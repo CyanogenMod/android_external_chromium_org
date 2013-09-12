@@ -26,10 +26,10 @@
 #include "content/public/common/frame_navigate_params.h"
 #include "grit/generated_resources.h"
 
+using autofill::PasswordForm;
+using autofill::PasswordFormMap;
 using content::UserMetricsAction;
 using content::WebContents;
-using content::PasswordForm;
-using content::PasswordFormMap;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(PasswordManager);
 
@@ -312,17 +312,12 @@ void PasswordManager::OnPasswordFormsRendered(
 
   DCHECK(IsSavingEnabled());
 
-  // First, check for a failed login attempt.
-  for (std::vector<PasswordForm>::const_iterator iter = visible_forms.begin();
-       iter != visible_forms.end(); ++iter) {
-    if (provisional_save_manager_->DoesManage(
-        *iter, PasswordFormManager::ACTION_MATCH_REQUIRED)) {
-      // The form trying to be saved has immediately re-appeared. Assume login
-      // failure and abort this save, by clearing provisional_save_manager_.
-      provisional_save_manager_->SubmitFailed();
-      provisional_save_manager_.reset();
-      return;
-    }
+  // We now assume that if there is at least one visible password form
+  // that means that the previous login attempt failed.
+  if (!visible_forms.empty()) {
+    provisional_save_manager_->SubmitFailed();
+    provisional_save_manager_.reset();
+    return;
   }
 
   if (!provisional_save_manager_->HasValidPasswordForm()) {
@@ -363,7 +358,7 @@ void PasswordManager::PossiblyInitializeUsernamesExperiment(
     return;
 
   bool other_possible_usernames_exist = false;
-  for (content::PasswordFormMap::const_iterator it = best_matches.begin();
+  for (autofill::PasswordFormMap::const_iterator it = best_matches.begin();
        it != best_matches.end(); ++it) {
     if (!it->second->other_possible_usernames.empty()) {
       other_possible_usernames_exist = true;

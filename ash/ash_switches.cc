@@ -44,6 +44,15 @@ const char kAshDefaultGuestWallpaperSmall[] =
 const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
 const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
 
+// Use the normal visual style for the caption buttons (minimize, maximize,
+// restore, close).
+const char kAshDisableAlternateFrameCaptionButtonStyle[] =
+    "ash-disable-alternate-caption-button";
+
+// Disable the alternate shelf layout.
+const char kAshDisableAlternateShelfLayout[] =
+    "ash-disable-alternate-shelf-layout";
+
 #if defined(OS_CHROMEOS)
 // Disable the status tray volume menu for allowing the user to choose an audio
 // input and output device.
@@ -83,6 +92,15 @@ const char kAshEnableAudioDeviceMenu[] = "ash-enable-audio-device-menu";
 // Enable advanced gestures (e.g. for window management).
 const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
 
+// Use alternate visual style for the caption buttons (minimize, maximize,
+// restore, close). The alternate style:
+// - Adds a dedicated button for minimize.
+// - Increases the height of the maximized header.
+// - Removes the maximize button's help bubble.
+// - Switches snapping a window left/right to be always 50%.
+const char kAshEnableAlternateFrameCaptionButtonStyle[] =
+    "ash-enable-alternate-caption-button";
+
 // Always enable brightness control. Used by machines that don't report their
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
@@ -90,8 +108,8 @@ const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
 // Enable the dock area on a desktop.
 const char kAshEnableDockedWindows[] = "ash-enable-docked-windows";
 
-// Enable dragging items off the shelf to unpin them.
-const char kAshEnableDragOffShelf[] = "ash-enable-drag-off-shelf";
+// Disable dragging items off the shelf to unpin them.
+const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
 
 // Enable immersive fullscreen mode, regardless of default setting.
 const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
@@ -104,8 +122,8 @@ const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
 
-// Enables overview mode for window switching.
-const char kAshEnableOverviewMode[] = "ash-enable-overview-mode";
+// Disables overview mode for window switching.
+const char kAshDisableOverviewMode[] = "ash-disable-overview-mode";
 
 // Enables "sticky" edges instead of "snap-to-edge"
 const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
@@ -179,30 +197,35 @@ const char kAshDisableDragAndDropAppListToLauncher[] =
 // in maximized mode.
 const char kForcedMaximizeMode[] = "forced-maximize-mode";
 
-bool UseAlternateShelfLayout() {
+bool UseAlternateFrameCaptionButtonStyle() {
   return CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshUseAlternateShelfLayout);
+      HasSwitch(kAshEnableAlternateFrameCaptionButtonStyle);
+}
+
+bool UseAlternateShelfLayout() {
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshDisableAlternateShelfLayout);
 }
 
 bool UseDragOffShelf() {
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshEnableDragOffShelf);
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshDisableDragOffShelf);
 }
 
 bool ShowShelfAlignmentMenu() {
-  return CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kShowShelfAlignmentMenu);
+  return !CommandLine::ForCurrentProcess()->
+      HasSwitch(kHideShelfAlignmentMenu);
 }
 
 #if defined(OS_CHROMEOS)
 bool ShowAudioDeviceMenu() {
   return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableAudioDeviceMenu);
+      HasSwitch(kAshDisableAudioDeviceMenu);
 }
 
 bool UseUsbChargerNotification() {
   return !CommandLine::ForCurrentProcess()->
-      HasSwitch(ash::switches::kAshDisableUsbChargerNotification);
+      HasSwitch(kAshDisableUsbChargerNotification);
 }
 #endif
 

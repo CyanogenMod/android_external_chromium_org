@@ -3337,28 +3337,6 @@
    fun:_ZN3net10URLRequest5StartEv
 }
 {
-   bug_92876a
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN3net18SSLClientSocketNSS10BufferSendEv
-   fun:_ZN3net18SSLClientSocketNSS13DoTransportIOEv
-   fun:_ZN3net18SSLClientSocketNSS11DoWriteLoopEi
-   fun:_ZN3net18SSLClientSocketNSS5WriteEPNS_8IOBufferEiP14CallbackRunnerI6Tuple1IiEE
-   fun:_ZN3net11SpdySession11WriteSocketEv
-}
-{
-   bug_92876b
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN3net18SSLClientSocketNSS10BufferSendEv
-   fun:_ZN3net18SSLClientSocketNSS13DoTransportIOEv
-   fun:_ZN3net18SSLClientSocketNSS15DoHandshakeLoopEi
-   fun:_ZN3net18SSLClientSocketNSS7ConnectEP14CallbackRunnerI6Tuple1IiEE
-   fun:_ZN3net13SSLConnectJob12DoSSLConnectEv
-   fun:_ZN3net13SSLConnectJob6DoLoopEi
-   fun:_ZN3net13SSLConnectJob12OnIOCompleteEi
-}
-{
    bug_93250a
    Memcheck:Leak
    fun:_Znw*
@@ -5886,22 +5864,6 @@
    fun:_ZN13BrowserWindow19CreateBrowserWindowEP7Browser
 }
 {
-   bug_164781a
-   Memcheck:Uninitialized
-   ...
-   fun:vp8cx_encode_*_macroblock
-   fun:thread_encoding_proc
-}
-{
-   bug_167481b
-   Memcheck:Uninitialized
-   ...
-   fun:encode_frame_to_data_rate
-   fun:vp8_get_compressed_data
-   fun:vp8e_encode
-   fun:vpx_codec_encode
-}
-{
    bug_170340
    Memcheck:Uninitialized
    fun:_ZN3WTF12AtomicString3addEPKt
@@ -6246,6 +6208,13 @@
    fun:_ZN2v88internal8Debugger18CallCEventCallbackENS_10DebugEventENS0_6HandleINS0_6ObjectEEES5_PNS_5Debug10ClientDataE
 }
 {
+   bug_181680b
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN7WebCore11ScriptState10forContextEN2v86HandleINS1_7ContextEEE
+   fun:_ZN7WebCore17ScriptDebugServer18handleProgramBreakEN2v86HandleINS1_6ObjectEEENS2_INS1_5ValueEEENS2_INS1_5ArrayEEE
+}
+{
    bug_184264
    Memcheck:Leak
    fun:_Znw*
@@ -6580,6 +6549,15 @@
    fun:_ZN7WebCore10UseCounter17recordMeasurementENS0_7FeatureE
 }
 {
+   bug_241044
+   Memcheck:Uninitialized
+   fun:_ZN7WebCore8Settings29setOpenGLMultisamplingEnabledEb
+   fun:_ZN6WebKit15WebSettingsImpl29setOpenGLMultisamplingEnabledEb
+   fun:_ZN7content19ApplyWebPreferencesERK14WebPreferencesPN6WebKit7WebViewE
+   fun:_ZN7content14RenderViewImpl22OnUpdateWebPreferencesERK14WebPreferences
+   fun:_ZN7content14RenderViewImpl20SetWebkitPreferencesERK14WebPreferences
+}
+{
    bug_241892a
    Memcheck:Leak
    fun:_Znw*
@@ -6720,6 +6698,25 @@
    fun:_ZN7content14ResourceLoader23CompleteResponseStartedEv
    fun:_ZN7content14ResourceLoader17OnResponseStartedEPN3net10URLRequestE
    fun:_ZN3net10URLRequest21NotifyResponseStartedEv
+}
+{
+   bug_245714c
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN7content17WorkerServiceImplC1Ev
+   fun:_ZN22DefaultSingletonTraitsIN7content17WorkerServiceImplEE3NewEv
+   fun:_ZN9SingletonIN7content17WorkerServiceImplE22DefaultSingletonTraitsIS1_ES1_E3getEv
+   fun:_ZN7content17WorkerServiceImpl11GetInstanceEv
+   fun:_ZN7content22ResourceRequestDetailsC1EPKN3net10URLRequestEi
+   fun:_ZN7content23ResourceRedirectDetailsC1EPKN3net10URLRequestEiRK4GURL
+   fun:_ZN7content26ResourceDispatcherHostImpl18DidReceiveRedirectEPNS_14ResourceLoaderERK4GURL
+   fun:_ZN7content14ResourceLoader18OnReceivedRedirectEPN3net10URLRequestERK4GURLPb
+   fun:_ZN3net10URLRequest22NotifyReceivedRedirectERK4GURLPb
+   fun:_ZN3net13URLRequestJob21NotifyHeadersCompleteEv
+   fun:_ZN3net17URLRequestHttpJob21NotifyHeadersCompleteEv
+   fun:_ZN3net17URLRequestHttpJob14SaveNextCookieEv
+   fun:_ZN3net17URLRequestHttpJob35SaveCookiesAndNotifyHeadersCompleteEi
+   fun:_ZN3net17URLRequestHttpJob16OnStartCompletedEi
 }
 {
    bug_245828
@@ -7178,7 +7175,7 @@
    fun:_ZN7WebCore14HarfBuzzShaper19collectHarfBuzzRunsEv
 }
 {
-   bug_272179_c 
+   bug_272179_c
    Memcheck:Param
    sendmsg(msg.msg_iov[0])
    obj:/lib/x86_64-linux-gnu/libpthread-2.15.so
@@ -7204,8 +7201,6 @@
    fun:_ZN6PickleC1Ev
    fun:_ZN7content14ZygoteHostImpl20GetTerminationStatusEibPi
    fun:_ZN7content20ChildProcessLauncher25GetChildTerminationStatusEbPi
-   fun:_ZN7content27BrowserChildProcessHostImpl20GetTerminationStatusEPi
-   fun:_ZN7content27BrowserChildProcessHostImpl19OnChildDisconnectedEv
 }
 {
    bug_274193
@@ -7238,4 +7233,75 @@
    fun:_ZN3net18ReliableQuicStream5CloseENS_22QuicRstStreamErrorCodeE
    fun:_ZN3net14QuicHttpStream5CloseEb
    fun:_ZN3net4test40QuicStreamFactoryTest_MaxOpenStream_Test8TestBodyEv
+}
+{
+   bug_282646
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN16sync_file_system21SyncFileSystemBackendC1EP7Profile
+   fun:_ZN6chrome26ChromeContentBrowserClient31GetAdditionalFileSystemBackendsEPN7content14BrowserContextERKN4base8FilePathEP12ScopedVectorIN7fileapi17FileSystemBackendEE
+   fun:_ZN7content23CreateFileSystemContextEPNS_14BrowserContextERKN4base8FilePathEbPN5quota17QuotaManagerProxyE
+   fun:_ZN7content20StoragePartitionImpl6CreateEPNS_14BrowserContextEbRKN4base8FilePathE
+   fun:_ZN7content23StoragePartitionImplMap3GetERKSsS2_b
+   fun:_ZN7content12_GLOBAL__N_129GetStoragePartitionFromConfigEPNS_14BrowserContextERKSsS4_b
+}
+{
+   bug_288787
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN10extensions22ManagedValueStoreCache16ExtensionTracker7ObserveEiRKN7content18NotificationSourceERKNS2_19NotificationDetailsE
+   fun:_ZN7content23NotificationServiceImpl6NotifyEiRKNS_18NotificationSourceERKNS_19NotificationDetailsE
+   fun:_ZN16ExtensionService23NotifyExtensionUnloadedEPKN10extensions9ExtensionEN14extension_misc23UnloadedExtensionReasonE
+   fun:_ZN16ExtensionService16DisableExtensionERKSsN10extensions9Extension13DisableReasonE
+   fun:_ZN22theme_service_internal40ThemeServiceTest_DisableUnusedTheme_Test8TestBodyEv
+}
+{
+   bug_288804
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN9__gnu_cxx13new_allocatorISt13_Rb_tree_nodeISt4pairIKN3net12HostPortPairESt3mapINS3_15SpdySettingsIdsES2_INS3_17SpdySettingsFlagsEjESt4lessIS7_ESaIS2_IKS7_S9_EEEEEE8allocateEmPKv
+   fun:_ZNSt8_Rb_treeIN3net12HostPortPairESt4pairIKS1_St3mapINS0_15SpdySettingsIdsES2_INS0_17SpdySettingsFlagsEjESt4lessIS5_ESaIS2_IKS5_S7_EEEESt10_Select1stISE_ES8_IS1_ESaISE_EE11_M_get_nodeEv
+   fun:_ZNSt8_Rb_treeIN3net12HostPortPairESt4pairIKS1_St3mapINS0_15SpdySettingsIdsES2_INS0_17SpdySettingsFlagsEjESt4lessIS5_ESaIS2_IKS5_S7_EEEESt10_Select1stISE_ES8_IS1_ESaISE_EE14_M_create_nodeERKSE_
+   fun:_ZNSt8_Rb_treeIN3net12HostPortPairESt4pairIKS1_St3mapINS0_15SpdySettingsIdsES2_INS0_17SpdySettingsFlagsEjESt4lessIS5_ESaIS2_IKS5_S7_EEEESt10_Select1stISE_ES8_IS1_ESaISE_EE13_M_clone_nodeEPKSt13_Rb_tree_nodeISE_E
+   fun:_ZNSt8_Rb_treeIN3net12HostPortPairESt4pairIKS1_St3mapINS0_15SpdySettingsIdsES2_INS0_17SpdySettingsFlagsEjESt4lessIS5_ESaIS2_IKS5_S7_EEEESt10_Select1stISE_ES8_IS1_ESaISE_EE7_M_copyEPKSt13_Rb_tree_nodeISE_EPSL_
+   fun:_ZNSt8_Rb_treeIN3net12HostPortPairESt4pairIKS1_St3mapINS0_15SpdySettingsIdsES2_INS0_17SpdySettingsFlagsEjESt4lessIS5_ESaIS2_IKS5_S7_EEEESt10_Select1stISE_ES8_IS1_ESaISE_EEaSERKSJ_
+   fun:_ZNSt3mapIN3net12HostPortPairES_INS0_15SpdySettingsIdsESt4pairINS0_17SpdySettingsFlagsEjESt4lessIS2_ESaIS3_IKS2_S5_EEES6_IS1_ESaIS3_IKS1_SB_EEEaSERKSG_
+   fun:_ZN18chrome_browser_net27HttpServerPropertiesManager24UpdatePrefsFromCacheOnIOERKN4base8CallbackIFvvEEE
+   fun:_ZN18chrome_browser_net27HttpServerPropertiesManager24UpdatePrefsFromCacheOnIOEv
+}
+{
+   bug_288801
+   Memcheck:Uninitialized
+   fun:_ZN7WebCore22InspectorDatabaseAgent15didOpenDatabaseEN3WTF10PassRefPtrINS_8DatabaseEEERKNS1_6StringES7_S7_
+   fun:_ZN7WebCore24InspectorInstrumentation19didOpenDatabaseImplEPNS_19InstrumentingAgentsEN3WTF10PassRefPtrINS_8DatabaseEEERKNS3_6StringES9_S9_
+   fun:_ZN7WebCore24InspectorInstrumentation15didOpenDatabaseEPNS_22ScriptExecutionContextEN3WTF10PassRefPtrINS_8DatabaseEEERKNS3_6StringES9_S9_
+   fun:_ZN7WebCore15DatabaseManager12openDatabaseEPNS_22ScriptExecutionContextERKN3WTF6StringES6_S6_mNS3_10PassRefPtrINS_16DatabaseCallbackEEERNS3_9EnumClassINS_23DatabaseErrorDefinitionEEE
+   fun:_ZN7WebCore20DOMWindowWebDatabase12openDatabaseEPNS_9DOMWindowERKN3WTF6StringES6_S6_mNS3_10PassRefPtrINS_16DatabaseCallbackEEERNS_14ExceptionStateE
+   fun:_ZN7WebCore19DOMWindowV8InternalL30openDatabaseMethodForMainWorldERKN2v820FunctionCallbackInfoINS1_5ValueEEE
+   fun:_ZN7WebCore19DOMWindowV8InternalL38openDatabaseMethodCallbackForMainWorldERKN2v820FunctionCallbackInfoINS1_5ValueEEE
+   fun:_ZN2v88internal25FunctionCallbackArguments4CallEPFvRKNS_20FunctionCallbackInfoINS_5ValueEEEE
+   fun:_ZN2v88internalL19HandleApiCallHelperILb0EEEPNS0_11MaybeObjectENS0_12_GLOBAL__N_116BuiltinArgumentsILNS0_21BuiltinExtraArgumentsE1EEEPNS0_7IsolateE
+   fun:_ZN2v88internalL25Builtin_implHandleApiCallENS0_12_GLOBAL__N_116BuiltinArgumentsILNS0_21BuiltinExtraArgumentsE1EEEPNS0_7IsolateE
+   fun:_ZN2v88internalL21Builtin_HandleApiCallEiPPNS0_6ObjectEPNS0_7IsolateE
+   obj:*
+   obj:*
+   obj:*
+   obj:*
+   fun:_ZN2v88internalL6InvokeEbNS0_6HandleINS0_10JSFunctionEEENS1_INS0_6ObjectEEEiPS5_Pb
+   fun:_ZN2v88internal9Execution4CallEPNS0_7IsolateENS0_6HandleINS0_6ObjectEEES6_iPS6_Pbb
+   fun:_ZN2v86Script3RunEv
+   fun:_ZN7WebCore14V8ScriptRunner17runCompiledScriptEN2v86HandleINS1_6ScriptEEEPNS_22ScriptExecutionContextEPNS1_7IsolateE
+   fun:_ZN7WebCore16ScriptController19compileAndRunScriptERKNS_16ScriptSourceCodeENS_19AccessControlStatusE
+   fun:_ZN7WebCore16ScriptController24executeScriptInMainWorldERKNS_16ScriptSourceCodeENS_19AccessControlStatusE
+   fun:_ZN7WebCore12ScriptLoader13executeScriptERKNS_16ScriptSourceCodeE
+}
+{
+   bug_289039
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN6WebKit30OverlayGraphicsLayerClientImpl6createEPNS_14WebPageOverlayE
+   fun:_ZN6WebKit11PageOverlay6updateEv
+   fun:_ZN6WebKit15PageOverlayList3addEPNS_14WebPageOverlayEi
+   fun:_ZN6WebKit11WebViewImpl14addPageOverlayEPNS_14WebPageOverlayEi
+   fun:_ZN6WebKit20WebDevToolsAgentImpl9highlightEv
 }

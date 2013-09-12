@@ -153,6 +153,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool experimental_websocket_enabled;
   bool pinch_virtual_viewport_enabled;
   int pinch_overlay_scrollbar_thickness;
+  bool use_solid_color_scrollbars;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
@@ -169,7 +170,10 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool user_gesture_required_for_media_playback;
   GURL default_video_poster_url;
   bool support_deprecated_target_density_dpi;
+  bool use_legacy_background_size_shorthand_behavior;
   bool use_wide_viewport;
+  bool viewport_meta_layout_size_quirk;
+  bool viewport_meta_zero_values_quirk;
 #endif
 
   // We try to keep the default values the same as the default values in

@@ -118,7 +118,7 @@ ACTION_P(TrustSignature, certificate_file) {
   // Add a certificate chain.  Note that we add the certificate twice so that
   // it appears as its own issuer.
   std::string cert_data;
-  ASSERT_TRUE(file_util::ReadFileToString(certificate_file, &cert_data));
+  ASSERT_TRUE(base::ReadFileToString(certificate_file, &cert_data));
   ClientDownloadRequest_CertificateChain* chain =
       arg1->add_certificate_chain();
   chain->add_element()->set_certificate(cert_data);
@@ -140,7 +140,8 @@ ACTION_P(CheckDownloadUrlDone, threat_type) {
           arg0,
           std::vector<SBFullHash>(),
           arg1,
-          safe_browsing_util::BINURL);
+          safe_browsing_util::BINURL,
+          std::vector<SBThreatType>(1, SB_THREAT_TYPE_BINARY_MALWARE_URL));
   for (size_t i = 0; i < check->url_results.size(); ++i)
     check->url_results[i] = threat_type;
   BrowserThread::PostTask(BrowserThread::IO,
@@ -239,8 +240,8 @@ class DownloadProtectionServiceTest : public testing::Test {
   scoped_refptr<net::X509Certificate> ReadTestCertificate(
       const std::string& filename) {
     std::string cert_data;
-    if (!file_util::ReadFileToString(testdata_path_.AppendASCII(filename),
-                                     &cert_data)) {
+    if (!base::ReadFileToString(testdata_path_.AppendASCII(filename),
+                                &cert_data)) {
       return NULL;
     }
     net::CertificateList certs =

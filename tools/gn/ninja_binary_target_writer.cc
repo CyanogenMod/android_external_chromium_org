@@ -4,6 +4,9 @@
 
 #include "tools/gn/ninja_binary_target_writer.h"
 
+#include <set>
+
+#include "base/strings/string_util.h"
 #include "tools/gn/config_values_extractors.h"
 #include "tools/gn/err.h"
 #include "tools/gn/escape.h"
@@ -25,9 +28,16 @@ EscapeOptions GetFlagOptions() {
 }
 
 struct DefineWriter {
-  void operator()(const std::string& s, std::ostream& out) const {
-    out << " -D" << s;
+  DefineWriter() {
+    options.mode = ESCAPE_SHELL;
   }
+
+  void operator()(const std::string& s, std::ostream& out) const {
+    out << " -D";
+    EscapeStringToStream(out, s, options);
+  }
+
+  EscapeOptions options;
 };
 
 struct IncludeWriter {
@@ -120,6 +130,8 @@ void NinjaBinaryTargetWriter::WriteSources(
   object_files->reserve(sources.size());
 
   const Toolchain* toolchain = GetToolchain();
+  std::string implicit_deps = GetSourcesImplicitDeps();
+
   for (size_t i = 0; i < sources.size(); i++) {
     const SourceFile& input_file = sources[i];
 
@@ -140,7 +152,7 @@ void NinjaBinaryTargetWriter::WriteSources(
     path_output_.WriteFile(out_, output_file);
     out_ << ": " << command << " ";
     path_output_.WriteFile(out_, input_file);
-    out_ << std::endl;
+    out_ << implicit_deps << std::endl;
   }
   out_ << std::endl;
 }
@@ -160,10 +172,19 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
     out_ << std::endl;
   }
 
-  // Linker flags, append manifest flag on Windows to reference our file.
+  EscapeOptions flag_options = GetFlagOptions();
+
+  // Linker flags. The linker flags will already be collected in all_ldflags
+  // for the target from all child targets, and configs, but they still need
+  // to be uniquified.
   out_ << "ldflags =";
-  RecursiveTargetConfigStringsToStream(target_, &ConfigValues::ldflags,
-                                       GetFlagOptions(), out_);
+  const OrderedSet<std::string> all_ldflags = target_->all_ldflags();
+  for (size_t i = 0; i < all_ldflags.size(); i++) {
+    out_ << " ";
+    EscapeStringToStream(out_, all_ldflags[i], flag_options);
+  }
+
+  // Append manifest flag on Windows to reference our file.
   // HACK ERASEME BRETTW FIXME
   if (settings_->IsWin()) {
     out_ << " /MANIFEST /ManifestFile:";
@@ -255,7 +276,7 @@ void NinjaBinaryTargetWriter::WriteLinkCommand(
   // Static libraries since they're just a collection of the object files so
   // don't need libraries linked with them, but we still need to go through
   // the list and find non-linkable data deps in the "deps" section. We'll
-  // collect all non-linkable deps and put it in the order-only deps below.
+  // collect all non-linkable deps and put it in the implicit deps below.
   std::vector<const Target*> extra_data_deps;
   const std::vector<const Target*>& deps = target_->deps();
   const std::set<const Target*>& inherited = target_->inherited_libraries();
@@ -280,7 +301,18 @@ void NinjaBinaryTargetWriter::WriteLinkCommand(
     }
   }
 
-  // Append data dependencies as order-only dependencies.
+  // External link deps from GYP. This is indexed by a label with no toolchain.
+  typedef BuildSettings::AdditionalLibsMap LibsMap;
+  const LibsMap& libs = settings_->build_settings()->external_link_deps();
+  Label libs_key(target_->label().dir(), target_->label().name());
+  LibsMap::const_iterator libs_end = libs.upper_bound(libs_key);
+  for (LibsMap::const_iterator i = libs.lower_bound(libs_key);
+       i != libs_end; ++i) {
+    out_ << " ";
+    path_output_.WriteFile(out_, i->second);
+  }
+
+  // Append data dependencies as implicit dependencies.
   const std::vector<const Target*>& datadeps = target_->datadeps();
   const std::vector<SourceFile>& data = target_->data();
   if (!extra_data_deps.empty() || !datadeps.empty() || !data.empty()) {

@@ -71,6 +71,8 @@ class PermissionMessage {
     kNetworkingPrivate,
     kDeclarativeWebRequest,
     kFileSystemDirectory,
+    kFileSystemWriteDirectory,
+    kSignedInDevices,
     kEnumBoundary,
   };
   COMPILE_ASSERT(PermissionMessage::kNone > PermissionMessage::kUnknown,

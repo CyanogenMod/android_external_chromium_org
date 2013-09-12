@@ -4,9 +4,14 @@
 
 #include "chrome/browser/local_discovery/service_discovery_host_client.h"
 
+#if defined(OS_POSIX)
+#include "base/file_descriptor_posix.h"
+#endif  // OS_POSIX
+
 #include "chrome/common/local_discovery/local_discovery_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
+#include "net/socket/socket_descriptor.h"
 
 namespace local_discovery {
 
@@ -25,18 +30,22 @@ class ServiceDiscoveryHostClient::ServiceWatcherProxy : public ServiceWatcher {
   }
 
   virtual ~ServiceWatcherProxy() {
+    DVLOG(1) << "~ServiceWatcherProxy with id " << id_;
     host_->UnregisterWatcherCallback(id_);
     if (started_)
       host_->Send(new LocalDiscoveryMsg_DestroyWatcher(id_));
   }
 
   virtual void Start() OVERRIDE {
+    DVLOG(1) << "ServiceWatcher::Start with id " << id_;
     DCHECK(!started_);
     host_->Send(new LocalDiscoveryMsg_StartWatcher(id_, service_type_));
     started_ = true;
   }
 
   virtual void DiscoverNewServices(bool force_update) OVERRIDE {
+    DVLOG(1) << "ServiceWatcher::DiscoverNewServices with id "
+            << id_;
     DCHECK(started_);
     host_->Send(new LocalDiscoveryMsg_DiscoverServices(id_, force_update));
   }
@@ -65,12 +74,16 @@ class ServiceDiscoveryHostClient::ServiceResolverProxy
   }
 
   virtual ~ServiceResolverProxy() {
+    DVLOG(1) << "~ServiceResolverProxy with id " << id_;
     host_->UnregisterResolverCallback(id_);
     if (started_)
       host_->Send(new LocalDiscoveryMsg_DestroyResolver(id_));
   }
 
   virtual void StartResolving() OVERRIDE {
+    DVLOG(1)
+        << "ServiceResolverProxy::StartResolving with id "
+        << id_;
     DCHECK(!started_);
     host_->Send(new LocalDiscoveryMsg_ResolveService(id_, service_name_));
     started_ = true;
@@ -102,12 +115,16 @@ class ServiceDiscoveryHostClient::LocalDomainResolverProxy
   }
 
   virtual ~LocalDomainResolverProxy() {
+    DVLOG(1) << "~LocalDomainResolverProxy with id "
+            << id_;
     host_->UnregisterLocalDomainResolverCallback(id_);
     if (started_)
       host_->Send(new LocalDiscoveryMsg_DestroyLocalDomainResolver(id_));
   }
 
   virtual void Start() OVERRIDE {
+    DVLOG(1) << "LocalDomainResolverProxy::Start with id "
+            << id_;
     DCHECK(!started_);
     host_->Send(new LocalDiscoveryMsg_ResolveLocalDomain(id_, domain_,
                                                          address_family_));
@@ -187,25 +204,23 @@ uint64 ServiceDiscoveryHostClient::RegisterLocalDomainResolverCallback(
 
 void ServiceDiscoveryHostClient::UnregisterWatcherCallback(uint64 id) {
   DCHECK(CalledOnValidThread());
-  DCHECK(ContainsKey(service_watcher_callbacks_, id));
   service_watcher_callbacks_.erase(id);
 }
 
 void ServiceDiscoveryHostClient::UnregisterResolverCallback(uint64 id) {
   DCHECK(CalledOnValidThread());
-  DCHECK(ContainsKey(service_resolver_callbacks_, id));
   service_resolver_callbacks_.erase(id);
 }
 
 void ServiceDiscoveryHostClient::UnregisterLocalDomainResolverCallback(
     uint64 id) {
   DCHECK(CalledOnValidThread());
-  DCHECK(ContainsKey(domain_resolver_callbacks_, id));
   domain_resolver_callbacks_.erase(id);
 }
 
 void ServiceDiscoveryHostClient::Start() {
   DCHECK(CalledOnValidThread());
+  net::NetworkChangeNotifier::AddIPAddressObserver(this);
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -213,6 +228,7 @@ void ServiceDiscoveryHostClient::Start() {
 }
 
 void ServiceDiscoveryHostClient::Shutdown() {
+  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
   DCHECK(CalledOnValidThread());
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -228,6 +244,21 @@ void ServiceDiscoveryHostClient::StartOnIOThread() {
     utility_host_->EnableZygote();
     utility_host_->EnableMDns();
     utility_host_->StartBatchMode();
+
+#if defined(OS_POSIX)
+    base::FileDescriptor v4(net::CreatePlatformSocket(AF_INET, SOCK_DGRAM, 0),
+                            true);
+    base::FileDescriptor v6(net::CreatePlatformSocket(AF_INET6, SOCK_DGRAM, 0),
+                            true);
+    LOG_IF(ERROR, v4.fd == net::kInvalidSocket) << "Can't create IPv4 socket.";
+    LOG_IF(ERROR, v6.fd == net::kInvalidSocket) << "Can't create IPv6 socket.";
+    if (v4.fd == net::kInvalidSocket &&
+        v6.fd == net::kInvalidSocket) {
+      ShutdownOnIOThread();
+    } else {
+      utility_host_->Send(new LocalDiscoveryMsg_SetSockets(v4, v6));
+    }
+#endif  // OS_POSIX
   }
 }
 
@@ -237,6 +268,13 @@ void ServiceDiscoveryHostClient::ShutdownOnIOThread() {
     utility_host_->Send(new LocalDiscoveryMsg_ShutdownLocalDiscovery);
     utility_host_->EndBatchMode();
   }
+}
+
+void ServiceDiscoveryHostClient::RestartOnIOThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  ShutdownOnIOThread();
+  StartOnIOThread();
 }
 
 void ServiceDiscoveryHostClient::Send(IPC::Message* msg) {
@@ -251,6 +289,23 @@ void ServiceDiscoveryHostClient::SendOnIOThread(IPC::Message* msg) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (utility_host_)
     utility_host_->Send(msg);
+}
+
+void ServiceDiscoveryHostClient::OnIPAddressChanged() {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&ServiceDiscoveryHostClient::RestartOnIOThread, this));
+
+  WatcherCallbacks service_watcher_callbacks;
+  service_watcher_callbacks_.swap(service_watcher_callbacks);
+
+  for (WatcherCallbacks::iterator i = service_watcher_callbacks.begin();
+       i != service_watcher_callbacks.end(); i++) {
+    if (!i->second.is_null()) {
+      i->second.Run(ServiceWatcher::UPDATE_INVALIDATED, "");
+    }
+  }
 }
 
 bool ServiceDiscoveryHostClient::OnMessageReceived(

@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "apps/app_lifetime_monitor.h"
 #include "apps/app_shim/app_shim_handler_mac.h"
@@ -55,7 +56,8 @@ class ExtensionAppShimHandler : public AppShimHandler,
     virtual const extensions::Extension* GetAppExtension(
         Profile* profile, const std::string& extension_id);
     virtual void LaunchApp(Profile* profile,
-                           const extensions::Extension* extension);
+                           const extensions::Extension* extension,
+                           const std::vector<base::FilePath>& files);
     virtual void LaunchShim(Profile* profile,
                             const extensions::Extension* extension);
 
@@ -69,14 +71,20 @@ class ExtensionAppShimHandler : public AppShimHandler,
 
   static void QuitAppForWindow(ShellWindow* shell_window);
 
+  static void HideAppForWindow(ShellWindow* shell_window);
+
   // Brings the window to the front without showing it and instructs the shim to
   // request user attention. Returns false if there is no shim for this window.
   static bool RequestUserAttentionForWindow(ShellWindow* shell_window);
 
   // AppShimHandler overrides:
-  virtual void OnShimLaunch(Host* host, AppShimLaunchType launch_type) OVERRIDE;
+  virtual void OnShimLaunch(Host* host,
+                            AppShimLaunchType launch_type,
+                            const std::vector<base::FilePath>& files) OVERRIDE;
   virtual void OnShimClose(Host* host) OVERRIDE;
-  virtual void OnShimFocus(Host* host, AppShimFocusType focus_type) OVERRIDE;
+  virtual void OnShimFocus(Host* host,
+                           AppShimFocusType focus_type,
+                           const std::vector<base::FilePath>& files) OVERRIDE;
   virtual void OnShimSetHidden(Host* host, bool hidden) OVERRIDE;
   virtual void OnShimQuit(Host* host) OVERRIDE;
 
@@ -108,6 +116,7 @@ class ExtensionAppShimHandler : public AppShimHandler,
   // where the profile was not yet loaded.
   void OnProfileLoaded(Host* host,
                        AppShimLaunchType launch_type,
+                       const std::vector<base::FilePath>& files,
                        Profile* profile);
 
   scoped_ptr<Delegate> delegate_;

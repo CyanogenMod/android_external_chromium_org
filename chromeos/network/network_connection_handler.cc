@@ -12,13 +12,13 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_service_client.h"
 #include "chromeos/network/client_cert_util.h"
-#include "chromeos/network/managed_network_configuration_handler.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
+#include "chromeos/network/shill_property_util.h"
 #include "dbus/object_path.h"
 #include "net/cert/x509_certificate.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -45,14 +45,6 @@ bool IsAuthenticationError(const std::string& error) {
           error == shill::kErrorEapLocalTlsFailed ||
           error == shill::kErrorEapRemoteTlsFailed ||
           error == shill::kErrorEapAuthenticationFailed);
-}
-
-void CopyStringFromDictionary(const base::DictionaryValue& source,
-                              const std::string& key,
-                              base::DictionaryValue* dest) {
-  std::string string_value;
-  if (source.GetStringWithoutPathExpansion(key, &string_value))
-    dest->SetStringWithoutPathExpansion(key, string_value);
 }
 
 bool NetworkRequiresActivation(const NetworkState* network) {
@@ -118,16 +110,10 @@ const char NetworkConnectionHandler::kErrorConfigurationRequired[] =
 const char NetworkConnectionHandler::kErrorAuthenticationRequired[] =
     "authentication-required";
 const char NetworkConnectionHandler::kErrorShillError[] = "shill-error";
-const char NetworkConnectionHandler::kErrorConnectFailed[] = "connect-failed";
 const char NetworkConnectionHandler::kErrorConfigureFailed[] =
     "configure-failed";
-const char NetworkConnectionHandler::kErrorActivateFailed[] =
-    "activate-failed";
-const char NetworkConnectionHandler::kErrorMissingProvider[] =
-    "missing-provider";
 const char NetworkConnectionHandler::kErrorConnectCanceled[] =
     "connect-canceled";
-const char NetworkConnectionHandler::kErrorUnknown[] = "unknown-error";
 
 struct NetworkConnectionHandler::ConnectRequest {
   ConnectRequest(const std::string& service_path,
@@ -254,14 +240,8 @@ void NetworkConnectionHandler::ConnectToNetwork(
 
     if (check_error_state) {
       const std::string& error = network->error();
-      if (error == flimflam::kErrorConnectFailed) {
-        InvokeErrorCallback(
-            service_path, error_callback, kErrorPassphraseRequired);
-        return;
-      }
       if (error == flimflam::kErrorBadPassphrase) {
-        InvokeErrorCallback(
-            service_path, error_callback, kErrorPassphraseRequired);
+        InvokeErrorCallback(service_path, error_callback, error);
         return;
       }
       if (IsAuthenticationError(error)) {
@@ -390,7 +370,7 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
           flimflam::kHostProperty, &vpn_provider_host);
     }
     if (vpn_provider_type.empty() || vpn_provider_host.empty()) {
-      ErrorCallbackForPendingRequest(service_path, kErrorMissingProvider);
+      ErrorCallbackForPendingRequest(service_path, kErrorConfigurationRequired);
       return;
     }
     // VPN requires a host and username to be set.
@@ -423,7 +403,7 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     // Note: Wifi/VPNConfigView set these properties explicitly, in which case
     //   only the TPM must be configured.
     scoped_ptr<NetworkUIData> ui_data =
-        ManagedNetworkConfigurationHandler::GetUIData(service_properties);
+        shill_property_util::GetUIDataFromProperties(service_properties);
     if (ui_data && ui_data->certificate_type() == CLIENT_CERT_TYPE_PATTERN) {
       // User must be logged in to connect to a network requiring a certificate.
       if (!logged_in_ || !cert_loader_) {
@@ -451,6 +431,12 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
         ErrorCallbackForPendingRequest(service_path, kErrorCertificateRequired);
         return;
       }
+    } else if (check_error_state &&
+               !client_cert::IsCertificateConfigured(client_cert_type,
+                                                     service_properties)) {
+      // Network may not be configured.
+      ErrorCallbackForPendingRequest(service_path, kErrorConfigurationRequired);
+      return;
     }
 
     // The network may not be 'Connectable' because the TPM properties are not
@@ -468,32 +454,21 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
 
   if (!config_properties.empty()) {
     NET_LOG_EVENT("Configuring Network", service_path);
-
-    // Set configuration properties required by Shill to identify the network.
-    config_properties.SetStringWithoutPathExpansion(
-        flimflam::kTypeProperty, type);
-    CopyStringFromDictionary(service_properties, flimflam::kNameProperty,
-                             &config_properties);
-    CopyStringFromDictionary(service_properties, flimflam::kGuidProperty,
-                             &config_properties);
-    if (type == flimflam::kTypeVPN) {
-      config_properties.SetStringWithoutPathExpansion(
-          flimflam::kProviderTypeProperty, vpn_provider_type);
-      config_properties.SetStringWithoutPathExpansion(
-          flimflam::kProviderHostProperty, vpn_provider_host);
-    } else if (type == flimflam::kTypeWifi) {
-      config_properties.SetStringWithoutPathExpansion(
-          flimflam::kSecurityProperty, security);
+    if (shill_property_util::CopyIdentifyingProperties(service_properties,
+                                                       &config_properties)) {
+      network_configuration_handler_->SetProperties(
+          service_path,
+          config_properties,
+          base::Bind(&NetworkConnectionHandler::CallShillConnect,
+                     AsWeakPtr(),
+                     service_path),
+          base::Bind(&NetworkConnectionHandler::HandleConfigurationFailure,
+                     AsWeakPtr(),
+                     service_path));
+      return;
     }
-
-    network_configuration_handler_->SetProperties(
-        service_path,
-        config_properties,
-        base::Bind(&NetworkConnectionHandler::CallShillConnect,
-                   AsWeakPtr(), service_path),
-        base::Bind(&NetworkConnectionHandler::HandleConfigurationFailure,
-                   AsWeakPtr(), service_path));
-   return;
+    NET_LOG_ERROR("Shill dictionary is missing some relevant entries",
+                  service_path);
   }
 
   // Otherwise, we probably still need to configure the network since
@@ -563,7 +538,7 @@ void NetworkConnectionHandler::HandleShillConnectFailure(
   network_handler::ErrorCallback error_callback = request->error_callback;
   pending_requests_.erase(service_path);
   network_handler::ShillErrorCallbackFunction(
-      kErrorConnectFailed, service_path, error_callback,
+      flimflam::kErrorConnectFailed, service_path, error_callback,
       dbus_error_name, dbus_error_message);
 }
 
@@ -603,7 +578,7 @@ void NetworkConnectionHandler::CheckPendingRequest(
     error_name = kErrorConnectCanceled;
     error_detail = "";
   } else {
-    error_name = kErrorConnectFailed;
+    error_name = flimflam::kErrorConnectFailed;
     error_detail = network->error();
     if (error_detail.empty()) {
       if (network->connection_state() == flimflam::kStateFailure)

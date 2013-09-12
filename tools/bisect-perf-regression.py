@@ -79,7 +79,8 @@ DEPOT_DEPS_NAME = {
     "src" : "src/third_party/angle_dx11",
     "recurse" : True,
     "depends" : None,
-    "from" : 'chromium'
+    "from" : 'chromium',
+    "platform": 'nt'
   },
   'v8' : {
     "src" : "src/v8",
@@ -882,6 +883,10 @@ class BisectPerformanceMetrics(object):
       rxp = re.compile(".git@(?P<revision>[a-fA-F0-9]+)")
 
       for d in DEPOT_NAMES:
+        if DEPOT_DEPS_NAME[d].has_key('platform'):
+          if DEPOT_DEPS_NAME[d]['platform'] != os.name:
+            continue
+
         if DEPOT_DEPS_NAME[d]['recurse'] and\
            DEPOT_DEPS_NAME[d]['from'] == depot:
           if locals['deps'].has_key(DEPOT_DEPS_NAME[d]['src']):
@@ -890,8 +895,12 @@ class BisectPerformanceMetrics(object):
             if re_results:
               results[d] = re_results.group('revision')
             else:
+              print 'Couldn\'t parse revision for %s.' % d
+              print
               return None
           else:
+            print 'Couldn\'t find %s while parsing .DEPS.git.' % d
+            print
             return None
     elif depot == 'cros':
       cmd = [CROS_SDK_PATH, '--', 'portageq-%s' % self.opts.cros_board,
@@ -1471,6 +1480,10 @@ class BisectPerformanceMetrics(object):
     """
     external_depot = None
     for current_depot in DEPOT_NAMES:
+      if DEPOT_DEPS_NAME[current_depot].has_key('platform'):
+        if DEPOT_DEPS_NAME[current_depot]['platform'] != os.name:
+          continue
+
       if not (DEPOT_DEPS_NAME[current_depot]["recurse"] and
           DEPOT_DEPS_NAME[current_depot]['from'] ==
           min_revision_data['depot']):
@@ -2068,9 +2081,6 @@ class BisectPerformanceMetrics(object):
             std_error, state_str)
 
     if last_broken_revision != None and first_working_revision != None:
-      # Give a "confidence" in the bisect. At the moment we use how distinct the
-      # values are before and after the last broken revision, and how noisy the
-      # overall graph is.
       bounds_broken = [revision_data[last_broken_revision]['value']['mean'],
           revision_data[last_broken_revision]['value']['mean']]
       broken_mean = []
@@ -2093,6 +2103,27 @@ class BisectPerformanceMetrics(object):
               revision_data_sorted[i][1]['value']['mean'])
           working_mean.extend(revision_data_sorted[i][1]['value']['values'])
 
+      # Calculate the approximate size of the regression
+      mean_of_bad_runs = CalculateTruncatedMean(broken_mean, 0.0)
+      mean_of_good_runs = CalculateTruncatedMean(working_mean, 0.0)
+
+      regression_size = math.fabs(max(mean_of_good_runs, mean_of_bad_runs) /
+          min(mean_of_good_runs, mean_of_bad_runs)) * 100.0 - 100.0
+
+      regression_size_max = math.fabs(max(bounds_working[0], bounds_broken[1]) /
+          min(bounds_working[0], bounds_broken[1])) * 100.0 - 100.0
+      regression_size_min = math.fabs(max(bounds_working[1], bounds_broken[0]) /
+          min(bounds_working[1], bounds_broken[0])) * 100.0 - 100.0
+      regression_diff = max(math.fabs(regression_size_max - regression_size),
+          math.fabs(regression_size - regression_size_min))
+
+      print
+      print 'Approximate size of regression: %.02f%%  +- %.02f%%' % (
+          regression_size, regression_diff)
+
+      # Give a "confidence" in the bisect. At the moment we use how distinct the
+      # values are before and after the last broken revision, and how noisy the
+      # overall graph is.
       dist_between_groups = min(math.fabs(bounds_broken[1] - bounds_working[0]),
           math.fabs(bounds_broken[0] - bounds_working[1]))
       len_working_group = CalculateStandardError(working_mean)
@@ -2102,7 +2133,6 @@ class BisectPerformanceMetrics(object):
           max(0.0001, (len_broken_group + len_working_group ))))
       confidence = min(1.0, max(confidence, 0.0)) * 100.0
 
-      print
       print 'Confidence in Bisection Results: %d%%' % int(confidence)
       print
 

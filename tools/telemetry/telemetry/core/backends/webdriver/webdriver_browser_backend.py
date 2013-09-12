@@ -10,11 +10,11 @@ class WebDriverBrowserBackend(browser_backend.BrowserBackend):
   instance, on Linux, Mac, and Windows.
   """
 
-  def __init__(self, driver_creator, supports_extensions, options):
+  def __init__(self, driver_creator, supports_extensions, browser_options):
     super(WebDriverBrowserBackend, self).__init__(
         is_content_shell=False,
         supports_extensions=supports_extensions,
-        options=options,
+        browser_options=browser_options,
         tab_list_backend=webdriver_tab_list_backend.WebDriverTabListBackend)
 
     self._driver_creator = driver_creator
@@ -45,7 +45,7 @@ class WebDriverBrowserBackend(browser_backend.BrowserBackend):
     # webdriver API.
     return False
 
-  def GetProcessName(self, _):
+  def GetProcessName(self, cmd_line):
     # Leave implementation details to subclass as process name depends on the
     # type of browser.
     raise NotImplementedError()
@@ -61,10 +61,6 @@ class WebDriverBrowserBackend(browser_backend.BrowserBackend):
   def IsBrowserRunning(self):
     # Assume the browser is running if not explicitly closed.
     return self._driver is not None
-
-  def GetStandardOutput(self):
-    # TODO(chrisgao): check if python client can get stdout of browsers.
-    return ''
 
   def __del__(self):
     self.Close()

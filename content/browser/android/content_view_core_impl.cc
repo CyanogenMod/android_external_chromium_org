@@ -577,15 +577,28 @@ void ContentViewCoreImpl::ShowDisambiguationPopup(
                                                java_bitmap.obj());
 }
 
-ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateGenericTouchGesture(
-    int start_x, int start_y, int delta_x, int delta_y) {
+ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateOnePointTouchGesture(
+    int32 start_x, int32 start_y, int32 delta_x, int32 delta_y) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return ScopedJavaLocalRef<jobject>();
-  return Java_ContentViewCore_createGenericTouchGesture(
+  return Java_ContentViewCore_createOnePointTouchGesture(
       env, obj.obj(), start_x, start_y, delta_x, delta_y);
+}
+
+ScopedJavaLocalRef<jobject> ContentViewCoreImpl::CreateTwoPointTouchGesture(
+    int32 start_x0, int32 start_y0, int32 delta_x0, int32 delta_y0,
+    int32 start_x1, int32 start_y1, int32 delta_x1, int32 delta_y1) {
+  JNIEnv* env = AttachCurrentThread();
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return ScopedJavaLocalRef<jobject>();
+  return Java_ContentViewCore_createTwoPointTouchGesture(
+      env, obj.obj(), start_x0, start_y0, delta_x0, delta_y0,
+      start_x1, start_y1, delta_x1, delta_y1);
 }
 
 void ContentViewCoreImpl::NotifyExternalSurface(
@@ -952,20 +965,13 @@ void ContentViewCoreImpl::ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms) {
 }
 
 void ContentViewCoreImpl::ScrollBy(JNIEnv* env, jobject obj, jlong time_ms,
-                                   jfloat x, jfloat y, jfloat dx, jfloat dy,
-                                   jboolean last_input_event_for_vsync) {
+                                   jfloat x, jfloat y, jfloat dx, jfloat dy) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureScrollUpdate, time_ms, x, y);
   event.data.scrollUpdate.deltaX = -dx / GetDpiScale();
   event.data.scrollUpdate.deltaY = -dy / GetDpiScale();
 
   SendGestureEvent(event);
-
-  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
-  if (last_input_event_for_vsync) {
-    SendBeginFrame(base::TimeTicks() +
-                   base::TimeDelta::FromMilliseconds(time_ms));
-  }
 }
 
 void ContentViewCoreImpl::FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
@@ -1088,19 +1094,12 @@ void ContentViewCoreImpl::PinchEnd(JNIEnv* env, jobject obj, jlong time_ms) {
 
 void ContentViewCoreImpl::PinchBy(JNIEnv* env, jobject obj, jlong time_ms,
                                   jfloat anchor_x, jfloat anchor_y,
-                                  jfloat delta,
-                                  jboolean last_input_event_for_vsync) {
+                                  jfloat delta) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GesturePinchUpdate, time_ms, anchor_x, anchor_y);
   event.data.pinchUpdate.scale = delta;
 
   SendGestureEvent(event);
-
-  // TODO(brianderson): Clean up last_input_event_for_vsync. crbug.com/247043
-  if (last_input_event_for_vsync) {
-    SendBeginFrame(base::TimeTicks() +
-                   base::TimeDelta::FromMilliseconds(time_ms));
-  }
 }
 
 void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,

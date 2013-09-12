@@ -643,10 +643,12 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kBrowsingData);
   skip.insert(APIPermission::kContextMenus);
   skip.insert(APIPermission::kDiagnostics);
+  skip.insert(APIPermission::kDns);
   skip.insert(APIPermission::kDownloadsShelf);
   skip.insert(APIPermission::kFontSettings);
   skip.insert(APIPermission::kFullscreen);
   skip.insert(APIPermission::kIdle);
+  skip.insert(APIPermission::kIdltest);
   skip.insert(APIPermission::kLogPrivate);
   skip.insert(APIPermission::kNotification);
   skip.insert(APIPermission::kPointerLock);
@@ -654,6 +656,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kPushMessaging);
   skip.insert(APIPermission::kScreensaver);
   skip.insert(APIPermission::kSessions);
+  skip.insert(APIPermission::kSignedInDevices);
   skip.insert(APIPermission::kStorage);
   skip.insert(APIPermission::kSystemCpu);
   skip.insert(APIPermission::kSystemDisplay);
@@ -698,6 +701,7 @@ TEST(PermissionsTest, PermissionMessages) {
   // These are private.
   skip.insert(APIPermission::kAutoTestPrivate);
   skip.insert(APIPermission::kBookmarkManagerPrivate);
+  skip.insert(APIPermission::kBrailleDisplayPrivate);
   skip.insert(APIPermission::kChromeosInfoPrivate);
   skip.insert(APIPermission::kCloudPrintPrivate);
   skip.insert(APIPermission::kCommandLinePrivate);
@@ -715,12 +719,14 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kMediaGalleriesPrivate);
   skip.insert(APIPermission::kMediaPlayerPrivate);
   skip.insert(APIPermission::kMetricsPrivate);
+  skip.insert(APIPermission::kMDns);
   skip.insert(APIPermission::kPreferencesPrivate);
   skip.insert(APIPermission::kRecoveryPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
   skip.insert(APIPermission::kTerminalPrivate);
+  skip.insert(APIPermission::kVirtualKeyboardPrivate);
   skip.insert(APIPermission::kWallpaperPrivate);
   skip.insert(APIPermission::kWebRequestInternal);
   skip.insert(APIPermission::kWebstorePrivate);
@@ -757,6 +763,69 @@ TEST(PermissionsTest, PermissionMessages) {
           << "missing message_id for " << permission_info->name();
     }
   }
+}
+
+TEST(PermissionsTest, FileSystemPermissionMessages) {
+  APIPermissionSet api_permissions;
+  api_permissions.insert(APIPermission::kFileSystemWrite);
+  api_permissions.insert(APIPermission::kFileSystemDirectory);
+  scoped_refptr<PermissionSet> permissions(
+      new PermissionSet(api_permissions, URLPatternSet(), URLPatternSet()));
+  PermissionMessages messages =
+      permissions->GetPermissionMessages(Manifest::TYPE_PLATFORM_APP);
+  ASSERT_EQ(2u, messages.size());
+  std::sort(messages.begin(), messages.end());
+  std::set<PermissionMessage::ID> ids;
+  for (PermissionMessages::const_iterator it = messages.begin();
+       it != messages.end(); ++it) {
+    ids.insert(it->id());
+  }
+  EXPECT_TRUE(ContainsKey(ids, PermissionMessage::kFileSystemDirectory));
+  EXPECT_TRUE(ContainsKey(ids, PermissionMessage::kFileSystemWrite));
+}
+
+TEST(PermissionsTest, HiddenFileSystemPermissionMessages) {
+  APIPermissionSet api_permissions;
+  api_permissions.insert(APIPermission::kFileSystemWrite);
+  api_permissions.insert(APIPermission::kFileSystemDirectory);
+  api_permissions.insert(APIPermission::kFileSystemWriteDirectory);
+  scoped_refptr<PermissionSet> permissions(
+      new PermissionSet(api_permissions, URLPatternSet(), URLPatternSet()));
+  PermissionMessages messages =
+      permissions->GetPermissionMessages(Manifest::TYPE_PLATFORM_APP);
+  ASSERT_EQ(1u, messages.size());
+  EXPECT_EQ(PermissionMessage::kFileSystemWriteDirectory, messages[0].id());
+}
+
+TEST(PermissionsTest, MergedFileSystemPermissionComparison) {
+  APIPermissionSet write_api_permissions;
+  write_api_permissions.insert(APIPermission::kFileSystemWrite);
+  scoped_refptr<PermissionSet> write_permissions(new PermissionSet(
+      write_api_permissions, URLPatternSet(), URLPatternSet()));
+
+  APIPermissionSet directory_api_permissions;
+  directory_api_permissions.insert(APIPermission::kFileSystemDirectory);
+  scoped_refptr<PermissionSet> directory_permissions(new PermissionSet(
+      directory_api_permissions, URLPatternSet(), URLPatternSet()));
+
+  APIPermissionSet write_directory_api_permissions;
+  write_directory_api_permissions.insert(
+      APIPermission::kFileSystemWriteDirectory);
+  scoped_refptr<PermissionSet> write_directory_permissions(new PermissionSet(
+      write_directory_api_permissions, URLPatternSet(), URLPatternSet()));
+
+  EXPECT_FALSE(write_directory_permissions->HasLessPrivilegesThan(
+      write_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_FALSE(write_directory_permissions->HasLessPrivilegesThan(
+      directory_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_TRUE(write_permissions->HasLessPrivilegesThan(
+      directory_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_TRUE(write_permissions->HasLessPrivilegesThan(
+      write_directory_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_TRUE(directory_permissions->HasLessPrivilegesThan(
+      write_permissions, Manifest::TYPE_PLATFORM_APP));
+  EXPECT_TRUE(directory_permissions->HasLessPrivilegesThan(
+      write_directory_permissions, Manifest::TYPE_PLATFORM_APP));
 }
 
 TEST(PermissionsTest, GetWarningMessages_ManyHosts) {

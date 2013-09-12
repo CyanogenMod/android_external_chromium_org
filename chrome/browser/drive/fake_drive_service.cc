@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/gdata_wapi_parser.h"
 #include "chrome/browser/google_apis/test_util.h"
@@ -57,7 +58,6 @@ using google_apis::ResourceList;
 using google_apis::UploadRangeCallback;
 using google_apis::UploadRangeResponse;
 namespace test_util = google_apis::test_util;
-namespace util = google_apis::util;
 
 namespace drive {
 namespace {
@@ -176,7 +176,9 @@ FakeDriveService::FakeDriveService()
       directory_load_count_(0),
       about_resource_load_count_(0),
       app_list_load_count_(0),
-      offline_(false) {
+      blocked_resource_list_load_count_(0),
+      offline_(false),
+      never_return_all_resource_list_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -328,6 +330,11 @@ CancelCallback FakeDriveService::GetAllResourceList(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
+  if (never_return_all_resource_list_) {
+    ++blocked_resource_list_load_count_;
+    return CancelCallback();
+  }
+
   GetResourceListInternal(0,  // start changestamp
                           std::string(),  // empty search query
                           std::string(),  // no directory resource id,
@@ -408,72 +415,24 @@ CancelCallback FakeDriveService::GetChangeList(
   return CancelCallback();
 }
 
-CancelCallback FakeDriveService::ContinueGetResourceList(
-    const GURL& override_url,
-    const GetResourceListCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!override_url.is_empty());
-  DCHECK(!callback.is_null());
-
-  // "changestamp", "q", "parent" and "start-offset" are parameters to
-  // implement "paging" of the result on FakeDriveService.
-  // The URL should be the one filled in GetResourceListInternal of the
-  // previous method invocation, so it should start with "http://localhost/?".
-  // See also GetResourceListInternal.
-  DCHECK_EQ(override_url.host(), "localhost");
-  DCHECK_EQ(override_url.path(), "/");
-
-  int64 start_changestamp = 0;
-  std::string search_query;
-  std::string directory_resource_id;
-  int start_offset = 0;
-  int max_results = default_max_results_;
-  std::vector<std::pair<std::string, std::string> > parameters;
-  if (base::SplitStringIntoKeyValuePairs(
-          override_url.query(), '=', '&', &parameters)) {
-    for (size_t i = 0; i < parameters.size(); ++i) {
-      if (parameters[i].first == "changestamp") {
-        base::StringToInt64(parameters[i].second, &start_changestamp);
-      } else if (parameters[i].first == "q") {
-        search_query =
-            net::UnescapeURLComponent(parameters[i].second,
-                                      net::UnescapeRule::URL_SPECIAL_CHARS);
-      } else if (parameters[i].first == "parent") {
-        directory_resource_id =
-            net::UnescapeURLComponent(parameters[i].second,
-                                      net::UnescapeRule::URL_SPECIAL_CHARS);
-      } else if (parameters[i].first == "start-offset") {
-        base::StringToInt(parameters[i].second, &start_offset);
-      } else if (parameters[i].first == "max-results") {
-        base::StringToInt(parameters[i].second, &max_results);
-      }
-    }
-  }
-
-  GetResourceListInternal(
-      start_changestamp, search_query, directory_resource_id,
-      start_offset, max_results, NULL, callback);
-  return CancelCallback();
-}
-
 CancelCallback FakeDriveService::GetRemainingChangeList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  return ContinueGetResourceList(GURL(page_token), callback);
+  return GetRemainingResourceList(next_link, callback);
 }
 
 CancelCallback FakeDriveService::GetRemainingFileList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  return ContinueGetResourceList(GURL(page_token), callback);
+  return GetRemainingResourceList(next_link, callback);
 }
 
 CancelCallback FakeDriveService::GetResourceEntry(
@@ -554,9 +513,6 @@ CancelCallback FakeDriveService::GetShareUrl(
 
 CancelCallback FakeDriveService::GetAboutResource(
     const AboutResourceCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -921,9 +877,10 @@ CancelCallback FakeDriveService::TouchResource(
   }
 
   entry->SetString("updated.$t",
-                   util::FormatTimeAsString(modified_date));
-  entry->SetString("gd$lastViewed.$t",
-                   util::FormatTimeAsString(last_viewed_by_me_date));
+                   google_apis::util::FormatTimeAsString(modified_date));
+  entry->SetString(
+      "gd$lastViewed.$t",
+      google_apis::util::FormatTimeAsString(last_viewed_by_me_date));
   AddNewChangestampAndETag(entry);
 
   scoped_ptr<ResourceEntry> parsed_entry(ResourceEntry::CreateFrom(*entry));
@@ -1207,7 +1164,7 @@ CancelCallback FakeDriveService::ResumeUpload(
   }
 
   std::string content_data;
-  if (!file_util::ReadFileToString(local_file_path, &content_data)) {
+  if (!base::ReadFileToString(local_file_path, &content_data)) {
     session->uploaded_size = end_position;
     completion_callback.Run(GDATA_FILE_ERROR, scoped_ptr<ResourceEntry>());
     return CancelCallback();
@@ -1265,6 +1222,64 @@ CancelCallback FakeDriveService::AuthorizeApp(
     const AuthorizeAppCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+  return CancelCallback();
+}
+
+CancelCallback FakeDriveService::GetResourceListInDirectoryByWapi(
+    const std::string& directory_resource_id,
+    const google_apis::GetResourceListCallback& callback) {
+  return GetResourceListInDirectory(
+      directory_resource_id == util::kWapiRootDirectoryResourceId ?
+          GetRootResourceId() :
+          directory_resource_id,
+      callback);
+}
+
+CancelCallback FakeDriveService::GetRemainingResourceList(
+    const GURL& next_link,
+    const google_apis::GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!next_link.is_empty());
+  DCHECK(!callback.is_null());
+
+  // "changestamp", "q", "parent" and "start-offset" are parameters to
+  // implement "paging" of the result on FakeDriveService.
+  // The URL should be the one filled in GetResourceListInternal of the
+  // previous method invocation, so it should start with "http://localhost/?".
+  // See also GetResourceListInternal.
+  DCHECK_EQ(next_link.host(), "localhost");
+  DCHECK_EQ(next_link.path(), "/");
+
+  int64 start_changestamp = 0;
+  std::string search_query;
+  std::string directory_resource_id;
+  int start_offset = 0;
+  int max_results = default_max_results_;
+  std::vector<std::pair<std::string, std::string> > parameters;
+  if (base::SplitStringIntoKeyValuePairs(
+          next_link.query(), '=', '&', &parameters)) {
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (parameters[i].first == "changestamp") {
+        base::StringToInt64(parameters[i].second, &start_changestamp);
+      } else if (parameters[i].first == "q") {
+        search_query =
+            net::UnescapeURLComponent(parameters[i].second,
+                                      net::UnescapeRule::URL_SPECIAL_CHARS);
+      } else if (parameters[i].first == "parent") {
+        directory_resource_id =
+            net::UnescapeURLComponent(parameters[i].second,
+                                      net::UnescapeRule::URL_SPECIAL_CHARS);
+      } else if (parameters[i].first == "start-offset") {
+        base::StringToInt(parameters[i].second, &start_offset);
+      } else if (parameters[i].first == "max-results") {
+        base::StringToInt(parameters[i].second, &max_results);
+      }
+    }
+  }
+
+  GetResourceListInternal(
+      start_changestamp, search_query, directory_resource_id,
+      start_offset, max_results, NULL, callback);
   return CancelCallback();
 }
 
@@ -1344,8 +1359,9 @@ void FakeDriveService::SetLastModifiedTime(
   if (last_modified_time.is_null()) {
     entry->Remove("updated.$t", NULL);
   } else {
-    entry->SetString("updated.$t",
-                     util::FormatTimeAsString(last_modified_time));
+    entry->SetString(
+        "updated.$t",
+        google_apis::util::FormatTimeAsString(last_modified_time));
   }
 
   scoped_ptr<ResourceEntry> parsed_entry(
@@ -1502,8 +1518,9 @@ const base::DictionaryValue* FakeDriveService::AddNewEntry(
 
   base::Time published_date =
       base::Time() + base::TimeDelta::FromMilliseconds(++published_date_seq_);
-  new_entry->SetString("published.$t",
-                       util::FormatTimeAsString(published_date));
+  new_entry->SetString(
+      "published.$t",
+      google_apis::util::FormatTimeAsString(published_date));
 
   // If there are no entries, prepare an empty entry to add.
   if (!resource_list_value_->HasKey("entry"))

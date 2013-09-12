@@ -17,16 +17,20 @@
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/utils/SkCanvasStateUtils.h"
+#include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -141,6 +145,13 @@ bool HardwareEnabled() {
 AwDrawSWFunctionTable* g_sw_draw_functions = NULL;
 
 const int64 kFallbackTickTimeoutInMilliseconds = 20;
+
+
+// Used to calculate memory and resource allocation. Determined experimentally.
+size_t g_memory_multiplier = 15;
+const size_t kMaxNumTilesToFillDisplay = 20;
+const size_t kBytesPerPixel = 4;
+const size_t kMemoryAllocationStep = 10 * 1024 * 1024;
 
 class ScopedAllowGL {
  public:
@@ -275,6 +286,39 @@ void InProcessViewRenderer::WebContentsGone() {
   compositor_ = NULL;
 }
 
+// static
+void InProcessViewRenderer::CalculateTileMemoryPolicy() {
+  CommandLine* cl = CommandLine::ForCurrentProcess();
+  if (cl->HasSwitch(switches::kTileMemoryMultiplier)) {
+    std::string string_value =
+        cl->GetSwitchValueASCII(switches::kTileMemoryMultiplier);
+    int int_value;
+    if (base::StringToInt(string_value, &int_value) &&
+        int_value >= 2 && int_value <= 50) {
+      g_memory_multiplier = int_value;
+    }
+  }
+
+  if (cl->HasSwitch(switches::kDefaultTileWidth) ||
+      cl->HasSwitch(switches::kDefaultTileHeight)) {
+    return;
+  }
+
+  // TODO(boliu): Should use view context to get the display dimensions, and
+  // pass tile size in a per WebContents setting instead of through command
+  // line switch.
+  gfx::DeviceDisplayInfo info;
+  int default_tile_size = 256;
+
+  if (info.GetDisplayWidth() >= 1080)
+    default_tile_size = 512;
+
+  std::stringstream size;
+  size << default_tile_size;
+  cl->AppendSwitchASCII(switches::kDefaultTileWidth, size.str());
+  cl->AppendSwitchASCII(switches::kDefaultTileHeight, size.str());
+}
+
 bool InProcessViewRenderer::RequestProcessGL() {
   return client_->RequestDrawGL(NULL);
 }
@@ -371,6 +415,18 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
+  // Update memory budget. This will no-op in compositor if the policy has not
+  // changed since last draw.
+  content::SynchronousCompositorMemoryPolicy policy;
+  policy.bytes_limit = g_memory_multiplier * kBytesPerPixel *
+                       cached_global_visible_rect_.width() *
+                       cached_global_visible_rect_.height();
+  // Round up to a multiple of kMemoryAllocationStep.
+  policy.bytes_limit =
+      (policy.bytes_limit / kMemoryAllocationStep + 1) * kMemoryAllocationStep;
+  policy.num_resources_limit = kMaxNumTilesToFillDisplay * g_memory_multiplier;
+  compositor_->SetMemoryPolicy(policy);
+
   DCHECK(gl_surface_);
   gl_surface_->SetBackingFrameBufferObject(
       state_restore.framebuffer_binding_ext());
@@ -387,15 +443,20 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   // Assume we always draw the full visible rect if we are drawing into a layer.
   bool drew_full_visible_rect = true;
 
+  gfx::Rect viewport_rect;
   if (!draw_info->is_layer) {
-    clip_rect.Intersect(cached_global_visible_rect_);
-    drew_full_visible_rect = clip_rect.Contains(cached_global_visible_rect_);
+    viewport_rect = cached_global_visible_rect_;
+    clip_rect.Intersect(viewport_rect);
+    drew_full_visible_rect = clip_rect.Contains(viewport_rect);
+  } else {
+    viewport_rect = clip_rect;
   }
 
   block_invalidates_ = true;
   // TODO(joth): Check return value.
   compositor_->DemandDrawHw(gfx::Size(draw_info->width, draw_info->height),
                             transform,
+                            viewport_rect,
                             clip_rect,
                             state_restore.stencil_enabled());
   block_invalidates_ = false;
@@ -449,82 +510,48 @@ bool InProcessViewRenderer::RenderViaAuxilaryBitmapIfNeeded(
   JNIEnv* env = AttachCurrentThread();
   ScopedPixelAccess auto_release_pixels(env, java_canvas);
   AwPixelInfo* pixels = auto_release_pixels.pixels();
-  SkMatrix matrix;
-  SkBitmap::Config config(SkBitmap::kNo_Config);
-  if (pixels) {
-    switch (pixels->config) {
-      case AwConfig_ARGB_8888:
-        config = SkBitmap::kARGB_8888_Config;
-        break;
-      case AwConfig_RGB_565:
-        config = SkBitmap::kRGB_565_Config;
-        break;
-    }
+  if (pixels && pixels->state) {
+    skia::RefPtr<SkCanvas> canvas = skia::AdoptRef(
+        SkCanvasStateUtils::CreateFromCanvasState(pixels->state));
 
-    for (int i = 0; i < 9; i++) {
-      matrix.set(i, pixels->matrix[i]);
+    // Workarounds for http://crbug.com/271096: SW draw only supports
+    // translate & scale transforms, and a simple rectangular clip.
+    if (canvas && (!canvas->getTotalClip().isRect() ||
+          (canvas->getTotalMatrix().getType() &
+           ~(SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask)))) {
+      canvas.clear();
     }
-    // Workaround for http://crbug.com/271096: SW draw only supports
-    // translate & scale transforms.
-    if (matrix.getType() & ~(SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask))
-      config = SkBitmap::kNo_Config;
+    if (canvas) {
+      canvas->translate(scroll_correction.x(), scroll_correction.y());
+      return render_source.Run(canvas.get());
+    }
   }
 
-  if (config == SkBitmap::kNo_Config) {
-    // Render into an auxiliary bitmap if pixel info is not available.
-    ScopedJavaLocalRef<jobject> jcanvas(env, java_canvas);
-    TRACE_EVENT0("android_webview", "RenderToAuxBitmap");
-    ScopedJavaLocalRef<jobject> jbitmap(java_helper->CreateBitmap(
-        env, clip.width(), clip.height(), jcanvas, owner_key));
-    if (!jbitmap.obj()) {
-      TRACE_EVENT_INSTANT0("android_webview",
-                           "EarlyOut_BitmapAllocFail",
-                           TRACE_EVENT_SCOPE_THREAD);
-      return false;
-    }
-
-    if (!RasterizeIntoBitmap(env, jbitmap,
-                             clip.x() - scroll_correction.x(),
-                             clip.y() - scroll_correction.y(),
-                             render_source)) {
-      TRACE_EVENT_INSTANT0("android_webview",
-                           "EarlyOut_RasterizeFail",
-                           TRACE_EVENT_SCOPE_THREAD);
-      return false;
-    }
-
-    java_helper->DrawBitmapIntoCanvas(env, jbitmap, jcanvas,
-                                      clip.x(), clip.y());
-    return true;
+  // Render into an auxiliary bitmap if pixel info is not available.
+  ScopedJavaLocalRef<jobject> jcanvas(env, java_canvas);
+  TRACE_EVENT0("android_webview", "RenderToAuxBitmap");
+  ScopedJavaLocalRef<jobject> jbitmap(java_helper->CreateBitmap(
+      env, clip.width(), clip.height(), jcanvas, owner_key));
+  if (!jbitmap.obj()) {
+    TRACE_EVENT_INSTANT0("android_webview",
+                         "EarlyOut_BitmapAllocFail",
+                         TRACE_EVENT_SCOPE_THREAD);
+    return false;
   }
 
-  // Draw in a SkCanvas built over the pixel information.
-  SkBitmap bitmap;
-  bitmap.setConfig(config,
-                   pixels->width,
-                   pixels->height,
-                   pixels->row_bytes);
-  bitmap.setPixels(pixels->pixels);
-  SkBitmapDevice device(bitmap);
-  SkCanvas canvas(&device);
-  canvas.setMatrix(matrix);
-
-  if (pixels->clip_rect_count) {
-    SkRegion clip;
-    for (int i = 0; i < pixels->clip_rect_count; ++i) {
-      clip.op(SkIRect::MakeXYWH(pixels->clip_rects[i + 0],
-                                pixels->clip_rects[i + 1],
-                                pixels->clip_rects[i + 2],
-                                pixels->clip_rects[i + 3]),
-              SkRegion::kUnion_Op);
-    }
-    canvas.setClipRegion(clip);
+  if (!RasterizeIntoBitmap(env, jbitmap,
+                           clip.x() - scroll_correction.x(),
+                           clip.y() - scroll_correction.y(),
+                           render_source)) {
+    TRACE_EVENT_INSTANT0("android_webview",
+                         "EarlyOut_RasterizeFail",
+                         TRACE_EVENT_SCOPE_THREAD);
+    return false;
   }
 
-  canvas.translate(scroll_correction.x(),
-                   scroll_correction.y());
-
-  return render_source.Run(&canvas);
+  java_helper->DrawBitmapIntoCanvas(env, jbitmap, jcanvas,
+                                    clip.x(), clip.y());
+  return true;
 }
 
 skia::RefPtr<SkPicture> InProcessViewRenderer::CapturePicture(int width,
@@ -737,16 +764,17 @@ gfx::Vector2dF InProcessViewRenderer::GetTotalRootLayerScrollOffset() {
 }
 
 void InProcessViewRenderer::DidOverscroll(
+    gfx::Vector2dF accumulated_overscroll,
     gfx::Vector2dF latest_overscroll_delta,
     gfx::Vector2dF current_fling_velocity) {
-  // TODO(mkosiba): Enable this once flinging is handled entirely Java-side.
-  // DCHECK(current_fling_velocity.IsZero());
+  DCHECK(current_fling_velocity.IsZero());
   const float physical_pixel_scale = dip_scale_ * page_scale_factor_;
-  gfx::Vector2dF scaled_overscroll_delta = gfx::ScaleVector2d(
-      latest_overscroll_delta + overscroll_rounding_error_,
-      physical_pixel_scale);
-  gfx::Vector2d rounded_overscroll_delta =
-      gfx::ToRoundedVector2d(scaled_overscroll_delta);
+  if (accumulated_overscroll == latest_overscroll_delta)
+    overscroll_rounding_error_ = gfx::Vector2dF();
+  gfx::Vector2dF scaled_overscroll_delta =
+      gfx::ScaleVector2d(latest_overscroll_delta, physical_pixel_scale);
+  gfx::Vector2d rounded_overscroll_delta = gfx::ToRoundedVector2d(
+      scaled_overscroll_delta + overscroll_rounding_error_);
   overscroll_rounding_error_ =
       scaled_overscroll_delta - rounded_overscroll_delta;
   client_->DidOverscroll(rounded_overscroll_delta);

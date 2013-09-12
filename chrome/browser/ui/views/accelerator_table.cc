@@ -123,6 +123,8 @@ const AcceleratorMapping kAcceleratorMap[] = {
   { ui::VKEY_BROWSER_REFRESH, ui::EF_SHIFT_DOWN, IDC_RELOAD_IGNORING_CACHE },
   { ui::VKEY_BROWSER_FAVORITES, ui::EF_NONE, IDC_SHOW_BOOKMARK_MANAGER },
   { ui::VKEY_BROWSER_STOP, ui::EF_NONE, IDC_STOP },
+  // Not implemented inside Ash to allow web pages to capture the key.
+  { ui::VKEY_M, ui::EF_CONTROL_DOWN, IDC_MINIMIZE_WINDOW },
 #else  // OS_CHROMEOS
   { ui::VKEY_DELETE, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_CLEAR_BROWSING_DATA },
@@ -141,7 +143,9 @@ const AcceleratorMapping kAcceleratorMap[] = {
 #if !defined(OS_CHROMEOS)
   // For each entry here add an entry into kChromeCmdId2AshActionId below
   // if Ash has a corresponding accelerator.
+#if defined(GOOGLE_CHROME_BUILD)
   { ui::VKEY_I, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN, IDC_FEEDBACK },
+#endif
   { ui::VKEY_Q, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN, IDC_EXIT },
   { ui::VKEY_N, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN,
     IDC_NEW_INCOGNITO_WINDOW },
@@ -163,7 +167,9 @@ struct ChromeCmdId2AshActionId {
   const ash::AcceleratorAction ash_action_id;
 };
 const ChromeCmdId2AshActionId kChromeCmdId2AshActionId[] = {
+#if defined(GOOGLE_CHROME_BUILD)
   { IDC_FEEDBACK,             ash::OPEN_FEEDBACK_PAGE },
+#endif
   { IDC_EXIT,                 ash::EXIT },
   { IDC_NEW_INCOGNITO_WINDOW, ash::NEW_INCOGNITO_WINDOW },
   { IDC_NEW_TAB,              ash::NEW_TAB },

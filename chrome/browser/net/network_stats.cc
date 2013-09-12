@@ -219,8 +219,9 @@ bool NetworkStats::ConnectComplete(int result) {
   }
 
   if (start_test_after_connect_) {
-    ReadData();  // This ReadData() reads data for all HelloReply and all
-                 // subsequent probe tests.
+    // ReadData() reads data for all HelloReply and all subsequent probe tests.
+    if (ReadData() != net::ERR_IO_PENDING)
+      return false;
     SendHelloRequest();
   } else {
     // For unittesting. Only run the callback, do not destroy it.
@@ -291,9 +292,9 @@ void NetworkStats::SendProbeRequest() {
     TestPhaseComplete(WRITE_FAILED, result);
 }
 
-void NetworkStats::ReadData() {
+int NetworkStats::ReadData() {
   if (!socket_.get())
-    return;
+    return 0;
 
   int rv = 0;
   do {
@@ -305,6 +306,7 @@ void NetworkStats::ReadData() {
         kMaxMessageSize,
         base::Bind(&NetworkStats::OnReadComplete, base::Unretained(this)));
   } while (rv > 0 && !ReadComplete(rv));
+  return rv;
 }
 
 void NetworkStats::OnReadComplete(int result) {
@@ -315,7 +317,8 @@ void NetworkStats::OnReadComplete(int result) {
     // loop.
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&NetworkStats::ReadData, weak_factory_.GetWeakPtr()),
+        base::Bind(base::IgnoreResult(&NetworkStats::ReadData),
+                   weak_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(1));
   }
 }
@@ -357,14 +360,16 @@ bool NetworkStats::ReadComplete(int result) {
                << probe_packet.header().type();
   }
 
-  if (current_test_complete) {
-    TestPhaseComplete(SUCCESS, net::OK);
-    // Read only completes if all tests are done.
-    // current_test_index_ is incremented in TestPhaseComplete().
-    return current_test_index_ >= test_sequence_.size();
+  if (!current_test_complete) {
+    // All packets have not been received for the current test.
+    return false;
   }
-  // All packets have not been received.
-  return false;
+  // All packets are received for the current test.
+  // Read completes if all tests are done.
+  bool all_tests_done = current_test_index_ >= maximum_tests_ ||
+      current_test_index_ + 1 >= test_sequence_.size();
+  TestPhaseComplete(SUCCESS, net::OK);
+  return all_tests_done;
 }
 
 bool NetworkStats::UpdateReception(const ProbePacket& probe_packet) {
@@ -420,7 +425,7 @@ int NetworkStats::SendData(const std::string& output) {
   int bytes_written = socket_->Write(
       write_buffer_.get(),
       write_buffer_->BytesRemaining(),
-      base::Bind(&NetworkStats::OnWriteComplete, base::Unretained(this)));
+      base::Bind(&NetworkStats::OnWriteComplete, weak_factory_.GetWeakPtr()));
   if (bytes_written < 0)
     return bytes_written;
   UpdateSendBuffer(bytes_written);
@@ -517,7 +522,7 @@ void NetworkStats::TestPhaseComplete(Status status, int result) {
 
   DVLOG(1) << "NetworkStat: schedule delete self at test index "
            << current_test_index_;
-  base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+  delete this;
 }
 
 NetworkStats::TestType NetworkStats::GetNextTest() {
@@ -789,17 +794,17 @@ void CollectNetworkStats(const std::string& network_stats_server,
     const base::FieldTrial::Probability kDivisor = 1000;
 
     // Enable the connectivity testing for 0.5% of the users in stable channel.
-    base::FieldTrial::Probability probability_per_group = 5;
+    base::FieldTrial::Probability probability_per_group = kDivisor / 200;
 
     chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
     if (channel == chrome::VersionInfo::CHANNEL_CANARY)
-      probability_per_group = kDivisor;
+      probability_per_group = kDivisor / 2;
     else if (channel == chrome::VersionInfo::CHANNEL_DEV)
-      // Enable the connectivity testing for 50% of the users in dev channel.
-      probability_per_group = 500;
+      // Enable the connectivity testing for 10% of the users in dev channel.
+      probability_per_group = kDivisor / 10;
     else if (channel == chrome::VersionInfo::CHANNEL_BETA)
-      // Enable the connectivity testing for 5% of the users in beta channel.
-      probability_per_group = 50;
+      // Enable the connectivity testing for 1% of the users in beta channel.
+      probability_per_group = kDivisor / 100;
 
     // After July 31, 2014 builds, it will always be in default group
     // (disable_network_stats).

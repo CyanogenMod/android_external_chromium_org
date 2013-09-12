@@ -452,7 +452,7 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self.assertEquals('0123456789+-*/ Hi, there!', value)
 
   def testGetCurrentUrl(self):
-    self.assertTrue('about:blank' in self._driver.GetCurrentUrl())
+    self.assertTrue('data:,' in self._driver.GetCurrentUrl())
 
   def testGoBackAndGoForward(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
@@ -617,6 +617,11 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self._driver.MouseClick(2)
     self.assertTrue(self._driver.ExecuteScript('return success'))
 
+  def testHasFocusOnStartup(self):
+    # Some pages (about:blank) cause Chrome to put the focus in URL bar.
+    # This breaks tests depending on focus.
+    self.assertTrue(self._driver.ExecuteScript('return document.hasFocus()'))
+
 
 class ChromeSwitchesCapabilityTest(ChromeDriverBaseTest):
   """Tests that chromedriver properly processes chromeOptions.args capabilities.
@@ -707,8 +712,7 @@ class ExistingBrowserTest(ChromeDriverBaseTest):
     if process is None:
       raise RuntimeError('Chrome could not be started with debugging port')
     try:
-      hostAndPort = '127.0.0.1:%d' % port
-      driver = self.CreateDriver(chrome_existing_browser=hostAndPort)
+      driver = self.CreateDriver(debugger_address='127.0.0.1:%d' % port)
       driver.ExecuteScript('console.info("%s")' % 'connecting at %d!' % port)
       driver.Quit()
     finally:

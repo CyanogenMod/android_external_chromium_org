@@ -24,7 +24,6 @@ class MockUserManager : public UserManager {
   virtual ~MockUserManager();
 
   MOCK_METHOD0(Shutdown, void(void));
-  MOCK_CONST_METHOD0(GetUsers, const UserList&(void));
   MOCK_CONST_METHOD0(GetUsersAdmittedForMultiProfile, UserList(void));
   MOCK_CONST_METHOD0(GetLoggedInUsers, const UserList&(void));
   MOCK_METHOD0(GetLRULoggedInUsers, const UserList&(void));
@@ -70,8 +69,6 @@ class MockUserManager : public UserManager {
   MOCK_METHOD1(RemoveSessionStateObserver,
                void(UserManager::UserSessionStateObserver*));
   MOCK_METHOD0(NotifyLocalStateChanged, void(void));
-  MOCK_CONST_METHOD0(GetMergeSessionState, MergeSessionState(void));
-  MOCK_METHOD1(SetMergeSessionState, void(MergeSessionState));
   MOCK_METHOD2(SetUserFlow, void(const std::string&, UserFlow*));
   MOCK_METHOD1(ResetUserFlow, void(const std::string&));
   MOCK_METHOD4(CreateLocallyManagedUserRecord, const User*(
@@ -102,7 +99,9 @@ class MockUserManager : public UserManager {
 
   // You can't mock these functions easily because nobody can create
   // User objects but the UserManagerImpl and us.
+  virtual const UserList& GetUsers() const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
+  virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
@@ -122,6 +121,7 @@ class MockUserManager : public UserManager {
   User* user_;
   scoped_ptr<MockUserImageManager> user_image_manager_;
   scoped_ptr<UserFlow> user_flow_;
+  UserList user_list_;
 };
 
 }  // namespace chromeos

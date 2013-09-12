@@ -5,8 +5,10 @@
 package org.chromium.content.browser;
 
 import android.app.Activity;
+import android.app.SearchManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -21,12 +23,15 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
+import android.provider.Browser;
 import android.provider.Settings;
 import android.provider.Settings.Secure;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 import android.view.ActionMode;
+import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -525,9 +530,9 @@ import java.util.Map;
                 // The anchor view should not go outside the bounds of the ContainerView.
                 int leftMargin = Math.round(x * scale);
                 int topMargin = Math.round(mRenderCoordinates.getContentOffsetYPix() + y * scale);
+                int scaledWidth = Math.round(width * scale);
                 // ContentViewCore currently only supports these two container view types.
                 if (mContainerView instanceof FrameLayout) {
-                    int scaledWidth = Math.round(width * scale);
                     if (scaledWidth + leftMargin > mContainerView.getWidth()) {
                         scaledWidth = mContainerView.getWidth() - leftMargin;
                     }
@@ -544,9 +549,10 @@ import java.util.Map;
                     // these models.
                     leftMargin += mRenderCoordinates.getScrollXPixInt();
                     topMargin += mRenderCoordinates.getScrollYPixInt();
+
                     android.widget.AbsoluteLayout.LayoutParams lp =
-                            new android.widget.AbsoluteLayout.LayoutParams((int)width,
-                                    (int)(height * scale), leftMargin, topMargin);
+                            new android.widget.AbsoluteLayout.LayoutParams(
+                                scaledWidth, (int)(height * scale), leftMargin, topMargin);
                     view.setLayoutParams(lp);
                 } else {
                     Log.e(TAG, "Unknown layout " + mContainerView.getClass().getName());
@@ -1259,17 +1265,11 @@ import java.util.Map;
     }
 
     @Override
-    public boolean sendGesture(int type, long timeMs, int x, int y, boolean lastInputEventForVSync,
-                               Bundle b) {
+    public boolean sendGesture(int type, long timeMs, int x, int y, Bundle b) {
         if (offerGestureToEmbedder(type)) return false;
         if (mNativeContentViewCore == 0) return false;
         updateTextHandlesForGesture(type);
         updateGestureStateListener(type, b);
-        if (lastInputEventForVSync && isVSyncNotificationEnabled()) {
-            assert type == ContentViewGestureHandler.GESTURE_SCROLL_BY ||
-                    type == ContentViewGestureHandler.GESTURE_PINCH_BY;
-            mDidSignalVSyncUsingInputEvent = true;
-        }
         switch (type) {
             case ContentViewGestureHandler.GESTURE_SHOW_PRESSED_STATE:
                 nativeShowPressState(mNativeContentViewCore, timeMs, x, y);
@@ -1302,8 +1302,7 @@ import java.util.Map;
             case ContentViewGestureHandler.GESTURE_SCROLL_BY: {
                 int dx = b.getInt(ContentViewGestureHandler.DISTANCE_X);
                 int dy = b.getInt(ContentViewGestureHandler.DISTANCE_Y);
-                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy,
-                        lastInputEventForVSync);
+                nativeScrollBy(mNativeContentViewCore, timeMs, x, y, dx, dy);
                 return true;
             }
             case ContentViewGestureHandler.GESTURE_SCROLL_END:
@@ -1322,14 +1321,23 @@ import java.util.Map;
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_BY:
                 nativePinchBy(mNativeContentViewCore, timeMs, x, y,
-                        b.getFloat(ContentViewGestureHandler.DELTA, 0),
-                        lastInputEventForVSync);
+                        b.getFloat(ContentViewGestureHandler.DELTA, 0));
                 return true;
             case ContentViewGestureHandler.GESTURE_PINCH_END:
                 nativePinchEnd(mNativeContentViewCore, timeMs);
                 return true;
             default:
                 return false;
+        }
+    }
+
+    @Override
+    public void onSentLastGestureForVSync(long eventTimeMs) {
+        if (isVSyncNotificationEnabled()) {
+            mDidSignalVSyncUsingInputEvent = true;
+        }
+        if (mNativeContentViewCore != 0) {
+            nativeOnVSync(mNativeContentViewCore, eventTimeMs * 1000);
         }
     }
 
@@ -1778,7 +1786,7 @@ import java.util.Map;
     public void scrollBy(int xPix, int yPix) {
         if (mNativeContentViewCore != 0) {
             nativeScrollBy(mNativeContentViewCore,
-                    System.currentTimeMillis(), 0, 0, xPix, yPix, false);
+                    System.currentTimeMillis(), 0, 0, xPix, yPix);
         }
     }
 
@@ -1795,7 +1803,7 @@ import java.util.Map;
             long time = System.currentTimeMillis();
             nativeScrollBegin(mNativeContentViewCore, time, xCurrentPix, yCurrentPix);
             nativeScrollBy(mNativeContentViewCore,
-                    time, xCurrentPix, yCurrentPix, dxPix, dyPix, false);
+                    time, xCurrentPix, yCurrentPix, dxPix, dyPix);
             nativeScrollEnd(mNativeContentViewCore, time);
         }
     }
@@ -2091,23 +2099,66 @@ import java.util.Map;
         SelectActionModeCallback.ActionHandler actionHandler =
                 new SelectActionModeCallback.ActionHandler() {
             @Override
-            public boolean selectAll() {
-                return mImeAdapter.selectAll();
+            public void selectAll() {
+                mImeAdapter.selectAll();
             }
 
             @Override
-            public boolean cut() {
-                return mImeAdapter.cut();
+            public void cut() {
+                mImeAdapter.cut();
             }
 
             @Override
-            public boolean copy() {
-                return mImeAdapter.copy();
+            public void copy() {
+                mImeAdapter.copy();
             }
 
             @Override
-            public boolean paste() {
-                return mImeAdapter.paste();
+            public void paste() {
+                mImeAdapter.paste();
+            }
+
+            @Override
+            public void share() {
+                final String query = getSelectedText();
+                if (TextUtils.isEmpty(query)) return;
+
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_TEXT, query);
+                try {
+                    Intent i = Intent.createChooser(send, getContext().getString(
+                            R.string.actionbar_share));
+                    i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(i);
+                } catch (android.content.ActivityNotFoundException ex) {
+                    // If no app handles it, do nothing.
+                }
+            }
+
+            @Override
+            public void search() {
+                final String query = getSelectedText();
+                if (TextUtils.isEmpty(query)) return;
+
+                // See if ContentViewClient wants to override
+                if (getContentViewClient().doesPerformWebSearch()) {
+                    getContentViewClient().performWebSearch(query);
+                    return;
+                }
+
+                Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
+                i.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
+                i.putExtra(SearchManager.QUERY, query);
+                i.putExtra(Browser.EXTRA_APPLICATION_ID, getContext().getPackageName());
+                if (!(getContext() instanceof Activity)) {
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                }
+                try {
+                    getContext().startActivity(i);
+                } catch (android.content.ActivityNotFoundException ex) {
+                    // If no app handles it, do nothing.
+                }
             }
 
             @Override
@@ -2116,15 +2167,27 @@ import java.util.Map;
             }
 
             @Override
-            public String getSelectedText() {
-                return ContentViewCore.this.getSelectedText();
-            }
-
-            @Override
             public void onDestroyActionMode() {
                 mActionMode = null;
                 if (mUnselectAllOnActionModeDismiss) mImeAdapter.unselect();
                 getContentViewClient().onContextualActionBarHidden();
+            }
+
+            @Override
+            public boolean isShareAvailable() {
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("text/plain");
+                return getContext().getPackageManager().queryIntentActivities(intent,
+                        PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
+            }
+
+            @Override
+            public boolean isWebSearchAvailable() {
+                if (getContentViewClient().doesPerformWebSearch()) return true;
+                Intent intent = new Intent(Intent.ACTION_WEB_SEARCH);
+                intent.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
+                return getContext().getPackageManager().queryIntentActivities(intent,
+                        PackageManager.MATCH_DEFAULT_ONLY).size() > 0;
             }
         };
         mActionMode = null;
@@ -2393,9 +2456,18 @@ import java.util.Map;
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private GenericTouchGesture createGenericTouchGesture(int startX,
+    private GenericTouchGesture createOnePointTouchGesture(int startX,
             int startY, int deltaX, int deltaY) {
         return new GenericTouchGesture(this, startX, startY, deltaX, deltaY);
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private GenericTouchGesture createTwoPointTouchGesture(
+            int startX0, int startY0, int deltaX0, int deltaY0,
+            int startX1, int startY1, int deltaX1, int deltaY1) {
+        return new GenericTouchGesture(this, startX0, startY0, deltaX0, deltaY0,
+                startX1, startY1, deltaX1, deltaY1);
     }
 
     @SuppressWarnings("unused")
@@ -2425,6 +2497,12 @@ import java.util.Map;
             } else {
                 mStartHandlePoint.setLocalDip(x2, y2);
                 mEndHandlePoint.setLocalDip(x1, y1);
+            }
+
+            if (getSelectionHandleController().isShowing()) {
+                // TODO(cjhopman): Remove this when there is a better signal that long press caused
+                // a selection. See http://crbug.com/150151.
+                mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             }
 
             getSelectionHandleController().onSelectionChanged(anchorDir, focusDir);
@@ -3079,7 +3157,7 @@ import java.util.Map;
 
     private native void nativeScrollBy(
             int nativeContentViewCoreImpl, long timeMs, float x, float y,
-            float deltaX, float deltaY, boolean lastInputEventForVSync);
+            float deltaX, float deltaY);
 
     private native void nativeFlingStart(
             int nativeContentViewCoreImpl, long timeMs, float x, float y, float vx, float vy);
@@ -3113,7 +3191,7 @@ import java.util.Map;
     private native void nativePinchEnd(int nativeContentViewCoreImpl, long timeMs);
 
     private native void nativePinchBy(int nativeContentViewCoreImpl, long timeMs,
-            float anchorX, float anchorY, float deltaScale, boolean lastInputEventForVSync);
+            float anchorX, float anchorY, float deltaScale);
 
     private native void nativeSelectBetweenCoordinates(
             int nativeContentViewCoreImpl, float x1, float y1, float x2, float y2);

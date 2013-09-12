@@ -52,6 +52,7 @@ namespace content {
 namespace {
 
 const int kUndefinedOutputSurfaceId = -1;
+const int kMinimumPointerDistance = 50;
 
 void InsertSyncPointAndAckForGpu(
     int gpu_host_id, int route_id, const std::string& return_mailbox) {
@@ -407,8 +408,8 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewAndroid::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   // Unused on Android, which uses OnTextInputChanged instead.
 }
 
@@ -511,7 +512,7 @@ void RenderWidgetHostViewAndroid::SetTooltipText(
 
 void RenderWidgetHostViewAndroid::SelectionChanged(const string16& text,
                                                    size_t offset,
-                                                   const ui::Range& range) {
+                                                   const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
 
   if (text.empty() || range.is_empty() || !content_view_core_)
@@ -612,9 +613,23 @@ SyntheticGesture* RenderWidgetHostViewAndroid::CreateSmoothScrollGesture(
     int mouse_event_y) {
   return new GenericTouchGestureAndroid(
       GetRenderWidgetHost(),
-      content_view_core_->CreateGenericTouchGesture(
+      content_view_core_->CreateOnePointTouchGesture(
           mouse_event_x, mouse_event_y,
           0, scroll_down ? -pixels_to_scroll : pixels_to_scroll));
+}
+
+SyntheticGesture* RenderWidgetHostViewAndroid::CreatePinchGesture(
+    bool zoom_in, int pixels_to_move, int anchor_x,
+    int anchor_y) {
+  int distance_between_pointers = zoom_in ?
+      kMinimumPointerDistance : (kMinimumPointerDistance + pixels_to_move);
+  return new GenericTouchGestureAndroid(
+      GetRenderWidgetHost(),
+      content_view_core_->CreateTwoPointTouchGesture(
+          anchor_x, anchor_y - distance_between_pointers / 2,
+          0, (zoom_in ? -pixels_to_move : pixels_to_move) / 2,
+          anchor_x, anchor_y + distance_between_pointers / 2,
+          0, (zoom_in ? pixels_to_move : -pixels_to_move) / 2));
 }
 
 void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
@@ -829,7 +844,7 @@ void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
   if (!overscroll_effect_enabled_ || overscroll_effect_)
     return;
 
-  overscroll_effect_ = OverscrollGlow::Create(true);
+  overscroll_effect_ = OverscrollGlow::Create(true, content_size_in_layer_);
 
   // Prevent future creation attempts on failure.
   if (!overscroll_effect_)
@@ -951,8 +966,8 @@ InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
-void RenderWidgetHostViewAndroid::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewAndroid::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   if (!host_ ||
       host_->accessibility_mode() != AccessibilityModeComplete ||
       !content_view_core_) {
@@ -966,7 +981,7 @@ void RenderWidgetHostViewAndroid::OnAccessibilityNotifications(
             BrowserAccessibilityManagerAndroid::GetEmptyDocument(),
             this));
   }
-  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
+  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 void RenderWidgetHostViewAndroid::SetAccessibilityFocus(int acc_obj_id) {

@@ -34,7 +34,8 @@ ChromeV8Context::ChromeV8Context(v8::Handle<v8::Context> v8_context,
       web_frame_(web_frame),
       extension_(extension),
       context_type_(context_type),
-      safe_builtins_(this) {
+      safe_builtins_(this),
+      isolate_(v8_context->GetIsolate()) {
   VLOG(1) << "Created context:\n"
           << "  extension id: " << GetExtensionID() << "\n"
           << "  frame:        " << web_frame_ << "\n"
@@ -76,7 +77,7 @@ v8::Local<v8::Value> ChromeV8Context::CallFunction(
     v8::Handle<v8::Function> function,
     int argc,
     v8::Handle<v8::Value> argv[]) const {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(isolate());
   v8::Context::Scope scope(v8_context());
 
   WebKit::WebScopedMicrotaskSuppression suppression;
@@ -135,14 +136,14 @@ void ChromeV8Context::OnResponseReceived(const std::string& name,
                                          bool success,
                                          const base::ListValue& response,
                                          const std::string& error) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(isolate());
 
   scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
   v8::Handle<v8::Value> argv[] = {
     v8::Integer::New(request_id),
     v8::String::New(name.c_str()),
     v8::Boolean::New(success),
-    converter->ToV8Value(&response, v8_context_.get()),
+    converter->ToV8Value(&response, v8_context_.NewHandle(isolate())),
     v8::String::New(error.c_str())
   };
 

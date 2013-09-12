@@ -75,7 +75,6 @@
 #include "chrome/browser/net/crl_set_fetcher.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
-#include "chrome/browser/page_cycler/page_cycler.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
 #include "chrome/browser/performance_monitor/startup_timer.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
@@ -115,8 +114,8 @@
 #include "chrome/common/net/net_resource_provider.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
-#include "chrome/common/startup_metric_utils.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -147,6 +146,7 @@
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "chrome/browser/first_run/upgrade_util_linux.h"
+#include "chrome/browser/sxs_linux.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -175,7 +175,7 @@
 #include "net/base/net_util.h"
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/dpi_win.h"
 #endif  // defined(OS_WIN)
 
 #if defined(OS_MACOSX)
@@ -273,7 +273,6 @@ PrefService* InitializeLocalState(
             parent_profile,
             local_state_task_runner,
             g_browser_process->policy_service(),
-            NULL,
             registry,
             false));
     registry->RegisterStringPref(prefs::kApplicationLocale, std::string());
@@ -686,7 +685,15 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
   if (startup_metric_utils::WasNonBrowserUIDisplayed())
     return;
 
+#if defined(OS_ANDROID)
+  // On Android the first run is handled in Java code, and the C++ side of
+  // Chrome doesn't know if this is the first run. This will cause some
+  // inaccuracy in the UMA statistics, but this should be minor (first runs are
+  // rare).
+  bool is_first_run = false;
+#else
   bool is_first_run = first_run::IsChromeFirstRun();
+#endif
 
 // CurrentProcessInfo::CreationTime() is currently only implemented on some
 // platforms.
@@ -917,7 +924,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
         local_state_->GetString(prefs::kApplicationLocale);
 
 #if defined(OS_WIN)
-    ui::EnableHighDPISupport();
+    gfx::EnableHighDPISupport();
 #endif
 
     // On a POSIX OS other than ChromeOS, the parameter that is passed to the
@@ -1086,11 +1093,6 @@ void ChromeBrowserMainParts::PreBrowserStart() {
 
 void ChromeBrowserMainParts::PostBrowserStart() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PostBrowserStart");
-#if !defined(OS_ANDROID)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kVisitURLs))
-    RunPageCycler();
-#endif
-
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PostBrowserStart();
 #if !defined(OS_ANDROID)
@@ -1098,26 +1100,6 @@ void ChromeBrowserMainParts::PostBrowserStart() {
   process_singleton_->Unlock();
 #endif
 }
-
-#if !defined(OS_ANDROID)
-void ChromeBrowserMainParts::RunPageCycler() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  Browser* browser = chrome::FindBrowserWithProfile(profile_,
-                                                    chrome::GetActiveDesktop());
-  DCHECK(browser);
-  PageCycler* page_cycler = NULL;
-  base::FilePath input_file =
-      command_line->GetSwitchValuePath(switches::kVisitURLs);
-  page_cycler = new PageCycler(browser, input_file);
-  page_cycler->set_errors_file(
-      input_file.AddExtension(FILE_PATH_LITERAL(".errors")));
-  if (command_line->HasSwitch(switches::kRecordStats)) {
-    page_cycler->set_stats_file(
-        command_line->GetSwitchValuePath(switches::kRecordStats));
-  }
-  page_cycler->Run();
-}
-#endif   // !defined(OS_ANDROID)
 
 void ChromeBrowserMainParts::SetupPlatformFieldTrials() {
   // Base class implementation of this does nothing.
@@ -1236,6 +1218,11 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
         NOTREACHED();
     }
   }
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  if (sxs_linux::ShouldMigrateUserDataDir())
+    return sxs_linux::MigrateUserDataDir();
+#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
   first_run::CreateSentinelIfNeeded();
 #endif  // !defined(OS_ANDROID)
@@ -1595,7 +1582,14 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     delete parameters().ui_task;
     run_message_loop_ = false;
   }
-
+#if defined(OS_ANDROID)
+  // We never run the C++ main loop on Android, since the UI thread message
+  // loop is controlled by the OS, so this is as close as we can get to
+  // the start of the main loop
+  if (result_code_ <= 0) {
+    RecordBrowserStartupTime();
+  }
+#endif
   return result_code_;
 }
 

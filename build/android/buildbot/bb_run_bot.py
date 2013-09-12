@@ -143,6 +143,7 @@ def GetBotStepMap():
       # Other waterfalls
       B('asan-builder-tests', H(compile_step, extra_gyp='asan=1'),
         T(std_tests, ['--asan'])),
+      B('blink-try-builder', H(compile_step)),
       B('chromedriver-fyi-tests-dbg', H(std_test_steps),
         T(['chromedriver'], ['--install=ChromiumTestShell'])),
       B('fyi-x86-builder-dbg',
@@ -159,6 +160,7 @@ def GetBotStepMap():
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
+      B('gpu-builder-tests-dbg', H(compile_step), T(['gpu'])),
       B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression'])),
       B('perf-tests-rel', H(std_test_steps),
         T([], ['--install=ChromiumTestShell'])),

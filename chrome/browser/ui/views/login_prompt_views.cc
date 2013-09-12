@@ -24,8 +24,8 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 using web_modal::WebContentsModalDialogManagerDelegate;
@@ -163,6 +163,8 @@ class LoginHandlerViews : public LoginHandler,
         requesting_contents->GetView()->GetNativeView(),
         modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
     web_contents_modal_dialog_manager->ShowDialog(dialog_->GetNativeView());
+    web_contents_modal_dialog_manager->SetCloseOnInterstitialWebUI(
+        dialog_->GetNativeView(), true);
     NotifyAuthNeeded();
   }
 

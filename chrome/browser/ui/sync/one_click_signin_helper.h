@@ -22,11 +22,14 @@ class GURL;
 class PasswordManager;
 class ProfileIOData;
 
+namespace autofill {
+struct PasswordForm;
+}
+
 namespace content {
 class WebContents;
 struct FrameNavigateParams;
 struct LoadCommittedDetails;
-struct PasswordForm;
 }
 
 namespace net {
@@ -216,8 +219,11 @@ class OneClickSigninHelper
   // TestingProfile provides.
   void SetDoNotClearPendingEmailForTesting();
 
+  // In unit tests, disable starting the actual sync.
+  void set_do_not_start_sync_for_testing();
+
   // Called when password has been submitted.
-  void PasswordSubmitted(const content::PasswordForm& form);
+  void PasswordSubmitted(const autofill::PasswordForm& form);
 
   // content::WebContentsObserver overrides.
   virtual void NavigateToPendingEntry(
@@ -272,6 +278,9 @@ class OneClickSigninHelper
   // Allows unittests to avoid accessing the ResourceContext for clearing a
   // pending e-mail.
   bool do_not_clear_pending_email_;
+
+  // Allows unittest to avoid starting sync for real.
+  bool do_not_start_sync_for_testing_;
 
   base::WeakPtrFactory<OneClickSigninHelper> weak_pointer_factory_;
 

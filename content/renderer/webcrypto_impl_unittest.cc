@@ -94,7 +94,7 @@ TEST_F(WebCryptoImplTest, DigestSampleSets) {
   for (size_t id_index = 0; id_index < arraysize(kAlgorithmIds); id_index++) {
     WebKit::WebCryptoAlgorithm algorithm(
         WebKit::WebCryptoAlgorithm::adoptParamsAndCreate(
-            kAlgorithmIds[id_index], "SHA", NULL));
+            kAlgorithmIds[id_index], NULL));
 
     for (size_t set_index = 0;
          set_index < ARRAYSIZE_UNSAFE(input_set);
@@ -102,7 +102,7 @@ TEST_F(WebCryptoImplTest, DigestSampleSets) {
       WebKit::WebArrayBuffer array_buffer;
 
       WebCryptoImpl crypto;
-      crypto.digestInternal(
+      crypto.DigestInternal(
           algorithm,
           reinterpret_cast<const unsigned char*>(input_set[set_index].input),
           input_set[set_index].input_length,

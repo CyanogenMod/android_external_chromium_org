@@ -143,6 +143,13 @@
             'toolkit_uses_gtk%': 0,
           }],
 
+          # Whether we're a traditional desktop unix.
+          ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
+            'desktop_linux%': 1,
+          }, {
+            'desktop_linux%': 0,
+          }],
+
           # Enable HiDPI on Mac OS and Chrome OS.
           ['OS=="mac" or chromeos==1', {
             'enable_hidpi%': 1,
@@ -174,6 +181,7 @@
       'target_arch%': '<(target_arch)',
       'toolkit_views%': '<(toolkit_views)',
       'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
+      'desktop_linux%': '<(desktop_linux)',
       'use_aura%': '<(use_aura)',
       'use_ash%': '<(use_ash)',
       'use_cras%': '<(use_cras)',
@@ -340,6 +348,12 @@
       # Metafile (e.g. usually a PDF or EMF) and disables print preview, cloud
       # print, UI, etc.
       'enable_printing%': 1,
+
+      # Set the version of CLD.
+      #   0: Don't specify the version. This option is for the Finch testing.
+      #   1: Use only CLD1.
+      #   2: Use only CLD2.
+      'cld_version%': 0,
 
       # Enable spell checker.
       'enable_spellcheck%': 1,
@@ -510,10 +524,15 @@
           'enable_one_click_signin%': 1,
         }],
 
+        ['OS=="win"', {
+          'cld_version%': 1,
+        }],
+
         ['OS=="android"', {
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
+          'cld_version%': 1,
           'enable_spellcheck%': 0,
           'enable_themes%': 0,
           'remoting%': 0,
@@ -563,6 +582,7 @@
           'enable_automation%': 0,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
+          'cld_version%': 1,
           'enable_printing%': 0,
           'enable_session_service%': 0,
           'enable_themes%': 0,
@@ -791,6 +811,7 @@
     'use_pango%': '<(use_pango)',
     'use_ozone%': '<(use_ozone)',
     'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
+    'desktop_linux%': '<(desktop_linux)',
     'use_x11%': '<(use_x11)',
     'use_gnome_keyring%': '<(use_gnome_keyring)',
     'linux_fpic%': '<(linux_fpic)',
@@ -851,6 +872,7 @@
     'enable_printing%': '<(enable_printing)',
     'enable_spellcheck%': '<(enable_spellcheck)',
     'enable_google_now%': '<(enable_google_now)',
+    'cld_version%': '<(cld_version)',
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -1132,6 +1154,9 @@
     # Use the chromium skia by default.
     'use_system_skia%': '0',
 
+    # Use brlapi from brltty for braille display support.
+    'use_brlapi%': 0,
+
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
       # not explicitly chosen to build with clang. Currently, this means all
@@ -1189,10 +1214,10 @@
         'use_system_libxml%': 1,
         'use_system_sqlite%': 1,
         'locales==': [
-          'ar', 'ca', 'cs', 'da', 'de', 'el', 'en-GB', 'en-US', 'es', 'fi',
-          'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb', 'nl',
-          'pl', 'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk', 'vi',
-          'zh-CN', 'zh-TW',
+          'ar', 'ca', 'cs', 'da', 'de', 'el', 'en-GB', 'en-US', 'es', 'es-MX',
+          'fi', 'fr', 'he', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'ms', 'nb',
+          'nl', 'pl', 'pt', 'pt-PT', 'ro', 'ru', 'sk', 'sv', 'th', 'tr', 'uk',
+          'vi', 'zh-CN', 'zh-TW',
         ],
 
         # The Mac SDK is set for iOS builds and passed through to Mac
@@ -1531,6 +1556,9 @@
       }],
       ['chromeos==1', {
         'grit_defines': ['-D', 'chromeos', '-D', 'scale_factors=2x'],
+      }],
+      ['desktop_linux==1', {
+        'grit_defines': ['-D', 'desktop_linux'],
       }],
       ['toolkit_views==1', {
         'grit_defines': ['-D', 'toolkit_views'],
@@ -1891,6 +1919,7 @@
       # Set this to use the new DX11 version of ANGLE.
       # TODO(apatrick): Remove this when the transition is complete.
       'ANGLE_DX11',
+      'WTF_VECTOR_INITIAL_SIZE=16',
     ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
@@ -2271,6 +2300,9 @@
       }],
       ['enable_google_now==1', {
         'defines': ['ENABLE_GOOGLE_NOW=1'],
+      }],
+      ['cld_version!=0', {
+        'defines': ['CLD_VERSION=<(cld_version)'],
       }],
       ['enable_printing==1', {
         'defines': ['ENABLE_FULL_PRINTING=1', 'ENABLE_PRINTING=1'],
@@ -2816,14 +2848,6 @@
                   '-Wl,--warn-shared-textrel',
                 ],
               }],
-              ['OS=="android" and android_webview_build==1', {
-                'ldflags!': [
-                  # Must not turn on --fatal-warnings or warn-shared-textrel,
-                  # see crbug.com/157326.
-                  '-Wl,--fatal-warnings',
-                  '-Wl,--warn-shared-textrel',
-                ],
-              }],
               ['OS=="android" and android_full_debug==0', {
                 # Some configurations are copied from Release_Base to reduce
                 # the binary size.
@@ -2894,14 +2918,6 @@
                 'ldflags': [
                   '-Wl,--fatal-warnings',
                   # Warn in case of text relocations.
-                  '-Wl,--warn-shared-textrel',
-                ],
-              }],
-              ['OS=="android" and android_webview_build==1', {
-                'ldflags!': [
-                  # Must not turn on --fatal-warnings or
-                  # shared-text-rel, see crbug.com/157326.
-                  '-Wl,--fatal-warnings',
                   '-Wl,--warn-shared-textrel',
                 ],
               }],
@@ -3287,13 +3303,6 @@
                 ],
               }],
             ],
-            'conditions': [
-              ['OS=="mac"', {
-                'cflags': [
-                  '-mllvm -asan-globals=0',  # http://crbug.com/196561
-                ],
-              }],
-            ],
           }],
           ['lsan==1', {
             'target_conditions': [
@@ -3306,6 +3315,7 @@
                 ],
                 'defines': [
                   'LEAK_SANITIZER',
+                  'WTF_USE_LEAK_SANITIZER=1',
                 ],
               }],
             ],
@@ -3808,6 +3818,8 @@
               '-Wl,--gc-sections',
               '-Wl,-O1',
               '-Wl,--as-needed',
+              '-Wl,--warn-shared-textrel',
+              '-Wl,--fatal-warnings',
             ],
           }],
           # Settings for building host targets on mac.
@@ -3865,11 +3877,12 @@
               'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
               'LDPLUSPLUS': '$(SOURCE_ROOT)/<(clang_dir)/clang++',
 
-              # Don't use -Wc++0x-extensions, which Xcode 4 enables by default
-              # when building with clang. This warning is triggered when the
-              # override keyword is used via the OVERRIDE macro from
-              # base/compiler_specific.h.
-              'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
+              # gnu++11 instead of c++11 is needed because some code uses
+              # typeof() (a GNU extension).
+              # TODO(thakis): Eventually switch this to c++11 instead of
+              # gnu++11 (once typeof can be removed, which is blocked on c++11
+              # being available everywhere).
+              'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++11',  # -std=gnu++11
               # Warn if automatic synthesis is triggered with
               # the -Wobjc-missing-property-synthesis flag.
               'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'YES',
@@ -3901,16 +3914,6 @@
                 # code generated by flex (used in angle) contains that keyword.
                 # http://crbug.com/255186
                 '-Wno-deprecated-register',
-              ],
-              'OTHER_CPLUSPLUSFLAGS': [
-                # gnu++11 instead of c++11 is needed because some code uses
-                # typeof() (a GNU extension).
-                # TODO(thakis): Eventually switch this to c++11 instead of
-                # gnu++11 (once typeof can be removed, which is blocked on c++11
-                # being available everywhere).
-                # TODO(thakis): Use CLANG_CXX_LANGUAGE_STANDARD instead once all
-                # bots use xcode 4 -- http://crbug.com/147515).
-                '$(inherited)', '-std=gnu++11',
               ],
             }],
             ['clang==1 and clang_use_chrome_plugins==1', {
@@ -3946,7 +3949,6 @@
             'xcode_settings': {
               'OTHER_CFLAGS': [
                 '-fsanitize=address',
-                '-mllvm -asan-globals=0',  # http://crbug.com/196561
                 '-w',  # http://crbug.com/162783
               ],
             },
@@ -4171,16 +4173,11 @@
 
           # This next block is mostly common with the 'mac' section above,
           # but keying off (or setting) 'clang' isn't valid for iOS as it
-          # also seems to mean using the custom build of clang.
+          # also means using Chromium's build of clang.
 
           # TODO(stuartmorgan): switch to c++0x (see TODOs in the clang
           # section above).
           'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++0x',
-          # Don't use -Wc++0x-extensions, which Xcode 4 enables by default
-          # when building with clang. This warning is triggered when the
-          # override keyword is used via the OVERRIDE macro from
-          # base/compiler_specific.h.
-          'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
           # Warn if automatic synthesis is triggered with
           # the -Wobjc-missing-property-synthesis flag.
           'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'YES',
@@ -4662,6 +4659,35 @@
       ],
     }],
   ],
+  'configurations': {
+    # DON'T ADD ANYTHING NEW TO THIS BLOCK UNLESS YOU REALLY REALLY NEED IT!
+    # This block adds *project-wide* configuration settings to each project
+    # file.  It's almost always wrong to put things here.  Specify your
+    # custom |configurations| in target_defaults to add them to targets instead.
+    'conditions': [
+      ['OS=="ios"', {
+        'Debug': {
+          'xcode_settings': {
+            # Enable 'Build Active Architecture Only' for Debug. This
+            # avoids a project-level warning in Xcode.
+            # Note that this configuration uses the default VALID_ARCHS value
+            # because if there is a device connected Xcode sets the active arch
+            # to the arch of the device. In cases where the device's arch is not
+            # in VALID_ARCHS (e.g. iPhone5 is armv7s) Xcode complains because it
+            # can't determine what arch to compile for.
+            'ONLY_ACTIVE_ARCH': 'YES',
+          },
+        },
+        'Release': {
+          'xcode_settings': {
+            # Override VALID_ARCHS and omit armv7s. Otherwise Xcode compiles for
+            # both armv7 and armv7s, doubling the binary size.
+            'VALID_ARCHS': 'armv7 i386',
+          },
+        },
+      }],
+    ],
+  },
   'xcode_settings': {
     # DON'T ADD ANYTHING NEW TO THIS BLOCK UNLESS YOU REALLY REALLY NEED IT!
     # This block adds *project-wide* configuration settings to each project
@@ -4699,8 +4725,6 @@
         ],
       }],
       ['OS=="ios"', {
-        # Just build armv7, until armv7s is correctly tested.
-        'VALID_ARCHS': 'armv7 i386',
         # Target both iPhone and iPad.
         'TARGETED_DEVICE_FAMILY': '1,2',
       }],

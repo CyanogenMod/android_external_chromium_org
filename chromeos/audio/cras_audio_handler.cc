@@ -134,9 +134,7 @@ int CrasAudioHandler::GetOutputVolumePercentForDevice(uint64 device_id) {
     return output_volume_;
   } else {
     const AudioDevice* device = GetDeviceFromId(device_id);
-    if (!device)
-      return kDefaultVolumeGainPercent;
-    return static_cast<int>(audio_pref_handler_->GetVolumeGainValue(*device));
+    return static_cast<int>(audio_pref_handler_->GetOutputVolumeValue(device));
   }
 }
 
@@ -149,9 +147,7 @@ int CrasAudioHandler::GetInputGainPercentForDevice(uint64 device_id) {
     return input_gain_;
   } else {
     const AudioDevice* device = GetDeviceFromId(device_id);
-    if (!device)
-      return kDefaultVolumeGainPercent;
-    return static_cast<int>(audio_pref_handler_->GetVolumeGainValue(*device));
+    return static_cast<int>(audio_pref_handler_->GetInputGainValue(device));
   }
 }
 
@@ -379,7 +375,7 @@ void CrasAudioHandler::SetupAudioInputState() {
     return;
   }
   input_mute_on_ = audio_pref_handler_->GetMuteValue(*device);
-  input_gain_ = audio_pref_handler_->GetVolumeGainValue(*device);
+  input_gain_ = audio_pref_handler_->GetInputGainValue(device);
   SetInputMuteInternal(input_mute_on_);
   // TODO(rkc,jennyz): Set input gain once we decide on how to store
   // the gain values since the range and step are both device specific.
@@ -393,7 +389,7 @@ void CrasAudioHandler::SetupAudioOutputState() {
     return;
   }
   output_mute_on_ = audio_pref_handler_->GetMuteValue(*device);
-  output_volume_ = audio_pref_handler_->GetVolumeGainValue(*device);
+  output_volume_ = audio_pref_handler_->GetOutputVolumeValue(device);
 
   SetOutputMuteInternal(output_mute_on_);
   SetOutputNodeVolume(active_output_node_id_, output_volume_);
@@ -517,9 +513,29 @@ void CrasAudioHandler::SwitchToDevice(const AudioDevice& device) {
   }
 }
 
+bool CrasAudioHandler::HasDeviceChange(const AudioNodeList& new_nodes,
+                                       bool is_input) {
+  size_t num_old_devices = 0;
+  size_t num_new_devices = 0;
+  for (AudioDeviceMap::const_iterator it = audio_devices_.begin();
+       it != audio_devices_.end(); ++it) {
+    if (is_input == it->second.is_input)
+      ++num_old_devices;
+  }
+
+  for (AudioNodeList::const_iterator it = new_nodes.begin();
+       it != new_nodes.end(); ++it) {
+    if (is_input == it->is_input)
+      ++num_new_devices;
+  }
+  return num_old_devices != num_new_devices;
+}
+
 void CrasAudioHandler::UpdateDevicesAndSwitchActive(
     const AudioNodeList& nodes) {
   size_t old_audio_devices_size = audio_devices_.size();
+  bool output_devices_changed = HasDeviceChange(nodes, false);
+  bool input_devices_changed = HasDeviceChange(nodes, true);
   audio_devices_.clear();
   has_alternative_input_ = false;
   has_alternative_output_ = false;
@@ -552,12 +568,14 @@ void CrasAudioHandler::UpdateDevicesAndSwitchActive(
   // If audio nodes change is caused by unplugging some non-active audio
   // devices, the previously set active audio device will stay active.
   // Otherwise, switch to a new active audio device according to their priority.
-  if (!NonActiveDeviceUnplugged(old_audio_devices_size,
+  if (input_devices_changed &&
+      !NonActiveDeviceUnplugged(old_audio_devices_size,
                                 audio_devices_.size(),
                                 active_input_node_id_) &&
       !input_devices_pq_.empty())
     SwitchToDevice(input_devices_pq_.top());
-  if (!NonActiveDeviceUnplugged(old_audio_devices_size,
+  if (output_devices_changed &&
+      !NonActiveDeviceUnplugged(old_audio_devices_size,
                                 audio_devices_.size(),
                                 active_output_node_id_) &&
       !output_devices_pq_.empty()) {

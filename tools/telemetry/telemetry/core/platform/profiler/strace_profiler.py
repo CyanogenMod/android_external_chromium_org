@@ -217,19 +217,21 @@ class StraceProfiler(profiler.Profiler):
     return 'strace'
 
   @classmethod
-  def is_supported(cls, options):
+  def is_supported(cls, browser_type):
     if sys.platform != 'linux2':
       return False
     # TODO(tonyg): This should be supported on android and cros.
-    if options and (options.browser_type.startswith('android')
-                    or options.browser_type.startswith('cros')):
+    if (browser_type.startswith('android') or
+       browser_type.startswith('cros')):
       return False
     return True
 
   @classmethod
   def CustomizeBrowserOptions(cls, options):
-    options.AppendExtraBrowserArg('--no-sandbox')
-    options.AppendExtraBrowserArg('--allow-sandbox-debugging')
+    options.AppendExtraBrowserArgs([
+        '--no-sandbox',
+        '--allow-sandbox-debugging'
+    ])
 
   def CollectProfile(self):
     print 'Processing trace...'

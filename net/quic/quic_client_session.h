@@ -132,6 +132,11 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
 
   base::WeakPtr<QuicClientSession> GetWeakPtr();
 
+  // Returns the number of client hello messages that have been sent on the
+  // crypto stream. If the handshake has completed then this is one greater
+  // than the number of round-trips needed for the handshake.
+  int GetNumSentClientHellos() const;
+
  protected:
   // QuicSession methods:
   virtual ReliableQuicStream* CreateIncomingReliableStream(
@@ -148,7 +153,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicSession {
 
   void OnClosedStream();
 
-  void CloseSessionOnErrorInner(int error);
+  void CloseSessionOnErrorInner(int net_error, QuicErrorCode quic_error);
 
   // Posts a task to notify the factory that this session has been closed.
   void NotifyFactoryOfSessionCloseLater();

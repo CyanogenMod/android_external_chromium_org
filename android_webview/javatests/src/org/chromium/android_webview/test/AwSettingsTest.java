@@ -2240,8 +2240,12 @@ public class AwSettingsTest extends AwTestBase {
             new AwSettingsUseWideViewportTestHelper(views.getContents1(), views.getClient1()));
     }
 
-    @SmallTest
-    @Feature({"AndroidWebView", "Preferences"})
+    /*
+     * @SmallTest
+     * @Feature({"AndroidWebView", "Preferences"})
+     * Failing after Blink r157293, see crbug.com/285995
+     */
+    @DisabledTest
     public void testUseWideViewportLayoutWidth() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -2504,6 +2508,36 @@ public class AwSettingsTest extends AwTestBase {
         }
     }
 
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    // background shorthand property must not override background-size when
+    // it's already set.
+    public void testUseLegacyBackgroundSizeShorthandBehavior() throws Throwable {
+        final TestAwContentsClient contentClient = new TestAwContentsClient();
+        final AwTestContainerView testContainerView =
+                createAwTestContainerViewOnMainSync(contentClient);
+        final AwContents awContents = testContainerView.getAwContents();
+        AwSettings settings = getAwSettingsOnUiThread(awContents);
+        CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
+        final String expectedBackgroundSize = "cover";
+        final String page = "<html><head>" +
+                "<script>" +
+                "function getBackgroundSize() {" +
+                "  var e = document.getElementById('test'); " +
+                "  e.style.backgroundSize = '" + expectedBackgroundSize + "';" +
+                "  e.style.background = 'center red url(dummy://test.png) no-repeat border-box'; " +
+                "  return e.style.backgroundSize; " +
+                "}" +
+                "</script></head>" +
+                "<body onload='document.title=getBackgroundSize()'>" +
+                "  <div id='test'> </div>" +
+                "</body></html>";
+        settings.setJavaScriptEnabled(true);
+        loadDataSync(awContents, onPageFinishedHelper, page, "text/html", false);
+        String actualBackgroundSize = getTitleOnUiThread(awContents);
+        assertEquals(expectedBackgroundSize, actualBackgroundSize);
+    }
+
     static class ViewPair {
         private final AwContents contents0;
         private final TestAwContentsClient client0;
@@ -2624,30 +2658,6 @@ public class AwSettingsTest extends AwTestBase {
 
     private String createContentUrl(final String target) {
         return TestContentProvider.createContentUrl(target);
-    }
-
-    /**
-     * Returns pure page scale.
-     */
-    private float getScaleOnUiThread(final AwContents awContents) throws Throwable {
-        return runTestOnUiThreadAndGetResult(new Callable<Float>() {
-            @Override
-            public Float call() throws Exception {
-                return awContents.getContentViewCore().getScale();
-            }
-        });
-    }
-
-    /**
-     * Returns page scale multiplied by the screen density.
-     */
-    private float getPixelScaleOnUiThread(final AwContents awContents) throws Throwable {
-        return runTestOnUiThreadAndGetResult(new Callable<Float>() {
-            @Override
-            public Float call() throws Exception {
-                return awContents.getScale();
-            }
-        });
     }
 
     private void simulateDoubleTapCenterOfWebViewOnUiThread(final AwTestContainerView webView)

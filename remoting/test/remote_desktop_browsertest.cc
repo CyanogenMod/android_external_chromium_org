@@ -9,6 +9,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_utils.h"
 
 using extensions::Extension;
@@ -196,6 +198,29 @@ void RemoteDesktopBrowserTest::StartMe2Me() {
 
   EXPECT_TRUE(HtmlElementVisible("me2me-content"));
   EXPECT_FALSE(HtmlElementVisible("me2me-first-run"));
+}
+
+void RemoteDesktopBrowserTest::SimulateKeyPressWithCode(
+    ui::KeyboardCode keyCode,
+    const char* code) {
+  SimulateKeyPressWithCode(keyCode, code, false, false, false, false);
+}
+
+void RemoteDesktopBrowserTest::SimulateKeyPressWithCode(
+    ui::KeyboardCode keyCode,
+    const char* code,
+    bool control,
+    bool shift,
+    bool alt,
+    bool command) {
+  content::SimulateKeyPressWithCode(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      keyCode,
+      code,
+      control,
+      shift,
+      alt,
+      command);
 }
 
 void RemoteDesktopBrowserTest::Install() {

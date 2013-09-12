@@ -42,12 +42,12 @@
 #include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/skia_utils_gtk.h"
 #include "url/gurl.h"
 
@@ -211,9 +211,10 @@ OmniboxViewGtk::OmniboxViewGtk(OmniboxEditController* controller,
       supports_pre_edit_(!gtk_check_version(2, 20, 0)),
       pre_edit_size_before_change_(0),
       going_to_focus_(NULL) {
-  popup_view_.reset(
-      new OmniboxPopupViewGtk
-          (GetFont(), this, model(), location_bar));
+  OmniboxPopupViewGtk* view = new OmniboxPopupViewGtk(
+      GetFont(), this, model(), location_bar);
+  view->Init();
+  popup_view_.reset(view);
 }
 
 OmniboxViewGtk::~OmniboxViewGtk() {
@@ -469,8 +470,7 @@ void OmniboxViewGtk::OnTabChanged(const WebContents* web_contents) {
 void OmniboxViewGtk::Update() {
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
-  if (model()->UpdatePermanentText(
-      controller()->GetToolbarModel()->GetText(true)))
+  if (model()->UpdatePermanentText())
     RevertAll();
   else if (old_security_level != security_level_)
     EmphasizeURLComponents();

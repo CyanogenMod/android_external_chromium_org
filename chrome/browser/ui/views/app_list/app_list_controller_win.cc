@@ -568,6 +568,8 @@ class AppListViewWin {
       window_icon_updated_(false) {
   }
 
+  app_list::AppListView* view() { return view_; }
+
   void Show() {
     view_->GetWidget()->Show();
     if (!window_icon_updated_) {
@@ -644,12 +646,11 @@ class AppListViewFactory {
         new AppListControllerDelegateWin, profile);
     app_list::AppListView* view = new app_list::AppListView(view_delegate);
     gfx::Point cursor = gfx::Screen::GetNativeScreen()->GetCursorScreenPoint();
-    view->InitAsBubble(NULL,
-                       pagination_model,
-                       NULL,
-                       cursor,
-                       views::BubbleBorder::FLOAT,
-                       false /* border_accepts_events */);
+    view->InitAsBubbleAtFixedLocation(NULL,
+                                      pagination_model,
+                                      cursor,
+                                      views::BubbleBorder::FLOAT,
+                                      false /* border_accepts_events */);
     SetWindowAttributes(view->GetHWND());
     return new AppListViewWin(view, on_should_dismiss);
   }
@@ -694,9 +695,15 @@ class AppListShower {
   }
 
   gfx::NativeWindow GetWindow() {
-    if (!view_)
+    if (!IsAppListVisible())
       return NULL;
     return view_->GetWindow();
+  }
+
+  app_list::AppListModel* GetGurrentModel() {
+    if (!view_)
+      return NULL;
+    return view_->view()->model();
   }
 
   void OnSigninStatusChanged() {
@@ -790,7 +797,7 @@ class AppListShower {
 // TODO(tapted): Rename this class to AppListServiceWin and move entire file to
 // chrome/browser/ui/app_list/app_list_service_win.cc after removing
 // chrome/browser/ui/views dependency.
-class AppListController : public AppListServiceImpl {
+class AppListController : public AppListServiceWin {
  public:
   virtual ~AppListController();
 
@@ -819,6 +826,9 @@ class AppListController : public AppListServiceImpl {
 
   // AppListServiceImpl overrides:
   virtual void CreateShortcut() OVERRIDE;
+
+  // AppListServiceWin overrides:
+  virtual app_list::AppListModel* GetAppListModelForTesting() OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<AppListController>;
@@ -937,6 +947,10 @@ gfx::NativeWindow AppListController::GetAppListWindow() {
 
 AppListControllerDelegate* AppListController::CreateControllerDelegate() {
   return new AppListControllerDelegateWin();
+}
+
+app_list::AppListModel* AppListController::GetAppListModelForTesting() {
+  return shower_->GetGurrentModel();
 }
 
 void AppListController::ShowForProfile(Profile* requested_profile) {

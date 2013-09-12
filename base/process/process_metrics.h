@@ -12,8 +12,10 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/process/process_handle.h"
 #include "base/time/time.h"
+#include "base/values.h"
 
 #if defined(OS_MACOSX)
 #include <mach/mach.h>
@@ -242,6 +244,9 @@ BASE_EXPORT extern const char kProcSelfExe[];
 struct BASE_EXPORT SystemMemoryInfoKB {
   SystemMemoryInfoKB();
 
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
+
   int total;
   int free;
   int buffers;
@@ -250,17 +255,58 @@ struct BASE_EXPORT SystemMemoryInfoKB {
   int inactive_anon;
   int active_file;
   int inactive_file;
-  int shmem;
+  int swap_total;
+  int swap_free;
+  int dirty;
 
+  // vmstats data.
+  int pswpin;
+  int pswpout;
+  int pgmajfault;
+
+#ifdef OS_CHROMEOS
+  int shmem;
+  int slab;
   // Gem data will be -1 if not supported.
   int gem_objects;
   long long gem_size;
+#endif
 };
 
-// Retrieves data from /proc/meminfo about system-wide memory consumption.
+// Retrieves data from /proc/meminfo and /proc/vmstat
+// about system-wide memory consumption.
 // Fills in the provided |meminfo| structure. Returns true on success.
 // Exposed for memory debugging widget.
 BASE_EXPORT bool GetSystemMemoryInfo(SystemMemoryInfoKB* meminfo);
+
+// Data from /proc/diskstats about system-wide disk I/O.
+struct BASE_EXPORT SystemDiskInfo {
+  SystemDiskInfo();
+
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
+
+  uint64 reads;
+  uint64 reads_merged;
+  uint64 sectors_read;
+  uint64 read_time;
+  uint64 writes;
+  uint64 writes_merged;
+  uint64 sectors_written;
+  uint64 write_time;
+  uint64 io;
+  uint64 io_time;
+  uint64 weighted_io_time;
+};
+
+// Checks whether the candidate string is a valid disk name, [sh]d[a-z]+
+// for a generic disk or mmcblk[0-9]+ for the MMC case.
+// Names of disk partitions (e.g. sda1) are not valid.
+BASE_EXPORT bool IsValidDiskName(const std::string& candidate);
+
+// Retrieves data from /proc/diskstats about system-wide disk I/O.
+// Fills in the provided |diskinfo| structure. Returns true on success.
+BASE_EXPORT bool GetSystemDiskInfo(SystemDiskInfo* diskinfo);
 #endif  // defined(OS_LINUX) || defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
@@ -273,6 +319,9 @@ struct BASE_EXPORT SwapInfo {
         orig_data_size(0),
         mem_used_total(0) {
   }
+
+  // Serializes the platform specific fields to value.
+  scoped_ptr<Value> ToValue() const;
 
   uint64 num_reads;
   uint64 num_writes;
@@ -291,14 +340,23 @@ BASE_EXPORT void GetSwapInfo(SwapInfo* swap_info);
 // to serialize the stored data.
 class SystemMetrics {
  public:
-  SystemMetrics() : committed_memory_(0) { }
+  SystemMetrics();
 
   static SystemMetrics Sample();
 
+  // Serializes the system metrics to value.
+  scoped_ptr<Value> ToValue() const;
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(SystemMetricsTest, SystemMetrics);
+
   size_t committed_memory_;
 #if defined(OS_LINUX) || defined(OS_ANDROID)
   SystemMemoryInfoKB memory_info_;
+  SystemDiskInfo disk_info_;
+#endif
+#if defined(OS_CHROMEOS)
+  SwapInfo swap_info_;
 #endif
 };
 

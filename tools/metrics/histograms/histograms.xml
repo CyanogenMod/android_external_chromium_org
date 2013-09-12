@@ -747,6 +747,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.Bubble" enum="AutocheckoutBubble">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the frequency of user interactions with the Autocheckout bubble,
     which prompts users to invoke Autocheckout on supported websites.
@@ -754,6 +757,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.BuyFlow" enum="AutocheckoutBuyFlow">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the frequency of final states reached in Autocheckout buy flow.
   </summary>
@@ -761,10 +767,16 @@ other types of suffix sets.
 
 <histogram name="Autocheckout.DismissalState"
     enum="AutofillDialogDismissalState">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>The state of the Autocheckout dialog when it was dismissed.</summary>
 </histogram>
 
 <histogram name="Autocheckout.FlowDuration" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the time elapsed between when the user submitted the Autocheckout
     dialog and when the Autocheckout flow, or filling process, concluded.
@@ -772,6 +784,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.FlowDuration.Failed" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the time elapsed between when the user submitted the Autocheckout
     dialog and when the Autocheckout flow concluded, in cases where the flow
@@ -780,6 +795,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.FlowDuration.Succeeded" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the time elapsed between when the user submitted the Autocheckout
     dialog and when the Autocheckout flow concluded, in cases where the flow
@@ -789,6 +807,9 @@ other types of suffix sets.
 
 <histogram name="Autocheckout.InitialUserState"
     enum="AutofillDialogInitialUserState">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     The initial state of a user that's interacting with a freshly shown
     Autocheckout dialog.
@@ -796,6 +817,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.PopupInDialog" enum="AutofillDialogPopupEvent">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     User interactions with the Autofill popup shown while filling an
     Autocheckout dialog.
@@ -803,6 +827,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.Security" enum="AutofillDialogSecurity">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the frequency of security warnings and errors in the Autocheckout
     dialog.
@@ -810,12 +837,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.UiDuration" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the duration for which an Autocheckout dialog was shown.
   </summary>
 </histogram>
 
 <histogram name="Autocheckout.UiDuration.Cancel" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the duration for which an Autocheckout dialog was shown, in cases
     where the user ended up canceling out of the dialog.
@@ -823,6 +856,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.UiDuration.Submit" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the duration for which an Autocheckout dialog was shown, in cases
     where the user ended up accepting the dialog.
@@ -830,12 +866,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.UiEvents" enum="AutofillDialogUiEvents">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures how users are interacting with the Autocheckout dialog UI.
   </summary>
 </histogram>
 
 <histogram name="Autocheckout.UiLatencyToShow" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the duration of time it takes for the Autocheckout UI to be
     actionable by the user after it is shown.
@@ -843,6 +885,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.WalletErrors" enum="WalletErrors">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the frequency of errors in communicating with the Google Online
     Wallet server.
@@ -851,6 +896,9 @@ other types of suffix sets.
 
 <histogram name="Autocheckout.WalletRequiredActions"
     enum="WalletRequiredActions">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures the frequency of required user actions returned by the Google
     Online Wallet server.
@@ -858,12 +906,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.WhitelistDownloadDuration" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures time taken to download the Autocheckout whitelist file.
   </summary>
 </histogram>
 
 <histogram name="Autocheckout.WhitelistDownloadDuration.Failed" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures time taken to download the Autocheckout whitelist file in case the
     download was failed.
@@ -871,6 +925,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Autocheckout.WhitelistDownloadDuration.Succeeded" units="ms">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Measures time taken to download the Autocheckout whitelist file in case the
     download was succeeded.
@@ -3012,6 +3069,47 @@ other types of suffix sets.
     received from a service. For each refresh, indicates whether the policy
     changed, and whether the policy was invalidated at the time of the refresh.
   </summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.DelayInitialization"
+    units="milliseconds">
+  <summary>Initialization delay due to loading the user policy cache.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.ClientError"
+    enum="EnterpriseDeviceManagementStatus">
+  <summary>Policy client error during initial policy fetch.</summary>
+</histogram>
+
+<histogram
+    name="Enterprise.UserPolicyChromeOS.InitialFetch.DelayClientRegister"
+    units="milliseconds">
+  <summary>Delay for registering the client with the policy server.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.DelayOAuth2Token"
+    units="milliseconds">
+  <summary>Delay for minting an OAuth2 acccess token.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.DelayPolicyFetch"
+    units="milliseconds">
+  <summary>Delay for fetching policy from the policy server.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.DelayTotal"
+    units="milliseconds">
+  <summary>Total delay for the initial policy fetch.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.OAuth2Error"
+    enum="GoogleServiceAuthError">
+  <summary>Service error during OAuth2 access token fetch.</summary>
+</histogram>
+
+<histogram name="Enterprise.UserPolicyChromeOS.InitialFetch.OAuth2NetworkError"
+    enum="NetErrorCodes">
+  <summary>Network error during OAuth2 access token fetch.</summary>
 </histogram>
 
 <histogram name="Event.CoalescedCount.Mouse">
@@ -5173,6 +5271,39 @@ other types of suffix sets.
 
 <histogram name="Linux.GlibcVersion" enum="LinuxGlibcVersion">
   <summary>The version of glibc used. (Linux only)</summary>
+</histogram>
+
+<histogram name="Login.FailureReason" enum="LoginFailureReason">
+  <summary>Chrome OS login failure reason.</summary>
+</histogram>
+
+<histogram name="Login.LeastUsedAccountDays" units="days">
+  <summary>
+    Chrome OS histogram that keeps track of the days since the least frequently
+    used account signed in. Reported on every boot and once a day after that.
+  </summary>
+</histogram>
+
+<histogram name="Login.PolicyFilesStatePerBoot" enum="LoginPolicyFilesState">
+  <summary>The state of Chrome OS owner key and device policy files.</summary>
+</histogram>
+
+<histogram name="Login.PromptToCompleteLoginTime" units="milliseconds">
+  <summary>
+    Time from first display of the login prompt until the user completes signing
+    in.
+  </summary>
+</histogram>
+
+<histogram name="Login.SuccessReason" enum="LoginSuccessReason">
+  <summary>Chrome OS login success reason.</summary>
+</histogram>
+
+<histogram name="Login.UserType" enum="LoginUserType">
+  <summary>
+    Chrome OS histogram that keeps track of the way a user logs in and whether
+    Chrome OS is running normal or developer mode.
+  </summary>
 </histogram>
 
 <histogram name="Media.AcceleratedCompositingActive" enum="BooleanSuccess">
@@ -7677,10 +7808,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.OutOfOrderGapReceived">
+  <summary>
+    The number of missing packets between the current received packet and the
+    previously largest received packet sequence number, when the current
+    received packet had a lower sequence number than the previously received
+    packet sequence number.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicSession.OutOfOrderPacketsReceived">
   <summary>
-    The number of times packets the current received packet had a lower sequence
-    number than the previously received packet sequence number.
+    The number of times the current received packet had a lower sequence number
+    than the previously received packet sequence number.
   </summary>
 </histogram>
 
@@ -7701,6 +7841,20 @@ other types of suffix sets.
 
 <histogram name="Net.QuicSession.QuicVersion">
   <summary>Version of the QUIC protocol used for this connection.</summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ReadError" enum="NetErrorCodes">
+  <summary>
+    The network error code returned when attempting to read to a QUIC
+    connection.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.WriteError" enum="NetErrorCodes">
+  <summary>
+    The network error code returned when attempting to write to a QUIC
+    connection.
+  </summary>
 </histogram>
 
 <histogram name="Net.RenegotiationExtensionSupported">
@@ -9984,6 +10138,17 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="NewTabPage.ThumbnailFallbackRate" units="%">
+  <summary>
+    The percentage of times most visited tiles use the fallback thumbnail. Only
+    requests that actually specify a fallback thumbnail are considered here. We
+    measure the rate instead of the number of errors because multiple attempts
+    are made to load thumbnails at different times during the NTP's lifetime.
+    Each NTP session's error rate is logged after the user navigates to a new
+    URL from that NTP.
+  </summary>
+</histogram>
+
 <histogram name="NewTabPage.VisibleScreenshots">
   <summary>
     The number of screenshots that were cached for the visible suggestions on
@@ -10274,6 +10439,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="PasswordManager.BlacklistedSites">
+  <summary>
+    The total number of sites that the user has blacklisted. Recorded by
+    iterating over stored passwords once per run of Chrome.
+  </summary>
+</histogram>
+
 <histogram name="PasswordManager.OtherPossibleUsernamesUsage"
     enum="OtherPossibleUsernamesUsage">
   <summary>
@@ -10399,6 +10571,13 @@ other types of suffix sets.
   <summary>
     Maximum size of user's GCache directory. Logged once a day, if disk usage is
     high.
+  </summary>
+</histogram>
+
+<histogram name="Platform.DiskUsage.LeastUsedAccountDays" units="days">
+  <summary>
+    Days since the least frequently used account signed in. Logged once a day,
+    if disk usage is high.
   </summary>
 </histogram>
 
@@ -11915,11 +12094,37 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.LocalPredictorLoggedInLookupTime"
+    units="milliseconds">
+  <summary>
+    Time to perform the LoggedIn Lookup for the local predictor. This operation
+    checks whether a user his likely logged into a page that we would like to
+    prerender.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.LocalPredictorServiceLookupTime"
+    units="milliseconds">
+  <summary>
+    Time to perform the Service Lookup for the local predictor. This operation
+    queries a Google service to obtain pages to prerender, as well as whether
+    prerender candidate pages are likely safe for prerendering.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.LocalPredictorTimeUntilUsed" units="milliseconds">
   <summary>
     Time from when a prerendered page is started to when it is first used due to
     user navigation. If the page is never used, it is not included in this
     histogram.  This only refers to prerenders based on the local predictor.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.LocalPredictorURLLookupTime" units="milliseconds">
+  <summary>
+    Time to perform the URL Lookup for the local predictor. This operation
+    retrieves from the user's local browsing history the URLs corresponding to
+    URLIDs.
   </summary>
 </histogram>
 
@@ -12374,14 +12579,42 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Profile.CreateTime" units="milliseconds">
-  <summary>Back-end time elapsed while creating a new profile.</summary>
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
+  <summary>
+    Back-end time elapsed while creating a new profile. The max is 30 seconds,
+    when an external timeout was applied.
+  </summary>
 </histogram>
 
 <histogram name="Profile.CreateTimeCanceled" units="milliseconds">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <summary>
     Time elapsed before the user decided to cancel creation of a new profile.
     Since only managed-user profile creation can be canceled, this time comes
-    from managed-user registration.
+    from managed-user registration. The max is 30 seconds, when an external
+    timeout was applied.
+  </summary>
+</histogram>
+
+<histogram name="Profile.CreateTimeCanceledNoTimeout" units="milliseconds">
+  <summary>
+    Time elapsed from when the handler received the message that a user clicked
+    'Create' until the user decided to cancel creation of a new profile. Since
+    only managed-user profile creation can be canceled, this time comes from
+    managed-user registration.
+  </summary>
+</histogram>
+
+<histogram name="Profile.CreateTimeNoTimeout" units="milliseconds">
+  <summary>
+    Time elapsed from when the handler received the message that a user clicked
+    'Create' until the creation either failed with a local error (see
+    Profile.CreateResult), was canceled (also recorded in
+    Profile.CreateTimeCanceledNoTimeout), or completed successfully.
   </summary>
 </histogram>
 
@@ -12552,6 +12785,25 @@ other types of suffix sets.
 <histogram name="Quickoffice.xlsxSheetCount">
   <summary>
     Records the number of worksheets when an OOXML format spreadsheet is opened.
+  </summary>
+</histogram>
+
+<histogram name="Renderer.AcceleratedFixedRootBackground"
+    enum="AcceleratedFixedRootBackground">
+  <summary>
+    Keeps track of the number of main frame scrolls with an accelerated fixed
+    root background, the number of main frame scrolls with an unaccelerated
+    fixed root background, and the total number of main frame scrolls.
+  </summary>
+</histogram>
+
+<histogram name="Renderer.CompositedScrolling" enum="CompositedScrolling">
+  <summary>
+    Total count of the number of RenderLayers which are scrollable areas, need
+    to be promoted to stacking containers, and will use composited scrolling.
+    Each bucket is sampled at most once per RenderLayer, when the RenderLayer
+    first becomes scrollable, first needs to become a stacking container, and
+    first uses composited scrolling, respectively.
   </summary>
 </histogram>
 
@@ -13789,6 +14041,26 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SBClientMalware.IPBlacklistRequestNetError"
+    enum="NetErrorCodes">
+  <summary>
+    The net error code for all ClientMalwareRequest URLFetchers.
+  </summary>
+</histogram>
+
+<histogram name="SBClientMalware.IPBlacklistRequestPayloadSize" units="bytes">
+  <summary>
+    The size of the upload data for ClientMalwareRequest URLFetchers.
+  </summary>
+</histogram>
+
+<histogram name="SBClientMalware.IPBlacklistRequestResponseCode">
+  <summary>
+    For ClientMalwareRequest URLFetchers with successful status, the HTTP
+    response code that was received.
+  </summary>
+</histogram>
+
 <histogram name="SBClientMalware.SentReports" enum="SBClientMalwareSentReports">
   <summary>
     Measures the success rate of sending malware reports.  Sending a report can
@@ -14111,6 +14383,19 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.PinnedTabEngineTypes" enum="OmniboxSearchEngineType">
+  <summary>
+    Tries to pretend pinned tab URLs are search URLs, and records the search
+    engine types of those URLs by comparing the TLD+1s of the URLs with those of
+    the different known search engines.  Recorded when a profile is opened, if
+    there are pinned tabs.  Note that at least one profile is opened on startup.
+  </summary>
+</histogram>
+
+<histogram name="Settings.PinnedTabs">
+  <summary>The number of pinned tabs opened when a profile is loaded.</summary>
+</histogram>
+
 <histogram name="Settings.ShowHomeButton" enum="BooleanEnabled">
   <summary>
     Whether or not the home button is enabled in user preferences when a profile
@@ -14179,7 +14464,479 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Settings.TrackedPreferenceChanged" enum="TrackedPreference">
+  <summary>
+    The id of a tracked preference whose value has been changed since the last
+    time Chrome set it.
+  </summary>
+</histogram>
+
+<histogram name="Settings.TrackedPreferenceCleared" enum="TrackedPreference">
+  <summary>
+    The id of a tracked preference whose value has been cleared since the last
+    time Chrome set it.
+  </summary>
+</histogram>
+
+<histogram name="Settings.TrackedPreferenceInitialized"
+    enum="TrackedPreference">
+  <summary>
+    The id of a tracked preference whose last value isn't known. We may be just
+    starting to track the preference, or local state may have been changed
+    outside of Chrome.
+  </summary>
+</histogram>
+
+<histogram name="Settings.TrackedPreferenceUnchanged" enum="TrackedPreference">
+  <summary>
+    The id of a tracked preference whose value has not changed since the last
+    time Chrome set it.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.CheckCRCResult" enum="CheckCRCResult">
+  <summary>
+    Whether or not the CRC was checked at the moment when the last reference to
+    a read-only entry stream is closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.CreationToIndex" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index has
+    been loaded from disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.CreationToIndexFail" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index fails
+    to load.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.EntryCreationResult" enum="BooleanSuccess">
+  <summary>
+    For entry creation operations that were sent to the disk, the result of
+    creation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.EntryCreationTime" units="milliseconds">
+  <summary>The time, in ms, spent creating a new entry on disk.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.EntryOperationsPending">
+  <summary>
+    At the time that operations are run, the number of pending operations on a
+    particular entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.CacheSizeOnStart" units="bytes">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.CacheSizeOnStart2" units="KB">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.EntryCount">
+  <summary>The number of entries to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.MaxCacheSizeOnStart" units="bytes">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.MaxCacheSizeOnStart2" units="KB">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.Result" enum="BooleanSuccess">
+  <summary>The result of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.SizeOfEvicted" units="bytes">
+  <summary>The number of bytes to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.SizeOfEvicted2" units="KB">
+  <summary>The amount of memory freed in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.SizeWhenDone" units="bytes">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.SizeWhenDone2" units="KB">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.TimeToDone" units="milliseconds">
+  <summary>Time spent completing an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.Eviction.TimeToSelectEntries"
+    units="milliseconds">
+  <summary>Time spent selecting entries for eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.FileDescriptorLimitHard">
+  <summary>
+    The maximum limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (This
+    is the highest value we could raise the current limit to if we liked.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.FileDescriptorLimitSoft">
+  <summary>
+    The current limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (We can
+    raise this to the maximum limit if we like, without root access.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.FileDescriptorLimitStatus"
+    enum="SimpleCache.FileDescriptorLimitStatus">
+  <summary>
+    The result of trying to get the file descriptor limit.  Emitted each time
+    the browser is launched.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.GlobalOpenEntryCount">
+  <summary>
+    The number of open entries across all caches backed by the Simple Cache. An
+    entry is opened whenever a caller asks to open it to read or write cache
+    data, and remains open until the last caller asks to close it. Logged
+    whenever an entry is opened or closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSize" units="bytes">
+  <summary>
+    The size of the header stream of a Simple Cache entry, emitted every time
+    the headers are written or rewritten.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSizeChange"
+    enum="SimpleCacheHeaderSizeChange">
+  <summary>
+    How the header size has changed in a Simple Cache entry, emitted every time
+    a write operation occurs on the header stream.  (This includes the initial
+    write, rewrites, and other writes that we couldn't classify.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSizeDecreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSizeDecreasePercentage" units="percent">
+  <summary>
+    The relative size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSizeIncreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.HeaderSizeIncreasePercentage" units="percent">
+  <summary>
+    The relative size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexCorrupt" enum="BooleanCorrupt">
+  <summary>For each index load, whether the index file was corrupt.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexCreatedEntryCount">
+  <summary>The number of entries in a newly created index file.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexEntriesLoaded">
+  <summary>Number of entries loaded from the index file on start.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexEntriesRestored">
+  <summary>
+    Number of entries restored from disk when there was no index or the index
+    was corrupted.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexFileStateOnLoad" enum="SimpleIndexState">
+  <summary>
+    The state the index file is at when an attempt is made to load from it.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexInitializationWaiters">
+  <summary>
+    At the time of index initialization, the number of enqueued jobs awaiting
+    index initialization.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexInitializeMethod"
+    enum="SimpleCacheIndexInitializeMethod">
+  <summary>The method used to initialize the simple cache index.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexLoadTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent loading the index file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexNumEntriesOnWrite">
+  <summary>The number of entries written to the index on a flush.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexRestoreTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent restoring the index file by
+    iterating directory entries.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexWriteInterval.Background"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the background.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexWriteInterval.Foreground"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the foreground.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexWriteToDiskTime.Background"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    background, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.IndexWriteToDiskTime.Foreground"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    foreground, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.KeyMatchedOnOpen" enum="BooleanMatched">
+  <summary>
+    For each call to OpenEntry, whether the key on disk matched the request key.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.LastClusterLossPercent" units="percent">
+  <summary>
+    For each file in the Simple Cache, the percentage of disk space used by the
+    cluster loss, the unused disk space in the last 4096 byte cluster of the
+    file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.LastClusterSize" units="bytes">
+  <summary>
+    For each file in the Simple Cache, the number of bytes in the last 4096 byte
+    cluster when the entry is saved to disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.OpenEntryIndexState"
+    enum="SimpleCacheOpenEntryIndexState">
+  <summary>
+    At the time that an entry is opened, the state of that entry in the index.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.ReadIsParallelizable"
+    enum="SimpleCacheReadParallelizable">
+  <summary>
+    For each Read operation, whether it could have been issued in parallel of a
+    previous Read operation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.ReadResult" enum="SimpleCacheReadResult">
+  <summary>The outcome of Entry::ReadData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCheckEOFHasCrc" enum="BooleanHasCrc">
+  <summary>
+    For each EOFRecord found with a valid magic number, indicates if the record
+    also contains a CRC.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCheckEOFResult"
+    enum="SimpleCacheSyncCheckEOFResult">
+  <summary>
+    The result, at the synchronous layer, of checking the EOF record of a cache
+    entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCloseResult"
+    enum="SimpleCacheSyncCloseResult">
+  <summary>
+    The result, at the synchronous layer, of closing a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreatePlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreatePlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreatePlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreateResult"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreateResult_WithIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncCreateResult_WithoutIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenEntryAge" units="hours">
+  <summary>
+    The age of the entry (time since last modified), when opened at the
+    synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenPlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenPlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenPlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenResult"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenResult_WithIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncOpenResult_WithoutIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.SyncWriteResult"
+    enum="SimpleCacheSyncWriteResult">
+  <summary>
+    The result, at the synchronous layer, of writing to a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.WriteDependencyType"
+    enum="SimpleCacheWriteDependencyType">
+  <summary>
+    Shows whether a write operation depends on the previous operation in queue
+    particularly in the aspect of its possibility to run in parallel.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.App.WriteResult" enum="SimpleCacheWriteResult">
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
+</histogram>
+
 <histogram name="SimpleCache.CheckCRCResult" enum="CheckCRCResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     Whether or not the CRC was checked at the moment when the last reference to
     a read-only entry stream is closed.
@@ -14187,6 +14944,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.CreationToIndex" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The time from the creation of the simple cache backend until the index has
     been loaded from disk.
@@ -14194,6 +14954,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.CreationToIndexFail" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The time from the creation of the simple cache backend until the index fails
     to load.
@@ -14201,6 +14964,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.EntryCreationResult" enum="BooleanSuccess">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For entry creation operations that were sent to the disk, the result of
     creation.
@@ -14208,10 +14974,16 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.EntryCreationTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The time, in ms, spent creating a new entry on disk.</summary>
 </histogram>
 
 <histogram name="SimpleCache.EntryOperationsPending">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     At the time that operations are run, the number of pending operations on a
     particular entry.
@@ -14219,58 +14991,97 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.Eviction.CacheSizeOnStart" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The size of the cache at the beginning of an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.CacheSizeOnStart2" units="KB">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The size of the cache at the beginning of an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.EntryCount">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The number of entries to be erased in an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.MaxCacheSizeOnStart" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The maximum allowed size of the cache at the beginning of an eviction.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.MaxCacheSizeOnStart2" units="KB">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The maximum allowed size of the cache at the beginning of an eviction.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.Result" enum="BooleanSuccess">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The result of an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.SizeOfEvicted" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The number of bytes to be erased in an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.SizeOfEvicted2" units="KB">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The amount of memory freed in an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.SizeWhenDone" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The size of the cache after running an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.SizeWhenDone2" units="KB">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The size of the cache after running an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.TimeToDone" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>Time spent completing an eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.Eviction.TimeToSelectEntries" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>Time spent selecting entries for eviction.</summary>
 </histogram>
 
 <histogram name="SimpleCache.FileDescriptorLimitHard">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The maximum limit of how many file descriptors a process can open.  Emitted
     each time the browser is launched, if the limit could be retrieved.  (This
@@ -14279,6 +15090,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.FileDescriptorLimitSoft">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The current limit of how many file descriptors a process can open.  Emitted
     each time the browser is launched, if the limit could be retrieved.  (We can
@@ -14288,6 +15102,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.FileDescriptorLimitStatus"
     enum="SimpleCache.FileDescriptorLimitStatus">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result of trying to get the file descriptor limit.  Emitted each time
     the browser is launched.
@@ -14295,6 +15112,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.GlobalOpenEntryCount">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The number of open entries across all caches backed by the Simple Cache. An
     entry is opened whenever a caller asks to open it to read or write cache
@@ -14304,6 +15124,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.HeaderSize" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The size of the header stream of a Simple Cache entry, emitted every time
     the headers are written or rewritten.
@@ -14312,6 +15135,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.HeaderSizeChange"
     enum="SimpleCacheHeaderSizeChange">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     How the header size has changed in a Simple Cache entry, emitted every time
     a write operation occurs on the header stream.  (This includes the initial
@@ -14320,6 +15146,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.HeaderSizeDecreaseAbsolute" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The absolute size decrease of the header stream of a Simple Cache entry,
     emitted every time the headers are rewritten with a smaller size.
@@ -14327,6 +15156,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.HeaderSizeDecreasePercentage" units="percent">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The relative size decrease of the header stream of a Simple Cache entry,
     emitted every time the headers are rewritten with a smaller size.
@@ -14334,6 +15166,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.HeaderSizeIncreaseAbsolute" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The absolute size increase of the header stream of a Simple Cache entry,
     emitted every time the headers are rewritten with a larger size.
@@ -14341,25 +15176,479 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.HeaderSizeIncreasePercentage" units="percent">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The relative size increase of the header stream of a Simple Cache entry,
     emitted every time the headers are rewritten with a larger size.
   </summary>
 </histogram>
 
+<histogram name="SimpleCache.Http.CheckCRCResult" enum="CheckCRCResult">
+  <summary>
+    Whether or not the CRC was checked at the moment when the last reference to
+    a read-only entry stream is closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.CreationToIndex" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index has
+    been loaded from disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.CreationToIndexFail" units="milliseconds">
+  <summary>
+    The time from the creation of the simple cache backend until the index fails
+    to load.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.EntryCreationResult" enum="BooleanSuccess">
+  <summary>
+    For entry creation operations that were sent to the disk, the result of
+    creation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.EntryCreationTime" units="milliseconds">
+  <summary>The time, in ms, spent creating a new entry on disk.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.EntryOperationsPending">
+  <summary>
+    At the time that operations are run, the number of pending operations on a
+    particular entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.CacheSizeOnStart" units="bytes">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.CacheSizeOnStart2" units="KB">
+  <summary>The size of the cache at the beginning of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.EntryCount">
+  <summary>The number of entries to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.MaxCacheSizeOnStart" units="bytes">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.MaxCacheSizeOnStart2" units="KB">
+  <summary>
+    The maximum allowed size of the cache at the beginning of an eviction.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.Result" enum="BooleanSuccess">
+  <summary>The result of an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.SizeOfEvicted" units="bytes">
+  <summary>The number of bytes to be erased in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.SizeOfEvicted2" units="KB">
+  <summary>The amount of memory freed in an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.SizeWhenDone" units="bytes">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.SizeWhenDone2" units="KB">
+  <summary>The size of the cache after running an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.TimeToDone" units="milliseconds">
+  <summary>Time spent completing an eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.Eviction.TimeToSelectEntries"
+    units="milliseconds">
+  <summary>Time spent selecting entries for eviction.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.FileDescriptorLimitHard">
+  <summary>
+    The maximum limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (This
+    is the highest value we could raise the current limit to if we liked.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.FileDescriptorLimitSoft">
+  <summary>
+    The current limit of how many file descriptors a process can open.  Emitted
+    each time the browser is launched, if the limit could be retrieved.  (We can
+    raise this to the maximum limit if we like, without root access.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.FileDescriptorLimitStatus"
+    enum="SimpleCache.FileDescriptorLimitStatus">
+  <summary>
+    The result of trying to get the file descriptor limit.  Emitted each time
+    the browser is launched.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.GlobalOpenEntryCount">
+  <summary>
+    The number of open entries across all caches backed by the Simple Cache. An
+    entry is opened whenever a caller asks to open it to read or write cache
+    data, and remains open until the last caller asks to close it. Logged
+    whenever an entry is opened or closed.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSize" units="bytes">
+  <summary>
+    The size of the header stream of a Simple Cache entry, emitted every time
+    the headers are written or rewritten.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSizeChange"
+    enum="SimpleCacheHeaderSizeChange">
+  <summary>
+    How the header size has changed in a Simple Cache entry, emitted every time
+    a write operation occurs on the header stream.  (This includes the initial
+    write, rewrites, and other writes that we couldn't classify.)
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSizeDecreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSizeDecreasePercentage" units="percent">
+  <summary>
+    The relative size decrease of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a smaller size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSizeIncreaseAbsolute" units="bytes">
+  <summary>
+    The absolute size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.HeaderSizeIncreasePercentage" units="percent">
+  <summary>
+    The relative size increase of the header stream of a Simple Cache entry,
+    emitted every time the headers are rewritten with a larger size.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexCorrupt" enum="BooleanCorrupt">
+  <summary>For each index load, whether the index file was corrupt.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexCreatedEntryCount">
+  <summary>The number of entries in a newly created index file.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexEntriesLoaded">
+  <summary>Number of entries loaded from the index file on start.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexEntriesRestored">
+  <summary>
+    Number of entries restored from disk when there was no index or the index
+    was corrupted.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexFileStateOnLoad" enum="SimpleIndexState">
+  <summary>
+    The state the index file is at when an attempt is made to load from it.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexInitializationWaiters">
+  <summary>
+    At the time of index initialization, the number of enqueued jobs awaiting
+    index initialization.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexInitializeMethod"
+    enum="SimpleCacheIndexInitializeMethod">
+  <summary>The method used to initialize the simple cache index.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexLoadTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent loading the index file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexNumEntriesOnWrite">
+  <summary>The number of entries written to the index on a flush.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexRestoreTime" units="milliseconds">
+  <summary>
+    Time (as measured on the worker pool) spent restoring the index file by
+    iterating directory entries.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexWriteInterval.Background"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the background.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexWriteInterval.Foreground"
+    units="milliseconds">
+  <summary>
+    The interval between index saves, for apps in the foreground.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexWriteToDiskTime.Background"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    background, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.IndexWriteToDiskTime.Foreground"
+    units="milliseconds">
+  <summary>
+    The amount of time spend writing the index file to disk, for apps in the
+    foreground, measured starting at the beginning of the write on the callback
+    thread, and calculated using the completion time on the worker pool.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.KeyMatchedOnOpen" enum="BooleanMatched">
+  <summary>
+    For each call to OpenEntry, whether the key on disk matched the request key.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.LastClusterLossPercent" units="percent">
+  <summary>
+    For each file in the Simple Cache, the percentage of disk space used by the
+    cluster loss, the unused disk space in the last 4096 byte cluster of the
+    file.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.LastClusterSize" units="bytes">
+  <summary>
+    For each file in the Simple Cache, the number of bytes in the last 4096 byte
+    cluster when the entry is saved to disk.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.OpenEntryIndexState"
+    enum="SimpleCacheOpenEntryIndexState">
+  <summary>
+    At the time that an entry is opened, the state of that entry in the index.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.ReadIsParallelizable"
+    enum="SimpleCacheReadParallelizable">
+  <summary>
+    For each Read operation, whether it could have been issued in parallel of a
+    previous Read operation.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.ReadResult" enum="SimpleCacheReadResult">
+  <summary>The outcome of Entry::ReadData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCheckEOFHasCrc" enum="BooleanHasCrc">
+  <summary>
+    For each EOFRecord found with a valid magic number, indicates if the record
+    also contains a CRC.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCheckEOFResult"
+    enum="SimpleCacheSyncCheckEOFResult">
+  <summary>
+    The result, at the synchronous layer, of checking the EOF record of a cache
+    entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCloseResult"
+    enum="SimpleCacheSyncCloseResult">
+  <summary>
+    The result, at the synchronous layer, of closing a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreatePlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreatePlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreatePlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreateResult"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreateResult_WithIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncCreateResult_WithoutIndex"
+    enum="SimpleCacheSyncCreateResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to create a
+    new cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenEntryAge" units="hours">
+  <summary>
+    The age of the entry (time since last modified), when opened at the
+    synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenPlatformFileError"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenPlatformFileError_WithIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenPlatformFileError_WithoutIndex"
+    enum="PlatformFileError">
+  <summary>
+    The platform error reported when attempting to create a new cache entry at
+    the synchronous layer when the index has not initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenResult"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenResult_WithIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has already initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncOpenResult_WithoutIndex"
+    enum="SimpleCacheSyncOpenResult">
+  <summary>
+    The result, at the synchronous layer, reported when attempting to open a new
+    cache entry when the index has not yet initialized.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.SyncWriteResult"
+    enum="SimpleCacheSyncWriteResult">
+  <summary>
+    The result, at the synchronous layer, of writing to a cache entry.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.WriteDependencyType"
+    enum="SimpleCacheWriteDependencyType">
+  <summary>
+    Shows whether a write operation depends on the previous operation in queue
+    particularly in the aspect of its possibility to run in parallel.
+  </summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.WriteResult" enum="SimpleCacheWriteResult">
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
+</histogram>
+
 <histogram name="SimpleCache.IndexCorrupt" enum="BooleanCorrupt">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>For each index load, whether the index file was corrupt.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexCreatedEntryCount">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The number of entries in a newly created index file.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexEntriesLoaded">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>Number of entries loaded from the index file on start.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexEntriesRestored">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     Number of entries restored from disk when there was no index or the index
     was corrupted.
@@ -14367,12 +15656,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.IndexFileStateOnLoad" enum="SimpleIndexState">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The state the index file is at when an attempt is made to load from it.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexInitializationWaiters">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     At the time of index initialization, the number of enqueued jobs awaiting
     index initialization.
@@ -14381,20 +15676,32 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexInitializeMethod"
     enum="SimpleCacheIndexInitializeMethod">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The method used to initialize the simple cache index.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexLoadTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     Time (as measured on the worker pool) spent loading the index file.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexNumEntriesOnWrite">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The number of entries written to the index on a flush.</summary>
 </histogram>
 
 <histogram name="SimpleCache.IndexRestoreTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     Time (as measured on the worker pool) spent restoring the index file by
     iterating directory entries.
@@ -14410,6 +15717,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexWriteInterval.Background"
     units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The interval between index saves, for apps in the background.
   </summary>
@@ -14417,6 +15727,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexWriteInterval.Foreground"
     units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The interval between index saves, for apps in the foreground.
   </summary>
@@ -14437,6 +15750,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexWriteToDiskTime.Background"
     units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The amount of time spend writing the index file to disk, for apps in the
     background, measured starting at the beginning of the write on the callback
@@ -14446,6 +15762,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.IndexWriteToDiskTime.Foreground"
     units="milliseconds">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The amount of time spend writing the index file to disk, for apps in the
     foreground, measured starting at the beginning of the write on the callback
@@ -14454,12 +15773,18 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.KeyMatchedOnOpen" enum="BooleanMatched">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For each call to OpenEntry, whether the key on disk matched the request key.
   </summary>
 </histogram>
 
 <histogram name="SimpleCache.LastClusterLossPercent" units="percent">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For each file in the Simple Cache, the percentage of disk space used by the
     cluster loss, the unused disk space in the last 4096 byte cluster of the
@@ -14468,6 +15793,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.LastClusterSize" units="bytes">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For each file in the Simple Cache, the number of bytes in the last 4096 byte
     cluster when the entry is saved to disk.
@@ -14476,6 +15804,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.OpenEntryIndexState"
     enum="SimpleCacheOpenEntryIndexState">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     At the time that an entry is opened, the state of that entry in the index.
   </summary>
@@ -14483,6 +15814,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.ReadIsParallelizable"
     enum="SimpleCacheReadParallelizable">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For each Read operation, whether it could have been issued in parallel of a
     previous Read operation.
@@ -14490,10 +15824,16 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.ReadResult" enum="SimpleCacheReadResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The outcome of Entry::ReadData in the simple cache.</summary>
 </histogram>
 
 <histogram name="SimpleCache.SyncCheckEOFHasCrc" enum="BooleanHasCrc">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     For each EOFRecord found with a valid magic number, indicates if the record
     also contains a CRC.
@@ -14502,6 +15842,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCheckEOFResult"
     enum="SimpleCacheSyncCheckEOFResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, of checking the EOF record of a cache
     entry.
@@ -14509,6 +15852,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.SyncCloseResult" enum="SimpleCacheSyncCloseResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, of closing a cache entry.
   </summary>
@@ -14516,6 +15862,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreatePlatformFileError"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer.
@@ -14524,6 +15873,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreatePlatformFileError_WithIndex"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer when the index has already initialized.
@@ -14532,6 +15884,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreatePlatformFileError_WithoutIndex"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer when the index has not yet initialized.
@@ -14540,6 +15895,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreateResult"
     enum="SimpleCacheSyncCreateResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to create a
     new cache entry.
@@ -14548,6 +15906,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreateResult_WithIndex"
     enum="SimpleCacheSyncCreateResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to create a
     new cache entry when the index has already initialized.
@@ -14556,6 +15917,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncCreateResult_WithoutIndex"
     enum="SimpleCacheSyncCreateResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to create a
     new cache entry when the index has not yet initialized.
@@ -14563,6 +15927,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenEntryAge" units="hours">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The age of the entry (time since last modified), when opened at the
     synchronous layer.
@@ -14571,6 +15938,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncOpenPlatformFileError"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer.
@@ -14579,6 +15949,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncOpenPlatformFileError_WithIndex"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer when the index has already initialized.
@@ -14587,6 +15960,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncOpenPlatformFileError_WithoutIndex"
     enum="PlatformFileError">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The platform error reported when attempting to create a new cache entry at
     the synchronous layer when the index has not initialized.
@@ -14594,6 +15970,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.SyncOpenResult" enum="SimpleCacheSyncOpenResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to open a new
     cache entry.
@@ -14602,6 +15981,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncOpenResult_WithIndex"
     enum="SimpleCacheSyncOpenResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to open a new
     cache entry when the index has already initialized.
@@ -14610,6 +15992,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.SyncOpenResult_WithoutIndex"
     enum="SimpleCacheSyncOpenResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, reported when attempting to open a new
     cache entry when the index has not yet initialized.
@@ -14617,6 +16002,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.SyncWriteResult" enum="SimpleCacheSyncWriteResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     The result, at the synchronous layer, of writing to a cache entry.
   </summary>
@@ -14624,6 +16012,9 @@ other types of suffix sets.
 
 <histogram name="SimpleCache.WriteDependencyType"
     enum="SimpleCacheWriteDependencyType">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>
     Shows whether a write operation depends on the previous operation in queue
     particularly in the aspect of its possibility to run in parallel.
@@ -14631,6 +16022,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.WriteResult" enum="SimpleCacheWriteResult">
+  <obsolete>
+    Deprecated 2013-08 in favor of cache type specific version (App or Http).
+  </obsolete>
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
@@ -15343,6 +16737,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Tab.PerceivedRestoreTime" units="ms">
+  <summary>
+    User-perceived load time for a successful tab restore, measured from the
+    first time the user sees the tab being restored until the load completes.
+  </summary>
+</histogram>
+
 <histogram name="Tab.RestoreResult" enum="BooleanSuccess">
   <summary>
     When the browser restores a tab, whether the load was successful. Loads can
@@ -15414,6 +16815,17 @@ other types of suffix sets.
   <summary>
     Age (time since the last display in previous sessions) of the foreground tab
     being restored on the browser cold start.
+  </summary>
+</histogram>
+
+<histogram name="TopSites.NumberOfApplyBlacklist">
+  <summary>The number of times TopSitesImpl::ApplyBlacklist is called.</summary>
+</histogram>
+
+<histogram name="TopSites.NumberOfBlacklistedItems">
+  <summary>
+    The number of items in the user Most Visited blacklist every time
+    TopSitesImpl::ApplyBlacklist is called.
   </summary>
 </histogram>
 
@@ -16147,6 +17559,17 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Wallet.MalformedResponse" enum="WalletApiCall">
+  <summary>
+    Counts the number of times each Wallet API failed due to being unable to
+    parse the response.
+  </summary>
+</histogram>
+
+<histogram name="Wallet.ResponseCode" enum="HttpResponseCode">
+  <summary>HTTP response codes seen by Wallet client.</summary>
+</histogram>
+
 <histogram name="WebCore.Animation.CSSProperties" enum="MappedCSSProperties">
   <summary>
     Counts the number of times each CSS property is animated. There is no limit
@@ -16532,7 +17955,33 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebFont.Resource.StyleRecalcToDownloadLatency"
+    units="milliseconds">
+  <summary>
+    The time from when the webfont was referenced by a calculated style for the
+    first time to the start of the font download. Recorded at most once for each
+    FontResource object (not recorded if the font is retrieved from the memory
+    cache).
+  </summary>
+</histogram>
+
+<histogram name="WebFont.Resource.UsageType" enum="WebFontUsageType">
+  <summary>
+    For each webfont, this records (a) if the font was 'styled', i.e. referenced
+    by a calculated style for a RenderText before the font data was used, and
+    (b) if the font was actually used or not, i.e. the renderer requested the
+    font data or not. (A Font can be used without being styled, for example when
+    drawn by a Canvas 2D Context.) This is recorded upon a download request of a
+    webfont, or destruction of a FontResource object. Recorded at most once for
+    each FontResource object in the renderer's memory cahce.
+  </summary>
+</histogram>
+
 <histogram name="WebFont.StyleRecalcToDownloadLatency" units="milliseconds">
+  <obsolete>
+    Deprecated as of 9/2013, replaced by
+    WebFont.Resource.StyleRecalcToDownloadLatency.
+  </obsolete>
   <summary>
     The time from when the webfont was referenced by a calculated style for the
     first time to the start of the font download.
@@ -16540,6 +17989,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="WebFont.UsageType" enum="WebFontUsageType">
+  <obsolete>
+    Deprecated as of 9/2013, replaced by WebFont.Resource.UsageType.
+  </obsolete>
   <summary>
     For each webfont, this records (a) if the font was 'styled', i.e. referenced
     by a calculated style for a RenderText before the font data was used, and
@@ -16744,6 +18196,12 @@ other types of suffix sets.
 <enum name="Abandoned" type="int">
   <int value="0" label="Finished"/>
   <int value="1" label="Abandoned"/>
+</enum>
+
+<enum name="AcceleratedFixedRootBackground" type="int">
+  <int value="0" label="ScrolledMainFrame"/>
+  <int value="1" label="ScrolledMainFrameWithAcceleratedFixedRootBackground"/>
+  <int value="2" label="ScrolledMainFrameWithUnacceleratedFixedRootBackground"/>
 </enum>
 
 <enum name="AndroidEvictionReason" type="int">
@@ -16958,6 +18416,9 @@ other types of suffix sets.
 </enum>
 
 <enum name="AutocheckoutBubble" type="int">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <int value="0" label="Created"/>
   <int value="1" label="Accepted"/>
   <int value="2" label="Dismissed"/>
@@ -16966,6 +18427,9 @@ other types of suffix sets.
 </enum>
 
 <enum name="AutocheckoutBuyFlow" type="int">
+  <obsolete>
+    Deprecated as of 8/2013.
+  </obsolete>
   <int value="0" label="Started"/>
   <int value="1" label="Success"/>
   <int value="2" label="Missing field mappings"/>
@@ -17378,6 +18842,12 @@ other types of suffix sets.
   <int value="0" label="No Advantage"/>
   <int value="1" label="Header packets Only"/>
   <int value="30" label="More Than 30"/>
+</enum>
+
+<enum name="CompositedScrolling" type="int">
+  <int value="0" label="Is scrollable area"/>
+  <int value="1" label="Needs to be stacking container"/>
+  <int value="2" label="Will use composited scrolling"/>
 </enum>
 
 <enum name="ConnectionType" type="int">
@@ -18484,7 +19954,7 @@ other types of suffix sets.
   <int value="43" label="SYNCFILESYSTEM_REQUESTFILESYSTEM"/>
   <int value="44" label="COMMANDS_GETALL"/>
   <int value="45" label="EXPERIMENTAL_DISCOVERY_REMOVESUGGESTION"/>
-  <int value="46" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_SENDKEYBOARDEVENT"/>
+  <int value="46" label="VIRTUALKEYBOARDPRIVATE_SENDKEYEVENT"/>
   <int value="47" label="BOOKMARKMANAGERPRIVATE_GETSUBTREE"/>
   <int value="48" label="EXPERIMENTAL_RLZ_RECORDPRODUCTEVENT"/>
   <int value="49" label="BOOKMARKS_GETRECENT"/>
@@ -18496,7 +19966,7 @@ other types of suffix sets.
   <int value="55" label="FILEBROWSERPRIVATE_GETFILETASKS"/>
   <int value="56" label="WEBSTOREPRIVATE_GETSTORELOGIN"/>
   <int value="57" label="SYSTEMPRIVATE_GETINCOGNITOMODEAVAILABILITY"/>
-  <int value="58" label="EXPERIMENTAL_IDLTEST_SENDARRAYBUFFERVIEW"/>
+  <int value="58" label="IDLTEST_SENDARRAYBUFFERVIEW"/>
   <int value="59" label="SOCKET_SETNODELAY"/>
   <int value="60" label="APP_CURRENTWINDOWINTERNAL_SHOW"/>
   <int value="61" label="WEBSTOREPRIVATE_GETBROWSERLOGIN"/>
@@ -18531,7 +20001,7 @@ other types of suffix sets.
   <int value="90" label="METRICSPRIVATE_RECORDSMALLCOUNT"/>
   <int value="91" label="APP_CURRENTWINDOWINTERNAL_MINIMIZE"/>
   <int value="92" label="DEVELOPERPRIVATE_AUTOUPDATE"/>
-  <int value="93" label="EXPERIMENTAL_DNS_RESOLVE"/>
+  <int value="93" label="DNS_RESOLVE"/>
   <int value="94" label="EXPERIMENTAL_SYSTEMINFO_MEMORY_GET"/>
   <int value="95" label="HISTORY_ADDURL"/>
   <int value="96" label="TABS_GET"/>
@@ -18660,7 +20130,7 @@ other types of suffix sets.
   <int value="218" label="USB_INTERRUPTTRANSFER"/>
   <int value="219" label="TYPES_CHROMESETTING_CLEAR"/>
   <int value="220" label="INPUT_IME_COMMITTEXT"/>
-  <int value="221" label="EXPERIMENTAL_IDLTEST_SENDARRAYBUFFER"/>
+  <int value="221" label="IDLTEST_SENDARRAYBUFFER"/>
   <int value="222" label="WALLPAPERPRIVATE_SETWALLPAPERIFEXISTS"/>
   <int value="223" label="SOCKET_ACCEPT"/>
   <int value="224" label="WEBNAVIGATION_GETFRAME"/>
@@ -18690,7 +20160,7 @@ other types of suffix sets.
   <int value="248" label="INPUT_IME_SETCANDIDATES"/>
   <int value="249" label="TERMINALPRIVATE_CLOSETERMINALPROCESS"/>
   <int value="250" label="HISTORY_DELETERANGE"/>
-  <int value="251" label="EXPERIMENTAL_IDLTEST_GETARRAYBUFFER"/>
+  <int value="251" label="IDLTEST_GETARRAYBUFFER"/>
   <int value="252" label="TERMINALPRIVATE_SENDINPUT"/>
   <int value="253" label="TABS_HIGHLIGHT"/>
   <int value="254" label="BLUETOOTH_STARTDISCOVERY"/>
@@ -18933,7 +20403,7 @@ other types of suffix sets.
   <int value="490" label="FEEDBACKPRIVATE_GETUSEREMAIL"/>
   <int value="491" label="FEEDBACKPRIVATE_GETSYSTEMINFORMATION"/>
   <int value="492" label="FEEDBACKPRIVATE_SENDFEEDBACK"/>
-  <int value="493" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_INSERTTEXT"/>
+  <int value="493" label="VIRTUALKEYBOARDPRIVATE_INSERTTEXT"/>
   <int value="494" label="DIAGNOSTICS_SENDPACKET"/>
   <int value="495" label="METRICSPRIVATE_GETFIELDTRIAL"/>
   <int value="496" label="FILEBROWSERPRIVATE_ZOOM"/>
@@ -18957,7 +20427,7 @@ other types of suffix sets.
   <int value="514" label="SYSTEM_STORAGE_GETALLAVAILABLECAPACITYWATCHES"/>
   <int value="515" label="SYSTEM_STORAGE_REMOVEALLAVAILABLECAPACITYWATCHES"/>
   <int value="516" label="INFOBARS_SHOW"/>
-  <int value="517" label="EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_MOVECURSOR"/>
+  <int value="517" label="VIRTUALKEYBOARDPRIVATE_MOVECURSOR"/>
   <int value="518" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
 </enum>
 
@@ -19776,6 +21246,22 @@ other types of suffix sets.
   <int value="10" label="USER_SUPPRESSED"/>
 </enum>
 
+<enum name="GoogleServiceAuthError" type="int">
+  <int value="0" label="NONE"/>
+  <int value="1" label="INVALID_GAIA_CREDENTIALS"/>
+  <int value="2" label="USER_NOT_SIGNED_UP"/>
+  <int value="3" label="CONNECTION_FAILED"/>
+  <int value="4" label="CAPTCHA_REQUIRED"/>
+  <int value="5" label="ACCOUNT_DELETED"/>
+  <int value="6" label="ACCOUNT_DISABLED"/>
+  <int value="7" label="SERVICE_UNAVAILABLE"/>
+  <int value="8" label="TWO_FACTOR"/>
+  <int value="9" label="REQUEST_CANCELED"/>
+  <int value="10" label="HOSTED_NOT_ALLOWED"/>
+  <int value="11" label="UNEXPECTED_SERVICE_RESPONSE"/>
+  <int value="12" label="SERVICE_ERROR"/>
+</enum>
+
 <enum name="HttpAuthCount" type="int">
   <int value="0" label="Basic Start"/>
   <int value="1" label="Basic Reject"/>
@@ -19824,6 +21310,49 @@ other types of suffix sets.
   <int value="7" label="Response content mismatch"/>
   <int value="8" label="Bad HTTP version"/>
   <int value="9" label="Corrupt stats response"/>
+</enum>
+
+<enum name="HttpResponseCode" type="int">
+  <int value="100" label="Continue"/>
+  <int value="101" label="Switching Protocols"/>
+  <int value="200" label="OK"/>
+  <int value="201" label="Created"/>
+  <int value="202" label="Accepted"/>
+  <int value="203" label="Non-Authoritative Information"/>
+  <int value="204" label="No Content"/>
+  <int value="205" label="Reset Content"/>
+  <int value="206" label="Partial Content"/>
+  <int value="300" label="Multiple Choices"/>
+  <int value="301" label="Moved Permanently"/>
+  <int value="302" label="Found"/>
+  <int value="303" label="See Other"/>
+  <int value="304" label="Not Modified"/>
+  <int value="305" label="Use Proxy"/>
+  <int value="306" label="(Unused)"/>
+  <int value="307" label="Temporary Redirect"/>
+  <int value="400" label="Bad Request"/>
+  <int value="401" label="Unauthorized"/>
+  <int value="402" label="Payment Required"/>
+  <int value="403" label="Forbidden"/>
+  <int value="404" label="Not Found"/>
+  <int value="405" label="Method Not Allowed"/>
+  <int value="406" label="Not Acceptable"/>
+  <int value="407" label="Proxy Authentication Required"/>
+  <int value="408" label="Request Timeout"/>
+  <int value="409" label="Conflict"/>
+  <int value="410" label="Gone"/>
+  <int value="411" label="Length Required"/>
+  <int value="412" label="Precondition Failed"/>
+  <int value="413" label="Request Entity Too Large"/>
+  <int value="414" label="Request-URI Too Long"/>
+  <int value="415" label="Unsupported Media Type"/>
+  <int value="416" label="Requested Range Not Satisfiable"/>
+  <int value="417" label="Expectation Failed"/>
+  <int value="500" label="Internal Server Error"/>
+  <int value="501" label="Not Implemented"/>
+  <int value="503" label="Service Unavailable"/>
+  <int value="504" label="Gateway Timeout"/>
+  <int value="505" label="HTTP Version Not Supported"/>
 </enum>
 
 <enum name="HttpSocketType" type="int">
@@ -20681,6 +22210,93 @@ other types of suffix sets.
   <int value="9" label="PRERENDER_LOAD">Speculative prerendering of a page</int>
 </enum>
 
+<enum name="LoginFailureReason" type="int">
+  <int value="0" label="NONE">None</int>
+  <int value="1" label="COULD_NOT_MOUNT_CRYPTOHOME">
+    Could not mount cryptohome
+  </int>
+  <int value="2" label="COULD_NOT_MOUNT_TMPFS">Could not mount tmpfs</int>
+  <int value="3" label="COULD_NOT_UNMOUNT_CRYPTOHOME">
+    Could not unmount cryptohome
+  </int>
+  <int value="4" label="DATA_REMOVAL_FAILED">Data removal failed</int>
+  <int value="5" label="LOGIN_TIMED_OUT">Login timed out</int>
+  <int value="6" label="UNLOCK_FAILED">Unlock failed</int>
+  <int value="7" label="NETWORK_AUTH_FAILED">Network auth failed</int>
+</enum>
+
+<enum name="LoginPolicyFilesState" type="int">
+  <summary>Policy/owner key file state.</summary>
+  <int value="0" label="HEALTHY_R11">Healthy, pre-R11</int>
+  <int value="1" label="UNUSED">Unused</int>
+  <int value="2" label="HEALTHY">Healthy</int>
+  <int value="3" label="RESERVED">Reserved</int>
+  <int value="4" label="BAD_POLICY_R11">Key OK, policy bad, pre-R11</int>
+  <int value="5" label="UNUSED">Unused</int>
+  <int value="6" label="BAD_POLICY">Key OK, policy bad</int>
+  <int value="7" label="RESERVED">Reserved</int>
+  <int value="8" label="KEY_OK_NO_POLICY_R11">
+    Key OK, no policy, pre-R11 user (http://crosbug.com/24916)
+  </int>
+  <int value="9" label="UNUSED">Unused</int>
+  <int value="10" label="KEY_OK_NO_POLICY">Key OK, no policy</int>
+  <int value="11" label="RESERVED">Reserved</int>
+  <int value="12" label="RESERVED">Reserved</int>
+  <int value="13" label="RESERVED">Reserved</int>
+  <int value="14" label="RESERVED">Reserved</int>
+  <int value="15" label="RESERVED">Reserved</int>
+  <int value="16" label="BAD_KEY_R11">Key bad, policy OK, pre-R11</int>
+  <int value="17" label="UNUSED">Unused</int>
+  <int value="18" label="BAD_KEY">Key bad, policy OK</int>
+  <int value="19" label="RESERVED">Reserved</int>
+  <int value="20" label="BAD_KEY_BAD_POLICY_R11">
+    Key bad, policy bad, pre-R11
+  </int>
+  <int value="21" label="UNUSED">Unused</int>
+  <int value="22" label="BAD_KEY_BAD_POLICY">Key bad, policy bad</int>
+  <int value="23" label="RESERVED">Reserved</int>
+  <int value="24" label="BAD_KEY_NO_POLICY_R11">
+    Key bad, policy bad, pre-R11
+  </int>
+  <int value="25" label="UNUSED">Unused</int>
+  <int value="26" label="BAD_KEY_BAD_POLICY">Key bad, policy bad</int>
+  <int value="27" label="RESERVED">Reserved</int>
+  <int value="28" label="RESERVED">Reserved</int>
+  <int value="29" label="RESERVED">Reserved</int>
+  <int value="30" label="RESERVED">Reserved</int>
+  <int value="31" label="RESERVED">Reserved</int>
+  <int value="32" label="NO_KEY_R11">No key, policy OK, pre-R11</int>
+  <int value="33" label="UNUSED">Unused</int>
+  <int value="34" label="NO_KEY">No key, policy OK</int>
+  <int value="35" label="RESERVED">RESERVED</int>
+  <int value="36" label="NO_KEY_BAD_POLICY_R11">
+    No key, policy bad, pre-R11
+  </int>
+  <int value="37" label="UNUSED">Unused</int>
+  <int value="38" label="NO_KEY_BAD_POLICY">No key, bad policy</int>
+  <int value="39" label="RESERVED">Reserved</int>
+  <int value="40" label="NO_KEY_NO_POLICY_R11">Un-owned, pre-R11</int>
+  <int value="41" label="UNUSED">Unused</int>
+  <int value="42" label="NO_KEY_NO_POLICY">Un-owned</int>
+  <int value="43" label="RESERVED">Reserved</int>
+</enum>
+
+<enum name="LoginSuccessReason" type="int">
+  <int value="0" label="OFFLINE_AND_ONLINE">
+    Login success offline and online
+  </int>
+  <int value="1" label="OFFLINE_ONLY">Login success offline only</int>
+</enum>
+
+<enum name="LoginUserType" type="int">
+  <int value="0" label="INCOGNITO_NORMAL">Incognito Normal</int>
+  <int value="1" label="OWNER_NORMAL">Owner Normal</int>
+  <int value="2" label="OTHER_NORMAL">Other Normal</int>
+  <int value="3" label="INCOGNITO_DEVELOPER">Incognito Dev</int>
+  <int value="4" label="OWNER_DEVELOPER">Owner Dev</int>
+  <int value="5" label="OTHER_DEVELOPER">Other Dev</int>
+</enum>
+
 <enum name="MappedCSSProperties" type="int">
 <!-- See http://src.chromium.org/viewvc/blink/trunk/Source/core/page/UseCounter.cpp -->
 
@@ -21106,6 +22722,18 @@ other types of suffix sets.
   <int value="420" label="mix-blend-mode"/>
   <int value="421" label="touch-action"/>
   <int value="422" label="grid-area"/>
+  <int value="423" label="grid-template"/>
+  <int value="424" label="animation"/>
+  <int value="425" label="animation-delay"/>
+  <int value="426" label="animation-direction"/>
+  <int value="427" label="animation-duration"/>
+  <int value="428" label="animation-fill-mode"/>
+  <int value="429" label="animation-iteration-count"/>
+  <int value="430" label="animation-name"/>
+  <int value="431" label="animation-play-state"/>
+  <int value="432" label="animation-timing-function"/>
+  <int value="433" label="object-fit"/>
+  <int value="434" label="paint-order"/>
 </enum>
 
 <enum name="MediaContainers" type="int">
@@ -21198,6 +22826,8 @@ other types of suffix sets.
   <int value="5" label="MPEG2 AAC"/>
   <int value="6" label="MPEG4 AAC"/>
   <int value="7" label="EAC3"/>
+  <int value="8" label="MP3"/>
+  <int value="9" label="OPUS"/>
 </enum>
 
 <enum name="NavigationScheme" type="int">
@@ -22195,6 +23825,19 @@ other types of suffix sets.
   <int value="53" label="Issuing prerender, new prerender"/>
   <int value="54" label="Issuing prerender, cancelled old prerender"/>
   <int value="55" label="Continue prerender check fallthrough prerendering"/>
+  <int value="56" label="URL lookup success"/>
+  <int value="57" label="Prerender Service disabled"/>
+  <int value="58" label="Prerender Service issued lookup"/>
+  <int value="59" label="Prerender Service lookup timed out"/>
+  <int value="60" label="Prerender Service received result"/>
+  <int value="61" label="Prerender Service no record for result"/>
+  <int value="62" label="Prerender Service parsed correctly"/>
+  <int value="63" label="Prerender Service parse error"/>
+  <int value="64" label="Prerender Service parse error incorrect JSON"/>
+  <int value="65" label="Prerender Service hinting timed out"/>
+  <int value="66" label="Prerender Service hinting url lookup timed out"/>
+  <int value="67" label="Prerender Service candidate url lookup timed out"/>
+  <int value="68" label="Continue prerender check service whitelist"/>
 </enum>
 
 <enum name="PrerenderLocalVisitCoreTransition" type="int">
@@ -22409,6 +24052,9 @@ other types of suffix sets.
   <int value="46" label="INVALID_STREAM_DATA"/>
   <int value="47" label="INVALID_CONGESTION_FEEDBACK_DATA"/>
   <int value="48" label="MISSING_PAYLOAD"/>
+  <int value="49" label="INVALID_PRIORITY"/>
+  <int value="50" label="INVALID_STREAM_FRAME"/>
+  <int value="51" label="PACKET_READ_ERROR"/>
 </enum>
 
 <enum name="QuicHandshakeState" type="int">
@@ -23736,6 +25382,21 @@ other types of suffix sets.
   </int>
 </enum>
 
+<enum name="TrackedPreference" type="int">
+  <int value="0" label="prefs::kShowHomeButton"/>
+  <int value="1" label="prefs::kHomePageIsNewTabPage"/>
+  <int value="2" label="prefs::kHomePage"/>
+  <int value="3" label="prefs::kRestoreOnStartup"/>
+  <int value="4" label="prefs::kURLsToRestoreOnStartup"/>
+  <int value="5" label="prefs::kExtensionsPref"/>
+  <int value="6" label="prefs::kGoogleServicesLastUsername"/>
+  <int value="7" label="prefs::kSearchProviderOverrides"/>
+  <int value="8" label="prefs::kDefaultSearchProviderSearchURL"/>
+  <int value="9" label="prefs::kDefaultSearchProviderKeyword"/>
+  <int value="10" label="prefs::kDefaultSearchProviderName"/>
+  <int value="11" label="prefs::kPinnedTabs"/>
+</enum>
+
 <enum name="TranslateError" type="int">
   <int value="0" label="No error"/>
   <int value="1" label="Network error"/>
@@ -23843,7 +25504,11 @@ other types of suffix sets.
   <int value="0" label="Other"/>
   <int value="1" label="HTTPS Server Only"/>
   <int value="2" label="HTTP Server Only"/>
-  <int value="3" label="Both HTTP and HTTPS Server"/>
+  <int value="3" label="HTTP Server, HTTPS Server"/>
+  <int value="4" label="HTTP Peer Only"/>
+  <int value="5" label="HTTP Peer and HTTPS Server"/>
+  <int value="6" label="HTTP Peer and HTTP Server"/>
+  <int value="7" label="HTTP Peer, HTTPS Server, and HTTP Server"/>
 </enum>
 
 <enum name="UpdateEngineErrorCode" type="int">
@@ -24047,6 +25712,15 @@ other types of suffix sets.
   <int value="4" label="L2TP/IPSec None"/>
   <int value="5" label="L2TP/IPSec Certificate"/>
   <int value="6" label="L2TP/IPSec Username/Password"/>
+</enum>
+
+<enum name="WalletApiCall" type="int">
+  <int value="0" label="Unknown API call"/>
+  <int value="1" label="Accept Legal Documents"/>
+  <int value="2" label="Authenticate Instrument"/>
+  <int value="3" label="Get Full Wallet"/>
+  <int value="4" label="Get Wallet Items"/>
+  <int value="5" label="Save to Wallet"/>
 </enum>
 
 <enum name="WalletErrors" type="int">
@@ -24445,6 +26119,7 @@ other types of suffix sets.
   <affected-histogram name="Platform.DiskUsage.Downloads_Max"/>
   <affected-histogram name="Platform.DiskUsage.GCache_Avg"/>
   <affected-histogram name="Platform.DiskUsage.GCache_Max"/>
+  <affected-histogram name="Platform.DiskUsage.LeastUsedAccountDays"/>
 </fieldtrial>
 
 <fieldtrial name="DnsImpact2">
@@ -24617,6 +26292,7 @@ other types of suffix sets.
 </fieldtrial>
 
 <fieldtrial name="InstallerDownloadSources" separator="">
+  <group name="HttpPeer" label="Download Source: HTTP Peer"/>
   <group name="HttpServer" label="Download Source: HTTP Server"/>
   <group name="HttpsServer" label="Download Source: HTTPS Server"/>
   <affected-histogram name="Installer.SuccessfulMBsDownloadedFrom"/>
@@ -26202,6 +27878,7 @@ other types of suffix sets.
   <group name="History" label="History"/>
   <group name="Predictor" label="Predictor"/>
   <group name="Quota" label="Quota"/>
+  <group name="Shortcuts" label="Shortcuts"/>
   <group name="SyncDirectory" label="SyncDirectory"/>
   <group name="Text" label="Text (obsolete 7/24/13)"/>
   <group name="Thumbnail" label="Thumbnail"/>

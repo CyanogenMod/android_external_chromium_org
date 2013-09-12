@@ -5,6 +5,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -176,7 +177,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, FocusTest) {
   // test_dialog1's text field should still be the view that has focus.
   EXPECT_EQ(test_dialog1->GetInitiallyFocusedView(),
             focus_manager->GetFocusedView());
-  ASSERT_TRUE(web_contents_modal_dialog_manager->IsShowingDialog());
+  ASSERT_TRUE(web_contents_modal_dialog_manager->IsDialogActive());
 
   // Now send a VKEY_RETURN to the browser.  This should result in closing
   // test_dialog1.
@@ -186,7 +187,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, FocusTest) {
 
   EXPECT_TRUE(test_dialog1->done());
   EXPECT_FALSE(test_dialog2->done());
-  EXPECT_TRUE(web_contents_modal_dialog_manager->IsShowingDialog());
+  EXPECT_TRUE(web_contents_modal_dialog_manager->IsDialogActive());
 
   // test_dialog2 will be shown.  Focus should be on test_dialog2's text field.
   EXPECT_EQ(test_dialog2->GetInitiallyFocusedView(),
@@ -214,7 +215,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest, FocusTest) {
       ui::Accelerator(ui::VKEY_RETURN, ui::EF_NONE)));
   content::RunAllPendingInMessageLoop();
   EXPECT_TRUE(test_dialog2->done());
-  EXPECT_FALSE(web_contents_modal_dialog_manager->IsShowingDialog());
+  EXPECT_FALSE(web_contents_modal_dialog_manager->IsDialogActive());
 }
 
 // Tests that the constrained window is closed properly when its tab is
@@ -409,7 +410,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowViewTest,
   // Wait for the navigation to commit, since the URL will not be visible
   // until then.
   back_observer.Wait();
-  EXPECT_EQ(new_tab_url.spec(), web_contents->GetURL().spec());
+  EXPECT_TRUE(chrome::IsNTPURL(web_contents->GetURL(), browser()->profile()));
 }
 
 // Fails flakily (once per 10-20 runs) on Win Aura only. http://crbug.com/177482

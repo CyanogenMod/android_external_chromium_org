@@ -503,6 +503,139 @@ class LayerTreeHostTestCompositeAndReadbackBeforePreviousCommitDraws
 MULTI_THREAD_TEST_F(
     LayerTreeHostTestCompositeAndReadbackBeforePreviousCommitDraws);
 
+class LayerTreeHostTestCompositeAndReadbackDuringForcedDraw
+    : public LayerTreeHostTest {
+ protected:
+  static const int kFirstCommitSourceFrameNumber = 0;
+  static const int kReadbackSourceFrameNumber = 1;
+  static const int kReadbackReplacementAndForcedDrawSourceFrameNumber = 2;
+
+  LayerTreeHostTestCompositeAndReadbackDuringForcedDraw()
+      : did_post_readback_(false) {}
+
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    // This enables forced draws after a single prepare to draw failure.
+    settings->timeout_and_draw_when_animation_checkerboards = true;
+    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
+  }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kFirstCommitSourceFrameNumber ||
+                sfn == kReadbackSourceFrameNumber ||
+                sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
+        << sfn;
+
+    // Before we react to the failed draw by initiating the forced draw
+    // sequence, start a readback on the main thread.
+    if (sfn == kFirstCommitSourceFrameNumber && !did_post_readback_) {
+      did_post_readback_ = true;
+      PostReadbackToMainThread();
+    }
+
+    // Returning false will result in a forced draw.
+    return false;
+  }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    // We should only draw for the readback and the forced draw.
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kReadbackSourceFrameNumber ||
+                sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
+        << sfn;
+  }
+
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    // We should only swap for the forced draw.
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kReadbackReplacementAndForcedDrawSourceFrameNumber)
+        << sfn;
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  bool did_post_readback_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackDuringForcedDraw);
+
+class LayerTreeHostTestCompositeAndReadbackAfterForcedDraw
+    : public LayerTreeHostTest {
+ protected:
+  static const int kFirstCommitSourceFrameNumber = 0;
+  static const int kForcedDrawSourceFrameNumber = 1;
+  static const int kReadbackSourceFrameNumber = 2;
+  static const int kReadbackReplacementSourceFrameNumber = 3;
+
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    // This enables forced draws after a single prepare to draw failure.
+    settings->timeout_and_draw_when_animation_checkerboards = true;
+    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
+  }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kFirstCommitSourceFrameNumber ||
+                sfn == kForcedDrawSourceFrameNumber ||
+                sfn == kReadbackSourceFrameNumber ||
+                sfn == kReadbackReplacementSourceFrameNumber)
+        << sfn;
+
+    // Returning false will result in a forced draw.
+    return false;
+  }
+
+  virtual void DidCommit() OVERRIDE {
+    if (layer_tree_host()->source_frame_number() ==
+        kForcedDrawSourceFrameNumber) {
+      // Avoid aborting the forced draw commit so source_frame_number
+      // increments.
+      layer_tree_host()->SetNeedsCommit();
+    } else if (layer_tree_host()->source_frame_number() ==
+               kReadbackSourceFrameNumber) {
+      // Perform a readback immediately after the forced draw's commit.
+      char pixels[4];
+      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
+    }
+  }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    // We should only draw for the the forced draw, readback, and
+    // replacement commit.
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kForcedDrawSourceFrameNumber ||
+                sfn == kReadbackSourceFrameNumber ||
+                sfn == kReadbackReplacementSourceFrameNumber)
+        << sfn;
+  }
+
+  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
+                                   bool result) OVERRIDE {
+    // We should only swap for the forced draw and replacement commit.
+    int sfn = host_impl->active_tree()->source_frame_number();
+    EXPECT_TRUE(sfn == kForcedDrawSourceFrameNumber ||
+                sfn == kReadbackReplacementSourceFrameNumber)
+        << sfn;
+
+    if (sfn == kReadbackReplacementSourceFrameNumber)
+      EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestCompositeAndReadbackAfterForcedDraw);
+
 // If the layerTreeHost says it can't draw, Then we should not try to draw.
 class LayerTreeHostTestCanDrawBlocksDrawing : public LayerTreeHostTest {
  public:
@@ -664,8 +797,6 @@ class LayerTreeHostTestAbortFrameWhenInvisible : public LayerTreeHostTest {
   }
 
   virtual void AfterTest() OVERRIDE {}
-
- private:
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestAbortFrameWhenInvisible);
@@ -684,7 +815,7 @@ class LayerTreeHostTestCommit : public LayerTreeHostTest {
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    EXPECT_EQ(gfx::Size(20, 20), impl->device_viewport_size());
+    EXPECT_EQ(gfx::Size(20, 20), impl->DrawViewportSize());
     EXPECT_EQ(SK_ColorGRAY, impl->active_tree()->background_color());
 
     EndTest();
@@ -1036,7 +1167,7 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
     ASSERT_EQ(1u, impl->active_tree()->root_layer()->children().size());
 
     // Device viewport is scaled.
-    EXPECT_EQ(gfx::Size(60, 60), impl->device_viewport_size());
+    EXPECT_EQ(gfx::Size(60, 60), impl->DrawViewportSize());
 
     LayerImpl* root = impl->active_tree()->root_layer();
     LayerImpl* child = impl->active_tree()->root_layer()->children()[0];
@@ -2272,6 +2403,51 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
 
 MULTI_THREAD_TEST_F(
     LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled);
+
+class LayerTreeHostTestAbortedCommitDoesntStallNextCommitWhenIdle
+    : public LayerTreeHostTest {
+ protected:
+  LayerTreeHostTestAbortedCommitDoesntStallNextCommitWhenIdle()
+      : commit_count_(0), commit_complete_count_(0) {}
+
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->begin_frame_scheduling_enabled = true;
+    settings->using_synchronous_renderer_compositor = true;
+  }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual void DidCommit() OVERRIDE {
+    commit_count_++;
+    if (commit_count_ == 2) {
+      // A commit was just aborted, request a real commit now to make sure a
+      // real commit following an aborted commit will still complete and
+      // end the test even when the Impl thread is idle.
+      layer_tree_host()->SetNeedsCommit();
+    }
+  }
+
+  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    commit_complete_count_++;
+    if (commit_complete_count_ == 1) {
+      // Initiate an aborted commit after the first commit.
+      host_impl->SetNeedsCommit();
+    } else {
+      EndTest();
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE {
+    EXPECT_EQ(commit_count_, 3);
+    EXPECT_EQ(commit_complete_count_, 2);
+  }
+
+  int commit_count_;
+  int commit_complete_count_;
+};
+
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestAbortedCommitDoesntStallNextCommitWhenIdle);
 
 class LayerTreeHostTestUninvertibleTransformDoesNotBlockActivation
     : public LayerTreeHostTest {
@@ -4463,6 +4639,55 @@ class LayerTreeHostTestAbortEvictedTextures : public LayerTreeHostTest {
 
 // Commits can only be aborted when using the thread proxy.
 MULTI_THREAD_TEST_F(LayerTreeHostTestAbortEvictedTextures);
+
+class LayerTreeHostTestMaxTransferBufferUsageBytes : public LayerTreeHostTest {
+ protected:
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->impl_side_painting = true;
+  }
+
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE {
+    context_provider_ = TestContextProvider::Create();
+    context_provider_->SetMaxTransferBufferUsageBytes(1024 * 1024);
+    return FakeOutputSurface::Create3d(context_provider_)
+        .PassAs<OutputSurface>();
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    scoped_refptr<FakePictureLayer> root_layer =
+        FakePictureLayer::Create(&client_);
+    root_layer->SetBounds(gfx::Size(6000, 6000));
+    root_layer->SetIsDrawable(true);
+
+    layer_tree_host()->SetRootLayer(root_layer);
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    TestWebGraphicsContext3D* context = static_cast<TestWebGraphicsContext3D*>(
+        impl->output_surface()->context_provider()->Context3d());
+
+    // Expect that the transfer buffer memory used is equal to the
+    // MaxTransferBufferUsageBytes value set in CreateOutputSurface.
+    EXPECT_EQ(1024 * 1024u,
+              context->GetTransferBufferMemoryUsedBytes());
+    EndTest();
+  }
+
+  virtual void AfterTest() OVERRIDE {}
+
+ private:
+  scoped_refptr<TestContextProvider> context_provider_;
+  FakeContentLayerClient client_;
+};
+
+// Impl-side painting is a multi-threaded compositor feature.
+MULTI_THREAD_TEST_F(LayerTreeHostTestMaxTransferBufferUsageBytes);
 
 }  // namespace
 

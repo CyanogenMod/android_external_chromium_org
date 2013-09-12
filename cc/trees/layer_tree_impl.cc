@@ -9,8 +9,8 @@
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
-#include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/render_surface_impl.h"
+#include "cc/layers/scrollbar_layer_impl_base.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "ui/gfx/size_conversions.h"
@@ -207,7 +207,7 @@ void LayerTreeImpl::SetPageScaleDelta(float delta) {
 }
 
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
-  return gfx::ScaleSize(layer_tree_host_impl_->VisibleViewportSize(),
+  return gfx::ScaleSize(layer_tree_host_impl_->UnscaledScrollableViewportSize(),
                         1.0f / total_page_scale_factor());
 }
 
@@ -257,6 +257,9 @@ void LayerTreeImpl::ApplyScrollDeltasSinceBeginFrame() {
       root_layer(), base::Bind(&ApplyScrollDeltasSinceBeginFrameTo));
 }
 
+// TODO(wjmaclean) This needs to go away, and be replaced with a single core
+// of login that works for both scrollbar layer types. This is already planned
+// as part of the larger pinch-zoom re-factoring viewport.
 void LayerTreeImpl::UpdateSolidColorScrollbars() {
   DCHECK(settings().solid_color_scrollbars);
 
@@ -269,15 +272,16 @@ void LayerTreeImpl::UpdateSolidColorScrollbars() {
       ScrollableViewportSize());
   float vertical_adjust = 0.0f;
   if (RootContainerLayer())
-    vertical_adjust = layer_tree_host_impl_->VisibleViewportSize().height() -
-                      RootContainerLayer()->bounds().height();
-  if (PaintedScrollbarLayerImpl* horiz =
+    vertical_adjust =
+        layer_tree_host_impl_->UnscaledScrollableViewportSize().height() -
+        RootContainerLayer()->bounds().height();
+  if (ScrollbarLayerImplBase* horiz =
           root_scroll->horizontal_scrollbar_layer()) {
     horiz->SetVerticalAdjust(vertical_adjust);
     horiz->SetVisibleToTotalLengthRatio(
         scrollable_viewport.width() / ScrollableSize().width());
   }
-  if (PaintedScrollbarLayerImpl* vertical =
+  if (ScrollbarLayerImplBase* vertical =
           root_scroll->vertical_scrollbar_layer()) {
     vertical->SetVerticalAdjust(vertical_adjust);
     vertical->SetVisibleToTotalLengthRatio(
@@ -314,8 +318,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  source_frame_number_);
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
-        layer_tree_host_impl_->DeviceViewport().size(),
-        layer_tree_host_impl_->DeviceTransform(),
+        DrawViewportSize(),
+        layer_tree_host_impl_->DrawTransform(),
         device_scale_factor(),
         total_page_scale_factor(),
         root_scroll_layer_ ? root_scroll_layer_->parent() : NULL,
@@ -451,6 +455,10 @@ MemoryHistory* LayerTreeImpl::memory_history() const {
   return layer_tree_host_impl_->memory_history();
 }
 
+bool LayerTreeImpl::device_viewport_valid_for_tile_management() const {
+  return layer_tree_host_impl_->device_viewport_valid_for_tile_management();
+}
+
 bool LayerTreeImpl::IsActiveTree() const {
   return layer_tree_host_impl_->active_tree() == this;
 }
@@ -501,6 +509,14 @@ void LayerTreeImpl::SetNeedsCommit() {
   layer_tree_host_impl_->SetNeedsCommit();
 }
 
+gfx::Size LayerTreeImpl::DrawViewportSize() const {
+  return layer_tree_host_impl_->DrawViewportSize();
+}
+
+void LayerTreeImpl::StartScrollbarAnimation() {
+  layer_tree_host_impl_->StartScrollbarAnimation();
+}
+
 void LayerTreeImpl::SetNeedsRedraw() {
   layer_tree_host_impl_->SetNeedsRedraw();
 }
@@ -511,10 +527,6 @@ const LayerTreeDebugState& LayerTreeImpl::debug_state() const {
 
 float LayerTreeImpl::device_scale_factor() const {
   return layer_tree_host_impl_->device_scale_factor();
-}
-
-gfx::Size LayerTreeImpl::device_viewport_size() const {
-  return layer_tree_host_impl_->device_viewport_size();
 }
 
 DebugRectHistory* LayerTreeImpl::debug_rect_history() const {
@@ -609,18 +621,23 @@ void LayerTreeImpl::ProcessUIResourceRequestQueue() {
     UIResourceRequest req = ui_resource_request_queue_.front();
     ui_resource_request_queue_.pop_front();
 
-    switch (req.type) {
+    switch (req.GetType()) {
       case UIResourceRequest::UIResourceCreate:
-        layer_tree_host_impl_->CreateUIResource(req.id, req.bitmap);
+        layer_tree_host_impl_->CreateUIResource(req.GetId(), req.GetBitmap());
         break;
       case UIResourceRequest::UIResourceDelete:
-        layer_tree_host_impl_->DeleteUIResource(req.id);
+        layer_tree_host_impl_->DeleteUIResource(req.GetId());
         break;
       case UIResourceRequest::UIResourceInvalidRequest:
         NOTREACHED();
         break;
     }
   }
+
+  // If all UI resource evictions were not recreated by processing this queue,
+  // then another commit is required.
+  if (layer_tree_host_impl_->EvictedUIResourcesExist())
+    layer_tree_host_impl_->SetNeedsCommit();
 }
 
 void LayerTreeImpl::AddLayerWithCopyOutputRequest(LayerImpl* layer) {

@@ -43,6 +43,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit
 
 LOCAL_SRC_FILES := \
+	content/public/browser/android/synchronous_compositor.cc \
 	content/public/browser/browser_child_process_host_delegate.cc \
 	content/public/browser/browser_child_process_host_iterator.cc \
 	content/public/browser/browser_child_process_observer.cc \
@@ -81,6 +82,7 @@ LOCAL_SRC_FILES := \
 	content/browser/accessibility/browser_accessibility_manager_android.cc \
 	content/browser/accessibility/browser_accessibility_state_impl.cc \
 	content/browser/android/browser_jni_registrar.cc \
+	content/browser/android/browser_demuxer_android.cc \
 	content/browser/android/browser_media_player_manager.cc \
 	content/browser/android/browser_startup_controller.cc \
 	content/browser/android/child_process_launcher_android.cc \
@@ -111,7 +113,6 @@ LOCAL_SRC_FILES := \
 	content/browser/appcache/chrome_appcache_service.cc \
 	content/browser/browser_child_process_host_impl.cc \
 	content/browser/browser_context.cc \
-	content/browser/browser_ipc_logging.cc \
 	content/browser/browser_main.cc \
 	content/browser/browser_main_loop.cc \
 	content/browser/browser_main_runner.cc \
@@ -122,6 +123,7 @@ LOCAL_SRC_FILES := \
 	content/browser/browser_plugin/browser_plugin_guest_manager.cc \
 	content/browser/browser_plugin/browser_plugin_message_filter.cc \
 	content/browser/browser_process_sub_thread.cc \
+	content/browser/browser_shutdown_profile_dumper.cc \
 	content/browser/browser_thread_impl.cc \
 	content/browser/browser_url_handler_impl.cc \
 	content/browser/browsing_instance.cc \
@@ -199,7 +201,6 @@ LOCAL_SRC_FILES := \
 	content/browser/fileapi/browser_file_system_helper.cc \
 	content/browser/fileapi/chrome_blob_storage_context.cc \
 	content/browser/fileapi/fileapi_message_filter.cc \
-	content/browser/font_list_async.cc \
 	content/browser/gamepad/gamepad_provider.cc \
 	content/browser/gamepad/gamepad_service.cc \
 	content/browser/geolocation/empty_wifi_data_provider.cc \
@@ -211,7 +212,6 @@ LOCAL_SRC_FILES := \
 	content/browser/geolocation/location_provider_base.cc \
 	content/browser/geolocation/wifi_data.cc \
 	content/browser/geolocation/wifi_data_provider.cc \
-	content/browser/geolocation/wifi_data_provider_common.cc \
 	content/browser/gpu/browser_gpu_channel_host_factory.cc \
 	content/browser/gpu/compositor_util.cc \
 	content/browser/gpu/gpu_data_manager_impl.cc \
@@ -303,9 +303,11 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
+	content/browser/renderer_host/input/browser_input_event.cc \
+	content/browser/renderer_host/input/buffered_input_router.cc \
 	content/browser/renderer_host/input/gesture_event_filter.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
-	content/browser/renderer_host/input/tap_suppression_controller.cc \
+	content/browser/renderer_host/input/input_queue.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/touchscreen_tap_suppression_controller_stub.cc \
@@ -341,7 +343,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/media/web_contents_tracker.cc \
 	content/browser/renderer_host/media/web_contents_video_capture_device.cc \
 	content/browser/renderer_host/memory_benchmark_message_filter.cc \
-	content/browser/renderer_host/native_web_keyboard_event.cc \
 	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/overscroll_configuration.cc \
 	content/browser/renderer_host/overscroll_controller.cc \
@@ -389,6 +390,7 @@ LOCAL_SRC_FILES := \
 	content/browser/tracing/trace_controller_impl.cc \
 	content/browser/tracing/trace_message_filter.cc \
 	content/browser/tracing/trace_subscriber_stdio.cc \
+	content/browser/tracing/tracing_controller_impl.cc \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
 	content/browser/web_contents/debug_urls.cc \
@@ -456,6 +458,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -468,6 +471,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
@@ -585,6 +589,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -597,6 +602,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
@@ -696,7 +702,9 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -715,7 +723,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--icf=safe \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

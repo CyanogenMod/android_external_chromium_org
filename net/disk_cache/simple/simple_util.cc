@@ -21,6 +21,25 @@ namespace {
 // Size of the uint64 hash_key number in Hex format in a string.
 const size_t kEntryHashKeyAsHexStringSize = 2 * sizeof(uint64);
 
+// TODO(clamy, gavinp): this should go in base
+bool GetNanoSecsFromStat(const struct stat& st,
+                         time_t* out_sec,
+                         long* out_nsec) {
+#if defined(OS_ANDROID)
+  *out_sec = st.st_mtime;
+  *out_nsec = st.st_mtime_nsec;
+#elif defined(OS_LINUX)
+  *out_sec = st.st_mtim.tv_sec;
+  *out_nsec = st.st_mtim.tv_nsec;
+#elif defined(OS_MACOSX) || defined(OS_IOS) || defined(OS_BSD)
+  *out_sec = st.st_mtimespec.tv_sec;
+  *out_nsec = st.st_mtimespec.tv_nsec;
+#else
+  return false;
+#endif
+  return true;
+}
+
 }  // namespace
 
 namespace disk_cache {
@@ -85,6 +104,30 @@ int64 GetFileOffsetFromKeyAndDataOffset(const std::string& key,
   return headers_size + data_offset;
 }
 
-}  // namespace simple_util
+// TODO(clamy, gavinp): this should go in base
+bool GetMTime(const base::FilePath& path, base::Time* out_mtime) {
+  DCHECK(out_mtime);
+#if defined(OS_POSIX)
+  base::ThreadRestrictions::AssertIOAllowed();
+  struct stat file_stat;
+  if (stat(path.value().c_str(), &file_stat) != 0)
+    return false;
+  time_t sec;
+  long nsec;
+  if (GetNanoSecsFromStat(file_stat, &sec, &nsec)) {
+    int64 usec = (nsec / base::Time::kNanosecondsPerMicrosecond);
+    *out_mtime = base::Time::FromTimeT(sec)
+        + base::TimeDelta::FromMicroseconds(usec);
+    return true;
+  }
+#endif
+  base::PlatformFileInfo file_info;
+  if (!file_util::GetFileInfo(path, &file_info))
+    return false;
+  *out_mtime = file_info.last_modified;
+  return true;
+}
+
+}  // namespace simple_backend
 
 }  // namespace disk_cache

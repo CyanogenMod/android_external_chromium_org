@@ -289,11 +289,11 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewGuest::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   RenderWidgetHostViewPort::FromRWHV(
       guest_->GetEmbedderRenderWidgetHostView())->
-          TextInputTypeChanged(type, can_compose_inline, input_mode);
+          TextInputTypeChanged(type, input_mode, can_compose_inline);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -302,7 +302,7 @@ void RenderWidgetHostViewGuest::ImeCancelComposition() {
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
 }
 #endif
@@ -317,7 +317,7 @@ void RenderWidgetHostViewGuest::DidUpdateBackingStore(
 
 void RenderWidgetHostViewGuest::SelectionChanged(const string16& text,
                                                  size_t offset,
-                                                 const ui::Range& range) {
+                                                 const gfx::Range& range) {
   platform_view_->SelectionChanged(text, offset, range);
 }
 
@@ -375,14 +375,6 @@ void RenderWidgetHostViewGuest::SetClickthroughRegion(SkRegion* region) {
 }
 #endif
 
-#if defined(OS_WIN) && defined(USE_AURA)
-gfx::NativeViewAccessible
-RenderWidgetHostViewGuest::AccessibleObjectFromChildId(long child_id) {
-  NOTIMPLEMENTED();
-  return NULL;
-}
-#endif
-
 void RenderWidgetHostViewGuest::SetHasHorizontalScrollbar(
     bool has_horizontal_scrollbar) {
   platform_view_->SetHasHorizontalScrollbar(has_horizontal_scrollbar);
@@ -412,8 +404,8 @@ void RenderWidgetHostViewGuest::GetScreenInfo(WebKit::WebScreenInfo* results) {
   embedder_view->GetScreenInfo(results);
 }
 
-void RenderWidgetHostViewGuest::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewGuest::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
 }
 
 #if defined(OS_MACOSX)

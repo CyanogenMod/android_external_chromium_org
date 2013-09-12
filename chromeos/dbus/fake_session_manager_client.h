@@ -30,13 +30,11 @@ class FakeSessionManagerClient : public SessionManagerClient {
   virtual void EmitLoginPromptReady() OVERRIDE;
   virtual void EmitLoginPromptVisible() OVERRIDE;
   virtual void RestartJob(int pid, const std::string& command_line) OVERRIDE;
-  virtual void RestartEntd() OVERRIDE;
   virtual void StartSession(const std::string& user_email) OVERRIDE;
   virtual void StopSession() OVERRIDE;
   virtual void StartDeviceWipe() OVERRIDE;
   virtual void RequestLockScreen() OVERRIDE;
   virtual void NotifyLockScreenShown() OVERRIDE;
-  virtual void RequestUnlockScreen() OVERRIDE;
   virtual void NotifyLockScreenDismissed() OVERRIDE;
   virtual void RetrieveActiveSessions(
       const ActiveSessionsCallback& callback) OVERRIDE;
@@ -79,17 +77,21 @@ class FakeSessionManagerClient : public SessionManagerClient {
   void OnPropertyChangeComplete(bool success);
 
   // Returns how many times EmitLoginPromptReady() is called.
-  int emit_login_prompt_ready_call_count() {
+  int emit_login_prompt_ready_call_count() const {
     return emit_login_prompt_ready_call_count_;
   }
 
+  int start_device_wipe_call_count() const {
+    return start_device_wipe_call_count_;
+  }
+
   // Returns how many times LockScreenShown() was called.
-  int notify_lock_screen_shown_call_count() {
+  int notify_lock_screen_shown_call_count() const {
     return notify_lock_screen_shown_call_count_;
   }
 
   // Returns how many times LockScreenDismissed() was called.
-  int notify_lock_screen_dismissed_call_count() {
+  int notify_lock_screen_dismissed_call_count() const {
     return notify_lock_screen_dismissed_call_count_;
   }
 
@@ -101,6 +103,7 @@ class FakeSessionManagerClient : public SessionManagerClient {
   SessionManagerClient::ActiveSessionsMap user_sessions_;
 
   int emit_login_prompt_ready_call_count_;
+  int start_device_wipe_call_count_;
   int notify_lock_screen_shown_call_count_;
   int notify_lock_screen_dismissed_call_count_;
 

@@ -12,6 +12,7 @@
 #include "content/test/content_browser_test.h"
 #include "content/test/content_browser_test_utils.h"
 #include "grit/content_resources.h"
+#include "grit/webui_resources.h"
 #include "net/base/net_util.h"
 
 namespace content {
@@ -32,7 +33,8 @@ class WebUIResourceBrowserTest : public ContentBrowserTest {
   }
 
   void RunMediaInternalsTest(const base::FilePath::CharType* file) {
-    AddLibrary(IDR_MEDIA_INTERNALS_NEW_JS);
+    AddLibrary(IDR_WEBUI_JS_CR);
+    AddLibrary(IDR_MEDIA_INTERNALS_JS);
 
     base::FilePath path;
     PathService::Get(DIR_TEST_DATA, &path);
@@ -64,8 +66,8 @@ IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, MediaInternals_PlayerInfo) {
   RunMediaInternalsTest(FILE_PATH_LITERAL("player_info_test.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, MediaInternals_PlayerManager) {
-  RunMediaInternalsTest(FILE_PATH_LITERAL("player_manager_test.html"));
+IN_PROC_BROWSER_TEST_F(WebUIResourceBrowserTest, MediaInternals_Manager) {
+  RunMediaInternalsTest(FILE_PATH_LITERAL("manager_test.html"));
 }
 
 }  // namespace content

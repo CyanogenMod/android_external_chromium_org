@@ -12,7 +12,6 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/cros/cert_library.h"
 #include "chrome/browser/chromeos/login/authentication_notification_details.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/user.h"
@@ -299,6 +298,7 @@ void ParallelAuthenticator::AuthenticateToUnlock(
       new AuthAttemptState(
           gaia::CanonicalizeEmail(user_context.username),
           HashPassword(user_context.password)));
+  remove_user_data_on_failure_ = false;
   check_key_attempted_ = true;
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -318,6 +318,7 @@ void ParallelAuthenticator::LoginAsLocallyManagedUser(
                            "",   // login_captcha
                            User::USER_TYPE_LOCALLY_MANAGED,
                            false));
+  remove_user_data_on_failure_ = false;
   Mount(current_state_.get(),
         scoped_refptr<ParallelAuthenticator>(this),
         cryptohome::MOUNT_FLAGS_NONE);
@@ -336,6 +337,7 @@ void ParallelAuthenticator::LoginRetailMode() {
         std::string(),  // login_captcha
         User::USER_TYPE_RETAIL_MODE,
         false));
+  remove_user_data_on_failure_ = false;
   ephemeral_mount_attempted_ = true;
   MountGuest(current_state_.get(),
              scoped_refptr<ParallelAuthenticator>(this));
@@ -352,6 +354,7 @@ void ParallelAuthenticator::LoginOffTheRecord() {
       std::string(),  // login_captcha
       User::USER_TYPE_GUEST,
       false));
+  remove_user_data_on_failure_ = false;
   ephemeral_mount_attempted_ = true;
   MountGuest(current_state_.get(),
              scoped_refptr<ParallelAuthenticator>(this));
@@ -368,6 +371,7 @@ void ParallelAuthenticator::LoginAsPublicAccount(const std::string& username) {
       std::string(),  // login_captcha
       User::USER_TYPE_PUBLIC_ACCOUNT,
       false));
+  remove_user_data_on_failure_ = false;
   ephemeral_mount_attempted_ = true;
   Mount(current_state_.get(),
         scoped_refptr<ParallelAuthenticator>(this),
@@ -519,10 +523,11 @@ bool ParallelAuthenticator::VerifyOwner() {
 }
 
 void ParallelAuthenticator::OnOwnershipChecked(
-    DeviceSettingsService::OwnershipStatus status,
-    bool is_owner) {
+    DeviceSettingsService::OwnershipStatus status) {
   // Now we can check if this user is the owner.
-  user_can_login_ = is_owner;
+  // TODO(tbarzic): This is broken. At this point, DeviceSettingsService will
+  // never have private key loaded (http://crbug.com/285450).
+  user_can_login_ = DeviceSettingsService::Get()->HasPrivateOwnerKey();
   owner_is_verified_ = true;
   Resolve();
 }

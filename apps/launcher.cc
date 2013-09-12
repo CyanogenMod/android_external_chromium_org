@@ -31,9 +31,9 @@
 #include "content/public/browser/web_contents.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -194,14 +194,14 @@ class PlatformAppPathLauncher
   void GetMimeTypeAndLaunchForDriveFile() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    drive::DriveIntegrationService* service =
-        drive::DriveIntegrationServiceFactory::FindForProfile(profile_);
-    if (!service) {
+    drive::FileSystemInterface* file_system =
+        drive::util::GetFileSystemByProfile(profile_);
+    if (!file_system) {
       LaunchWithNoLaunchData();
       return;
     }
 
-    service->file_system()->GetFileByPath(
+    file_system->GetFileByPath(
         drive::util::ExtractDrivePath(file_path_),
         base::Bind(&PlatformAppPathLauncher::OnGotDriveFile, this));
   }
@@ -385,6 +385,15 @@ void RestartPlatformApp(Profile* profile, const Extension* extension) {
 
   if (listening_to_launch && had_windows)
     LaunchPlatformAppWithNoData(profile, extension);
+}
+
+void LaunchPlatformAppWithUrl(Profile* profile,
+                              const Extension* extension,
+                              const std::string& handler_id,
+                              const GURL& url,
+                              const GURL& referrer_url) {
+  extensions::AppEventRouter::DispatchOnLaunchedEventWithUrl(
+      profile, extension, handler_id, url, referrer_url);
 }
 
 }  // namespace apps

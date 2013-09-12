@@ -33,6 +33,7 @@
 #include "cc/resources/layer_quad.h"
 #include "cc/resources/scoped_resource.h"
 #include "cc/resources/sync_point_helper.h"
+#include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/trees/damage_tracker.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -126,13 +127,20 @@ struct GLRenderer::PendingAsyncReadPixels {
   DISALLOW_COPY_AND_ASSIGN(PendingAsyncReadPixels);
 };
 
-scoped_ptr<GLRenderer> GLRenderer::Create(RendererClient* client,
-                                          OutputSurface* output_surface,
-                                          ResourceProvider* resource_provider,
-                                          int highp_threshold_min,
-                                          bool use_skia_gpu_backend) {
-  scoped_ptr<GLRenderer> renderer(new GLRenderer(
-      client, output_surface, resource_provider, highp_threshold_min));
+scoped_ptr<GLRenderer> GLRenderer::Create(
+    RendererClient* client,
+    const LayerTreeSettings* settings,
+    OutputSurface* output_surface,
+    ResourceProvider* resource_provider,
+    TextureMailboxDeleter* texture_mailbox_deleter,
+    int highp_threshold_min,
+    bool use_skia_gpu_backend) {
+  scoped_ptr<GLRenderer> renderer(new GLRenderer(client,
+                                                 settings,
+                                                 output_surface,
+                                                 resource_provider,
+                                                 texture_mailbox_deleter,
+                                                 highp_threshold_min));
   if (!renderer->Initialize())
     return scoped_ptr<GLRenderer>();
   if (use_skia_gpu_backend) {
@@ -145,13 +153,16 @@ scoped_ptr<GLRenderer> GLRenderer::Create(RendererClient* client,
 }
 
 GLRenderer::GLRenderer(RendererClient* client,
+                       const LayerTreeSettings* settings,
                        OutputSurface* output_surface,
                        ResourceProvider* resource_provider,
+                       TextureMailboxDeleter* texture_mailbox_deleter,
                        int highp_threshold_min)
-    : DirectRenderer(client, output_surface, resource_provider),
+    : DirectRenderer(client, settings, output_surface, resource_provider),
       offscreen_framebuffer_id_(0),
       shared_geometry_quad_(gfx::RectF(-0.5f, -0.5f, 1.0f, 1.0f)),
       context_(output_surface->context_provider()->Context3d()),
+      texture_mailbox_deleter_(texture_mailbox_deleter),
       is_backbuffer_discarded_(false),
       discard_backbuffer_when_not_visible_(false),
       is_using_bind_uniform_(false),
@@ -170,18 +181,15 @@ bool GLRenderer::Initialize() {
   if (!context_->makeContextCurrent())
     return false;
 
-  std::string unique_context_name = base::StringPrintf(
-      "%s-%p",
-      Settings().compositor_name.c_str(),
-      context_);
+  std::string unique_context_name =
+      base::StringPrintf("%s-%p", settings_->compositor_name.c_str(), context_);
   context_->pushGroupMarkerEXT(unique_context_name.c_str());
 
   ContextProvider::Capabilities context_caps =
     output_surface_->context_provider()->ContextCapabilities();
 
   capabilities_.using_partial_swap =
-      Settings().partial_swap_enabled &&
-      context_caps.post_sub_buffer;
+      settings_->partial_swap_enabled && context_caps.post_sub_buffer;
 
   capabilities_.using_set_visibility = context_caps.set_visibility;
 
@@ -202,7 +210,10 @@ bool GLRenderer::Initialize() {
   capabilities_.using_offscreen_context3d = true;
 
   capabilities_.using_map_image =
-      Settings().use_map_image && context_caps.map_image;
+      settings_->use_map_image && context_caps.map_image;
+
+  capabilities_.using_discard_framebuffer =
+      context_caps.discard_framebuffer;
 
   is_using_bind_uniform_ = context_caps.bind_uniform_location;
 
@@ -287,10 +298,20 @@ void GLRenderer::ViewportChanged() {
 void GLRenderer::ClearFramebuffer(DrawingFrame* frame) {
   // It's unsafe to clear when we have a stencil test because glClear ignores
   // stencil.
-  if (client_->ExternalStencilTestEnabled() &&
+  if (output_surface_->HasExternalStencilTest() &&
       frame->current_render_pass == frame->root_render_pass) {
     DCHECK(!frame->current_render_pass->has_transparent_background);
     return;
+  }
+
+  if (capabilities_.using_discard_framebuffer) {
+    bool using_default_framebuffer =
+        !current_framebuffer_lock_ &&
+        output_surface_->capabilities().uses_default_gl_framebuffer;
+    GLenum attachments[] = {static_cast<GLenum>(
+        using_default_framebuffer ? GL_COLOR_EXT : GL_COLOR_ATTACHMENT0_EXT)};
+    context_->discardFramebufferEXT(
+        GL_FRAMEBUFFER, arraysize(attachments), attachments);
   }
 
   // On DEBUG builds, opaque render passes are cleared to blue to easily see
@@ -1131,11 +1152,12 @@ static void SolidColorUniformLocation(T program,
   uniforms->color_location = program->fragment_shader().color_location();
 }
 
+// static
 bool GLRenderer::SetupQuadForAntialiasing(
     const gfx::Transform& device_transform,
     const DrawQuad* quad,
     gfx::QuadF* local_quad,
-    float edge[24]) const {
+    float edge[24]) {
   gfx::Rect tile_rect = quad->visible_rect;
 
   bool clipped = false;
@@ -1146,11 +1168,8 @@ bool GLRenderer::SetupQuadForAntialiasing(
   bool is_nearest_rect_within_epsilon = is_axis_aligned_in_target &&
       gfx::IsNearestRectWithinDistance(device_layer_quad.BoundingBox(),
                                        kAntiAliasingEpsilon);
-
-  bool use_aa = Settings().allow_antialiasing &&
-                !clipped &&  // code can't handle clipped quads
-                !is_nearest_rect_within_epsilon &&
-                quad->IsEdge();
+  // AAing clipped quads is not supported by the code yet.
+  bool use_aa = !clipped && !is_nearest_rect_within_epsilon && quad->IsEdge();
   if (!use_aa)
     return false;
 
@@ -1239,8 +1258,9 @@ void GLRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
 
   gfx::QuadF local_quad = gfx::QuadF(gfx::RectF(tile_rect));
   float edge[24];
-  bool use_aa = !quad->force_anti_aliasing_off && SetupQuadForAntialiasing(
-      device_transform, quad, &local_quad, edge);
+  bool use_aa =
+      settings_->allow_antialiasing && !quad->force_anti_aliasing_off &&
+      SetupQuadForAntialiasing(device_transform, quad, &local_quad, edge);
 
   SolidColorProgramUniforms uniforms;
   if (use_aa)
@@ -1378,7 +1398,7 @@ void GLRenderer::DrawContentQuad(const DrawingFrame* frame,
 
   gfx::QuadF local_quad = gfx::QuadF(gfx::RectF(tile_rect));
   float edge[24];
-  bool use_aa = SetupQuadForAntialiasing(
+  bool use_aa = settings_->allow_antialiasing && SetupQuadForAntialiasing(
       device_transform, quad, &local_quad, edge);
 
   TileProgramUniforms uniforms;
@@ -1695,6 +1715,7 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
         quad->texture_size,
         GL_RGBA,
         GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+        GL_CLAMP_TO_EDGE,
         ResourceProvider::TextureUsageAny);
   }
 
@@ -2087,7 +2108,7 @@ void GLRenderer::SwapBuffers() {
   compositor_frame.metadata = client_->MakeCompositorFrameMetadata();
   compositor_frame.gl_frame_data = make_scoped_ptr(new GLFrameData);
   compositor_frame.gl_frame_data->size = output_surface_->SurfaceSize();
-  if (capabilities_.using_partial_swap && client_->AllowPartialSwap()) {
+  if (capabilities_.using_partial_swap) {
     // If supported, we can save significant bandwidth by only swapping the
     // damaged/scissored region (clamped to the viewport)
     swap_buffer_rect_.Intersect(client_->DeviceViewport());
@@ -2170,31 +2191,6 @@ void GLRenderer::GetFramebufferPixels(void* pixels, gfx::Rect rect) {
                          AsyncGetFramebufferPixelsCleanupCallback());
 }
 
-static void DeleteTextureReleaseCallbackOnImplThread(
-    const scoped_refptr<ContextProvider>& context_provider,
-    unsigned texture_id,
-    unsigned sync_point,
-    bool lost_resource) {
-  if (sync_point)
-    context_provider->Context3d()->waitSyncPoint(sync_point);
-  context_provider->Context3d()->deleteTexture(texture_id);
-}
-
-static void DeleteTextureReleaseCallback(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    const scoped_refptr<ContextProvider>& context_provider,
-    unsigned texture_id,
-    unsigned sync_point,
-    bool lost_resource) {
-  task_runner->PostTask(
-      FROM_HERE,
-      base::Bind(&DeleteTextureReleaseCallbackOnImplThread,
-                 context_provider,
-                 texture_id,
-                 sync_point,
-                 lost_resource));
-}
-
 void GLRenderer::GetFramebufferPixelsAsync(
     gfx::Rect rect, scoped_ptr<CopyOutputRequest> request) {
   DCHECK(!request->IsEmpty());
@@ -2238,10 +2234,8 @@ void GLRenderer::GetFramebufferPixelsAsync(
     sync_point = context_->insertSyncPoint();
     scoped_ptr<TextureMailbox> texture_mailbox = make_scoped_ptr(
         new TextureMailbox(mailbox,
-                           base::Bind(&DeleteTextureReleaseCallback,
-                                      base::MessageLoopProxy::current(),
-                                      output_surface_->context_provider(),
-                                      texture_id),
+                           texture_mailbox_deleter_->GetReleaseCallback(
+                               output_surface_->context_provider(), texture_id),
                            GL_TEXTURE_2D,
                            sync_point));
     request->SendTextureResult(window_rect.size(), texture_mailbox.Pass());
@@ -2500,7 +2494,7 @@ void GLRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
   current_framebuffer_lock_.reset();
   output_surface_->BindFramebuffer();
 
-  if (client_->ExternalStencilTestEnabled()) {
+  if (output_surface_->HasExternalStencilTest()) {
     SetStencilEnabled(true);
     GLC(context_, context_->stencilFunc(GL_EQUAL, 1, 1));
   } else {
@@ -3148,11 +3142,9 @@ void GLRenderer::LazyLabelOffscreenContext(
     return;
   offscreen_context_labelled_ = true;
   std::string unique_context_name = base::StringPrintf(
-      "%s-Offscreen-%p",
-      Settings().compositor_name.c_str(),
-      context_);
-  offscreen_context_provider->Context3d()->pushGroupMarkerEXT(
-      unique_context_name.c_str());
+      "%s-Offscreen-%p", settings_->compositor_name.c_str(), context_);
+  offscreen_context_provider->Context3d()
+      ->pushGroupMarkerEXT(unique_context_name.c_str());
 }
 
 

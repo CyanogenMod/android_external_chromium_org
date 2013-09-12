@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/api/developer_private/developer_private_api_factory.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -31,7 +32,7 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
@@ -653,7 +654,7 @@ bool DeveloperPrivateEnableFunction::RunImpl() {
   if (!extension ||
       !management_policy->UserMayModifySettings(extension, NULL)) {
     LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable "
-               "was made. Extension id: " << extension->id();
+               "was made. Extension id: " << extension_id.c_str();
     return false;
   }
 
@@ -733,7 +734,7 @@ bool DeveloperPrivateInspectFunction::RunImpl() {
         options.extension_id);
     DCHECK(extension);
     // Wakes up the background page and  opens the inspect window.
-    service->InspectBackgroundPage(extension);
+    devtools_util::InspectBackgroundPage(extension, profile());
     return false;
   }
 
@@ -849,10 +850,9 @@ bool DeveloperPrivatePackDirectoryFunction::RunImpl() {
   key_path_str_ = params->private_key_path;
 
   base::FilePath root_directory =
-      base::FilePath::FromWStringHack(UTF8ToWide(item_path_str_));
+      base::FilePath::FromUTF8Unsafe(item_path_str_);
 
-  base::FilePath key_file =
-      base::FilePath::FromWStringHack(UTF8ToWide(key_path_str_));
+  base::FilePath key_file = base::FilePath::FromUTF8Unsafe(key_path_str_);
 
   developer::PackDirectoryResponse response;
   if (root_directory.empty()) {
@@ -1146,8 +1146,7 @@ bool DeveloperPrivateChoosePathFunction::RunImpl() {
 
 void DeveloperPrivateChoosePathFunction::FileSelected(
     const base::FilePath& path) {
-  SetResult(new base::StringValue(
-      UTF16ToUTF8(path.LossyDisplayName())));
+  SetResult(new base::StringValue(UTF16ToUTF8(path.LossyDisplayName())));
   SendResponse(true);
   Release();
 }

@@ -20,8 +20,7 @@ class TestAccountChooserModel : public AccountChooserModel {
   TestAccountChooserModel(AccountChooserModelDelegate* delegate,
                           PrefService* prefs,
                           const AutofillMetrics& metric_logger)
-      : AccountChooserModel(delegate, prefs, metric_logger,
-                            DIALOG_TYPE_REQUEST_AUTOCOMPLETE) {}
+      : AccountChooserModel(delegate, prefs, metric_logger) {}
   virtual ~TestAccountChooserModel() {}
 
   using AccountChooserModel::kActiveWalletItemId;
@@ -100,7 +99,7 @@ TEST_F(AccountChooserModelTest, HandlesError) {
   ASSERT_TRUE(model()->IsCommandIdEnabled(
       TestAccountChooserModel::kActiveWalletItemId));
 
-  model()->SetHadWalletError(ASCIIToUTF16("Error"));
+  model()->SetHadWalletError();
   EXPECT_FALSE(model()->WalletIsSelected());
   EXPECT_FALSE(model()->IsCommandIdEnabled(
       TestAccountChooserModel::kActiveWalletItemId));

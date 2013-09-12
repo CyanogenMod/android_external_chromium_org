@@ -20,6 +20,15 @@ class Test(object):
   options = {}
   enabled = True
 
+  @classmethod
+  def GetName(cls):
+    name = cls.__module__.split('.')[-1]
+    if hasattr(cls, 'tag'):
+      name += '.' + cls.tag
+    if hasattr(cls, 'page_set'):
+      name += '.' + os.path.basename(os.path.splitext(cls.page_set)[0])
+    return name
+
   def Run(self, options):
     """Run this test with the given options."""
     assert hasattr(self, 'test'), 'This test has no "test" attribute.'
@@ -76,3 +85,8 @@ class Test(object):
   @staticmethod
   def AddCommandLineOptions(parser):
     page_runner.AddCommandLineOptions(parser)
+
+  @staticmethod
+  def AddTestCommandLineOptions(parser):
+    """Override to accept custom command line options."""
+    pass

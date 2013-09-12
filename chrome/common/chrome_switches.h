@@ -98,6 +98,7 @@ extern const char kDisableComponentUpdate[];
 extern const char kDisableCRLSets[];
 extern const char kDisableCustomJumpList[];
 extern const char kDisableDefaultApps[];
+extern const char kDisableDeviceDiscovery[];
 extern const char kDisableDhcpWpad[];
 extern const char kDisableDnsProbes[];
 extern const char kDisableExtensionsFileAccessCheck[];
@@ -146,6 +147,7 @@ extern const char kDisableSyncThemes[];
 extern const char kDisableSyncTypedUrls[];
 extern const char kDisableTranslate[];
 extern const char kDisableTLSChannelID[];
+extern const char kDisableUserMediaSecurity[];
 extern const char kDisableWebResources[];
 extern const char kDisableZeroBrowsersOpenForTests[];
 extern const char kDiskCacheDir[];
@@ -165,7 +167,6 @@ extern const char kEnableBenchmarking[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableComponentCloudPolicy[];
 extern const char kEnableContacts[];
-extern const char kEnableDeviceDiscovery[];
 extern const char kEnableDevToolsExperiments[];
 extern const char kEnableDnsProbes[];
 extern const char kEnableExtensionActivityLogging[];
@@ -191,11 +192,11 @@ extern const char kEnableOmniboxAutoCompletionForIme[];
 extern const char kEnablePanels[];
 extern const char kEnablePasswordAutofillPublicSuffixDomainMatching[];
 extern const char kEnablePasswordGeneration[];
+extern const char kEnablePeopleSearch[];
 extern const char kEnableProfiling[];
 extern const char kEnableQuic[];
 extern const char kEnableQuicHttps[];
 extern const char kEnableQuickofficeViewing[];
-extern const char kEnableResetProfileSettings[];
 extern const char kEnableResourceContentSettings[];
 extern const char kEnableSavePasswordBubble[];
 extern const char kEnableSdch[];
@@ -390,7 +391,6 @@ extern const char kUserDataDir[];
 extern const char kValidateCrx[];
 extern const char kVariationsServerURL[];
 extern const char kVersion[];
-extern const char kVisitURLs[];
 extern const char kWhitelistedExtensionID[];
 extern const char kWindowPosition[];
 extern const char kWindowSize[];
@@ -402,13 +402,15 @@ extern const char kPluginsMetadataServerURL[];
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kEnableSpdyProxyAuth[];
+extern const char kFakeCloudPolicyType[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+extern const char kDisableNewNTP[];
 extern const char kEnableAccessibilityTabSwitcher[];
+extern const char kEnableAddToHomescreen[];
 extern const char kEnableNewNTP[];
 extern const char kEnableTranslate[];
-extern const char kFakeCloudPolicyType[];
 extern const char kTabletUI[];
 #endif
 
@@ -422,6 +424,10 @@ extern const char kEnableCrashReporterForTesting[];
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
 extern const char kPasswordStore[];
 #endif
+#endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+extern const char kMigrateDataDirForSxS[];
 #endif
 
 #if defined(OS_MACOSX)

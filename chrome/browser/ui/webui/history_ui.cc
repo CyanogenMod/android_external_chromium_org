@@ -24,6 +24,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
@@ -50,6 +51,7 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
+#include "net/base/net_util.h"
 #include "sync/protocol/history_delete_directive_specifics.pb.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
@@ -277,7 +279,8 @@ BrowsingHistoryHandler::HistoryEntry::HistoryEntry(
     BrowsingHistoryHandler::HistoryEntry::EntryType entry_type,
     const GURL& url, const string16& title, base::Time time,
     const std::string& client_id, bool is_search_result,
-    const string16& snippet, bool blocked_visit) {
+    const string16& snippet, bool blocked_visit,
+    const std::string& accept_languages) {
   this->entry_type = entry_type;
   this->url = url;
   this->title = title;
@@ -287,6 +290,7 @@ BrowsingHistoryHandler::HistoryEntry::HistoryEntry(
   this->is_search_result = is_search_result;
   this->snippet = snippet;
   this->blocked_visit = blocked_visit;
+  this->accept_languages = accept_languages;
 }
 
 BrowsingHistoryHandler::HistoryEntry::HistoryEntry()
@@ -326,6 +330,8 @@ scoped_ptr<DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
     const ProfileSyncService* sync_service) const {
   scoped_ptr<DictionaryValue> result(new DictionaryValue());
   SetUrlAndTitle(result.get());
+  result->SetString("domain",
+                    net::IDNToUnicode(url.host(), accept_languages));
   result->SetDouble("time", time.ToJsTime());
 
   // Pass the timestamps in a list.
@@ -617,6 +623,17 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const ListValue* args) {
         base::Bind(&BrowsingHistoryHandler::RemoveWebHistoryComplete,
                    base::Unretained(this)));
   }
+
+  // If the profile has activity logging enabled also clean up any URLs from
+  // the extension activity log. The extension activity log contains URLS
+  // which websites an extension has activity on so it will indirectly
+  // contain websites that a user has visited.
+  extensions::ActivityLog* activity_log =
+      extensions::ActivityLog::GetInstance(profile);
+  for (std::vector<history::ExpireHistoryArgs>::const_iterator it =
+       expire_list.begin(); it != expire_list.end(); ++it) {
+    activity_log->RemoveURLs(it->urls);
+  }
 }
 
 void BrowsingHistoryHandler::HandleClearBrowsingData(const ListValue* args) {
@@ -742,6 +759,7 @@ void BrowsingHistoryHandler::QueryComplete(
     history::QueryResults* results) {
   DCHECK_EQ(0U, query_results_.size());
   query_results_.reserve(results->size());
+  const std::string accept_languages = GetAcceptLanguages();
 
   for (size_t i = 0; i < results->size(); ++i) {
     history::URLResult const &page = (*results)[i];
@@ -755,7 +773,8 @@ void BrowsingHistoryHandler::QueryComplete(
             std::string(),
             !search_text.empty(),
             page.snippet().text(),
-            page.blocked_visit()));
+            page.blocked_visit(),
+            accept_languages));
   }
 
   results_info_value_.SetString("term", search_text);
@@ -785,6 +804,7 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
     const DictionaryValue* results_value) {
   base::TimeDelta delta = base::TimeTicks::Now() - start_time;
   UMA_HISTOGRAM_TIMES("WebHistory.ResponseTime", delta);
+  const std::string accept_languages = GetAcceptLanguages();
 
   // If the response came in too late, do nothing.
   // TODO(dubroy): Maybe show a banner, and prompt the user to reload?
@@ -852,7 +872,8 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
                 client_id,
                 !search_text.empty(),
                 string16(),
-                /* blocked_visit */ false));
+                /* blocked_visit */ false,
+                accept_languages));
       }
     }
   } else if (results_value) {
@@ -953,6 +974,11 @@ void BrowsingHistoryHandler::Observe(
   if (deletedDetails->all_history ||
       DeletionsDiffer(deletedDetails->rows, urls_to_be_deleted_))
     web_ui()->CallJavascriptFunction("historyDeleted");
+}
+
+std::string BrowsingHistoryHandler::GetAcceptLanguages() const {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  return profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -190,13 +190,11 @@ const char kSmsTestMessages[] = "sms-test-messages";
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[]              = "stub-cros-settings";
 
-// Enables usage of the new ManagedNetworkConfigurationHandler and
-// NetworkConfigurationHandler singletons.
-const char kUseNewNetworkConfigurationHandlers[] =
-    "use-new-network-configuration-handlers";
-
 // Disables user image sync.
 const char kDisableUserImageSync[] = "disable-user-image-sync";
+
+// Enables new first-run overlay UI.
+const char kEnableFirstRunUI[] = "enable-first-run-ui";
 
 }  // namespace switches
 }  // namespace chromeos

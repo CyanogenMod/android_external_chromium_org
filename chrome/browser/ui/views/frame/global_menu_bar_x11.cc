@@ -31,7 +31,7 @@
 #include "ui/base/accelerators/menu_label_accelerator_util_linux.h"
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 
 // libdbusmenu-glib types
 typedef struct _DbusmenuMenuitem DbusmenuMenuitem;
@@ -233,7 +233,9 @@ GlobalMenuBarCommand tools_menu[] = {
 };
 
 GlobalMenuBarCommand help_menu[] = {
+#if defined(GOOGLE_CHROME_BUILD)
   { IDS_FEEDBACK, IDC_FEEDBACK },
+#endif
   { IDS_HELP_PAGE , IDC_HELP_PAGE_VIA_MENU },
   { MENU_END, MENU_END }
 };
@@ -522,7 +524,7 @@ void GlobalMenuBarX11::AddHistoryItemToMenu(HistoryItem* item,
 
   if (title.empty())
     title = UTF8ToUTF16(url_string);
-  ui::ElideString(title, kMaximumMenuWidthInChars, &title);
+  gfx::ElideString(title, kMaximumMenuWidthInChars, &title);
 
   DbusmenuMenuitem* menu_item = BuildMenuItem(UTF16ToUTF8(title), tag);
   g_signal_connect(menu_item, "item-activated",

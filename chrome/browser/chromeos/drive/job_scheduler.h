@@ -91,22 +91,16 @@ class JobScheduler
   void GetChangeList(int64 start_changestamp,
                      const google_apis::GetResourceListCallback& callback);
 
-  // Adds ContinueGetResourceList operation to the queue.
-  // |callback| must not be null.
-  void ContinueGetResourceList(
-      const GURL& next_url,
-      const google_apis::GetResourceListCallback& callback);
-
   // Adds GetRemainingChangeList operation to the queue.
   // |callback| must not be null.
   void GetRemainingChangeList(
-      const std::string& page_token,
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback);
 
   // Adds GetRemainingFileList operation to the queue.
   // |callback| must not be null.
   void GetRemainingFileList(
-      const std::string& page_token,
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback);
 
   // Adds a GetResourceEntry operation to the queue.
@@ -210,6 +204,18 @@ class JobScheduler
                   const std::string& content_type,
                   const ClientContext& context,
                   const google_apis::GetResourceEntryCallback& callback);
+
+  // Adds a GetResourceListInDirectoryByWapi operation to the queue.
+  // |callback| must not be null.
+  void GetResourceListInDirectoryByWapi(
+      const std::string& directory_resource_id,
+      const google_apis::GetResourceListCallback& callback);
+
+  // Adds GetRemainingResourceList operation to the queue.
+  // |callback| must not be null.
+  void GetRemainingResourceList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback);
 
  private:
   friend class JobSchedulerTest;

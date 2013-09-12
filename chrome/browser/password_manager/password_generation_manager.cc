@@ -13,13 +13,17 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/field_types.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/password_generator.h"
 #include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/password_form.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/rect.h"
 
@@ -53,6 +57,25 @@ void PasswordGenerationManager::RegisterProfilePrefs(
       prefs::kPasswordGenerationEnabled,
       true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+}
+
+void PasswordGenerationManager::DetectAccountCreationForms(
+    const std::vector<autofill::FormStructure*>& forms) {
+  std::vector<autofill::FormData> account_creation_forms;
+  for (std::vector<autofill::FormStructure*>::const_iterator form_it =
+           forms.begin(); form_it != forms.end(); ++form_it) {
+    autofill::FormStructure* form = *form_it;
+    for (std::vector<autofill::AutofillField*>::const_iterator field_it =
+             form->begin(); field_it != form->end(); ++field_it) {
+      autofill::AutofillField* field = *field_it;
+      if (field->server_type() == autofill::ACCOUNT_CREATION_PASSWORD) {
+        account_creation_forms.push_back(form->ToFormData());
+        break;
+      }
+    }
+  }
+  SendAccountCreationFormsToRenderer(web_contents()->GetRenderViewHost(),
+                                     account_creation_forms);
 }
 
 void PasswordGenerationManager::RegisterWithSyncService() {
@@ -151,10 +174,17 @@ void PasswordGenerationManager::SendStateToRenderer(
                                                        enabled));
 }
 
+void PasswordGenerationManager::SendAccountCreationFormsToRenderer(
+    content::RenderViewHost* host,
+    const std::vector<autofill::FormData>& forms) {
+  host->Send(new AutofillMsg_AccountCreationFormsDetected(
+      host->GetRoutingID(), forms));
+}
+
 void PasswordGenerationManager::OnShowPasswordGenerationPopup(
     const gfx::Rect& bounds,
     int max_length,
-    const content::PasswordForm& form) {
+    const autofill::PasswordForm& form) {
 #if defined(OS_ANDROID)
   NOTIMPLEMENTED();
 #else

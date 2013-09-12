@@ -70,10 +70,6 @@ namespace {
 const char kSpreadsheetsScope[] = "https://spreadsheets.google.com/feeds/";
 const char kUserContentScope[] = "https://docs.googleusercontent.com/";
 
-// The resource ID for the root directory for WAPI is defined in the spec:
-// https://developers.google.com/google-apps/documents-list/
-const char kWapiRootDirectoryResourceId[] = "folder:root";
-
 // Parses the JSON value to ResourceEntry runs |callback|.
 void ParseResourceEntryAndRun(const GetResourceEntryCallback& callback,
                               GDataErrorCode error,
@@ -106,7 +102,7 @@ void ParseAboutResourceAndRun(
   scoped_ptr<AboutResource> about_resource;
   if (account_metadata) {
     about_resource = AboutResource::CreateFromAccountMetadata(
-        *account_metadata, kWapiRootDirectoryResourceId);
+        *account_metadata, util::kWapiRootDirectoryResourceId);
   }
 
   callback.Run(error, about_resource.Pass());
@@ -189,7 +185,7 @@ std::string GDataWapiService::CanonicalizeResourceId(
 }
 
 std::string GDataWapiService::GetRootResourceId() const {
-  return kWapiRootDirectoryResourceId;
+  return util::kWapiRootDirectoryResourceId;
 }
 
 // Because GData WAPI support is expected to be gone somehow soon by migration
@@ -277,43 +273,24 @@ CancelCallback GDataWapiService::GetChangeList(
                                  callback));
 }
 
-CancelCallback GDataWapiService::ContinueGetResourceList(
-    const GURL& override_url,
-    const GetResourceListCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!override_url.is_empty());
-  DCHECK(!callback.is_null());
-
-  return sender_->StartRequestWithRetry(
-      new GetResourceListRequest(sender_.get(),
-                                 url_generator_,
-                                 override_url,
-                                 0,              // start changestamp
-                                 std::string(),  // empty search query
-                                 std::string(),  // no directory resource id
-                                 callback));
-}
-
 CancelCallback GDataWapiService::GetRemainingChangeList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  // The page token for the GData WAPI is an URL.
-  return ContinueGetResourceList(GURL(page_token), callback);
+  return GetRemainingResourceList(next_link, callback);
 }
 
 CancelCallback GDataWapiService::GetRemainingFileList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  // The page token for the GData WAPI is an URL.
-  return ContinueGetResourceList(GURL(page_token), callback);
+  return GetRemainingResourceList(next_link, callback);
 }
 
 CancelCallback GDataWapiService::GetResourceEntry(
@@ -624,6 +601,29 @@ CancelCallback GDataWapiService::AuthorizeApp(
                               callback,
                               resource_id,
                               app_id));
+}
+
+CancelCallback GDataWapiService::GetResourceListInDirectoryByWapi(
+    const std::string& directory_resource_id,
+    const google_apis::GetResourceListCallback& callback) {
+  return GetResourceListInDirectory(directory_resource_id, callback);
+}
+
+CancelCallback GDataWapiService::GetRemainingResourceList(
+    const GURL& next_link,
+    const google_apis::GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!next_link.is_empty());
+  DCHECK(!callback.is_null());
+
+  return sender_->StartRequestWithRetry(
+      new GetResourceListRequest(sender_.get(),
+                                 url_generator_,
+                                 next_link,
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 bool GDataWapiService::HasAccessToken() const {

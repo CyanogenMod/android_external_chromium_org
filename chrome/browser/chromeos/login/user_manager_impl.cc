@@ -25,12 +25,12 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/cros/cert_library.h"
 #include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/remove_user_delegate.h"
 #include "chrome/browser/chromeos/login/user_image_manager_impl.h"
+#include "chrome/browser/chromeos/login/user_policy_status_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
@@ -211,6 +211,7 @@ void UserManager::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(kManagedUserManagerDisplayEmails);
 
   SessionLengthLimiter::RegisterPrefs(registry);
+  UserPolicyStatusManager::RegisterPrefs(registry);
 }
 
 UserManagerImpl::UserManagerImpl()
@@ -224,7 +225,6 @@ UserManagerImpl::UserManagerImpl()
       is_current_user_new_(false),
       is_current_user_ephemeral_regular_user_(false),
       ephemeral_users_enabled_(false),
-      merge_session_state_(MERGE_STATUS_NOT_STARTED),
       observed_sync_service_(NULL),
       user_image_manager_(new UserImageManagerImpl),
       manager_creation_time_(base::TimeTicks::Now()) {
@@ -273,6 +273,7 @@ void UserManagerImpl::Shutdown() {
   if (observed_sync_service_)
     observed_sync_service_->RemoveObserver(this);
   user_image_manager_->Shutdown();
+  user_policy_status_manager_.reset();
 }
 
 UserImageManager* UserManagerImpl::GetUserImageManager() {
@@ -288,8 +289,15 @@ UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
   UserList result;
   const UserList& users = GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_REGULAR && !(*it)->is_logged_in())
+    // Only allow users that are regular users, not signed-in, not owner
+    // and not a corp user with a policy.
+    if ((*it)->GetType() == User::USER_TYPE_REGULAR &&
+        !(*it)->is_logged_in() &&
+        (*it)->email() != owner_email_ &&
+        UserPolicyStatusManager::Get((*it)->email()) !=
+            UserPolicyStatusManager::USER_POLICY_STATUS_MANAGED) {
       result.push_back(*it);
+    }
   }
   return result;
 }
@@ -307,6 +315,10 @@ const UserList& UserManagerImpl::GetLRULoggedInUsers() {
     return temp_single_logged_in_users_;
   }
   return lru_logged_in_users_;
+}
+
+const std::string& UserManagerImpl::GetOwnerEmail() {
+  return owner_email_;
 }
 
 void UserManagerImpl::UserLoggedIn(const std::string& email,
@@ -752,8 +764,8 @@ void UserManagerImpl::Observe(int type,
         if (device_local_account_policy_service_)
           device_local_account_policy_service_->AddObserver(this);
       }
-      CheckOwnership();
       RetrieveTrustedDevicePolicies();
+      UpdateOwnership();
       break;
     case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED:
       if (IsUserLoggedIn() &&
@@ -772,6 +784,11 @@ void UserManagerImpl::Observe(int type,
             if (observed_sync_service_)
               observed_sync_service_->AddObserver(this);
           }
+
+          if (!user_policy_status_manager_)
+            user_policy_status_manager_.reset(new UserPolicyStatusManager);
+          user_policy_status_manager_->StartObserving(active_user_->email(),
+                                                      profile);
         }
       }
       break;
@@ -828,8 +845,10 @@ bool UserManagerImpl::IsCurrentUserOwner() const {
 
 void UserManagerImpl::SetCurrentUserIsOwner(bool is_current_user_owner) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  base::AutoLock lk(is_current_user_owner_lock_);
-  is_current_user_owner_ = is_current_user_owner;
+  {
+    base::AutoLock lk(is_current_user_owner_lock_);
+    is_current_user_owner_ = is_current_user_owner;
+  }
   UpdateLoginState();
 }
 
@@ -903,19 +922,6 @@ bool UserManagerImpl::IsSessionStarted() const {
 bool UserManagerImpl::UserSessionsRestored() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return user_sessions_restored_;
-}
-
-UserManager::MergeSessionState UserManagerImpl::GetMergeSessionState() const {
-  return merge_session_state_;
-}
-
-void UserManagerImpl::SetMergeSessionState(
-    UserManager::MergeSessionState state) {
-  if (merge_session_state_ == state)
-    return;
-
-  merge_session_state_ = state;
-  NotifyMergeSessionStateChanged();
 }
 
 bool UserManagerImpl::HasBrowserRestarted() const {
@@ -1325,18 +1331,11 @@ void UserManagerImpl::NotifyOnLogin() {
   DeviceSettingsService::Get()->SetUsername(active_user_->email());
 }
 
-void UserManagerImpl::UpdateOwnership(
-    DeviceSettingsService::OwnershipStatus status,
-    bool is_owner) {
+void UserManagerImpl::UpdateOwnership() {
+  bool is_owner = DeviceSettingsService::Get()->HasPrivateOwnerKey();
   VLOG(1) << "Current user " << (is_owner ? "is owner" : "is not owner");
 
   SetCurrentUserIsOwner(is_owner);
-}
-
-void UserManagerImpl::CheckOwnership() {
-  DeviceSettingsService::Get()->GetOwnershipStatusAsync(
-      base::Bind(&UserManagerImpl::UpdateOwnership,
-                 base::Unretained(this)));
 }
 
 void UserManagerImpl::RemoveNonCryptohomeData(const std::string& email) {
@@ -1668,12 +1667,6 @@ void UserManagerImpl::NotifyUserListChanged() {
       chrome::NOTIFICATION_USER_LIST_CHANGED,
       content::Source<UserManager>(this),
       content::NotificationService::NoDetails());
-}
-
-void UserManagerImpl::NotifyMergeSessionStateChanged() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  FOR_EACH_OBSERVER(UserManager::Observer, observer_list_,
-                    MergeSessionStateChanged(merge_session_state_));
 }
 
 void UserManagerImpl::NotifyActiveUserChanged(const User* active_user) {

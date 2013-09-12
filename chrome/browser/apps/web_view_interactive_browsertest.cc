@@ -33,6 +33,13 @@ class WebViewInteractiveTest
         mouse_click_result_(false),
         first_click_(true) {}
 
+  virtual void SetUp() OVERRIDE {
+    // We need real contexts, otherwise the embedder doesn't composite, but the
+    // guest does, and that isn't an expected configuration.
+    UseRealGLContexts();
+    extensions::PlatformAppBrowserTest::SetUp();
+  }
+
   void MoveMouseInsideWindowWithListener(gfx::Point point,
                                          const std::string& message) {
     ExtensionTestMessageListener move_listener(message, false);
@@ -469,11 +476,8 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
 
 // Fails on Windows. crbug.com/236040
 // Also flaky on ChromiumOS. crbug.com/281815
-#if defined(OS_WIN) || defined(OS_CHROMEOS)
+// Appears to be flaky on Mac and Linux too.
 #define MAYBE_Focus DISABLED_Focus
-#else
-#define MAYBE_Focus Focus
-#endif
 // Tests that setting focus on the <webview> sets focus on the guest.
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, MAYBE_Focus) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
@@ -615,6 +619,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_PopupPositioningMoved) {
 // but the tests don't work on anything except chromeos for now. This is because
 // of simulating mouse drag code's dependency on platforms.
 #if defined(OS_CHROMEOS)
+// http://crbug.com/281001
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DragDropWithinWebView) {
   SetupTest(
       "web_view/dnd_within_webview",

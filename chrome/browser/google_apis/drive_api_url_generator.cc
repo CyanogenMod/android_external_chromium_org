@@ -120,21 +120,6 @@ GURL DriveApiUrlGenerator::GetFilesTrashUrl(const std::string& file_id) const {
       kDriveV2FileTrashUrlFormat, net::EscapePath(file_id).c_str()));
 }
 
-GURL DriveApiUrlGenerator::GetFileTouchUrl(
-    const std::string& resource_id) const {
-  GURL url = base_url_.Resolve(
-      kDriveV2FileUrlPrefix + net::EscapePath(resource_id));
-
-  // This parameter is needed to set the modified date.
-  url = net::AppendOrReplaceQueryParameter(url, "setModifiedDate", "true");
-
-  // This parameter is needed to set the last viewed by me date. Otherwise
-  // the current time is set automatically.
-  url = net::AppendOrReplaceQueryParameter(url, "updateViewedDate", "false");
-
-  return url;
-}
-
 GURL DriveApiUrlGenerator::GetChangesListUrl(bool include_deleted,
                                              int max_results,
                                              const std::string& page_token,
@@ -163,15 +148,14 @@ GURL DriveApiUrlGenerator::GetChangesListUrl(bool include_deleted,
   return url;
 }
 
-GURL DriveApiUrlGenerator::GetChildrenUrl(
-    const std::string& resource_id) const {
-  return base_url_.Resolve(
-      base::StringPrintf(kDriveV2ChildrenUrlFormat,
-                         net::EscapePath(resource_id).c_str()));
+GURL DriveApiUrlGenerator::GetChildrenInsertUrl(
+    const std::string& file_id) const {
+  return base_url_.Resolve(base::StringPrintf(
+      kDriveV2ChildrenUrlFormat, net::EscapePath(file_id).c_str()));
 }
 
-GURL DriveApiUrlGenerator::GetChildrenUrlForRemoval(
-    const std::string& folder_id, const std::string& child_id) const {
+GURL DriveApiUrlGenerator::GetChildrenDeleteUrl(
+    const std::string& child_id, const std::string& folder_id) const {
   return base_url_.Resolve(
       base::StringPrintf(kDriveV2ChildrenUrlForRemovalFormat,
                          net::EscapePath(folder_id).c_str(),

@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/platform_file.h"
 #include "base/time/time.h"
+#include "net/base/cache_type.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 
 namespace net {
@@ -36,7 +37,7 @@ struct SimpleEntryStat {
 };
 
 struct SimpleEntryCreationResults {
-  SimpleEntryCreationResults(SimpleEntryStat entry_stat);
+  explicit SimpleEntryCreationResults(SimpleEntryStat entry_stat);
   ~SimpleEntryCreationResults();
 
   SimpleSynchronousEntry* sync_entry;
@@ -71,25 +72,25 @@ class SimpleSynchronousEntry {
     bool truncate;
   };
 
-  static void OpenEntry(const base::FilePath& path,
+  static void OpenEntry(net::CacheType cache_type,
+                        const base::FilePath& path,
                         uint64 entry_hash,
                         bool had_index,
                         SimpleEntryCreationResults* out_results);
 
-  static void CreateEntry(const base::FilePath& path,
+  static void CreateEntry(net::CacheType cache_type,
+                          const base::FilePath& path,
                           const std::string& key,
                           uint64 entry_hash,
                           bool had_index,
                           SimpleEntryCreationResults* out_results);
 
-  // Deletes an entry without first Opening it. Does not check if there is
-  // already an Entry object in memory holding the open files. Be careful! This
-  // is meant to be used by the Backend::DoomEntry() call. |callback| will be
-  // run by |callback_runner|.
-  static void DoomEntry(const base::FilePath& path,
-                        const std::string& key,
-                        uint64 entry_hash,
-                        int* out_result);
+  // Deletes an entry from the file system without affecting the state of the
+  // corresponding instance, if any (allowing operations to continue to be
+  // executed through that instance). Returns a net error code.
+  static int DoomEntry(const base::FilePath& path,
+                       const std::string& key,
+                       uint64 entry_hash);
 
   // Like |DoomEntry()| above. Deletes all entries corresponding to the
   // |key_hashes|. Succeeds only when all entries are deleted. Returns a net
@@ -122,6 +123,7 @@ class SimpleSynchronousEntry {
 
  private:
   SimpleSynchronousEntry(
+      net::CacheType cache_type,
       const base::FilePath& path,
       const std::string& key,
       uint64 entry_hash);
@@ -151,6 +153,7 @@ class SimpleSynchronousEntry {
   static bool DeleteFilesForEntryHash(const base::FilePath& path,
                                       uint64 entry_hash);
 
+  const net::CacheType cache_type_;
   const base::FilePath path_;
   const uint64 entry_hash_;
   std::string key_;

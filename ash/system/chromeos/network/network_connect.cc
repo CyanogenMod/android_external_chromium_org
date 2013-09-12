@@ -24,6 +24,7 @@
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -40,6 +41,7 @@ using chromeos::NetworkProfile;
 using chromeos::NetworkProfileHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
+using chromeos::NetworkTypePattern;
 
 namespace ash {
 
@@ -75,7 +77,8 @@ void OnConnectFailed(const std::string& service_path,
   if (error_name == NetworkConnectionHandler::kErrorConnectCanceled)
     return;
 
-  if (error_name == NetworkConnectionHandler::kErrorPassphraseRequired ||
+  if (error_name == flimflam::kErrorBadPassphrase ||
+      error_name == NetworkConnectionHandler::kErrorPassphraseRequired ||
       error_name == NetworkConnectionHandler::kErrorConfigurationRequired ||
       error_name == NetworkConnectionHandler::kErrorAuthenticationRequired) {
     ash::Shell::GetInstance()->system_tray_delegate()->ConfigureNetwork(
@@ -104,7 +107,7 @@ void OnConnectFailed(const std::string& service_path,
   ShowErrorNotification(error_name, service_path);
 
   // Show a configure dialog for ConnectFailed errors.
-  if (error_name != NetworkConnectionHandler::kErrorConnectFailed)
+  if (error_name != flimflam::kErrorConnectFailed)
     return;
 
   // If Shill reports an InProgress error, don't try to configure the network.
@@ -147,11 +150,10 @@ void CallConnectToNetwork(const std::string& service_path,
 }
 
 void OnActivateFailed(const std::string& service_path,
-                     const std::string& error_name,
+                      const std::string& error_name,
                       scoped_ptr<base::DictionaryValue> error_data) {
   NET_LOG_ERROR("Unable to activate network", service_path);
-  ShowErrorNotification(
-      NetworkConnectionHandler::kErrorActivateFailed, service_path);
+  ShowErrorNotification(network_connect::kErrorActivateFailed, service_path);
 }
 
 void OnActivateSucceeded(const std::string& service_path) {
@@ -261,6 +263,8 @@ const char kNetworkConnectNotificationId[] =
 const char kNetworkActivateNotificationId[] =
     "chrome://settings/internet/activate";
 
+const char kErrorActivateFailed[] = "activate-failed";
+
 void ConnectToNetwork(const std::string& service_path,
                       gfx::NativeWindow owning_window) {
   NET_LOG_USER("ConnectToNetwork", service_path);
@@ -279,10 +283,11 @@ void ConnectToNetwork(const std::string& service_path,
   CallConnectToNetwork(service_path, check_error_state, owning_window);
 }
 
-void SetTechnologyEnabled(const std::string& technology, bool enabled_state) {
+void SetTechnologyEnabled(const NetworkTypePattern& technology,
+                          bool enabled_state) {
   std::string log_string =
       base::StringPrintf("technology %s, target state: %s",
-                         technology.c_str(),
+                         technology.ToDebugString().c_str(),
                          (enabled_state ? "ENABLED" : "DISABLED"));
   NET_LOG_USER("SetTechnologyEnabled", log_string);
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
@@ -300,8 +305,7 @@ void SetTechnologyEnabled(const std::string& technology, bool enabled_state) {
   // If we're dealing with a mobile network, then handle SIM lock here.
   // SIM locking only applies to cellular, so the code below won't execute
   // if |technology| has been explicitly set to WiMAX.
-  if (technology == NetworkStateHandler::kMatchTypeMobile ||
-      technology == flimflam::kTypeCellular) {
+  if (technology.MatchesPattern(NetworkTypePattern::Mobile())) {
     const DeviceState* mobile = handler->GetDeviceStateByType(technology);
     if (!mobile) {
       NET_LOG_ERROR("SetTechnologyEnabled with no device", log_string);
@@ -348,10 +352,8 @@ void ActivateCellular(const std::string& service_path) {
   }
   if (!IsDirectActivatedCarrier(cellular_device->carrier())) {
     // For non direct activation, show the mobile setup dialog which can be
-    // used to activate the network. Only show the dialog, if an account
-    // management URL is available.
-    if (!cellular->payment_url().empty())
-      ShowMobileSetup(service_path);
+    // used to activate the network.
+    ShowMobileSetup(service_path);
     return;
   }
   if (cellular->activation_state() == flimflam::kActivationStateActivated) {
@@ -384,7 +386,7 @@ void ShowMobileSetup(const std::string& service_path) {
                                        UTF8ToUTF16(cellular->name())),
             ui::ResourceBundle::GetSharedInstance().GetImageNamed(
                 IDR_AURA_UBER_TRAY_CELLULAR_NETWORK_FAILED),
-            ash::NOTIFIER_NETWORK,
+            ash::system_notifier::NOTIFIER_NETWORK,
             base::Bind(&ash::network_connect::ShowNetworkSettings,
                        service_path)));
     return;

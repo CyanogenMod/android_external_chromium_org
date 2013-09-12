@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/api/desktop_capture/desktop_capture_api.h"
 
+#include "base/compiler_specific.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/media/desktop_streams_registry.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
@@ -57,7 +58,13 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
         return false;
 
       case api::desktop_capture::DESKTOP_CAPTURE_SOURCE_TYPE_SCREEN:
+#if defined(OS_WIN)
+        // ScreenCapturerWin disables Aero by default.
+        screen_capturer.reset(
+            webrtc::ScreenCapturer::CreateWithDisableAero(false));
+#else
         screen_capturer.reset(webrtc::ScreenCapturer::Create());
+#endif
         break;
 
       case api::desktop_capture::DESKTOP_CAPTURE_SOURCE_TYPE_WINDOW:
@@ -87,10 +94,9 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
         screen_capturer.Pass(), window_capturer.Pass());
     picker_ = g_picker_factory->CreatePicker();
   } else {
-    // Currently DesktopMediaPicker is implemented only for platforms that
-    // use Views.
-#if defined(TOOLKIT_VIEWS)
-    model.reset(new DesktopMediaPickerModel(
+    // DesktopMediaPicker is not implented for all platforms yet.
+#if defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
+    model.reset(new DesktopMediaPickerModelImpl(
         screen_capturer.Pass(), window_capturer.Pass()));
     picker_ = DesktopMediaPicker::Create();
 #else

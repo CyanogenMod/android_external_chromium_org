@@ -38,6 +38,7 @@ using syncable::MutableEntry;
 using syncable::Entry;
 using syncable::BASE_VERSION;
 using syncable::GET_BY_ID;
+using syncable::GET_BY_HANDLE;
 using syncable::ID;
 using syncable::IS_DEL;
 using syncable::IS_DIR;
@@ -100,7 +101,7 @@ SyncerError ProcessCommitResponseCommand::ModelChangingExecuteImpl(
           &trans,
           cr.entryresponse(proj[i]),
           commit_message.entries(proj[i]),
-          commit_set_.GetCommitIdAt(proj[i]),
+          commit_set_.GetCommitHandleAt(proj[i]),
           &deleted_folders);
       switch (response_type) {
         case CommitResponse::INVALID_MESSAGE:
@@ -168,10 +169,9 @@ ProcessCommitResponseCommand::ProcessSingleCommitResponse(
     syncable::WriteTransaction* trans,
     const sync_pb::CommitResponse_EntryResponse& server_entry,
     const sync_pb::SyncEntity& commit_request_entry,
-    const syncable::Id& pre_commit_id,
+    const int64 metahandle,
     set<syncable::Id>* deleted_folders) {
-
-  MutableEntry local_entry(trans, GET_BY_ID, pre_commit_id);
+  MutableEntry local_entry(trans, GET_BY_HANDLE, metahandle);
   CHECK(local_entry.good());
   bool syncing_was_set = local_entry.Get(SYNCING);
   local_entry.Put(SYNCING, false);
@@ -216,11 +216,13 @@ ProcessCommitResponseCommand::ProcessSingleCommitResponse(
   // it as an error response and retry later.
   const syncable::Id& server_entry_id =
       SyncableIdFromProto(server_entry.id_string());
-  if (pre_commit_id != server_entry_id) {
+  if (local_entry.Get(ID) != server_entry_id) {
     Entry e(trans, GET_BY_ID, server_entry_id);
     if (e.good()) {
-      LOG(ERROR) << "Got duplicate id when commiting id: " << pre_commit_id <<
-                 ". Treating as an error return";
+      LOG(ERROR)
+          << "Got duplicate id when commiting id: "
+          << local_entry.Get(ID)
+          << ". Treating as an error return";
       return CommitResponse::INVALID_MESSAGE;
     }
   }
@@ -230,7 +232,7 @@ ProcessCommitResponseCommand::ProcessSingleCommitResponse(
   }
 
   ProcessSuccessfulCommitResponse(commit_request_entry, server_entry,
-      pre_commit_id, &local_entry, syncing_was_set, deleted_folders);
+      local_entry.Get(ID), &local_entry, syncing_was_set, deleted_folders);
   return response;
 }
 
@@ -363,29 +365,6 @@ void ProcessCommitResponseCommand::UpdateServerFieldsAfterCommit(
   }
 }
 
-void ProcessCommitResponseCommand::OverrideClientFieldsAfterCommit(
-    const sync_pb::SyncEntity& committed_entry,
-    const sync_pb::CommitResponse_EntryResponse& entry_response,
-    syncable::MutableEntry* local_entry) {
-  if (committed_entry.deleted()) {
-    // If an entry's been deleted, nothing else matters.
-    DCHECK(local_entry->Get(IS_DEL));
-    return;
-  }
-
-  // Update the name.
-  const string& server_name =
-      GetResultingPostCommitName(committed_entry, entry_response);
-  const string& old_name =
-      local_entry->Get(syncable::NON_UNIQUE_NAME);
-
-  if (!server_name.empty() && old_name != server_name) {
-    DVLOG(1) << "During commit, server changed name: " << old_name
-             << " to new name: " << server_name;
-    local_entry->Put(syncable::NON_UNIQUE_NAME, server_name);
-  }
-}
-
 void ProcessCommitResponseCommand::ProcessSuccessfulCommitResponse(
     const sync_pb::SyncEntity& committed_entry,
     const sync_pb::CommitResponse_EntryResponse& entry_response,
@@ -412,12 +391,8 @@ void ProcessCommitResponseCommand::ProcessSuccessfulCommitResponse(
 
   // If the item doesn't need to be committed again (an item might need to be
   // committed again if it changed locally during the commit), we can remove
-  // it from the unsynced list.  Also, we should change the locally-
-  // visible properties to apply any canonicalizations or fixups
-  // that the server introduced during the commit.
+  // it from the unsynced list.
   if (syncing_was_set) {
-    OverrideClientFieldsAfterCommit(committed_entry, entry_response,
-                                    local_entry);
     local_entry->Put(IS_UNSYNCED, false);
   }
 

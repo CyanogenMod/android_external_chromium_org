@@ -117,6 +117,7 @@ WebPreferences::WebPreferences()
       experimental_websocket_enabled(false),
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
+      use_solid_color_scrollbars(false),
       cookie_enabled(true)
 #if defined(OS_ANDROID)
       ,
@@ -126,7 +127,10 @@ WebPreferences::WebPreferences()
       double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true),
       support_deprecated_target_density_dpi(false),
-      use_wide_viewport(true)
+      use_legacy_background_size_shorthand_behavior(false),
+      use_wide_viewport(true),
+      viewport_meta_layout_size_quirk(false),
+      viewport_meta_zero_values_quirk(false)
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =

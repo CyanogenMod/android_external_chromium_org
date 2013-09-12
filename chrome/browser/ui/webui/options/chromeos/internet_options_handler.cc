@@ -30,13 +30,13 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/choose_mobile_network_dialog.h"
-#include "chrome/browser/chromeos/cros/network_property_ui_data.h"
 #include "chrome/browser/chromeos/enrollment_dialog_view.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
+#include "chrome/browser/chromeos/options/network_property_ui_data.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/chromeos/ui_proxy_config_service.h"
@@ -63,6 +63,7 @@
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -135,6 +136,8 @@ const char kUpdateConnectionDataFunction[] =
     "options.internet.DetailsInternetPage.updateConnectionData";
 const char kUpdateCarrierFunction[] =
     "options.internet.DetailsInternetPage.updateCarrier";
+const char kUpdateLoggedInUserTypeFunction[] =
+    "options.network.NetworkList.updateLoggedInUserType";
 const char kUpdateSecurityTabFunction[] =
     "options.internet.DetailsInternetPage.updateSecurityTab";
 
@@ -341,6 +344,30 @@ std::string ConnectionStateString(const std::string& state) {
   return l10n_util::GetStringUTF8(id);
 }
 
+std::string LoggedInUserTypeToString(
+    LoginState::LoggedInUserType type) {
+  switch (type) {
+    case LoginState::LOGGED_IN_USER_NONE:
+      return "none";
+    case LoginState::LOGGED_IN_USER_REGULAR:
+      return "regular";
+    case LoginState::LOGGED_IN_USER_OWNER:
+      return "owner";
+    case LoginState::LOGGED_IN_USER_GUEST:
+      return "guest";
+    case LoginState::LOGGED_IN_USER_RETAIL_MODE:
+      return "retail-mode";
+    case LoginState::LOGGED_IN_USER_PUBLIC_ACCOUNT:
+      return "public-account";
+    case LoginState::LOGGED_IN_USER_LOCALLY_MANAGED:
+      return "locally-managed";
+    case LoginState::LOGGED_IN_USER_KIOSK_APP:
+      return "kiosk-app";
+    default:
+      return "";
+  }
+}
+
 std::string EncryptionString(const std::string& security,
                              const std::string& eap_method) {
   if (security == flimflam::kSecurityNone)
@@ -438,7 +465,7 @@ NetworkInfoDictionary::NetworkInfoDictionary(const NetworkState* network,
       shared_(false),
       activation_state_(network->activation_state()),
       policy_managed_(network->IsManaged()) {
-  if (network->type() == flimflam::kTypeEthernet)
+  if (network->Matches(NetworkTypePattern::Ethernet()))
     name_ = l10n_util::GetStringUTF8(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
   gfx::ImageSkia icon = ash::network_icon::GetImageForNetwork(
       network, ash::network_icon::ICON_TYPE_LIST);
@@ -456,7 +483,7 @@ NetworkInfoDictionary::NetworkInfoDictionary(const FavoriteState* favorite,
       remembered_(true),
       shared_(!favorite->IsPrivate()),
       policy_managed_(favorite->IsManaged()) {
-  if (favorite->type() == flimflam::kTypeEthernet)
+  if (favorite->Matches(NetworkTypePattern::Ethernet()))
     name_ = l10n_util::GetStringUTF8(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
   gfx::ImageSkia icon = ash::network_icon::GetImageForDisconnectedNetwork(
       ash::network_icon::ICON_TYPE_LIST, favorite->type());
@@ -666,6 +693,12 @@ void PopulateVPNDetails(const NetworkState* vpn,
   SetValueDictionary(dictionary, kTagServerHostname,
                      new base::StringValue(provider_host),
                      hostname_ui_data);
+
+  // Disable 'Connect' for VPN unless connected to a non-VPN network.
+  const NetworkState* connected_network =
+      NetworkHandler::Get()->network_state_handler()->ConnectedNetworkByType(
+          NetworkTypePattern::NonVirtual());
+  dictionary->SetBoolean(kTagDisableConnectButton, !connected_network);
 }
 
 // Given a list of supported carrier's by the device, return the index of
@@ -771,6 +804,7 @@ InternetOptionsHandler::InternetOptionsHandler()
   registrar_.Add(this, chrome::NOTIFICATION_ENTER_PIN_ENDED,
                  content::NotificationService::AllSources());
   NetworkHandler::Get()->network_state_handler()->AddObserver(this, FROM_HERE);
+  LoginState::Get()->AddObserver(this);
 }
 
 InternetOptionsHandler::~InternetOptionsHandler() {
@@ -778,6 +812,8 @@ InternetOptionsHandler::~InternetOptionsHandler() {
     NetworkHandler::Get()->network_state_handler()->RemoveObserver(
         this, FROM_HERE);
   }
+  if (LoginState::Get()->IsInitialized())
+    LoginState::Get()->RemoveObserver(this);
 }
 
 void InternetOptionsHandler::GetLocalizedValues(
@@ -961,6 +997,7 @@ void InternetOptionsHandler::InitializePage() {
                                    dictionary);
   NetworkHandler::Get()->network_state_handler()->RequestScan();
   RefreshNetworkData();
+  UpdateLoggedInUserType();
 }
 
 void InternetOptionsHandler::RegisterMessages() {
@@ -1023,13 +1060,13 @@ void InternetOptionsHandler::RegisterMessages() {
 
 void InternetOptionsHandler::EnableWifiCallback(const base::ListValue* args) {
   NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-      flimflam::kTypeWifi, true,
+      NetworkTypePattern::WiFi(), true,
       base::Bind(&ShillError, "EnableWifiCallback"));
 }
 
 void InternetOptionsHandler::DisableWifiCallback(const base::ListValue* args) {
   NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-      flimflam::kTypeWifi, false,
+      NetworkTypePattern::WiFi(), false,
       base::Bind(&ShillError, "DisableWifiCallback"));
 }
 
@@ -1037,7 +1074,7 @@ void InternetOptionsHandler::EnableCellularCallback(
     const base::ListValue* args) {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   const DeviceState* device =
-      handler->GetDeviceStateByType(flimflam::kTypeCellular);
+      handler->GetDeviceStateByType(NetworkTypePattern::Cellular());
   if (!device) {
     LOG(ERROR) << "Mobile device not found.";
     return;
@@ -1047,9 +1084,9 @@ void InternetOptionsHandler::EnableCellularCallback(
                                   SimDialogDelegate::SIM_DIALOG_UNLOCK);
     return;
   }
-  if (!handler->IsTechnologyEnabled(flimflam::kTypeCellular)) {
+  if (!handler->IsTechnologyEnabled(NetworkTypePattern::Cellular())) {
     handler->SetTechnologyEnabled(
-        flimflam::kTypeCellular, true,
+        NetworkTypePattern::Cellular(), true,
         base::Bind(&ShillError, "EnableCellularCallback"));
     return;
   }
@@ -1074,19 +1111,19 @@ void InternetOptionsHandler::EnableCellularCallback(
 void InternetOptionsHandler::DisableCellularCallback(
     const base::ListValue* args) {
   NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-      NetworkStateHandler::kMatchTypeMobile, false,
+      NetworkTypePattern::Mobile(), false,
       base::Bind(&ShillError, "DisableCellularCallback"));
 }
 
 void InternetOptionsHandler::EnableWimaxCallback(const base::ListValue* args) {
   NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-      flimflam::kTypeWimax, true,
+      NetworkTypePattern::Wimax(), true,
       base::Bind(&ShillError, "EnableWimaxCallback"));
 }
 
 void InternetOptionsHandler::DisableWimaxCallback(const base::ListValue* args) {
   NetworkHandler::Get()->network_state_handler()->SetTechnologyEnabled(
-      flimflam::kTypeWimax, false,
+      NetworkTypePattern::Wimax(), false,
       base::Bind(&ShillError, "DisableWimaxCallback"));
 }
 
@@ -1175,10 +1212,10 @@ void InternetOptionsHandler::SetApnProperties(
 void InternetOptionsHandler::CarrierStatusCallback() {
   NetworkStateHandler* handler = NetworkHandler::Get()->network_state_handler();
   const DeviceState* device =
-      handler->GetDeviceStateByType(flimflam::kTypeCellular);
+      handler->GetDeviceStateByType(NetworkTypePattern::Cellular());
   if (device && (device->carrier() == shill::kCarrierSprint)) {
     const NetworkState* network =
-        handler->FirstNetworkByType(flimflam::kTypeCellular);
+        handler->FirstNetworkByType(NetworkTypePattern::Cellular());
     if (network) {
       ash::network_connect::ActivateCellular(network->path());
       UpdateConnectionData(network->path());
@@ -1197,7 +1234,7 @@ void InternetOptionsHandler::SetCarrierCallback(const base::ListValue* args) {
     return;
   }
   const DeviceState* device = NetworkHandler::Get()->network_state_handler()->
-      GetDeviceStateByType(flimflam::kTypeCellular);
+      GetDeviceStateByType(NetworkTypePattern::Cellular());
   if (!device) {
     LOG(WARNING) << "SetCarrierCallback with no cellular device.";
     return;
@@ -1291,12 +1328,36 @@ void InternetOptionsHandler::NetworkListChanged() {
   RefreshNetworkData();
 }
 
+void InternetOptionsHandler::NetworkConnectionStateChanged(
+    const NetworkState* network) {
+  if (!web_ui())
+    return;
+  // Update the connection data for the detailed view when the connection state
+  // of any network changes.
+  if (!details_path_.empty())
+    UpdateConnectionData(details_path_);
+}
+
 void InternetOptionsHandler::NetworkPropertiesUpdated(
     const NetworkState* network) {
   if (!web_ui())
     return;
   RefreshNetworkData();
   UpdateConnectionData(network->path());
+}
+
+void InternetOptionsHandler::LoggedInStateChanged(
+    LoginState::LoggedInState state) {
+  UpdateLoggedInUserType();
+}
+
+void InternetOptionsHandler::UpdateLoggedInUserType() {
+  if (!web_ui())
+    return;
+  base::StringValue login_type(
+      LoggedInUserTypeToString(LoginState::Get()->GetLoggedInUserType()));
+  web_ui()->CallJavascriptFunction(
+      kUpdateLoggedInUserTypeFunction, login_type);
 }
 
 void InternetOptionsHandler::Observe(
@@ -1470,6 +1531,8 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
     return;
   }
 
+  details_path_ = service_path;
+
   onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
       onc::FindPolicyForActiveUser(network->guid(), &onc_source);
@@ -1535,14 +1598,17 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   dictionary.SetBoolean(kTagShowProxy, !network->profile_path().empty());
 
   // Enable static ip config for ethernet. For wifi, enable if flag is set.
-  bool staticIPConfig = type == flimflam::kTypeEthernet ||
-      (type == flimflam::kTypeWifi &&
-       CommandLine::ForCurrentProcess()->HasSwitch(
-           chromeos::switches::kEnableStaticIPConfig));
+  bool staticIPConfig = network->Matches(NetworkTypePattern::Ethernet()) ||
+                        (type == flimflam::kTypeWifi &&
+                         CommandLine::ForCurrentProcess()->HasSwitch(
+                             chromeos::switches::kEnableStaticIPConfig));
   dictionary.SetBoolean(kTagShowStaticIPConfig, staticIPConfig);
 
   dictionary.SetBoolean(kTagShowPreferred, !network->profile_path().empty());
-  bool preferred = network->priority() > 0;
+  int priority = 0;
+  shill_properties.GetIntegerWithoutPathExpansion(
+      flimflam::kPriorityProperty, &priority);
+  bool preferred = priority > 0;
   SetValueDictionary(&dictionary, kTagPreferred,
                      new base::FundamentalValue(preferred),
                      property_ui_data);
@@ -1564,8 +1630,11 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
     auto_connect_ui_data.ParseOncProperty(
         onc_source, onc, onc_path_to_auto_connect);
   }
+  bool auto_connect = false;
+  shill_properties.GetBooleanWithoutPathExpansion(
+      flimflam::kAutoConnectProperty, &auto_connect);
   SetValueDictionary(&dictionary, kTagAutoConnect,
-                     new base::FundamentalValue(network->auto_connect()),
+                     new base::FundamentalValue(auto_connect),
                      auto_connect_ui_data);
 
   PopulateConnectionDetails(network, shill_properties, &dictionary);
@@ -1596,7 +1665,7 @@ void PopulateConnectionDetails(const NetworkState* network,
   const std::string& type = network->type();
   const NetworkState* connected_network =
       NetworkHandler::Get()->network_state_handler()->ConnectedNetworkByType(
-          type);
+          NetworkTypePattern::Primitive(type));
 
   dictionary->SetBoolean(kTagDeviceConnected, connected_network != NULL);
 
@@ -1920,7 +1989,7 @@ void InternetOptionsHandler::AddConnection(const std::string& type) {
 base::ListValue* InternetOptionsHandler::GetWiredList() {
   base::ListValue* list = new base::ListValue();
   const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
-      FirstNetworkByType(flimflam::kTypeEthernet);
+      FirstNetworkByType(NetworkTypePattern::Ethernet());
   if (!network)
     return list;
   NetworkInfoDictionary network_dict(network, web_ui()->GetDeviceScaleFactor());
@@ -1932,16 +2001,11 @@ base::ListValue* InternetOptionsHandler::GetWirelessList() {
   base::ListValue* list = new base::ListValue();
 
   NetworkStateHandler::NetworkStateList networks;
-  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&networks);
+  NetworkHandler::Get()->network_state_handler()->GetNetworkListByType(
+      NetworkTypePattern::Wireless(), &networks);
   for (NetworkStateHandler::NetworkStateList::const_iterator iter =
            networks.begin(); iter != networks.end(); ++iter) {
-    const NetworkState* network = *iter;
-    if (network->type() != flimflam::kTypeWifi &&
-        network->type() != flimflam::kTypeWimax &&
-        network->type() != flimflam::kTypeCellular)
-      continue;
-    NetworkInfoDictionary network_dict(
-        network, web_ui()->GetDeviceScaleFactor());
+    NetworkInfoDictionary network_dict(*iter, web_ui()->GetDeviceScaleFactor());
     list->Append(network_dict.BuildDictionary());
   }
 
@@ -1952,14 +2016,11 @@ base::ListValue* InternetOptionsHandler::GetVPNList() {
   base::ListValue* list = new base::ListValue();
 
   NetworkStateHandler::NetworkStateList networks;
-  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&networks);
+  NetworkHandler::Get()->network_state_handler()->GetNetworkListByType(
+      NetworkTypePattern::VPN(), &networks);
   for (NetworkStateHandler::NetworkStateList::const_iterator iter =
            networks.begin(); iter != networks.end(); ++iter) {
-    const NetworkState* network = *iter;
-    if (network->type() != flimflam::kTypeVPN)
-      continue;
-    NetworkInfoDictionary network_dict(
-        network, web_ui()->GetDeviceScaleFactor());
+    NetworkInfoDictionary network_dict(*iter, web_ui()->GetDeviceScaleFactor());
     list->Append(network_dict.BuildDictionary());
   }
 
@@ -1993,27 +2054,31 @@ void InternetOptionsHandler::FillNetworkInfo(
   dictionary->Set(kTagVpnList, GetVPNList());
   dictionary->Set(kTagRememberedList, GetRememberedList());
 
-  dictionary->SetBoolean(kTagWifiAvailable,
-                         handler->IsTechnologyAvailable(flimflam::kTypeWifi));
-  dictionary->SetBoolean(kTagWifiEnabled,
-                         handler->IsTechnologyEnabled(flimflam::kTypeWifi));
+  dictionary->SetBoolean(
+      kTagWifiAvailable,
+      handler->IsTechnologyAvailable(NetworkTypePattern::WiFi()));
+  dictionary->SetBoolean(
+      kTagWifiEnabled,
+      handler->IsTechnologyEnabled(NetworkTypePattern::WiFi()));
 
-  dictionary->SetBoolean(kTagCellularAvailable,
-                         handler->IsTechnologyAvailable(
-                             NetworkStateHandler::kMatchTypeMobile));
-  dictionary->SetBoolean(kTagCellularEnabled,
-                         handler->IsTechnologyEnabled(
-                             NetworkStateHandler::kMatchTypeMobile));
+  dictionary->SetBoolean(
+      kTagCellularAvailable,
+      handler->IsTechnologyAvailable(NetworkTypePattern::Mobile()));
+  dictionary->SetBoolean(
+      kTagCellularEnabled,
+      handler->IsTechnologyEnabled(NetworkTypePattern::Mobile()));
   const DeviceState* cellular =
-      handler->GetDeviceStateByType(NetworkStateHandler::kMatchTypeMobile);
+      handler->GetDeviceStateByType(NetworkTypePattern::Mobile());
   dictionary->SetBoolean(
       kTagCellularSupportsScan,
       cellular && cellular->support_network_scan());
 
-  dictionary->SetBoolean(kTagWimaxAvailable,
-                         handler->IsTechnologyAvailable(flimflam::kTypeWimax));
-  dictionary->SetBoolean(kTagWimaxEnabled,
-                         handler->IsTechnologyEnabled(flimflam::kTypeWimax));
+  dictionary->SetBoolean(
+      kTagWimaxAvailable,
+      handler->IsTechnologyAvailable(NetworkTypePattern::Wimax()));
+  dictionary->SetBoolean(
+      kTagWimaxEnabled,
+      handler->IsTechnologyEnabled(NetworkTypePattern::Wimax()));
 }
 
 }  // namespace options

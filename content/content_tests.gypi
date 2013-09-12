@@ -243,6 +243,7 @@
         }],
         ['OS=="android"', {
           'dependencies': [
+            '../ui/ui.gyp:shell_dialogs',
             'test_support_content_jni_headers',
           ],
         }],
@@ -336,7 +337,15 @@
         'browser/power_monitor_message_broadcaster_unittest.cc',
         'browser/renderer_host/compositing_iosurface_transformer_mac_unittest.cc',
         'browser/renderer_host/gtk_key_bindings_handler_unittest.cc',
+        'browser/renderer_host/input/buffered_input_router_unittest.cc',
         'browser/renderer_host/input/immediate_input_router_unittest.cc',
+        'browser/renderer_host/input/input_router_unittest.h',
+        'browser/renderer_host/input/input_router_unittest.cc',
+        'browser/renderer_host/input/input_queue_unittest.cc',
+        'browser/renderer_host/input/mock_input_ack_handler.cc',
+        'browser/renderer_host/input/mock_input_ack_handler.h',
+        'browser/renderer_host/input/mock_input_router_client.cc',
+        'browser/renderer_host/input/mock_input_router_client.h',
         'browser/renderer_host/media/audio_input_device_manager_unittest.cc',
         'browser/renderer_host/media/audio_mirroring_manager_unittest.cc',
         'browser/renderer_host/media/audio_renderer_host_unittest.cc',
@@ -404,6 +413,7 @@
         'common/dom_storage/dom_storage_map_unittest.cc',
         'common/gpu/gpu_memory_manager_unittest.cc',
         'common/indexed_db/indexed_db_key_unittest.cc',
+        'common/input/input_param_traits_unittest.cc',
         'common/inter_process_time_ticks_converter_unittest.cc',
         'common/mac/attributed_string_coder_unittest.mm',
         'common/mac/font_descriptor_unittest.mm',
@@ -477,7 +487,6 @@
         '../webkit/browser/appcache/mock_appcache_storage.h',
         '../webkit/browser/appcache/mock_appcache_storage_unittest.cc',
         '../webkit/browser/blob/blob_storage_context_unittest.cc',
-        '../webkit/browser/blob/blob_storage_controller_unittest.cc',
         '../webkit/browser/blob/blob_url_request_job_unittest.cc',
         '../webkit/browser/blob/local_file_stream_reader_unittest.cc',
         '../webkit/browser/blob/mock_blob_url_request_context.cc',
@@ -496,6 +505,7 @@
         '../webkit/browser/fileapi/file_system_file_stream_reader_unittest.cc',
         '../webkit/browser/fileapi/file_system_operation_impl_unittest.cc',
         '../webkit/browser/fileapi/file_system_operation_impl_write_unittest.cc',
+        '../webkit/browser/fileapi/file_system_operation_runner_unittest.cc',
         '../webkit/browser/fileapi/file_system_quota_client_unittest.cc',
         '../webkit/browser/fileapi/file_system_url_request_job_unittest.cc',
         '../webkit/browser/fileapi/file_system_url_unittest.cc',
@@ -706,9 +716,6 @@
           ],
         }],
         ['OS == "android"', {
-          'dependencies': [
-            '../ui/ui.gyp:shell_dialogs',
-          ],
           'sources!': [
             'browser/geolocation/gps_location_provider_unittest_linux.cc',
             'browser/geolocation/network_location_provider_unittest.cc',
@@ -777,6 +784,7 @@
             '../ui/snapshot/snapshot.gyp:snapshot',
             '../ui/ui.gyp:shell_dialogs',
             '../ui/ui.gyp:ui',
+            '../ui/ui.gyp:ui_resources',
             '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
             '../webkit/support/webkit_support.gyp:glue',
             '../webkit/support/webkit_support.gyp:glue_child',
@@ -814,10 +822,11 @@
             'browser/download/mhtml_generation_browsertest.cc',
             'browser/download/save_package_browsertest.cc',
             'browser/fileapi/file_system_browsertest.cc',
+            'browser/gpu/compositor_util_browsertest.cc',
             'browser/gpu/gpu_crash_browsertest.cc',
+            'browser/gpu/gpu_functional_browsertest.cc',
             'browser/gpu/gpu_info_browsertest.cc',
             'browser/gpu/gpu_ipc_browsertests.cc',
-            'browser/gpu/gpu_functional_browsertest.cc',
             'browser/gpu/gpu_memory_test.cc',
             'browser/gpu/gpu_pixel_browsertest.cc',
             'browser/gpu/webgl_conformance_test.cc',
@@ -842,6 +851,7 @@
             'browser/session_history_browsertest.cc',
             'browser/site_per_process_browsertest.cc',
             'browser/speech/speech_recognition_browsertest.cc',
+            'browser/tracing/tracing_controller_browsertest.cc',
             'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
             'browser/web_contents/web_contents_impl_browsertest.cc',
             'browser/web_contents/web_contents_view_aura_browsertest.cc',
@@ -858,7 +868,6 @@
             'renderer/cpp_bound_class_unittest.cc',
             'renderer/dom_serializer_browsertest.cc',
             'renderer/mouse_lock_dispatcher_browsertest.cc',
-            'renderer/password_form_conversion_utils_browsertest.cc',
             'renderer/pepper/mock_renderer_ppapi_host.cc',
             'renderer/pepper/pepper_device_enumeration_host_helper_unittest.cc',
             'renderer/pepper/pepper_file_chooser_host_unittest.cc',
@@ -1025,6 +1034,13 @@
             'common/gpu/client/gl_helper_unittests.cc',
             'common/gpu/client/gpu_in_process_context_tests.cc',
           ],
+          'conditions': [
+            ['OS=="android"', {
+              'dependencies': [
+                '../testing/android/native_test.gyp:native_test_native_code',
+              ],
+            }],
+          ],
         },
         {
           'target_name': 'content_gl_benchmark',
@@ -1159,6 +1175,21 @@
     # See base.gyp for TODO(jrg)s about this strategy.
     ['OS == "android" and gtest_target_type == "shared_library"', {
       'targets': [
+        {
+          'target_name': 'content_gl_tests_apk',
+          'type': 'none',
+          'dependencies': [
+            'content_gl_tests',
+            'content_java_test_support',
+          ],
+          'variables': {
+            'test_suite_name': 'content_gl_tests',
+            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)content_gl_tests<(SHARED_LIB_SUFFIX)',
+          },
+          'includes': [
+            '../build/apk_test.gypi',
+          ],
+        },
         {
           'target_name': 'content_unittests_apk',
           'type': 'none',

@@ -51,7 +51,7 @@ class WebUILoginView : public views::View,
   // Initializes the webui login view.
   virtual void Init();
 
-  // Overridden from views::Views:
+  // Overridden from views::View:
   virtual bool AcceleratorPressed(
       const ui::Accelerator& accelerator) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
@@ -63,6 +63,7 @@ class WebUILoginView : public views::View,
   // Overridden from web_modal::WebContentsModalDialogHost:
   virtual gfx::NativeView GetHostView() const OVERRIDE;
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
+  virtual gfx::Size GetMaximumDialogSize() OVERRIDE;
   virtual void AddObserver(
       web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
@@ -93,6 +94,8 @@ class WebUILoginView : public views::View,
   void SetUIEnabled(bool enabled);
 
   void set_is_hidden(bool hidden) { is_hidden_ = hidden; }
+
+  bool webui_visible() const { return webui_visible_; }
 
   // Let suppress emission of this signal.
   void set_should_emit_login_prompt_visible(bool emit) {
@@ -153,8 +156,8 @@ class WebUILoginView : public views::View,
   // True when WebUI is being initialized hidden.
   bool is_hidden_;
 
-  // True is login-prompt-visible event has been already handled.
-  bool login_prompt_visible_handled_;
+  // True when the WebUI has finished initializing and is visible.
+  bool webui_visible_;
 
   // Should we emit the login-prompt-visible signal when the login page is
   // displayed?

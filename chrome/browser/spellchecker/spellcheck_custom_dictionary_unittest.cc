@@ -127,6 +127,11 @@ class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
     return dictionary_->ProcessSyncChanges(from_here, change_list);
   }
 
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return syncer::SyncDataList();
+  }
+
  private:
   SpellcheckCustomDictionary* dictionary_;
   DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
@@ -305,7 +310,7 @@ TEST_F(SpellcheckCustomDictionaryTest, CorruptedWriteShouldBeRecovered) {
   change.AddWord("baz");
   UpdateDictionaryFile(change, path);
   content.clear();
-  file_util::ReadFileToString(path, &content);
+  base::ReadFileToString(path, &content);
   content.append("corruption");
   file_util::WriteFile(path, content.c_str(), content.length());
   loaded_custom_words = LoadDictionaryFile(path);

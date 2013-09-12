@@ -11,6 +11,7 @@ import time
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
+from telemetry.core.backends import android_rndis
 from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import chrome_browser_backend
 
@@ -146,19 +147,21 @@ class WebviewBackendSettings(AndroidBrowserBackendSettings):
 class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a browser instance running on Android.
   """
-  def __init__(self, options, backend_settings):
+  def __init__(self, browser_options, backend_settings, rndis,
+               output_profile_path, extensions_to_load):
     super(AndroidBrowserBackend, self).__init__(
         is_content_shell=backend_settings.is_content_shell,
-        supports_extensions=False, options=options)
-    if len(options.extensions_to_load) > 0:
+        supports_extensions=False, browser_options=browser_options,
+        output_profile_path=output_profile_path,
+        extensions_to_load=extensions_to_load)
+    if len(extensions_to_load) > 0:
       raise browser_backend.ExtensionsNotSupportedException(
           'Android browser does not support extensions.')
     # Initialize fields so that an explosion during init doesn't break in Close.
-    self._options = options
     self._adb = backend_settings.adb
     self._backend_settings = backend_settings
     self._saved_cmdline = None
-    if not options.keep_test_server_ports:
+    if not self.browser_options.keep_test_server_ports:
       adb_commands.ResetTestServerPortAllocation()
     self._port = adb_commands.AllocateTestServerPort()
 
@@ -166,16 +169,22 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._adb.CloseApplication(self._backend_settings.package)
 
     if self._adb.Adb().CanAccessProtectedFileContents():
-      if not options.dont_override_profile:
+      if not self.browser_options.dont_override_profile:
         self._backend_settings.RemoveProfile()
-      if options.profile_dir:
-        self._backend_settings.PushProfile(options.profile_dir)
+      if self.browser_options.profile_dir:
+        self._backend_settings.PushProfile(self.browser_options.profile_dir)
 
-    # Set up the command line.
-    self._saved_cmdline = ''.join(self._adb.Adb().GetProtectedFileContents(
-        self._backend_settings.cmdline_file) or [])
-    args = [backend_settings.pseudo_exec_name]
-    args.extend(self.GetBrowserStartupArgs())
+    # Pre-configure RNDIS forwarding.
+    self._rndis_forwarder = None
+    if rndis:
+      self._rndis_forwarder = android_rndis.RndisForwarderWithRoot(self._adb)
+      self.WEBPAGEREPLAY_HOST = self._rndis_forwarder.host_ip
+    # TODO(szym): only override DNS if WPR has privileges to proxy on port 25.
+    self._override_dns = False
+
+    self._SetUpCommandLine()
+
+  def _SetUpCommandLine(self):
     def QuoteIfNeeded(arg):
       # Escape 'key=valueA valueB' to 'key="valueA valueB"'
       # Already quoted values, or values without space are left untouched.
@@ -190,15 +199,38 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       if values[0] in '"\'' and values[-1] == values[0]:
         return arg
       return '%s="%s"' % (key, values)
-    args = map(QuoteIfNeeded, args)
-    self._adb.Adb().SetProtectedFileContents(
-        self._backend_settings.cmdline_file, ' '.join(args))
-    cmdline = self._adb.Adb().GetProtectedFileContents(
-        self._backend_settings.cmdline_file)
-    if len(cmdline) != 1 or cmdline[0] != ' '.join(args):
-      logging.critical('Failed to set Chrome command line. '
-                       'Fix this by flashing to a userdebug build.')
-      sys.exit(1)
+
+    args = [self._backend_settings.pseudo_exec_name]
+    args.extend(self.GetBrowserStartupArgs())
+    args = ' '.join(map(QuoteIfNeeded, args))
+
+    self._SetCommandLineFile(args)
+
+  def _SetCommandLineFile(self, file_contents):
+    def IsProtectedFile(name):
+      if self._adb.Adb().FileExistsOnDevice(name):
+        return not self._adb.Adb().IsFileWritableOnDevice(name)
+      else:
+        parent_name = os.path.dirname(name)
+        if parent_name != '':
+          return IsProtectedFile(parent_name)
+        else:
+          return True
+
+    if IsProtectedFile(self._backend_settings.cmdline_file):
+      if not self._adb.Adb().CanAccessProtectedFileContents():
+        logging.critical('Cannot set Chrome command line. '
+                         'Fix this by flashing to a userdebug build.')
+        sys.exit(1)
+      self._saved_cmdline = ''.join(self._adb.Adb().GetProtectedFileContents(
+          self._backend_settings.cmdline_file) or [])
+      self._adb.Adb().SetProtectedFileContents(
+          self._backend_settings.cmdline_file, file_contents)
+    else:
+      self._saved_cmdline = ''.join(self._adb.Adb().GetFileContents(
+          self._backend_settings.cmdline_file) or [])
+      self._adb.Adb().SetFileContents(self._backend_settings.cmdline_file,
+                                      file_contents)
 
   def Start(self):
     self._adb.RunShellCommand('logcat -c')
@@ -206,7 +238,8 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                             self._backend_settings.activity,
                             True,
                             None,
-                            'chrome://newtab/')
+                            None,
+                            'about:blank')
 
     self._adb.Forward('tcp:%d' % self._port,
                       self._backend_settings.GetDevtoolsRemotePort())
@@ -231,6 +264,9 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def GetBrowserStartupArgs(self):
     args = super(AndroidBrowserBackend, self).GetBrowserStartupArgs()
+    if self._override_dns:
+      args = [arg for arg in args
+              if not arg.startswith('--host-resolver-rules')]
     args.append('--enable-remote-debugging')
     args.append('--no-restore-state')
     args.append('--disable-fre')
@@ -261,23 +297,17 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
   def Close(self):
     super(AndroidBrowserBackend, self).Close()
-
-    if self._saved_cmdline:
-      self._adb.Adb().SetProtectedFileContents(
-          self._backend_settings.cmdline_file,
-          self._saved_cmdline)
-    else:
-      self._adb.RunShellCommand('rm %s' % self._backend_settings.cmdline_file)
+    self._SetCommandLineFile(self._saved_cmdline or '')
     self._adb.CloseApplication(self._backend_settings.package)
 
-    if self._options.output_profile_path:
-      logging.info("Pulling profile directory from device: '%s'->'%s'." %
-          (self._backend_settings.profile_dir,
-          self._options.output_profile_path))
+    if self._output_profile_path:
+      logging.info("Pulling profile directory from device: '%s'->'%s'.",
+                   self._backend_settings.profile_dir,
+                   self._output_profile_path)
       # To minimize bandwidth it might be good to look at whether all the data
       # pulled down is really needed e.g. .pak files.
       self._adb.Pull(self._backend_settings.profile_dir,
-          self._options.output_profile_path)
+                     self._output_profile_path)
 
   def IsBrowserRunning(self):
     pids = self._adb.ExtractPid(self._backend_settings.package)
@@ -313,5 +343,21 @@ class AndroidBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                                        stdout=subprocess.PIPE).communicate()[0])
     return ret
 
+  def AddReplayServerOptions(self, extra_wpr_args):
+    """Override. Only add --no-dns_forwarding if not using RNDIS."""
+    if not self._override_dns:
+      extra_wpr_args.append('--no-dns_forwarding')
+
   def CreateForwarder(self, *port_pairs):
+    if self._rndis_forwarder:
+      forwarder = self._rndis_forwarder
+      forwarder.SetPorts(*port_pairs)
+      assert self.WEBPAGEREPLAY_HOST == forwarder.host_ip, (
+        'Host IP address on the RNDIS interface changed. Must restart browser!')
+      if self._override_dns:
+        forwarder.OverrideDns()
+      return forwarder
+    assert not self._override_dns, ('The user-space forwarder does not support '
+                                    'DNS override!')
+    logging.warning('Using the user-space forwarder.\n')
     return adb_commands.Forwarder(self._adb, *port_pairs)

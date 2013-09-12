@@ -56,10 +56,10 @@
 #include "grit/ui_resources.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
@@ -69,9 +69,6 @@ using content::UserMetricsAction;
 using content::WebContents;
 
 namespace {
-
-// The showing height of the bar.
-const int kBookmarkBarHeight = 29;
 
 // Padding for when the bookmark bar is detached.
 const int kTopBottomNTPPadding = 12;
@@ -351,7 +348,7 @@ void BookmarkBarGtk::CalculateMaxHeight() {
     max_height_ = req.height;
   } else {
     max_height_ = (bookmark_bar_state_ == BookmarkBar::DETACHED) ?
-                  chrome::kNTPBookmarkBarHeight : kBookmarkBarHeight;
+        chrome::kNTPBookmarkBarHeight : chrome::kBookmarkBarHeight;
   }
 }
 
@@ -422,7 +419,9 @@ void BookmarkBarGtk::PopupForButtonNextTo(GtkWidget* button,
   const int first_hidden = GetFirstHiddenBookmark(0, &folder_list);
   if (first_hidden != -1)
     folder_list.push_back(overflow_button_);
-  folder_list.push_back(other_bookmarks_button_);
+
+  if (!model_->other_node()->empty())
+    folder_list.push_back(other_bookmarks_button_);
 
   // Find the position of |button|.
   int button_idx = -1;

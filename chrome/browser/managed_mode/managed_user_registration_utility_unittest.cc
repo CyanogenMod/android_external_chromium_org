@@ -47,6 +47,11 @@ class MockChangeProcessor : public SyncChangeProcessor {
       const tracked_objects::Location& from_here,
       const SyncChangeList& change_list) OVERRIDE;
 
+  virtual SyncDataList GetAllSyncData(syncer::ModelType type) const
+      OVERRIDE {
+    return SyncDataList();
+  }
+
   const SyncChangeList& changes() const { return change_list_; }
 
  private:
@@ -226,7 +231,7 @@ TEST_F(ManagedUserRegistrationUtilityTest, Register) {
   StartInitialSync();
   GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Dug")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Dug"), 0),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   Acknowledge();
@@ -239,7 +244,7 @@ TEST_F(ManagedUserRegistrationUtilityTest, Register) {
 TEST_F(ManagedUserRegistrationUtilityTest, RegisterBeforeInitialSync) {
   GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Nemo")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Nemo"), 5),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   StartInitialSync();
@@ -254,7 +259,7 @@ TEST_F(ManagedUserRegistrationUtilityTest, SyncServiceShutdownBeforeRegFinish) {
   StartInitialSync();
   GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Remy")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Remy"), 12),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   service()->Shutdown();
@@ -268,7 +273,7 @@ TEST_F(ManagedUserRegistrationUtilityTest, StopSyncingBeforeRegFinish) {
   StartInitialSync();
   GetRegistrationUtility()->Register(
       ManagedUserRegistrationUtility::GenerateNewManagedUserId(),
-      ManagedUserRegistrationInfo(ASCIIToUTF16("Mike")),
+      ManagedUserRegistrationInfo(ASCIIToUTF16("Mike"), 17),
       GetRegistrationCallback());
   EXPECT_EQ(1u, prefs()->GetDictionary(prefs::kManagedUsers)->size());
   service()->StopSyncing(MANAGED_USERS);

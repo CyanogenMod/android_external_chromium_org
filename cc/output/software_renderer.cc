@@ -22,6 +22,7 @@
 #include "skia/ext/opacity_draw_filter.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
@@ -51,21 +52,23 @@ bool IsScaleAndIntegerTranslate(const SkMatrix& matrix) {
 
 scoped_ptr<SoftwareRenderer> SoftwareRenderer::Create(
     RendererClient* client,
+    const LayerTreeSettings* settings,
     OutputSurface* output_surface,
     ResourceProvider* resource_provider) {
-  return make_scoped_ptr(
-      new SoftwareRenderer(client, output_surface, resource_provider));
+  return make_scoped_ptr(new SoftwareRenderer(
+      client, settings, output_surface, resource_provider));
 }
 
 SoftwareRenderer::SoftwareRenderer(RendererClient* client,
+                                   const LayerTreeSettings* settings,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
-  : DirectRenderer(client, output_surface, resource_provider),
-    visible_(true),
-    is_scissor_enabled_(false),
-    is_backbuffer_discarded_(false),
-    output_device_(output_surface->software_device()),
-    current_canvas_(NULL) {
+    : DirectRenderer(client, settings, output_surface, resource_provider),
+      visible_(true),
+      is_scissor_enabled_(false),
+      is_backbuffer_discarded_(false),
+      output_device_(output_surface->software_device()),
+      current_canvas_(NULL) {
   if (resource_provider_) {
     capabilities_.max_texture_size = resource_provider_->max_texture_size();
     capabilities_.best_texture_format =
@@ -76,7 +79,7 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = Settings().use_map_image;
+  capabilities_.using_map_image = settings_->use_map_image;
   capabilities_.using_shared_memory_resources = true;
 }
 
@@ -135,7 +138,7 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
 void SoftwareRenderer::Finish() {}
 
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
-  DCHECK(!client_->ExternalStencilTestEnabled());
+  DCHECK(!output_surface_->HasExternalStencilTest());
   current_framebuffer_lock_.reset();
   current_canvas_ = root_canvas_;
 }
@@ -228,8 +231,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
                                        quad->IsLeftEdge() &&
                                        quad->IsBottomEdge() &&
                                        quad->IsRightEdge();
-    if (Settings().allow_antialiasing &&
-        all_four_edges_are_exterior)
+    if (settings_->allow_antialiasing && all_four_edges_are_exterior)
       current_paint_.setAntiAlias(true);
     current_paint_.setFilterBitmap(true);
   }
@@ -316,9 +318,10 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
   // TODO(aelias): This isn't correct in all cases. We should detect these
   // cases and fall back to a persistent bitmap backing
   // (http://crbug.com/280374).
+  skia::RefPtr<SkDrawFilter> opacity_filter =
+      skia::AdoptRef(new skia::OpacityDrawFilter(quad->opacity(), true));
   DCHECK(!current_canvas_->getDrawFilter());
-  current_canvas_->setDrawFilter(new skia::OpacityDrawFilter(quad->opacity(),
-                                                             true));
+  current_canvas_->setDrawFilter(opacity_filter.get());
 
   TRACE_EVENT0("cc",
                "SoftwareRenderer::DrawPictureQuad");

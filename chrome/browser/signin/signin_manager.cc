@@ -130,8 +130,6 @@ std::string SigninManager::SigninTypeToString(
   switch (type) {
     case SIGNIN_TYPE_NONE:
       return "No Signin";
-    case SIGNIN_TYPE_CLIENT_LOGIN:
-      return "Client Login";
     case SIGNIN_TYPE_WITH_CREDENTIALS:
       return "Signin with credentials";
   }
@@ -168,45 +166,8 @@ bool SigninManager::PrepareForSignin(SigninType type,
   client_login_.reset(new GaiaAuthFetcher(this,
                                           GaiaConstants::kChromeSource,
                                           profile_->GetRequestContext()));
-
   NotifyDiagnosticsObservers(SIGNIN_TYPE, SigninTypeToString(type));
   return true;
-}
-
-// Users must always sign out before they sign in again.
-void SigninManager::StartSignIn(const std::string& username,
-                                const std::string& password,
-                                const std::string& login_token,
-                                const std::string& login_captcha) {
-  DCHECK(GetAuthenticatedUsername().empty() ||
-         gaia::AreEmailsSame(username, GetAuthenticatedUsername()));
-
-  if (!PrepareForSignin(SIGNIN_TYPE_CLIENT_LOGIN, username, password))
-    return;
-
-  client_login_->StartClientLogin(username,
-                                  password,
-                                  "",
-                                  login_token,
-                                  login_captcha,
-                                  GaiaAuthFetcher::HostedAccountsNotAllowed);
-}
-
-void SigninManager::ProvideSecondFactorAccessCode(
-    const std::string& access_code) {
-  DCHECK(!possibly_invalid_username_.empty() && !password_.empty() &&
-      last_result_.data.empty());
-  DCHECK(type_ == SIGNIN_TYPE_CLIENT_LOGIN);
-
-  client_login_.reset(new GaiaAuthFetcher(this,
-                                          GaiaConstants::kChromeSource,
-                                          profile_->GetRequestContext()));
-  client_login_->StartClientLogin(possibly_invalid_username_,
-                                  access_code,
-                                  "",
-                                  std::string(),
-                                  std::string(),
-                                  GaiaAuthFetcher::HostedAccountsNotAllowed);
 }
 
 void SigninManager::StartSignInWithCredentials(
@@ -593,8 +554,12 @@ void SigninManager::CompletePendingSignin() {
   token_service->StartFetchingTokens();
 
   // If we have oauth2 tokens, tell token service about them so it does not
-  // need to fetch them again.
+  // need to fetch them again.  Its important that the authenticated name has
+  // already been set before sending the oauth2 token to the token service.
+  // Some token service listeners will query the authenticated name when they
+  // receive the token available notification.
   if (!temp_oauth_login_tokens_.refresh_token.empty()) {
+    DCHECK(!GetAuthenticatedUsername().empty());
     token_service->UpdateCredentialsWithOAuth2(temp_oauth_login_tokens_);
     temp_oauth_login_tokens_ = ClientOAuthResult();
   }

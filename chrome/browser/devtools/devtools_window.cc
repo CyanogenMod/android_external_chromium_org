@@ -288,6 +288,10 @@ void DevToolsWindow::RegisterProfilePrefs(
       prefs::kDevToolsPortForwardingEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kDevToolsPortForwardingDefaultSet,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterDictionaryPref(
       prefs::kDevToolsPortForwardingConfig,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
@@ -583,6 +587,9 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
   if (inspected_rvh)
     inspected_contents_observer_.reset(new InspectedWebContentsObserver(
         content::WebContents::FromRenderViewHost(inspected_rvh)));
+
+  embedder_message_dispatcher_.reset(
+      new DevToolsEmbedderMessageDispatcher(this));
 }
 
 // static
@@ -828,15 +835,15 @@ void DevToolsWindow::WebContentsFocused(content::WebContents* contents) {
     inspected_browser->window()->WebContentsFocused(contents);
 }
 
+void DevToolsWindow::DispatchOnEmbedder(const std::string& message) {
+  embedder_message_dispatcher_->Dispatch(message);
+}
+
 void DevToolsWindow::ActivateWindow() {
   if (IsDocked() && GetInspectedBrowserWindow())
     web_contents_->GetView()->Focus();
   else if (!IsDocked() && !browser_->window()->IsActive())
     browser_->window()->Activate();
-}
-
-void DevToolsWindow::ChangeAttachedWindowHeight(unsigned height) {
-  NOTREACHED();  // TODO(dgozman): This is not used anymore, remove.
 }
 
 void DevToolsWindow::CloseWindow() {

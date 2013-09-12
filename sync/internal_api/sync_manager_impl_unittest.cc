@@ -735,6 +735,7 @@ class TestHttpPostProviderFactory : public HttpPostProviderFactory {
   virtual void Destroy(HttpPostProviderInterface* http) OVERRIDE {
     delete static_cast<TestHttpPostProviderInterface*>(http);
   }
+  virtual void Shutdown() OVERRIDE {}
 };
 
 class SyncManagerObserverMock : public SyncManager::Observer {
@@ -982,11 +983,12 @@ class SyncManagerTest : public testing::Test,
 
   void TriggerOnIncomingNotificationForTest(ModelTypeSet model_types) {
     DCHECK(sync_manager_.thread_checker_.CalledOnValidThread());
-    ModelTypeInvalidationMap invalidation_map =
-        ModelTypeSetToInvalidationMap(model_types, std::string());
-    sync_manager_.OnIncomingInvalidation(
-        ModelTypeInvalidationMapToObjectIdInvalidationMap(
-            invalidation_map));
+    ObjectIdSet id_set = ModelTypeSetToObjectIdSet(model_types);
+    ObjectIdInvalidationMap invalidation_map =
+        ObjectIdSetToInvalidationMap(id_set,
+                                     Invalidation::kUnknownVersion,
+                                     std::string());
+    sync_manager_.OnIncomingInvalidation(invalidation_map);
   }
 
   void SetProgressMarkerForType(ModelType type, bool set) {

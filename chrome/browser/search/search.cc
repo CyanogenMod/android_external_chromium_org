@@ -64,6 +64,7 @@ const char kShowNtpFlagName[] = "show_ntp";
 const char kRecentTabsOnNTPFlagName[] = "show_recent_tabs";
 const char kUseCacheableNTP[] = "use_cacheable_ntp";
 const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
+const char kSuppressInstantExtendedOnSRPFlagName[] = "suppress_on_srp";
 
 // Constants for the field trial name and group prefix.
 const char kInstantExtendedFieldTrialName[] = "InstantExtended";
@@ -120,21 +121,6 @@ GURL TemplateURLRefToGURL(const TemplateURLRef& ref,
   search_terms_args.omnibox_start_margin = start_margin;
   search_terms_args.append_extra_query_params = append_extra_query_params;
   return GURL(ref.ReplaceSearchTerms(search_terms_args));
-}
-
-GURL GetNewTabPageURL(Profile* profile) {
-  if (!ShouldUseCacheableNTP())
-    return GURL();
-
-  if (!profile)
-    return GURL();
-
-  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
-  if (!template_url)
-    return GURL();
-
-  return TemplateURLRefToGURL(template_url->new_tab_url_ref(),
-                              kDisableStartMargin, false);
 }
 
 bool MatchesOrigin(const GURL& my_url, const GURL& other_url) {
@@ -230,9 +216,14 @@ bool IsInstantURL(const GURL& url, Profile* profile) {
   const TemplateURLRef& instant_url_ref = template_url->instant_url_ref();
   const GURL instant_url =
       TemplateURLRefToGURL(instant_url_ref, kDisableStartMargin, false);
-  return instant_url.is_valid() &&
-      (MatchesOriginAndPath(url, instant_url) ||
-       MatchesAnySearchURL(url, template_url));
+  if (!instant_url.is_valid())
+    return false;
+
+  if (MatchesOriginAndPath(url, instant_url))
+    return true;
+
+  return !ShouldSuppressInstantExtendedOnSRP() &&
+      MatchesAnySearchURL(url, template_url);
 }
 
 string16 GetSearchTermsImpl(const content::WebContents* contents,
@@ -273,10 +264,8 @@ bool IsInstantExtendedAPIEnabled() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   return false;
 #else
-  // On desktop, query extraction is part of Instant extended, so if one is
-  // enabled, the other is too.
   RecordInstantExtendedOptInState();
-  return IsQueryExtractionEnabled();
+  return EmbeddedSearchPageVersion() != kEmbeddedPageVersionDisabled;
 #endif  // defined(OS_IOS) || defined(OS_ANDROID)
 }
 
@@ -311,7 +300,8 @@ uint64 EmbeddedSearchPageVersion() {
 }
 
 bool IsQueryExtractionEnabled() {
-  return EmbeddedSearchPageVersion() != kEmbeddedPageVersionDisabled;
+  return EmbeddedSearchPageVersion() != kEmbeddedPageVersionDisabled &&
+      !ShouldSuppressInstantExtendedOnSRP();
 }
 
 string16 GetSearchTermsFromURL(Profile* profile, const GURL& url) {
@@ -387,22 +377,24 @@ bool IsInstantNTP(const content::WebContents* contents) {
 
 bool NavEntryIsInstantNTP(const content::WebContents* contents,
                           const content::NavigationEntry* entry) {
-  if (!contents || !entry)
+  if (!contents || !entry || !IsInstantExtendedAPIEnabled())
     return false;
 
   Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-  if (!IsInstantExtendedAPIEnabled() ||
-      !IsRenderedInInstantProcess(contents, profile))
+  if (!IsRenderedInInstantProcess(contents, profile))
     return false;
 
-  if (IsInstantURL(entry->GetVirtualURL(), profile) ||
-      entry->GetVirtualURL() == GetLocalInstantURL(profile))
-    return GetSearchTermsImpl(contents, entry).empty();
+  if (entry->GetVirtualURL() == GetLocalInstantURL(profile))
+    return true;
 
-  GURL new_tab_url(GetNewTabPageURL(profile));
-  return entry->GetVirtualURL() == GURL(chrome::kChromeUINewTabURL) &&
-      new_tab_url.is_valid() &&
-      MatchesOriginAndPath(entry->GetURL(), new_tab_url);
+  if (ShouldUseCacheableNTP()) {
+    GURL new_tab_url(GetNewTabPageURL(profile));
+    return new_tab_url.is_valid() &&
+        MatchesOriginAndPath(entry->GetURL(), new_tab_url);
+  }
+
+  return IsInstantURL(entry->GetVirtualURL(), profile) &&
+      GetSearchTermsImpl(contents, entry).empty();
 }
 
 bool IsSuggestPrefEnabled(Profile* profile) {
@@ -503,6 +495,18 @@ bool ShouldShowRecentTabsOnNTP() {
           &flags, NULL)) {
     return GetBoolValueForFlagWithDefault(
         kRecentTabsOnNTPFlagName, false, flags);
+  }
+
+  return false;
+}
+
+bool ShouldSuppressInstantExtendedOnSRP() {
+  FieldTrialFlags flags;
+  if (GetFieldTrialInfo(
+          base::FieldTrialList::FindFullName(kInstantExtendedFieldTrialName),
+          &flags, NULL)) {
+    return GetBoolValueForFlagWithDefault(
+        kSuppressInstantExtendedOnSRPFlagName, false, flags);
   }
 
   return false;
@@ -733,6 +737,21 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
                                     bool default_value,
                                     const FieldTrialFlags& flags) {
   return !!GetUInt64ValueForFlagWithDefault(flag, default_value ? 1 : 0, flags);
+}
+
+GURL GetNewTabPageURL(Profile* profile) {
+  if (!ShouldUseCacheableNTP())
+    return GURL();
+
+  if (!profile)
+    return GURL();
+
+  TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
+  if (!template_url)
+    return GURL();
+
+  return TemplateURLRefToGURL(template_url->new_tab_url_ref(),
+                              kDisableStartMargin, false);
 }
 
 void ResetInstantExtendedOptInStateGateForTest() {

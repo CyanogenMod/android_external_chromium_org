@@ -148,7 +148,6 @@ RootWindow::RootWindow(const CreateParams& params)
       last_cursor_(ui::kCursorNull),
       mouse_pressed_handler_(NULL),
       mouse_moved_handler_(NULL),
-      mouse_event_dispatch_target_(NULL),
       event_dispatch_target_(NULL),
       gesture_recognizer_(ui::GestureRecognizer::Create(this)),
       synthesize_mouse_move_(false),
@@ -170,6 +169,8 @@ RootWindow::RootWindow(const CreateParams& params)
 }
 
 RootWindow::~RootWindow() {
+  TRACE_EVENT0("shutdown", "RootWindow::Destructor");
+
   compositor_->RemoveObserver(this);
   // Make sure to destroy the compositor before terminating so that state is
   // cleared and we don't hit asserts.
@@ -226,16 +227,11 @@ void RootWindow::RepostEvent(const ui::LocatedEvent& event) {
             static_cast<aura::Window*>(event.target()),
             static_cast<aura::Window*>(this)));
   } else {
-    const ui::GestureEvent* gesture_event =
-        static_cast<const ui::GestureEvent*>(&event);
-    held_repostable_event_.reset(new ui::GestureEvent(
-        gesture_event->type(),
-        gesture_event->root_location().x(),
-        gesture_event->root_location().y(),
-        gesture_event->flags(),
-        gesture_event->time_stamp(),
-        gesture_event->details(),
-        gesture_event->touch_ids_bitfield()));
+    held_repostable_event_.reset(
+        new ui::GestureEvent(
+            static_cast<const ui::GestureEvent&>(event),
+            static_cast<aura::Window*>(event.target()),
+            static_cast<aura::Window*>(this)));
   }
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -724,22 +720,6 @@ void RootWindow::MoveCursorToInternal(const gfx::Point& root_location,
   synthesize_mouse_move_ = false;
 }
 
-void RootWindow::HandleMouseMoved(const ui::MouseEvent& event, Window* target) {
-  if (target == mouse_moved_handler_)
-    return;
-
-  DispatchMouseEnterOrExit(event, ui::ET_MOUSE_EXITED);
-
-  if (mouse_event_dispatch_target_ != target) {
-    mouse_moved_handler_ = NULL;
-    return;
-  }
-
-  mouse_moved_handler_ = target;
-
-  DispatchMouseEnterOrExit(event, ui::ET_MOUSE_ENTERED);
-}
-
 void RootWindow::DispatchMouseEnterOrExit(const ui::MouseEvent& event,
                                           ui::EventType type) {
   if (!mouse_moved_handler_ || !mouse_moved_handler_->delegate())
@@ -825,8 +805,6 @@ void RootWindow::OnWindowHidden(Window* invisible, WindowHiddenReason reason) {
     mouse_pressed_handler_ = NULL;
   if (invisible->Contains(mouse_moved_handler_))
     mouse_moved_handler_ = NULL;
-  if (invisible->Contains(mouse_event_dispatch_target_))
-    mouse_event_dispatch_target_ = NULL;
 
   CleanupGestureRecognizerState(invisible);
 }
@@ -975,7 +953,6 @@ void RootWindow::OnHostLostWindowCapture() {
 void RootWindow::OnHostLostMouseGrab() {
   mouse_pressed_handler_ = NULL;
   mouse_moved_handler_ = NULL;
-  mouse_event_dispatch_target_ = NULL;
 }
 
 void RootWindow::OnHostPaint(const gfx::Rect& damage_rect) {
@@ -1039,6 +1016,15 @@ bool RootWindow::DispatchGestureEventRepost(ui::GestureEvent* event) {
 
   Window* new_consumer = GetEventHandlerForPoint(event->root_location());
   if (new_consumer) {
+    ui::GestureEvent begin_gesture(
+        ui::ET_GESTURE_BEGIN,
+        event->x(),
+        event->y(),
+        event->flags(),
+        event->time_stamp(),
+        ui::GestureEventDetails(ui::ET_GESTURE_BEGIN, 0, 0),
+        event->touch_ids_bitfield());
+    ProcessEvent(new_consumer, &begin_gesture);
     ProcessEvent(new_consumer, event);
     return event->handled();
   }
@@ -1061,8 +1047,6 @@ bool RootWindow::DispatchMouseEventToTarget(ui::MouseEvent* event,
   // dispatching any event. Do not use AutoReset or the like here.
   WindowTracker destroyed_tracker;
   destroyed_tracker.Add(this);
-  Window* old_mouse_event_dispatch_target = mouse_event_dispatch_target_;
-  mouse_event_dispatch_target_ = target;
   SetLastMouseLocation(this, event->location());
   synthesize_mouse_move_ = false;
   switch (event->type()) {
@@ -1075,12 +1059,30 @@ bool RootWindow::DispatchMouseEventToTarget(ui::MouseEvent* event,
       }
       break;
     case ui::ET_MOUSE_MOVED:
-      mouse_event_dispatch_target_ = target;
-      HandleMouseMoved(*event, target);
-      if (!destroyed_tracker.Contains(this))
-        return false;
-      if (mouse_event_dispatch_target_ != target)
-        return false;
+      // Send an exit to the current |mouse_moved_handler_| and an enter to
+      // |target|. Take care that both us and |target| aren't destroyed during
+      // dispatch.
+      if (target != mouse_moved_handler_) {
+        aura::Window* old_mouse_moved_handler = mouse_moved_handler_;
+        if (target)
+          destroyed_tracker.Add(target);
+        DispatchMouseEnterOrExit(*event, ui::ET_MOUSE_EXITED);
+        if (!destroyed_tracker.Contains(this))
+          return false;
+        // If the |mouse_moved_handler_| changes out from under us, assume a
+        // nested message loop ran and we don't need to do anything.
+        if (mouse_moved_handler_ != old_mouse_moved_handler)
+          return false;
+        if (destroyed_tracker.Contains(target)) {
+          destroyed_tracker.Remove(target);
+          mouse_moved_handler_ = target;
+          DispatchMouseEnterOrExit(*event, ui::ET_MOUSE_ENTERED);
+          if (!destroyed_tracker.Contains(this))
+            return false;
+        } else {
+          mouse_moved_handler_ = NULL;
+        }
+      }
       break;
     case ui::ET_MOUSE_PRESSED:
       // Don't set the mouse pressed handler for non client mouse down events.
@@ -1112,7 +1114,6 @@ bool RootWindow::DispatchMouseEventToTarget(ui::MouseEvent* event,
   } else {
     result = false;
   }
-  mouse_event_dispatch_target_ = old_mouse_event_dispatch_target;
   return result;
 }
 

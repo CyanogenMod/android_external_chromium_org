@@ -24,6 +24,7 @@
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
+#include "cc/resources/scoped_ui_resource.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/resources/ui_resource_client.h"
 #include "cc/scheduler/rate_limiter.h"
@@ -82,20 +83,38 @@ struct CC_EXPORT RendererCapabilities {
   bool avoid_pow2_textures;
   bool using_map_image;
   bool using_shared_memory_resources;
+  bool using_discard_framebuffer;
 };
 
-struct CC_EXPORT UIResourceRequest {
+class CC_EXPORT UIResourceRequest {
+ public:
   enum UIResourceRequestType {
     UIResourceCreate,
     UIResourceDelete,
     UIResourceInvalidRequest
   };
 
-  UIResourceRequest();
+  UIResourceRequest(UIResourceRequestType type, UIResourceId id);
+  UIResourceRequest(UIResourceRequestType type,
+                    UIResourceId id,
+                    const UIResourceBitmap& bitmap);
+  UIResourceRequest(const UIResourceRequest& request);
+
   ~UIResourceRequest();
-  UIResourceRequestType type;
-  UIResourceId id;
-  scoped_refptr<UIResourceBitmap> bitmap;
+
+  UIResourceRequestType GetType() const { return type_; }
+  UIResourceId GetId() const { return id_; }
+  UIResourceBitmap GetBitmap() const {
+    DCHECK(bitmap_);
+    return *bitmap_.get();
+  }
+
+  UIResourceRequest& operator=(const UIResourceRequest& request);
+
+ private:
+  UIResourceRequestType type_;
+  UIResourceId id_;
+  scoped_ptr<UIResourceBitmap> bitmap_;
 };
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
@@ -224,6 +243,8 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
     has_transparent_background_ = transparent;
   }
 
+  void SetOverhangBitmap(const SkBitmap& bitmap);
+
   PrioritizedResourceManager* contents_texture_manager() const {
     return contents_texture_manager_.get();
   }
@@ -282,6 +303,11 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   virtual UIResourceId CreateUIResource(UIResourceClient* client);
   // Deletes a UI resource.  May safely be called more than once.
   virtual void DeleteUIResource(UIResourceId id);
+  // Put the recreation of all UI resources into the resource queue after they
+  // were evicted on the impl thread.
+  void RecreateUIResources();
+
+  virtual gfx::Size GetUIResourceSize(UIResourceId id) const;
 
   bool UsingSharedMemoryResources();
   int id() const { return tree_id_; }
@@ -319,11 +345,13 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
 
-  void UIResourceLost(UIResourceId id);
+  struct UIResourceClientData {
+    UIResourceClient* client;
+    gfx::Size size;
+  };
 
-  void DidLoseUIResources();
-
-  typedef base::hash_map<UIResourceId, UIResourceClient*> UIResourceClientMap;
+  typedef base::hash_map<UIResourceId, UIResourceClientData>
+      UIResourceClientMap;
   UIResourceClientMap ui_resource_client_map_;
   int next_ui_resource_id_;
 
@@ -378,6 +406,10 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   SkColor background_color_;
   bool has_transparent_background_;
+
+  // If set, this texture is used to fill in the parts of the screen not
+  // covered by layers.
+  scoped_ptr<ScopedUIResource> overhang_ui_resource_;
 
   typedef ScopedPtrVector<PrioritizedResource> TextureList;
   size_t partial_texture_update_requests_;

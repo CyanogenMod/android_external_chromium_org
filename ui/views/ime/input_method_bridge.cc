@@ -16,8 +16,7 @@ InputMethodBridge::InputMethodBridge(internal::InputMethodDelegate* delegate,
                                      ui::InputMethod* host,
                                      bool shared_input_method)
     : host_(host),
-      shared_input_method_(shared_input_method),
-      context_focused_(false) {
+      shared_input_method_(shared_input_method) {
   DCHECK(host_);
   SetDelegate(delegate);
 }
@@ -29,13 +28,13 @@ InputMethodBridge::~InputMethodBridge() {
   // this and go into |widget_|. NULL out |widget_| so we don't attempt to use
   // it.
   DetachFromWidget();
-  if (host_->GetTextInputClient() == this)
-    host_->SetFocusedTextInputClient(NULL);
+  host_->DetachTextInputClient(this);
 }
 
 void InputMethodBridge::OnFocus() {
   // Direct the shared IME to send TextInputClient messages to |this| object.
-  if (shared_input_method_ || !host_->GetTextInputClient())
+  if (IsWidgetActive() &&
+      (shared_input_method_ || !host_->GetTextInputClient()))
     host_->SetFocusedTextInputClient(this);
 
   // TODO(yusukes): We don't need to call OnTextInputTypeChanged() once we move
@@ -56,6 +55,8 @@ void InputMethodBridge::OnBlur() {
 
 bool InputMethodBridge::OnUntranslatedIMEMessage(const base::NativeEvent& event,
                                                  NativeEventResult* result) {
+  if (!IsWidgetActive())
+    return false;
   return host_->OnUntranslatedIMEMessage(event, result);
 }
 
@@ -84,7 +85,8 @@ void InputMethodBridge::CancelComposition(View* view) {
 }
 
 void InputMethodBridge::OnInputLocaleChanged() {
-  return host_->OnInputLocaleChanged();
+  if (IsWidgetActive())
+    host_->OnInputLocaleChanged();
 }
 
 std::string InputMethodBridge::GetInputLocale() {
@@ -180,33 +182,33 @@ bool InputMethodBridge::HasCompositionText() {
   return client ? client->HasCompositionText() : false;
 }
 
-bool InputMethodBridge::GetTextRange(ui::Range* range) {
+bool InputMethodBridge::GetTextRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ?  client->GetTextRange(range) : false;
 }
 
-bool InputMethodBridge::GetCompositionTextRange(ui::Range* range) {
+bool InputMethodBridge::GetCompositionTextRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetCompositionTextRange(range) : false;
 }
 
-bool InputMethodBridge::GetSelectionRange(ui::Range* range) {
+bool InputMethodBridge::GetSelectionRange(gfx::Range* range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetSelectionRange(range) : false;
 }
 
-bool InputMethodBridge::SetSelectionRange(const ui::Range& range) {
+bool InputMethodBridge::SetSelectionRange(const gfx::Range& range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->SetSelectionRange(range) : false;
 }
 
-bool InputMethodBridge::DeleteRange(const ui::Range& range) {
+bool InputMethodBridge::DeleteRange(const gfx::Range& range) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->DeleteRange(range) : false;
 }
 
 bool InputMethodBridge::GetTextFromRange(
-    const ui::Range& range, string16* text) {
+    const gfx::Range& range, string16* text) {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetTextFromRange(range, text) : false;
 }
@@ -253,6 +255,5 @@ void InputMethodBridge::OnDidChangeFocus(View* focused_before, View* focused) {
 ui::InputMethod* InputMethodBridge::GetHostInputMethod() const {
   return host_;
 }
-
 
 }  // namespace views

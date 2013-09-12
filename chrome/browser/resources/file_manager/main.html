@@ -81,6 +81,7 @@
 
       <script src="js/combobutton.js"></script>
       <script src="js/commandbutton.js"></script>
+      <script src="js/ui/file_manager_dialog_base.js"></script>
 
       <script src="js/app_installer.js"></script>
       <script src="js/async_util.js"></script>
@@ -112,7 +113,11 @@
       <script src="js/share_client.js"></script>
       <script src="js/share_dialog.js"></script>
       <script src="js/suggest_apps_dialog.js"></script>
+      <script src="js/text_measure.js"></script>
       <script src="js/tree.css.js"></script>
+      <script src="js/ui/preview_panel.js"></script>
+      <script src="js/ui/progress_center_panel.js"></script>
+      <script src="js/url_constants.js"></script>
       <script src="js/volume_manager.js"></script>
       <script src="js/media/media_util.js"></script>
       <script src="js/metadata/metadata_cache.js"></script>
@@ -201,7 +206,7 @@
       <menuitem command="#paste" visibleif="full-page"></menuitem>
       <hr visibleif="full-page">
       <menuitem command="#rename"></menuitem>
-      <menuitem command="#delete" i18n-content=DELETE_BUTTON_LABEL></menuitem>
+      <menuitem command="#delete" i18n-content="DELETE_BUTTON_LABEL"></menuitem>
       <menuitem command="#zip-selection"></menuitem>
       <hr visibleif="saveas-file full-page">
       <menuitem command="#newfolder"
@@ -226,9 +231,9 @@
                 command="#change-default-app"></menuitem>
       <hr id="drive-separator">
       <menuitem id="drive-sync-settings"
-                i18n-content=DRIVE_MOBILE_CONNECTION_OPTION></menuitem>
+                i18n-content="DRIVE_MOBILE_CONNECTION_OPTION"></menuitem>
       <menuitem id="drive-hosted-settings"
-                i18n-content=DRIVE_SHOW_HOSTED_FILES_OPTION></menuitem>
+                i18n-content="DRIVE_SHOW_HOSTED_FILES_OPTION"></menuitem>
       <hr command="#drive-clear-local-cache">
       <menuitem id="gear-menu-drive-clear-local-cache"
                 command="#drive-clear-local-cache"></menuitem>
@@ -267,7 +272,7 @@
         <menuitem command="#cut"></menuitem>
         <menuitem command="#copy"></menuitem>
         <menuitem command="#paste"></menuitem>
-        <menuitem command="#delete" i18n-content=DELETE_BUTTON_LABEL></menuitem>
+        <menuitem command="#delete" i18n-content="DELETE_BUTTON_LABEL"></menuitem>
     </menu>
 
     <div class="dialog-container">
@@ -279,6 +284,8 @@
           <list id="navigation-list" tabindex="8"></list>
         </div>
         <div class="dialog-navigation-list-footer">
+          <!-- This progress center is under development and hidden. -->
+          <div id="progress-center" hidden></div>
           <div id="butter-bar-container">
             <div id="butter-bar">
               <div class="content">
@@ -316,7 +323,7 @@
             </button>
           </div>
         </div>
-        <div class=dialog-body>
+        <div class="dialog-body">
           <div class="main-panel">
             <!-- The middle bar and spilitter are hidden by default, and will be shown by script if necessary. -->
             <div class="dialog-middlebar-contents" hidden>
@@ -325,7 +332,7 @@
               <tree id="directory-tree" tabindex="8"></tree>
             </div>
             <div class="splitter" id="middlebar-splitter" hidden></div>
-            <div class=filelist-panel>
+            <div class="filelist-panel">
               <div class="drive-welcome header"></div>
               <div class="volume-warning" id="volume-space-warning" hidden></div>
               <div class="volume-warning" id="drive-auth-failed-warning" hidden>
@@ -333,16 +340,16 @@
                 <div class="drive-text" id="drive-auth-failed-warning-text"></div>
               </div>
               <div id="list-container">
-                <div class=detail-table id="detail-table" tabindex=1 autofocus>
+                <div class="detail-table" id="detail-table" tabindex="1" autofocus>
                 </div>
-                <grid class=thumbnail-grid tabindex=1></grid>
+                <grid class="thumbnail-grid" tabindex="1"></grid>
                 <div id="spinner-container">
                   <div id="spinner-with-text"></div>
                 </div>
                 <div class="drive-welcome page"></div>
                 <div id="no-search-results"></div>
               </div>
-              <div class=downloads-warning hidden></div>
+              <div class="downloads-warning" hidden></div>
             </div>
           </div>
           <div class="preview-panel progressable" visibility="hidden">
@@ -353,7 +360,7 @@
               <div id="preview-lines">
                 <div class="preview-summary">
                   <span class="preview-text"></span>
-                  <span class="calculating-size" hidden></span>
+                  <span class="calculating-size"></span>
                 </div>
                 <div id="search-breadcrumbs" class="breadcrumbs"></div>
               </div>
@@ -366,15 +373,15 @@
               <button id="delete-button" command="#delete" tabindex="4"
                       i18n-values="aria-label:DELETE_BUTTON_LABEL"></button>
             </div>
-            <div class=preparing-label i18n-content=PREPARING_LABEL></div>
-            <div class=progress-bar>
-              <div class=progress-track></div>
+            <div class="preparing-label" i18n-content="PREPARING_LABEL"></div>
+            <div class="progress-bar">
+              <div class="progress-track"></div>
             </div>
             <div class="right buttonbar" id="open-panel"
                  visibleif="open-file open-multi-file">
               <select class="file-type"></select>
-              <button class=ok disabled tabindex="7"></button>
-              <button class=cancel i18n-content=CANCEL_LABEL tabindex="8"></button>
+              <button class="ok" disabled tabindex="7"></button>
+              <button class="cancel" i18n-content="CANCEL_LABEL" tabindex="8"></button>
             </div>
           </div>
           <div id="unmounted-panel"></div>
@@ -388,23 +395,23 @@
     <div class="dialog-footer progressable" tabindex="-1"
          visibleif="saveas-file folder">
       <div class="left">
-        <button id="new-folder" i18n-content=NEW_FOLDER_BUTTON_LABEL
+        <button id="new-folder" i18n-content="NEW_FOLDER_BUTTON_LABEL"
                 visibleif="saveas-file folder" command="#newfolder"
                 tabindex="5">
         </button>
         <div id="filename-input-box">
-          <div class=filename-label i18n-content=FILENAME_LABEL></div>
-          <input type=text spellcheck=false tabindex="6">
+          <div class="filename-label" i18n-content="FILENAME_LABEL"></div>
+          <input type="text" spellcheck="false" tabindex="6">
         </div>
-        <div class=preparing-label i18n-content=PREPARING_LABEL></div>
-        <div class=progress-bar>
-          <div class=progress-track></div>
+        <div class="preparing-label" i18n-content="PREPARING_LABEL"></div>
+        <div class="progress-bar">
+          <div class="progress-track"></div>
         </div>
       </div>
       <div class="right buttonbar">
         <select class="file-type"></select>
-        <button class=ok disabled tabindex="7"></button>
-        <button class=cancel i18n-content=CANCEL_LABEL tabindex="8"></button>
+        <button class="ok" disabled tabindex="7"></button>
+        <button class="cancel" i18n-content="CANCEL_LABEL" tabindex="8"></button>
       </div>
     </div>
     <div id="drag-container"></div>

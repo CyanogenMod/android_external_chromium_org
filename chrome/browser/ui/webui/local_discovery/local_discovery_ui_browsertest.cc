@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.cc"
 #include "chrome/test/base/web_ui_browsertest.h"
 
@@ -18,7 +19,6 @@ namespace local_discovery {
 
 namespace {
 
-const char kChromeDevicesPage[] = "chrome://devices";
 const char kSampleServiceName[] = "myService._privet._tcp.local";
 const char kSampleDeviceID[] = "MyFakeID";
 const char kSampleDeviceHost[] = "myservice.local";
@@ -142,7 +142,6 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     WebUIBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableDeviceDiscovery);
   }
 
   FakeLocalDiscoveryUIFactory* ui_factory() { return ui_factory_.get(); }
@@ -158,17 +157,18 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(LocalDiscoveryUITest, EmptyTest) {
-  ui_test_utils::NavigateToURL(browser(), GURL(kChromeDevicesPage));
+  ui_test_utils::NavigateToURL(browser(), GURL(
+      chrome::kChromeUIDevicesFrameURL));
   condition_devices_listed().Wait();
   EXPECT_TRUE(WebUIBrowserTest::RunJavascriptTest("checkNoDevices"));
 }
 
 IN_PROC_BROWSER_TEST_F(LocalDiscoveryUITest, AddRowTest) {
-  ui_test_utils::NavigateToURL(browser(), GURL(kChromeDevicesPage));
+  ui_test_utils::NavigateToURL(browser(), GURL(
+      chrome::kChromeUIDevicesFrameURL));
   condition_devices_listed().Wait();
   DeviceDescription description;
 
-  description.id = kSampleDeviceID;
   description.name = "Sample device";
   description.description = "Sample device description";
 

@@ -87,6 +87,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual bool IsHandledURL(const GURL& url) OVERRIDE;
   virtual bool CanCommitURL(content::RenderProcessHost* process_host,
                             const GURL& url) OVERRIDE;
+  virtual bool ShouldAllowOpenURL(content::SiteInstance* site_instance,
+                                  const GURL& url) OVERRIDE;
   virtual bool IsSuitableHost(content::RenderProcessHost* process_host,
                               const GURL& site_url) OVERRIDE;
   virtual bool ShouldTryToUseExistingProcessHost(
@@ -194,6 +196,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       int render_view_id,
       int notification_id) OVERRIDE;
   virtual bool CanCreateWindow(const GURL& opener_url,
+                               const GURL& opener_top_level_frame_url,
                                const GURL& source_origin,
                                WindowContainerType container_type,
                                const GURL& target_url,

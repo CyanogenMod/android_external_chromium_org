@@ -84,6 +84,9 @@ static const char kPortForwardingEnabledCommand[] =
     "set-port-forwarding-enabled";
 static const char kPortForwardingConfigCommand[] = "set-port-forwarding-config";
 
+static const char kPortForwardingDefaultPort[] = "8080";
+static const char kPortForwardingDefaultLocation[] = "localhost:8080";
+
 static const char kTargetTypeField[]  = "type";
 static const char kAttachedField[]  = "attached";
 static const char kProcessIdField[]  = "processId";
@@ -102,6 +105,7 @@ static const char kAdbGlobalIdField[] = "adbGlobalId";
 static const char kAdbBrowsersField[] = "browsers";
 static const char kAdbPagesField[] = "pages";
 static const char kAdbPortStatus[] = "adbPortStatus";
+static const char kGuestList[] = "guests";
 
 DictionaryValue* BuildTargetDescriptor(
     const std::string& target_type,
@@ -494,6 +498,7 @@ InspectUI::~InspectUI() {
 }
 
 void InspectUI::InitUI() {
+  SetPortForwardingDefaults();
   StartListeningNotifications();
   PopulateLists();
   UpdatePortForwardingEnabled();
@@ -550,11 +555,43 @@ void InspectUI::PopulateLists() {
   std::vector<RenderViewHost*> rvh_vector =
       DevToolsAgentHost::GetValidRenderViewHosts();
 
+  std::map<WebContents*, DictionaryValue*> description_map;
+  std::vector<WebContents*> guest_contents;
+
   for (std::vector<RenderViewHost*>::iterator it(rvh_vector.begin());
        it != rvh_vector.end(); it++) {
     bool is_tab = tab_rvhs.find(*it) != tab_rvhs.end();
-    target_list->Append(BuildTargetDescriptor(*it, is_tab));
+    RenderViewHost* rvh = (*it);
+    WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
+    if (rvh->GetProcess()->IsGuest()) {
+      if (web_contents)
+        guest_contents.push_back(web_contents);
+    } else {
+      DictionaryValue* dictionary = BuildTargetDescriptor(rvh, is_tab);
+      if (web_contents)
+        description_map[web_contents] = dictionary;
+      target_list->Append(dictionary);
+    }
   }
+
+  // Add the list of guest-views to each of its embedders.
+  for (std::vector<WebContents*>::iterator it(guest_contents.begin());
+       it != guest_contents.end(); ++it) {
+    WebContents* guest = (*it);
+    WebContents* embedder = guest->GetEmbedderWebContents();
+    if (embedder && description_map.count(embedder) > 0) {
+      DictionaryValue* description = description_map[embedder];
+      ListValue* guests = NULL;
+      if (!description->GetList(kGuestList, &guests)) {
+        guests = new ListValue();
+        description->Set(kGuestList, guests);
+      }
+      RenderViewHost* rvh = guest->GetRenderViewHost();
+      if (rvh)
+        guests->Append(BuildTargetDescriptor(rvh, false));
+    }
+  }
+
   web_ui()->CallJavascriptFunction("populateLists", *target_list.get());
 }
 
@@ -694,16 +731,50 @@ void InspectUI::RemoteDevicesChanged(
 }
 
 void InspectUI::UpdatePortForwardingEnabled() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  const base::Value* value = profile->GetPrefs()->FindPreference(
-      prefs::kDevToolsPortForwardingEnabled)->GetValue();
-  web_ui()->CallJavascriptFunction("updatePortForwardingEnabled", *value);
+  web_ui()->CallJavascriptFunction("updatePortForwardingEnabled",
+      *GetPrefValue(prefs::kDevToolsPortForwardingEnabled));
 
 }
 
 void InspectUI::UpdatePortForwardingConfig() {
+  web_ui()->CallJavascriptFunction("updatePortForwardingConfig",
+      *GetPrefValue(prefs::kDevToolsPortForwardingConfig));
+}
+
+void InspectUI::SetPortForwardingDefaults() {
   Profile* profile = Profile::FromWebUI(web_ui());
-  const base::Value* value = profile->GetPrefs()->FindPreference(
-      prefs::kDevToolsPortForwardingConfig)->GetValue();
-  web_ui()->CallJavascriptFunction("updatePortForwardingConfig", *value);
+  PrefService* prefs = profile->GetPrefs();
+
+  bool default_set;
+  if (!GetPrefValue(prefs::kDevToolsPortForwardingDefaultSet)->
+      GetAsBoolean(&default_set) || default_set) {
+    return;
+  }
+
+  // This is the first chrome://inspect invocation on a fresh profile or after
+  // upgrade from a version that did not have kDevToolsPortForwardingDefaultSet.
+  prefs->SetBoolean(prefs::kDevToolsPortForwardingDefaultSet, true);
+
+  bool enabled;
+  const base::DictionaryValue* config;
+  if (!GetPrefValue(prefs::kDevToolsPortForwardingEnabled)->
+        GetAsBoolean(&enabled) ||
+      !GetPrefValue(prefs::kDevToolsPortForwardingConfig)->
+        GetAsDictionary(&config)) {
+    return;
+  }
+
+  // Do nothing if user already took explicit action.
+  if (enabled || config->size() != 0)
+    return;
+
+  base::DictionaryValue default_config;
+  default_config.SetString(
+      kPortForwardingDefaultPort, kPortForwardingDefaultLocation);
+  prefs->Set(prefs::kDevToolsPortForwardingConfig, default_config);
+}
+
+const base::Value* InspectUI::GetPrefValue(const char* name) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  return profile->GetPrefs()->FindPreference(name)->GetValue();
 }

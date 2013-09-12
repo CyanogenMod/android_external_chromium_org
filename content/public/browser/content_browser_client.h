@@ -216,6 +216,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // authority.
   virtual bool CanCommitURL(RenderProcessHost* process_host, const GURL& url);
 
+  // Returns whether a URL should be allowed to open from a specific context.
+  // This also applies in cases where the new URL will open in another process.
+  virtual bool ShouldAllowOpenURL(SiteInstance* site_instance, const GURL& url);
+
   // Returns whether a new view for a given |site_url| can be launched in a
   // given |process_host|.
   virtual bool IsSuitableHost(RenderProcessHost* process_host,
@@ -450,6 +454,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // the window that is created should be scriptable/in the same process.
   // This is called on the IO thread.
   virtual bool CanCreateWindow(const GURL& opener_url,
+                               const GURL& opener_top_level_frame_url,
                                const GURL& source_origin,
                                WindowContainerType container_type,
                                const GURL& target_url,

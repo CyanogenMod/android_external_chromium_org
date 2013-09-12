@@ -17,6 +17,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/stack_frame.h"
 #include "extensions/common/view_type.h"
 
 #if defined(TOOLKIT_VIEWS)
@@ -207,6 +208,7 @@ class ExtensionHost : public content::WebContentsDelegate,
   // web_modal::WebContentsModalDialogHost
   virtual gfx::NativeView GetHostView() const OVERRIDE;
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
+  virtual gfx::Size GetMaximumDialogSize() OVERRIDE;
   virtual void AddObserver(
       web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
@@ -221,6 +223,11 @@ class ExtensionHost : public content::WebContentsDelegate,
   void OnEventAck();
   void OnIncrementLazyKeepaliveCount();
   void OnDecrementLazyKeepaliveCount();
+  void OnDetailedConsoleMessageAdded(
+      const base::string16& message,
+      const base::string16& source,
+      const StackTrace& stack_trace,
+      int32 severity_level);
 
   // Handles keyboard events that were not handled by HandleKeyboardEvent().
   // Platform specific implementation may override this method to handle the

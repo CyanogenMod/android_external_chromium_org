@@ -33,17 +33,21 @@ class PictureDrawQuad;
 class ScopedResource;
 class StreamVideoDrawQuad;
 class TextureDrawQuad;
+class TextureMailboxDeleter;
 class GeometryBinding;
 class ScopedEnsureFramebufferAllocation;
 
 // Class that handles drawing of composited render layers using GL.
 class CC_EXPORT GLRenderer : public DirectRenderer {
  public:
-  static scoped_ptr<GLRenderer> Create(RendererClient* client,
-                                       OutputSurface* output_surface,
-                                       ResourceProvider* resource_provider,
-                                       int highp_threshold_min,
-                                       bool use_skia_gpu_backend);
+  static scoped_ptr<GLRenderer> Create(
+      RendererClient* client,
+      const LayerTreeSettings* settings,
+      OutputSurface* output_surface,
+      ResourceProvider* resource_provider,
+      TextureMailboxDeleter* texture_mailbox_deleter,
+      int highp_threshold_min,
+      bool use_skia_gpu_backend);
 
   virtual ~GLRenderer();
 
@@ -81,8 +85,10 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
  protected:
   GLRenderer(RendererClient* client,
+             const LayerTreeSettings* settings,
              OutputSurface* output_surface,
              ResourceProvider* resource_provider,
+             TextureMailboxDeleter* texture_mailbox_deleter,
              int highp_threshold_min);
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
@@ -123,6 +129,17 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       DrawingFrame* frame,
       scoped_ptr<CopyOutputRequest> request) OVERRIDE;
   virtual void FinishDrawingQuadList() OVERRIDE;
+
+  // Check if quad needs antialiasing and if so, inflate the quad and
+  // fill edge array for fragment shader.  local_quad is set to
+  // inflated quad if antialiasing is required, otherwise it is left
+  // unchanged.  edge array is filled with inflated quad's edge data
+  // if antialiasing is required, otherwise it is left unchanged.
+  // Returns true if quad requires antialiasing and false otherwise.
+  static bool SetupQuadForAntialiasing(const gfx::Transform& device_transform,
+                                       const DrawQuad* quad,
+                                       gfx::QuadF* local_quad,
+                                       float edge[24]);
 
  private:
   friend class GLRendererShaderPixelTest;
@@ -173,17 +190,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                                 gfx::Rect rect,
                                 const gfx::Transform& draw_matrix,
                                 bool flip_vertically);
-
-  // Check if quad needs antialiasing and if so, inflate the quad and
-  // fill edge array for fragment shader.  local_quad is set to
-  // inflated quad if antialiasing is required, otherwise it is left
-  // unchanged.  edge array is filled with inflated quad's edge data
-  // if antialiasing is required, otherwise it is left unchanged.
-  // Returns true if quad requires antialiasing and false otherwise.
-  bool SetupQuadForAntialiasing(const gfx::Transform& device_transform,
-                                const DrawQuad* quad,
-                                gfx::QuadF* local_quad,
-                                float edge[24]) const;
 
   bool UseScopedTexture(DrawingFrame* frame,
                         const ScopedResource* resource,
@@ -422,6 +428,8 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   skia::RefPtr<GrContext> gr_context_;
   skia::RefPtr<SkCanvas> sk_canvas_;
+
+  TextureMailboxDeleter* texture_mailbox_deleter_;
 
   gfx::Rect swap_buffer_rect_;
   gfx::Rect scissor_rect_;

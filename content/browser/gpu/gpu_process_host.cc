@@ -25,8 +25,6 @@
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
-#include "content/gpu/gpu_child_thread.h"
-#include "content/gpu/gpu_process.h"
 #include "content/port/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -1116,7 +1114,6 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableLogging,
     switches::kEnableShareGroupAsyncTextureUpload,
-    switches::kEnableVirtualGLContexts,
     switches::kGpuStartupDialog,
     switches::kGpuSandboxAllowSysVShm,
     switches::kLoggingLevel,
@@ -1163,7 +1160,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
       new GpuSandboxedProcessLauncherDelegate(cmd_line),
 #elif defined(OS_POSIX)
       false,
-      base::EnvironmentVector(),
+      base::EnvironmentMap(),
 #endif
       cmd_line);
   process_launched_ = true;

@@ -160,7 +160,6 @@ bool NetworkingPrivateGetStateFunction::RunImpl() {
       "  \"Name\": \"wifi2_PSK\","
       "  \"Type\": \"WiFi\","
       "  \"WiFi\": {"
-      "    \"AutoConnect\": false,"
       "    \"Security\": \"WPA-PSK\","
       "    \"SignalStrength\": 80"
       "  }"
@@ -193,6 +192,31 @@ bool NetworkingPrivateSetPropertiesFunction::RunImpl() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateCreateNetworkFunction
+
+NetworkingPrivateCreateNetworkFunction::
+~NetworkingPrivateCreateNetworkFunction() {
+}
+
+bool NetworkingPrivateCreateNetworkFunction::RunImpl() {
+  scoped_ptr<api::CreateNetwork::Params> params =
+      api::CreateNetwork::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  // Store properties_dict in profile to return from GetProperties.
+  scoped_ptr<base::DictionaryValue> properties_dict(
+      params->properties.ToValue());
+  properties_dict->SetString("GUID", "fake_guid");
+  profile()->SetUserData(
+      kNetworkingPrivateProperties,
+      new NetworkingPrivatePropertiesData(properties_dict.get()));
+
+  results_ = api::CreateNetwork::Results::Create("fake_guid");
+  SendResponse(true);
+  return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateGetVisibleNetworksFunction
 
 NetworkingPrivateGetVisibleNetworksFunction::
@@ -216,7 +240,6 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
       "    \"Name\": \"wifi1\","
       "    \"Type\": \"WiFi\","
       "    \"WiFi\": {"
-      "      \"AutoConnect\": false,"
       "      \"Security\": \"WEP-PSK\","
       "      \"SignalStrength\": 0"
       "    }"
@@ -225,10 +248,7 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
       "    \"ConnectionState\": \"Connected\","
       "    \"GUID\": \"stub_vpn1\","
       "    \"Name\": \"vpn1\","
-      "    \"Type\": \"VPN\","
-      "    \"VPN\": {"
-      "      \"AutoConnect\": false"
-      "    }"
+      "    \"Type\": \"VPN\""
       "  },"
       "  {"
       "    \"ConnectionState\": \"NotConnected\","
@@ -236,7 +256,6 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
       "    \"Name\": \"wifi2_PSK\","
       "    \"Type\": \"WiFi\","
       "    \"WiFi\": {"
-      "      \"AutoConnect\": false,"
       "      \"Security\": \"WPA-PSK\","
       "      \"SignalStrength\": 80"
       "    }"

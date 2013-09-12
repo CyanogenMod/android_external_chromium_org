@@ -36,6 +36,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/common/extension_urls.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -124,10 +125,8 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
                                            ListValue* event_args,
                                            UserGestureState user_gesture,
                                            const EventFilteringInfo& info) {
-  if (ActivityLog::IsLogEnabledOnAnyProfile()) {
-    LogExtensionEventMessage(profile_id, extension_id, event_name,
-                             scoped_ptr<ListValue>(event_args->DeepCopy()));
-  }
+  LogExtensionEventMessage(profile_id, extension_id, event_name,
+                           scoped_ptr<ListValue>(event_args->DeepCopy()));
 
   ListValue args;
   args.Set(0, new base::StringValue(event_name));
@@ -136,7 +135,7 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
   ipc_sender->Send(new ExtensionMsg_MessageInvoke(
       MSG_ROUTING_CONTROL,
       extension_id,
-      "event_bindings",
+      kEventBindings,
       "dispatchEvent",
       args,
       user_gesture == USER_GESTURE_ENABLED));

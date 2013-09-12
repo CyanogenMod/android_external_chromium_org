@@ -28,11 +28,12 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
   once a remote-debugger port has been established."""
   # It is OK to have abstract methods. pylint: disable=W0223
 
-  def __init__(self, is_content_shell, supports_extensions, options):
+  def __init__(self, is_content_shell, supports_extensions, browser_options,
+               output_profile_path, extensions_to_load):
     super(ChromeBrowserBackend, self).__init__(
         is_content_shell=is_content_shell,
         supports_extensions=supports_extensions,
-        options=options,
+        browser_options=browser_options,
         tab_list_backend=tab_list_backend.TabListBackend)
     self._port = None
 
@@ -41,12 +42,16 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._tracing_backend = None
     self._system_info_backend = None
 
+    self._output_profile_path = output_profile_path
+    self._extensions_to_load = extensions_to_load
+
     self.webpagereplay_local_http_port = util.GetAvailableLocalPort()
     self.webpagereplay_local_https_port = util.GetAvailableLocalPort()
     self.webpagereplay_remote_http_port = self.webpagereplay_local_http_port
     self.webpagereplay_remote_https_port = self.webpagereplay_local_https_port
 
-    if options.dont_override_profile and not options_for_unittests.AreSet():
+    if (self.browser_options.dont_override_profile and
+        not options_for_unittests.AreSet()):
       sys.stderr.write('Warning: Not overriding profile. This can cause '
                        'unexpected effects due to profile-specific settings, '
                        'such as about:flags settings, cookies, and '
@@ -58,8 +63,8 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
       self._extension_dict_backend = (
           extension_dict_backend.ExtensionDictBackend(self))
 
-  def AddReplayServerOptions(self, options):
-    options.append('--no-dns_forwarding')
+  def AddReplayServerOptions(self, extra_wpr_args):
+    extra_wpr_args.append('--no-dns_forwarding')
 
   @property
   def misc_web_contents_backend(self):
@@ -73,37 +78,39 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def GetBrowserStartupArgs(self):
     args = []
-    args.extend(self.options.extra_browser_args)
+    args.extend(self.browser_options.extra_browser_args)
     args.append('--disable-background-networking')
     args.append('--metrics-recording-only')
     args.append('--no-first-run')
     args.append('--no-proxy-server')
-    if self.options.wpr_mode != wpr_modes.WPR_OFF:
+    if self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
       args.extend(wpr_server.GetChromeFlags(
           self.WEBPAGEREPLAY_HOST,
           self.webpagereplay_remote_http_port,
           self.webpagereplay_remote_https_port))
     args.extend(user_agent.GetChromeUserAgentArgumentFromType(
-        self.options.browser_user_agent_type))
+        self.browser_options.browser_user_agent_type))
 
-    extensions = [extension.local_path for extension in
-                  self.options.extensions_to_load if not extension.is_component]
+    extensions = [extension.local_path
+                  for extension in self._extensions_to_load
+                  if not extension.is_component]
     extension_str = ','.join(extensions)
     if len(extensions) > 0:
       args.append('--load-extension=%s' % extension_str)
 
-    component_extensions = [extension.local_path for extension in
-                  self.options.extensions_to_load if extension.is_component]
+    component_extensions = [extension.local_path
+                            for extension in self._extensions_to_load
+                            if extension.is_component]
     component_extension_str = ','.join(component_extensions)
     if len(component_extensions) > 0:
       args.append('--load-component-extension=%s' % component_extension_str)
 
-    if self.options.no_proxy_server:
+    if self.browser_options.no_proxy_server:
       args.append('--no-proxy-server')
 
     return args
 
-  def _WaitForBrowserToComeUp(self, timeout=None):
+  def _WaitForBrowserToComeUp(self, wait_for_extensions=True, timeout=None):
     def IsBrowserUp():
       try:
         self.Request('', timeout=timeout)
@@ -126,7 +133,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
           (document.readyState == 'complete' ||
            document.readyState == 'interactive')
       """
-      for e in self.options.extensions_to_load:
+      for e in self._extensions_to_load:
         if not e.extension_id in self._extension_dict_backend:
           return False
         extension_object = self._extension_dict_backend[e.extension_id]
@@ -135,7 +142,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
         if not res:
           return False
       return True
-    if self._supports_extensions:
+    if wait_for_extensions and self._supports_extensions:
       util.WaitFor(AllExtensionsLoaded, timeout=30)
 
   def _PostBrowserStartupInitialization(self):

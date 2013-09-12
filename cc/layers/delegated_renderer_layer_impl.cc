@@ -240,13 +240,19 @@ RenderPass::Id DelegatedRendererLayerImpl::NextContributingRenderPassId(
   return RenderPass::Id(previous.layer_id, previous.index + 1);
 }
 
-RenderPass::Id DelegatedRendererLayerImpl::ConvertDelegatedRenderPassId(
-    RenderPass::Id delegated_render_pass_id) const {
+bool DelegatedRendererLayerImpl::ConvertDelegatedRenderPassId(
+    RenderPass::Id delegated_render_pass_id,
+    RenderPass::Id* output_render_pass_id) const {
   base::hash_map<RenderPass::Id, int>::const_iterator found =
       render_passes_index_by_id_.find(delegated_render_pass_id);
-  DCHECK(found != render_passes_index_by_id_.end());
+  if (found == render_passes_index_by_id_.end()) {
+    // Be robust against a RenderPass id that isn't part of the frame.
+    return false;
+  }
   unsigned delegated_render_pass_index = found->second;
-  return RenderPass::Id(id(), IndexToId(delegated_render_pass_index));
+  *output_render_pass_id =
+      RenderPass::Id(id(), IndexToId(delegated_render_pass_index));
+  return true;
 }
 
 void DelegatedRendererLayerImpl::AppendContributingRenderPasses(
@@ -254,10 +260,14 @@ void DelegatedRendererLayerImpl::AppendContributingRenderPasses(
   DCHECK(HasContributingDelegatedRenderPasses());
 
   for (size_t i = 0; i < render_passes_in_draw_order_.size() - 1; ++i) {
-    RenderPass::Id output_render_pass_id =
-        ConvertDelegatedRenderPassId(render_passes_in_draw_order_[i]->id);
+    RenderPass::Id output_render_pass_id(-1, -1);
+    bool present =
+        ConvertDelegatedRenderPassId(render_passes_in_draw_order_[i]->id,
+                                     &output_render_pass_id);
 
     // Don't clash with the RenderPass we generate if we own a RenderSurface.
+    DCHECK(present) << render_passes_in_draw_order_[i]->id.layer_id << ", "
+                    << render_passes_in_draw_order_[i]->id.index;
     DCHECK_GT(output_render_pass_id.index, 0);
 
     render_pass_sink->AppendRenderPass(
@@ -288,13 +298,13 @@ void DelegatedRendererLayerImpl::AppendQuads(
   DCHECK(root_delegated_render_pass->output_rect.origin().IsOrigin());
   gfx::Size frame_size = root_delegated_render_pass->output_rect.size();
 
-  // If the index of the EenderPassId is 0, then it is a RenderPass generated
-  // for a layer in this compositor, not the delegated renderer. Then we want to
-  // merge our root RenderPass with the target RenderPass. Otherwise, it is some
-  // RenderPass which we added from the delegated renderer.
+  // If the index of the RenderPassId is 0, then it is a RenderPass generated
+  // for a layer in this compositor, not the delegating renderer. Then we want
+  // to merge our root RenderPass with the target RenderPass. Otherwise, it is
+  // some RenderPass which we added from the delegating renderer.
   bool should_merge_root_render_pass_with_target = !target_render_pass_id.index;
   if (should_merge_root_render_pass_with_target) {
-    // Verify that the RenderPass we are appending to is created our
+    // Verify that the RenderPass we are appending to is created by our
     // render_target.
     DCHECK(target_render_pass_id.layer_id == render_target()->id());
 
@@ -447,18 +457,26 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     } else {
       RenderPass::Id delegated_contributing_render_pass_id =
           RenderPassDrawQuad::MaterialCast(delegated_quad)->render_pass_id;
-      RenderPass::Id output_contributing_render_pass_id =
-          ConvertDelegatedRenderPassId(delegated_contributing_render_pass_id);
-      DCHECK(output_contributing_render_pass_id !=
-             append_quads_data->render_pass_id);
+      RenderPass::Id output_contributing_render_pass_id(-1, -1);
 
-      output_quad = RenderPassDrawQuad::MaterialCast(delegated_quad)->Copy(
-          output_shared_quad_state,
-          output_contributing_render_pass_id).PassAs<DrawQuad>();
+      bool present =
+          ConvertDelegatedRenderPassId(delegated_contributing_render_pass_id,
+                                       &output_contributing_render_pass_id);
+
+      // The frame may have a RenderPassDrawQuad that points to a RenderPass not
+      // part of the frame. Just ignore these quads.
+      if (present) {
+        DCHECK(output_contributing_render_pass_id !=
+               append_quads_data->render_pass_id);
+
+        output_quad = RenderPassDrawQuad::MaterialCast(delegated_quad)->Copy(
+            output_shared_quad_state,
+            output_contributing_render_pass_id).PassAs<DrawQuad>();
+      }
     }
-    DCHECK(output_quad.get());
 
-    quad_sink->Append(output_quad.Pass(), append_quads_data);
+    if (output_quad)
+      quad_sink->Append(output_quad.Pass(), append_quads_data);
   }
 }
 

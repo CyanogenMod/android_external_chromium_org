@@ -13,6 +13,7 @@
 #include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/policy/url_blacklist_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/matcher/url_matcher.h"
 #include "url/gurl.h"
@@ -77,7 +78,6 @@ FilterBuilder::~FilterBuilder() {
 
 bool FilterBuilder::AddPattern(const std::string& pattern, int site_id) {
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-#if defined(ENABLE_CONFIGURATION_POLICY)
   std::string scheme;
   std::string host;
   uint16 port;
@@ -96,10 +96,6 @@ bool FilterBuilder::AddPattern(const std::string& pattern, int site_id) {
   all_conditions_.push_back(condition_set);
   contents_->matcher_site_map[matcher_id_] = site_id;
   return true;
-#else
-  NOTREACHED();
-  return false;
-#endif
 }
 
 void FilterBuilder::AddHostnameHash(const std::string& hash, int site_id) {

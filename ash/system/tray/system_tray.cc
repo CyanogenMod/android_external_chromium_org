@@ -320,16 +320,6 @@ bool SystemTray::HasNotificationBubble() const {
   return notification_bubble_.get() != NULL;
 }
 
-bool SystemTray::IsPressed() {
-  // Only when a full system tray bubble gets shown true will be returned.
-  // Small bubbles (like audio modifications via keyboard) should return false.
-  // Since showing the e.g. network portion of the system tray menu will convert
-  // the |system_bubble_| from type |BUBBLE_TYPE_DEFAULT| into
-  // |BUBBLE_TYPE_DETAILED| the full tray cannot reliably be checked trhough the
-  // type. As such |full_system_tray_menu_| gets checked here.
-  return HasSystemBubble() && full_system_tray_menu_;
-}
-
 internal::SystemTrayBubble* SystemTray::GetSystemBubble() {
   if (!system_bubble_)
     return NULL;
@@ -375,6 +365,12 @@ void SystemTray::DestroySystemBubble() {
   system_bubble_.reset();
   detailed_item_ = NULL;
   UpdateWebNotifications();
+  // When closing a system bubble with the alternate shelf layout, we need to
+  // turn off the active tinting of the shelf.
+  if (full_system_tray_menu_) {
+    SetDrawBackgroundAsActive(false);
+    full_system_tray_menu_ = false;
+  }
 }
 
 void SystemTray::DestroyNotificationBubble() {
@@ -482,6 +478,11 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
   if (!notification_bubble_)
     UpdateWebNotifications();
   GetShelfLayoutManager()->UpdateAutoHideState();
+
+  // When we show the system menu in our alternate shelf layout, we need to
+  // tint the background.
+  if (full_system_tray_menu_)
+    SetDrawBackgroundAsActive(true);
 }
 
 void SystemTray::UpdateNotificationBubble() {

@@ -24,7 +24,6 @@
         # TODO(gregoryd): chrome_resources and chrome_strings could be
         #  shared with the 64-bit target, but it does not work due to a gyp
         # issue.
-        '../third_party/cld/cld.gyp:cld',
         'common_net',
         'common_version',
         'installer_util',
@@ -72,6 +71,8 @@
         '../extensions/common/extension_paths.h',
         '../extensions/common/extension_resource.cc',
         '../extensions/common/extension_resource.h',
+        '../extensions/common/extension_urls.cc',
+        '../extensions/common/extension_urls.h',
         '../extensions/common/extensions_client.cc',
         '../extensions/common/extensions_client.h',
         '../extensions/common/features/feature.cc',
@@ -103,6 +104,8 @@
         '../extensions/common/one_shot_event.cc',
         '../extensions/common/one_shot_event.h',
         '../extensions/common/permissions/permissions_provider.h',
+        '../extensions/common/stack_frame.cc',
+        '../extensions/common/stack_frame.h',
         '../extensions/common/switches.cc',
         '../extensions/common/switches.h',
         '../extensions/common/url_pattern.cc',
@@ -216,6 +219,8 @@
         'common/extensions/api/storage/storage_schema_manifest_handler.h',
         'common/extensions/api/system_indicator/system_indicator_handler.cc',
         'common/extensions/api/system_indicator/system_indicator_handler.h',
+        'common/extensions/api/url_handlers/url_handlers_parser.cc',
+        'common/extensions/api/url_handlers/url_handlers_parser.h',
         'common/extensions/background_info.cc',
         'common/extensions/background_info.h',
         'common/extensions/chrome_extensions_client.cc',
@@ -448,8 +453,6 @@
         'common/spellcheck_marker.h',
         'common/spellcheck_messages.h',
         'common/spellcheck_result.h',
-        'common/startup_metric_utils.cc',
-        'common/startup_metric_utils.h',
         'common/switch_utils.cc',
         'common/switch_utils.h',
         'common/thumbnail_score.cc',
@@ -572,6 +575,21 @@
             ['exclude', '^common/chrome_version_info_posix.cc'],
             ['exclude', '^common/service_'],
           ],
+          'sources!': [
+            'common/badge_util.cc',
+            'common/extensions/api/extension_action/browser_action_handler.cc',
+            'common/extensions/api/extension_action/page_action_handler.cc',
+            'common/extensions/api/spellcheck/spellcheck_handler.cc',
+            'common/extensions/manifest_handlers/minimum_chrome_version_checker.cc',
+            'common/extensions/manifest_handlers/nacl_modules_handler.cc',
+            'common/icon_with_badge_image_source.cc',
+            'common/importer/imported_bookmark_entry.cc',
+            'common/importer/importer_bridge.cc',
+            'common/importer/importer_data_types.cc',
+            'common/importer/importer_url_row.cc',
+            'common/net/url_util.cc',
+            'common/spellcheck_common.cc',
+          ],
           'dependencies!': [
             '<(DEPTH)/chrome/app/policy/cloud_policy_codegen.gyp:policy',
           ],
@@ -633,6 +651,11 @@
             ['exclude', '^common/automation_']
           ]
         }],
+        ['enable_plugins==0', {
+          'source!' : [
+            'common/pepper_permission_util.cc',
+          ],
+        }],
         ['use_system_nspr==1', {
           'dependencies': [
             '<(DEPTH)/base/third_party/nspr/nspr.gyp:nspr',
@@ -648,6 +671,16 @@
             'common/print_messages.cc',
             'common/print_messages.h',
           ]
+        }],
+        ['cld_version==0 or cld_version==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/cld/cld.gyp:cld',
+          ],
+        }],
+        ['cld_version==0 or cld_version==2', {
+          'dependencies': [
+            '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld_2',
+          ],
         }],
       ],
       'target_conditions': [

@@ -12,7 +12,8 @@ namespace {
 
 static bool SetMotionBuffer(content::DeviceMotionHardwareBuffer* buffer,
     bool enabled) {
-  DCHECK(buffer);
+  if (!buffer)
+    return false;
   buffer->seqlock.WriteBegin();
   buffer->data.allAvailableSensorsAreActive = enabled;
   buffer->seqlock.WriteEnd();
@@ -29,14 +30,13 @@ DataFetcherSharedMemory::DataFetcherSharedMemory() {
 DataFetcherSharedMemory::~DataFetcherSharedMemory() {
 }
 
-bool DataFetcherSharedMemory::Start(ConsumerType consumer_type) {
+bool DataFetcherSharedMemory::Start(ConsumerType consumer_type, void* buffer) {
+  DCHECK(buffer);
+
   switch (consumer_type) {
     case CONSUMER_TYPE_MOTION:
-      if (void* buffer = InitSharedMemoryBuffer(consumer_type,
-          sizeof(DeviceMotionHardwareBuffer)))
-        return SetMotionBuffer(
-            static_cast<DeviceMotionHardwareBuffer*>(buffer), true);
-      break;
+      motion_buffer_ = static_cast<DeviceMotionHardwareBuffer*>(buffer);
+      return SetMotionBuffer(motion_buffer_, true);
     case CONSUMER_TYPE_ORIENTATION:
       NOTIMPLEMENTED();
       break;
@@ -47,13 +47,10 @@ bool DataFetcherSharedMemory::Start(ConsumerType consumer_type) {
 }
 
 bool DataFetcherSharedMemory::Stop(ConsumerType consumer_type) {
+
   switch (consumer_type) {
     case CONSUMER_TYPE_MOTION:
-      if (void* buffer = InitSharedMemoryBuffer(consumer_type,
-          sizeof(DeviceMotionHardwareBuffer)))
-        return SetMotionBuffer(
-            static_cast<DeviceMotionHardwareBuffer*>(buffer), false);
-      break;
+      return SetMotionBuffer(motion_buffer_, false);
     case CONSUMER_TYPE_ORIENTATION:
       NOTIMPLEMENTED();
       break;

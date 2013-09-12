@@ -289,10 +289,13 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Removes the entry at |index|, as long as it is not the current entry.
   void RemoveEntryAtIndexInternal(int index);
 
-  // Discards the pending and transient entries.
+  // Discards both the pending and transient entries.
   void DiscardNonCommittedEntriesInternal();
 
-  // Discards the transient entry.
+  // Discards only the pending entry.
+  void DiscardPendingEntry();
+
+  // Discards only the transient entry.
   void DiscardTransientEntry();
 
   // If we have the maximum number of entries, remove the oldest one in
@@ -363,7 +366,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   // of the restored entries to update its max page ID.
   int32 max_restored_page_id_;
 
-  // Manages the SSL security UI
+  // Manages the SSL security UI.
   SSLManager ssl_manager_;
 
   // Whether we need to be reloaded when made active.

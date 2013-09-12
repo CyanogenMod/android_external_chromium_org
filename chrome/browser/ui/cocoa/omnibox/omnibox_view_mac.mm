@@ -202,8 +202,7 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 }
 
 void OmniboxViewMac::Update() {
-  if (model()->UpdatePermanentText(
-      controller()->GetToolbarModel()->GetText(true))) {
+  if (model()->UpdatePermanentText()) {
     // Restore everything to the baseline look.
     RevertAll();
 
@@ -430,6 +429,7 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
   CGFloat line_height = [[field_ cell] lineHeight];
   [paragraph_style setMaximumLineHeight:line_height];
   [paragraph_style setMinimumLineHeight:line_height];
+  [paragraph_style setLineBreakMode:NSLineBreakByTruncatingTail];
   [as addAttribute:NSParagraphStyleAttributeName value:paragraph_style
              range:as_entire_string];
 

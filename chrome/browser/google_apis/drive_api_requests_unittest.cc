@@ -187,8 +187,8 @@ class DriveApiRequestsTest : public testing::Test {
     response->set_code(net::HTTP_PRECONDITION_FAILED);
 
     std::string content;
-    if (file_util::ReadFileToString(expected_precondition_failed_file_path_,
-                                    &content)) {
+    if (base::ReadFileToString(expected_precondition_failed_file_path_,
+                               &content)) {
       response->set_content(content);
       response->set_content_type("application/json");
     }
@@ -555,6 +555,33 @@ TEST_F(DriveApiRequestsTest, ChangesListRequest) {
   EXPECT_TRUE(result);
 }
 
+TEST_F(DriveApiRequestsTest, ChangesListNextPageRequest) {
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "drive/changelist.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<ChangeList> result;
+
+  {
+    base::RunLoop run_loop;
+    drive::ChangesListNextPageRequest* request =
+        new drive::ChangesListNextPageRequest(
+            request_sender_.get(),
+            test_util::CreateQuitCallback(
+                &run_loop,
+                test_util::CreateCopyResultCallback(&error, &result)));
+    request->set_next_link(test_server_.GetURL("/continue/get/change/list"));
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/continue/get/change/list", http_request_.relative_url);
+  EXPECT_TRUE(result);
+}
+
 TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
   // Set an expected data file containing the dummy file entry data.
   // It'd be returned if we copy a file.
@@ -654,23 +681,23 @@ TEST_F(DriveApiRequestsTest, FilesListRequest) {
   EXPECT_TRUE(result);
 }
 
-TEST_F(DriveApiRequestsTest, ContinueGetFileListRequest) {
+TEST_F(DriveApiRequestsTest, FilesListNextPageRequest) {
   // Set an expected data file containing valid result.
   expected_data_file_path_ = test_util::GetTestFilePath(
       "drive/filelist.json");
 
   GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result;
+  scoped_ptr<FileList> result;
 
   {
     base::RunLoop run_loop;
-    drive::ContinueGetFileListRequest* request =
-        new drive::ContinueGetFileListRequest(
+    drive::FilesListNextPageRequest* request =
+        new drive::FilesListNextPageRequest(
             request_sender_.get(),
-            test_server_.GetURL("/continue/get/file/list"),
             test_util::CreateQuitCallback(
                 &run_loop,
                 test_util::CreateCopyResultCallback(&error, &result)));
+    request->set_next_link(test_server_.GetURL("/continue/get/file/list"));
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
@@ -711,123 +738,7 @@ TEST_F(DriveApiRequestsTest, FilesTrashRequest) {
   EXPECT_TRUE(http_request_.content.empty());
 }
 
-TEST_F(DriveApiRequestsTest, TouchResourceRequest) {
-  // Set an expected data file containing the directory's entry data.
-  // It'd be returned if we rename a directory.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/directory_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<FileResource> file_resource;
-  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
-  const base::Time::Exploded kLastViewedByMeDate =
-      {2013, 7, 0, 19, 15, 59, 13, 123};
-
-  // Touch a file with |resource_id|.
-  {
-    base::RunLoop run_loop;
-    drive::TouchResourceRequest* request = new drive::TouchResourceRequest(
-        request_sender_.get(),
-        *url_generator_,
-        "resource_id",
-        base::Time::FromUTCExploded(kModifiedDate),
-        base::Time::FromUTCExploded(kLastViewedByMeDate),
-        test_util::CreateQuitCallback(
-            &run_loop,
-            test_util::CreateCopyResultCallback(&error, &file_resource)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_PATCH, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id"
-            "?setModifiedDate=true&updateViewedDate=false",
-            http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_EQ("{\"lastViewedByMeDate\":\"2013-07-19T15:59:13.123Z\","
-            "\"modifiedDate\":\"2012-07-19T15:59:13.123Z\"}",
-            http_request_.content);
-}
-
-TEST_F(DriveApiRequestsTest, MoveResourceRequest) {
-  // Set an expected data file containing the dummy file entry data.
-  // It'd be returned if we move a file.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/file_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<FileResource> file_resource;
-
-  // Move the file to the directory |parent_resource_id| with new name
-  // "new title".
-  {
-    base::RunLoop run_loop;
-    drive::MoveResourceRequest* request =
-        new drive::MoveResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "resource_id",
-            "parent_resource_id",
-            "new title",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error, &file_resource)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_PATCH, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id", http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_EQ(
-      "{\"parents\":[{\"id\":\"parent_resource_id\"}],\"title\":\"new title\"}",
-      http_request_.content);
-  EXPECT_TRUE(file_resource);
-}
-
-TEST_F(DriveApiRequestsTest, MoveResourceRequest_EmptyParentResourceId) {
-  // Set an expected data file containing the directory's entry data.
-  // It'd be returned if we rename a directory.
-  expected_data_file_path_ =
-      test_util::GetTestFilePath("drive/file_entry.json");
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<FileResource> file_resource;
-
-  // Rename the file to "new title," but keep the parent directory as is.
-  {
-    base::RunLoop run_loop;
-    drive::MoveResourceRequest* request =
-        new drive::MoveResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "resource_id",
-            std::string(),
-            "new title",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error, &file_resource)));
-    request_sender_->StartRequestWithRetry(request);
-    run_loop.Run();
-  }
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_EQ(net::test_server::METHOD_PATCH, http_request_.method);
-  EXPECT_EQ("/drive/v2/files/resource_id", http_request_.relative_url);
-  EXPECT_EQ("application/json", http_request_.headers["Content-Type"]);
-
-  EXPECT_TRUE(http_request_.has_content);
-  EXPECT_EQ("{\"title\":\"new title\"}", http_request_.content);
-  EXPECT_TRUE(file_resource);
-}
-
-TEST_F(DriveApiRequestsTest, InsertResourceRequest) {
+TEST_F(DriveApiRequestsTest, ChildrenInsertRequest) {
   // Set an expected data file containing the children entry.
   expected_content_type_ = "application/json";
   expected_content_ = kTestChildrenResponse;
@@ -838,15 +749,14 @@ TEST_F(DriveApiRequestsTest, InsertResourceRequest) {
   // "parent_resource_id".
   {
     base::RunLoop run_loop;
-    drive::InsertResourceRequest* request =
-        new drive::InsertResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "parent_resource_id",
-            "resource_id",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error)));
+    drive::ChildrenInsertRequest* request = new drive::ChildrenInsertRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error)));
+    request->set_folder_id("parent_resource_id");
+    request->set_id("resource_id");
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
@@ -861,22 +771,21 @@ TEST_F(DriveApiRequestsTest, InsertResourceRequest) {
   EXPECT_EQ("{\"id\":\"resource_id\"}", http_request_.content);
 }
 
-TEST_F(DriveApiRequestsTest, DeleteResourceRequest) {
+TEST_F(DriveApiRequestsTest, ChildrenDeleteRequest) {
   GDataErrorCode error = GDATA_OTHER_ERROR;
 
   // Remove a resource with "resource_id" from a directory with
   // "parent_resource_id".
   {
     base::RunLoop run_loop;
-    drive::DeleteResourceRequest* request =
-        new drive::DeleteResourceRequest(
-            request_sender_.get(),
-            *url_generator_,
-            "parent_resource_id",
-            "resource_id",
-            test_util::CreateQuitCallback(
-                &run_loop,
-                test_util::CreateCopyResultCallback(&error)));
+    drive::ChildrenDeleteRequest* request = new drive::ChildrenDeleteRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error)));
+    request->set_child_id("resource_id");
+    request->set_folder_id("parent_resource_id");
     request_sender_->StartRequestWithRetry(request);
     run_loop.Run();
   }
@@ -1588,7 +1497,7 @@ TEST_F(DriveApiRequestsTest, DownloadFileRequest) {
   }
 
   std::string contents;
-  file_util::ReadFileToString(temp_file, &contents);
+  base::ReadFileToString(temp_file, &contents);
   base::DeleteFile(temp_file, false);
 
   EXPECT_EQ(HTTP_SUCCESS, result_code);

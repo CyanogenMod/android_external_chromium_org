@@ -43,7 +43,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/extensions/file_manager/open_util.h"
+#include "chrome/browser/chromeos/file_manager/open_util.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
@@ -441,7 +441,7 @@ Notification* ScreenshotTaker::CreateNotification(
       ui::ResourceBundle::GetSharedInstance().GetImageNamed(
           IDR_SCREENSHOT_NOTIFICATION_ICON),
       WebKit::WebTextDirectionDefault,
-      message_center::NotifierId(ash::NOTIFIER_SCREENSHOT),
+      message_center::NotifierId(ash::system_notifier::NOTIFIER_SCREENSHOT),
       l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_NOTIFIER_SCREENSHOT_NAME),
       replace_id,
       message_center::RichNotificationData(),
@@ -462,8 +462,8 @@ void ScreenshotTaker::ShowNotification(
   // TODO(sschmitz): make this work for Windows.
   DesktopNotificationService* const service =
       DesktopNotificationServiceFactory::GetForProfile(GetProfile());
-  if (service->IsNotifierEnabled(
-          message_center::NotifierId(ash::NOTIFIER_SCREENSHOT))) {
+  if (service->IsNotifierEnabled(message_center::NotifierId(
+          ash::system_notifier::NOTIFIER_SCREENSHOT))) {
     scoped_ptr<Notification> notification(
         CreateNotification(screenshot_result, screenshot_path));
     g_browser_process->notification_ui_manager()->Add(*notification,

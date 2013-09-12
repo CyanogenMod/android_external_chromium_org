@@ -42,8 +42,8 @@ class PaintTimeCounter;
 class Proxy;
 class ResourceProvider;
 class TileManager;
+class UIResourceRequest;
 struct RendererCapabilities;
-struct UIResourceRequest;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
@@ -66,6 +66,7 @@ class CC_EXPORT LayerTreeImpl {
   FrameRateCounter* frame_rate_counter() const;
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
+  bool device_viewport_valid_for_tile_management() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
   bool IsRecycleTree() const;
@@ -77,6 +78,8 @@ class CC_EXPORT LayerTreeImpl {
   base::Time CurrentFrameTime() const;
   base::TimeTicks CurrentPhysicalTimeTicks() const;
   void SetNeedsCommit();
+  gfx::Size DrawViewportSize() const;
+  void StartScrollbarAnimation();
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -86,7 +89,6 @@ class CC_EXPORT LayerTreeImpl {
   // trivial accessors in a followup patch.
   const LayerTreeDebugState& debug_state() const;
   float device_scale_factor() const;
-  gfx::Size device_viewport_size() const;
   DebugRectHistory* debug_rect_history() const;
   scoped_ptr<base::Value> AsValue() const;
 

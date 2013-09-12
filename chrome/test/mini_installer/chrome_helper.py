@@ -4,12 +4,35 @@
 
 """Common helper module for working with Chrome's processes and windows."""
 
-import psutil
+import ctypes
+import pywintypes
 import re
+import win32con
 import win32gui
 import win32process
 
-import path_resolver
+
+def GetProcessIDAndPathPairs():
+  """Returns a list of 2-tuples of (process id, process path).
+
+  This is needed because psutil is not available on Windows slave machines (see:
+  http://crbug.com/257696).
+  TODO(sukolsak): Use psutil.process_iter() once it becomes available.
+  """
+  process_id_and_path_pairs = []
+  for process_id in win32process.EnumProcesses():
+    process_handle = ctypes.windll.kernel32.OpenProcess(
+        win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False,
+        process_id)
+    if not process_handle:
+      continue
+    try:
+      process_path = win32process.GetModuleFileNameEx(process_handle, 0)
+      process_id_and_path_pairs.append((process_id, process_path))
+    except pywintypes.error:
+      # It's normal that some processes are not accessible.
+      pass
+  return process_id_and_path_pairs
 
 
 def GetProcessIDs(process_path):
@@ -21,16 +44,8 @@ def GetProcessIDs(process_path):
   Returns:
     A list of process IDs.
   """
-  process_ids = []
-  for process in psutil.process_iter():
-    try:
-      found_process_path = process.exe
-      if found_process_path == process_path:
-        process_ids.append(process.pid)
-    except psutil.AccessDenied:
-      # It's normal that some processes are not accessible.
-      pass
-  return process_ids
+  return [pid for (pid, path) in GetProcessIDAndPathPairs() if
+          path == process_path]
 
 
 def GetWindowHandles(process_ids):
@@ -70,13 +85,3 @@ def WindowExists(process_ids, class_pattern):
     if re.match(class_pattern, win32gui.GetClassName(hwnd)):
       return True
   return False
-
-
-def GetChromePath(system_level):
-  """Returns the path to Chrome, at the |system_level| or user level."""
-  chrome_path = None
-  if system_level:
-    chrome_path = '$PROGRAM_FILES\\$CHROME_DIR\\Application\\chrome.exe'
-  else:
-    chrome_path = '$LOCAL_APPDATA\\$CHROME_DIR\\Application\\chrome.exe'
-  return path_resolver.ResolvePath(chrome_path)

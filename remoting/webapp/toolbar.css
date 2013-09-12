@@ -48,15 +48,18 @@
 }
 
 .toolbar-border > div {
-  margin: 4px;
+  margin: 5px 4px;
 }
 
 /* Ensure that the 'connected to' string doesn't make the tool-bar overflow */
 #connected-to {
-  max-width: 280px;
+  max-width: 260px;
   overflow: hidden;
-  margin-__MSG_@@bidi_end_edge__: 8px;
   white-space: nowrap;
+}
+
+#new-connection {
+  margin-__MSG_@@bidi_start_edge__: 0;
 }
 
 .end-align {

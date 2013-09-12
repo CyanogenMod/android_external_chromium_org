@@ -20,17 +20,6 @@
 class PrefRegistrySimple;
 class PrefService;
 
-namespace {
-
-// Default value for the volume pref, as a percent in the range [0.0, 100.0].
-const double kDefaultVolumeGainPercent = 75.0;
-
-// Values used for muted preference.
-const int kPrefMuteOff = 0;
-const int kPrefMuteOn = 1;
-
-}  // namespace
-
 namespace chromeos {
 
 class AudioDevicesPrefHandler;
@@ -229,6 +218,10 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   bool NonActiveDeviceUnplugged(size_t old_devices_size,
                                 size_t new_device_size,
                                 uint64 current_active_node);
+
+  // Returns true if there is any device change for for input or output,
+  // specified by |is_input|.
+  bool HasDeviceChange(const AudioNodeList& new_nodes, bool is_input);
 
   // Handles dbus callback for GetNodes.
   void HandleGetNodes(const chromeos::AudioNodeList& node_list, bool success);

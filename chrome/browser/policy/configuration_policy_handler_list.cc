@@ -337,15 +337,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kVariationsRestrictParameter,
     prefs::kVariationsRestrictParameter,
     Value::TYPE_STRING },
-  { key::kContentPackDefaultFilteringBehavior,
-    prefs::kDefaultManagedModeFilteringBehavior,
-    Value::TYPE_INTEGER },
-  { key::kContentPackManualBehaviorHosts,
-    prefs::kManagedModeManualHosts,
-    Value::TYPE_DICTIONARY },
-  { key::kContentPackManualBehaviorURLs,
-    prefs::kManagedModeManualURLs,
-    Value::TYPE_DICTIONARY },
   { key::kSupervisedUserCreationEnabled,
     prefs::kManagedUserCreationAllowed,
     Value::TYPE_BOOLEAN },
@@ -433,6 +424,12 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kBackgroundModeEnabled,
     Value::TYPE_BOOLEAN },
 #endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
+
+#if defined(OS_ANDROID)
+  { key::kDataCompressionProxyEnabled,
+    prefs::kSpdyProxyAuthEnabled,
+    Value::TYPE_BOOLEAN },
+#endif  // defined(OS_ANDROID)
 };
 
 // Mapping from extension type names to Manifest::Type.

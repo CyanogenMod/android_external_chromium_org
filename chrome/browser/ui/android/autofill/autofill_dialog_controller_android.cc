@@ -81,16 +81,6 @@ void FillOutputForSectionWithComparator(
     const InputFieldComparator& compare,
     FormStructure& form_structure, wallet::FullWallet* full_wallet,
     const base::string16& email_address) {
-
-  // Email is hidden while using Wallet, special case it.
-  if (section == SECTION_EMAIL) {
-    AutofillProfile profile;
-    profile.SetRawInfo(EMAIL_ADDRESS, email_address);
-    AutofillProfileWrapper profile_wrapper(&profile, 0);
-    profile_wrapper.FillFormStructure(inputs, compare, &form_structure);
-    return;
-  }
-
   scoped_ptr<DataModelWrapper> wrapper = CreateWrapper(section, full_wallet);
   if (wrapper)
     wrapper->FillFormStructure(inputs, compare, &form_structure);
@@ -108,6 +98,15 @@ void FillOutputForSection(
       section, inputs,
       base::Bind(common::DetailInputMatchesField, section),
       form_structure, full_wallet, email_address);
+
+  if (section == SECTION_CC_BILLING) {
+    // Email is hidden while using Wallet, special case it.
+    for (size_t i = 0; i < form_structure.field_count(); ++i) {
+      AutofillField* field = form_structure.field(i);
+      if (field->Type().GetStorableType() == EMAIL_ADDRESS)
+        field->value = email_address;
+    }
+  }
 }
 
 // Returns true if |input_type| in |section| is needed for |form_structure|.
@@ -145,7 +144,6 @@ base::WeakPtr<AutofillDialogController> AutofillDialogControllerAndroid::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
     const base::Callback<void(const FormStructure*,
                               const std::string&)>& callback) {
   // AutofillDialogControllerAndroid owns itself.
@@ -153,7 +151,6 @@ base::WeakPtr<AutofillDialogController> AutofillDialogControllerAndroid::Create(
       new AutofillDialogControllerAndroid(contents,
                                           form_structure,
                                           source_url,
-                                          dialog_type,
                                           callback);
   return autofill_dialog_controller->weak_ptr_factory_.GetWeakPtr();
 }
@@ -172,13 +169,11 @@ AutofillDialogController::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
     const base::Callback<void(const FormStructure*,
                               const std::string&)>& callback) {
   return AutofillDialogControllerAndroid::Create(contents,
                                                  form_structure,
                                                  source_url,
-                                                 dialog_type,
                                                  callback);
 }
 
@@ -201,21 +196,18 @@ void AutofillDialogControllerAndroid::Show() {
   invoked_from_same_origin_ = active_url.GetOrigin() == source_url_.GetOrigin();
 
   // Log any relevant UI metrics and security exceptions.
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_SHOWN);
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_SHOWN);
 
   GetMetricLogger().LogDialogSecurityMetric(
-      GetDialogType(), AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
+      AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
 
   if (RequestingCreditCardInfo() && !TransmissionWillBeSecure()) {
     GetMetricLogger().LogDialogSecurityMetric(
-        GetDialogType(),
         AutofillMetrics::SECURITY_METRIC_CREDIT_CARD_OVER_HTTP);
   }
 
   if (!invoked_from_same_origin_) {
     GetMetricLogger().LogDialogSecurityMetric(
-        GetDialogType(),
         AutofillMetrics::SECURITY_METRIC_CROSS_ORIGIN_FRAME);
   }
 
@@ -327,46 +319,6 @@ void AutofillDialogControllerAndroid::Hide() {
 
 void AutofillDialogControllerAndroid::TabActivated() {}
 
-void AutofillDialogControllerAndroid::AddAutocheckoutStep(
-    AutocheckoutStepType step_type) {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED() << " step_type = " << step_type;
-}
-
-void AutofillDialogControllerAndroid::UpdateAutocheckoutStep(
-    AutocheckoutStepType step_type,
-    AutocheckoutStepStatus step_status) {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED() << " step_type=" << step_type
-                   << " step_status=" << step_status;
-}
-
-void AutofillDialogControllerAndroid::OnAutocheckoutError() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
-  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
-  GetMetricLogger().LogAutocheckoutDuration(
-      base::Time::Now() - autocheckout_started_timestamp_,
-      AutofillMetrics::AUTOCHECKOUT_FAILED);
-  SetAutocheckoutState(AUTOCHECKOUT_ERROR);
-  autocheckout_started_timestamp_ = base::Time();
-}
-
-void AutofillDialogControllerAndroid::OnAutocheckoutSuccess() {
-  // TODO(aruslan): http://crbug.com/177373 Autocheckout.
-  NOTIMPLEMENTED();
-  DCHECK_EQ(AUTOCHECKOUT_IN_PROGRESS, autocheckout_state_);
-  GetMetricLogger().LogAutocheckoutDuration(
-      base::Time::Now() - autocheckout_started_timestamp_,
-      AutofillMetrics::AUTOCHECKOUT_SUCCEEDED);
-  SetAutocheckoutState(AUTOCHECKOUT_SUCCESS);
-  autocheckout_started_timestamp_ = base::Time();
-}
-
-DialogType AutofillDialogControllerAndroid::GetDialogType() const {
-  return dialog_type_;
-}
-
 // static
 bool AutofillDialogControllerAndroid::
     RegisterAutofillDialogControllerAndroid(JNIEnv* env) {
@@ -375,15 +327,7 @@ bool AutofillDialogControllerAndroid::
 
 void AutofillDialogControllerAndroid::DialogCancel(JNIEnv* env,
                                                    jobject obj) {
-  if (autocheckout_state_ == AUTOCHECKOUT_NOT_STARTED)
-    LogOnCancelMetrics();
-
-  if (autocheckout_state_ == AUTOCHECKOUT_IN_PROGRESS) {
-    GetMetricLogger().LogAutocheckoutDuration(
-        base::Time::Now() - autocheckout_started_timestamp_,
-        AutofillMetrics::AUTOCHECKOUT_CANCELLED);
-  }
-
+  LogOnCancelMetrics();
   callback_.Run(NULL, std::string());
 }
 
@@ -412,8 +356,6 @@ void AutofillDialogControllerAndroid::DialogContinue(
   scoped_ptr<wallet::FullWallet> full_wallet =
       AutofillDialogResult::ConvertFromJava(env, wallet);
   FillOutputForSection(
-      SECTION_EMAIL, form_structure_, full_wallet.get(), email);
-  FillOutputForSection(
       SECTION_CC_BILLING, form_structure_, full_wallet.get(), email);
   FillOutputForSection(
       SECTION_SHIPPING, form_structure_, full_wallet.get(), email);
@@ -438,39 +380,30 @@ void AutofillDialogControllerAndroid::DialogContinue(
     }
   }
 
-  if (GetDialogType() == DIALOG_TYPE_AUTOCHECKOUT) {
-    autocheckout_started_timestamp_ = base::Time::Now();
-    SetAutocheckoutState(AUTOCHECKOUT_IN_PROGRESS);
-  }
-
   LogOnFinishSubmitMetrics();
 
   // Callback should be called as late as possible.
   callback_.Run(&form_structure_, google_transaction_id);
 
   // This might delete us.
-  if (GetDialogType() == DIALOG_TYPE_REQUEST_AUTOCOMPLETE)
-    Hide();
+  Hide();
 }
 
 AutofillDialogControllerAndroid::AutofillDialogControllerAndroid(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const DialogType dialog_type,
     const base::Callback<void(const FormStructure*,
                               const std::string&)>& callback)
     : profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
       contents_(contents),
       initial_user_state_(AutofillMetrics::DIALOG_USER_STATE_UNKNOWN),
-      dialog_type_(dialog_type),
-      form_structure_(form_structure, std::string()),
+      form_structure_(form_structure),
       invoked_from_same_origin_(true),
       source_url_(source_url),
       callback_(callback),
       cares_about_shipping_(true),
       weak_ptr_factory_(this),
-      autocheckout_state_(AUTOCHECKOUT_NOT_STARTED),
       was_ui_latency_logged_(false) {
   DCHECK(!callback_.is_null());
 }
@@ -491,32 +424,20 @@ bool AutofillDialogControllerAndroid::TransmissionWillBeSecure() const {
   return source_url_.SchemeIs(content::kHttpsScheme);
 }
 
-void AutofillDialogControllerAndroid::SetAutocheckoutState(
-    AutocheckoutState autocheckout_state) {
-  if (autocheckout_state_ == autocheckout_state)
-    return;
-
-  autocheckout_state_ = autocheckout_state;
-}
-
 void AutofillDialogControllerAndroid::LogOnFinishSubmitMetrics() {
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      GetDialogType(),
       AutofillMetrics::DIALOG_ACCEPTED);
 
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_ACCEPTED);
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_ACCEPTED);
 }
 
 void AutofillDialogControllerAndroid::LogOnCancelMetrics() {
   GetMetricLogger().LogDialogUiDuration(
       base::Time::Now() - dialog_shown_timestamp_,
-      GetDialogType(),
       AutofillMetrics::DIALOG_CANCELED);
 
-  GetMetricLogger().LogDialogUiEvent(
-      GetDialogType(), AutofillMetrics::DIALOG_UI_CANCELED);
+  GetMetricLogger().LogDialogUiEvent(AutofillMetrics::DIALOG_UI_CANCELED);
 }
 
 }  // namespace autofill

@@ -20,7 +20,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -363,7 +363,7 @@ class RootWindowHostX11::MouseMoveFilter {
 
 RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
     : delegate_(NULL),
-      xdisplay_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
+      xdisplay_(base::MessagePumpX11::GetDefaultXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_cursor_(ui::kCursorNull),
@@ -373,7 +373,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
       focus_when_shown_(false),
       touch_calibrate_(new internal::TouchEventCalibrate),
       mouse_move_filter_(new MouseMoveFilter),
-      atom_cache_(xdisplay_, kAtomsToCache) {
+      atom_cache_(xdisplay_, kAtomsToCache),
+      bezel_tracking_ids_(0) {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.background_pixmap = None;
@@ -387,8 +388,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
       CopyFromParent,  // visual
       CWBackPixmap | CWOverrideRedirect,
       &swa);
-  base::MessagePumpAuraX11::Current()->AddDispatcherForWindow(this, xwindow_);
-  base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, xwindow_);
+  base::MessagePumpX11::Current()->AddDispatcherForRootWindow(this);
 
   long event_mask = ButtonPressMask | ButtonReleaseMask | FocusChangeMask |
                     KeyPressMask | KeyReleaseMask |
@@ -439,8 +440,8 @@ RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
 
 RootWindowHostX11::~RootWindowHostX11() {
   Env::GetInstance()->RemoveObserver(this);
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(this);
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(xwindow_);
+  base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(this);
+  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(xwindow_);
 
   UnConfineCursor();
 
@@ -629,7 +630,7 @@ void RootWindowHostX11::Show() {
     // We now block until our window is mapped. Some X11 APIs will crash and
     // burn if passed |xwindow_| before the window is mapped, and XMapWindow is
     // asynchronous.
-    base::MessagePumpAuraX11::Current()->BlockUntilWindowMapped(xwindow_);
+    base::MessagePumpX11::Current()->BlockUntilWindowMapped(xwindow_);
     window_mapped_ = true;
   }
 }
@@ -853,7 +854,7 @@ void RootWindowHostX11::OnDeviceScaleFactorChanged(
 }
 
 void RootWindowHostX11::PrepareForShutdown() {
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForWindow(xwindow_);
+  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(xwindow_);
 }
 
 void RootWindowHostX11::OnWindowInitialized(Window* window) {
@@ -912,15 +913,22 @@ void RootWindowHostX11::DispatchXI2Event(const base::NativeEvent& event) {
     case ui::ET_TOUCH_PRESSED:
     case ui::ET_TOUCH_CANCELLED:
     case ui::ET_TOUCH_RELEASED: {
+      ui::TouchEvent touchev(xev);
 #if defined(USE_XI2_MT)
-      // Ignore events from the bezel when the side bezel flag is not explicitly
-      // enabled.
-      if (!IsSideBezelsEnabled() &&
-          touch_calibrate_->IsEventOnSideBezels(xev, bounds_)) {
-        break;
+      // Ignore touch events with touch press happening on the side bezel.
+      if (!IsSideBezelsEnabled()) {
+        uint32 tracking_id = (1 << touchev.touch_id());
+        if (type == ui::ET_TOUCH_PRESSED &&
+            touch_calibrate_->IsEventOnSideBezels(xev, bounds_))
+          bezel_tracking_ids_ |= tracking_id;
+        if (bezel_tracking_ids_ & tracking_id) {
+          if (type == ui::ET_TOUCH_CANCELLED || type == ui::ET_TOUCH_RELEASED)
+            bezel_tracking_ids_ =
+                (bezel_tracking_ids_ | tracking_id) ^ tracking_id;
+          return;
+        }
       }
 #endif  // defined(USE_XI2_MT)
-      ui::TouchEvent touchev(xev);
 #if defined(OS_CHROMEOS)
       if (base::chromeos::IsRunningOnChromeOS()) {
         if (!bounds_.Contains(touchev.location()))
@@ -1082,7 +1090,7 @@ RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
 
 // static
 gfx::Size RootWindowHost::GetNativeScreenSize() {
-  ::Display* xdisplay = base::MessagePumpAuraX11::GetDefaultXDisplay();
+  ::Display* xdisplay = base::MessagePumpX11::GetDefaultXDisplay();
   return gfx::Size(DisplayWidth(xdisplay, 0), DisplayHeight(xdisplay, 0));
 }
 

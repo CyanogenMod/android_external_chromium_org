@@ -101,6 +101,8 @@
 #include "ppapi/c/private/ppb_net_address_private.h"
 #include "ppapi/c/private/ppb_network_list_private.h"
 #include "ppapi/c/private/ppb_network_monitor_private.h"
+#include "ppapi/c/private/ppb_output_protection_private.h"
+#include "ppapi/c/private/ppb_platform_verification_private.h"
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppb_tcp_server_socket_private.h"
 #include "ppapi/c/private/ppb_tcp_socket_private.h"
@@ -183,6 +185,7 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_91;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Testing_Dev_0_92;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TrueTypeFont_Dev_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_2;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_3;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoDecoder_Dev_0_16;
@@ -206,7 +209,10 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NaCl_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_1_1;
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1;
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Talk_Private_1_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Talk_Private_2_0;
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_TCPServerSocket_Private_0_1;
@@ -230,6 +236,8 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_Ext_Socket_Dev_0_2;
 /* END Declarations for all Wrapper Infos. */
 
 /* Not generating wrapper methods for PPB_Audio_1_0 */
+
+/* Not generating wrapper methods for PPB_Audio_1_1 */
 
 /* Not generating wrapper methods for PPB_AudioConfig_1_0 */
 
@@ -2064,6 +2072,55 @@ static void Pnacl_M17_PPB_URLUtil_Dev_GetPluginInstanceURL(struct PP_Var* _struc
 
 /* End wrapper methods for PPB_URLUtil_Dev_0_6 */
 
+/* Begin wrapper methods for PPB_URLUtil_Dev_0_7 */
+
+static void Pnacl_M31_PPB_URLUtil_Dev_Canonicalize(struct PP_Var* _struct_result, struct PP_Var* url, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->Canonicalize(*url, components);
+}
+
+static void Pnacl_M31_PPB_URLUtil_Dev_ResolveRelativeToURL(struct PP_Var* _struct_result, struct PP_Var* base_url, struct PP_Var* relative_string, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->ResolveRelativeToURL(*base_url, *relative_string, components);
+}
+
+static void Pnacl_M31_PPB_URLUtil_Dev_ResolveRelativeToDocument(struct PP_Var* _struct_result, PP_Instance instance, struct PP_Var* relative_string, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->ResolveRelativeToDocument(instance, *relative_string, components);
+}
+
+static PP_Bool Pnacl_M31_PPB_URLUtil_Dev_IsSameSecurityOrigin(struct PP_Var* url_a, struct PP_Var* url_b) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  return iface->IsSameSecurityOrigin(*url_a, *url_b);
+}
+
+static PP_Bool Pnacl_M31_PPB_URLUtil_Dev_DocumentCanRequest(PP_Instance instance, struct PP_Var* url) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  return iface->DocumentCanRequest(instance, *url);
+}
+
+static PP_Bool Pnacl_M31_PPB_URLUtil_Dev_DocumentCanAccessDocument(PP_Instance active, PP_Instance target) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  return iface->DocumentCanAccessDocument(active, target);
+}
+
+static void Pnacl_M31_PPB_URLUtil_Dev_GetDocumentURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->GetDocumentURL(instance, components);
+}
+
+static void Pnacl_M31_PPB_URLUtil_Dev_GetPluginInstanceURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->GetPluginInstanceURL(instance, components);
+}
+
+static void Pnacl_M31_PPB_URLUtil_Dev_GetPluginReferrerURL(struct PP_Var* _struct_result, PP_Instance instance, struct PP_URLComponents_Dev* components) {
+  const struct PPB_URLUtil_Dev_0_7 *iface = Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7.real_iface;
+  *_struct_result = iface->GetPluginReferrerURL(instance, components);
+}
+
+/* End wrapper methods for PPB_URLUtil_Dev_0_7 */
+
 /* Begin wrapper methods for PPB_VideoCapture_Dev_0_2 */
 
 static PP_Resource Pnacl_M19_PPB_VideoCapture_Dev_Create(PP_Instance instance) {
@@ -2846,9 +2903,9 @@ static PP_FileHandle Pnacl_M25_PPB_NaCl_Private_CreateTemporaryFile(PP_Instance 
   return iface->CreateTemporaryFile(instance);
 }
 
-static int32_t Pnacl_M25_PPB_NaCl_Private_GetNexeFd(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback* callback) {
+static int32_t Pnacl_M25_PPB_NaCl_Private_GetNexeFd(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool has_no_store_header, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback* callback) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->GetNexeFd(instance, pexe_url, abi_version, opt_level, last_modified, etag, is_hit, nexe_handle, *callback);
+  return iface->GetNexeFd(instance, pexe_url, abi_version, opt_level, last_modified, etag, has_no_store_header, is_hit, nexe_handle, *callback);
 }
 
 static void Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished(PP_Instance instance, PP_Bool success) {
@@ -3010,51 +3067,116 @@ static void Pnacl_M19_1_PPB_NetAddress_Private_CreateFromIPv6Address(const uint8
 
 /* End wrapper methods for PPB_NetAddress_Private_1_1 */
 
-/* Begin wrapper methods for PPB_NetworkList_Private_0_2 */
+/* Begin wrapper methods for PPB_NetworkList_Private_0_3 */
 
-static PP_Bool Pnacl_M19_PPB_NetworkList_Private_IsNetworkList(PP_Resource resource) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static PP_Bool Pnacl_M31_PPB_NetworkList_Private_IsNetworkList(PP_Resource resource) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   return iface->IsNetworkList(resource);
 }
 
-static uint32_t Pnacl_M19_PPB_NetworkList_Private_GetCount(PP_Resource resource) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static uint32_t Pnacl_M31_PPB_NetworkList_Private_GetCount(PP_Resource resource) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   return iface->GetCount(resource);
 }
 
-static void Pnacl_M19_PPB_NetworkList_Private_GetName(struct PP_Var* _struct_result, PP_Resource resource, uint32_t index) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static void Pnacl_M31_PPB_NetworkList_Private_GetName(struct PP_Var* _struct_result, PP_Resource resource, uint32_t index) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   *_struct_result = iface->GetName(resource, index);
 }
 
-static PP_NetworkListType_Private Pnacl_M19_PPB_NetworkList_Private_GetType(PP_Resource resource, uint32_t index) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static PP_NetworkListType_Private Pnacl_M31_PPB_NetworkList_Private_GetType(PP_Resource resource, uint32_t index) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   return iface->GetType(resource, index);
 }
 
-static PP_NetworkListState_Private Pnacl_M19_PPB_NetworkList_Private_GetState(PP_Resource resource, uint32_t index) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static PP_NetworkListState_Private Pnacl_M31_PPB_NetworkList_Private_GetState(PP_Resource resource, uint32_t index) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   return iface->GetState(resource, index);
 }
 
-static int32_t Pnacl_M19_PPB_NetworkList_Private_GetIpAddresses(PP_Resource resource, uint32_t index, struct PP_NetAddress_Private addresses[], uint32_t count) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
-  return iface->GetIpAddresses(resource, index, addresses, count);
+static int32_t Pnacl_M31_PPB_NetworkList_Private_GetIpAddresses(PP_Resource resource, uint32_t index, struct PP_ArrayOutput* output) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
+  return iface->GetIpAddresses(resource, index, *output);
 }
 
-static void Pnacl_M19_PPB_NetworkList_Private_GetDisplayName(struct PP_Var* _struct_result, PP_Resource resource, uint32_t index) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static void Pnacl_M31_PPB_NetworkList_Private_GetDisplayName(struct PP_Var* _struct_result, PP_Resource resource, uint32_t index) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   *_struct_result = iface->GetDisplayName(resource, index);
 }
 
-static uint32_t Pnacl_M19_PPB_NetworkList_Private_GetMTU(PP_Resource resource, uint32_t index) {
-  const struct PPB_NetworkList_Private_0_2 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2.real_iface;
+static uint32_t Pnacl_M31_PPB_NetworkList_Private_GetMTU(PP_Resource resource, uint32_t index) {
+  const struct PPB_NetworkList_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3.real_iface;
   return iface->GetMTU(resource, index);
 }
 
-/* End wrapper methods for PPB_NetworkList_Private_0_2 */
+/* End wrapper methods for PPB_NetworkList_Private_0_3 */
 
-/* Not generating wrapper methods for PPB_NetworkMonitor_Private_0_2 */
+/* Begin wrapper methods for PPB_NetworkMonitor_Private_0_3 */
+
+static PP_Resource Pnacl_M31_PPB_NetworkMonitor_Private_Create(PP_Instance instance) {
+  const struct PPB_NetworkMonitor_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3.real_iface;
+  return iface->Create(instance);
+}
+
+static int32_t Pnacl_M31_PPB_NetworkMonitor_Private_UpdateNetworkList(PP_Resource network_monitor, PP_Resource* network_list, struct PP_CompletionCallback* callback) {
+  const struct PPB_NetworkMonitor_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3.real_iface;
+  return iface->UpdateNetworkList(network_monitor, network_list, *callback);
+}
+
+static PP_Bool Pnacl_M31_PPB_NetworkMonitor_Private_IsNetworkMonitor(PP_Resource resource) {
+  const struct PPB_NetworkMonitor_Private_0_3 *iface = Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3.real_iface;
+  return iface->IsNetworkMonitor(resource);
+}
+
+/* End wrapper methods for PPB_NetworkMonitor_Private_0_3 */
+
+/* Begin wrapper methods for PPB_OutputProtection_Private_0_1 */
+
+static PP_Resource Pnacl_M31_PPB_OutputProtection_Private_Create(PP_Instance instance) {
+  const struct PPB_OutputProtection_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1.real_iface;
+  return iface->Create(instance);
+}
+
+static PP_Bool Pnacl_M31_PPB_OutputProtection_Private_IsOutputProtection(PP_Resource resource) {
+  const struct PPB_OutputProtection_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1.real_iface;
+  return iface->IsOutputProtection(resource);
+}
+
+static int32_t Pnacl_M31_PPB_OutputProtection_Private_QueryStatus(PP_Resource resource, uint32_t* link_mask, uint32_t* protection_mask, struct PP_CompletionCallback* callback) {
+  const struct PPB_OutputProtection_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1.real_iface;
+  return iface->QueryStatus(resource, link_mask, protection_mask, *callback);
+}
+
+static int32_t Pnacl_M31_PPB_OutputProtection_Private_EnableProtection(PP_Resource resource, uint32_t desired_protection_mask, struct PP_CompletionCallback* callback) {
+  const struct PPB_OutputProtection_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1.real_iface;
+  return iface->EnableProtection(resource, desired_protection_mask, *callback);
+}
+
+/* End wrapper methods for PPB_OutputProtection_Private_0_1 */
+
+/* Begin wrapper methods for PPB_PlatformVerification_Private_0_1 */
+
+static PP_Resource Pnacl_M31_PPB_PlatformVerification_Private_Create(PP_Instance instance) {
+  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+  return iface->Create(instance);
+}
+
+static PP_Bool Pnacl_M31_PPB_PlatformVerification_Private_IsPlatformVerification(PP_Resource resource) {
+  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+  return iface->IsPlatformVerification(resource);
+}
+
+static PP_Bool Pnacl_M31_PPB_PlatformVerification_Private_CanChallengePlatform(PP_Resource instance) {
+  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+  return iface->CanChallengePlatform(instance);
+}
+
+static int32_t Pnacl_M31_PPB_PlatformVerification_Private_ChallengePlatform(PP_Resource instance, struct PP_Var* service_id, struct PP_Var* challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback* callback) {
+  const struct PPB_PlatformVerification_Private_0_1 *iface = Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1.real_iface;
+  return iface->ChallengePlatform(instance, *service_id, *challenge, signed_data, signed_data_signature, platform_key_certificate, *callback);
+}
+
+/* End wrapper methods for PPB_PlatformVerification_Private_0_1 */
 
 /* Begin wrapper methods for PPB_Talk_Private_1_0 */
 
@@ -3891,6 +4013,8 @@ static int32_t Pnacl_M29_PPB_Ext_Socket_Dev_GetJoinedGroups(PP_Instance instance
 
 /* Not generating wrapper interface for PPB_Audio_1_0 */
 
+/* Not generating wrapper interface for PPB_Audio_1_1 */
+
 /* Not generating wrapper interface for PPB_AudioConfig_1_0 */
 
 /* Not generating wrapper interface for PPB_AudioConfig_1_1 */
@@ -4428,6 +4552,18 @@ struct PPB_URLUtil_Dev_0_6 Pnacl_Wrappers_PPB_URLUtil_Dev_0_6 = {
     .GetPluginInstanceURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M17_PPB_URLUtil_Dev_GetPluginInstanceURL
 };
 
+struct PPB_URLUtil_Dev_0_7 Pnacl_Wrappers_PPB_URLUtil_Dev_0_7 = {
+    .Canonicalize = (struct PP_Var (*)(struct PP_Var url, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_Canonicalize,
+    .ResolveRelativeToURL = (struct PP_Var (*)(struct PP_Var base_url, struct PP_Var relative_string, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_ResolveRelativeToURL,
+    .ResolveRelativeToDocument = (struct PP_Var (*)(PP_Instance instance, struct PP_Var relative_string, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_ResolveRelativeToDocument,
+    .IsSameSecurityOrigin = (PP_Bool (*)(struct PP_Var url_a, struct PP_Var url_b))&Pnacl_M31_PPB_URLUtil_Dev_IsSameSecurityOrigin,
+    .DocumentCanRequest = (PP_Bool (*)(PP_Instance instance, struct PP_Var url))&Pnacl_M31_PPB_URLUtil_Dev_DocumentCanRequest,
+    .DocumentCanAccessDocument = (PP_Bool (*)(PP_Instance active, PP_Instance target))&Pnacl_M31_PPB_URLUtil_Dev_DocumentCanAccessDocument,
+    .GetDocumentURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetDocumentURL,
+    .GetPluginInstanceURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetPluginInstanceURL,
+    .GetPluginReferrerURL = (struct PP_Var (*)(PP_Instance instance, struct PP_URLComponents_Dev* components))&Pnacl_M31_PPB_URLUtil_Dev_GetPluginReferrerURL
+};
+
 struct PPB_VideoCapture_Dev_0_2 Pnacl_Wrappers_PPB_VideoCapture_Dev_0_2 = {
     .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M19_PPB_VideoCapture_Dev_Create,
     .IsVideoCapture = (PP_Bool (*)(PP_Resource video_capture))&Pnacl_M19_PPB_VideoCapture_Dev_IsVideoCapture,
@@ -4658,7 +4794,7 @@ struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .EnsurePnaclInstalled = (int32_t (*)(PP_Instance instance, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_EnsurePnaclInstalled,
     .GetReadonlyPnaclFd = (PP_FileHandle (*)(const char* filename))&Pnacl_M25_PPB_NaCl_Private_GetReadonlyPnaclFd,
     .CreateTemporaryFile = (PP_FileHandle (*)(PP_Instance instance))&Pnacl_M25_PPB_NaCl_Private_CreateTemporaryFile,
-    .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_GetNexeFd,
+    .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool has_no_store_header, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_GetNexeFd,
     .ReportTranslationFinished = (void (*)(PP_Instance instance, PP_Bool success))&Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished,
     .IsOffTheRecord = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsOffTheRecord,
     .IsPnaclEnabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsPnaclEnabled,
@@ -4699,18 +4835,36 @@ struct PPB_NetAddress_Private_1_1 Pnacl_Wrappers_PPB_NetAddress_Private_1_1 = {
     .CreateFromIPv6Address = (void (*)(const uint8_t ip[16], uint32_t scope_id, uint16_t port, struct PP_NetAddress_Private* addr_out))&Pnacl_M19_1_PPB_NetAddress_Private_CreateFromIPv6Address
 };
 
-struct PPB_NetworkList_Private_0_2 Pnacl_Wrappers_PPB_NetworkList_Private_0_2 = {
-    .IsNetworkList = (PP_Bool (*)(PP_Resource resource))&Pnacl_M19_PPB_NetworkList_Private_IsNetworkList,
-    .GetCount = (uint32_t (*)(PP_Resource resource))&Pnacl_M19_PPB_NetworkList_Private_GetCount,
-    .GetName = (struct PP_Var (*)(PP_Resource resource, uint32_t index))&Pnacl_M19_PPB_NetworkList_Private_GetName,
-    .GetType = (PP_NetworkListType_Private (*)(PP_Resource resource, uint32_t index))&Pnacl_M19_PPB_NetworkList_Private_GetType,
-    .GetState = (PP_NetworkListState_Private (*)(PP_Resource resource, uint32_t index))&Pnacl_M19_PPB_NetworkList_Private_GetState,
-    .GetIpAddresses = (int32_t (*)(PP_Resource resource, uint32_t index, struct PP_NetAddress_Private addresses[], uint32_t count))&Pnacl_M19_PPB_NetworkList_Private_GetIpAddresses,
-    .GetDisplayName = (struct PP_Var (*)(PP_Resource resource, uint32_t index))&Pnacl_M19_PPB_NetworkList_Private_GetDisplayName,
-    .GetMTU = (uint32_t (*)(PP_Resource resource, uint32_t index))&Pnacl_M19_PPB_NetworkList_Private_GetMTU
+struct PPB_NetworkList_Private_0_3 Pnacl_Wrappers_PPB_NetworkList_Private_0_3 = {
+    .IsNetworkList = (PP_Bool (*)(PP_Resource resource))&Pnacl_M31_PPB_NetworkList_Private_IsNetworkList,
+    .GetCount = (uint32_t (*)(PP_Resource resource))&Pnacl_M31_PPB_NetworkList_Private_GetCount,
+    .GetName = (struct PP_Var (*)(PP_Resource resource, uint32_t index))&Pnacl_M31_PPB_NetworkList_Private_GetName,
+    .GetType = (PP_NetworkListType_Private (*)(PP_Resource resource, uint32_t index))&Pnacl_M31_PPB_NetworkList_Private_GetType,
+    .GetState = (PP_NetworkListState_Private (*)(PP_Resource resource, uint32_t index))&Pnacl_M31_PPB_NetworkList_Private_GetState,
+    .GetIpAddresses = (int32_t (*)(PP_Resource resource, uint32_t index, struct PP_ArrayOutput output))&Pnacl_M31_PPB_NetworkList_Private_GetIpAddresses,
+    .GetDisplayName = (struct PP_Var (*)(PP_Resource resource, uint32_t index))&Pnacl_M31_PPB_NetworkList_Private_GetDisplayName,
+    .GetMTU = (uint32_t (*)(PP_Resource resource, uint32_t index))&Pnacl_M31_PPB_NetworkList_Private_GetMTU
 };
 
-/* Not generating wrapper interface for PPB_NetworkMonitor_Private_0_2 */
+struct PPB_NetworkMonitor_Private_0_3 Pnacl_Wrappers_PPB_NetworkMonitor_Private_0_3 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M31_PPB_NetworkMonitor_Private_Create,
+    .UpdateNetworkList = (int32_t (*)(PP_Resource network_monitor, PP_Resource* network_list, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_NetworkMonitor_Private_UpdateNetworkList,
+    .IsNetworkMonitor = (PP_Bool (*)(PP_Resource resource))&Pnacl_M31_PPB_NetworkMonitor_Private_IsNetworkMonitor
+};
+
+struct PPB_OutputProtection_Private_0_1 Pnacl_Wrappers_PPB_OutputProtection_Private_0_1 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M31_PPB_OutputProtection_Private_Create,
+    .IsOutputProtection = (PP_Bool (*)(PP_Resource resource))&Pnacl_M31_PPB_OutputProtection_Private_IsOutputProtection,
+    .QueryStatus = (int32_t (*)(PP_Resource resource, uint32_t* link_mask, uint32_t* protection_mask, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_OutputProtection_Private_QueryStatus,
+    .EnableProtection = (int32_t (*)(PP_Resource resource, uint32_t desired_protection_mask, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_OutputProtection_Private_EnableProtection
+};
+
+struct PPB_PlatformVerification_Private_0_1 Pnacl_Wrappers_PPB_PlatformVerification_Private_0_1 = {
+    .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M31_PPB_PlatformVerification_Private_Create,
+    .IsPlatformVerification = (PP_Bool (*)(PP_Resource resource))&Pnacl_M31_PPB_PlatformVerification_Private_IsPlatformVerification,
+    .CanChallengePlatform = (PP_Bool (*)(PP_Resource instance))&Pnacl_M31_PPB_PlatformVerification_Private_CanChallengePlatform,
+    .ChallengePlatform = (int32_t (*)(PP_Resource instance, struct PP_Var service_id, struct PP_Var challenge, struct PP_Var* signed_data, struct PP_Var* signed_data_signature, struct PP_Var* platform_key_certificate, struct PP_CompletionCallback callback))&Pnacl_M31_PPB_PlatformVerification_Private_ChallengePlatform
+};
 
 struct PPB_Talk_Private_1_0 Pnacl_Wrappers_PPB_Talk_Private_1_0 = {
     .Create = (PP_Resource (*)(PP_Instance instance))&Pnacl_M19_PPB_Talk_Private_Create,
@@ -5223,6 +5377,12 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6 = {
   .real_iface = NULL
 };
 
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7 = {
+  .iface_macro = PPB_URLUTIL_DEV_INTERFACE_0_7,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_URLUtil_Dev_0_7,
+  .real_iface = NULL
+};
+
 static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_2 = {
   .iface_macro = PPB_VIDEOCAPTURE_DEV_INTERFACE_0_2,
   .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_VideoCapture_Dev_0_2,
@@ -5361,9 +5521,27 @@ static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetAddress_Private_1_1 = 
   .real_iface = NULL
 };
 
-static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2 = {
-  .iface_macro = PPB_NETWORKLIST_PRIVATE_INTERFACE_0_2,
-  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_NetworkList_Private_0_2,
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3 = {
+  .iface_macro = PPB_NETWORKLIST_PRIVATE_INTERFACE_0_3,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_NetworkList_Private_0_3,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3 = {
+  .iface_macro = PPB_NETWORKMONITOR_PRIVATE_INTERFACE_0_3,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_NetworkMonitor_Private_0_3,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1 = {
+  .iface_macro = PPB_OUTPUTPROTECTION_PRIVATE_INTERFACE_0_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_OutputProtection_Private_0_1,
+  .real_iface = NULL
+};
+
+static struct __PnaclWrapperInfo Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1 = {
+  .iface_macro = PPB_PLATFORMVERIFICATION_PRIVATE_INTERFACE_0_1,
+  .wrapped_iface = (void *) &Pnacl_Wrappers_PPB_PlatformVerification_Private_0_1,
   .real_iface = NULL
 };
 
@@ -5537,6 +5715,7 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_Testing_Dev_0_92,
   &Pnacl_WrapperInfo_PPB_TrueTypeFont_Dev_0_1,
   &Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_6,
+  &Pnacl_WrapperInfo_PPB_URLUtil_Dev_0_7,
   &Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_2,
   &Pnacl_WrapperInfo_PPB_VideoCapture_Dev_0_3,
   &Pnacl_WrapperInfo_PPB_VideoDecoder_Dev_0_16,
@@ -5559,7 +5738,10 @@ static struct __PnaclWrapperInfo *s_ppb_wrappers[] = {
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_0_1,
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_1_0,
   &Pnacl_WrapperInfo_PPB_NetAddress_Private_1_1,
-  &Pnacl_WrapperInfo_PPB_NetworkList_Private_0_2,
+  &Pnacl_WrapperInfo_PPB_NetworkList_Private_0_3,
+  &Pnacl_WrapperInfo_PPB_NetworkMonitor_Private_0_3,
+  &Pnacl_WrapperInfo_PPB_OutputProtection_Private_0_1,
+  &Pnacl_WrapperInfo_PPB_PlatformVerification_Private_0_1,
   &Pnacl_WrapperInfo_PPB_Talk_Private_1_0,
   &Pnacl_WrapperInfo_PPB_Talk_Private_2_0,
   &Pnacl_WrapperInfo_PPB_TCPServerSocket_Private_0_1,

@@ -7,6 +7,9 @@
 
 #include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/bind.h"
@@ -330,7 +333,7 @@ class CloudPrintServiceModule
     std::string contents;
     ServiceState service_state;
 
-    bool is_valid = file_util::ReadFileToString(file, &contents) &&
+    bool is_valid = base::ReadFileToString(file, &contents) &&
                     service_state.FromString(contents);
     std::string proxy_id = service_state.proxy_id();
 

@@ -24,14 +24,12 @@ class FilePath;
 
 class Chrome;
 class DeviceManager;
-class Log;
 class Status;
 class URLRequestContextGetter;
 
 Status LaunchChrome(
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
-    Log* log,
     DeviceManager* device_manager,
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
@@ -41,7 +39,7 @@ namespace internal {
 Status ProcessExtensions(const std::vector<std::string>& extensions,
                          const base::FilePath& temp_dir,
                          bool include_automation_extension,
-                         CommandLine* command,
+                         Switches* switches,
                          std::vector<std::string>* bg_pages);
 Status PrepareUserDataDir(
     const base::FilePath& user_data_dir,

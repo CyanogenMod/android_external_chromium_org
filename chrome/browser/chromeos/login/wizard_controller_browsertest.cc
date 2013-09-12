@@ -2,11 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "base/prefs/pref_service_builder.h"
+#include "base/prefs/testing_pref_store.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/enrollment/mock_enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
@@ -14,6 +22,7 @@
 #include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
+#include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/mock_eula_screen.h"
 #include "chrome/browser/chromeos/login/screens/mock_network_screen.h"
 #include "chrome/browser/chromeos/login/screens/mock_update_screen.h"
@@ -23,25 +32,53 @@
 #include "chrome/browser/chromeos/login/screens/wrong_hwid_screen.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/test_login_utils.h"
+#include "chrome/browser/chromeos/login/webui_login_view.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/login/wizard_in_process_browser_test.h"
+#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/chromeos_test_utils.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_session_manager_client.h"
+#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/network/network_state_handler.h"
+#include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_utils.h"
 #include "grit/generated_resources.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/icu/source/common/unicode/locid.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using ::testing::Exactly;
+using ::testing::Return;
+
 namespace chromeos {
 
 namespace {
 const char kUsername[] = "test_user@managedchrome.com";
 const char kPassword[] = "test_password";
+
+class PrefStoreStub : public TestingPrefStore {
+ public:
+  // TestingPrefStore overrides:
+  virtual PrefReadError GetReadError() const OVERRIDE {
+    return PersistentPrefStore::PREF_READ_ERROR_JSON_PARSE;
+  }
+
+  virtual bool IsInitializationComplete() const OVERRIDE {
+    return true;
+  }
+
+ private:
+  virtual ~PrefStoreStub() {}
+};
+
 }  // namespace
 
 using ::testing::_;
@@ -358,6 +395,165 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
   // And this destroys WizardController.
   OnExit(ScreenObserver::WRONG_HWID_WARNING_SKIPPED);
   EXPECT_FALSE(ExistingUserController::current_controller() == NULL);
+}
+
+class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
+ protected:
+  WizardControllerBrokenLocalStateTest()
+      : fake_session_manager_client_(NULL) {
+  }
+
+  virtual ~WizardControllerBrokenLocalStateTest() {}
+
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    WizardControllerTest::SetUpInProcessBrowserTestFixture();
+
+    MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
+        new MockDBusThreadManagerWithoutGMock();
+    fake_session_manager_client_ =
+        mock_dbus_thread_manager->fake_session_manager_client();
+    DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    PrefServiceBuilder builder;
+    local_state_.reset(builder
+                       .WithUserPrefs(new PrefStoreStub())
+                       .Create(new PrefRegistrySimple()));
+    WizardController::set_local_state_for_testing(local_state_.get());
+
+    WizardControllerTest::SetUpOnMainThread();
+
+    // Make sure that OOBE is run as an "official" build.
+    WizardController::default_controller()->is_official_build_ = true;
+  }
+
+  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+    WizardControllerTest::TearDownInProcessBrowserTestFixture();
+    DBusThreadManager::Shutdown();
+  }
+
+  ErrorScreen* GetErrorScreen() {
+    return ((ScreenObserver*) WizardController::default_controller())->
+        GetErrorScreen();
+  }
+
+  content::WebContents* GetWebContents() {
+    LoginDisplayHostImpl* host = static_cast<LoginDisplayHostImpl*>(
+        LoginDisplayHostImpl::default_host());
+    if (!host)
+      return NULL;
+    WebUILoginView* webui_login_view = host->GetWebUILoginView();
+    if (!webui_login_view)
+      return NULL;
+    return webui_login_view->GetWebContents();
+  }
+
+  void WaitUntilJSIsReady() {
+    LoginDisplayHostImpl* host = static_cast<LoginDisplayHostImpl*>(
+        LoginDisplayHostImpl::default_host());
+    if (!host)
+      return;
+    chromeos::OobeUI* oobe_ui = host->GetOobeUI();
+    if (!oobe_ui)
+      return;
+    base::RunLoop run_loop;
+    const bool oobe_ui_ready = oobe_ui->IsJSReady(run_loop.QuitClosure());
+    if (!oobe_ui_ready)
+      run_loop.Run();
+  }
+
+  bool JSExecuteBooleanExpression(const std::string& expression) {
+    bool result;
+    EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+        GetWebContents(),
+        "window.domAutomationController.send(!!(" + expression + "));",
+        &result));
+    return result;
+  }
+
+  FakeSessionManagerClient* fake_session_manager_client() const {
+    return fake_session_manager_client_;
+  }
+
+ private:
+  scoped_ptr<PrefService> local_state_;
+  FakeSessionManagerClient* fake_session_manager_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(WizardControllerBrokenLocalStateTest);
+};
+
+IN_PROC_BROWSER_TEST_F(WizardControllerBrokenLocalStateTest,
+                       LocalStateCorrupted) {
+  // Checks that after wizard controller initialization error screen
+  // in the proper state is displayed.
+  ASSERT_EQ(GetErrorScreen(),
+            WizardController::default_controller()->current_screen());
+  ASSERT_EQ(ErrorScreen::UI_STATE_LOCAL_STATE_ERROR,
+            GetErrorScreen()->GetUIState());
+
+  WaitUntilJSIsReady();
+
+  // Checks visibility of the error message and powerwash button.
+  ASSERT_FALSE(JSExecuteBooleanExpression("$('error-message').hidden"));
+  ASSERT_TRUE(JSExecuteBooleanExpression(
+      "$('error-message').classList.contains('ui-state-local-state-error')"));
+  ASSERT_TRUE(JSExecuteBooleanExpression("$('progress-dots').hidden"));
+  ASSERT_TRUE(JSExecuteBooleanExpression("$('login-header-bar').hidden"));
+
+  // Emulates user click on the "Restart and Powerwash" button.
+  ASSERT_EQ(0, fake_session_manager_client()->start_device_wipe_call_count());
+  ASSERT_TRUE(content::ExecuteScript(
+      GetWebContents(),
+      "$('error-message-restart-and-powerwash-button').click();"));
+  ASSERT_EQ(1, fake_session_manager_client()->start_device_wipe_call_count());
+}
+
+class WizardControllerProxyAuthOnSigninTest : public WizardControllerTest {
+ protected:
+  WizardControllerProxyAuthOnSigninTest()
+      : proxy_server_(net::SpawnedTestServer::TYPE_BASIC_AUTH_PROXY,
+                      net::SpawnedTestServer::kLocalhost,
+                      base::FilePath()) {
+  }
+  virtual ~WizardControllerProxyAuthOnSigninTest() {}
+
+  // Overridden from WizardControllerTest:
+  virtual void SetUp() OVERRIDE {
+    ASSERT_TRUE(proxy_server_.Start());
+    WizardControllerTest::SetUp();
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    WizardControllerTest::SetUpOnMainThread();
+    WizardController::default_controller()->AdvanceToScreen(
+        WizardController::kNetworkScreenName);
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitchASCII(::switches::kProxyServer,
+                                    proxy_server_.host_port_pair().ToString());
+  }
+
+  net::SpawnedTestServer& proxy_server() { return proxy_server_; }
+
+ private:
+  net::SpawnedTestServer proxy_server_;
+
+  DISALLOW_COPY_AND_ASSIGN(WizardControllerProxyAuthOnSigninTest);
+};
+
+IN_PROC_BROWSER_TEST_F(WizardControllerProxyAuthOnSigninTest,
+                       ProxyAuthDialogOnSigninScreen) {
+  content::WindowedNotificationObserver auth_needed_waiter(
+      chrome::NOTIFICATION_AUTH_NEEDED,
+      content::NotificationService::AllSources());
+
+  EXPECT_EQ(WizardController::default_controller()->GetNetworkScreen(),
+            WizardController::default_controller()->current_screen());
+
+  LoginDisplayHostImpl::default_host()->StartSignInScreen();
+  auth_needed_waiter.Wait();
 }
 
 class WizardControllerKioskFlowTest : public WizardControllerFlowTest {

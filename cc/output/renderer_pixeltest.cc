@@ -112,7 +112,8 @@ scoped_ptr<TextureDrawQuad> CreateTestTextureDrawQuad(
   std::vector<uint32_t> pixels(rect.size().GetArea(), pixel_color);
 
   ResourceProvider::ResourceId resource = resource_provider->CreateResource(
-      rect.size(), GL_RGBA, ResourceProvider::TextureUsageAny);
+      rect.size(), GL_RGBA, GL_CLAMP_TO_EDGE,
+      ResourceProvider::TextureUsageAny);
   resource_provider->SetPixels(
       resource,
       reinterpret_cast<uint8_t*>(&pixels.front()),
@@ -409,22 +410,26 @@ class VideoGLRendererPixelTest : public GLRendererPixelTest {
         resource_provider_->CreateResource(
             this->device_viewport_size_,
             GL_LUMINANCE,
+            GL_CLAMP_TO_EDGE,
             ResourceProvider::TextureUsageAny);
     ResourceProvider::ResourceId u_resource =
         resource_provider_->CreateResource(
             this->device_viewport_size_,
             GL_LUMINANCE,
+            GL_CLAMP_TO_EDGE,
             ResourceProvider::TextureUsageAny);
     ResourceProvider::ResourceId v_resource =
         resource_provider_->CreateResource(
             this->device_viewport_size_,
             GL_LUMINANCE,
+            GL_CLAMP_TO_EDGE,
             ResourceProvider::TextureUsageAny);
     ResourceProvider::ResourceId a_resource = 0;
     if (with_alpha) {
       a_resource = resource_provider_->CreateResource(
                        this->device_viewport_size_,
                        GL_LUMINANCE,
+                       GL_CLAMP_TO_EDGE,
                        ResourceProvider::TextureUsageAny);
     }
 
@@ -1146,6 +1151,31 @@ TEST_F(ExternalStencilPixelTest, RenderSurfacesIgnoreStencil) {
       &pass_list,
       PixelTest::NoOffscreenContext,
       base::FilePath(FILE_PATH_LITERAL("four_blue_green_checkers.png")),
+      ExactPixelComparator(true)));
+}
+
+TEST_F(ExternalStencilPixelTest, DeviceClip) {
+  ClearBackgroundToGreen();
+  gfx::Rect clip_rect(gfx::Point(150, 150), gfx::Size(50, 50));
+  this->ForceDeviceClip(clip_rect);
+
+  // Draw a blue quad that covers the entire device viewport. It should be
+  // clipped to the bottom right corner by the device clip.
+  gfx::Rect rect(this->device_viewport_size_);
+  RenderPass::Id id(1, 1);
+  scoped_ptr<RenderPass> pass = CreateTestRootRenderPass(id, rect);
+  scoped_ptr<SharedQuadState> blue_shared_state =
+      CreateTestSharedQuadState(gfx::Transform(), rect);
+  scoped_ptr<SolidColorDrawQuad> blue = SolidColorDrawQuad::Create();
+  blue->SetNew(blue_shared_state.get(), rect, SK_ColorBLUE, false);
+  pass->quad_list.push_back(blue.PassAs<DrawQuad>());
+  RenderPassList pass_list;
+  pass_list.push_back(pass.Pass());
+
+  EXPECT_TRUE(this->RunPixelTest(
+      &pass_list,
+      PixelTest::NoOffscreenContext,
+      base::FilePath(FILE_PATH_LITERAL("green_with_blue_corner.png")),
       ExactPixelComparator(true)));
 }
 

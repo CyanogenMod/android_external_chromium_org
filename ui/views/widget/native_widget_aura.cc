@@ -521,9 +521,14 @@ void NativeWidgetAura::Deactivate() {
 }
 
 bool NativeWidgetAura::IsActive() const {
-  return window_ &&
-      aura::client::GetActivationClient(window_->GetRootWindow())->
-          GetActiveWindow() == window_;
+  if (!window_)
+    return false;
+
+  // We may up here during destruction of the root, in which case
+  // GetRootWindow() returns NULL (~RootWindow() has run and we're in ~Window).
+  aura::RootWindow* root = window_->GetRootWindow();
+  return root &&
+      aura::client::GetActivationClient(root)->GetActiveWindow() == window_;
 }
 
 void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
@@ -683,6 +688,9 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 #endif
 }
 
+void NativeWidgetAura::OnRootViewLayout() const {
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, views::InputMethodDelegate implementation:
 
@@ -799,11 +807,8 @@ void NativeWidgetAura::GetHitTestMask(gfx::Path* mask) const {
   delegate_->GetHitTestMask(mask);
 }
 
-scoped_refptr<ui::Texture> NativeWidgetAura::CopyTexture() {
-  // The layer we create doesn't have an external texture, so this should never
-  // get invoked.
-  NOTREACHED();
-  return scoped_refptr<ui::Texture>();
+void NativeWidgetAura::DidRecreateLayer(ui::Layer *old_layer,
+                                        ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////

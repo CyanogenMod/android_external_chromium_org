@@ -108,6 +108,7 @@
           'callback_helpers.h',
           'callback_internal.cc',
           'callback_internal.h',
+          'callback_registry.h',
           'cancelable_callback.h',
           'chromeos/chromeos_version.cc',
           'chromeos/chromeos_version.h',
@@ -402,6 +403,7 @@
           'process/kill_mac.cc',
           'process/kill_posix.cc',
           'process/kill_win.cc',
+          'process/launch.cc',
           'process/launch.h',
           'process/launch_ios.cc',
           'process/launch_mac.cc',
@@ -474,6 +476,8 @@
           'strings/latin1_string_conversions.h',
           'strings/nullable_string16.cc',
           'strings/nullable_string16.h',
+          'strings/safe_sprintf.cc',
+          'strings/safe_sprintf.h',
           'strings/string16.cc',
           'strings/string16.h',
           'strings/string_number_conversions.cc',
@@ -633,8 +637,6 @@
           'win/registry.h',
           'win/resource_util.cc',
           'win/resource_util.h',
-          'win/sampling_profiler.cc',
-          'win/sampling_profiler.h',
           'win/scoped_bstr.cc',
           'win/scoped_bstr.h',
           'win/scoped_co_mem.h',
@@ -689,7 +691,7 @@
               'sources!': [
                 'atomicops_internals_x86_gcc.cc',
                 'message_loop/message_pump_glib.cc',
-                'message_loop/message_pump_aurax11.cc',
+                'message_loop/message_pump_x11.cc',
               ],
           }],
           ['<(toolkit_uses_gtk)==0 or >(nacl_untrusted_build)==1', {
@@ -855,7 +857,7 @@
           ['<(use_ozone) == 1', {
             'sources!': [
               'message_loop/message_pump_glib.cc',
-              'message_loop/message_pump_aurax11.cc',
+              'message_loop/message_pump_x11.cc',
             ]
           }],
           ['OS == "linux" and >(nacl_untrusted_build)==0', {

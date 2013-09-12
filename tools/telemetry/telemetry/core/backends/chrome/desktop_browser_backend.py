@@ -19,12 +19,14 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a locally-executed browser instance, on Linux,
   Mac or Windows.
   """
-  def __init__(self, options, executable, flash_path, is_content_shell,
-               browser_directory, output_profile_path=None):
+  def __init__(self, browser_options, executable, flash_path, is_content_shell,
+               browser_directory, output_profile_path, extensions_to_load):
     super(DesktopBrowserBackend, self).__init__(
         is_content_shell=is_content_shell,
         supports_extensions=not is_content_shell,
-        options=options)
+        browser_options=browser_options,
+        output_profile_path=output_profile_path,
+        extensions_to_load=extensions_to_load)
 
     # Initialize fields so that an explosion during init doesn't break in Close.
     self._proc = None
@@ -42,7 +44,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
                       self._flash_path)
       self._flash_path = None
 
-    if len(options.extensions_to_load) > 0 and is_content_shell:
+    if len(extensions_to_load) > 0 and is_content_shell:
       raise browser_backend.ExtensionsNotSupportedException(
           'Content shell does not support extensions.')
 
@@ -50,13 +52,12 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     self._port = util.GetAvailableLocalPort()
     self._profile_dir = None
     self._supports_net_benchmarking = True
-    self._output_profile_path = output_profile_path
     self._tmp_minidump_dir = tempfile.mkdtemp()
 
     self._SetupProfile()
 
   def _SetupProfile(self):
-    if not self.options.dont_override_profile:
+    if not self.browser_options.dont_override_profile:
       if self._output_profile_path:
         # If both |_output_profile_path| and |profile_dir| are specified then
         # the calling code will throw an exception, so we don't need to worry
@@ -64,7 +65,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         self._tmp_profile_dir = self._output_profile_path
       else:
         self._tmp_profile_dir = tempfile.mkdtemp()
-      profile_dir = self._profile_dir or self.options.profile_dir
+      profile_dir = self._profile_dir or self.browser_options.profile_dir
       if profile_dir:
         if self.is_content_shell:
           logging.critical('Profiles cannot be used with content shell')
@@ -79,7 +80,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     env = os.environ.copy()
     env['CHROME_HEADLESS'] = '1'  # Don't upload minidumps.
     env['BREAKPAD_DUMP_LOCATION'] = self._tmp_minidump_dir
-    if not self.options.show_stdout:
+    if not self.browser_options.show_stdout:
       self._tmp_output_file = tempfile.NamedTemporaryFile('w', 0)
       self._proc = subprocess.Popen(
           args, stdout=self._tmp_output_file, stderr=subprocess.STDOUT, env=env)
@@ -105,7 +106,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         args.append('--enable-net-benchmarking')
       else:
         args.append('--enable-benchmarking')
-      if not self.options.dont_override_profile:
+      if not self.browser_options.dont_override_profile:
         args.append('--user-data-dir=%s' % self._tmp_profile_dir)
     return args
 

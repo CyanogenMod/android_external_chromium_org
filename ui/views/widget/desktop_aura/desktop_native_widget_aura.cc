@@ -77,8 +77,7 @@ class DesktopNativeWidgetTopLevelHandler : public aura::WindowObserver {
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET;
     init_params.layer_type = ui::LAYER_NOT_DRAWN;
-    init_params.accept_events = full_screen;
-
+    init_params.can_activate = full_screen;
     // This widget instance will get deleted when the window is
     // destroyed.
     top_level_handler->top_level_widget_ = new Widget();
@@ -229,6 +228,37 @@ void DesktopNativeWidgetAura::CreateCaptureClient(aura::RootWindow* root) {
   capture_client_.reset(new corewm::ScopedCaptureClient(root));
 }
 
+void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
+  native_widget_delegate_->OnNativeWidgetActivationChanged(active);
+  aura::client::ActivationClient* activation_client =
+      aura::client::GetActivationClient(root_window_.get());
+  if (!activation_client)
+    return;
+  if (active) {
+    if (GetWidget()->HasFocusManager()) {
+      // This function can be called before the focus manager has had a
+      // chance to set the focused view. In which case we should get the
+      // last focused view.
+      View* view_for_activation =
+          GetWidget()->GetFocusManager()->GetFocusedView() ?
+              GetWidget()->GetFocusManager()->GetFocusedView() :
+                  GetWidget()->GetFocusManager()->GetStoredFocusView();
+      if (!view_for_activation)
+        view_for_activation = GetWidget()->GetRootView();
+      activation_client->ActivateWindow(
+          view_for_activation->GetWidget()->GetNativeView());
+    }
+  } else {
+    // If we're not active we need to deactivate the corresponding
+    // aura::Window. This way if a child widget is active it gets correctly
+    // deactivated (child widgets don't get native desktop activation changes,
+    // only aura activation changes).
+    aura::Window* active_window = activation_client->GetActiveWindow();
+    if (active_window)
+      activation_client->DeactivateWindow(active_window);
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, internal::NativeWidgetPrivate implementation:
 
@@ -237,6 +267,13 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   ownership_ = params.ownership;
 
   NativeWidgetAura::RegisterNativeWidgetForWindow(this, window_);
+  // Animations on TYPE_WINDOW are handled by the OS. Additionally if we animate
+  // these windows the size of the window gets augmented, effecting restore
+  // bounds and maximized windows in bad ways.
+  if (params.type == Widget::InitParams::TYPE_WINDOW &&
+      !params.remove_standard_frame) {
+    window_->SetProperty(aura::client::kAnimationsDisabledKey, true);
+  }
   window_->SetType(GetAuraWindowTypeForWidgetType(params.type));
   window_->SetTransparent(true);
   window_->Init(params.layer_type);
@@ -659,6 +696,11 @@ ui::NativeTheme* DesktopNativeWidgetAura::GetNativeTheme() const {
   return DesktopRootWindowHost::GetNativeTheme(window_);
 }
 
+void DesktopNativeWidgetAura::OnRootViewLayout() const {
+  if (window_)
+    desktop_root_window_host_->OnRootViewLayout();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, aura::WindowDelegate implementation:
 
@@ -742,12 +784,8 @@ void DesktopNativeWidgetAura::GetHitTestMask(gfx::Path* mask) const {
   native_widget_delegate_->GetHitTestMask(mask);
 }
 
-scoped_refptr<ui::Texture> DesktopNativeWidgetAura::CopyTexture() {
-  // The layer we create doesn't have an external texture, so this should never
-  // get invoked.
-  NOTREACHED();
-  return scoped_refptr<ui::Texture>();
-}
+void DesktopNativeWidgetAura::DidRecreateLayer(ui::Layer* old_layer,
+                                               ui::Layer* new_layer) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, ui::EventHandler implementation:
@@ -828,28 +866,10 @@ void DesktopNativeWidgetAura::OnWindowActivated(aura::Window* gained_active,
     restore_focus_on_activate_ = false;
     GetWidget()->GetFocusManager()->RestoreFocusedView();
   } else if (lost_active == window_ && GetWidget()->HasFocusManager()) {
-    bool store_focused_view = corewm::UseFocusControllerOnDesktop();
-    if (!store_focused_view) {
-      // If we're losing focus to a window that is a top level (such as a
-      // bubble) store the focus. Such a window shares the same
-      // RootWindowHost, so that such a change won't trigger an activation
-      // change (which calls StoreFocusedView()). Without this the focused
-      // view is never told it lost focus.
-      aura::Window* focused_window =
-        aura::client::GetFocusClient(window_)->GetFocusedWindow();
-      if (focused_window && focused_window != window_) {
-        Widget* focused_widget =
-            Widget::GetWidgetForNativeWindow(focused_window);
-        store_focused_view = focused_widget && focused_widget != GetWidget() &&
-            focused_widget->is_top_level();
-      }
-    }
-    if (store_focused_view) {
-      DCHECK(!restore_focus_on_activate_);
-      restore_focus_on_activate_ = true;
-      // Pass in false so that ClearNativeFocus() isn't invoked.
-      GetWidget()->GetFocusManager()->StoreFocusedView(false);
-    }
+    DCHECK(!restore_focus_on_activate_);
+    restore_focus_on_activate_ = true;
+    // Pass in false so that ClearNativeFocus() isn't invoked.
+    GetWidget()->GetFocusManager()->StoreFocusedView(false);
   }
 }
 

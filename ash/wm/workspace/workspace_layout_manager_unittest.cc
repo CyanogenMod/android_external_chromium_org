@@ -11,6 +11,7 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/property_util.h"
+#include "ash/wm/window_settings.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
@@ -138,7 +139,7 @@ TEST_F(WorkspaceLayoutManagerTest, MaximizeInDisplayToBeRestored) {
   // is inside 2nd display.
   wm::MaximizeWindow(window.get());
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
-  EXPECT_EQ("300,0 400x452", window->GetBoundsInScreen().ToString());
+  EXPECT_EQ("300,0 400x453", window->GetBoundsInScreen().ToString());
 
   wm::RestoreWindow(window.get());
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
@@ -149,7 +150,7 @@ TEST_F(WorkspaceLayoutManagerTest, MaximizeInDisplayToBeRestored) {
   SetRestoreBoundsInScreen(window.get(), gfx::Rect(280, 0, 30, 40));
   wm::MaximizeWindow(window.get());
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
-  EXPECT_EQ("300,0 400x452", window->GetBoundsInScreen().ToString());
+  EXPECT_EQ("300,0 400x453", window->GetBoundsInScreen().ToString());
 
   wm::RestoreWindow(window.get());
   EXPECT_EQ(root_windows[1], window->GetRootWindow());
@@ -165,7 +166,7 @@ TEST_F(WorkspaceLayoutManagerTest, MaximizeInDisplayToBeRestored) {
   w1->Show();
   EXPECT_TRUE(w1->IsMaximized());
   EXPECT_EQ(root_windows[1], w1->GetNativeView()->GetRootWindow());
-  EXPECT_EQ("300,0 400x452", w1->GetWindowBoundsInScreen().ToString());
+  EXPECT_EQ("300,0 400x453", w1->GetWindowBoundsInScreen().ToString());
   w1->Restore();
   EXPECT_EQ(root_windows[1], w1->GetNativeView()->GetRootWindow());
   EXPECT_EQ("400,0 30x40", w1->GetWindowBoundsInScreen().ToString());
@@ -308,7 +309,7 @@ TEST_F(WorkspaceLayoutManagerTest, WindowShouldBeOnScreenWhenAdded) {
   parent->RemoveChild(out_window.get());
   out_window->SetBounds(gfx::Rect(-200, -200, 200, 200));
   // UserHasChangedWindowPositionOrSize flag shouldn't turn off this behavior.
-  wm::SetUserHasChangedWindowPositionOrSize(window.get(), true);
+  wm::GetWindowSettings(window.get())->set_bounds_changed_by_user(true);
   parent->AddChild(out_window.get());
   EXPECT_GT(bounds.width(), out_window->bounds().width() * 0.29);
   EXPECT_GT(bounds.height(), out_window->bounds().height() * 0.29);

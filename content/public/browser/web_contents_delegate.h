@@ -117,13 +117,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   // loading feedback. See WebContents::IsLoading()
   virtual void LoadingStateChanged(WebContents* source) {}
 
-#if defined(OS_ANDROID)
   // Notifies the delegate that the page has made some progress loading.
   // |progress| is a value between 0.0 (nothing loaded) to 1.0 (page fully
   // loaded).
   virtual void LoadProgressChanged(WebContents* source,
                                    double progress) {}
-#endif
 
   // Request the delegate to close this web contents, and do whatever cleanup
   // it needs to do.
@@ -423,7 +421,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RequestMediaAccessPermission(
       WebContents* web_contents,
       const MediaStreamRequest& request,
-      const MediaResponseCallback& callback) {}
+      const MediaResponseCallback& callback);
 
   // Requests permission to access the PPAPI broker. The delegate should return
   // true and call the passed in |callback| with the result, or return false

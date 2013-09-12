@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,29 +13,40 @@ class Profile;
 
 namespace extensions {
 
-class InsertTextInputFunction : public SyncExtensionFunction {
+class InsertTextFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION(
-      "experimental.input.virtualKeyboard.insertText",
-      EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_INSERTTEXT);
+  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.insertText",
+                             VIRTUALKEYBOARDPRIVATE_INSERTTEXT);
 
  protected:
-  virtual ~InsertTextInputFunction() {}
+  virtual ~InsertTextFunction() {}
 
   // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 
-class  MoveCursorFunction : public SyncExtensionFunction {
+class MoveCursorFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION(
-      "experimental.input.virtualKeyboard.moveCursor",
-      EXPERIMENTAL_INPUT_VIRTUALKEYBOARD_MOVECURSOR);
+  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.moveCursor",
+                             VIRTUALKEYBOARDPRIVATE_MOVECURSOR);
 
  protected:
   virtual ~MoveCursorFunction() {}
 
   // ExtensionFunction.
+  virtual bool RunImpl() OVERRIDE;
+};
+
+class SendKeyEventFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION(
+      "virtualKeyboardPrivate.sendKeyEvent",
+      VIRTUALKEYBOARDPRIVATE_SENDKEYEVENT);
+
+ protected:
+  virtual ~SendKeyEventFunction() {}
+
+  // ExtensionFunction:
   virtual bool RunImpl() OVERRIDE;
 };
 

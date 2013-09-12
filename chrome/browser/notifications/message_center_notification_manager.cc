@@ -12,8 +12,10 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
+#include "chrome/browser/notifications/fullscreen_notification_blocker.h"
 #include "chrome/browser/notifications/message_center_settings_controller.h"
 #include "chrome/browser/notifications/notification.h"
+#include "chrome/browser/notifications/screen_lock_notification_blocker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
@@ -27,7 +29,12 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
+#include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notifier_settings.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/notifications/login_state_notification_blocker_chromeos.h"
+#endif
 
 namespace {
 // The first-run balloon will be shown |kFirstRunIdleDelaySeconds| after all
@@ -45,14 +52,22 @@ MessageCenterNotificationManager::MessageCenterNotificationManager(
           base::TimeDelta::FromSeconds(kFirstRunIdleDelaySeconds)),
       weak_factory_(this),
 #endif
-      settings_provider_(settings_provider.Pass()) {
+      settings_provider_(settings_provider.Pass()),
+      system_observer_(this) {
 #if defined(OS_WIN)
   first_run_pref_.Init(prefs::kMessageCenterShowedFirstRunBalloon, local_state);
 #endif
 
-  message_center_->SetDelegate(this);
   message_center_->AddObserver(this);
   message_center_->SetNotifierSettingsProvider(settings_provider_.get());
+
+#if defined(OS_CHROMEOS)
+  blockers_.push_back(
+      new LoginStateNotificationBlockerChromeOS(message_center));
+#else
+  blockers_.push_back(new ScreenLockNotificationBlocker(message_center));
+#endif
+  blockers_.push_back(new FullscreenNotificationBlocker(message_center));
 
 #if defined(OS_WIN) || defined(OS_MACOSX) \
   || (defined(USE_AURA) && !defined(USE_ASH))
@@ -72,106 +87,17 @@ MessageCenterNotificationManager::~MessageCenterNotificationManager() {
 ////////////////////////////////////////////////////////////////////////////////
 // NotificationUIManager
 
-const Notification* MessageCenterNotificationManager::FindById(
-    const std::string& id) const {
-  const Notification* notification = NotificationUIManagerImpl::FindById(id);
-  if (notification)
-    return notification;
-  NotificationMap::const_iterator iter = profile_notifications_.find(id);
-  if (iter == profile_notifications_.end())
-    return NULL;
-  return &(iter->second->notification());
-}
-
-bool MessageCenterNotificationManager::CancelById(const std::string& id) {
-  // See if this ID hasn't been shown yet.
-  if (NotificationUIManagerImpl::CancelById(id))
-    return true;
-
-  // If it has been shown, remove it.
-  NotificationMap::iterator iter = profile_notifications_.find(id);
-  if (iter == profile_notifications_.end())
-    return false;
-
-  message_center_->RemoveNotification(id, /* by_user */ false);
-  return true;
-}
-
-std::set<std::string>
-MessageCenterNotificationManager::GetAllIdsByProfileAndSourceOrigin(
-    Profile* profile,
-    const GURL& source) {
-
-  std::set<std::string> notification_ids =
-      NotificationUIManagerImpl::GetAllIdsByProfileAndSourceOrigin(profile,
-                                                                   source);
-
-  for (NotificationMap::iterator iter = profile_notifications_.begin();
-       iter != profile_notifications_.end(); iter++) {
-    if ((*iter).second->notification().origin_url() == source &&
-        profile == (*iter).second->profile()) {
-      notification_ids.insert(iter->first);
-    }
-  }
-  return notification_ids;
-}
-
-bool MessageCenterNotificationManager::CancelAllBySourceOrigin(
-    const GURL& source) {
-  // Same pattern as CancelById, but more complicated than the above
-  // because there may be multiple notifications from the same source.
-  bool removed = NotificationUIManagerImpl::CancelAllBySourceOrigin(source);
-
-  for (NotificationMap::iterator loopiter = profile_notifications_.begin();
-       loopiter != profile_notifications_.end(); ) {
-    NotificationMap::iterator curiter = loopiter++;
-    if ((*curiter).second->notification().origin_url() == source) {
-      message_center_->RemoveNotification(curiter->first, /* by_user */ false);
-      removed = true;
-    }
-  }
-  return removed;
-}
-
-bool MessageCenterNotificationManager::CancelAllByProfile(Profile* profile) {
-  // Same pattern as CancelAllBySourceOrigin.
-  bool removed = NotificationUIManagerImpl::CancelAllByProfile(profile);
-
-  for (NotificationMap::iterator loopiter = profile_notifications_.begin();
-       loopiter != profile_notifications_.end(); ) {
-    NotificationMap::iterator curiter = loopiter++;
-    if (profile == (*curiter).second->profile()) {
-      message_center_->RemoveNotification(curiter->first, /* by_user */ false);
-      removed = true;
-    }
-  }
-  return removed;
-}
-
-void MessageCenterNotificationManager::CancelAll() {
-  NotificationUIManagerImpl::CancelAll();
-
-  message_center_->RemoveAllNotifications(/* by_user */ false);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NotificationUIManagerImpl
-
-bool MessageCenterNotificationManager::ShowNotification(
-    const Notification& notification, Profile* profile) {
-  if (message_center_->IsMessageCenterVisible())
-    return false;
-
-  if (UpdateNotification(notification, profile))
-    return true;
+void MessageCenterNotificationManager::Add(const Notification& notification,
+                                           Profile* profile) {
+  if (Update(notification, profile))
+    return;
 
   AddProfileNotification(
       new ProfileNotification(profile, notification, message_center_));
-  return true;
 }
 
-bool MessageCenterNotificationManager::UpdateNotification(
-    const Notification& notification, Profile* profile) {
+bool MessageCenterNotificationManager::Update(const Notification& notification,
+                                              Profile* profile) {
   // Only progress notification update can be reflected immediately in the
   // message center.
   bool update_progress_notification =
@@ -229,29 +155,75 @@ bool MessageCenterNotificationManager::UpdateNotification(
   return false;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// MessageCenter::Delegate
+const Notification* MessageCenterNotificationManager::FindById(
+    const std::string& id) const {
+  NotificationMap::const_iterator iter = profile_notifications_.find(id);
+  if (iter == profile_notifications_.end())
+    return NULL;
+  return &(iter->second->notification());
+}
 
-void MessageCenterNotificationManager::ShowSettings(
-    const std::string& notification_id) {
-  // The per-message-center Settings button passes an empty string.
-  if (notification_id.empty()) {
-    NOTIMPLEMENTED();
-    return;
+bool MessageCenterNotificationManager::CancelById(const std::string& id) {
+  // See if this ID hasn't been shown yet.
+  // If it has been shown, remove it.
+  NotificationMap::iterator iter = profile_notifications_.find(id);
+  if (iter == profile_notifications_.end())
+    return false;
+
+  message_center_->RemoveNotification(id, /* by_user */ false);
+  return true;
+}
+
+std::set<std::string>
+MessageCenterNotificationManager::GetAllIdsByProfileAndSourceOrigin(
+    Profile* profile,
+    const GURL& source) {
+
+  std::set<std::string> notification_ids;
+  for (NotificationMap::iterator iter = profile_notifications_.begin();
+       iter != profile_notifications_.end(); iter++) {
+    if ((*iter).second->notification().origin_url() == source &&
+        profile == (*iter).second->profile()) {
+      notification_ids.insert(iter->first);
+    }
   }
+  return notification_ids;
+}
 
-  ProfileNotification* profile_notification =
-      FindProfileNotification(notification_id);
-  if (!profile_notification)
-    return;
+bool MessageCenterNotificationManager::CancelAllBySourceOrigin(
+    const GURL& source) {
+  // Same pattern as CancelById, but more complicated than the above
+  // because there may be multiple notifications from the same source.
+  bool removed = false;
 
-  Browser* browser =
-      chrome::FindOrCreateTabbedBrowser(profile_notification->profile(),
-                                        chrome::HOST_DESKTOP_TYPE_NATIVE);
-  if (profile_notification->GetExtensionId().empty())
-    chrome::ShowContentSettings(browser, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-  else
-    chrome::ShowExtensions(browser, std::string());
+  for (NotificationMap::iterator loopiter = profile_notifications_.begin();
+       loopiter != profile_notifications_.end(); ) {
+    NotificationMap::iterator curiter = loopiter++;
+    if ((*curiter).second->notification().origin_url() == source) {
+      message_center_->RemoveNotification(curiter->first, /* by_user */ false);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+bool MessageCenterNotificationManager::CancelAllByProfile(Profile* profile) {
+  // Same pattern as CancelAllBySourceOrigin.
+  bool removed = false;
+
+  for (NotificationMap::iterator loopiter = profile_notifications_.begin();
+       loopiter != profile_notifications_.end(); ) {
+    NotificationMap::iterator curiter = loopiter++;
+    if (profile == (*curiter).second->profile()) {
+      message_center_->RemoveNotification(curiter->first, /* by_user */ false);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+void MessageCenterNotificationManager::CancelAll() {
+  message_center_->RemoveAllNotifications(/* by_user */ false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -272,13 +244,23 @@ void MessageCenterNotificationManager::OnNotificationRemoved(
 #endif
 }
 
-void MessageCenterNotificationManager::OnNotificationCenterClosed() {
-  // When the center is open it halts all notifications, so we need to listen
-  // for events indicating it's been closed.
-  CheckAndShowNotifications();
+void MessageCenterNotificationManager::OnCenterVisibilityChanged(
+    message_center::Visibility visibility) {
+  switch (visibility) {
+    case message_center::VISIBILITY_TRANSIENT:
 #if defined(OS_WIN)
-  CheckFirstRunTimer();
+      CheckFirstRunTimer();
 #endif
+      break;
+    case message_center::VISIBILITY_MESSAGE_CENTER:
+      content::RecordAction(
+          content::UserMetricsAction("Notifications.ShowMessageCenter"));
+      break;
+    case message_center::VISIBILITY_SETTINGS:
+      content::RecordAction(
+          content::UserMetricsAction("Notifications.ShowSettings"));
+      break;
+  }
 }
 
 void MessageCenterNotificationManager::OnNotificationUpdated(
@@ -302,8 +284,6 @@ void MessageCenterNotificationManager::Observe(
 
     if (is_fullscreen && tray_.get() && tray_->GetMessageCenterTray())
       tray_->GetMessageCenterTray()->HidePopupBubble();
-  } else {
-    NotificationUIManagerImpl::Observe(type, source, details);
   }
 }
 

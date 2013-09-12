@@ -4,6 +4,7 @@
 
 #include "ash/wm/custom_frame_view_ash.h"
 
+#include "ash/ash_switches.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/maximize_bubble_controller.h"
@@ -113,6 +114,9 @@ class CustomFrameViewAshTest : public ash::test::AshTestBase {
 
   virtual void SetUp() OVERRIDE {
     AshTestBase::SetUp();
+
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kAshDisableAlternateFrameCaptionButtonStyle);
 
     widget_ = CreateWidget();
     CustomFrameViewAsh* frame = static_cast<CustomFrameViewAsh*>(
@@ -242,7 +246,7 @@ TEST_F(CustomFrameViewAshTest, MAYBE_ResizeButtonDrag) {
   {
     center = view->GetBoundsInScreen().CenterPoint();
     gfx::Point end = center;
-    end.Offset(40, 0);
+    end.Offset(80, 0);
     generator.GestureScrollSequence(center, end,
         base::TimeDelta::FromMilliseconds(100),
         3);
@@ -252,14 +256,14 @@ TEST_F(CustomFrameViewAshTest, MAYBE_ResizeButtonDrag) {
     EXPECT_FALSE(ash::wm::IsWindowMinimized(window));
     // This is a short resizing distance and different touch behavior
     // applies which leads in half of the screen being used.
-    EXPECT_EQ("400,0 400x552", window->bounds().ToString());
+    EXPECT_EQ("400,0 400x553", window->bounds().ToString());
   }
 
   // Snap left.
   {
     center = view->GetBoundsInScreen().CenterPoint();
     gfx::Point end = center;
-    end.Offset(-40, 0);
+    end.Offset(-80, 0);
     generator.GestureScrollSequence(center, end,
         base::TimeDelta::FromMilliseconds(100),
         3);

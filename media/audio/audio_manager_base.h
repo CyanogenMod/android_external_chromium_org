@@ -47,10 +47,14 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual void ShowAudioInputSettings() OVERRIDE;
 
   virtual void GetAudioInputDeviceNames(
-      media::AudioDeviceNames* device_names) OVERRIDE;
+      AudioDeviceNames* device_names) OVERRIDE;
+
+  virtual void GetAudioOutputDeviceNames(
+      AudioDeviceNames* device_names) OVERRIDE;
 
   virtual AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
 
   virtual AudioInputStream* MakeAudioInputStream(
@@ -58,6 +62,7 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
       const AudioParameters& params,
+      const std::string& device_id,
       const std::string& input_device_id) OVERRIDE;
 
   // Called internally by the audio stream when it has been closed.
@@ -72,7 +77,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // Creates the output stream for the |AUDIO_PCM_LOW_LATENCY| format.
   // |input_device_id| is used by unified IO to open the correct input device.
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
-      const AudioParameters& params, const std::string& input_device_id) = 0;
+      const AudioParameters& params,
+      const std::string& device_id,
+      const std::string& input_device_id) = 0;
 
   // Creates the input stream for the |AUDIO_PCM_LINEAR| format. The legacy
   // name is also from |AUDIO_PCM_LINEAR|.
@@ -90,8 +97,14 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
       AudioDeviceListener* listener) OVERRIDE;
 
   virtual AudioParameters GetDefaultOutputStreamParameters() OVERRIDE;
+  virtual AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) OVERRIDE;
+
   virtual AudioParameters GetInputStreamParameters(
       const std::string& device_id) OVERRIDE;
+
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) OVERRIDE;
 
  protected:
   AudioManagerBase();
@@ -115,8 +128,15 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // will decide if they should return the values from |input_params| or the
   // default hardware values. If the |input_params| is invalid, it will return
   // the default hardware audio parameters.
+  // If |output_device_id| is empty, the implementation must treat that as
+  // a request for the default output device.
   virtual AudioParameters GetPreferredOutputStreamParameters(
+      const std::string& output_device_id,
       const AudioParameters& input_params) = 0;
+
+  // Returns the ID of the default audio output device.
+  // Implementations that don't yet support this should return an empty string.
+  virtual std::string GetDefaultOutputDeviceID();
 
   // Get number of input or output streams.
   int input_stream_count() { return num_input_streams_; }

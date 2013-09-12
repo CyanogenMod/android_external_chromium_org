@@ -38,8 +38,8 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "ui/base/keycodes/keyboard_codes.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/codec/jpeg_codec.h"
+#include "ui/gfx/range/range.h"
 
 #if defined(OS_LINUX) && !defined(USE_AURA)
 #include "ui/base/gtk/event_synthesis_gtk.h"
@@ -855,8 +855,8 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
     ui::TextInputMode input_mode = ui::TEXT_INPUT_MODE_DEFAULT;
     ViewHostMsg_TextInputTypeChanged::Read(msg,
                                            &type,
-                                           &can_compose_inline,
-                                           &input_mode);
+                                           &input_mode,
+                                           &can_compose_inline);
     EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
     EXPECT_EQ(true, can_compose_inline);
 
@@ -874,8 +874,8 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
     EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
     ViewHostMsg_TextInputTypeChanged::Read(msg,
                                            &type,
-                                           &can_compose_inline,
-                                           &input_mode);
+                                           &input_mode,
+                                           &can_compose_inline);
     EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
 
     for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kInputModeTestCases); i++) {
@@ -897,8 +897,8 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
       EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
       ViewHostMsg_TextInputTypeChanged::Read(msg,
                                             &type,
-                                            &can_compose_inline,
-                                            &input_mode);
+                                            &input_mode,
+                                            &can_compose_inline);
       EXPECT_EQ(test_case->expected_mode, input_mode);
     }
   }
@@ -1014,7 +1014,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
       case IME_CONFIRMCOMPOSITION:
         view()->OnImeConfirmComposition(
             WideToUTF16Hack(ime_message->ime_string),
-            ui::Range::InvalidRange(),
+            gfx::Range::InvalidRange(),
             false);
         break;
 
@@ -1777,7 +1777,7 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
   for (size_t i = 0; i < bounds.size(); ++i)
     EXPECT_LT(0, bounds[i].width());
   view()->OnImeConfirmComposition(
-      empty_string, ui::Range::InvalidRange(), false);
+      empty_string, gfx::Range::InvalidRange(), false);
 
   // Non surrogate pair unicode character.
   const string16 unicode_composition = UTF8ToUTF16(
@@ -1788,7 +1788,7 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
   for (size_t i = 0; i < bounds.size(); ++i)
     EXPECT_LT(0, bounds[i].width());
   view()->OnImeConfirmComposition(
-      empty_string, ui::Range::InvalidRange(), false);
+      empty_string, gfx::Range::InvalidRange(), false);
 
   // Surrogate pair character.
   const string16 surrogate_pair_char = UTF8ToUTF16("\xF0\xA0\xAE\x9F");
@@ -1801,7 +1801,7 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
   EXPECT_LT(0, bounds[0].width());
   EXPECT_EQ(0, bounds[1].width());
   view()->OnImeConfirmComposition(
-      empty_string, ui::Range::InvalidRange(), false);
+      empty_string, gfx::Range::InvalidRange(), false);
 
   // Mixed string.
   const string16 surrogate_pair_mixed_composition =
@@ -1824,7 +1824,7 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
     }
   }
   view()->OnImeConfirmComposition(
-      empty_string, ui::Range::InvalidRange(), false);
+      empty_string, gfx::Range::InvalidRange(), false);
 }
 #endif
 

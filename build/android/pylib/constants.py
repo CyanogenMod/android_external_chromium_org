@@ -106,6 +106,7 @@ SDK_BUILD_JAVALIB_DIR = 'lib.java'
 SDK_BUILD_TEST_JAVALIB_DIR = 'test.lib.java'
 SDK_BUILD_APKS_DIR = 'apks'
 
+PERF_OUTPUT_DIR = os.path.join(DIR_SOURCE_ROOT, 'out', 'step_results')
 # The directory on the device where perf test output gets saved to.
 DEVICE_PERF_OUTPUT_DIR = '/data/data/' + CHROME_PACKAGE + '/files'
 
@@ -129,6 +130,18 @@ def GetBuildType():
 
 def SetBuildType(build_type):
   os.environ['BUILDTYPE'] = build_type
+
+
+def GetOutDirectory(build_type=None):
+  """Returns the out directory where the output binaries are built.
+
+  Args:
+    build_type: Build type, generally 'Debug' or 'Release'. Defaults to the
+      globally set build type environment variable BUILDTYPE.
+  """
+  return os.path.abspath(os.path.join(
+      DIR_SOURCE_ROOT, os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+      GetBuildType() if build_type is None else build_type))
 
 
 def _GetADBPath():

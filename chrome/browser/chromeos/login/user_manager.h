@@ -21,26 +21,12 @@ class UserImageManager;
 // who have logged into this Chrome OS device before and updating that list.
 class UserManager {
  public:
-  // Status of merge sessions process which is responsible for exchanging
-  // user OAuth2 refresh token for GAIA cookies.
-  enum MergeSessionState {
-    // Session merge hasn't started yet.
-    MERGE_STATUS_NOT_STARTED,
-    // Session merge is in process.
-    MERGE_STATUS_IN_PROCESS,
-    // Session merge is completed.
-    MERGE_STATUS_DONE,
-  };
-
   // Interface that observers of UserManager must implement in order
   // to receive notification when local state preferences is changed
   class Observer {
    public:
     // Called when the local state preferences is changed.
     virtual void LocalStateChanged(UserManager* user_manager);
-
-    // Called when merge session state is changed.
-    virtual void MergeSessionStateChanged(MergeSessionState state);
 
    protected:
     virtual ~Observer();
@@ -125,6 +111,10 @@ class UserManager {
   // so the active user is the first one in the list. If there is no user logged
   // in, the current user will be returned.
   virtual const UserList& GetLRULoggedInUsers() = 0;
+
+  // Returns the email of the owner user. Returns an empty string if there is
+  // no owner for the device.
+  virtual const std::string& GetOwnerEmail() = 0;
 
   // Indicates that a user with the given |email| has just logged in. The
   // persistent list is updated accordingly if the user is not ephemeral.
@@ -300,12 +290,6 @@ class UserManager {
   // Returns true iff browser has been restarted after crash and UserManager
   // finished restoring user sessions.
   virtual bool UserSessionsRestored() const = 0;
-
-  // Returns merge session status.
-  virtual MergeSessionState GetMergeSessionState() const = 0;
-
-  // Changes merge session status.
-  virtual void SetMergeSessionState(MergeSessionState status) = 0;
 
   // Returns true when the browser has crashed and restarted during the current
   // user's session.

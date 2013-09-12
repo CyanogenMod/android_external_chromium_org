@@ -30,6 +30,7 @@
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/top_controls_state.h"
+#include "extensions/common/stack_frame.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
@@ -235,6 +236,13 @@ IPC_STRUCT_TRAITS_BEGIN(LanguageDetectionDetails)
   IPC_STRUCT_TRAITS_MEMBER(contents)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(extensions::StackFrame)
+  IPC_STRUCT_TRAITS_MEMBER(line_number)
+  IPC_STRUCT_TRAITS_MEMBER(column_number)
+  IPC_STRUCT_TRAITS_MEMBER(source)
+  IPC_STRUCT_TRAITS_MEMBER(function)
+IPC_STRUCT_TRAITS_END()
+
 IPC_ENUM_TRAITS_MAX_VALUE(NTPLoggingEventType,
                           NTP_NUM_EVENT_TYPES)
 
@@ -355,11 +363,6 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_RevertTranslation,
 // incognito mode.
 IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetIsIncognitoProcess,
                      bool /* is_incognito_processs */)
-
-// Sent on process startup to indicate whether the extension activity
-// log is enabled.
-IPC_MESSAGE_CONTROL1(ChromeViewMsg_SetExtensionActivityLogEnabled,
-                     bool /* extension_activity_log_enabled */)
 
 // Sent in response to ViewHostMsg_DidBlockDisplayingInsecureContent.
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetAllowDisplayingInsecureContent,
@@ -743,3 +746,11 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SetVoiceSearchSupported,
                     int /* page_id */,
                     bool /* supported */)
+
+// Tells listeners that a detailed message was reported to the console by
+// WebKit.
+IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DetailedConsoleMessageAdded,
+                    string16 /* message */,
+                    string16 /* source */,
+                    extensions::StackTrace /* stack trace */,
+                    int32 /* severity level */)

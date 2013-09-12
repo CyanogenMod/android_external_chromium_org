@@ -313,6 +313,10 @@
         'layout/layout_constants.h',
         'layout/layout_manager.cc',
         'layout/layout_manager.h',
+        'linux_ui/linux_ui.h',
+        'linux_ui/linux_ui.cc',
+        'linux_ui/status_icon_linux.h',
+        'linux_ui/status_icon_linux.cc',
         'metrics.cc',
         'metrics.h',
         'metrics_aura.cc',
@@ -354,8 +358,6 @@
         'widget/aero_tooltip_manager.h',
         'widget/child_window_message_processor.cc',
         'widget/child_window_message_processor.h',
-        'widget/desktop_aura/desktop_activation_client.cc',
-        'widget/desktop_aura/desktop_activation_client.h',
         'widget/desktop_aura/desktop_cursor_loader_updater.h',
         'widget/desktop_aura/desktop_cursor_loader_updater_aurax11.cc',
         'widget/desktop_aura/desktop_cursor_loader_updater_aurax11.h',
@@ -550,10 +552,13 @@
             ['include', 'accessibility/native_view_accessibility_win.h'],
           ],
         }],
-        ['use_aura==1 and OS=="linux" and chromeos==0', {
+        ['OS=="linux" and chromeos==0', {
           'dependencies': [
             '../ui.gyp:shell_dialogs',
-            '../linux_ui/linux_ui.gyp:linux_ui',
+          ],
+        }, { # OS=="linux" and chromeos==0
+          'sources/': [
+            ['exclude', 'linux_ui'],
           ],
         }],
         ['OS=="win"', {
@@ -565,6 +570,10 @@
             '../../third_party/wtl/include',
           ],
           'link_settings': {
+            'libraries': [
+              '-limm32.lib',
+              '-loleacc.lib',
+            ],
             'msvs_settings': {
               'VCLinkerTool': {
                 'DelayLoadDLLs': [
@@ -625,6 +634,8 @@
         'test/test_widget_observer.h',
         'test/views_test_base.cc',
         'test/views_test_base.h',
+        'test/widget_test.cc',
+        'test/widget_test.h',
         'widget/root_view_test_helper.h',
       ],
       'conditions': [
@@ -696,6 +707,7 @@
         '..',
       ],
       'sources': [
+        'accessibility/native_view_accessibility_win_unittest.cc',
         'accessible_pane_view_unittest.cc',
         'animation/bounds_animator_unittest.cc',
         'bubble/bubble_border_unittest.cc',

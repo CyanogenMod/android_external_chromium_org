@@ -58,15 +58,21 @@ bool IsAppInstalled(Profile* profile, const std::string& app_id) {
 StartupAppLauncher::StartupAppLauncher(Profile* profile,
                                        const std::string& app_id)
     : profile_(profile),
-      app_id_(app_id) {
+      app_id_(app_id),
+      ready_to_launch_(false) {
   DCHECK(profile_);
   DCHECK(Extension::IdIsValid(app_id_));
 }
 
 StartupAppLauncher::~StartupAppLauncher() {
+  // StartupAppLauncher can be deleted at anytime during the launch process
+  // through a user bailout shortcut.
+  ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
+      ->RemoveObserver(this);
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
 }
 
-void StartupAppLauncher::Start() {
+void StartupAppLauncher::Initialize() {
   DVLOG(1) << "Starting... connection = "
            <<  net::NetworkChangeNotifier::GetConnectionType();
   StartLoadingOAuthFile();
@@ -135,13 +141,9 @@ void StartupAppLauncher::OnOAuthFileLoaded(KioskOAuthParams* auth_params) {
 void StartupAppLauncher::InitializeNetwork() {
   FOR_EACH_OBSERVER(Observer, observer_list_, OnInitializingNetwork());
 
-  // Set a maximum allowed wait time for network.
-  const int kMaxNetworkWaitSeconds = 5 * 60;
-  network_wait_timer_.Start(
-      FROM_HERE,
-      base::TimeDelta::FromSeconds(kMaxNetworkWaitSeconds),
-      this, &StartupAppLauncher::OnNetworkWaitTimedout);
-
+  // TODO(tengs): Use NetworkStateInformer instead because it can handle
+  // portal and proxy detection. We will need to do some refactoring to
+  // make NetworkStateInformer more independent from the WebUI handlers.
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   OnNetworkChanged(net::NetworkChangeNotifier::GetConnectionType());
 }
@@ -209,7 +211,12 @@ void StartupAppLauncher::OnLaunchFailure(KioskAppLaunchError::Error error) {
   FOR_EACH_OBSERVER(Observer, observer_list_, OnLaunchFailed(error));
 }
 
-void StartupAppLauncher::Launch() {
+void StartupAppLauncher::LaunchApp() {
+  if (!ready_to_launch_) {
+    NOTREACHED();
+    LOG(ERROR) << "LaunchApp() called but launcher is not initialized.";
+  }
+
   const Extension* extension = extensions::ExtensionSystem::Get(profile_)->
       extension_service()->GetInstalledExtension(app_id_);
   CHECK(extension);
@@ -226,6 +233,8 @@ void StartupAppLauncher::Launch() {
                                                   NEW_WINDOW));
   InitAppSession(profile_, app_id_);
 
+  UserManager::Get()->SessionStarted();
+
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_KIOSK_APP_LAUNCHED,
       content::NotificationService::AllSources(),
@@ -241,7 +250,7 @@ void StartupAppLauncher::BeginInstall() {
            <<  net::NetworkChangeNotifier::GetConnectionType();
 
   if (IsAppInstalled(profile_, app_id_)) {
-    Launch();
+    OnReadyToLaunch();
     return;
   }
 
@@ -257,12 +266,13 @@ void StartupAppLauncher::InstallCallback(bool success,
                                          const std::string& error) {
   installer_ = NULL;
   if (success) {
-    // Schedules Launch() to be called after the callback returns.
+    // Finish initialization after the callback returns.
     // So that the app finishes its installation.
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        base::Bind(&StartupAppLauncher::Launch, AsWeakPtr()));
+        base::Bind(&StartupAppLauncher::OnReadyToLaunch,
+                   AsWeakPtr()));
     return;
   }
 
@@ -270,15 +280,9 @@ void StartupAppLauncher::InstallCallback(bool success,
   OnLaunchFailure(KioskAppLaunchError::UNABLE_TO_INSTALL);
 }
 
-void StartupAppLauncher::OnNetworkWaitTimedout() {
-  LOG(WARNING) << "OnNetworkWaitTimedout... connection = "
-               <<  net::NetworkChangeNotifier::GetConnectionType();
-
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnNetworkWaitTimedout());
-
-  // Timeout in waiting for online. Try the install anyway.
-  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
-  BeginInstall();
+void StartupAppLauncher::OnReadyToLaunch() {
+  ready_to_launch_ = true;
+  FOR_EACH_OBSERVER(Observer, observer_list_, OnReadyToLaunch());
 }
 
 void StartupAppLauncher::OnNetworkChanged(
@@ -288,7 +292,6 @@ void StartupAppLauncher::OnNetworkChanged(
   if (!net::NetworkChangeNotifier::IsOffline()) {
     DVLOG(1) << "Network up and running!";
     net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
-    network_wait_timer_.Stop();
 
     BeginInstall();
   } else {

@@ -27,15 +27,14 @@ AccountChooserModelDelegate::~AccountChooserModelDelegate() {}
 AccountChooserModel::AccountChooserModel(
     AccountChooserModelDelegate* delegate,
     PrefService* prefs,
-    const AutofillMetrics& metric_logger,
-    DialogType dialog_type)
+    const AutofillMetrics& metric_logger)
     : ui::SimpleMenuModel(this),
       delegate_(delegate),
       checked_item_(
           prefs->GetBoolean(::prefs::kAutofillDialogPayWithoutWallet) ?
               kAutofillItemId : kActiveWalletItemId),
-      metric_logger_(metric_logger),
-      dialog_type_(dialog_type) {
+      had_wallet_error_(false),
+      metric_logger_(metric_logger) {
   ReconstructMenuItems();
 }
 
@@ -73,7 +72,7 @@ bool AccountChooserModel::IsCommandIdChecked(int command_id) const {
 
 bool AccountChooserModel::IsCommandIdEnabled(int command_id) const {
   // Currently, _any_ (non-sign-in) error disables _all_ Wallet accounts.
-  if (command_id != kAutofillItemId && HadWalletError())
+  if (command_id != kAutofillItemId && had_wallet_error_)
     return false;
 
   return true;
@@ -101,22 +100,18 @@ void AccountChooserModel::ExecuteCommand(int command_id, int event_flags) {
     chooser_event =
         AutofillMetrics::DIALOG_UI_ACCOUNT_CHOOSER_SWITCHED_WALLET_ACCOUNT;
   }
-  metric_logger_.LogDialogUiEvent(dialog_type_, chooser_event);
+  metric_logger_.LogDialogUiEvent(chooser_event);
 
   checked_item_ = command_id;
   ReconstructMenuItems();
   delegate_->AccountChoiceChanged();
 }
 
-void AccountChooserModel::SetHadWalletError(const base::string16& message) {
+void AccountChooserModel::SetHadWalletError() {
   // Any non-sign-in error disables all Wallet accounts.
-  wallet_error_message_ = message;
+  had_wallet_error_ = true;
   ClearActiveWalletAccountName();
   ExecuteCommand(kAutofillItemId, 0);
-}
-
-bool AccountChooserModel::HadWalletError() const {
-  return !wallet_error_message_.empty();
 }
 
 void AccountChooserModel::SetHadWalletSigninError() {

@@ -10,11 +10,11 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/renderer/form_autofill_util.h"
+#include "components/autofill/content/renderer/password_form_conversion_utils.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/form_field_data.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
-#include "content/public/common/password_form.h"
-#include "content/public/renderer/password_form_conversion_utils.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
@@ -23,6 +23,8 @@
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -361,10 +363,14 @@ void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
   if (!OriginCanAccessPasswordManager(origin))
     return;
 
+  // Checks whether the webpage is a redirect page or an empty page.
+  if (IsWebpageEmpty(frame))
+    return;
+
   WebKit::WebVector<WebKit::WebFormElement> forms;
   frame->document().forms(forms);
 
-  std::vector<content::PasswordForm> password_forms;
+  std::vector<PasswordForm> password_forms;
   for (size_t i = 0; i < forms.size(); ++i) {
     const WebKit::WebFormElement& form = forms[i];
 
@@ -373,8 +379,7 @@ void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,
     if (only_visible && !IsWebNodeVisible(form))
       continue;
 
-    scoped_ptr<content::PasswordForm> password_form(
-        content::CreatePasswordForm(form));
+    scoped_ptr<PasswordForm> password_form(CreatePasswordForm(form));
     if (password_form.get())
       password_forms.push_back(*password_form);
   }
@@ -441,14 +446,12 @@ void PasswordAutofillAgent::WillSendSubmitEvent(
   // into a hidden field and then clear the password (http://crbug.com/28910).
   // This method gets called before any of those handlers run, so save away
   // a copy of the password in case it gets lost.
-  provisionally_saved_forms_[frame].reset(
-      content::CreatePasswordForm(form).release());
+  provisionally_saved_forms_[frame].reset(CreatePasswordForm(form).release());
 }
 
 void PasswordAutofillAgent::WillSubmitForm(WebKit::WebFrame* frame,
                                            const WebKit::WebFormElement& form) {
-  scoped_ptr<content::PasswordForm> submitted_form =
-      content::CreatePasswordForm(form);
+  scoped_ptr<PasswordForm> submitted_form = CreatePasswordForm(form);
 
   // If there is a provisionally saved password, copy over the previous
   // password value so we get the user's typed password, not the value that

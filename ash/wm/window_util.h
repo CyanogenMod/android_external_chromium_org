@@ -10,7 +10,6 @@
 #include "ui/base/ui_base_types.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 }
 
@@ -20,7 +19,6 @@ class Rect;
 
 namespace ui {
 class Event;
-class Layer;
 }
 
 namespace ash {
@@ -85,21 +83,8 @@ ASH_EXPORT void ToggleMaximizedWindow(aura::Window* window);
 // Moves the window to the center of the display.
 ASH_EXPORT void CenterWindow(aura::Window* window);
 
-// Returns true if |window|'s position can automatically be managed.
-ASH_EXPORT bool IsWindowPositionManaged(const aura::Window* window);
-
-// Change the |window|'s position manageability to |managed|.
-ASH_EXPORT void SetWindowPositionManaged(aura::Window* window, bool managed);
-
 // Change the availability of animation to the fullscreen of the |window|.
 ASH_EXPORT void SetAnimateToFullscreen(aura::Window* window, bool animate);
-
-// Returns true if the user has changed the |window|'s position or size.
-ASH_EXPORT bool HasUserChangedWindowPositionOrSize(const aura::Window* window);
-
-// Marks a |window|'s coordinates to be changed by a user.
-ASH_EXPORT void SetUserHasChangedWindowPositionOrSize(aura::Window* window,
-                                                      bool changed);
 
 // Get |window| bounds of the window before it was moved by the auto window
 // management. As long as it was not managed, it will return NULL.

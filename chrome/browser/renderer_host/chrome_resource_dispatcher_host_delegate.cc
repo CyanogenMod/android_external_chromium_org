@@ -16,6 +16,7 @@
 #include "chrome/browser/download/download_resource_throttle.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
 #include "chrome/browser/extensions/extension_info_map.h"
+#include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/user_script_listener.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/google/google_util.h"
@@ -64,6 +65,8 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/intercept_download_resource_throttle.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
+#else
+#include "chrome/browser/apps/app_url_redirector.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -262,23 +265,36 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     request->SetPriority(net::IDLE);
   }
 
-#if defined(OS_ANDROID)
+  ProfileIOData* io_data = ProfileIOData::FromResourceContext(
+      resource_context);
+
   if (!is_prerendering && resource_type == ResourceType::MAIN_FRAME) {
+#if defined(OS_ANDROID)
     throttles->push_back(
         InterceptNavigationDelegate::CreateThrottleFor(request));
-  }
+#else
+    // Redirect some navigations to apps that have registered matching URL
+    // handlers ('url_handlers' in the manifest).
+    content::ResourceThrottle* url_to_app_throttle =
+        AppUrlRedirector::MaybeCreateThrottleFor(request, io_data);
+    if (url_to_app_throttle)
+      throttles->push_back(url_to_app_throttle);
 #endif
+  }
+
 #if defined(OS_CHROMEOS)
   if (resource_type == ResourceType::MAIN_FRAME) {
     // We check offline first, then check safe browsing so that we still can
     // block unsafe site after we remove offline page.
-    throttles->push_back(new OfflineResourceThrottle(
-        child_id, route_id, request, appcache_service));
+    throttles->push_back(new OfflineResourceThrottle(request,
+                                                     appcache_service));
     // Add interstitial page while merge session process (cookie
     // reconstruction from OAuth2 refresh token in ChromeOS login) is still in
     // progress while we are attempting to load a google property.
-    throttles->push_back(new MergeSessionThrottle(
-        child_id, route_id, request));
+    if (!MergeSessionThrottle::AreAllSessionMergedAlready() &&
+        request->url().SchemeIsHTTPOrHTTPS()) {
+      throttles->push_back(new MergeSessionThrottle(request));
+    }
   }
 #endif
 
@@ -288,8 +304,6 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
   if (!request->is_pending()) {
     net::HttpRequestHeaders headers;
     headers.CopyFrom(request->extra_request_headers());
-    ProfileIOData* io_data = ProfileIOData::FromResourceContext(
-        resource_context);
     bool incognito = io_data->is_incognito();
     chrome_variations::VariationsHttpHeaderProvider::GetInstance()->
         AppendHeaders(request->url(),
@@ -305,12 +319,9 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 
   AppendStandardResourceThrottles(request,
                                   resource_context,
-                                  child_id,
-                                  route_id,
                                   resource_type,
                                   throttles);
 
-  ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
   if (io_data->resource_prefetch_predictor_observer()) {
     io_data->resource_prefetch_predictor_observer()->OnRequestStarted(
         request, resource_type, child_id, route_id);
@@ -350,8 +361,6 @@ void ChromeResourceDispatcherHostDelegate::DownloadStarting(
   if (!request->is_pending()) {
     AppendStandardResourceThrottles(request,
                                     resource_context,
-                                    child_id,
-                                    route_id,
                                     ResourceType::MAIN_FRAME,
                                     throttles);
   }
@@ -422,9 +431,12 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
     return false;
   }
 
-  RenderViewHost* view = RenderViewHost::FromID(child_id, route_id);
-  if (view && view->GetProcess()->IsGuest())
+  ExtensionRendererState::WebViewInfo info;
+  if (ExtensionRendererState::GetInstance()->GetWebViewInfo(child_id,
+                                                            route_id,
+                                                            &info)) {
     return false;
+  }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -436,8 +448,6 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
 void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    int child_id,
-    int route_id,
     ResourceType::Type resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
@@ -448,8 +458,6 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
     bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
     content::ResourceThrottle* throttle =
         SafeBrowsingResourceThrottleFactory::Create(request,
-                                                    child_id,
-                                                    route_id,
                                                     is_subresource_request,
                                                     safe_browsing_.get());
     if (throttle)
@@ -460,7 +468,7 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 #if defined(ENABLE_MANAGED_USERS)
   bool is_subresource_request = resource_type != ResourceType::MAIN_FRAME;
   throttles->push_back(new ManagedModeResourceThrottle(
-        request, child_id, route_id, !is_subresource_request,
+        request, !is_subresource_request,
         io_data->managed_mode_url_filter()));
 #endif
 

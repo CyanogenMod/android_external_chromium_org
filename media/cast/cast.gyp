@@ -16,6 +16,8 @@
       'sources': [
         'cast_config.h',
         'cast_config.cc',
+        'cast_thread.h',
+        'cast_thread.cc',
       ], # source
     },
     {
@@ -56,10 +58,15 @@
             '<(DEPTH)/third_party/webrtc/',
           ],
           'sources': [
+            'audio_sender/audio_encoder_unittest.cc',
+            'audio_sender/audio_sender_unittest.cc',
             'congestion_control/congestion_control_unittest.cc',
             'framer/cast_message_builder_unittest.cc',
             'framer/frame_buffer_unittest.cc',
             'framer/framer_unittest.cc',
+            'rtp_receiver/receiver_stats_unittest.cc',
+            'rtp_receiver/rtp_parser/test/rtp_packet_builder.cc',
+            'rtp_receiver/rtp_parser/rtp_parser_unittest.cc',
             'rtp_sender/packet_storage/packet_storage_unittest.cc',
             'rtp_sender/rtp_packetizer/rtp_packetizer_unittest.cc',
             'rtp_sender/rtp_packetizer/test/rtp_header_parser.cc',
@@ -68,6 +75,8 @@
             'rtcp/rtcp_receiver_unittest.cc',
             'rtcp/rtcp_sender_unittest.cc',
             'rtcp/rtcp_unittest.cc',
+            'video_sender/video_encoder_unittest.cc',
+            'video_sender/video_sender_unittest.cc',
           ], # source
         },
       ],  # targets

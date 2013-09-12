@@ -120,12 +120,8 @@ FileSystemContext::FileSystemContext(
       additional_backends_(additional_backends.Pass()),
       external_mount_points_(external_mount_points),
       partition_path_(partition_path),
+      is_incognito_(options.is_incognito()),
       operation_runner_(new FileSystemOperationRunner(this)) {
-  if (quota_manager_proxy) {
-    quota_manager_proxy->RegisterClient(CreateQuotaClient(
-            this, options.is_incognito()));
-  }
-
   RegisterBackend(sandbox_backend_.get());
   RegisterBackend(isolated_backend_.get());
 
@@ -133,6 +129,12 @@ FileSystemContext::FileSystemContext(
           additional_backends_.begin();
        iter != additional_backends_.end(); ++iter) {
     RegisterBackend(*iter);
+  }
+
+  if (quota_manager_proxy) {
+    // Quota client assumes all backends have registered.
+    quota_manager_proxy->RegisterClient(CreateQuotaClient(
+            this, options.is_incognito()));
   }
 
   sandbox_backend_->Initialize(this);
@@ -222,7 +224,8 @@ FileSystemBackend* FileSystemContext::GetFileSystemBackend(
 }
 
 bool FileSystemContext::IsSandboxFileSystem(FileSystemType type) const {
-  return GetQuotaUtil(type) != NULL;
+  FileSystemBackendMap::const_iterator found = backend_map_.find(type);
+  return found != backend_map_.end() && found->second->GetQuotaUtil();
 }
 
 const UpdateObserverList* FileSystemContext::GetUpdateObservers(
@@ -346,6 +349,18 @@ void FileSystemContext::EnableTemporaryFileSystemInIncognito() {
   sandbox_backend_->set_enable_temporary_file_system_in_incognito(true);
 }
 #endif
+
+bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
+  if (!is_incognito_)
+    return true;
+#if defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
+  if (url.type() == kFileSystemTypeTemporary &&
+      sandbox_backend_->enable_temporary_file_system_in_incognito()) {
+    return true;
+  }
+#endif
+  return false;
+}
 
 FileSystemContext::~FileSystemContext() {
 }

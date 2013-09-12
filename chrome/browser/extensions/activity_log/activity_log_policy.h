@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_ACTIVITY_LOG_ACTIVITY_LOG_POLICY_H_
 #define CHROME_BROWSER_EXTENSIONS_ACTIVITY_LOG_ACTIVITY_LOG_POLICY_H_
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -74,36 +75,26 @@ class ActivityLogPolicy {
   // state to memory every 5 min.
   virtual void ProcessAction(scoped_refptr<Action> action) = 0;
 
-  // Gets all actions for a given extension for the specified day. 0 = today,
-  // 1 = yesterday, etc. Only returns 1 day at a time. Actions are sorted from
-  // newest to oldest. Results as passed to the specified callback when
-  // available.
-  //
-  // TODO(felt,dbabic) This is overly specific to the current implementation of
-  // the FullStreamUIPolicy.  We should refactor it to use a more generic read
-  // function, for example one that takes a dictionary of query parameters
-  // (extension_id, time range, etc.).
-  virtual void ReadData(
-      const std::string& extension_id,
-      const int day,
-      const base::Callback
-          <void(scoped_ptr<Action::ActionVector>)>& callback) = 0;
-
   // Gets all actions that match the specified fields. URLs are treated like
   // prefixes; other fields are exact matches. Empty strings are not matched to
-  // anything.
+  // anything. For the date: 0 = today, 1 = yesterday, etc.; if the data is
+  // negative, it will be treated as missing.
   virtual void ReadFilteredData(
       const std::string& extension_id,
       const Action::ActionType type,
       const std::string& api_name,
       const std::string& page_url,
       const std::string& arg_url,
+      const int days_ago,
       const base::Callback
          <void(scoped_ptr<Action::ActionVector>)>& callback) = 0;
 
   // Clean the relevant URL data. The cleaning may need to be different for
   // different policies. If restrict_urls is empty then all URLs are removed.
   virtual void RemoveURLs(const std::vector<GURL>& restrict_urls) = 0;
+
+  // Deletes everything in the database.
+  virtual void DeleteDatabase() = 0;
 
   // For unit testing only.
   void SetClockForTesting(scoped_ptr<base::Clock> clock);
@@ -114,6 +105,10 @@ class ActivityLogPolicy {
   // these methods more convenient from within a policy, but they are public.
   class Util {
    public:
+    // A collection of API calls, used to specify whitelists for argument
+    // filtering.
+    typedef std::set<std::pair<Action::ActionType, std::string> > ApiSet;
+
     // Serialize a Value as a JSON string.  Returns an empty string if value is
     // null.
     static std::string Serialize(const base::Value* value);
@@ -127,7 +122,7 @@ class ActivityLogPolicy {
 
     // Strip arguments from most API actions, preserving actions only for a
     // whitelisted set.  Modifies the Action object in-place.
-    static void StripArguments(const std::set<std::string>& api_whitelist,
+    static void StripArguments(const ApiSet& api_whitelist,
                                scoped_refptr<Action> action);
 
     // Given a base day (timestamp at local midnight), computes the timestamp

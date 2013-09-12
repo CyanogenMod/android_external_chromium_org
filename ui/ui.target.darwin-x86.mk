@@ -36,14 +36,11 @@ LOCAL_SRC_FILES := \
 	ui/android/window_android.cc \
 	ui/base/accelerators/accelerator.cc \
 	ui/base/accelerators/accelerator_manager.cc \
-	ui/base/accessibility/accessible_text_utils.cc \
-	ui/base/accessibility/accessible_view_state.cc \
 	ui/base/animation/animation.cc \
 	ui/base/animation/animation_container.cc \
 	ui/base/animation/linear_animation.cc \
 	ui/base/animation/multi_animation.cc \
 	ui/base/animation/slide_animation.cc \
-	ui/base/animation/throb_animation.cc \
 	ui/base/animation/tween.cc \
 	ui/base/base_window.cc \
 	ui/base/clipboard/clipboard.cc \
@@ -51,41 +48,30 @@ LOCAL_SRC_FILES := \
 	ui/base/clipboard/clipboard_constants.cc \
 	ui/base/clipboard/custom_data_helper.cc \
 	ui/base/clipboard/scoped_clipboard_writer.cc \
-	ui/base/default_theme_provider.cc \
-	ui/base/events/event_utils.cc \
-	ui/base/keycodes/keyboard_code_conversion.cc \
 	ui/base/keycodes/keyboard_code_conversion_android.cc \
 	ui/base/latency_info.cc \
-	ui/base/l10n/l10n_font_util.cc \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
 	ui/base/l10n/l10n_util_posix.cc \
 	ui/base/l10n/time_format.cc \
 	ui/base/layout.cc \
-	ui/base/models/button_menu_item_model.cc \
 	ui/base/models/combobox_model.cc \
-	ui/base/models/dialog_model.cc \
 	ui/base/models/list_selection_model.cc \
 	ui/base/models/menu_model.cc \
 	ui/base/models/simple_menu_model.cc \
 	ui/base/models/table_model.cc \
 	ui/base/models/tree_model.cc \
-	ui/base/range/range.cc \
 	ui/base/resource/data_pack.cc \
 	ui/base/resource/resource_bundle.cc \
 	ui/base/resource/resource_bundle_android.cc \
 	ui/base/text/bytes_formatting.cc \
-	ui/base/text/text_elider.cc \
 	ui/base/text/utf16_indexing.cc \
-	ui/base/theme_provider.cc \
 	ui/base/touch/touch_device_android.cc \
-	ui/base/touch/touch_editing_controller.cc \
 	ui/base/touch/touch_enabled.cc \
 	ui/base/ui_base_exports.cc \
 	ui/base/ui_base_paths.cc \
 	ui/base/ui_base_switches.cc \
 	ui/base/ui_base_switches_util.cc \
-	ui/base/ui_base_types.cc \
 	ui/base/window_open_disposition.cc \
 	ui/gfx/android/device_display_info.cc \
 	ui/gfx/android/java_bitmap.cc \
@@ -99,7 +85,6 @@ LOCAL_SRC_FILES := \
 	ui/gfx/color_profile.cc \
 	ui/gfx/color_utils.cc \
 	ui/gfx/display.cc \
-	ui/gfx/display_observer.cc \
 	ui/gfx/favicon_size.cc \
 	ui/gfx/font.cc \
 	ui/gfx/font_list.cc \
@@ -118,20 +103,19 @@ LOCAL_SRC_FILES := \
 	ui/gfx/insets_f.cc \
 	ui/gfx/interpolated_transform.cc \
 	ui/gfx/matrix3_f.cc \
-	ui/gfx/path.cc \
 	ui/gfx/platform_font_android.cc \
 	ui/gfx/point.cc \
 	ui/gfx/point3_f.cc \
 	ui/gfx/point_conversions.cc \
 	ui/gfx/point_f.cc \
 	ui/gfx/quad_f.cc \
+	ui/gfx/range/range.cc \
 	ui/gfx/rect.cc \
 	ui/gfx/rect_conversions.cc \
 	ui/gfx/rect_f.cc \
 	ui/gfx/screen.cc \
 	ui/gfx/screen_android.cc \
 	ui/gfx/scrollbar_size.cc \
-	ui/gfx/selection_model.cc \
 	ui/gfx/shadow_value.cc \
 	ui/gfx/size.cc \
 	ui/gfx/size_conversions.cc \
@@ -140,6 +124,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/skia_util.cc \
 	ui/gfx/switches.cc \
 	ui/gfx/sys_color_change_listener.cc \
+	ui/gfx/text_elider.cc \
 	ui/gfx/text_utils.cc \
 	ui/gfx/text_utils_android.cc \
 	ui/gfx/transform.cc \
@@ -192,6 +177,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -204,6 +190,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -311,6 +298,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -323,6 +311,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -407,7 +396,9 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -424,7 +415,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

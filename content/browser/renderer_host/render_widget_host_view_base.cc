@@ -29,8 +29,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/common/content_switches.h"
-#include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/gdi_util.h"
 #endif
 
@@ -169,7 +169,7 @@ BOOL CALLBACK PaintEnumChildProc(HWND hwnd, LPARAM lparam) {
     return TRUE;
 
   gfx::Rect* rect = reinterpret_cast<gfx::Rect*>(lparam);
-  gfx::Rect rect_in_pixels = ui::win::DIPToScreenRect(*rect);
+  gfx::Rect rect_in_pixels = gfx::win::DIPToScreenRect(*rect);
   static UINT msg = RegisterWindowMessage(kPaintMessageName);
   WPARAM wparam = MAKEWPARAM(rect_in_pixels.x(), rect_in_pixels.y());
   lparam = MAKELPARAM(rect_in_pixels.width(), rect_in_pixels.height());
@@ -284,7 +284,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
 #endif
 
     if (move.rects_valid) {
-      gfx::Rect clip_rect_in_pixel = ui::win::DIPToScreenRect(move.clip_rect);
+      gfx::Rect clip_rect_in_pixel = gfx::win::DIPToScreenRect(move.clip_rect);
       HRGN hrgn = ::CreateRectRgn(clip_rect_in_pixel.x(),
                                   clip_rect_in_pixel.y(),
                                   clip_rect_in_pixel.right(),
@@ -313,7 +313,7 @@ void RenderWidgetHostViewBase::MovePluginWindowsHelper(
     }
 
     gfx::Rect window_rect_in_pixel =
-        ui::win::DIPToScreenRect(move.window_rect);
+        gfx::win::DIPToScreenRect(move.window_rect);
     defer_window_pos_info = ::DeferWindowPos(defer_window_pos_info,
                                              window, NULL,
                                              window_rect_in_pixel.x(),
@@ -382,7 +382,7 @@ RenderWidgetHostViewBase::RenderWidgetHostViewBase()
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
-      selection_range_(ui::Range::InvalidRange()),
+      selection_range_(gfx::Range::InvalidRange()),
       current_device_scale_factor_(0),
       renderer_frame_number_(0) {
 }
@@ -417,7 +417,7 @@ float RenderWidgetHostViewBase::GetOverdrawBottomHeight() const {
 
 void RenderWidgetHostViewBase::SelectionChanged(const string16& text,
                                                 size_t offset,
-                                                const ui::Range& range) {
+                                                const gfx::Range& range) {
   selection_text_ = text;
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
@@ -506,6 +506,14 @@ SyntheticGesture* RenderWidgetHostViewBase::CreateSmoothScrollGesture(
     int mouse_event_y) {
   return new BasicMouseWheelSmoothScrollGesture(scroll_down, pixels_to_scroll,
                                                 mouse_event_x, mouse_event_y);
+}
+
+SyntheticGesture* RenderWidgetHostViewBase::CreatePinchGesture(
+    bool zoom_in, int pixels_to_move, int anchor_x,
+    int anchor_y) {
+  // There is no generic implementation for pinch gestures.
+  NOTIMPLEMENTED();
+  return NULL;
 }
 
 void RenderWidgetHostViewBase::ProcessAckedTouchEvent(

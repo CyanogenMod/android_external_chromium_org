@@ -152,7 +152,8 @@ void PepperURLLoaderHost::didReceiveResponse(WebURLLoader* loader,
 }
 
 void PepperURLLoaderHost::didDownloadData(WebURLLoader* loader,
-                                          int data_length) {
+                                          int data_length,
+                                          int encoded_data_length) {
   bytes_received_ += data_length;
   UpdateProgress();
 }
@@ -249,9 +250,12 @@ int32_t PepperURLLoaderHost::InternalOnHostMsgOpen(
   WebFrame* frame = GetFrame();
   if (!frame)
     return PP_ERROR_FAILED;
+
   WebURLRequest web_request;
   if (!CreateWebURLRequest(&filled_in_request_data, frame, &web_request))
     return PP_ERROR_FAILED;
+
+  web_request.setTargetType(WebURLRequest::TargetIsObject);
   web_request.setRequestorProcessID(renderer_ppapi_host_->GetPluginPID());
 
   WebURLLoaderOptions options;

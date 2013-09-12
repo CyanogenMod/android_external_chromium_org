@@ -395,7 +395,7 @@ CrxUpdateService::CrxUpdateService(ComponentUpdateService::Configurator* config)
           config->RequestContext())),
       chrome_version_(chrome::VersionInfo().Version()),
       running_(false) {
- }
+}
 
 CrxUpdateService::~CrxUpdateService() {
   // Because we are a singleton, at this point only the UI thread should be
@@ -403,7 +403,7 @@ CrxUpdateService::~CrxUpdateService() {
   // flight in other threads.
   Stop();
   STLDeleteElements(&work_items_);
- }
+}
 
 ComponentUpdateService::Status CrxUpdateService::Start() {
   // Note that RegisterComponent will call Start() when the first
@@ -848,9 +848,11 @@ void CrxUpdateService::OnParseUpdateManifestFailed(
 void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
                                           CRXContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  scoped_ptr<CRXContext> crx_context(context);
   int error_code = net::OK;
 
-  CrxUpdateItem* crx = FindUpdateItemById(context->id);
+  CrxUpdateItem* crx = FindUpdateItemById(crx_context->id);
   DCHECK(crx->status == CrxUpdateItem::kDownloadingDiff ||
          crx->status == CrxUpdateItem::kDownloading);
 
@@ -907,7 +909,7 @@ void CrxUpdateService::OnURLFetchComplete(const net::URLFetcher* source,
         FROM_HERE,
         base::Bind(&CrxUpdateService::Install,
                    base::Unretained(this),
-                   context,
+                   crx_context.release(),
                    temp_crx_path),
         base::TimeDelta::FromMilliseconds(config_->StepDelay()));
   }
@@ -965,12 +967,12 @@ void CrxUpdateService::DoneInstalling(const std::string& component_id,
     item->diff_error_category = error_category;
     item->diff_error_code = error;
     item->diff_extra_code1 = extra_code;
-      item->diff_update_failed = true;
-      size_t count = ChangeItemStatus(CrxUpdateItem::kUpdatingDiff,
-                                      CrxUpdateItem::kCanUpdate);
-      DCHECK_EQ(count, 1ul);
-      ScheduleNextRun(kStepDelayShort);
-      return;
+    item->diff_update_failed = true;
+    size_t count = ChangeItemStatus(CrxUpdateItem::kUpdatingDiff,
+                                    CrxUpdateItem::kCanUpdate);
+    DCHECK_EQ(count, 1ul);
+    ScheduleNextRun(kStepDelayShort);
+    return;
     }
 
   if (is_success) {

@@ -96,6 +96,7 @@ void ShillServiceClientStub::GetProperties(
                                                   NULL);
     call_status = DBUS_METHOD_CALL_SUCCESS;
   } else {
+    LOG(ERROR) << "Properties not found for: " << service_path.value();
     result_properties.reset(new base::DictionaryValue);
     call_status = DBUS_METHOD_CALL_FAILURE;
   }
@@ -313,12 +314,6 @@ void ShillServiceClientStub::CompleteCellularActivation(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
-}
-
-bool ShillServiceClientStub::CallActivateCellularModemAndBlock(
-    const dbus::ObjectPath& service_path,
-    const std::string& carrier) {
-  return true;
 }
 
 void ShillServiceClientStub::GetLoadableProfileEntries(

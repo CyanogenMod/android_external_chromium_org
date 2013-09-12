@@ -15,8 +15,8 @@
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/win/tsf_bridge.h"
-#include "ui/base/win/dpi.h"
 #include "ui/base/win/shell.h"
+#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path_win.h"
@@ -29,7 +29,6 @@
 #include "ui/views/corewm/input_method_event_filter.h"
 #include "ui/views/corewm/window_animations.h"
 #include "ui/views/ime/input_method_bridge.h"
-#include "ui/views/widget/desktop_aura/desktop_activation_client.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 #include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
@@ -67,10 +66,8 @@ DesktopRootWindowHostWin::DesktopRootWindowHostWin(
 }
 
 DesktopRootWindowHostWin::~DesktopRootWindowHostWin() {
-  if (corewm::UseFocusControllerOnDesktop()) {
-    aura::client::SetFocusClient(root_window_, NULL);
-    aura::client::SetActivationClient(root_window_, NULL);
-  }
+  aura::client::SetFocusClient(root_window_, NULL);
+  aura::client::SetActivationClient(root_window_, NULL);
 }
 
 // static
@@ -115,7 +112,7 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
 
   has_non_client_view_ = Widget::RequiresNonClientView(params.type);
 
-  gfx::Rect pixel_bounds = ui::win::DIPToScreenRect(params.bounds);
+  gfx::Rect pixel_bounds = gfx::win::DIPToScreenRect(params.bounds);
   message_handler_->Init(parent_hwnd, pixel_bounds);
 
   aura::RootWindow::CreateParams rw_params(params.bounds);
@@ -128,18 +125,12 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
 
   desktop_native_widget_aura_->CreateCaptureClient(root_window_);
 
-  if (corewm::UseFocusControllerOnDesktop()) {
-    corewm::FocusController* focus_controller =
-        new corewm::FocusController(new DesktopFocusRules);
-    focus_client_.reset(focus_controller);
-    aura::client::SetFocusClient(root_window_, focus_controller);
-    aura::client::SetActivationClient(root_window_, focus_controller);
-    root_window_->AddPreTargetHandler(focus_controller);
-  } else {
-    focus_client_.reset(new aura::FocusManager);
-    aura::client::SetFocusClient(root_window_, focus_client_.get());
-    activation_client_.reset(new DesktopActivationClient(root_window_));
-  }
+  corewm::FocusController* focus_controller =
+      new corewm::FocusController(new DesktopFocusRules);
+  focus_client_.reset(focus_controller);
+  aura::client::SetFocusClient(root_window_, focus_controller);
+  aura::client::SetActivationClient(root_window_, focus_controller);
+  root_window_->AddPreTargetHandler(focus_controller);
 
   dispatcher_client_.reset(new DesktopDispatcherClient);
   aura::client::SetDispatcherClient(root_window_,
@@ -211,7 +202,7 @@ void DesktopRootWindowHostWin::ShowWindowWithState(
 
 void DesktopRootWindowHostWin::ShowMaximizedWithBounds(
     const gfx::Rect& restored_bounds) {
-  gfx::Rect pixel_bounds = ui::win::DIPToScreenRect(restored_bounds);
+  gfx::Rect pixel_bounds = gfx::win::DIPToScreenRect(restored_bounds);
   message_handler_->ShowMaximizedWithBounds(pixel_bounds);
 }
 
@@ -220,12 +211,12 @@ bool DesktopRootWindowHostWin::IsVisible() const {
 }
 
 void DesktopRootWindowHostWin::SetSize(const gfx::Size& size) {
-  gfx::Size size_in_pixels = ui::win::DIPToScreenSize(size);
+  gfx::Size size_in_pixels = gfx::win::DIPToScreenSize(size);
   message_handler_->SetSize(size_in_pixels);
 }
 
 void DesktopRootWindowHostWin::CenterWindow(const gfx::Size& size) {
-  gfx::Size size_in_pixels = ui::win::DIPToScreenSize(size);
+  gfx::Size size_in_pixels = gfx::win::DIPToScreenSize(size);
   message_handler_->CenterWindow(size_in_pixels);
 }
 
@@ -233,22 +224,22 @@ void DesktopRootWindowHostWin::GetWindowPlacement(
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
   message_handler_->GetWindowPlacement(bounds, show_state);
-  *bounds = ui::win::ScreenToDIPRect(*bounds);
+  *bounds = gfx::win::ScreenToDIPRect(*bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetWindowBoundsInScreen() const {
   gfx::Rect pixel_bounds = message_handler_->GetWindowBoundsInScreen();
-  return ui::win::ScreenToDIPRect(pixel_bounds);
+  return gfx::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetClientAreaBoundsInScreen() const {
   gfx::Rect pixel_bounds = message_handler_->GetClientAreaBoundsInScreen();
-  return ui::win::ScreenToDIPRect(pixel_bounds);
+  return gfx::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetRestoredBounds() const {
   gfx::Rect pixel_bounds = message_handler_->GetRestoredBounds();
-  return ui::win::ScreenToDIPRect(pixel_bounds);
+  return gfx::win::ScreenToDIPRect(pixel_bounds);
 }
 
 gfx::Rect DesktopRootWindowHostWin::GetWorkAreaBoundsInScreen() const {
@@ -258,7 +249,7 @@ gfx::Rect DesktopRootWindowHostWin::GetWorkAreaBoundsInScreen() const {
                                    MONITOR_DEFAULTTONEAREST),
                  &monitor_info);
   gfx::Rect pixel_bounds = gfx::Rect(monitor_info.rcWork);
-  return ui::win::ScreenToDIPRect(pixel_bounds);
+  return gfx::win::ScreenToDIPRect(pixel_bounds);
 }
 
 void DesktopRootWindowHostWin::SetShape(gfx::NativeRegion native_region) {
@@ -372,6 +363,9 @@ void DesktopRootWindowHostWin::InitModalType(ui::ModalType modal_type) {
 
 void DesktopRootWindowHostWin::FlashFrame(bool flash_frame) {
   message_handler_->FlashFrame(flash_frame);
+}
+
+void DesktopRootWindowHostWin::OnRootViewLayout() const {
 }
 
 void DesktopRootWindowHostWin::OnNativeWidgetFocus() {
@@ -589,7 +583,7 @@ bool DesktopRootWindowHostWin::WillProcessWorkAreaChange() const {
 
 int DesktopRootWindowHostWin::GetNonClientComponent(
     const gfx::Point& point) const {
-  gfx::Point dip_position = ui::win::ScreenToDIPPoint(point);
+  gfx::Point dip_position = gfx::win::ScreenToDIPPoint(point);
   return native_widget_delegate_->GetNonClientComponent(dip_position);
 }
 
@@ -640,20 +634,7 @@ void DesktopRootWindowHostWin::HandleAppDeactivated() {
 void DesktopRootWindowHostWin::HandleActivationChanged(bool active) {
   if (active)
     root_window_host_delegate_->OnHostActivated();
-  native_widget_delegate_->OnNativeWidgetActivationChanged(active);
-  // If we're not active we need to deactivate the corresponding aura::Window.
-  // This way if a child widget is active it gets correctly deactivated (child
-  // widgets don't get native desktop activation changes, only aura activation
-  // changes).
-  if (!active) {
-    aura::client::ActivationClient* activation_client =
-        aura::client::GetActivationClient(root_window_);
-    if (activation_client) {
-      aura::Window* active_window = activation_client->GetActiveWindow();
-      if (active_window)
-        activation_client->DeactivateWindow(active_window);
-    }
-  }
+  desktop_native_widget_aura_->HandleActivationChanged(active);
 }
 
 bool DesktopRootWindowHostWin::HandleAppCommand(short command) {
@@ -745,7 +726,7 @@ void DesktopRootWindowHostWin::HandleClientSizeChanged(
   if (root_window_host_delegate_)
     root_window_host_delegate_->OnHostResized(new_size);
   // TODO(beng): replace with a layout manager??
-  gfx::Size dip_size = ui::win::ScreenToDIPSize(without_expansion);
+  gfx::Size dip_size = gfx::win::ScreenToDIPSize(without_expansion);
   content_window_->SetBounds(gfx::Rect(dip_size));
   native_widget_delegate_->OnNativeWidgetSizeChanged(dip_size);
 }
@@ -787,9 +768,14 @@ bool DesktopRootWindowHostWin::HandleUntranslatedKeyEvent(
       OnHostKeyEvent(duplicate_event.get());
 }
 
-bool DesktopRootWindowHostWin::HandleTouchEvent(
+void DesktopRootWindowHostWin::HandleTouchEvent(
     const ui::TouchEvent& event) {
-  return root_window_host_delegate_->OnHostTouchEvent(
+  // HWNDMessageHandler asynchronously processes touch events. Because of this
+  // it's possible for the aura::RootWindow to have been destroyed by the time
+  // we attempt to process them.
+  if (!GetWidget()->GetNativeView())
+    return;
+  root_window_host_delegate_->OnHostTouchEvent(
       const_cast<ui::TouchEvent*>(&event));
 }
 

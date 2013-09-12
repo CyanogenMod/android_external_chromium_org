@@ -36,7 +36,13 @@ be available for now. -->
       <output filename="chromium_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="chromium_strings_es.pak" type="data_package" lang="es" />
-    <output filename="chromium_strings_es-419.pak" type="data_package" lang="es-419" />
+    <if expr="is_ios">
+      <!-- iOS uses es-MX for es-419 -->
+      <output filename="chromium_strings_es-MX.pak" type="data_package" lang="es-419" />
+    </if>
+    <if expr="not is_ios">
+      <output filename="chromium_strings_es-419.pak" type="data_package" lang="es-419" />
+    </if>
     <output filename="chromium_strings_et.pak" type="data_package" lang="et" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="chromium_strings_eu.pak" type="data_package" lang="eu" />
@@ -1045,6 +1051,15 @@ Signing in anyway will merge Chromium information like bookmarks, history, and o
       <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_VIDEO_ONLY" desc="Tool tip for the capture status tray icon when camera is being used">
         Chromium is using your camera.
       </message>
+
+      <!-- ProcessSingleton -->
+      <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
+        The profile appears to be in use by another Chromium process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). Chromium has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chromium.
+      </message>
+      <message name="IDS_PROFILE_IN_USE_LINUX_RELAUNCH" desc="Text of button in dialog to delete the profile lock file.">
+        Unlock Profile and Relaunch
+      </message>
+
     </messages>
   </release>
 </grit>

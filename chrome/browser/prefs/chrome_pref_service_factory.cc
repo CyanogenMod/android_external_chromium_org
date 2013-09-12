@@ -32,6 +32,10 @@
 #include "chrome/browser/policy/policy_types.h"
 #endif
 
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/supervised_user_pref_store.h"
+#endif
+
 using content::BrowserContext;
 using content::BrowserThread;
 
@@ -39,7 +43,13 @@ namespace {
 
 // Shows notifications which correspond to PersistentPrefStore's reading errors.
 void HandleReadError(PersistentPrefStore::PrefReadError error) {
+  // Sample the histogram also for the successful case in order to get a
+  // baseline on the success rate in addition to the error distribution.
+  UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error,
+                            PersistentPrefStore::PREF_READ_ERROR_MAX_ENUM);
+
   if (error != PersistentPrefStore::PREF_READ_ERROR_NONE) {
+#if !defined(OS_CHROMEOS)
     // Failing to load prefs on startup is a bad thing(TM). See bug 38352 for
     // an example problem that this can cause.
     // Do some diagnosis and try to avoid losing data.
@@ -54,8 +64,10 @@ void HandleReadError(PersistentPrefStore::PrefReadError error) {
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               base::Bind(&ShowProfileErrorDialog, message_id));
     }
-    UMA_HISTOGRAM_ENUMERATION("PrefService.ReadError", error,
-                              PersistentPrefStore::PREF_READ_ERROR_MAX_ENUM);
+#else
+    // On ChromeOS error screen with message about broken local state
+    // will be displayed.
+#endif
   }
 }
 
@@ -64,6 +76,7 @@ void PrepareBuilder(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
+    ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     bool async) {
 #if defined(OS_LINUX)
@@ -91,6 +104,13 @@ void PrepareBuilder(
       policy::POLICY_LEVEL_RECOMMENDED));
 #endif  // ENABLE_CONFIGURATION_POLICY
 
+#if defined(ENABLE_MANAGED_USERS)
+  if (managed_user_settings) {
+    builder->WithSupervisedUserPrefs(
+        new SupervisedUserPrefStore(managed_user_settings));
+  }
+#endif
+
   builder->WithAsync(async);
   builder->WithExtensionPrefs(extension_prefs.get());
   builder->WithCommandLinePrefs(
@@ -107,7 +127,6 @@ PrefService* CreateLocalState(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
-    const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<PrefRegistry>& pref_registry,
     bool async) {
   PrefServiceSyncableBuilder builder;
@@ -115,7 +134,8 @@ PrefService* CreateLocalState(
                  pref_filename,
                  pref_io_task_runner,
                  policy_service,
-                 extension_prefs,
+                 NULL,
+                 NULL,
                  async);
   return builder.Create(pref_registry.get());
 }
@@ -124,6 +144,7 @@ PrefServiceSyncable* CreateProfilePrefs(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
     policy::PolicyService* policy_service,
+    ManagedUserSettingsService* managed_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async) {
@@ -133,6 +154,7 @@ PrefServiceSyncable* CreateProfilePrefs(
                  pref_filename,
                  pref_io_task_runner,
                  policy_service,
+                 managed_user_settings,
                  extension_prefs,
                  async);
   return builder.CreateSyncable(pref_registry.get());

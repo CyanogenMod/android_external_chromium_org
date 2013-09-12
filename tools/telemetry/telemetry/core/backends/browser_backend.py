@@ -14,16 +14,16 @@ class BrowserBackend(object):
 
   WEBPAGEREPLAY_HOST = '127.0.0.1'
 
-  def __init__(self, is_content_shell, supports_extensions, options,
+  def __init__(self, is_content_shell, supports_extensions, browser_options,
                tab_list_backend):
-    self.browser_type = options.browser_type
+    self.browser_type = browser_options.browser_type
     self.is_content_shell = is_content_shell
     self._supports_extensions = supports_extensions
-    self.options = options
+    self.browser_options = browser_options
     self._browser = None
     self._tab_list_backend = tab_list_backend(self)
 
-  def AddReplayServerOptions(self, options):
+  def AddReplayServerOptions(self, extra_wpr_args):
     pass
 
   def SetBrowser(self, browser):
@@ -41,7 +41,7 @@ class BrowserBackend(object):
 
   @property
   def wpr_mode(self):
-    return self.options.wpr_mode
+    return self.browser_options.wpr_mode
 
   @property
   def supports_tab_control(self):

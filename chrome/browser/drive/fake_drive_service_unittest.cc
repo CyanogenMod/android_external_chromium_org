@@ -492,7 +492,7 @@ TEST_F(FakeDriveServiceTest, GetRemainingChangeList_GetAllResourceList) {
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingChangeList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -510,7 +510,7 @@ TEST_F(FakeDriveServiceTest, GetRemainingChangeList_GetAllResourceList) {
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingChangeList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -552,7 +552,7 @@ TEST_F(FakeDriveServiceTest,
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingFileList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -570,7 +570,7 @@ TEST_F(FakeDriveServiceTest,
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingFileList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -610,7 +610,7 @@ TEST_F(FakeDriveServiceTest, GetRemainingFileList_Search) {
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingFileList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -662,7 +662,7 @@ TEST_F(FakeDriveServiceTest, GetRemainingChangeList_GetChangeList) {
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingChangeList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -680,7 +680,7 @@ TEST_F(FakeDriveServiceTest, GetRemainingChangeList_GetChangeList) {
   error = GDATA_OTHER_ERROR;
   resource_list.reset();
   fake_service_.GetRemainingChangeList(
-      next_url.spec(),
+      next_url,
       test_util::CreateCopyResultCallback(&error, &resource_list));
   base::RunLoop().RunUntilIdle();
 
@@ -903,7 +903,7 @@ TEST_F(FakeDriveServiceTest, DownloadFile_ExistingFile) {
   EXPECT_EQ(HTTP_SUCCESS, error);
   EXPECT_EQ(output_file_path, kOutputFilePath);
   std::string content;
-  ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(output_file_path, &content));
   // The content is "x"s of the file size specified in root_feed.json.
   EXPECT_EQ("This is some test content.", content);
   ASSERT_TRUE(!download_progress_values.empty());

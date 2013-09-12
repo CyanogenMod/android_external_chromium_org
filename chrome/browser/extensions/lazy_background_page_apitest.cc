@@ -7,6 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/browser_action_test_util.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/lazy_background_page_test_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
@@ -281,9 +283,9 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_WaitForNTP) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 
   // The extension should've opened a new tab to an extension page.
-  EXPECT_EQ(std::string(chrome::kChromeUINewTabURL),
-            browser()->tab_strip_model()->GetActiveWebContents()->
-                GetURL().spec());
+  EXPECT_TRUE(chrome::IsNTPURL(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetURL(),
+      browser()->profile()));
 
   // Lazy Background Page still exists, because the extension created a new tab
   // to an extension page.
@@ -358,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, MAYBE_IncognitoSplitMode) {
                            page2_complete(incognito_browser->profile());
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForProfile(browser()->profile());
-    ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
+    test::WaitForBookmarkModelToLoad(bookmark_model);
     const BookmarkNode* parent = bookmark_model->bookmark_bar_node();
     bookmark_model->AddURL(
         parent, 0, ASCIIToUTF16("Title"), GURL("about:blank"));
@@ -445,11 +447,9 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, EventDispatchToTab) {
   // Send an event by making a bookmark.
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(browser()->profile());
-  ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
+  test::WaitForBookmarkModelToLoad(bookmark_model);
   bookmark_utils::AddIfNotBookmarked(
-      bookmark_model,
-      GURL("http://www.google.com"),
-      UTF8ToUTF16("Google"));
+      bookmark_model, GURL("http://www.google.com"), UTF8ToUTF16("Google"));
 
   EXPECT_TRUE(event_page_ready.WaitUntilSatisfied());
 

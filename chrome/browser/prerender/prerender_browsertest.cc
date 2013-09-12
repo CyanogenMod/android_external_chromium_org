@@ -506,11 +506,15 @@ class FakeSafeBrowsingDatabaseManager :  public SafeBrowsingDatabaseManager {
   virtual ~FakeSafeBrowsingDatabaseManager() {}
 
   void OnCheckBrowseURLDone(const GURL& gurl, Client* client) {
+    std::vector<SBThreatType> expected_threats;
+    expected_threats.push_back(SB_THREAT_TYPE_URL_MALWARE);
+    expected_threats.push_back(SB_THREAT_TYPE_URL_PHISHING);
     SafeBrowsingDatabaseManager::SafeBrowsingCheck sb_check(
         std::vector<GURL>(1, gurl),
         std::vector<SBFullHash>(),
         client,
-        safe_browsing_util::MALWARE);
+        safe_browsing_util::MALWARE,
+        expected_threats);
     sb_check.url_results[0] = threat_type_;
     client->OnSafeBrowsingResult(sb_check);
   }
@@ -1889,7 +1893,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 }
 
 // See crbug.com/131836.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderTaskManager) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderTaskManager) {
   // Show the task manager. This populates the model.
   chrome::OpenTaskManager(current_browser());
   // Wait for the model of task manager to start.
@@ -1905,7 +1909,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderTaskManager) {
   string16 prerender_title;
   int num_prerender_tabs = 0;
 
-  const TaskManagerModel* model = GetModel();
+  TaskManagerModel* model = GetModel();
+  // The task manager caches values. Force the titles to be fresh.
+  model->Refresh();
   for (int i = 0; i < model->ResourceCount(); ++i) {
     if (model->GetResourceWebContents(i)) {
       prerender_title = model->GetResourceTitle(i);
@@ -1923,6 +1929,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderTaskManager) {
       l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_TAB_PREFIX, string16());
   num_prerender_tabs = 0;
   int num_tabs_with_prerender_page_title = 0;
+  model->Refresh();
   for (int i = 0; i < model->ResourceCount(); ++i) {
     if (model->GetResourceWebContents(i)) {
       string16 tab_title = model->GetResourceTitle(i);

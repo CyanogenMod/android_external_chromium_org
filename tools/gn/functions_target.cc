@@ -4,11 +4,19 @@
 
 #include "tools/gn/functions.h"
 
+#include "tools/gn/config_values_generator.h"
 #include "tools/gn/err.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scope.h"
 #include "tools/gn/target_generator.h"
 #include "tools/gn/value.h"
+
+#define DEPENDENT_CONFIG_VARS \
+    "  Dependent configs: all_dependent_configs, direct_dependent_configs\n"
+#define DEPS_VARS \
+    "  Deps: data, datadeps, deps, forward_dependent_configs_from, hard_dep\n"
+#define GENERAL_TARGET_VARS \
+    "  General: configs, external, source_prereqs, sources\n"
 
 namespace functions {
 
@@ -123,17 +131,19 @@ const char kCustom_Help[] =
     "  variable must be unique when applied to each source file (normally you\n"
     "  would reference |{{source_name_part}}| from within each one) or the\n"
     "  build system will get confused about how to build those files. You\n"
-    "  should use the |data| variable to list all additional dependencies of\n"
-    "  your script: these will be added as dependencies for each build step.\n"
+    "  should use the |source_prereqs| variable to list all additional\n"
+    "  dependencies of your script: these will be added as dependencies for\n"
+    "  each build step.\n"
     "\n"
     "  The second mode is when you just want to run a script once rather than\n"
     "  as a general rule over a set of files. In this case you don't list any\n"
-    "  sources. Dependencies of your script are specified only in the |data|\n"
-    "  variable and your |outputs| variable should just list all outputs.\n"
+    "  sources. Dependencies of your script are specified only in the\n"
+    "  |source_prereqs| variable and your |outputs| variable should just list\n"
+    "  all outputs.\n"
     "\n"
     "Variables:\n"
     "\n"
-    "  args, data, deps, outputs, script*, sources\n"
+    "  args, deps, outputs, script*, source_prereqs, sources\n"
     "  * = required\n"
     "\n"
     "  There are some special substrings that will be searched for when\n"
@@ -158,11 +168,14 @@ const char kCustom_Help[] =
     "\n"
     "Examples:\n"
     "\n"
+    "  # Runs the script over each IDL file. The IDL script will generate\n"
+    "  # both a .cc and a .h file for each input.\n"
     "  custom(\"general_rule\") {\n"
-    "    script = \"do_processing.py\"\n"
-    "    sources = [ \"foo.idl\" ]\n"
-    "    data = [ \"my_configuration.txt\" ]\n"
-    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\" ]\n"
+    "    script = \"idl_processor.py\"\n"
+    "    sources = [ \"foo.idl\", \"bar.idl\" ]\n"
+    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
+    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\",\n"
+    "                \"$target_gen_dir/{{source_name_part}}.cc\" ]\n"
     "    args = [ \"{{source}}\",\n"
     "             \"-o\",\n"
     "             \"$relative_target_gen_dir/{{source_name_part}}.h\" ]\n"
@@ -170,7 +183,7 @@ const char kCustom_Help[] =
     "\n"
     "  custom(\"just_run_this_guy_once\") {\n"
     "    script = \"doprocessing.py\"\n"
-    "    data = [ \"my_configuration.txt\" ]\n"
+    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
     "    outputs = [ \"$target_gen_dir/insightful_output.txt\" ]\n"
     "    args = [ \"--output_dir\", $target_gen_dir ]\n"
     "  }\n";
@@ -188,7 +201,13 @@ Value RunCustom(Scope* scope,
 
 const char kExecutable[] = "executable";
 const char kExecutable_Help[] =
-    "TODO(brettw) write this.";
+    "executable: Declare an executable target.\n"
+    "\n"
+    "Variables:\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunExecutable(Scope* scope,
                     const FunctionCallNode* function,
@@ -206,19 +225,26 @@ const char kGroup_Help[] =
     "group: Declare a named group of targets.\n"
     "\n"
     "  This target type allows you to create meta-targets that just collect a\n"
-    "  set of dependencies into one named target.\n"
+    "  set of dependencies into one named target. Groups can additionally\n"
+    "  specify configs that apply to their dependents.\n"
+    "\n"
+    "  Depending on a group is exactly like depending directly on that\n"
+    "  group's deps. Direct dependent configs will get automatically fowarded\n"
+    "  through the group so you shouldn't need to use\n"
+    "  \"forward_dependent_configs_from.\n"
     "\n"
     "Variables:\n"
-    "\n"
-    "  deps\n"
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    "  Other variables: external\n"
     "\n"
     "Example:\n"
     "  group(\"all\") {\n"
     "    deps = [\n"
     "      \"//project:runner\",\n"
     "      \"//project:unit_tests\",\n"
-    "      ]\n"
-    "    }";
+    "    ]\n"
+    "  }\n";
 
 Value RunGroup(Scope* scope,
                const FunctionCallNode* function,
@@ -233,7 +259,18 @@ Value RunGroup(Scope* scope,
 
 const char kSharedLibrary[] = "shared_library";
 const char kSharedLibrary_Help[] =
-    "TODO(brettw) write this.";
+    "shared_library: Declare a shared library target.\n"
+    "\n"
+    "  A shared library will be specified on the linker line for targets\n"
+    "  listing the shared library in its \"deps\". If you don't want this\n"
+    "  (say you dynamically load the library at runtime), then you should\n"
+    "  depend on the shared library via \"datadeps\" instead.\n"
+    "\n"
+    "Variables:\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunSharedLibrary(Scope* scope,
                        const FunctionCallNode* function,
@@ -248,7 +285,13 @@ Value RunSharedLibrary(Scope* scope,
 
 const char kStaticLibrary[] = "static_library";
 const char kStaticLibrary_Help[] =
-    "TODO(brettw) write this.";
+    "static_library: Declare a static library target.\n"
+    "\n"
+    "Variables:\n"
+    CONFIG_VALUES_VARS_HELP
+    DEPS_VARS
+    DEPENDENT_CONFIG_VARS
+    GENERAL_TARGET_VARS;
 
 Value RunStaticLibrary(Scope* scope,
                        const FunctionCallNode* function,

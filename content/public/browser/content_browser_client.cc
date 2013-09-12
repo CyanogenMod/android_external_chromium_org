@@ -60,6 +60,11 @@ bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
   return true;
 }
 
+bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
+                                              const GURL& url) {
+  return true;
+}
+
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
   return true;
@@ -208,6 +213,7 @@ WebKit::WebNotificationPresenter::Permission
 
 bool ContentBrowserClient::CanCreateWindow(
     const GURL& opener_url,
+    const GURL& opener_top_level_frame_url,
     const GURL& source_origin,
     WindowContainerType container_type,
     const GURL& target_url,

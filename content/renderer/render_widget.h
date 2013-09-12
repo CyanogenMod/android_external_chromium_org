@@ -32,8 +32,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/gfx/vector2d_f.h"
@@ -60,7 +60,7 @@ struct WebRenderingStatsImpl;
 
 namespace cc { class OutputSurface; }
 
-namespace ui {
+namespace gfx {
 class Range;
 }
 
@@ -189,6 +189,16 @@ class CONTENT_EXPORT RenderWidget
                          int mouse_event_x,
                          int mouse_event_y);
 
+  // Directs the host to begin a pinch gesture. This gesture should have the
+  // same performance characteristics as a user-initiated pinch.
+  // |pixels_to_move|, |anchor_x| and |anchor_y| are expected to be in local
+  // DIP coordinates.
+  void BeginPinch(bool zoom_in,
+                  int pixels_to_move,
+                  int anchor_x,
+                  int anchor_y,
+                  const SyntheticGestureCompletionCallback& callback);
+
   // Close the underlying WebWidget.
   virtual void Close();
 
@@ -307,7 +317,7 @@ class CONTENT_EXPORT RenderWidget
       int selection_start,
       int selection_end);
   virtual void OnImeConfirmComposition(const string16& text,
-                                       const ui::Range& replacement_range,
+                                       const gfx::Range& replacement_range,
                                        bool keep_selection);
   void OnPaintAtSize(const TransportDIB::Handle& dib_id,
                      int tag,
@@ -449,12 +459,12 @@ class CONTENT_EXPORT RenderWidget
 
   // Returns the range of the text that is being composed or the selection if
   // the composition does not exist.
-  virtual void GetCompositionRange(ui::Range* range);
+  virtual void GetCompositionRange(gfx::Range* range);
 
   // Returns true if the composition range or composition character bounds
   // should be sent to the browser process.
   bool ShouldUpdateCompositionInfo(
-      const ui::Range& range,
+      const gfx::Range& range,
       const std::vector<gfx::Rect>& bounds);
 #endif
 
@@ -641,11 +651,11 @@ class CONTENT_EXPORT RenderWidget
   // Stores the current text input type of |webwidget_|.
   ui::TextInputType text_input_type_;
 
-  // Stores the current type of composition text rendering of |webwidget_|.
-  bool can_compose_inline_;
-
   // Stores the current text input mode of |webwidget_|.
   ui::TextInputMode text_input_mode_;
+
+  // Stores the current type of composition text rendering of |webwidget_|.
+  bool can_compose_inline_;
 
   // Stores the current selection bounds.
   gfx::Rect selection_focus_rect_;
@@ -655,7 +665,7 @@ class CONTENT_EXPORT RenderWidget
   std::vector<gfx::Rect> composition_character_bounds_;
 
   // Stores the current composition range.
-  ui::Range composition_range_;
+  gfx::Range composition_range_;
 
   // The kind of popup this widget represents, NONE if not a popup.
   WebKit::WebPopupType popup_type_;

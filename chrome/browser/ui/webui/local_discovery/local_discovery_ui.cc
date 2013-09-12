@@ -6,6 +6,7 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
+#include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -16,11 +17,12 @@ namespace {
 
 content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
   content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIDevicesHost);
+      content::WebUIDataSource::Create(chrome::kChromeUIDevicesFrameHost);
 
   source->SetDefaultResource(IDR_LOCAL_DISCOVERY_HTML);
   source->AddResourcePath("local_discovery.css", IDR_LOCAL_DISCOVERY_CSS);
   source->AddResourcePath("local_discovery.js", IDR_LOCAL_DISCOVERY_JS);
+  source->AddResourcePath("printer.png", IDR_LOCAL_DISCOVERY_PRINTER_PNG);
 
   source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("serviceRegister",
@@ -42,12 +44,24 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
                              IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1);
   source->AddLocalizedString("addingMessage2",
                              IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE2);
-  source->AddLocalizedString("registeredDevicesTitle",
-                             IDS_LOCAL_DISCOVERY_REGISTERED_DEVICES_TITLE);
-  source->AddLocalizedString("unregisteredDevicesTitle",
-                             IDS_LOCAL_DISCOVERY_UNREGISTERED_DEVICES_TITLE);
   source->AddLocalizedString("devicesTitle",
                              IDS_LOCAL_DISCOVERY_DEVICES_PAGE_TITLE);
+  source->AddLocalizedString("noDescription",
+                             IDS_LOCAL_DISCOVERY_NO_DESCRIPTION);
+  source->AddLocalizedString("printersOnNetworkZero",
+                             IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ZERO);
+  source->AddLocalizedString("printersOnNetworkOne",
+                             IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_ONE);
+  source->AddLocalizedString("printersOnNetworkMultiple",
+                             IDS_LOCAL_DISCOVERY_PRINTERS_ON_NETWORK_MULTIPLE);
+  source->AddLocalizedString("cancel", IDS_CANCEL);
+  source->AddLocalizedString("ok", IDS_OK);
+  source->AddLocalizedString("loading", IDS_LOCAL_DISCOVERY_LOADING);
+  source->AddLocalizedString("addPrinters", IDS_LOCAL_DISCOVERY_ADD_PRINTERS);
+  source->AddLocalizedString(
+      "noPrintersOnNetworkExplanation",
+      IDS_LOCAL_DISCOVERY_NO_PRINTERS_ON_NETWORK_EXPLANATION);
+
 
   source->SetJsonPath("strings.js");
 
@@ -67,4 +81,5 @@ LocalDiscoveryUI::LocalDiscoveryUI(content::WebUI* web_ui)
   // TODO(gene): Use LocalDiscoveryUIHandler to send updated to the devices
   // page. For example
   web_ui->AddMessageHandler(local_discovery::LocalDiscoveryUIHandler::Create());
+  web_ui->AddMessageHandler(new MetricsHandler());
 }

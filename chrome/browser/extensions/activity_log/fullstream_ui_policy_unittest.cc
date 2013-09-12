@@ -6,6 +6,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/simple_test_clock.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -60,35 +61,15 @@ class FullStreamUIPolicyTest : public testing::Test {
     *CommandLine::ForCurrentProcess() = saved_cmdline_;
   }
 
-  // A helper function to call ReadData on a policy object and wait for the
-  // results to be processed.
+  // A wrapper function for CheckReadFilteredData, so that we don't need to
+  // enter empty string values for parameters we don't care about.
   void CheckReadData(
       ActivityLogPolicy* policy,
       const std::string& extension_id,
-      const int day,
+      int day,
       const base::Callback<void(scoped_ptr<Action::ActionVector>)>& checker) {
-    // Submit a request to the policy to read back some data, and call the
-    // checker function when results are available.  This will happen on the
-    // database thread.
-    policy->ReadData(
-        extension_id,
-        day,
-        base::Bind(&FullStreamUIPolicyTest::CheckWrapper,
-                   checker,
-                   base::MessageLoop::current()->QuitClosure()));
-
-    // Set up a timeout that will trigger after 5 seconds; if we haven't
-    // received any results by then assume that the test is broken.
-    base::CancelableClosure timeout(
-        base::Bind(&FullStreamUIPolicyTest::TimeoutCallback));
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, timeout.callback(), base::TimeDelta::FromSeconds(5));
-
-    // Wait for results; either the checker or the timeout callbacks should
-    // cause the main loop to exit.
-    base::MessageLoop::current()->Run();
-
-    timeout.Cancel();
+    CheckReadFilteredData(
+        policy, extension_id, Action::ACTION_ANY, "", "", "", day, checker);
   }
 
   // A helper function to call ReadFilteredData on a policy object and wait for
@@ -100,6 +81,7 @@ class FullStreamUIPolicyTest : public testing::Test {
       const std::string& api_name,
       const std::string& page_url,
       const std::string& arg_url,
+      const int days_ago,
       const base::Callback<void(scoped_ptr<Action::ActionVector>)>& checker) {
     // Submit a request to the policy to read back some data, and call the
     // checker function when results are available.  This will happen on the
@@ -110,16 +92,17 @@ class FullStreamUIPolicyTest : public testing::Test {
         api_name,
         page_url,
         arg_url,
+        days_ago,
         base::Bind(&FullStreamUIPolicyTest::CheckWrapper,
                    checker,
                    base::MessageLoop::current()->QuitClosure()));
 
-    // Set up a timeout that will trigger after 5 seconds; if we haven't
+    // Set up a timeout that will trigger after 8 seconds; if we haven't
     // received any results by then assume that the test is broken.
     base::CancelableClosure timeout(
         base::Bind(&FullStreamUIPolicyTest::TimeoutCallback));
     base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, timeout.callback(), base::TimeDelta::FromSeconds(5));
+        FROM_HERE, timeout.callback(), base::TimeDelta::FromSeconds(8));
 
     // Wait for results; either the checker or the timeout callbacks should
     // cause the main loop to exit.
@@ -146,6 +129,11 @@ class FullStreamUIPolicyTest : public testing::Test {
     ASSERT_EQ(2, static_cast<int>(i->size()));
   }
 
+  static void RetrieveActions_FetchFilteredActions0(
+      scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
+    ASSERT_EQ(0, static_cast<int>(i->size()));
+  }
+
   static void RetrieveActions_FetchFilteredActions1(
       scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
     ASSERT_EQ(1, static_cast<int>(i->size()));
@@ -156,38 +144,35 @@ class FullStreamUIPolicyTest : public testing::Test {
     ASSERT_EQ(2, static_cast<int>(i->size()));
   }
 
+  static void RetrieveActions_FetchFilteredActions300(
+      scoped_ptr<std::vector<scoped_refptr<Action> > > i) {
+    ASSERT_EQ(300, static_cast<int>(i->size()));
+  }
+
   static void Arguments_Present(scoped_ptr<Action::ActionVector> i) {
     scoped_refptr<Action> last = i->front();
-    std::string args =
-        "ID=odlameecjipmbmbejkplpemijjgpljce CATEGORY=api_call "
-        "API=extension.connect ARGS=[\"hello\",\"world\"]";
-    ASSERT_EQ(args, last->PrintForDebug());
+    CheckAction(*last, "odlameecjipmbmbejkplpemijjgpljce",
+                Action::ACTION_API_CALL, "extension.connect",
+                "[\"hello\",\"world\"]", "", "", "");
   }
 
   static void Arguments_GetTodaysActions(
       scoped_ptr<Action::ActionVector> actions) {
-    std::string api_print =
-        "ID=punky CATEGORY=api_call API=brewster ARGS=[\"woof\"] "
-        "PAGE_TITLE=\"Page Title\" ARG_URL=http://www.arg-url.com/";
-    std::string dom_print =
-        "ID=punky CATEGORY=dom_access API=lets ARGS=[\"vamoose\"] "
-        "PAGE_URL=http://www.google.com/ PAGE_TITLE=\"Page Title\" "
-        "ARG_URL=http://www.arg-url.com/";
     ASSERT_EQ(2, static_cast<int>(actions->size()));
-    ASSERT_EQ(dom_print, actions->at(0)->PrintForDebug());
-    ASSERT_EQ(api_print, actions->at(1)->PrintForDebug());
+    CheckAction(*actions->at(0), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "http://www.google.com/", "Page Title",
+                "http://www.arg-url.com/");
+    CheckAction(*actions->at(1), "punky", Action::ACTION_API_CALL, "brewster",
+                "[\"woof\"]", "", "Page Title", "http://www.arg-url.com/");
   }
 
   static void Arguments_GetOlderActions(
       scoped_ptr<Action::ActionVector> actions) {
-    std::string api_print =
-        "ID=punky CATEGORY=api_call API=brewster ARGS=[\"woof\"]";
-    std::string dom_print =
-        "ID=punky CATEGORY=dom_access API=lets ARGS=[\"vamoose\"] "
-        "PAGE_URL=http://www.google.com/";
     ASSERT_EQ(2, static_cast<int>(actions->size()));
-    ASSERT_EQ(dom_print, actions->at(0)->PrintForDebug());
-    ASSERT_EQ(api_print, actions->at(1)->PrintForDebug());
+    CheckAction(*actions->at(0), "punky", Action::ACTION_DOM_ACCESS, "lets",
+                "[\"vamoose\"]", "http://www.google.com/", "", "");
+    CheckAction(*actions->at(1), "punky", Action::ACTION_API_CALL, "brewster",
+                "[\"woof\"]", "", "", "");
   }
 
   static void AllURLsRemoved(scoped_ptr<Action::ActionVector> actions) {
@@ -341,6 +326,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "tabs.testMethod",
       "",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions1));
 
@@ -351,6 +337,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "",
       "",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions1));
 
@@ -361,6 +348,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "",
       "http://www.google.com/",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions1));
 
@@ -371,6 +359,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "",
       "http://www.google.com",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions1));
 
@@ -381,6 +370,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "",
       "http://www.goo",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions1));
 
@@ -391,6 +381,7 @@ TEST_F(FullStreamUIPolicyTest, LogAndFetchFilteredActions) {
       "",
       "",
       "",
+      -1,
       base::Bind(
           &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions2));
 
@@ -639,6 +630,90 @@ TEST_F(FullStreamUIPolicyTest, RemoveSpecificURLs) {
       "punky",
       0,
       base::Bind(&FullStreamUIPolicyTest::SomeURLsRemoved));
+  policy->Close();
+}
+
+TEST_F(FullStreamUIPolicyTest, CapReturns) {
+  FullStreamUIPolicy* policy = new FullStreamUIPolicy(profile_.get());
+
+  for (int i = 0; i < 305; i++) {
+    scoped_refptr<Action> action =
+        new Action("punky",
+                   base::Time::Now(),
+                   Action::ACTION_API_CALL,
+                   base::StringPrintf("apicall_%d", i));
+    policy->ProcessAction(action);
+  }
+
+  policy->Flush();
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::DB,
+      FROM_HERE,
+      base::Bind(&base::DoNothing),
+      base::MessageLoop::current()->QuitClosure());
+  base::MessageLoop::current()->Run();
+
+  CheckReadFilteredData(
+      policy,
+      "punky",
+      Action::ACTION_ANY,
+      "",
+      "",
+      "",
+      -1,
+      base::Bind(
+          &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions300));
+  policy->Close();
+}
+
+TEST_F(FullStreamUIPolicyTest, DeleteActions) {
+  ActivityLogPolicy* policy = new FullStreamUIPolicy(profile_.get());
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder()
+          .SetManifest(DictionaryBuilder()
+                       .Set("name", "Test extension")
+                       .Set("version", "1.0.0")
+                       .Set("manifest_version", 2))
+          .Build();
+  extension_service_->AddExtension(extension.get());
+  GURL gurl("http://www.google.com");
+
+  // Write some API calls.
+  scoped_refptr<Action> action_api = new Action(extension->id(),
+                                                base::Time::Now(),
+                                                Action::ACTION_API_CALL,
+                                                "tabs.testMethod");
+  action_api->set_args(make_scoped_ptr(new base::ListValue()));
+  policy->ProcessAction(action_api);
+
+  scoped_refptr<Action> action_dom = new Action(extension->id(),
+                                                base::Time::Now(),
+                                                Action::ACTION_DOM_ACCESS,
+                                                "document.write");
+  action_dom->set_args(make_scoped_ptr(new base::ListValue()));
+  action_dom->set_page_url(gurl);
+  policy->ProcessAction(action_dom);
+
+  CheckReadData(
+      policy,
+      extension->id(),
+      0,
+      base::Bind(&FullStreamUIPolicyTest::RetrieveActions_LogAndFetchActions));
+
+  // Now delete them.
+  policy->DeleteDatabase();
+
+  CheckReadFilteredData(
+      policy,
+      "",
+      Action::ACTION_ANY,
+      "",
+      "",
+      "",
+      -1,
+      base::Bind(
+          &FullStreamUIPolicyTest::RetrieveActions_FetchFilteredActions0));
+
   policy->Close();
 }
 

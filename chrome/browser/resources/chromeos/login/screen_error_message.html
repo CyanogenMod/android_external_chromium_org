@@ -6,10 +6,11 @@
           class="error-title
                  show-with-error-state-portal
                  show-with-error-state-offline"></div>
-      <div id="proxy-error-title" i18n-content="proxyErrorTitle"
+      <div id="login-error-title" i18n-content="loginErrorTitle"
           class="error-title
                  show-with-error-state-proxy
-                 show-with-error-state-auth-ext-timeout">
+                 show-with-error-state-auth-ext-timeout
+                 show-with-ui-state-local-state-error">
       </div>
     </div>
     <div class="error-body">
@@ -24,6 +25,9 @@
             i18n-content="signinOfflineMessageBody"
             class="show-with-ui-state-signin
                    show-with-ui-state-locally-managed"></span>
+        <span id="kiosk-offline-message-text"
+            i18n-content="kioskOfflineMessageBody"
+            class="show-with-ui-state-kiosk-mode"></span>
       </div>
       <div id="captive-portal-message-body"
           class="error-message-paragraph
@@ -31,7 +35,8 @@
         <span id="captive-portal-message-text"
             class="show-with-ui-state-update
                    show-with-ui-state-signin
-                   show-with-ui-state-locally-managed"></span>
+                   show-with-ui-state-locally-managed
+                   show-with-ui-state-kiosk-mode"></span>
       </div>
       <div id="captive-portal-proxy-message-body"
           class="error-message-paragraph
@@ -40,7 +45,8 @@
         <span id="captive-portal-proxy-message-text"
             class="show-with-ui-state-update
                    show-with-ui-state-signin
-                   show-with-ui-state-locally-managed"></span>
+                   show-with-ui-state-locally-managed
+                   show-with-ui-state-kiosk-mode"></span>
       </div>
       <div id="proxy-message-body"
           class="error-message-paragraph
@@ -49,12 +55,14 @@
             class="show-with-ui-state-update"></span>
         <span id="signin-proxy-message-text"
             class="show-with-ui-state-signin
-                   show-with-ui-state-locally-managed"></span>
+                   show-with-ui-state-locally-managed
+                   show-with-ui-state-kiosk-mode"></span>
       </div>
       <div id="offline-network-control-body"
           class="show-with-ui-state-update
                  show-with-ui-state-signin
-                 show-with-ui-state-locally-managed">
+                 show-with-ui-state-locally-managed
+                 show-with-ui-state-kiosk-mode">
         <div id="offline-network-control" class="error-message-paragraph">
           <label for="offline-networks-list-dropdown"
               i18n-content="selectNetwork"
@@ -72,10 +80,22 @@
           </div>
         </div>
       </div>
+      <div id="local-state-error-body"
+          class="show-with-ui-state-local-state-error">
+        <div i18n-content="localStateErrorText0"
+            class="error-message-paragraph">
+        </div>
+        <div i18n-content="localStateErrorText1"
+            class="error-message-paragraph">
+        </div>
+      </div>
       <div id="error-guest-signin" class="error-message-paragraph guest-signin">
       </div>
       <div id="error-offline-login"
           class="error-message-paragraph offline-login"></div>
     </div>
+  </div>
+  <div class="error-controls">
+    <div id="error-message-controls" class="step-controls"></div>
   </div>
 </div>

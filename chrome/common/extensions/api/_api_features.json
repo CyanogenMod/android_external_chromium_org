@@ -92,6 +92,10 @@
     "extension_types": ["extension"],
     "location": "component"
   },
+  "brailleDisplayPrivate": {
+    "dependencies": ["permission:brailleDisplayPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "browserAction": {
     "dependencies": ["manifest:browser_action"],
     "contexts": ["blessed_extension"]
@@ -158,6 +162,10 @@
     "dependencies": ["permission:dial"],
     "contexts": ["blessed_extension"]
   },
+  "dns": {
+    "dependencies": ["permission:dns"],
+    "contexts": ["blessed_extension"]
+  },
   "downloads": {
     "dependencies": ["permission:downloads"],
     "contexts": ["blessed_extension"]
@@ -193,23 +201,11 @@
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
-  "experimental.dns": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
   "experimental.history": {
     "dependencies": ["permission:history", "permission:experimental"],
     "contexts": ["blessed_extension"]
   },
   "experimental.identity": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
-  "experimental.idltest": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
-  "experimental.input.virtualKeyboard": {
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
@@ -286,6 +282,10 @@
     "dependencies": ["permission:identityPrivate"],
     "contexts": ["blessed_extension"]
   },
+  "idltest": {
+    "dependencies": ["permission:idltest"],
+    "contexts": ["blessed_extension"]
+  },
   "idle": {
     "dependencies": ["permission:idle"],
     "contexts": ["blessed_extension"]
@@ -349,6 +349,10 @@
   },
   "metricsPrivate": {
     "dependencies": ["permission:metricsPrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "mdns": {
+    "dependencies": ["permission:mdns"],
     "contexts": ["blessed_extension"]
   },
   "musicManagerPrivate": {
@@ -473,6 +477,10 @@
     "dependencies": ["permission:sessions"],
     "contexts": ["blessed_extension"]
   },
+  "signedInDevices": {
+    "dependencies": ["permission:signedInDevices"],
+    "contexts": ["blessed_extension"]
+  },
   "socket": {
     "dependencies": ["permission:socket"],
     "contexts": ["blessed_extension"]
@@ -561,6 +569,11 @@
   },
   "usb": {
     "dependencies": ["permission:usb"],
+    "contexts": ["blessed_extension"]
+  },
+  "virtualKeyboardPrivate": {
+    "platform": "chromeos",
+    "dependencies": ["permission:virtualKeyboardPrivate"],
     "contexts": ["blessed_extension"]
   },
   "wallpaperPrivate": {

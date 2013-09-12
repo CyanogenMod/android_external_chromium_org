@@ -337,14 +337,6 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   [self updateAndClobber:NO];
 }
 
-- (void)editLinkClicked {
-  delegate_->EditClickedForSection(section_);
-}
-
-- (NSString*)editLinkTitle {
-  return base::SysUTF16ToNSString(delegate_->EditSuggestionText());
-}
-
 - (BOOL)validateFor:(autofill::ValidationType)validationType {
   DCHECK(![[self view] isHidden]);
 
@@ -466,6 +458,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   [label setStringValue:labelText];
   [label setEditable:NO];
   [label setBordered:NO];
+  [label setDrawsBackground:NO];
   [label sizeToFit];
   return label.autorelease();
 }

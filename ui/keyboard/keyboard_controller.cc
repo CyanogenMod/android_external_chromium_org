@@ -4,6 +4,7 @@
 
 #include "ui/keyboard/keyboard_controller.h"
 
+#include "base/bind.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -18,6 +19,8 @@
 #include "ui/keyboard/keyboard_controller_proxy.h"
 
 namespace {
+
+const int kHideKeyboardDelayMs = 100;
 
 gfx::Rect KeyboardBoundsFromWindowBounds(const gfx::Rect& window_bounds) {
   const float kKeyboardHeightRatio = 0.3f;
@@ -68,7 +71,8 @@ class KeyboardWindowDelegate : public aura::WindowDelegate {
     gfx::Rect keyboard_bounds = KeyboardBoundsFromWindowBounds(bounds_);
     mask->addRect(RectToSkRect(keyboard_bounds));
   }
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE { return NULL; }
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE {}
 
   gfx::Rect bounds_;
   DISALLOW_COPY_AND_ASSIGN(KeyboardWindowDelegate);
@@ -118,7 +122,9 @@ class KeyboardLayoutManager : public aura::LayoutManager {
 KeyboardController::KeyboardController(KeyboardControllerProxy* proxy)
     : proxy_(proxy),
       container_(NULL),
-      input_method_(NULL) {
+      input_method_(NULL),
+      keyboard_visible_(false),
+      weak_factory_(this) {
   CHECK(proxy);
   input_method_ = proxy_->GetInputMethod();
   input_method_->AddObserver(this);
@@ -166,9 +172,11 @@ void KeyboardController::OnTextInputStateChanged(
   if (!container_)
     return;
 
-  bool was_showing = container_->IsVisible();
+  bool was_showing = keyboard_visible_;
   bool should_show = was_showing;
-  if (!client || client->GetTextInputType() == ui::TEXT_INPUT_TYPE_NONE) {
+  ui::TextInputType type =
+      client ? client->GetTextInputType() : ui::TEXT_INPUT_TYPE_NONE;
+  if (type == ui::TEXT_INPUT_TYPE_NONE) {
     should_show = false;
   } else {
     if (container_->children().empty()) {
@@ -177,25 +185,32 @@ void KeyboardController::OnTextInputStateChanged(
       container_->AddChild(keyboard);
       container_->layout_manager()->OnWindowResized();
     }
+    proxy_->SetUpdateInputType(type);
     container_->parent()->StackChildAtTop(container_);
     should_show = true;
   }
 
   if (was_showing != should_show) {
-    gfx::Rect new_bounds(
-        should_show ? container_->children()[0]->bounds() : gfx::Rect());
+    if (should_show) {
+      keyboard_visible_ = true;
+      weak_factory_.InvalidateWeakPtrs();
+      if (container_->IsVisible())
+        return;
 
-    FOR_EACH_OBSERVER(
-        KeyboardControllerObserver,
-        observer_list_,
-        OnKeyboardBoundsChanging(new_bounds));
-
-    if (should_show)
+      FOR_EACH_OBSERVER(
+          KeyboardControllerObserver,
+          observer_list_,
+          OnKeyboardBoundsChanging(container_->children()[0]->bounds()));
       proxy_->ShowKeyboardContainer(container_);
-    else
-      proxy_->HideKeyboardContainer(container_);
+    } else {
+      keyboard_visible_ = false;
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&KeyboardController::HideKeyboard,
+                     weak_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(kHideKeyboardDelayMs));
+    }
   }
-
   // TODO(bryeung): whenever the TextInputClient changes we need to notify the
   // keyboard (with the TextInputType) so that it can reset it's state (e.g.
   // abandon compositions in progress)
@@ -205,6 +220,17 @@ void KeyboardController::OnInputMethodDestroyed(
     const ui::InputMethod* input_method) {
   DCHECK_EQ(input_method_, input_method);
   input_method_ = NULL;
+}
+
+void KeyboardController::HideKeyboard() {
+  FOR_EACH_OBSERVER(KeyboardControllerObserver,
+                    observer_list_,
+                    OnKeyboardBoundsChanging(gfx::Rect()));
+  proxy_->HideKeyboardContainer(container_);
+}
+
+bool KeyboardController::WillHideKeyboard() const {
+  return weak_factory_.HasWeakPtrs();
 }
 
 }  // namespace keyboard

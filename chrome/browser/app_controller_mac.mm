@@ -4,6 +4,7 @@
 
 #import "chrome/browser/app_controller_mac.h"
 
+#include "apps/app_shim/app_shim_mac.h"
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "apps/shell_window_registry.h"
 #include "base/auto_reset.h"
@@ -382,25 +383,10 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
-  using apps::ShellWindowRegistry;
-
   // If there are no windows, quit immediately.
   if (chrome::BrowserIterator().done() &&
-      !ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0)) {
+      !apps::ShellWindowRegistry::IsShellWindowRegisteredInAnyProfile(0)) {
     return NSTerminateNow;
-  }
-
-  // Check if this is a keyboard initiated quit on an app window. If so, quit
-  // the app. This could cause the app to trigger another terminate, but that
-  // will be caught by the no windows condition above.
-  if ([[app currentEvent] type] == NSKeyDown) {
-    apps::ShellWindow* shellWindow =
-        ShellWindowRegistry::GetShellWindowForNativeWindowAnyProfile(
-            [app keyWindow]);
-    if (shellWindow) {
-      apps::ExtensionAppShimHandler::QuitAppForWindow(shellWindow);
-      return NSTerminateCancel;
-    }
   }
 
   // Check if the preference is turned on.
@@ -658,7 +644,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 
   // Start managing the menu for app windows. This needs to be done here because
   // main menu item titles are not yet initialized in awakeFromNib.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableAppShims))
+  if (apps::IsAppShimsEnabled())
     appShimMenuController_.reset([[AppShimMenuController alloc] init]);
 
   // Build up the encoding menu, the order of the items differs based on the
@@ -893,9 +879,11 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
                                      currentProfile:lastProfile];
           break;
         }
+#if defined(GOOGLE_CHROME_BUILD)
         case IDC_FEEDBACK:
           enable = NO;
           break;
+#endif
         default:
           enable = menuState_->IsCommandEnabled(tag) ?
                    ![self keyWindowIsModal] : NO;
@@ -1084,20 +1072,20 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   // Bring all browser windows to the front. Specifically, this brings them in
   // front of any app windows. FocusWindowSet will also unminimize the most
   // recently minimized window if no windows in the set are visible.
-  // If there are tabbed or popup windows, return here. Otherwise, the windows
-  // are panels or notifications so we still need to open a new window.
+  // If there are any, return here. Otherwise, the windows are panels or
+  // notifications so we still need to open a new window.
   if (hasVisibleWindows) {
-    BOOL foundBrowser = NO;
     std::set<NSWindow*> browserWindows;
     for (chrome::BrowserIterator iter; !iter.done(); iter.Next()) {
       Browser* browser = *iter;
       browserWindows.insert(browser->window()->GetNativeWindow());
-      if (browser->is_type_tabbed() || browser->is_type_popup())
-        foundBrowser = YES;
     }
-    ui::FocusWindowSet(browserWindows);
-    if (foundBrowser)
-      return YES;
+    if (!browserWindows.empty()) {
+      ui::FocusWindowSet(browserWindows, false);
+      // Return NO; we've done the unminimize, so AppKit shouldn't do
+      // anything.
+      return NO;
+    }
   }
 
   // If launched as a hidden login item (due to installation of a persistent app
@@ -1162,7 +1150,9 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   menuState_->UpdateCommandEnabled(IDC_MANAGE_EXTENSIONS, true);
   menuState_->UpdateCommandEnabled(IDC_HELP_PAGE_VIA_MENU, true);
   menuState_->UpdateCommandEnabled(IDC_IMPORT_SETTINGS, true);
+#if defined(GOOGLE_CHROME_BUILD)
   menuState_->UpdateCommandEnabled(IDC_FEEDBACK, true);
+#endif
   menuState_->UpdateCommandEnabled(IDC_SHOW_SYNC_SETUP, true);
   menuState_->UpdateCommandEnabled(IDC_TASK_MANAGER, true);
 }

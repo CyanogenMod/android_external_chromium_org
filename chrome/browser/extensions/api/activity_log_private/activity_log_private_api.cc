@@ -134,6 +134,9 @@ bool ActivityLogPrivateGetExtensionActivitiesFunction::RunImpl() {
       filter->page_url.get() ? *filter->page_url : std::string();
   std::string arg_url =
       filter->arg_url.get() ? *filter->arg_url : std::string();
+  int days_ago = -1;
+  if (filter->days_ago.get())
+    days_ago = *filter->days_ago;
 
   // Call the ActivityLog.
   ActivityLog* activity_log = ActivityLog::GetInstance(profile_);
@@ -144,6 +147,7 @@ bool ActivityLogPrivateGetExtensionActivitiesFunction::RunImpl() {
       api_call,
       page_url,
       arg_url,
+      days_ago,
       base::Bind(
           &ActivityLogPrivateGetExtensionActivitiesFunction::OnLookupCompleted,
           this));
@@ -163,16 +167,39 @@ void ActivityLogPrivateGetExtensionActivitiesFunction::OnLookupCompleted(
   }
 
   // Populate the return object.
-  // TODO(felt): Implement paging. Right now max_time and more_results are
-  // placeholder values.
   scoped_ptr<ActivityResultSet> result_set(new ActivityResultSet);
   result_set->activities = result_arr;
-  result_set->max_time = scoped_ptr<int>(new int(0));
-  result_set->more_results = false;
   results_ = activity_log_private::GetExtensionActivities::Results::Create(
       *result_set);
 
   SendResponse(true);
+}
+
+bool ActivityLogPrivateDeleteDatabaseFunction::RunImpl() {
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile_);
+  DCHECK(activity_log);
+  activity_log->DeleteDatabase();
+  return true;
+}
+
+bool ActivityLogPrivateDeleteUrlsFunction::RunImpl() {
+  scoped_ptr<activity_log_private::DeleteUrls::Params> params(
+      activity_log_private::DeleteUrls::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  // Put the arguments in the right format.
+  std::vector<GURL> gurls;
+  std::vector<std::string> urls = *params->urls.get();
+  for (std::vector<std::string>::iterator it = urls.begin();
+       it != urls.end();
+       ++it) {
+    gurls.push_back(GURL(*it));
+  }
+
+  ActivityLog* activity_log = ActivityLog::GetInstance(profile_);
+  DCHECK(activity_log);
+  activity_log->RemoveURLs(gurls);
+  return true;
 }
 
 }  // namespace extensions

@@ -335,6 +335,7 @@
         '../chrome/chrome.gyp:test_support_common',
         '../chrome/chrome.gyp:test_support_ui',
         '../chrome/chrome.gyp:utility',
+        '../chrome/test/perf/perf_test.gyp:*',
         '../content/content.gyp:content_gpu',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',

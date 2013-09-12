@@ -34,6 +34,7 @@
 #include "net/base/net_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/perf/perf_test.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -158,7 +159,7 @@ class ThroughputTest : public BrowserPerfTest {
           flags.substr(num_pos, flags.size() - num_pos), &index));
       base::FilePath filepath(flags.substr(0, colon_pos));
       std::string json;
-      ASSERT_TRUE(file_util::ReadFileToString(filepath, &json));
+      ASSERT_TRUE(base::ReadFileToString(filepath, &json));
       ASSERT_TRUE(ParseFlagsFromJSON(filepath.DirName(), json, index));
     } else {
       gurl_ = GURL(flags);

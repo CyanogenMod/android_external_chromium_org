@@ -32,11 +32,11 @@ class ToolbarView;
 
 namespace autofill {
 class PasswordGenerator;
+struct PasswordForm;
 }
 namespace content {
 class WebContents;
 struct NativeWebKeyboardEvent;
-struct PasswordForm;
 struct SSLStatus;
 }
 
@@ -322,7 +322,8 @@ class BrowserWindow : public ui::BaseWindow {
   virtual FindBar* CreateFindBar() = 0;
 
   // Return the WebContentsModalDialogHost for use in positioning web contents
-  // modal dialogs within the browser window.
+  // modal dialogs within the browser window. This can sometimes be NULL (for
+  // instance during tab drag on Views/Win32).
   virtual web_modal::WebContentsModalDialogHost*
       GetWebContentsModalDialogHost() = 0;
 
@@ -355,7 +356,7 @@ class BrowserWindow : public ui::BaseWindow {
   // contains the password field that the bubble will be associated with.
   virtual void ShowPasswordGenerationBubble(
       const gfx::Rect& rect,
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
       autofill::PasswordGenerator* password_generator) = 0;
 
   // Invoked when the amount of vertical overscroll changes. |delta_y| is the

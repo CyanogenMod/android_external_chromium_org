@@ -10,7 +10,6 @@
 #include "base/auto_reset.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/debug/alias.h"
 #include "base/i18n/rtl.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
@@ -27,6 +26,7 @@
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -44,14 +44,14 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_util.h"
+#include "ash/wm/window_settings.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/gestures/gesture_recognizer.h"
@@ -192,13 +192,13 @@ class DockView : public views::View {
 
 void SetTrackedByWorkspace(gfx::NativeWindow window, bool value) {
 #if defined(USE_ASH)
-  ash::SetTrackedByWorkspace(window, value);
+  ash::wm::GetWindowSettings(window)->SetTrackedByWorkspace(value);
 #endif
 }
 
 void SetWindowPositionManaged(gfx::NativeWindow window, bool value) {
 #if defined(USE_ASH)
-  ash::wm::SetWindowPositionManaged(window, value);
+  ash::wm::GetWindowSettings(window)->set_window_position_managed(value);
 #endif
 }
 
@@ -361,7 +361,8 @@ TabDragController::TabDragController()
       screen_(NULL),
       host_desktop_type_(chrome::HOST_DESKTOP_TYPE_NATIVE),
       offset_to_width_ratio_(0),
-      old_focused_view_(NULL),
+      old_focused_view_id_(
+          views::ViewStorage::GetInstance()->CreateStorageID()),
       last_move_screen_loc_(0),
       started_drag_(false),
       active_(true),
@@ -376,13 +377,13 @@ TabDragController::TabDragController()
       tab_strip_to_attach_to_after_exit_(NULL),
       move_loop_widget_(NULL),
       destroyed_(NULL),
-      is_mutating_(false),
-      saving_focus_(false) {
+      is_mutating_(false) {
   instance_ = this;
 }
 
 TabDragController::~TabDragController() {
-  CHECK(!saving_focus_);
+  views::ViewStorage::GetInstance()->RemoveView(old_focused_view_id_);
+
   if (instance_ == this)
     instance_ = NULL;
 
@@ -501,8 +502,16 @@ void TabDragController::Drag(const gfx::Point& point_in_screen) {
     if (!CanStartDrag(point_in_screen))
       return;  // User hasn't dragged far enough yet.
 
+    // On windows SaveFocus() may trigger a capture lost, which destroys us.
+    {
+      bool destroyed = false;
+      destroyed_ = &destroyed;
+      SaveFocus();
+      if (destroyed)
+        return;
+      destroyed_ = NULL;
+    }
     started_drag_ = true;
-    SaveFocus();
     Attach(source_tabstrip_, gfx::Point());
     if (detach_into_browser_ && static_cast<int>(drag_data_.size()) ==
         GetModel(source_tabstrip_)->count()) {
@@ -564,12 +573,14 @@ WebContents* TabDragController::OpenURLFromTab(
 
 void TabDragController::NavigationStateChanged(const WebContents* source,
                                                unsigned changed_flags) {
-  if (attached_tabstrip_) {
+  if (attached_tabstrip_ ||
+      changed_flags == content::INVALIDATE_TYPE_PAGE_ACTIONS) {
     for (size_t i = 0; i < drag_data_.size(); ++i) {
       if (drag_data_[i].contents == source) {
         // Pass the NavigationStateChanged call to the original delegate so
         // that the title is updated. Do this only when we are attached as
-        // otherwise the Tab isn't in the TabStrip.
+        // otherwise the Tab isn't in the TabStrip (except for page action
+        // updates).
         drag_data_[i].original_delegate->NavigationStateChanged(source,
                                                                 changed_flags);
         break;
@@ -746,24 +757,25 @@ void TabDragController::UpdateDockInfo(const gfx::Point& point_in_screen) {
 }
 
 void TabDragController::SaveFocus() {
-  DCHECK(!old_focused_view_);  // This should only be invoked once.
   DCHECK(source_tabstrip_);
-  old_focused_view_ = source_tabstrip_->GetFocusManager()->GetFocusedView();
-  // TODO(sky): used in tracking crash; see 275931.
-  const char* old_focused_view_class_name =
-      old_focused_view_ ? old_focused_view_->GetClassName() : NULL;
-  base::debug::Alias(old_focused_view_class_name);
-  const int old_focused_view_id =
-      old_focused_view_ ? old_focused_view_->id() : 0;
-  base::debug::Alias(&old_focused_view_id);
-  base::AutoReset<bool> setter(&saving_focus_, true);
+  views::View* focused_view =
+      source_tabstrip_->GetFocusManager()->GetFocusedView();
+  if (focused_view)
+    views::ViewStorage::GetInstance()->StoreView(old_focused_view_id_,
+                                                 focused_view);
   source_tabstrip_->GetFocusManager()->SetFocusedView(source_tabstrip_);
+  // WARNING: we may have been deleted.
 }
 
 void TabDragController::RestoreFocus() {
-  if (old_focused_view_ && attached_tabstrip_ == source_tabstrip_)
-    old_focused_view_->GetFocusManager()->SetFocusedView(old_focused_view_);
-  old_focused_view_ = NULL;
+  if (attached_tabstrip_ != source_tabstrip_)
+    return;
+  views::View* old_focused_view =
+      views::ViewStorage::GetInstance()->RetrieveView(
+      old_focused_view_id_);
+  if (!old_focused_view)
+    return;
+  old_focused_view->GetFocusManager()->SetFocusedView(old_focused_view);
 }
 
 bool TabDragController::CanStartDrag(const gfx::Point& point_in_screen) const {

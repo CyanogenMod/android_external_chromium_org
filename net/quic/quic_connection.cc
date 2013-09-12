@@ -127,6 +127,14 @@ class TimeoutAlarm : public QuicAlarm::Delegate {
 
 }  // namespace
 
+// TODO(rch): Remove this.
+// Because of a bug in the interaction between the TcpCubicSender and
+// QuicConnection, acks currently count against the congestion window.
+// This means that if acks are not acked, and data is only flowing in
+// one direction, then the connection will deadlock.
+// static
+bool QuicConnection::g_acks_do_not_instigate_acks = false;
+
 #define ENDPOINT (is_server_ ? "Server: " : " Client: ")
 
 QuicConnection::QuicConnection(QuicGuid guid,
@@ -182,6 +190,7 @@ QuicConnection::QuicConnection(QuicGuid guid,
 }
 
 QuicConnection::~QuicConnection() {
+  STLDeleteElements(&ack_notifiers_);
   STLDeleteElements(&undecryptable_packets_);
   STLDeleteValues(&unacked_packets_);
   STLDeleteValues(&group_map_);
@@ -448,6 +457,23 @@ void QuicConnection::ProcessAckFrame(const QuicAckFrame& incoming_ack) {
   HandleAckForSentFecPackets(incoming_ack, &acked_packets);
   if (acked_packets.size() > 0) {
     visitor_->OnAck(acked_packets);
+
+    // Inform all the registered AckNotifiers of the new ACKs.
+    // TODO(rjshade): Make this more efficient by maintaining a mapping of
+    //                <sequence number, set<AckNotifierList>> so that OnAck
+    //                is only called on AckNotifiers that care about the
+    //                packets being ACKed.
+    AckNotifierList::iterator it = ack_notifiers_.begin();
+    while (it != ack_notifiers_.end()) {
+      if ((*it)->OnAck(acked_packets)) {
+        // The QuicAckNotifier has seen all the ACKs it was interested in, and
+        // has triggered its callback. No more use for it.
+        delete *it;
+        it = ack_notifiers_.erase(it);
+      } else {
+        ++it;
+      }
+    }
   }
   congestion_manager_.OnIncomingAckFrame(incoming_ack,
                                          time_of_last_received_packet_);
@@ -747,7 +773,8 @@ void QuicConnection::MaybeSendInResponseToPacket(
     bool last_packet_should_instigate_ack) {
   packet_generator_.StartBatchOperations();
 
-  if (last_packet_should_instigate_ack) {
+  if (last_packet_should_instigate_ack ||
+      !g_acks_do_not_instigate_acks) {
     if (send_ack_in_response_to_packet_) {
       SendAck();
     } else if (last_packet_should_instigate_ack) {
@@ -809,6 +836,30 @@ QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
     // Restore batch mode.
     packet_generator_.StartBatchOperations();
   }
+  return consumed_data;
+}
+
+QuicConsumedData QuicConnection::SendStreamDataAndNotifyWhenAcked(
+    QuicStreamId id,
+    StringPiece data,
+    QuicStreamOffset offset,
+    bool fin,
+    QuicAckNotifier::DelegateInterface* delegate) {
+  // This notifier will be deleted in ProcessAckFrame once it has seen ACKs for
+  // all the consumed data (or below if no data was consumed).
+  QuicAckNotifier* notifier = new QuicAckNotifier(delegate);
+  QuicConsumedData consumed_data =
+      packet_generator_.ConsumeData(id, data, offset, fin, notifier);
+
+  if (consumed_data.bytes_consumed > 0) {
+    // If some data was consumed, then the delegate should be registered for
+    // notification when the data is ACKed.
+    ack_notifiers_.push_back(notifier);
+  } else {
+    // No data was consumed, delete the notifier.
+    delete notifier;
+  }
+
   return consumed_data;
 }
 
@@ -1053,14 +1104,23 @@ void QuicConnection::RetransmitPacket(
   // Remove info with old sequence number.
   unacked_packets_.erase(unacked_it);
   retransmission_map_.erase(retransmission_it);
-  DVLOG(1) << ENDPOINT << "Retransmitting unacked packet " << sequence_number
-           << " as " << serialized_packet.sequence_number;
+  DLOG(INFO) << ENDPOINT << "Retransmitting unacked packet " << sequence_number
+             << " as " << serialized_packet.sequence_number;
   DCHECK(unacked_packets_.empty() ||
          unacked_packets_.rbegin()->first < serialized_packet.sequence_number);
   unacked_packets_.insert(make_pair(serialized_packet.sequence_number,
                                     unacked));
   retransmission_map_.insert(make_pair(serialized_packet.sequence_number,
                                        retransmission_info));
+
+  // A notifier may be waiting to hear about ACKs for the original sequence
+  // number. Inform them that the sequence number has changed.
+  for (AckNotifierList::iterator notifier_it = ack_notifiers_.begin();
+       notifier_it != ack_notifiers_.end(); ++notifier_it) {
+    (*notifier_it)->UpdateSequenceNumber(sequence_number,
+                                         serialized_packet.sequence_number);
+  }
+
   if (debug_visitor_) {
     debug_visitor_->OnPacketRetransmitted(sequence_number,
                                           serialized_packet.sequence_number);

@@ -38,7 +38,7 @@
 #include "chrome/common/importer/pstore_declarations.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/utility/importer/favicon_reencode.h"
-#include "content/public/common/password_form.h"
+#include "components/autofill/core/common/password_form.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -322,7 +322,7 @@ GURL ReadFaviconURLFromInternetShortcut(IUniformResourceLocator* url_locator) {
 // IE7 and above store the data.
 bool ReadFaviconDataFromInternetShortcut(const string16& file,
                                          std::string* data) {
-  return file_util::ReadFileToString(
+  return base::ReadFileToString(
       base::FilePath(file + kFaviconStreamName), data);
 }
 
@@ -343,8 +343,7 @@ bool ReadFaviconDataFromCache(const GURL& favicon_url, std::string* data) {
                               NULL, NULL, 0)) {
     return false;
   }
-  return file_util::ReadFileToString(base::FilePath(cache->lpszLocalFileName),
-                                     data);
+  return base::ReadFileToString(base::FilePath(cache->lpszLocalFileName), data);
 }
 
 // Reads the binary image data of favicon of an internet shortcut file |file|.
@@ -609,7 +608,7 @@ void IEImporter::ImportPasswordsIE6() {
       continue;
     }
 
-    content::PasswordForm form;
+    autofill::PasswordForm form;
     GURL::Replacements rp;
     rp.ClearUsername();
     rp.ClearPassword();

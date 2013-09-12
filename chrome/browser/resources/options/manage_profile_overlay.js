@@ -60,10 +60,10 @@ cr.define('options', function() {
 
       $('create-profile-managed-container').hidden =
           !loadTimeData.getBoolean('managedUsersEnabled');
-      $('select-existing-managed-profile-checkbox').hidden =
-          !loadTimeData.getBoolean('allowCreateExistingManagedUsers');
-      $('choose-existing-managed-profile').hidden =
-          !loadTimeData.getBoolean('allowCreateExistingManagedUsers');
+
+      $('import-existing-managed-user-link').hidden =
+          !loadTimeData.getBoolean('allowCreateExistingManagedUsers') ||
+          !loadTimeData.getBoolean('managedUsersEnabled');
 
       $('manage-profile-cancel').onclick =
           $('delete-profile-cancel').onclick = function(event) {
@@ -103,23 +103,9 @@ cr.define('options', function() {
         SyncSetupOverlay.showSetupUI();
       };
 
-      $('create-profile-managed').onchange = function(event) {
-        var createManagedProfile = $('create-profile-managed').checked;
-        $('select-existing-managed-profile-checkbox').disabled =
-            !createManagedProfile;
-
-        if (!createManagedProfile) {
-          $('select-existing-managed-profile-checkbox').checked = false;
-          $('choose-existing-managed-profile').disabled = true;
-          $('create-profile-name').disabled = false;
-        }
-      };
-
-      $('select-existing-managed-profile-checkbox').onchange = function(event) {
-        var selectExistingProfile =
-            $('select-existing-managed-profile-checkbox').checked;
-        $('choose-existing-managed-profile').disabled = !selectExistingProfile;
-        $('create-profile-name').disabled = selectExistingProfile;
+      $('import-existing-managed-user-link').onclick = function(event) {
+        OptionsPage.closeOverlay();
+        OptionsPage.navigateToPage('managedUserImport');
       };
     },
 
@@ -350,12 +336,6 @@ cr.define('options', function() {
       var createShortcut = $('create-shortcut').checked;
       var isManaged = $('create-profile-managed').checked;
       var existingManagedUserId = '';
-      if ($('select-existing-managed-profile-checkbox').checked) {
-        var selectElement = $('choose-existing-managed-profile');
-        existingManagedUserId =
-            selectElement.options[selectElement.selectedIndex].value;
-        name = selectElement.options[selectElement.selectedIndex].text;
-      }
 
       // 'createProfile' is handled by the BrowserOptionsHandler.
       chrome.send('createProfile',
@@ -485,7 +465,6 @@ cr.define('options', function() {
       chrome.send('requestCreateProfileUpdate');
       chrome.send('requestDefaultProfileIcons');
       chrome.send('requestNewProfileDefaults');
-      chrome.send('requestExistingManagedUsers');
 
       $('manage-profile-overlay-create').hidden = false;
       $('manage-profile-overlay-manage').hidden = true;
@@ -507,9 +486,6 @@ cr.define('options', function() {
       $('create-profile-managed-signed-in').disabled = true;
       $('create-profile-managed-signed-in').hidden = true;
       $('create-profile-managed-not-signed-in').hidden = true;
-      $('select-existing-managed-profile-checkbox').disabled = true;
-      $('select-existing-managed-profile-checkbox').checked = false;
-      $('choose-existing-managed-profile').disabled = true;
     },
 
     /** @override */
@@ -538,10 +514,12 @@ cr.define('options', function() {
      * @private
      */
     updateCreateInProgress_: function(inProgress) {
+      this.createInProgress_ = inProgress;
+      this.updateCreateManagedUserCheckbox_();
+
       $('create-profile-icon-grid').disabled = inProgress;
       $('create-profile-name').disabled = inProgress;
       $('create-shortcut').disabled = inProgress;
-      $('create-profile-managed').disabled = inProgress;
       $('create-profile-ok').disabled = inProgress;
 
       $('create-profile-throbber').hidden = !inProgress;
@@ -608,13 +586,6 @@ cr.define('options', function() {
       var isSignedIn = email !== '';
       $('create-profile-managed-signed-in').hidden = !isSignedIn;
       $('create-profile-managed-not-signed-in').hidden = isSignedIn;
-      var hideSelectExistingManagedUsers =
-          !isSignedIn ||
-          !loadTimeData.getBoolean('allowCreateExistingManagedUsers');
-      $('select-existing-managed-profile-checkbox').hidden =
-          hideSelectExistingManagedUsers;
-      $('choose-existing-managed-profile').hidden =
-          hideSelectExistingManagedUsers;
 
       if (isSignedIn) {
         var accountDetailsOutOfDate =
@@ -631,10 +602,27 @@ cr.define('options', function() {
         $('create-profile-managed-sign-in-again-link').hidden = !hasError;
         $('create-profile-managed-signed-in-learn-more-link').hidden = hasError;
       }
+
+      this.updateImportExistingManagedUserLink_(isSignedIn && !hasError);
     },
 
     /**
-     * Updates the status of the "create managed user" checkbox. Called by the
+     * Enables/disables the 'import existing managed users' link button.
+     * It also updates the button text.
+     * @param {boolean} enable True to enable the link button and
+     *     false otherwise.
+     * @private
+     */
+    updateImportExistingManagedUserLink_: function(enable) {
+      var importManagedUserElement = $('import-existing-managed-user-link');
+      importManagedUserElement.disabled = !enable;
+      importManagedUserElement.textContent = enable ?
+          loadTimeData.getString('importExistingManagedUserLink') :
+          loadTimeData.getString('signInToImportManagedUsers');
+    },
+
+    /**
+     * Sets whether creating managed users is allowed or not. Called by the
      * handler in response to the 'requestCreateProfileUpdate' message or a
      * change in the (policy-controlled) pref that prohibits creating managed
      * users, after the signed-in status has been updated.
@@ -643,9 +631,8 @@ cr.define('options', function() {
      * @private
      */
     updateManagedUsersAllowed_: function(allowed) {
-      var isSignedIn = this.signedInEmail_ !== '';
-      $('create-profile-managed').disabled =
-          !isSignedIn || !allowed || this.hasError_;
+      this.managedUsersAllowed_ = allowed;
+      this.updateCreateManagedUserCheckbox_();
 
       $('create-profile-managed-not-signed-in-link').hidden = !allowed;
       if (!allowed) {
@@ -657,40 +644,16 @@ cr.define('options', function() {
     },
 
     /**
-     * Populates a dropdown menu with the existing managed users attached
-     * to the current custodians profile.
-     * @param {Object} managedUsers A dictionary of managed users IDs and
-     *     names.
+     * Updates the status of the "create managed user" checkbox. Called from
+     * updateManagedUsersAllowed_() or updateCreateInProgress_().
+     * updateSignedInStatus_() does not call this method directly, because it
+     * will be followed by a call to updateManagedUsersAllowed_().
+     * @private
      */
-    receiveExistingManagedUsers_: function(managedUsers) {
-      var managedUsersArray = Object.keys(managedUsers).map(function(id) {
-        return {'id': id, 'name': managedUsers[id]};
-      });
-
-      // No existing managed users, so hide the UI elements.
-      var hide = managedUsersArray.length == 0 ||
-          !loadTimeData.getBoolean('allowCreateExistingManagedUsers');
-      $('select-existing-managed-profile').hidden = hide;
-      $('choose-existing-managed-profile').hidden = hide;
-      if (hide) {
-        $('select-existing-managed-profile-checkbox').checked = false;
-        return;
-      }
-
-      // Sort by name.
-      managedUsersArray.sort(function compare(a, b) {
-        return a.name.localeCompare(b.name);
-      });
-
-      // Clear the dropdown list.
-      while ($('choose-existing-managed-profile').options.length > 0)
-        $('choose-existing-managed-profile').options.remove(0);
-
-      // Populate the dropdown list.
-      managedUsersArray.forEach(function(user) {
-        $('choose-existing-managed-profile').options.add(
-            new Option(user.name, user.id));
-      });
+    updateCreateManagedUserCheckbox_: function() {
+      $('create-profile-managed').disabled =
+          !this.managedUsersAllowed_ || this.createInProgress_ ||
+          this.signedInEmail_ == '' || this.hasError_;
     },
   };
 
@@ -699,7 +662,6 @@ cr.define('options', function() {
     'cancelCreateProfile',
     'onError',
     'onSuccess',
-    'receiveExistingManagedUsers',
     'updateCreateInProgress',
     'updateManagedUsersAllowed',
     'updateSignedInStatus',

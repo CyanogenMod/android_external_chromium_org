@@ -103,16 +103,17 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
     return "";
   }
 
-  virtual scoped_refptr<net::StreamListenSocket> CreateSocketForTethering(
+  virtual scoped_ptr<net::StreamListenSocket> CreateSocketForTethering(
       net::StreamListenSocket::Delegate* delegate,
       std::string* name) OVERRIDE {
     *name = base::StringPrintf(
         kTetheringSocketName, getpid(), ++last_tethering_socket_);
     return net::UnixDomainSocket::CreateAndListenWithAbstractNamespace(
-        *name,
-        "",
-        delegate,
-        base::Bind(&content::CanUserConnectToDevTools));
+               *name,
+               "",
+               delegate,
+               base::Bind(&content::CanUserConnectToDevTools))
+           .PassAs<net::StreamListenSocket>();
   }
 
  private:
@@ -147,6 +148,12 @@ DevToolsServer::DevToolsServer(const std::string& socket_name_prefix)
     : socket_name_(base::StringPrintf(kDevToolsChannelNameFormat,
                                       socket_name_prefix.c_str())),
       protocol_handler_(NULL) {
+  // Override the socket name if one is specified on the command line.
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kRemoteDebuggingSocketName)) {
+    socket_name_ = command_line.GetSwitchValueASCII(
+        switches::kRemoteDebuggingSocketName);
+  }
 }
 
 DevToolsServer::~DevToolsServer() {

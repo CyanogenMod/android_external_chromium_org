@@ -9,6 +9,7 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/animation/scrollbar_animation_controller_linear_fade.h"
+#include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/debug/layer_tree_debug_state.h"
@@ -750,7 +751,7 @@ scoped_ptr<LayerImpl> LayerImpl::TakeReplicaLayer() {
   return replica_layer_.Pass();
 }
 
-PaintedScrollbarLayerImpl* LayerImpl::ToScrollbarLayer() {
+ScrollbarLayerImplBase* LayerImpl::ToScrollbarLayer() {
   return NULL;
 }
 
@@ -975,10 +976,11 @@ void LayerImpl::UpdateScrollbarPositions() {
     return;
   last_scroll_offset_ = current_offset;
 
-  if (scrollbar_animation_controller_ &&
-      !scrollbar_animation_controller_->IsScrollGestureInProgress()) {
-    scrollbar_animation_controller_->DidProgrammaticallyUpdateScroll(
+  if (scrollbar_animation_controller_) {
+    bool should_animate = scrollbar_animation_controller_->DidScrollUpdate(
         layer_tree_impl_->CurrentPhysicalTimeTicks());
+    if (should_animate)
+      layer_tree_impl_->StartScrollbarAnimation();
   }
 
   // Get the current_offset_.y() value for a sanity-check on scrolling
@@ -1090,13 +1092,6 @@ void LayerImpl::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
   UpdateScrollbarPositions();
 }
 
-void LayerImpl::SetScrollbarOpacity(float opacity) {
-  if (horizontal_scrollbar_layer_)
-    horizontal_scrollbar_layer_->SetOpacity(opacity);
-  if (vertical_scrollbar_layer_)
-    vertical_scrollbar_layer_->SetOpacity(opacity);
-}
-
 void LayerImpl::DidBecomeActive() {
   if (layer_tree_impl_->settings().scrollbar_animator ==
       LayerTreeSettings::NoAnimator) {
@@ -1126,20 +1121,26 @@ void LayerImpl::DidBecomeActive() {
             .PassAs<ScrollbarAnimationController>();
     break;
   }
+  case LayerTreeSettings::Thinning: {
+    scrollbar_animation_controller_ =
+        ScrollbarAnimationControllerThinning::Create(this)
+            .PassAs<ScrollbarAnimationController>();
+    break;
+  }
   case LayerTreeSettings::NoAnimator:
     NOTREACHED();
     break;
   }
 }
 void LayerImpl::SetHorizontalScrollbarLayer(
-    PaintedScrollbarLayerImpl* scrollbar_layer) {
+    ScrollbarLayerImplBase* scrollbar_layer) {
   horizontal_scrollbar_layer_ = scrollbar_layer;
   if (horizontal_scrollbar_layer_)
     horizontal_scrollbar_layer_->set_scroll_layer_id(id());
 }
 
 void LayerImpl::SetVerticalScrollbarLayer(
-    PaintedScrollbarLayerImpl* scrollbar_layer) {
+    ScrollbarLayerImplBase* scrollbar_layer) {
   vertical_scrollbar_layer_ = scrollbar_layer;
   if (vertical_scrollbar_layer_)
     vertical_scrollbar_layer_->set_scroll_layer_id(id());

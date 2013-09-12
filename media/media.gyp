@@ -12,12 +12,12 @@
     # detection of ABI mismatches and prevents silent errors.
     'linux_link_pulseaudio%': 0,
     'conditions': [
-      ['OS=="android" or OS=="ios"', {
-        # Android and iOS don't use ffmpeg.
+      ['OS=="android"', {
+        # Android doesn't use ffmpeg.
         'media_use_ffmpeg%': 0,
-        # Android and iOS don't use libvpx.
+        # Android doesn't use libvpx.
         'media_use_libvpx%': 0,
-      }, {  # 'OS!="android" and OS!="ios"'
+      }, {  # 'OS!="android"'
         'media_use_ffmpeg%': 1,
         'media_use_libvpx%': 1,
       }],
@@ -27,24 +27,31 @@
       }, {
         'use_alsa%': 0,
       }],
-      ['os_posix==1 and OS!="mac" and OS!="ios" and OS!="android" and chromeos!=1', {
+      ['os_posix==1 and OS!="mac" and OS!="android" and chromeos!=1', {
         'use_pulseaudio%': 1,
       }, {
         'use_pulseaudio%': 0,
       }],
     ],
   },
+  'includes': [
+    'media_cdm.gypi',
+  ],
   'targets': [
     {
       'target_name': 'media',
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
+        '../net/net.gyp:net',
+        '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
         '../third_party/opus/opus.gyp:opus',
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
+        'shared_memory_support',
       ],
       'defines': [
         'MEDIA_IMPLEMENTATION',
@@ -110,10 +117,6 @@
         'audio/fake_audio_input_stream.h',
         'audio/fake_audio_output_stream.cc',
         'audio/fake_audio_output_stream.h',
-        'audio/ios/audio_manager_ios.h',
-        'audio/ios/audio_manager_ios.mm',
-        'audio/ios/audio_session_util_ios.h',
-        'audio/ios/audio_session_util_ios.mm',
         'audio/linux/alsa_input.cc',
         'audio/linux/alsa_input.h',
         'audio/linux/alsa_output.cc',
@@ -186,6 +189,7 @@
         'audio/win/wavein_input_win.h',
         'audio/win/waveout_output_win.cc',
         'audio/win/waveout_output_win.h',
+        'base/android/demuxer_android.h',
         'base/android/demuxer_stream_player_params.cc',
         'base/android/demuxer_stream_player_params.h',
         'base/android/media_player_manager.h',
@@ -382,6 +386,8 @@
         'midi/midi_manager_mac.h',
         'midi/midi_port_info.cc',
         'midi/midi_port_info.h',
+        'mp3/mp3_stream_parser.cc',
+        'mp3/mp3_stream_parser.h',
         'video/capture/android/video_capture_device_android.cc',
         'video/capture/android/video_capture_device_android.h',
         'video/capture/fake_video_capture_device.cc',
@@ -399,6 +405,7 @@
         'video/capture/video_capture_device_dummy.h',
         'video/capture/video_capture_proxy.cc',
         'video/capture/video_capture_proxy.h',
+        'video/capture/video_capture_types.cc',
         'video/capture/video_capture_types.h',
         'video/capture/win/capability_list_win.cc',
         'video/capture/win/capability_list_win.h',
@@ -457,13 +464,6 @@
             'USE_NEON'
           ],
         }],
-        ['OS!="ios"', {
-          'dependencies': [
-            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../gpu/gpu.gyp:command_buffer_common',
-            'shared_memory_support',
-          ],
-        }],
         ['media_use_ffmpeg==1', {
           'dependencies': [
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
@@ -508,53 +508,6 @@
           'sources!': [
             'filters/vpx_video_decoder.cc',
             'filters/vpx_video_decoder.h',
-          ],
-        }],
-        ['OS=="ios"', {
-          'includes': [
-            # For shared_memory_support_sources variable.
-            'shared_memory_support.gypi',
-          ],
-          'sources': [
-            'base/media_stub.cc',
-            # These sources are normally built via a dependency on the
-            # shared_memory_support target, but that target is not built on iOS.
-            # Instead, directly build only the files that are needed for iOS.
-            '<@(shared_memory_support_sources)',
-          ],
-          'sources/': [
-            # Exclude everything but iOS-specific files.
-            ['exclude', '\\.(cc|mm)$'],
-            ['include', '_ios\\.(cc|mm)$'],
-            ['include', '(^|/)ios/'],
-            # Re-include specific pieces.
-            # iOS support is limited to audio input only.
-            ['include', '^audio/audio_buffers_state\\.'],
-            ['include', '^audio/audio_input_controller\\.'],
-            ['include', '^audio/audio_manager\\.'],
-            ['include', '^audio/audio_manager_base\\.'],
-            ['include', '^audio/audio_parameters\\.'],
-            ['include', '^audio/fake_audio_consumer\\.'],
-            ['include', '^audio/fake_audio_input_stream\\.'],
-            ['include', '^audio/fake_audio_output_stream\\.'],
-            ['include', '^base/audio_bus\\.'],
-            ['include', '^base/channel_layout\\.'],
-            ['include', '^base/media\\.cc$'],
-            ['include', '^base/media_stub\\.cc$'],
-            ['include', '^base/media_switches\\.'],
-            ['include', '^base/user_input_monitor\\.'],
-            ['include', '^base/vector_math\\.'],
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/AudioToolbox.framework',
-              '$(SDKROOT)/System/Library/Frameworks/AVFoundation.framework',
-              '$(SDKROOT)/System/Library/Frameworks/CoreAudio.framework',
-              '$(SDKROOT)/System/Library/Frameworks/CoreMIDI.framework',
-            ],
-          },
-          'defines': [
-            'DISABLE_USER_INPUT_MONITOR',
           ],
         }],
         ['OS=="android"', {
@@ -865,8 +818,7 @@
             '../build/linux/system.gyp:gtk',
           ],
         }],
-        # ios check is necessary due to http://crbug.com/172682.
-        ['OS!="ios" and (target_arch=="ia32" or target_arch=="x64")', {
+        ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': [
             'media_asm',
             'media_mmx',
@@ -883,15 +835,6 @@
           ],
         }],
       ],
-      'target_conditions': [
-        ['OS=="ios"', {
-          'sources/': [
-            # Pull in specific Mac files for iOS (which have been filtered out
-            # by file name rules).
-            ['include', '^audio/mac/audio_input_mac\\.'],
-          ],
-        }],
-      ],
     },
     {
       'target_name': 'media_unittests',
@@ -899,9 +842,11 @@
       'dependencies': [
         'media',
         'media_test_support',
+        'shared_memory_support',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
+        '../gpu/gpu.gyp:command_buffer_common',
         '../skia/skia.gyp:skia',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -913,13 +858,13 @@
         'audio/audio_input_unittest.cc',
         'audio/audio_input_volume_unittest.cc',
         'audio/audio_low_latency_input_output_unittest.cc',
+        'audio/audio_manager_unittest.cc',
         'audio/audio_output_controller_unittest.cc',
         'audio/audio_output_device_unittest.cc',
         'audio/audio_output_proxy_unittest.cc',
         'audio/audio_parameters_unittest.cc',
         'audio/audio_power_monitor_unittest.cc',
         'audio/fake_audio_consumer_unittest.cc',
-        'audio/ios/audio_manager_ios_unittest.cc',
         'audio/linux/alsa_output_unittest.cc',
         'audio/mac/audio_auhal_mac_unittest.cc',
         'audio/mac/audio_device_listener_mac_unittest.cc',
@@ -1023,12 +968,6 @@
             'USE_NEON'
           ],
         }],
-        ['OS!="ios"', {
-          'dependencies': [
-            '../gpu/gpu.gyp:command_buffer_common',
-            'shared_memory_support',
-          ],
-        }],
         ['media_use_ffmpeg==1', {
           'dependencies': [
             '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
@@ -1038,24 +977,23 @@
             'base/media_file_checker_unittest.cc',
           ],
         }],
-        ['os_posix==1 and OS!="mac" and OS!="ios"', {
+        ['use_alsa==1', {
+          'defines': [
+            'USE_ALSA',
+          ],
+        }],
+        ['use_pulseaudio==1', {
+          'defines': [
+            'USE_PULSEAUDIO',
+          ],
+        }],
+        ['os_posix==1 and OS!="mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
-          ],
-        }],
-        ['OS=="ios"', {
-          'sources/': [
-            ['exclude', '.*'],
-            ['include', '^audio/audio_input_controller_unittest\\.cc$'],
-            ['include', '^audio/audio_input_unittest\\.cc$'],
-            ['include', '^audio/audio_parameters_unittest\\.cc$'],
-            ['include', '^audio/ios/audio_manager_ios_unittest\\.cc$'],
-            ['include', '^base/mock_reader\\.h$'],
-            ['include', '^base/run_all_unittests\\.cc$'],
           ],
         }],
         ['OS=="android"', {
@@ -1104,7 +1042,7 @@
             'audio/audio_low_latency_input_output_unittest.cc',
           ],
         }],
-        ['OS!="ios" and (target_arch=="ia32" or target_arch=="x64")', {
+        ['target_arch=="ia32" or target_arch=="x64"', {
           'sources': [
             'base/simd/convert_rgb_to_yuv_unittest.cc',
           ],
@@ -1161,9 +1099,56 @@
         'video/mock_video_decode_accelerator.h',
       ],
     },
+    {
+      # Minimal target for NaCl and other renderer side media clients which
+      # only need to send audio data across the shared memory to the browser
+      # process.
+      'target_name': 'shared_memory_support',
+      'type': '<(component)',
+      'dependencies': [
+        '../base/base.gyp:base',
+      ],
+      'defines': [
+        'MEDIA_IMPLEMENTATION',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'includes': [
+        'shared_memory_support.gypi',
+      ],
+      'sources': [
+        '<@(shared_memory_support_sources)',
+      ],
+      'conditions': [
+        ['arm_neon==1', {
+          'defines': [
+            'USE_NEON'
+          ],
+        }],
+        ['target_arch=="ia32" or target_arch=="x64"', {
+          'dependencies': [
+            'shared_memory_support_sse'
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'demuxer_bench',
+      'type': 'executable',
+      'dependencies': [
+        'media',
+        '../base/base.gyp:base',
+      ],
+      'sources': [
+        'tools/demuxer_bench/demuxer_bench.cc',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
   ],
   'conditions': [
-    ['OS!="ios" and target_arch!="arm"', {
+    ['target_arch!="arm"', {
       'targets': [
        {
           'target_name': 'media_asm',
@@ -1317,60 +1302,6 @@
           ],
         },
       ], # targets
-    }],
-    ['OS!="ios"', {
-      'includes': [
-        'media_cdm.gypi',
-      ],
-      'targets': [
-        {
-          # Minimal target for NaCl and other renderer side media clients which
-          # only need to send audio data across the shared memory to the browser
-          # process.
-          'target_name': 'shared_memory_support',
-          'type': '<(component)',
-          'dependencies': [
-            '../base/base.gyp:base',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'includes': [
-            'shared_memory_support.gypi',
-          ],
-          'sources': [
-            '<@(shared_memory_support_sources)',
-          ],
-          'conditions': [
-            ['arm_neon==1', {
-              'defines': [
-                'USE_NEON'
-              ],
-            }],
-            ['target_arch=="ia32" or target_arch=="x64"', {
-              'dependencies': [
-                'shared_memory_support_sse'
-              ],
-            }],
-          ],
-        },
-        {
-          'target_name': 'demuxer_bench',
-          'type': 'executable',
-          'dependencies': [
-            'media',
-            '../base/base.gyp:base',
-          ],
-          'sources': [
-            'tools/demuxer_bench/demuxer_bench.cc',
-          ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
-        },
-      ],
     }],
     ['use_x11==1', {
       'targets': [

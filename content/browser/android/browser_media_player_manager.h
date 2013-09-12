@@ -15,19 +15,21 @@
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "content/browser/android/content_video_view.h"
+#include "content/common/media/media_player_messages_enums_android.h"
 #include "content/public/browser/render_view_host_observer.h"
-#include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
 #include "ui/gfx/rect_f.h"
 #include "url/gurl.h"
 
 namespace media {
+class DemuxerAndroid;
 class MediaDrmBridge;
 }
 
 namespace content {
 
+class BrowserDemuxerAndroid;
 class WebContents;
 
 // This class manages all the MediaPlayerAndroid objects. It receives
@@ -75,8 +77,6 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnError(int player_id, int error) OVERRIDE;
   virtual void OnVideoSizeChanged(
       int player_id, int width, int height) OVERRIDE;
-  virtual void OnReadFromDemuxer(int player_id,
-                                 media::DemuxerStream::Type type) OVERRIDE;
   virtual void RequestMediaResources(int player_id) OVERRIDE;
   virtual void ReleaseMediaResources(int player_id) OVERRIDE;
   virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
@@ -84,9 +84,6 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
   virtual media::MediaDrmBridge* GetDrmBridge(int media_keys_id) OVERRIDE;
   virtual void DestroyAllMediaPlayers() OVERRIDE;
-  virtual void OnMediaSeekRequest(int player_id, base::TimeDelta time_to_seek,
-                                  unsigned seek_request_id) OVERRIDE;
-  virtual void OnMediaConfigRequest(int player_id) OVERRIDE;
   virtual void OnProtectedSurfaceRequested(int player_id) OVERRIDE;
   virtual void OnKeyAdded(int media_keys_id,
                           const std::string& session_id) OVERRIDE;
@@ -114,7 +111,7 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnInitialize(
       int player_id,
       const GURL& url,
-      media::MediaPlayerAndroid::SourceType source_type,
+      MediaPlayerHostMsg_Initialize_Type type,
       const GURL& first_party_for_cookies);
   virtual void OnStart(int player_id);
   virtual void OnSeek(int player_id, base::TimeDelta time);
@@ -122,11 +119,6 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnSetVolume(int player_id, double volume);
   virtual void OnReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
-  virtual void OnDemuxerReady(int player_id,
-                              const media::DemuxerConfigs& configs);
-  virtual void OnReadFromDemuxerAck(int player_id,
-                                    const media::DemuxerData& data);
-  void OnMediaSeekRequestAck(int player_id, unsigned seek_request_id);
   void OnInitializeCDM(int media_keys_id, const std::vector<uint8>& uuid);
   void OnGenerateKeyRequest(int media_keys_id,
                             const std::string& type,
@@ -136,7 +128,6 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
                 const std::vector<uint8>& init_data,
                 const std::string& session_id);
   void OnCancelKeyRequest(int media_keys_id, const std::string& session_id);
-  void OnDurationChanged(int player_id, const base::TimeDelta& duration);
   void OnSetMediaKeys(int player_id, int media_keys_id);
 
 #if defined(GOOGLE_TV)
@@ -157,6 +148,25 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   void RemoveDrmBridge(int media_keys_id);
 
  private:
+  // Constructs a MediaPlayerAndroid object. Declared static to permit embedders
+  // to override functionality.
+  //
+  // Objects must call |manager->RequestMediaResources()| before decoding
+  // and |manager->ReleaseMediaSources()| after finishing. This allows the
+  // manager to track decoding resources across the process and free them as
+  // needed.
+  static media::MediaPlayerAndroid* CreateMediaPlayer(
+      int player_id,
+      const GURL& url,
+      MediaPlayerHostMsg_Initialize_Type type,
+      const GURL& first_party_for_cookies,
+      bool hide_url_log,
+      media::MediaPlayerManager* manager,
+      media::DemuxerAndroid* demuxer);
+
+  // Owned by RenderViewHost.
+  BrowserDemuxerAndroid* browser_demuxer_;
+
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;
 

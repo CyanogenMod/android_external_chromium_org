@@ -20,11 +20,12 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
+#include "ui/compositor/compositor.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 
 #if defined(USE_X11)
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #endif
 
 namespace {
@@ -67,9 +68,8 @@ class DemoWindowDelegate : public aura::WindowDelegate {
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE { return false; }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE {
-    return scoped_refptr<ui::Texture>();
-  }
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   SkColor color_;
@@ -110,6 +110,11 @@ class DemoStackingClient : public aura::client::StackingClient {
 int DemoMain() {
   // Create the message-loop here before creating the root window.
   base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+
+  // The ContextFactory must exist before any Compositors are created.
+  bool allow_test_contexts = false;
+  ui::Compositor::InitializeContextFactoryForTests(allow_test_contexts);
+
   aura::Env::GetInstance();
   scoped_ptr<aura::TestScreen> test_screen(aura::TestScreen::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());

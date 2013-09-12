@@ -43,6 +43,7 @@
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
@@ -343,7 +344,7 @@ class CONTENT_EXPORT RenderViewImpl
       int selection_start,
       int selection_end);
   void SimulateImeConfirmComposition(const string16& text,
-                                     const ui::Range& replacement_range);
+                                     const gfx::Range& replacement_range);
 
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Informs the render view that the given plugin has gained or lost focus.
@@ -511,9 +512,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void navigateBackForwardSoon(int offset);
   virtual int historyBackListCount();
   virtual int historyForwardListCount();
-  virtual void postAccessibilityNotification(
-      const WebKit::WebAccessibilityObject& obj,
-      WebKit::WebAccessibilityNotification notification);
+  virtual void postAccessibilityEvent(
+      const WebKit::WebAXObject& obj, WebKit::WebAXEvent event);
   virtual void didUpdateInspectorSetting(const WebKit::WebString& key,
                                          const WebKit::WebString& value);
   virtual WebKit::WebGeolocationClient* geolocationClient();
@@ -767,7 +767,7 @@ class CONTENT_EXPORT RenderViewImpl
       int selection_start,
       int selection_end) OVERRIDE;
   virtual void OnImeConfirmComposition(const string16& text,
-                                       const ui::Range& replacement_range,
+                                       const gfx::Range& replacement_range,
                                        bool keep_selection) OVERRIDE;
   virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
   virtual ui::TextInputType GetTextInputType() OVERRIDE;
@@ -775,7 +775,7 @@ class CONTENT_EXPORT RenderViewImpl
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   virtual void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) OVERRIDE;
-  virtual void GetCompositionRange(ui::Range* range) OVERRIDE;
+  virtual void GetCompositionRange(gfx::Range* range) OVERRIDE;
 #endif
   virtual bool CanComposeInline() OVERRIDE;
   virtual void DidCommitCompositorFrame() OVERRIDE;
@@ -1066,11 +1066,10 @@ class CONTENT_EXPORT RenderViewImpl
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
 
-  // Initializes |media_stream_client_| if needed.
-  // TODO(qinmin): rename this function as it does not guarantee
-  // |media_stream_client_| will be created.
-  // http://crbug.com/278490.
-  void EnsureMediaStreamClient();
+  // Initializes |media_stream_client_|, returning true if successful. Returns
+  // false if it wasn't possible to create a MediaStreamClient (e.g., WebRTC is
+  // disabled) in which case |media_stream_client_| is NULL.
+  bool InitializeMediaStreamClient();
 
   // This callback is triggered when DownloadFavicon completes, either
   // succesfully or with a failure. See DownloadFavicon for more
@@ -1140,7 +1139,7 @@ class CONTENT_EXPORT RenderViewImpl
   static bool ShouldUpdateSelectionTextFromContextMenuParams(
       const string16& selection_text,
       size_t selection_text_offset,
-      const ui::Range& selection_range,
+      const gfx::Range& selection_range,
       const ContextMenuParams& params);
 
   // Starts nav_state_sync_timer_ if it isn't already running.
@@ -1313,7 +1312,7 @@ class CONTENT_EXPORT RenderViewImpl
   size_t selection_text_offset_;
   // Range over the document corresponding to the actual selected text (which
   // could correspond to a substring of |selection_text_|; see above).
-  ui::Range selection_range_;
+  gfx::Range selection_range_;
 
   // External context menu requests we're waiting for. "Internal"
   // (WebKit-originated) context menu events will have an ID of 0 and will not

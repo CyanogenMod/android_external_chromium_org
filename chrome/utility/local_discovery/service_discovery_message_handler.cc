@@ -6,11 +6,9 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "chrome/common/local_discovery/local_discovery_messages.h"
 #include "chrome/utility/local_discovery/service_discovery_client_impl.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/utility/utility_thread.h"
 #include "net/socket/socket_descriptor.h"
 
@@ -18,31 +16,30 @@ namespace local_discovery {
 
 namespace {
 
-bool NeedsSockets() {
-  return !CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoSandbox) &&
-         CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kUtilityProcessEnableMDns);
-}
-
-#if defined(OS_WIN)
+void ClosePlatformSocket(net::SocketDescriptor socket);
 
 class SocketFactory : public net::PlatformSocketFactory {
  public:
   SocketFactory()
-      : socket_v4_(NULL),
-        socket_v6_(NULL) {
-    socket_v4_ = net::CreatePlatformSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    socket_v6_ = net::CreatePlatformSocket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+      : socket_v4_(net::kInvalidSocket),
+        socket_v6_(net::kInvalidSocket) {
+  }
+
+  void SetSockets(net::SocketDescriptor socket_v4,
+                  net::SocketDescriptor socket_v6) {
+    Reset();
+    socket_v4_ = socket_v4;
+    socket_v6_ = socket_v6;
   }
 
   void Reset() {
-    if (socket_v4_ != INVALID_SOCKET) {
-      closesocket(socket_v4_);
-      socket_v4_ = INVALID_SOCKET;
+    if (socket_v4_ != net::kInvalidSocket) {
+      ClosePlatformSocket(socket_v4_);
+      socket_v4_ = net::kInvalidSocket;
     }
-    if (socket_v6_ != INVALID_SOCKET) {
-      closesocket(socket_v6_);
-      socket_v6_ = INVALID_SOCKET;
+    if (socket_v6_ != net::kInvalidSocket) {
+      ClosePlatformSocket(socket_v6_);
+      socket_v6_ = net::kInvalidSocket;
     }
   }
 
@@ -50,9 +47,11 @@ class SocketFactory : public net::PlatformSocketFactory {
     Reset();
   }
 
-  virtual SOCKET CreateSocket(int family, int type, int protocol) OVERRIDE {
-    SOCKET result = INVALID_SOCKET;
-    if (type != SOCK_DGRAM && protocol != IPPROTO_UDP) {
+ protected:
+  virtual net::SocketDescriptor CreateSocket(int family, int type,
+                                             int protocol) OVERRIDE {
+    net::SocketDescriptor result = net::kInvalidSocket;
+    if (type != SOCK_DGRAM) {
       NOTREACHED();
     } else if (family == AF_INET) {
       std::swap(result, socket_v4_);
@@ -62,10 +61,10 @@ class SocketFactory : public net::PlatformSocketFactory {
     return result;
   }
 
-  SOCKET socket_v4_;
-  SOCKET socket_v6_;
-
  private:
+  net::SocketDescriptor socket_v4_;
+  net::SocketDescriptor socket_v6_;
+
   DISALLOW_COPY_AND_ASSIGN(SocketFactory);
 };
 
@@ -75,41 +74,39 @@ base::LazyInstance<SocketFactory>
 class ScopedSocketFactorySetter {
  public:
   ScopedSocketFactorySetter() {
-    if (NeedsSockets()) {
-      net::PlatformSocketFactory::SetInstance(
-          &g_local_discovery_socket_factory.Get());
-    }
+    net::PlatformSocketFactory::SetInstance(
+        &g_local_discovery_socket_factory.Get());
   }
 
   ~ScopedSocketFactorySetter() {
-    if (NeedsSockets()) {
-      net::PlatformSocketFactory::SetInstance(NULL);
-      g_local_discovery_socket_factory.Get().Reset();
-    }
-  }
-
-  static void Initialize() {
-    if (NeedsSockets()) {
-      g_local_discovery_socket_factory.Get();
-    }
+    net::PlatformSocketFactory::SetInstance(NULL);
+    g_local_discovery_socket_factory.Get().Reset();
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScopedSocketFactorySetter);
 };
 
+#if defined(OS_WIN)
+
+void ClosePlatformSocket(net::SocketDescriptor socket) {
+  ::closesocket(socket);
+}
+
+void StaticInitializeSocketFactory() {
+  g_local_discovery_socket_factory.Get().SetSockets(
+      net::CreatePlatformSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
+      net::CreatePlatformSocket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+}
+
 #else  // OS_WIN
 
-class ScopedSocketFactorySetter {
- public:
-  ScopedSocketFactorySetter() {}
+void ClosePlatformSocket(net::SocketDescriptor socket) {
+  ::close(socket);
+}
 
-  static void Initialize() {
-    // TODO(vitalybuka) : implement socket access from sandbox for other
-    // platforms.
-    DCHECK(!NeedsSockets());
-  }
-};
+void StaticInitializeSocketFactory() {
+}
 
 #endif  // OS_WIN
 
@@ -133,6 +130,33 @@ void SendLocalDomainResolved(uint64 id, bool success,
           id, success, address_ipv4, address_ipv6));
 }
 
+
+std::string WatcherUpdateToString(ServiceWatcher::UpdateType update) {
+  switch (update) {
+    case ServiceWatcher::UPDATE_ADDED:
+      return "UPDATE_ADDED";
+    case ServiceWatcher::UPDATE_CHANGED:
+      return "UPDATE_CHANGED";
+    case ServiceWatcher::UPDATE_REMOVED:
+      return "UPDATE_REMOVED";
+    case ServiceWatcher::UPDATE_INVALIDATED:
+      return "UPDATE_INVALIDATED";
+  }
+  return "Unknown Update";
+}
+
+std::string ResolverStatusToString(ServiceResolver::RequestStatus status) {
+  switch (status) {
+    case ServiceResolver::STATUS_SUCCESS:
+      return "STATUS_SUCESS";
+    case ServiceResolver::STATUS_REQUEST_TIMEOUT:
+      return "STATUS_REQUEST_TIMEOUT";
+    case ServiceResolver::STATUS_KNOWN_NONEXISTENT:
+      return "STATUS_KNOWN_NONEXISTENT";
+  }
+  return "Unknown Status";
+}
+
 }  // namespace
 
 ServiceDiscoveryMessageHandler::ServiceDiscoveryMessageHandler() {
@@ -143,7 +167,7 @@ ServiceDiscoveryMessageHandler::~ServiceDiscoveryMessageHandler() {
 }
 
 void ServiceDiscoveryMessageHandler::PreSandboxStartup() {
-  ScopedSocketFactorySetter::Initialize();
+  StaticInitializeSocketFactory();
 }
 
 void ServiceDiscoveryMessageHandler::InitializeMdns() {
@@ -183,6 +207,9 @@ bool ServiceDiscoveryMessageHandler::OnMessageReceived(
     const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ServiceDiscoveryMessageHandler, message)
+#if defined(OS_POSIX)
+    IPC_MESSAGE_HANDLER(LocalDiscoveryMsg_SetSockets, OnSetSockets)
+#endif  // OS_POSIX
     IPC_MESSAGE_HANDLER(LocalDiscoveryMsg_StartWatcher, OnStartWatcher)
     IPC_MESSAGE_HANDLER(LocalDiscoveryMsg_DiscoverServices, OnDiscoverServices)
     IPC_MESSAGE_HANDLER(LocalDiscoveryMsg_DestroyWatcher, OnDestroyWatcher)
@@ -206,6 +233,14 @@ void ServiceDiscoveryMessageHandler::PostTask(
     return;
   discovery_task_runner_->PostTask(from_here, task);
 }
+
+#if defined(OS_POSIX)
+void ServiceDiscoveryMessageHandler::OnSetSockets(
+    const base::FileDescriptor& socket_v4,
+    const base::FileDescriptor& socket_v6) {
+  g_local_discovery_socket_factory.Get().SetSockets(socket_v4.fd, socket_v6.fd);
+}
+#endif  // OS_POSIX
 
 void ServiceDiscoveryMessageHandler::OnStartWatcher(
     uint64 id,
@@ -260,6 +295,7 @@ void ServiceDiscoveryMessageHandler::OnDestroyLocalDomainResolver(uint64 id) {
 void ServiceDiscoveryMessageHandler::StartWatcher(
     uint64 id,
     const std::string& service_type) {
+  VLOG(1) << "StartWatcher with id " << id;
   if (!service_discovery_client_)
     return;
   DCHECK(!ContainsKey(service_watchers_, id));
@@ -274,6 +310,7 @@ void ServiceDiscoveryMessageHandler::StartWatcher(
 
 void ServiceDiscoveryMessageHandler::DiscoverServices(uint64 id,
                                                       bool force_update) {
+  VLOG(1) << "DiscoverServices with id " << id;
   if (!service_discovery_client_)
     return;
   DCHECK(ContainsKey(service_watchers_, id));
@@ -281,15 +318,16 @@ void ServiceDiscoveryMessageHandler::DiscoverServices(uint64 id,
 }
 
 void ServiceDiscoveryMessageHandler::DestroyWatcher(uint64 id) {
+  VLOG(1) << "DestoryWatcher with id " << id;
   if (!service_discovery_client_)
     return;
-  DCHECK(ContainsKey(service_watchers_, id));
   service_watchers_.erase(id);
 }
 
 void ServiceDiscoveryMessageHandler::ResolveService(
     uint64 id,
     const std::string& service_name) {
+  VLOG(1) << "ResolveService with id " << id;
   if (!service_discovery_client_)
     return;
   DCHECK(!ContainsKey(service_resolvers_, id));
@@ -303,9 +341,9 @@ void ServiceDiscoveryMessageHandler::ResolveService(
 }
 
 void ServiceDiscoveryMessageHandler::DestroyResolver(uint64 id) {
+  VLOG(1) << "DestroyResolver with id " << id;
   if (!service_discovery_client_)
     return;
-  DCHECK(ContainsKey(service_resolvers_, id));
   service_resolvers_.erase(id);
 }
 
@@ -313,6 +351,7 @@ void ServiceDiscoveryMessageHandler::ResolveLocalDomain(
     uint64 id,
     const std::string& domain,
     net::AddressFamily address_family) {
+  VLOG(1) << "ResolveLocalDomain with id " << id;
   if (!service_discovery_client_)
     return;
   DCHECK(!ContainsKey(local_domain_resolvers_, id));
@@ -326,13 +365,14 @@ void ServiceDiscoveryMessageHandler::ResolveLocalDomain(
 }
 
 void ServiceDiscoveryMessageHandler::DestroyLocalDomainResolver(uint64 id) {
+  VLOG(1) << "DestroyLocalDomainResolver with id " << id;
   if (!service_discovery_client_)
     return;
-  DCHECK(ContainsKey(local_domain_resolvers_, id));
   local_domain_resolvers_.erase(id);
 }
 
 void ServiceDiscoveryMessageHandler::ShutdownLocalDiscovery() {
+  VLOG(1) << "ShutdownLocalDiscovery";
   discovery_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&ServiceDiscoveryMessageHandler::ShutdownOnIOThread,
@@ -356,6 +396,8 @@ void ServiceDiscoveryMessageHandler::OnServiceUpdated(
     uint64 id,
     ServiceWatcher::UpdateType update,
     const std::string& name) {
+  VLOG(1) << "OnServiceUpdated with id " << id
+          << WatcherUpdateToString(update);
   DCHECK(service_discovery_client_);
   utility_task_runner_->PostTask(FROM_HERE,
       base::Bind(&SendServiceUpdated, id, update, name));
@@ -365,6 +407,9 @@ void ServiceDiscoveryMessageHandler::OnServiceResolved(
     uint64 id,
     ServiceResolver::RequestStatus status,
     const ServiceDescription& description) {
+  VLOG(1) << "OnServiceResolved with id " << id << " and status "
+          << ResolverStatusToString(status);
+
   DCHECK(service_discovery_client_);
   utility_task_runner_->PostTask(FROM_HERE,
       base::Bind(&SendServiceResolved, id, status, description));
@@ -375,6 +420,13 @@ void ServiceDiscoveryMessageHandler::OnLocalDomainResolved(
     bool success,
     const net::IPAddressNumber& address_ipv4,
     const net::IPAddressNumber& address_ipv6) {
+  VLOG(1) << "OnLocalDomainResolved with id " << id;
+
+  if (!address_ipv4.empty())
+    VLOG(1) << "Local comain callback has valid ipv4 address with id " << id;
+  if (!address_ipv6.empty())
+    VLOG(1) << "Local comain callback has valid ipv6 address with id " << id;
+
   DCHECK(service_discovery_client_);
   utility_task_runner_->PostTask(FROM_HERE, base::Bind(&SendLocalDomainResolved,
                                                        id, success,

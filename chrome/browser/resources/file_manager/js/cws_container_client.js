@@ -12,9 +12,11 @@
  * @param {number} height Height of the CWS widget.
  * @param {string} url Share Url for an entry.
  * @param {string} target Target (scheme + host + port) of the widget.
+ * @param {string} token Access token to access CWS.
  * @constructor
  */
-function CWSContainerClient(webView, ext, mime, width, height, url, target) {
+function CWSContainerClient(
+    webView, ext, mime, width, height, url, target, token) {
   this.webView_ = webView;
   this.ext_ = ext;
   this.mime_ = mime;
@@ -22,6 +24,7 @@ function CWSContainerClient(webView, ext, mime, width, height, url, target) {
   this.height_ = height;
   this.url_ = url;
   this.target_ = target;
+  this.token_ = token;
 
   this.loaded_ = false;
   this.loading_ = false;
@@ -36,6 +39,19 @@ CWSContainerClient.prototype = {
 };
 
 /**
+ * Events CWSContainerClient fires
+ *
+ * @enum {string}
+ * @const
+ */
+CWSContainerClient.Events = {
+  LOADED: 'CWSContainerClient.Events.LOADED',
+  LOAD_FAILED: 'CWSContainerClient.Events.LOAD_FAILED',
+  REQUEST_INSTALL: 'CWSContainerClient.Events.REQUEST_INSTALL'
+};
+Object.freeze(CWSContainerClient.Events);
+
+/**
  * Handles messages from the widget
  * @param {Event} event Message event.
  * @private
@@ -47,7 +63,10 @@ CWSContainerClient.prototype.onMessage_ = function(event) {
   var data = event.data;
   switch (data['message']) {
     case 'widget_loaded':
-      // Do nothing. Waits for user action and next message.
+      this.onWidgetLoaded_();
+      break;
+    case 'widget_load_failed':
+      this.onWidgetLoadFailed_();
       break;
     case 'before_install':
       this.sendInstallRequest_(data['item_id']);
@@ -70,12 +89,28 @@ CWSContainerClient.prototype.onLoadStop_ = function(event) {
 };
 
 /**
+ * Called when the widget is loaded successfully.
+ * @private
+ */
+CWSContainerClient.prototype.onWidgetLoaded_ = function() {
+  cr.dispatchSimpleEvent(this, CWSContainerClient.Events.LOADED);
+};
+
+/**
+ * Called when the widget is failed to load.
+ * @private
+ */
+CWSContainerClient.prototype.onWidgetLoadFailed_ = function() {
+  this.sendWidgetLoadFailed_();
+};
+
+/**
  * Called when receiving the 'loadabort' event from <webview>.
  * @param {Event} event Message event.
  * @private
  */
 CWSContainerClient.prototype.onLoadAbort_ = function(event) {
-  this.sendWebviewLoadAbort_();
+  this.sendWidgetLoadFailed_();
 };
 
 /**
@@ -92,11 +127,11 @@ CWSContainerClient.prototype.onInstallCompleted = function(result, itemId) {
 };
 
 /**
- * Send the abort event to the suggest-app dialog.
+ * Send the fail message to the suggest-app dialog.
  * @private
  */
-CWSContainerClient.prototype.sendWebviewLoadAbort_ = function() {
-  this.dispatchEvent(new cr.Event('webview-load-abort'));
+CWSContainerClient.prototype.sendWidgetLoadFailed_ = function() {
+  cr.dispatchSimpleEvent(this, CWSContainerClient.Events.LOAD_FAILED);
 };
 
 /**
@@ -106,7 +141,7 @@ CWSContainerClient.prototype.sendWebviewLoadAbort_ = function() {
  * @private
  */
 CWSContainerClient.prototype.sendInstallRequest_ = function(itemId) {
-  var event = new cr.Event('install-request');
+  var event = new cr.Event(CWSContainerClient.Events.REQUEST_INSTALL);
   event.itemId = itemId;
   this.dispatchEvent(event);
 };
@@ -150,11 +185,12 @@ CWSContainerClient.prototype.postInstallSuccessMessage_ = function(itemId) {
 CWSContainerClient.prototype.postInitializeMessage_ = function() {
   var message = {
     message: 'initialize',
-    hl: 'en',
+    hl: util.getCurrentLocaleOrDefault(),
     widgth: this.width_,
     height: this.height_,
     file_extension: this.ext_,
     mime_type: this.mime_,
+    access_token: this.token_,
     v: 1
   };
 
@@ -207,4 +243,3 @@ CWSContainerClient.prototype.abort = function() {
 CWSContainerClient.prototype.dispose = function() {
   this.abort();
 };
-

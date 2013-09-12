@@ -123,7 +123,7 @@ static std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-bool LoadAudiosesDll() {
+static bool LoadAudiosesDll() {
   static const wchar_t* const kAudiosesDLL =
       L"%WINDIR%\\system32\\audioses.dll";
 
@@ -132,7 +132,7 @@ bool LoadAudiosesDll() {
   return (LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH) != NULL);
 }
 
-bool CanCreateDeviceEnumerator() {
+static bool CanCreateDeviceEnumerator() {
   ScopedComPtr<IMMDeviceEnumerator> device_enumerator;
   HRESULT hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
                                                 NULL, CLSCTX_INPROC_SERVER);
@@ -142,6 +142,14 @@ bool CanCreateDeviceEnumerator() {
   CHECK_NE(hr, CO_E_NOTINITIALIZED);
 
   return SUCCEEDED(hr);
+}
+
+static std::string GetDeviceID(IMMDevice* device) {
+  ScopedCoMem<WCHAR> device_id_com;
+  std::string device_id;
+  if (SUCCEEDED(device->GetId(&device_id_com)))
+    WideToUTF8(device_id_com, wcslen(device_id_com), &device_id);
+  return device_id;
 }
 
 bool CoreAudioUtil::IsSupported() {
@@ -263,6 +271,12 @@ ScopedComPtr<IMMDevice> CoreAudioUtil::CreateDefaultDevice(EDataFlow data_flow,
   return endpoint_device;
 }
 
+std::string CoreAudioUtil::GetDefaultOutputDeviceID() {
+  DCHECK(IsSupported());
+  ScopedComPtr<IMMDevice> device(CreateDefaultDevice(eRender, eConsole));
+  return device ? GetDeviceID(device) : std::string();
+}
+
 ScopedComPtr<IMMDevice> CoreAudioUtil::CreateDevice(
     const std::string& device_id) {
   DCHECK(IsSupported());
@@ -289,17 +303,14 @@ HRESULT CoreAudioUtil::GetDeviceName(IMMDevice* device, AudioDeviceName* name) {
   // Retrieve unique name of endpoint device.
   // Example: "{0.0.1.00000000}.{8db6020f-18e3-4f25-b6f5-7726c9122574}".
   AudioDeviceName device_name;
-  ScopedCoMem<WCHAR> endpoint_device_id;
-  HRESULT hr = device->GetId(&endpoint_device_id);
-  if (FAILED(hr))
-    return hr;
-  WideToUTF8(endpoint_device_id, wcslen(endpoint_device_id),
-             &device_name.unique_id);
+  device_name.unique_id = GetDeviceID(device);
+  if (device_name.unique_id.empty())
+    return E_FAIL;
 
   // Retrieve user-friendly name of endpoint device.
   // Example: "Microphone (Realtek High Definition Audio)".
   ScopedComPtr<IPropertyStore> properties;
-  hr = device->OpenPropertyStore(STGM_READ, properties.Receive());
+  HRESULT hr = device->OpenPropertyStore(STGM_READ, properties.Receive());
   if (FAILED(hr))
     return hr;
   base::win::ScopedPropVariant friendly_name;
@@ -365,6 +376,41 @@ std::string CoreAudioUtil::GetAudioControllerID(IMMDevice* device,
   return controller_id;
 }
 
+std::string CoreAudioUtil::GetMatchingOutputDeviceID(
+    const std::string& input_device_id) {
+  ScopedComPtr<IMMDevice> input_device(CreateDevice(input_device_id));
+  if (!input_device)
+    return std::string();
+
+  // See if we can get id of the associated controller.
+  ScopedComPtr<IMMDeviceEnumerator> enumerator(CreateDeviceEnumerator());
+  std::string controller_id(GetAudioControllerID(input_device, enumerator));
+  if (controller_id.empty())
+    return std::string();
+
+  // Now enumerate the available (and active) output devices and see if any of
+  // them is associated with the same controller.
+  ScopedComPtr<IMMDeviceCollection> collection;
+  enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE,
+      collection.Receive());
+  if (!collection)
+    return std::string();
+
+  UINT count = 0;
+  collection->GetCount(&count);
+  ScopedComPtr<IMMDevice> output_device;
+  for (UINT i = 0; i < count; ++i) {
+    collection->Item(i, output_device.Receive());
+    std::string output_controller_id(CoreAudioUtil::GetAudioControllerID(
+        output_device, enumerator));
+    if (output_controller_id == controller_id)
+      break;
+    output_device = NULL;
+  }
+
+  return output_device ? GetDeviceID(output_device) : std::string();
+}
+
 std::string CoreAudioUtil::GetFriendlyName(const std::string& device_id) {
   DCHECK(IsSupported());
   ScopedComPtr<IMMDevice> audio_device = CreateDevice(device_id);
@@ -387,16 +433,8 @@ bool CoreAudioUtil::DeviceIsDefault(EDataFlow flow,
   if (!device)
     return false;
 
-  ScopedCoMem<WCHAR> default_device_id;
-  HRESULT hr = device->GetId(&default_device_id);
-  if (FAILED(hr))
-    return false;
-
-  std::string str_default;
-  WideToUTF8(default_device_id, wcslen(default_device_id), &str_default);
-  if (device_id.compare(str_default) != 0)
-    return false;
-  return true;
+  std::string str_default(GetDeviceID(device));
+  return device_id.compare(str_default) == 0;
 }
 
 EDataFlow CoreAudioUtil::GetDataFlow(IMMDevice* device) {

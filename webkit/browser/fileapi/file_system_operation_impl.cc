@@ -31,20 +31,12 @@ using webkit_blob::ScopedFile;
 
 namespace fileapi {
 
-FileSystemOperationImpl::FileSystemOperationImpl(
+FileSystemOperation* FileSystemOperation::Create(
     const FileSystemURL& url,
     FileSystemContext* file_system_context,
-    scoped_ptr<FileSystemOperationContext> operation_context)
-    : file_system_context_(file_system_context),
-      operation_context_(operation_context.Pass()),
-      async_file_util_(NULL),
-      peer_handle_(base::kNullProcessHandle),
-      pending_operation_(kOperationNone),
-      weak_factory_(this) {
-  DCHECK(operation_context_.get());
-  operation_context_->DetachUserDataThread();
-  async_file_util_ = file_system_context_->GetAsyncFileUtil(url.type());
-  DCHECK(async_file_util_);
+    scoped_ptr<FileSystemOperationContext> operation_context) {
+  return new FileSystemOperationImpl(url, file_system_context,
+                                     operation_context.Pass());
 }
 
 FileSystemOperationImpl::~FileSystemOperationImpl() {
@@ -74,11 +66,15 @@ void FileSystemOperationImpl::CreateDirectory(const FileSystemURL& url,
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
-void FileSystemOperationImpl::Copy(const FileSystemURL& src_url,
-                                   const FileSystemURL& dest_url,
-                                   const StatusCallback& callback) {
+void FileSystemOperationImpl::Copy(
+    const FileSystemURL& src_url,
+    const FileSystemURL& dest_url,
+    const CopyProgressCallback& progress_callback,
+    const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
   DCHECK(!recursive_operation_delegate_);
+
+  // TODO(hidehiko): Support |progress_callback|. (crbug.com/278038).
   recursive_operation_delegate_.reset(
       new CopyOrMoveOperationDelegate(
           file_system_context(),
@@ -283,13 +279,17 @@ void FileSystemOperationImpl::RemoveDirectory(
 void FileSystemOperationImpl::CopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   DCHECK(SetPendingOperationType(kOperationCopy));
   DCHECK(src_url.IsInSameFileSystem(dest_url));
+
+  // TODO(hidehiko): Support progress_callback.
   GetUsageAndQuotaThenRunTask(
       dest_url,
       base::Bind(&FileSystemOperationImpl::DoCopyFileLocal,
-                 weak_factory_.GetWeakPtr(), src_url, dest_url, callback),
+                 weak_factory_.GetWeakPtr(), src_url, dest_url,
+                 progress_callback, callback),
       base::Bind(callback, base::PLATFORM_FILE_ERROR_FAILED));
 }
 
@@ -316,6 +316,22 @@ base::PlatformFileError FileSystemOperationImpl::SyncGetPlatformPath(
       file_system_context()->sandbox_delegate()->sync_file_util();
   file_util->GetLocalFilePath(operation_context_.get(), url, platform_path);
   return base::PLATFORM_FILE_OK;
+}
+
+FileSystemOperationImpl::FileSystemOperationImpl(
+    const FileSystemURL& url,
+    FileSystemContext* file_system_context,
+    scoped_ptr<FileSystemOperationContext> operation_context)
+    : file_system_context_(file_system_context),
+      operation_context_(operation_context.Pass()),
+      async_file_util_(NULL),
+      peer_handle_(base::kNullProcessHandle),
+      pending_operation_(kOperationNone),
+      weak_factory_(this) {
+  DCHECK(operation_context_.get());
+  operation_context_->DetachUserDataThread();
+  async_file_util_ = file_system_context_->GetAsyncFileUtil(url.type());
+  DCHECK(async_file_util_);
 }
 
 void FileSystemOperationImpl::GetUsageAndQuotaThenRunTask(
@@ -384,9 +400,10 @@ void FileSystemOperationImpl::DoCreateDirectory(
 void FileSystemOperationImpl::DoCopyFileLocal(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    const CopyFileProgressCallback& progress_callback,
     const StatusCallback& callback) {
   async_file_util_->CopyFileLocal(
-      operation_context_.Pass(), src_url, dest_url,
+      operation_context_.Pass(), src_url, dest_url, progress_callback,
       base::Bind(&FileSystemOperationImpl::DidFinishOperation,
                  weak_factory_.GetWeakPtr(), callback));
 }
@@ -453,8 +470,12 @@ void FileSystemOperationImpl::DidFinishOperation(
     DCHECK_EQ(kOperationTruncate, pending_operation_);
 
     StatusCallback cancel_callback = cancel_callback_;
-    callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
-    cancel_callback.Run(base::PLATFORM_FILE_OK);
+    callback.Run(rv);
+
+    // Return OK only if we succeeded to stop the operation.
+    cancel_callback.Run(rv == base::PLATFORM_FILE_ERROR_ABORT ?
+                        base::PLATFORM_FILE_OK :
+                        base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
   } else {
     callback.Run(rv);
   }

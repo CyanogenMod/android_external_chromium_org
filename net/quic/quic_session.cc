@@ -285,6 +285,9 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
     AddPrematurelyClosedStream(stream->id());
   }
   closed_streams_.push_back(it->second);
+  if (ContainsKey(zombie_streams_, stream->id())) {
+    zombie_streams_.erase(stream->id());
+  }
   stream_map_.erase(it);
   stream->OnClose();
 }
@@ -425,12 +428,13 @@ ReliableQuicStream* QuicSession::GetIncomingReliableStream(
       connection()->SendConnectionClose(QUIC_INVALID_STREAM_ID);
       return NULL;
     }
-    if (largest_peer_created_stream_id_ != 0) {
-      for (QuicStreamId id = largest_peer_created_stream_id_ + 2;
-           id < stream_id;
-           id += 2) {
-        implicitly_created_streams_.insert(id);
-      }
+    if (largest_peer_created_stream_id_ == 0) {
+      largest_peer_created_stream_id_= 1;
+    }
+    for (QuicStreamId id = largest_peer_created_stream_id_ + 2;
+         id < stream_id;
+         id += 2) {
+      implicitly_created_streams_.insert(id);
     }
     largest_peer_created_stream_id_ = stream_id;
   }

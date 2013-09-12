@@ -70,6 +70,7 @@ v8.log
 /chrome/browser/intents/internal/
 /chrome/browser/performance_monitor/performance_monitor.xml
 /chrome/browser/protector/internal
+/chrome/browser/resources/settings_internal/
 /chrome/browser/resources/software_rendering_list
 /chrome/browser/search_engines/prepopulated_engines.xml
 /chrome/browser/spellchecker/internal
@@ -186,6 +187,7 @@ v8.log
 /third_party/chromeos_login_manager
 /third_party/chromeos_text_input
 /third_party/chromite
+/third_party/cld_2/src
 /third_party/cros
 /third_party/cros_dbus_cplusplus/source
 /third_party/cros_system_api

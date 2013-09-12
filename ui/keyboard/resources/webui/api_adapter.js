@@ -6,6 +6,10 @@ function insertText(text) {
   chrome.send('insertText', [ text ]);
 }
 
+function sendKeyEvent(event) {
+  chrome.send('sendKeyEvent', [ event ]);
+}
+
 (function(exports) {
   /**
    * An array to save callbacks of each request.
@@ -18,6 +22,16 @@ function insertText(text) {
    * @type {number}
    */
   var requestId = 0;
+
+  /**
+   * Called when a text input box gets focus.
+   * @param {object} inputContext Describes an input context. It only contains
+   *     the type of text input box at present and only "password", "number" and
+   *     "text" are supported.
+   */
+  function OnTextInputBoxFocused(inputContext) {
+    // TODO(bshe): Making keyboard aware of inputContext.
+  }
 
   /**
    * Gets the context of the focused input field. The context is returned as a
@@ -57,6 +71,7 @@ function insertText(text) {
     requestIdCallbackMap[requestId](inputContext);
   }
 
+  exports.OnTextInputBoxFocused = OnTextInputBoxFocused;
   exports.getInputContext = GetInputContext;
   exports.cancelRequest = CancelRequest;
   exports.GetInputContextCallback = GetInputContextCallback;

@@ -13,6 +13,7 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -161,6 +162,11 @@ void QueueProfileDirectoryForDeletion(const base::FilePath& path) {
 bool IsProfileMarkedForDeletion(const base::FilePath& profile_path) {
   return std::find(ProfilesToDelete().begin(), ProfilesToDelete().end(),
       profile_path) != ProfilesToDelete().end();
+}
+
+void ForceIncognitoModeOnProfile(Profile* profile) {
+  IncognitoModePrefs::SetAvailability(profile->GetPrefs(),
+                                      IncognitoModePrefs::FORCED);
 }
 
 #if defined(OS_CHROMEOS)
@@ -513,8 +519,12 @@ void ProfileManager::CreateProfileAsync(
   // Call or enqueue the callback.
   if (!callback.is_null()) {
     if (iter != profiles_info_.end() && info->created) {
-        // Profile has already been created. Run callback immediately.
-        callback.Run(info->profile.get(), Profile::CREATE_STATUS_INITIALIZED);
+      Profile* profile = info->profile.get();
+      // If this was the guest profile, finish setting its incognito status.
+      if (profile->GetPath() == ProfileManager::GetGuestProfilePath())
+        ForceIncognitoModeOnProfile(profile);
+      // Profile has already been created. Run callback immediately.
+      callback.Run(profile, Profile::CREATE_STATUS_INITIALIZED);
     } else {
       // Profile is either already in the process of being created, or new.
       // Add callback to the list.
@@ -733,8 +743,37 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
 void ProfileManager::DoFinalInitForServices(Profile* profile,
                                             bool go_off_the_record) {
 #if defined(ENABLE_EXTENSIONS)
+  // Set up a field trial to determine the effectiveness of deferring
+  // creation of background extension RenderViews.
+  CR_DEFINE_STATIC_LOCAL(scoped_refptr<base::FieldTrial>, trial, ());
+  static bool defer_creation = false;
+
+  if (!trial.get()) {
+    const base::FieldTrial::Probability kDivisor = 100;
+
+    // Enable the deferred creation for 50% of the users.
+    base::FieldTrial::Probability probability_per_group = 50;
+
+    // After August 31, 2014 builds, it will always be in default group
+    // (defer_creation == false).
+    trial = base::FieldTrialList::FactoryGetFieldTrial(
+        "DeferBackgroundExtensionCreation",
+        kDivisor,
+        "RateLimited",
+        2014,
+        8,
+        31,
+        base::FieldTrial::ONE_TIME_RANDOMIZED,
+        NULL);
+
+    // Add group for deferred creation of background extension RenderViews.
+    int defer_creation_group =
+        trial->AppendGroup("Deferred", probability_per_group);
+    defer_creation = trial->group() == defer_creation_group;
+  }
+
   extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
-      !go_off_the_record);
+      !go_off_the_record, defer_creation);
   // During tests, when |profile| is an instance of TestingProfile,
   // ExtensionSystem might not create an ExtensionService.
   if (extensions::ExtensionSystem::Get(profile)->extension_service()) {
@@ -807,6 +846,10 @@ void ProfileManager::OnProfileCreated(Profile* profile,
     profile = NULL;
     profiles_info_.erase(iter);
   }
+
+  // If this was the guest profile, finish setting its incognito status.
+  if (profile->GetPath() == ProfileManager::GetGuestProfilePath())
+    ForceIncognitoModeOnProfile(profile);
 
   // Invoke CREATED callback for incognito profiles.
   if (profile && go_off_the_record)

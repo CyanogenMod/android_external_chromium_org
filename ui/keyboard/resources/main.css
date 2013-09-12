@@ -32,7 +32,7 @@ kb-key {
   border-radius: 2px;
   color: #ffffff;
   display: -webkit-box;
-  font-family: 'Open Sans', sans-serif;
+  font-family: 'Open Sans', 'Noto Sans UI', sans-serif;
   font-weight: 300;
   margin-left: 7px;
   position: relative;
@@ -52,7 +52,7 @@ kb-key::x-key {
   top: 0;
 }
 
-kb-key::x-superscript {
+kb-key::x-hinttext {
   color: #7c7c7c;
   font-size: 70%;
   position: absolute;
@@ -64,15 +64,15 @@ kb-key::x-key[inverted] {
   color: #7c7c7c;
 }
 
-kb-key::x-superscript[inverted] {
+kb-key::x-hinttext[inverted] {
   color: #ffffff;
 }
 
 /**
 * Controls whether the shift key should be highlighted or not.
-* Only highlights if we are in a lockable keyboard which is not locked.
+* Only highlights if we are in the upper keyset, but not capslocked.
 */
-kb-keyboard:not(.locked) kb-keyset[lockable] kb-shift-key {
+kb-keyboard:not(.caps-locked)[keyset=upper] kb-shift-key {
   color: lightblue;
 }
 
@@ -95,7 +95,7 @@ kb-altkey::x-key {
   text-align: center;
 }
 
-.locked kb-shift-key,
+.caps-locked kb-shift-key,
 .active {
   background-color: #848490 !important;
   border-top: 2px solid #A9A9AF !important;
@@ -159,6 +159,8 @@ kb-altkey::x-key {
 
 .microphone {
   background-image: url('images/microphone.svg');
+  background-position: 4%;
+  background-size: 25%;
 }
 
 .audio .microphone {

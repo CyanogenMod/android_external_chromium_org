@@ -59,12 +59,23 @@
     "channel": "stable",
     "extension_types": ["platform_app"]
   },
-  "background": {
-    "channel": "stable",
-    "extension_types": [
-      "extension", "legacy_packaged_app", "hosted_app"
-    ]
-  },
+  "background": [
+    {
+      "channel": "stable",
+      "extension_types": [
+        "extension", "legacy_packaged_app", "hosted_app"
+      ]
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["platform_app"],
+      "whitelist": [
+        "5B5DA6D054D10DB917AF7D9EAE3C56044D1B0B03",  // http://crbug.com/286542
+        "2843C1E82A9B6C6FB49308FDDF4E157B6B44BC2B",  // http://crbug.com/286542
+        "3F596D221126DCDFD115CFAA2E5A3141806358AD"   // http://crbug.com/286542
+      ]
+    }
+  ],
   "bluetooth": {
     "channel": "dev",
     "extension_types": ["platform_app"]
@@ -81,6 +92,11 @@
   "bookmarks": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
+  },
+  "brailleDisplayPrivate": {
+    "channel": "dev",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "location": "component"
   },
   "browsingData": {
     "channel": "stable",
@@ -161,7 +177,9 @@
     "channel": "dev",
     "extension_types": ["platform_app"],
     "whitelist": [
-        "lphgohfeebnhcpiohjndkgbhhkoapkjc",  // Apps Debugger
+        "ohmmkhmmmpcnpikjeljgnaoabkaalbgc", // Published Apps developer tool.
+        // TODO(grv): clean up once Apps developer tool is published.
+        "lphgohfeebnhcpiohjndkgbhhkoapkjc",  // Apps Developer tool.
         "gonnpeheodhmhdjiimoiheniambmdcco",  // Apps Editor old.
         // TODO(grv) : clean up once after publish.
         "cbelnpbjogfbjamhpbofhlnklecjpido"  // Apps Editor published.
@@ -198,6 +216,10 @@
       "whitelist": ["80B9DC58E5210749F052F5B4DB239C50CF72AEB6"]
     }
   ],
+  "dns": {
+    "channel": "dev",
+    "extension_types": ["extension", "platform_app"]
+  },
   "downloads": {
     "channel": "beta",
     "extension_types": ["extension"]
@@ -262,7 +284,7 @@
     "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
   }],
   "fileSystem.directory": [{
-    "channel": "trunk",
+    "channel": "dev",
     "extension_types": ["platform_app"]
   }],
   "fileSystem.retainEntries": [{
@@ -305,6 +327,10 @@
       "legacy_packaged_app"
     ],
     "location": "component"
+  },
+  "idltest": {
+    "channel": "trunk",
+    "extension_types": ["extension"]
   },
   "idle": {
     "channel": "stable",
@@ -391,9 +417,9 @@
     "extension_types": [ "platform_app" ],
     "whitelist": [
       "dhgjflpimlbndbpamnkoepaacagejgda",
-      "ebpbnabdhheoknfklmpddcdijjkmklkp",  // G+ Photos staging
-      "efjnaogkjbogokcnohkmnjdojkikgobo",  // G+ Photos prod
-      "ejegoaikibpmikoejfephaneibodccma",  // G+ Photos dev
+      "5B5DA6D054D10DB917AF7D9EAE3C56044D1B0B03",  // http://crbug.com/286542
+      "2843C1E82A9B6C6FB49308FDDF4E157B6B44BC2B",  // http://crbug.com/286542
+      "3F596D221126DCDFD115CFAA2E5A3141806358AD",  // http://crbug.com/286542
       "F7FA7ABC1ECB89BA8EE6656847EFABBF43BB9BCA"
     ]
   },
@@ -421,6 +447,18 @@
       "mlocfejafidcakdddnndjdngfmncfbeg",  // CCD Development
       "ganomidahfnpdchomfgdoppjmmedlhia",  // CCD Testing
       "eemlkeanncmjljgehlbplemhmdmalhdc"   // CCD Release
+    ]
+  },
+  "mdns": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "whitelist": [
+      "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
     ]
   },
   "musicManagerPrivate": {
@@ -514,7 +552,9 @@
     "channel": "dev",
     "extension_types": ["platform_app"],
     "whitelist": [
-      "nmedaodmkamdcnmfceajookiaicfnkhd"
+      "nmedaodmkamdcnmfceajookiaicfnkhd", // Recovery API Dev App
+      "jdnamgpmgjhphalijaakigbpccepfllk", // Chrome OS Recovery Tool local
+      "jobolcahaebjkjhdedcfcnfkgpjcmkcg" // Chrome OS Recovery Tool CWS
     ]
   },
   "rtcPrivate": {
@@ -544,6 +584,10 @@
   "sessions": {
     "channel": "dev",
     "extension_types": ["extension", "legacy_packaged_app"]
+  },
+  "signedInDevices": {
+    "channel": "dev",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
   },
   "streamsPrivate": {
     "channel": "stable",
@@ -662,6 +706,13 @@
   "videoCapture": {
     "channel": "stable",
     "extension_types": ["platform_app"]
+  },
+  "virtualKeyboardPrivate": {
+    "channel": "stable",
+    "whitelist": [
+      "mppnpdlheglhdfmldimlhpnegondlapf"  // System-level virtual keyboard.
+    ],
+    "extension_types": ["extension"]
   },
   "wallpaperPrivate": {
     "channel": "stable",

@@ -100,7 +100,6 @@
 #include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/media/midi_dispatcher.h"
 #include "content/renderer/media/render_media_log.h"
-#include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/webmediaplayer_impl.h"
 #include "content/renderer/media/webmediaplayer_ms.h"
@@ -151,7 +150,7 @@
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebAccessibilityObject.h"
+#include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDOMEvent.h"
 #include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
@@ -249,8 +248,11 @@
 #include "content/renderer/pepper/plugin_module.h"
 #endif
 
-using WebKit::WebAccessibilityNotification;
-using WebKit::WebAccessibilityObject;
+#if defined(ENABLE_WEBRTC)
+#include "content/renderer/media/rtc_peer_connection_handler.h"
+#endif
+
+using WebKit::WebAXObject;
 using WebKit::WebApplicationCacheHost;
 using WebKit::WebApplicationCacheHostClient;
 using WebKit::WebCString;
@@ -539,7 +541,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
 }
 
 static void NotifyTimezoneChange(WebKit::WebFrame* frame) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Context::Scope context_scope(frame->mainWorldScriptContext());
   v8::Date::DateTimeConfigurationChangeNotification();
   WebKit::WebFrame* child = frame->firstChild();
@@ -792,7 +794,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       history_list_length_(0),
       target_url_status_(TARGET_NONE),
       selection_text_offset_(0),
-      selection_range_(ui::Range::InvalidRange()),
+      selection_range_(gfx::Range::InvalidRange()),
 #if defined(OS_ANDROID)
       top_controls_constraints_(cc::BOTH),
 #endif
@@ -829,9 +831,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       pepper_last_mouse_event_target_(NULL),
 #endif
       enumeration_completion_id_(0),
-#if defined(OS_ANDROID)
       load_progress_tracker_(new LoadProgressTracker(this)),
-#endif
       session_storage_namespace_id_(params->session_storage_namespace_id),
       decrement_shared_popup_at_destruction_(false),
       handling_select_range_(false),
@@ -1276,7 +1276,7 @@ void RenderViewImpl::SimulateImeSetComposition(
 
 void RenderViewImpl::SimulateImeConfirmComposition(
     const string16& text,
-    const ui::Range& replacement_range) {
+    const gfx::Range& replacement_range) {
   OnImeConfirmComposition(text, replacement_range, false);
 }
 
@@ -2289,6 +2289,7 @@ WebView* RenderViewImpl::createView(
     params.frame_name = frame_name;
   params.opener_frame_id = creator->identifier();
   params.opener_url = creator->document().url();
+  params.opener_top_level_frame_url = creator->top()->document().url();
   GURL security_url(creator->document().securityOrigin().toString().utf8());
   if (!security_url.is_valid())
     security_url = GURL();
@@ -2414,12 +2415,22 @@ void RenderViewImpl::didAddMessageToConsole(
       NOTREACHED();
   }
 
+  if (shouldReportDetailedMessageForSource(source_name)) {
+    FOR_EACH_OBSERVER(
+        RenderViewObserver,
+        observers_,
+        DetailedConsoleMessageAdded(message.text,
+                                    source_name,
+                                    stack_trace,
+                                    source_line,
+                                    static_cast<int32>(log_severity)));
+  }
+
   Send(new ViewHostMsg_AddMessageToConsole(routing_id_,
                                            static_cast<int32>(log_severity),
                                            message.text,
                                            static_cast<int32>(source_line),
-                                           source_name,
-                                           stack_trace));
+                                           source_name));
 }
 
 void RenderViewImpl::printPage(WebFrame* frame) {
@@ -2660,7 +2671,7 @@ void RenderViewImpl::showContextMenu(
     selection_text_ = params.selection_text;
     // TODO(asvitkine): Text offset and range is not available in this case.
     selection_text_offset_ = 0;
-    selection_range_ = ui::Range(0, selection_text_.length());
+    selection_range_ = gfx::Range(0, selection_text_.length());
     Send(new ViewHostMsg_SelectionChanged(routing_id_,
                                           selection_text_,
                                           selection_text_offset_,
@@ -2833,12 +2844,10 @@ int RenderViewImpl::historyForwardListCount() {
   return history_list_length_ - historyBackListCount() - 1;
 }
 
-void RenderViewImpl::postAccessibilityNotification(
-    const WebAccessibilityObject& obj,
-    WebAccessibilityNotification notification) {
+void RenderViewImpl::postAccessibilityEvent(
+    const WebAXObject& obj, WebKit::WebAXEvent event) {
   if (renderer_accessibility_) {
-    renderer_accessibility_->HandleWebAccessibilityNotification(
-        obj, notification);
+    renderer_accessibility_->HandleWebAccessibilityEvent(obj, event);
   }
 }
 
@@ -2985,9 +2994,11 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 #if defined(ENABLE_WEBRTC)
-  EnsureMediaStreamClient();
+  if (!InitializeMediaStreamClient())
+    return NULL;
+
 #if !defined(GOOGLE_TV)
-  if (media_stream_client_ && media_stream_client_->IsMediaStream(url)) {
+  if (media_stream_client_->IsMediaStream(url)) {
 #if defined(OS_ANDROID) && defined(ARCH_CPU_ARMEL)
     bool found_neon =
         (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
@@ -3010,24 +3021,24 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
 
   scoped_refptr<cc::ContextProvider> context_provider =
       RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  if (!context_provider.get()) {
-    LOG(ERROR) << "Failed to get context3d for media player";
-    return NULL;
-  }
-
-  if (!media_player_proxy_) {
-    media_player_proxy_ = new WebMediaPlayerProxyAndroid(
-        this, media_player_manager_.get());
-  }
-
   scoped_ptr<StreamTextureFactory> stream_texture_factory;
   if (UsingSynchronousRendererCompositor()) {
     SynchronousCompositorFactory* factory =
         SynchronousCompositorFactory::GetInstance();
     stream_texture_factory = factory->CreateStreamTextureFactory(routing_id_);
   } else {
+    if (!context_provider.get()) {
+      LOG(ERROR) << "Failed to get context3d for media player";
+      return NULL;
+    }
+
     stream_texture_factory.reset(new StreamTextureFactoryImpl(
         context_provider->Context3d(), gpu_channel_host, routing_id_));
+  }
+
+  if (!media_player_proxy_) {
+    media_player_proxy_ = new WebMediaPlayerProxyAndroid(
+        this, media_player_manager_.get());
   }
 
   scoped_ptr<WebMediaPlayerAndroid> web_media_player_android(
@@ -4044,27 +4055,31 @@ BrowserPluginManager* RenderViewImpl::GetBrowserPluginManager() {
   return browser_plugin_manager_.get();
 }
 
-void RenderViewImpl::EnsureMediaStreamClient() {
+bool RenderViewImpl::InitializeMediaStreamClient() {
+  if (media_stream_client_)
+    return true;
+
   if (!RenderThreadImpl::current())  // Will be NULL during unit tests.
-    return;
+    return false;
 
 #if defined(OS_ANDROID)
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableWebRTC))
-    return;
+    return false;
 #endif
 
 #if defined(ENABLE_WEBRTC)
   if (!media_stream_dispatcher_)
     media_stream_dispatcher_ = new MediaStreamDispatcher(this);
 
-  if (!media_stream_client_) {
-    MediaStreamImpl* media_stream_impl = new MediaStreamImpl(
-        this,
-        media_stream_dispatcher_,
-        RenderThreadImpl::current()->GetMediaStreamDependencyFactory());
-    media_stream_client_ = media_stream_impl;
-    web_user_media_client_ = media_stream_impl;
-  }
+  MediaStreamImpl* media_stream_impl = new MediaStreamImpl(
+      this,
+      media_stream_dispatcher_,
+      RenderThreadImpl::current()->GetMediaStreamDependencyFactory());
+  media_stream_client_ = media_stream_impl;
+  web_user_media_client_ = media_stream_impl;
+  return true;
+#else
+  return false;
 #endif
 }
 
@@ -4165,7 +4180,7 @@ void RenderViewImpl::SendFindReply(int request_id,
 bool RenderViewImpl::ShouldUpdateSelectionTextFromContextMenuParams(
     const string16& selection_text,
     size_t selection_text_offset,
-    const ui::Range& selection_range,
+    const gfx::Range& selection_range,
     const ContextMenuParams& params) {
   string16 trimmed_selection_text;
   if (!selection_text.empty() && !selection_range.is_empty()) {
@@ -4376,7 +4391,7 @@ void RenderViewImpl::EvaluateScript(const string16& frame_xpath,
                                     const string16& jscript,
                                     int id,
                                     bool notify_result) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Handle<v8::Value> result;
   WebFrame* web_frame = GetChildFrame(frame_xpath);
   if (web_frame)
@@ -4489,7 +4504,7 @@ void RenderViewImpl::SyncSelectionIfRequired() {
 
   string16 text;
   size_t offset;
-  ui::Range range;
+  gfx::Range range;
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
     focused_pepper_plugin_->GetSurroundingText(&text, &range);
@@ -4502,7 +4517,7 @@ void RenderViewImpl::SyncSelectionIfRequired() {
     if (!webview()->caretOrSelectionRange(&location, &length))
       return;
 
-    range = ui::Range(location, location + length);
+    range = gfx::Range(location, location + length);
 
     if (webview()->textInputInfo().type != WebKit::WebTextInputTypeNone) {
       // If current focused element is editable, we will send 100 more chars
@@ -5880,9 +5895,10 @@ void RenderViewImpl::OnImeSetComposition(
                                     selection_end);
 }
 
-void RenderViewImpl::OnImeConfirmComposition(const string16& text,
-                                             const ui::Range& replacement_range,
-                                             bool keep_selection) {
+void RenderViewImpl::OnImeConfirmComposition(
+    const string16& text,
+    const gfx::Range& replacement_range,
+    bool keep_selection) {
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
     // When a PPAPI plugin has focus, we bypass WebKit.
@@ -6037,7 +6053,7 @@ void RenderViewImpl::GetCompositionCharacterBounds(
   }
 }
 
-void RenderViewImpl::GetCompositionRange(ui::Range* range) {
+void RenderViewImpl::GetCompositionRange(gfx::Range* range) {
 #if defined(ENABLE_PLUGINS)
   if (focused_pepper_plugin_) {
     return;
@@ -6212,7 +6228,10 @@ WebKit::WebPageVisibilityState RenderViewImpl::visibilityState() const {
 }
 
 WebKit::WebUserMediaClient* RenderViewImpl::userMediaClient() {
-  EnsureMediaStreamClient();
+  // This can happen in tests, in which case it's OK to return NULL.
+  if (!InitializeMediaStreamClient())
+    return NULL;
+
   return web_user_media_client_;
 }
 

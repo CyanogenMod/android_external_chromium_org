@@ -63,6 +63,11 @@ const char kDebugPluginLoading[] = "debug-plugin-loading";
 const char kDefaultTileWidth[]              = "default-tile-width";
 const char kDefaultTileHeight[]             = "default-tile-height";
 
+// Handles URL requests by NPAPI plugins directly through the browser, instead
+// of going through the renderer. This will be the new default, but it's not
+// turned on initially until we do more testing.
+const char kDirectNPAPIRequests[]           = "direct-npapi-requests";
+
 // Disable antialiasing on 2d canvas.
 const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
 
@@ -408,6 +413,11 @@ const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
 const char kEnableHighDpiCompositingForFixedPosition[] =
      "enable-high-dpi-fixed-position-compositing";
 
+#if defined(OS_WIN)
+// Use high resolution timers for TimeTicks.
+const char kEnableHighResolutionTime[]      = "enable-high-resolution-time";
+#endif
+
 // Enable HTML Imports
 extern const char kEnableHTMLImports[]      = "enable-html-imports";
 
@@ -428,10 +438,6 @@ const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 // This does NOT enable color management for images. The source is still
 // assumed to be sRGB.
 const char kEnableMonitorProfile[]          = "enable-monitor-profile";
-
-// Enables the new chrome://media-internals page.
-// http://crbug.com/260005
-const char kEnableNewMediaInternals[]       = "enable-new-media-internals";
 
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";
@@ -517,10 +523,6 @@ const char kEnableUserMediaScreenCapturing[] =
 // pages to control aspects of their own layout. This also turns on touch-screen
 // pinch gestures.
 const char kEnableViewport[]                = "enable-viewport";
-
-// Allow GL contexts to be automatically virtualized (shared between command
-// buffer clients) if they are compatible.
-const char kEnableVirtualGLContexts[]       = "enable-virtual-gl-contexts";
 
 // Enables moving cursor by word in visual order.
 const char kEnableVisualWordMovement[]      = "enable-visual-word-movement";
@@ -793,6 +795,19 @@ const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
 // Runs the security test for the renderer sandbox.
 const char kTestSandbox[]                   = "test-sandbox";
 
+// Causes TRACE_EVENT flags to be recorded beginning with shutdown. Optionally,
+// can specify the specific trace categories to include (e.g.
+// --trace-shutdown=base,net) otherwise, all events are recorded.
+// --trace-shutdown-file can be used to control where the trace log gets stored
+// to since there is otherwise no way to access the result.
+const char kTraceShutdown[]                 = "trace-shutdown";
+
+// If supplied, sets the file which shutdown tracing will be stored into, if
+// omitted the default will be used "chrometrace.log" in the current directory.
+// Has no effect unless --trace-shutdown is also supplied.
+// Example: --trace-shutdown --trace-shutdown-file=/tmp/trace_event.log
+const char kTraceShutdownFile[]             = "trace-shutdown-file";
+
 // Causes TRACE_EVENT flags to be recorded from startup. Optionally, can
 // specify the specific trace categories to include (e.g.
 // --trace-startup=base,net) otherwise, all events are recorded. Setting this
@@ -873,19 +888,19 @@ const char kZygoteProcess[]                 = "zygote";
 
 #if defined(ENABLE_WEBRTC)
 // Disable WebRTC device enumeration.
-const char kDisableDeviceEnumeration[]        = "disable-device-enumeration";
+const char kDisableDeviceEnumeration[]      = "disable-device-enumeration";
 
-// Enable WebRTC DataChannels SCTP wire protocol support.
-const char kEnableSCTPDataChannels[]        = "enable-sctp-data-channels";
+// Disables HW encode acceleration for WebRTC.
+const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
+
+// Disable WebRTC DataChannels SCTP wire protocol support.
+const char kDisableSCTPDataChannels[]        = "disable-sctp-data-channels";
 
 // Enables WebRTC AEC recordings.
 const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
 // Enables HW decode acceleration for WebRTC.
 const char kEnableWebRtcHWDecoding[]        = "enable-webrtc-hw-decoding";
-
-// Enables HW encode acceleration for WebRTC.
-const char kEnableWebRtcHWEncoding[] = "enable-webrtc-hw-encoding";
 
 #endif
 
@@ -901,7 +916,7 @@ const char kDisableGestureRequirementForMediaPlayback[] =
 const char kDisableMediaHistoryLogging[]    = "disable-media-history";
 
 // Disable overscroll edge effects like those found in Android views.
-const char kDisableOverscrollEdgeEffect[] = "disable-overscroll-edge-effect";
+const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";

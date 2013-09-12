@@ -15,11 +15,12 @@
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_settings.h"
 #include "ash/wm/workspace/magnetism_matcher.h"
 #include "ash/wm/workspace/phantom_window_controller.h"
 #include "ash/wm/workspace/workspace_window_resizer.h"
 #include "base/command_line.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
@@ -47,8 +48,6 @@ DockedWindowLayoutManager* GetDockedLayoutManagerAtPoint(
 }  // namespace
 
 DockedWindowResizer::~DockedWindowResizer() {
-  if (destroyed_)
-    *destroyed_ = true;
 }
 
 // static
@@ -66,7 +65,6 @@ DockedWindowResizer::Create(WindowResizer* next_window_resizer,
 void DockedWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   last_location_ = location;
   wm::ConvertPointToScreen(GetTarget()->parent(), &last_location_);
-  bool destroyed = false;
   if (!did_move_or_resize_) {
     did_move_or_resize_ = true;
     StartedDragging();
@@ -78,22 +76,18 @@ void DockedWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   // Temporarily clear kWindowTrackedByWorkspaceKey for windows that are snapped
   // to screen edges e.g. when they are docked. This prevents the windows from
   // getting snapped to other nearby windows during the drag.
-  bool tracked_by_workspace = GetTrackedByWorkspace(GetTarget());
+  wm::WindowSettings* window_settings = wm::GetWindowSettings(GetTarget());
+  bool was_tracked_by_workspace = window_settings->tracked_by_workspace();
   if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), false);
+    window_settings->SetTrackedByWorkspace(false);
   gfx::Point modified_location(location.x() + offset.x(),
                                location.y() + offset.y());
-  destroyed_ = &destroyed;
-  next_window_resizer_->Drag(modified_location, event_flags);
 
-  // TODO(varkha): Refactor the way WindowResizer calls into other window
-  // resizers to avoid the awkward pattern here for checking if
-  // next_window_resizer_ destroys the resizer object.
-  if (destroyed)
+  base::WeakPtr<DockedWindowResizer> resizer(weak_ptr_factory_.GetWeakPtr());
+  next_window_resizer_->Drag(modified_location, event_flags);
+  if (!resizer)
     return;
-  destroyed_ = NULL;
-  if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), tracked_by_workspace);
+  window_settings->SetTrackedByWorkspace(was_tracked_by_workspace);
 
   DockedWindowLayoutManager* new_dock_layout =
       GetDockedLayoutManagerAtPoint(last_location_);
@@ -141,15 +135,14 @@ void DockedWindowResizer::CompleteDrag(int event_flags) {
   // Temporarily clear kWindowTrackedByWorkspaceKey for panels so that they
   // don't get forced into the workspace that may be shrunken because of docked
   // windows.
-  bool tracked_by_workspace = GetTrackedByWorkspace(GetTarget());
-  bool set_tracked_by_workspace = was_docked_;
-  if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), false);
+  wm::WindowSettings* window_settings = wm::GetWindowSettings(GetTarget());
+  bool was_tracked_by_workspace = window_settings->tracked_by_workspace();
+  if (was_docked_)
+    window_settings->SetTrackedByWorkspace(false);
   // The root window can change when dragging into a different screen.
   next_window_resizer_->CompleteDrag(event_flags);
   FinishedDragging();
-  if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), tracked_by_workspace);
+  window_settings->SetTrackedByWorkspace(was_tracked_by_workspace);
 }
 
 void DockedWindowResizer::RevertDrag() {
@@ -158,14 +151,13 @@ void DockedWindowResizer::RevertDrag() {
   // Temporarily clear kWindowTrackedByWorkspaceKey for panels so that they
   // don't get forced into the workspace that may be shrunken because of docked
   // windows.
-  bool tracked_by_workspace = GetTrackedByWorkspace(GetTarget());
-  bool set_tracked_by_workspace = was_docked_;
-  if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), false);
+  wm::WindowSettings* window_settings = wm::GetWindowSettings(GetTarget());
+  bool was_tracked_by_workspace = window_settings->tracked_by_workspace();
+  if (was_docked_)
+    window_settings->SetTrackedByWorkspace(false);
   next_window_resizer_->RevertDrag();
   FinishedDragging();
-  if (set_tracked_by_workspace)
-    SetTrackedByWorkspace(GetTarget(), tracked_by_workspace);
+  window_settings->SetTrackedByWorkspace(was_tracked_by_workspace);
 }
 
 aura::Window* DockedWindowResizer::GetTarget() {
@@ -185,7 +177,7 @@ DockedWindowResizer::DockedWindowResizer(WindowResizer* next_window_resizer,
       did_move_or_resize_(false),
       was_docked_(false),
       is_docked_(false),
-      destroyed_(NULL) {
+      weak_ptr_factory_(this) {
   DCHECK(details_.is_resizable);
   aura::Window* dock_container = Shell::GetContainer(
       details.window->GetRootWindow(),
@@ -284,7 +276,7 @@ void DockedWindowResizer::StartedDragging() {
   if (GetTarget()->type() != aura::client::WINDOW_TYPE_PANEL &&
       GetTarget()->parent()->id() == kShellWindowId_DefaultContainer) {
     // The window is going to be reparented - avoid completing the drag.
-    GetTarget()->SetProperty(kContinueDragAfterReparent, true);
+    wm::GetWindowSettings(GetTarget())->set_continue_drag_after_reparent(true);
 
     // Reparent the window into the docked windows container in order to get it
     // on top of other docked windows.
@@ -305,7 +297,7 @@ void DockedWindowResizer::FinishedDragging() {
   bool should_dock = was_docked_;
   const bool attached_panel =
       window->type() == aura::client::WINDOW_TYPE_PANEL &&
-      window->GetProperty(kPanelAttachedKey);
+      wm::GetWindowSettings(window)->panel_attached();
   // If a window was previously docked then keep it docked if it is resized and
   // still aligned at the screen edge.
   if ((was_docked_ ||

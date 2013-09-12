@@ -18,12 +18,8 @@
 #include "ui/views/view.h"
 
 #if defined(USE_ASH)
+#include "ash/wm/window_settings.h"
 #include "ash/wm/window_util.h"
-#include "chrome/browser/ui/ash/ash_init.h"
-#endif
-
-#if !defined(OS_CHROMEOS)
-#include "chrome/browser/ui/views/frame/desktop_browser_frame_aura.h"
 #endif
 
 using aura::Window;
@@ -162,25 +158,6 @@ const gfx::Font& BrowserFrame::GetTitleFont() {
   return *title_font;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// NativeBrowserFrame, public:
-
-// static
-NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
-    BrowserFrame* browser_frame,
-    BrowserView* browser_view) {
-#if !defined(OS_CHROMEOS)
-  if (
-#if defined(USE_ASH)
-      !chrome::ShouldOpenAshOnStartup() &&
-#endif
-      browser_view->browser()->
-          host_desktop_type() == chrome::HOST_DESKTOP_TYPE_NATIVE)
-    return new DesktopBrowserFrameAura(browser_frame, browser_view);
-#endif
-  return new BrowserFrameAura(browser_frame, browser_view);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserFrameAura, private:
 
@@ -190,7 +167,9 @@ BrowserFrameAura::~BrowserFrameAura() {
 void BrowserFrameAura::SetWindowAutoManaged() {
 #if defined(USE_ASH)
   if (browser_view_->browser()->type() != Browser::TYPE_POPUP ||
-      browser_view_->browser()->is_app())
-    ash::wm::SetWindowPositionManaged(GetNativeWindow(), true);
+      browser_view_->browser()->is_app()) {
+    ash::wm::GetWindowSettings(GetNativeWindow())->
+        set_window_position_managed(true);
+  }
 #endif
 }

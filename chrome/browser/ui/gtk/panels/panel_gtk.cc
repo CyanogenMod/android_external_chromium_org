@@ -33,12 +33,12 @@
 #include "content/public/browser/web_contents_view.h"
 #include "grit/ui_resources.h"
 #include "ui/base/accelerators/platform_accelerator_gtk.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_expanded_container.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/x/active_window_watcher_x.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/image/image.h"
 
@@ -1066,9 +1066,6 @@ void PanelGtk::SetPanelAlwaysOnTop(bool on_top) {
     gtk_window_stick(window_);
   else
     gtk_window_unstick(window_);
-}
-
-void PanelGtk::EnableResizeByMouse(bool enable) {
 }
 
 void PanelGtk::UpdatePanelMinimizeRestoreButtonVisibility() {

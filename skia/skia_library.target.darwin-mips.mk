@@ -47,6 +47,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/utils/debugger/SkObjectParser.cpp \
 	third_party/skia/src/utils/SkBase64.cpp \
 	third_party/skia/src/utils/SkBitSet.cpp \
+	third_party/skia/src/utils/SkCanvasStack.cpp \
+	third_party/skia/src/utils/SkCanvasStateUtils.cpp \
 	third_party/skia/src/utils/SkDeferredCanvas.cpp \
 	third_party/skia/src/utils/SkMatrix44.cpp \
 	third_party/skia/src/utils/SkNullCanvas.cpp \
@@ -63,6 +65,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkBBoxRecord.cpp \
 	third_party/skia/src/core/SkBBoxHierarchyRecord.cpp \
 	third_party/skia/src/core/SkBitmap.cpp \
+	third_party/skia/src/core/SkBitmapDevice.cpp \
 	third_party/skia/src/core/SkBitmapFilter.cpp \
 	third_party/skia/src/core/SkBitmapHeap.cpp \
 	third_party/skia/src/core/SkBitmapProcShader.cpp \
@@ -235,6 +238,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkArithmeticMode.cpp \
 	third_party/skia/src/effects/SkAvoidXfermode.cpp \
 	third_party/skia/src/effects/SkBicubicImageFilter.cpp \
+	third_party/skia/src/effects/SkBitmapAlphaThresholdShader.cpp \
 	third_party/skia/src/effects/SkBitmapSource.cpp \
 	third_party/skia/src/effects/SkBlurDrawLooper.cpp \
 	third_party/skia/src/effects/SkBlurMask.cpp \
@@ -331,6 +335,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrConfigConversionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBezierEffect.cpp \
 	third_party/skia/src/gpu/effects/GrConvolutionEffect.cpp \
+	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrTextureDomainEffect.cpp \
@@ -408,6 +413,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -420,6 +426,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -529,6 +536,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -541,6 +549,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
@@ -627,7 +636,9 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -644,7 +655,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

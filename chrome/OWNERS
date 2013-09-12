@@ -29,6 +29,7 @@ per-file nacl.gypi=sehr@chromium.org
 per-file chrome_android.gypi=aruslan@chromium.org
 per-file chrome_android.gypi=bulach@chromium.org
 per-file chrome_android.gypi=dtrainor@chromium.org
+per-file chrome_android.gypi=nyquist@chromium.org
 per-file chrome_android.gypi=tedchoc@chromium.org
 per-file chrome_android.gypi=yfriedman@chromium.org
 
@@ -43,3 +44,7 @@ per-file chrome_browser_chromeos.gypi=satorux@chromium.org
 per-file chrome_browser_chromeos.gypi=stevenjb@chromium.org
 per-file chrome_browser_chromeos.gypi=xiyuan@chromium.org
 per-file chrome_browser_chromeos.gypi=zelidrag@chromium.org
+
+# Syzygy files.
+per-file chrome_syzygy.gyp*=chrisha@chromium.org
+per-file chrome_syzygy.gyp*=siggi@chromium.org

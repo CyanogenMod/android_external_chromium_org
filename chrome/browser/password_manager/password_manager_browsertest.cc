@@ -23,6 +23,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
@@ -31,6 +32,8 @@
 
 namespace {
 
+// Observer that waits for navigation to complete and for the password infobar
+// to be shown.
 class NavigationObserver : public content::NotificationObserver,
                            public content::WebContentsObserver {
  public:
@@ -46,6 +49,13 @@ class NavigationObserver : public content::NotificationObserver,
 
   virtual ~NavigationObserver() {}
 
+  // Normally Wait() will not return until a main frame navigation occurs.
+  // If a path is set, Wait() will return after this path has been seen,
+  // regardless of the frame that navigated. Useful for multi-frame pages.
+  void SetPathToWaitFor(const std::string& path) {
+    wait_for_path_ = path;
+  }
+
   // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -60,7 +70,12 @@ class NavigationObserver : public content::NotificationObserver,
       const GURL& validated_url,
       bool is_main_frame,
       content::RenderViewHost* render_view_host) OVERRIDE {
-    message_loop_runner_->Quit();
+    if (!wait_for_path_.empty()) {
+      if (validated_url.path() == wait_for_path_)
+        message_loop_runner_->Quit();
+    } else if (is_main_frame) {
+      message_loop_runner_->Quit();
+    }
   }
 
   bool infobar_shown() const { return infobar_shown_; }
@@ -70,6 +85,7 @@ class NavigationObserver : public content::NotificationObserver,
   }
 
  private:
+  std::string wait_for_path_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
   bool infobar_shown_;
   content::NotificationRegistrar registrar_;
@@ -108,18 +124,28 @@ class PasswordManagerBrowserTest : public InProcessBrowserTest {
     return WebContents()->GetRenderViewHost();
   }
 
+  // Wrapper around ui_test_utils::NavigateToURL that waits until
+  // DidFinishLoad() fires. Normally this function returns after
+  // DidStopLoading(), which caused flakiness as the NavigationObserver
+  // would sometimes see the DidFinishLoad event from a previous navigation and
+  // return immediately.
+  void NavigateToFile(const std::string& path) {
+    ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+    NavigationObserver observer(WebContents());
+    GURL url = embedded_test_server()->GetURL(path);
+    ui_test_utils::NavigateToURL(browser(), url);
+    observer.Wait();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerBrowserTest);
 };
 
 // Actual tests ---------------------------------------------------------------
-// This test was a bit flaky <http://crbug.com/276597>.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
-                       DISABLED_PromptForNormalSubmit) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/password_form.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+                       PromptForNormalSubmit) {
+  NavigateToFile("/password/password_form.html");
 
   // Fill a form and submit through a <input type="submit"> button. Nothing
   // special.
@@ -133,13 +159,9 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   EXPECT_TRUE(observer.infobar_shown());
 }
 
-// This test was a bit flaky <http://crbug.com/276597>.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
-                       DISABLED_PromptForSubmitUsingJavaScript) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/password_form.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+                       PromptForSubmitUsingJavaScript) {
+  NavigateToFile("/password/password_form.html");
 
   // Fill a form and submit using <button> that calls submit() on the form.
   // This should work regardless of the type of element, as long as submit() is
@@ -155,10 +177,7 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForNavigation) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/password_form.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+  NavigateToFile("/password/password_form.html");
 
   // Don't fill the password form, just navigate away. Shouldn't prompt.
   NavigationObserver observer(WebContents());
@@ -170,14 +189,12 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForNavigation) {
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
                        NoPromptForSubFrameNavigation) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/multi_frames.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+  NavigateToFile("/password/multi_frames.html");
 
   // If you are filling out a password form in one frame and a different frame
   // navigates, this should not trigger the infobar.
   NavigationObserver observer(WebContents());
+  observer.SetPathToWaitFor("/password/done.html");
   std::string fill =
       "var first_frame = document.getElementById('first_frame');"
       "var frame_doc = first_frame.contentDocument;"
@@ -193,20 +210,17 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   EXPECT_FALSE(observer.infobar_shown());
 }
 
-// This test was a bit flaky <http://crbug.com/276597>.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
-                       DISABLED_PromptAfterSubmitWithSubFrameNavigation) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/multi_frames.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+                       PromptAfterSubmitWithSubFrameNavigation) {
+  NavigateToFile("/password/multi_frames.html");
 
   // Make sure that we prompt to save password even if a sub-frame navigation
   // happens first.
   NavigationObserver observer(WebContents());
+  observer.SetPathToWaitFor("/password/done.html");
   std::string navigate_frame =
       "var second_iframe = document.getElementById('second_frame');"
-      "second_iframe.contentWindow.location.href = 'done.html';";
+      "second_iframe.contentWindow.location.href = 'other.html';";
   std::string fill_and_submit =
       "var first_frame = document.getElementById('first_frame');"
       "var frame_doc = first_frame.contentDocument;"
@@ -220,19 +234,14 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   EXPECT_TRUE(observer.infobar_shown());
 }
 
-// This test was a bit flaky <http://crbug.com/276597>.
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
-                       DISABLED_PromptForXHRSubmit) {
+                       PromptForXHRSubmit) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
     return;
 #endif
-
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/password_xhr_submit.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+  NavigateToFile("/password/password_xhr_submit.html");
 
   // Verify that we show the save password prompt if a form returns false
   // in its onsubmit handler but instead logs in/navigates via XHR.
@@ -249,10 +258,7 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForOtherXHR) {
-  ASSERT_TRUE(test_server()->Start());
-
-  GURL url = test_server()->GetURL("files/password/password_xhr_submit.html");
-  ui_test_utils::NavigateToURL(browser(), url);
+  NavigateToFile("/password/password_xhr_submit.html");
 
   // Verify that if random XHR navigation occurs, we don't try and save the
   // password.

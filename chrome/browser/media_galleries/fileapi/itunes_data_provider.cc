@@ -13,8 +13,10 @@
 #include "base/logging.h"
 #include "base/platform_file.h"
 #include "base/stl_util.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/media_galleries/fileapi/file_path_watcher_util.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "chrome/common/media_galleries/itunes_library.h"
@@ -28,8 +30,12 @@ namespace itunes {
 
 namespace {
 
-typedef base::Callback<void(scoped_ptr<base::FilePathWatcher> watcher)>
-    FileWatchStartedCallback;
+// Colon and slash are not allowed in filenames, replace them with underscore.
+std::string EscapeBadCharacters(const std::string& input) {
+  std::string result;
+  ReplaceChars(input, ":/", "_", &result);
+  return result;
+}
 
 ITunesDataProvider::Album MakeUniqueTrackNames(const parser::Album& album) {
   // TODO(vandebo): It would be nice to ensure that names returned from here
@@ -44,7 +50,8 @@ ITunesDataProvider::Album MakeUniqueTrackNames(const parser::Album& album) {
   parser::Album::const_iterator album_it;
   for (album_it = album.begin(); album_it != album.end(); ++album_it) {
     const parser::Track& track = *album_it;
-    std::string name = track.location.BaseName().AsUTF8Unsafe();
+    std::string name =
+        EscapeBadCharacters(track.location.BaseName().AsUTF8Unsafe());
     duped_tracks[name].insert(&track);
   }
 
@@ -58,46 +65,19 @@ ITunesDataProvider::Album MakeUniqueTrackNames(const parser::Album& album) {
       for (TrackRefs::const_iterator track_it = track_refs.begin();
            track_it != track_refs.end();
            ++track_it) {
+        base::FilePath track_file_name = (*track_it)->location.BaseName();
         std::string id =
             base::StringPrintf(" (%" PRId64 ")", (*track_it)->id);
-        base::FilePath unique_name =
-            (*track_it)->location.BaseName().InsertBeforeExtensionASCII(id);
-        result[unique_name.AsUTF8Unsafe()] = (*track_it)->location;
+        std::string uniquified_track_name =
+            track_file_name.InsertBeforeExtensionASCII(id).AsUTF8Unsafe();
+        std::string escaped_track_name =
+            EscapeBadCharacters(uniquified_track_name);
+        result[escaped_track_name] = (*track_it)->location;
       }
     }
   }
 
   return result;
-}
-
-// Bounces |path| and |error| to |callback| from the FILE thread to the media
-// task runner.
-void OnLibraryChanged(const base::FilePathWatcher::Callback& callback,
-                      const base::FilePath& path,
-                      bool error) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  MediaFileSystemBackend::MediaTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(callback, path, error));
-}
-
-// The watch has to be started on the FILE thread, and the callback called by
-// the FilePathWatcher also needs to run on the FILE thread.
-void StartLibraryWatchOnFileThread(
-    const base::FilePath& library_path,
-    const FileWatchStartedCallback& watch_started_callback,
-    const base::FilePathWatcher::Callback& library_changed_callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  // The watcher is created on the FILE thread because it is very difficult
-  // to safely pass an already-created member to a different thread.
-  scoped_ptr<base::FilePathWatcher> watcher(new base::FilePathWatcher);
-  bool success = watcher->Watch(
-      library_path, false /*recursive*/,
-      base::Bind(&OnLibraryChanged, library_changed_callback));
-  if (!success)
-    LOG(ERROR) << "Adding watch for " << library_path.value() << " failed";
-  MediaFileSystemBackend::MediaTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(watch_started_callback, base::Passed(&watcher)));
 }
 
 // |result_path| is set if |locale_string| maps to a localized directory name
@@ -208,15 +188,12 @@ ITunesDataProvider::ITunesDataProvider(const base::FilePath& library_path)
   DCHECK(MediaFileSystemBackend::CurrentlyOnMediaTaskRunnerThread());
   DCHECK(!library_path_.empty());
 
-  content::BrowserThread::PostTask(
-      content::BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(StartLibraryWatchOnFileThread,
-                 library_path_,
-                 base::Bind(&ITunesDataProvider::OnLibraryWatchStarted,
-                            weak_factory_.GetWeakPtr()),
-                 base::Bind(&ITunesDataProvider::OnLibraryChanged,
-                            weak_factory_.GetWeakPtr())));
+  chrome::StartFilePathWatchOnMediaTaskRunner(
+      library_path_,
+      base::Bind(&ITunesDataProvider::OnLibraryWatchStarted,
+                 weak_factory_.GetWeakPtr()),
+      base::Bind(&ITunesDataProvider::OnLibraryChanged,
+                 weak_factory_.GetWeakPtr()));
 }
 
 ITunesDataProvider::~ITunesDataProvider() {}
@@ -350,10 +327,12 @@ void ITunesDataProvider::OnLibraryParsed(const ReadyCallback& ready_callback,
     for (parser::Library::const_iterator artist_it = library.begin();
          artist_it != library.end();
          ++artist_it) {
+      std::string artist_name = EscapeBadCharacters(artist_it->first);
       for (parser::Albums::const_iterator album_it = artist_it->second.begin();
            album_it != artist_it->second.end();
            ++album_it) {
-        library_[artist_it->first][album_it->first] =
+        std::string album_name = EscapeBadCharacters(album_it->first);
+        library_[artist_name][album_name] =
             MakeUniqueTrackNames(album_it->second);
       }
     }

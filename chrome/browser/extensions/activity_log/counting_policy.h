@@ -14,7 +14,12 @@
 
 namespace extensions {
 
-// A policy for logging the stream of actions, but without arguments.
+// A policy for logging the stream of actions, but with most arguments stripped
+// out (to improve privacy and reduce database size) and with multiple
+// identical rows combined together using a count column to track the total
+// number of repetitions.  Identical rows within the same day are merged, but
+// actions on separate days are kept distinct.  Data is kept for up to a few
+// days then deleted.
 class CountingPolicy : public ActivityLogDatabasePolicy {
  public:
   explicit CountingPolicy(Profile* profile);
@@ -22,18 +27,13 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
 
   virtual void ProcessAction(scoped_refptr<Action> action) OVERRIDE;
 
-  virtual void ReadData(
-      const std::string& extension_id,
-      const int day,
-      const base::Callback
-          <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
-
   virtual void ReadFilteredData(
       const std::string& extension_id,
       const Action::ActionType type,
       const std::string& api_name,
       const std::string& page_url,
       const std::string& arg_url,
+      const int days_ago,
       const base::Callback
           <void(scoped_ptr<Action::ActionVector>)>& callback) OVERRIDE;
 
@@ -47,6 +47,9 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
 
   // Clean the URL data stored for this policy.
   virtual void RemoveURLs(const std::vector<GURL>&) OVERRIDE;
+
+  // Delete everything in the database.
+  virtual void DeleteDatabase() OVERRIDE;
 
   // The main database table, and the name for a read-only view that
   // decompresses string values for easier parsing.
@@ -74,22 +77,20 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
 
   // Internal method to read data from the database; called on the database
   // thread.
-  scoped_ptr<Action::ActionVector> DoReadData(
-      const std::string& extension_id,
-      const int days_ago);
-
-  // Internal method to read data from the database; called on the database
-  // thread.
   scoped_ptr<Action::ActionVector> DoReadFilteredData(
       const std::string& extension_id,
       const Action::ActionType type,
       const std::string& api_name,
       const std::string& page_url,
-      const std::string& arg_url);
+      const std::string& arg_url,
+      const int days_ago);
 
   // The implementation of RemoveURLs; this must only run on the database
   // thread.
   void DoRemoveURLs(const std::vector<GURL>& restrict_urls);
+
+  // The implementation of DeleteDatabase; called on the database thread.
+  void DoDeleteDatabase();
 
   // Cleans old records from the activity log database.
   bool CleanOlderThan(sql::Connection* db, const base::Time& cutoff);
@@ -99,7 +100,7 @@ class CountingPolicy : public ActivityLogDatabasePolicy {
   bool CleanStringTables(sql::Connection* db);
 
   // API calls for which complete arguments should be logged.
-  std::set<std::string> api_arg_whitelist_;
+  Util::ApiSet api_arg_whitelist_;
 
   // Tables for mapping strings to integers for shrinking database storage
   // requirements.  URLs are kept in a separate table from other strings to

@@ -65,11 +65,17 @@ class DriveIntegrationService
     : public BrowserContextKeyedService,
       public DriveNotificationObserver {
  public:
+  class PreferenceWatcher;
+
   // test_drive_service, test_cache_root and test_file_system are used by tests
   // to inject customized instances.
   // Pass NULL or the empty value when not interested.
+  // |preference_watcher| observes the drive enable preference, and sets the
+  // enable state when changed. It can be NULL. The ownership is taken by
+  // the DriveIntegrationService.
   DriveIntegrationService(
       Profile* profile,
+      PreferenceWatcher* preference_watcher,
       DriveServiceInterface* test_drive_service,
       const base::FilePath& test_cache_root,
       FileSystemInterface* test_file_system);
@@ -81,6 +87,11 @@ class DriveIntegrationService
 
   // BrowserContextKeyedService override:
   virtual void Shutdown() OVERRIDE;
+
+  void SetEnabled(bool enabled);
+
+  bool is_enabled() const { return enabled_; }
+  bool is_mounted() const { return mounted_; }
 
   // Adds and removes the observer.
   void AddObserver(DriveIntegrationServiceObserver* observer);
@@ -110,6 +121,13 @@ class DriveIntegrationService
       const base::Callback<void(bool)>& callback);
 
  private:
+  enum State {
+    NOT_INITIALIZED,
+    INITIALIZING,
+    INITIALIZED,
+    REMOUNTING,
+  };
+
   // Returns true if Drive is enabled.
   // Must be called on UI thread.
   bool IsDriveEnabled();
@@ -131,7 +149,9 @@ class DriveIntegrationService
   friend class DriveIntegrationServiceFactory;
 
   Profile* profile_;
-  bool is_initialized_;
+  State state_;
+  bool enabled_;
+  bool mounted_;
 
   base::FilePath cache_root_directory_;
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
@@ -148,6 +168,7 @@ class DriveIntegrationService
   scoped_ptr<DebugInfoCollector> debug_info_collector_;
 
   ObserverList<DriveIntegrationServiceObserver> observers_;
+  scoped_ptr<PreferenceWatcher> preference_watcher_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

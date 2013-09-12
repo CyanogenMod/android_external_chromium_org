@@ -91,7 +91,10 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_FloatPoint* wheel_delta,
       const PP_FloatPoint* wheel_ticks,
       PP_Bool scroll_by_page) OVERRIDE;
-
+  virtual PP_Resource CreateAudio1_0(PP_Instance instance,
+                                     PP_Resource config_id,
+                                     PPB_Audio_Callback_1_0 audio_callback,
+                                     void* user_data) OVERRIDE;
   virtual PP_Resource CreateAudio(PP_Instance instance,
                                   PP_Resource config_id,
                                   PPB_Audio_Callback audio_callback,
@@ -132,10 +135,8 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
       PP_Instance instance,
       const PP_NetAddress_Private& private_addr) OVERRIDE;
-  virtual PP_Resource CreateNetworkMonitor(
-      PP_Instance instance,
-      PPB_NetworkMonitor_Callback callback,
-      void* user_data) OVERRIDE;
+  virtual PP_Resource CreateNetworkMonitorPrivate(
+      PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreatePrinting(PP_Instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;

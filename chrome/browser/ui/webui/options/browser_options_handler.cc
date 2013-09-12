@@ -12,7 +12,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
@@ -32,6 +31,8 @@
 #include "chrome/browser/managed_mode/managed_user_registration_utility.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service.h"
+#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
@@ -122,10 +123,6 @@ namespace options {
 
 namespace {
 
-// Constants for the new tab button field trial.
-const char kProfileResetTrialName[] = "ManualResetProfile";
-const char kProfileResetTrialEnableGroupName[] = "Enable";
-
 bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 #if defined(OS_CHROMEOS)
   // On Chrome OS we use different UI for multi-profiles.
@@ -175,7 +172,8 @@ void OpenNewWindowForProfile(
 BrowserOptionsHandler::BrowserOptionsHandler()
     : page_initialized_(false),
       template_url_service_(NULL),
-      weak_ptr_factory_(this) {
+      weak_ptr_factory_(this),
+      importing_existing_managed_user_(false) {
 #if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
 #endif
@@ -531,14 +529,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       "gpuEnabledAtStart",
       g_browser_process->gpu_mode_manager()->initial_gpu_mode_pref());
 #endif
-
-  bool finch_allows_button =
-      base::FieldTrialList::FindFullName(kProfileResetTrialName) ==
-      kProfileResetTrialEnableGroupName;
-  values->SetBoolean("enableResetProfileSettingsSection",
-                     finch_allows_button ||
-                     CommandLine::ForCurrentProcess()->HasSwitch(
-                         switches::kEnableResetProfileSettings));
 }
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -1115,6 +1105,7 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
 
   DCHECK(profile_path_being_created_.empty());
   profile_creation_start_time_ = base::TimeTicks::Now();
+  importing_existing_managed_user_ = false;
 
   string16 name;
   string16 icon;
@@ -1141,6 +1132,8 @@ void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
     if (managed_user_id.empty()) {
       managed_user_id =
           ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+    } else {
+      importing_existing_managed_user_ = true;
     }
     callbacks.push_back(
         base::Bind(&BrowserOptionsHandler::RegisterManagedUser,
@@ -1214,9 +1207,9 @@ void BrowserOptionsHandler::OnManagedUserRegistered(
       state == GoogleServiceAuthError::USER_NOT_SIGNED_UP ||
       state == GoogleServiceAuthError::ACCOUNT_DELETED ||
       state == GoogleServiceAuthError::ACCOUNT_DISABLED) {
-    error_msg = l10n_util::GetStringUTF16(IDS_PROFILES_CREATE_SIGN_IN_ERROR);
+    error_msg = GetProfileCreationErrorMessage(SIGNIN_ERROR);
   } else {
-    error_msg = l10n_util::GetStringUTF16(IDS_PROFILES_CREATE_REMOTE_ERROR);
+    error_msg = GetProfileCreationErrorMessage(REMOTE_ERROR);
   }
   ShowProfileCreationError(profile, error_msg);
 }
@@ -1230,9 +1223,8 @@ void BrowserOptionsHandler::ShowProfileCreationFeedback(
 
   switch (status) {
     case Profile::CREATE_STATUS_LOCAL_FAIL: {
-      string16 error =
-          l10n_util::GetStringUTF16(IDS_PROFILES_CREATE_LOCAL_ERROR);
-      ShowProfileCreationError(profile, error);
+      ShowProfileCreationError(profile,
+                               GetProfileCreationErrorMessage(LOCAL_ERROR));
       break;
     }
     case Profile::CREATE_STATUS_CREATED: {
@@ -1261,8 +1253,9 @@ void BrowserOptionsHandler::ShowProfileCreationFeedback(
 void BrowserOptionsHandler::ShowProfileCreationError(Profile* profile,
                                                      const string16& error) {
   profile_path_being_created_.clear();
-  web_ui()->CallJavascriptFunction("BrowserOptions.showCreateProfileError",
-                                   base::StringValue(error));
+  web_ui()->CallJavascriptFunction(
+      GetJavascriptMethodName(PROFILE_CREATION_ERROR),
+      base::StringValue(error));
   DeleteProfileAtPath(profile->GetPath());
 }
 
@@ -1278,12 +1271,13 @@ void BrowserOptionsHandler::ShowProfileCreationSuccess(
   dict.Set("filePath", base::CreateFilePathValue(profile->GetPath()));
   dict.SetBoolean("isManaged", is_managed);
   web_ui()->CallJavascriptFunction(
-      "BrowserOptions.showCreateProfileSuccess", dict);
+      GetJavascriptMethodName(PROFILE_CREATION_SUCCESS), dict);
 
   // If the new profile is a managed user, instead of opening a new window
   // right away, a confirmation overlay will be shown from the creation
-  // dialog.
-  if (is_managed)
+  // dialog. However, if we are importing an existing managed user we
+  // open the new window directly.
+  if (is_managed && !importing_existing_managed_user_)
     return;
 
   // Opening the new window must be the last action, after all callbacks
@@ -1799,6 +1793,50 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
 #endif  // !defined(OS_CHROMEOS)
 }
 
+string16 BrowserOptionsHandler::GetProfileCreationErrorMessage(
+    ProfileCreationErrorType error) const {
+  int message_id = -1;
+  switch (error) {
+    case SIGNIN_ERROR:
+      message_id =
+          importing_existing_managed_user_ ?
+              IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR :
+              IDS_PROFILES_CREATE_SIGN_IN_ERROR;
+      break;
+    case REMOTE_ERROR:
+      message_id =
+          importing_existing_managed_user_ ?
+              IDS_MANAGED_USER_IMPORT_REMOTE_ERROR :
+              IDS_PROFILES_CREATE_REMOTE_ERROR;
+      break;
+    case LOCAL_ERROR:
+      message_id =
+          importing_existing_managed_user_ ?
+              IDS_MANAGED_USER_IMPORT_LOCAL_ERROR :
+              IDS_PROFILES_CREATE_LOCAL_ERROR;
+      break;
+  }
+
+  return l10n_util::GetStringUTF16(message_id);
+}
+
+std::string BrowserOptionsHandler::GetJavascriptMethodName(
+    ProfileCreationStatus status) const {
+  switch (status) {
+    case PROFILE_CREATION_SUCCESS:
+      return importing_existing_managed_user_ ?
+          "BrowserOptions.showManagedUserImportSuccess" :
+          "BrowserOptions.showCreateProfileSuccess";
+    case PROFILE_CREATION_ERROR:
+      return importing_existing_managed_user_ ?
+          "BrowserOptions.showManagedUserImportError" :
+          "BrowserOptions.showCreateProfileError";
+  }
+
+  NOTREACHED();
+  return std::string();
+}
+
 bool BrowserOptionsHandler::IsValidExistingManagedUserId(
     const std::string& existing_managed_user_id) const {
   if (existing_managed_user_id.empty())
@@ -1809,9 +1847,9 @@ bool BrowserOptionsHandler::IsValidExistingManagedUserId(
     return false;
   }
 
-  DictionaryPrefUpdate update(Profile::FromWebUI(web_ui())->GetPrefs(),
-                              prefs::kManagedUsers);
-  DictionaryValue* dict = update.Get();
+  Profile* profile = Profile::FromWebUI(web_ui());
+  const DictionaryValue* dict =
+      ManagedUserSyncServiceFactory::GetForProfile(profile)->GetManagedUsers();
   if (!dict->HasKey(existing_managed_user_id))
     return false;
 

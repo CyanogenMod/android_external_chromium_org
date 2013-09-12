@@ -20,14 +20,15 @@ var FactoryResetOverlay = options.FactoryResetOverlay;
 <if expr="pp_ifdef('enable_google_now')">
 var GeolocationOptions = options.GeolocationOptions;
 </if>
-var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
-var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
 var ImportDataOverlay = options.ImportDataOverlay;
 var LanguageOptions = options.LanguageOptions;
 var ManageProfileOverlay = options.ManageProfileOverlay;
+var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
+var ManagedUserImportOverlay = options.ManagedUserImportOverlay;
+var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
 var MediaGalleriesManager = options.MediaGalleriesManager;
 var OptionsFocusManager = options.OptionsFocusManager;
 var OptionsPage = options.OptionsPage;
@@ -141,6 +142,10 @@ function load() {
   if (loadTimeData.getBoolean('managedUsersEnabled') && !cr.isChromeOS) {
     OptionsPage.registerOverlay(ManagedUserCreateConfirmOverlay.getInstance(),
                                 BrowserOptions.getInstance());
+    if (loadTimeData.getBoolean('allowCreateExistingManagedUsers')) {
+      OptionsPage.registerOverlay(ManagedUserImportOverlay.getInstance(),
+                                  BrowserOptions.getInstance());
+    }
     OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
                                 CreateProfileOverlay.getInstance());
   }
@@ -191,26 +196,6 @@ function load() {
                                 [$('pointer-settings-button')]);
     OptionsPage.registerOverlay(PreferredNetworks.getInstance(),
                                 BrowserOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageChewing',
-                        loadTimeData.getString('languageChewingPageTabTitle'),
-                        'languageChewingPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageHangul',
-                        loadTimeData.getString('languageHangulPageTabTitle'),
-                        'languageHangulPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languageMozc',
-                        loadTimeData.getString('languageMozcPageTabTitle'),
-                        'languageMozcPage'),
-        LanguageOptions.getInstance());
-    OptionsPage.registerOverlay(
-        new OptionsPage('languagePinyin',
-                        loadTimeData.getString('languagePinyinPageTabTitle'),
-                        'languagePinyinPage'),
-        LanguageOptions.getInstance());
   }
 
   if (!cr.isWindows && !cr.isMac) {

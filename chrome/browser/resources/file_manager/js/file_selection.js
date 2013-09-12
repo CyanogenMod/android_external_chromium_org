@@ -26,6 +26,7 @@ function FileSelection(fileManager, indexes) {
   this.iconType = null;
   this.bytesKnown = false;
   this.mustBeHidden_ = false;
+  this.mimeTypes = null;
 
   // Synchronously compute what we can.
   for (var i = 0; i < this.indexes.length; i++) {
@@ -53,6 +54,8 @@ function FileSelection(fileManager, indexes) {
   }
 
   this.tasks = new FileTasks(this.fileManager_);
+
+  Object.seal(this);
 }
 
 /**
@@ -156,11 +159,13 @@ function FileSelectionHandler(fileManager) {
   // TODO(dgozman): create a shared object with most of UI elements.
   this.okButton_ = fileManager.okButton_;
   this.filenameInput_ = fileManager.filenameInput_;
-
-  this.previewPanel_ = fileManager.dialogDom_.querySelector('.preview-panel');
-  this.previewThumbnails_ = this.previewPanel_.
+  this.previewPanel_ = fileManager.previewPanel_;
+  this.previewPanelElement_ =
+      fileManager.dialogDom_.querySelector('.preview-panel');
+  this.previewThumbnails_ = this.previewPanelElement_.
       querySelector('.preview-thumbnails');
-  this.previewSummary_ = this.previewPanel_.querySelector('.preview-summary');
+  this.previewSummary_ =
+      this.previewPanelElement_.querySelector('.preview-summary');
   this.previewText_ = this.previewSummary_.querySelector('.preview-text');
   this.calculatingSize_ = this.previewSummary_.
       querySelector('.calculating-size');
@@ -223,8 +228,6 @@ FileSelectionHandler.prototype.onFileSelectionChanged = function(event) {
     this.selectionUpdateTimer_ = null;
   }
 
-  this.hideCalculating_();
-
   // The rest of the selection properties are computed via (sometimes lengthy)
   // asynchronous calls. We initiate these calls after a timeout. If the
   // selection is changing quickly we only do this once when it slows down.
@@ -242,17 +245,6 @@ FileSelectionHandler.prototype.onFileSelectionChanged = function(event) {
     if (this.selection == selection)
       this.updateFileSelectionAsync(selection);
   }.bind(this), updateDelay);
-};
-
-/**
- * Clears the primary UI selection elements.
- */
-FileSelectionHandler.prototype.clearUI = function() {
-  this.previewThumbnails_.textContent = '';
-  this.previewText_.textContent = '';
-  this.hideCalculating_();
-  this.taskItems_.hidden = true;
-  this.okButton_.disabled = true;
 };
 
 /**
@@ -310,168 +302,6 @@ FileSelectionHandler.prototype.isFileSelectionAvailable = function() {
 };
 
 /**
- * Sets the flag to force the preview panel hidden.
- * @param {boolean} hidden True to force hidden.
- */
-FileSelectionHandler.prototype.setPreviewPanelMustBeHidden = function(hidden) {
-  this.previewPanelMustBeHidden_ = hidden;
-  this.updatePreviewPanelVisibility_();
-};
-
-/**
- * Animates preview panel show/hide transitions.
- *
- * @private
- */
-FileSelectionHandler.prototype.updatePreviewPanelVisibility_ = function() {
-  var panel = this.previewPanel_;
-  var state = panel.getAttribute('visibility');
-  var mustBeVisible =
-       // If one or more files are selected, show the file info.
-      (this.selection.totalCount > 0 ||
-       // If the directory is not root dir, show the directory info.
-       !PathUtil.isRootPath(this.fileManager_.getCurrentDirectory()) ||
-       // On Open File dialog, the preview panel is always shown.
-       this.fileManager_.dialogType == DialogType.SELECT_OPEN_FILE ||
-       this.fileManager_.dialogType == DialogType.SELECT_OPEN_MULTI_FILE);
-
-  var stopHidingAndShow = function() {
-    clearTimeout(this.hidingTimeout_);
-    this.hidingTimeout_ = 0;
-    setVisibility('visible');
-  }.bind(this);
-
-  var startHiding = function() {
-    setVisibility('hiding');
-    this.hidingTimeout_ = setTimeout(function() {
-        this.hidingTimeout_ = 0;
-        setVisibility('hidden');
-        cr.dispatchSimpleEvent(this, 'hide-preview-panel');
-      }.bind(this), 250);
-  }.bind(this);
-
-  var show = function() {
-    setVisibility('visible');
-    this.previewThumbnails_.textContent = '';
-    cr.dispatchSimpleEvent(this, 'show-preview-panel');
-  }.bind(this);
-
-  var setVisibility = function(visibility) {
-    panel.setAttribute('visibility', visibility);
-  };
-
-  switch (state) {
-    case 'visible':
-      if (!mustBeVisible || this.previewPanelMustBeHidden_)
-        startHiding();
-      break;
-
-    case 'hiding':
-      if (mustBeVisible && !this.previewPanelMustBeHidden_)
-        stopHidingAndShow();
-      break;
-
-    case 'hidden':
-      if (mustBeVisible && !this.previewPanelMustBeHidden_)
-        show();
-  }
-};
-
-/**
- * @return {boolean} True if space reserverd for the preview panel.
- * @private
- */
-FileSelectionHandler.prototype.isPreviewPanelVisibile_ = function() {
-  return this.previewPanel_.getAttribute('visibility') == 'visible';
-};
-
-/**
- * Update the selection summary in preview panel.
- *
- * @private
- */
-FileSelectionHandler.prototype.updatePreviewPanelText_ = function() {
-  var selection = this.selection;
-  if (selection.totalCount <= 1) {
-    // Hides the preview text if zero or one file is selected. We shows a
-    // breadcrumb list instead on the preview panel.
-    this.hideCalculating_();
-    this.previewText_.textContent = '';
-    return;
-  }
-
-  var text = '';
-  if (selection.totalCount == 1) {
-    text = selection.entries[0].name;
-  } else if (selection.directoryCount == 0) {
-    text = strf('MANY_FILES_SELECTED', selection.fileCount);
-  } else if (selection.fileCount == 0) {
-    text = strf('MANY_DIRECTORIES_SELECTED', selection.directoryCount);
-  } else {
-    text = strf('MANY_ENTRIES_SELECTED', selection.totalCount);
-  }
-
-  if (selection.bytesKnown) {
-    this.hideCalculating_();
-    if (selection.showBytes) {
-      var bytes = util.bytesToString(selection.bytes);
-      text += ', ' + bytes;
-    }
-  } else {
-    this.showCalculating_();
-  }
-
-  this.previewText_.textContent = text;
-};
-
-/**
- * Displays the 'calculating size' label.
- *
- * @private
- */
-FileSelectionHandler.prototype.showCalculating_ = function() {
-  if (this.animationTimeout_) {
-    clearTimeout(this.animationTimeout_);
-    this.animationTimeout_ = null;
-  }
-
-  var dotCount = 0;
-
-  var advance = function() {
-    this.animationTimeout_ = setTimeout(advance, 1000);
-
-    var s = this.calculatingSize_.textContent;
-    s = s.replace(/(\.)+$/, '');
-    for (var i = 0; i < dotCount; i++) {
-      s += '.';
-    }
-    this.calculatingSize_.textContent = s;
-
-    dotCount = (dotCount + 1) % 3;
-  }.bind(this);
-
-  var start = function() {
-    this.calculatingSize_.hidden = false;
-    advance();
-  }.bind(this);
-
-  this.animationTimeout_ = setTimeout(start, 500);
-};
-
-/**
- * Hides the 'calculating size' label.
- *
- * @private
- */
-FileSelectionHandler.prototype.hideCalculating_ = function() {
-  if (this.animationTimeout_) {
-    clearTimeout(this.animationTimeout_);
-    this.animationTimeout_ = null;
-  }
-  this.calculatingSize_.hidden = true;
-};
-
-/**
  * Calculates async selection stats and updates secondary UI elements.
  *
  * @param {FileSelection} selection The selection object.
@@ -493,25 +323,17 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
   }
 
   // Update preview panels.
-  var wasVisible = this.isPreviewPanelVisibile_();
-  var thumbnailEntries;
-  if (selection.totalCount == 0) {
-    thumbnailEntries = [
-      this.fileManager_.getCurrentDirectoryEntry()
-    ];
+  var wasVisible = this.previewPanel_.visible;
+  var thumbnailSelection;
+  if (selection.totalCount != 0) {
+    thumbnailSelection = selection;
   } else {
-    thumbnailEntries = selection.entries;
-    if (selection.totalCount != 1) {
-      selection.computeBytes(function() {
-        if (this.selection != selection)
-          return;
-        this.updatePreviewPanelText_();
-      }.bind(this));
-    }
+    thumbnailSelection = {
+      entries: [this.fileManager_.getCurrentDirectoryEntry()]
+    };
   }
-  this.updatePreviewPanelVisibility_();
-  this.updatePreviewPanelText_();
-  this.showPreviewThumbnails_(thumbnailEntries);
+  this.previewPanel_.setSelection(selection);
+  this.previewPanel_.thumbnails.selection = thumbnailSelection;
 
   // Update breadcrums.
   var updateTarget = null;
@@ -520,7 +342,7 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
     // Shows the breadcrumb list when a file is selected.
     updateTarget = selection.entries[0].fullPath;
   } else if (selection.totalCount == 0 &&
-             this.isPreviewPanelVisibile_()) {
+             this.previewPanel_.visible) {
     // Shows the breadcrumb list when no file is selected and the preview
     // panel is visible.
     updateTarget = path;
@@ -544,113 +366,6 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
   if (selection.totalCount > 0) {
     chrome.test.sendMessage('selection-change-complete');
   }
-};
-
-/**
- * Renders preview thumbnails in preview panel.
- *
- * @param {Array.<FileEntry>} entries The entries of selected object.
- * @private
- */
-FileSelectionHandler.prototype.showPreviewThumbnails_ = function(entries) {
-  var selection = this.selection;
-  var thumbnails = [];
-  var thumbnailCount = 0;
-  var thumbnailLoaded = -1;
-  var forcedShowTimeout = null;
-  var thumbnailsHaveZoom = false;
-  var self = this;
-
-  var showThumbnails = function() {
-    // have-zoom class may be updated twice: then timeout exceeds and then
-    // then all images loaded.
-    if (self.selection == selection) {
-      if (thumbnailsHaveZoom) {
-        self.previewThumbnails_.classList.add('has-zoom');
-      } else {
-        self.previewThumbnails_.classList.remove('has-zoom');
-      }
-    }
-
-    if (forcedShowTimeout === null)
-      return;
-    clearTimeout(forcedShowTimeout);
-    forcedShowTimeout = null;
-
-    // FileSelection could change while images are loading.
-    if (self.selection == selection) {
-      self.previewThumbnails_.textContent = '';
-      for (var i = 0; i < thumbnails.length; i++)
-        self.previewThumbnails_.appendChild(thumbnails[i]);
-    }
-  };
-
-  var onThumbnailLoaded = function() {
-    thumbnailLoaded++;
-    if (thumbnailLoaded == thumbnailCount)
-      showThumbnails();
-  };
-
-  var thumbnailClickHandler = function() {
-    if (selection.tasks)
-      selection.tasks.executeDefault();
-  };
-
-  var doc = this.fileManager_.document_;
-  for (var i = 0; i < entries.length; i++) {
-    var entry = entries[i];
-
-    if (thumbnailCount < FileSelectionHandler.MAX_PREVIEW_THUMBNAIL_COUNT) {
-      var box = doc.createElement('div');
-      box.className = 'thumbnail';
-      if (thumbnailCount == 0) {
-        var zoomed = doc.createElement('div');
-        zoomed.hidden = true;
-        thumbnails.push(zoomed);
-        var onFirstThumbnailLoaded = function(img, transform) {
-          if (img && self.decorateThumbnailZoom_(zoomed, img, transform)) {
-            zoomed.hidden = false;
-            thumbnailsHaveZoom = true;
-          }
-          onThumbnailLoaded();
-        };
-        var thumbnail = this.renderThumbnail_(entry, onFirstThumbnailLoaded);
-        zoomed.addEventListener('click', thumbnailClickHandler);
-      } else {
-        var thumbnail = this.renderThumbnail_(entry, onThumbnailLoaded);
-      }
-      thumbnailCount++;
-      box.appendChild(thumbnail);
-      box.style.zIndex =
-          FileSelectionHandler.MAX_PREVIEW_THUMBNAIL_COUNT + 1 - i;
-      box.addEventListener('click', thumbnailClickHandler);
-
-      thumbnails.push(box);
-    }
-  }
-
-  forcedShowTimeout = setTimeout(showThumbnails,
-      FileManager.THUMBNAIL_SHOW_DELAY);
-  onThumbnailLoaded();
-};
-
-/**
- * Renders a thumbnail for the buttom panel.
- *
- * @param {Entry} entry Entry to render for.
- * @param {function} callback Called when image loaded.
- * @return {HTMLDivElement} Created element.
- * @private
- */
-FileSelectionHandler.prototype.renderThumbnail_ = function(entry, callback) {
-  var thumbnail = this.fileManager_.document_.createElement('div');
-  FileGrid.decorateThumbnailBox(thumbnail,
-                                entry,
-                                this.fileManager_.metadataCache_,
-                                ThumbnailLoader.FillMode.FILL,
-                                FileGrid.ThumbnailQuality.LOW,
-                                callback);
-  return thumbnail;
 };
 
 /**
@@ -685,77 +400,4 @@ FileSelectionHandler.prototype.updateSearchBreadcrumbs_ = function() {
   this.searchBreadcrumbs_.show(
       PathUtil.getRootPath(entry.fullPath),
       entry.fullPath);
-};
-
-/**
- * Creates enlarged image for a bottom pannel thumbnail.
- * Image's assumed to be just loaded and not inserted into the DOM.
- *
- * @param {HTMLElement} largeImageBox DIV element to decorate.
- * @param {HTMLElement} img Loaded image.
- * @param {Object} transform Image transformation description.
- * @return {boolean} True if zoomed image is present.
- * @private
- */
-FileSelectionHandler.prototype.decorateThumbnailZoom_ = function(
-    largeImageBox, img, transform) {
-  var width = img.width;
-  var height = img.height;
-  var THUMBNAIL_SIZE = 35;
-  if (width < THUMBNAIL_SIZE * 2 && height < THUMBNAIL_SIZE * 2)
-    return false;
-
-  var scale = Math.min(1,
-      FileSelectionHandler.IMAGE_HOVER_PREVIEW_SIZE / Math.max(width, height));
-
-  var imageWidth = Math.round(width * scale);
-  var imageHeight = Math.round(height * scale);
-
-  var largeImage = this.fileManager_.document_.createElement('img');
-  if (scale < 0.3) {
-    // Scaling large images kills animation. Downscale it in advance.
-
-    // Canvas scales images with liner interpolation. Make a larger
-    // image (but small enough to not kill animation) and let IMG
-    // scale it smoothly.
-    var INTERMEDIATE_SCALE = 3;
-    var canvas = this.fileManager_.document_.createElement('canvas');
-    canvas.width = imageWidth * INTERMEDIATE_SCALE;
-    canvas.height = imageHeight * INTERMEDIATE_SCALE;
-    var ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    // Using bigger than default compression reduces image size by
-    // several times. Quality degradation compensated by greater resolution.
-    largeImage.src = canvas.toDataURL('image/jpeg', 0.6);
-  } else {
-    largeImage.src = img.src;
-  }
-  largeImageBox.className = 'popup';
-
-  var boxWidth = Math.max(THUMBNAIL_SIZE, imageWidth);
-  var boxHeight = Math.max(THUMBNAIL_SIZE, imageHeight);
-
-  if (transform && transform.rotate90 % 2 == 1) {
-    var t = boxWidth;
-    boxWidth = boxHeight;
-    boxHeight = t;
-  }
-
-  var style = largeImageBox.style;
-  style.width = boxWidth + 'px';
-  style.height = boxHeight + 'px';
-  style.top = (-boxHeight + THUMBNAIL_SIZE) + 'px';
-
-  var style = largeImage.style;
-  style.width = imageWidth + 'px';
-  style.height = imageHeight + 'px';
-  style.left = (boxWidth - imageWidth) / 2 + 'px';
-  style.top = (boxHeight - imageHeight) / 2 + 'px';
-  style.position = 'relative';
-
-  util.applyTransform(largeImage, transform);
-
-  largeImageBox.appendChild(largeImage);
-  largeImageBox.style.zIndex = 1000;
-  return true;
 };

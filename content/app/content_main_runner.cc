@@ -29,7 +29,7 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
-#include "content/gpu/gpu_main_thread.h"
+#include "content/gpu/in_process_gpu_thread.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/browser/content_browser_client.h"
@@ -41,15 +41,15 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
-#include "content/renderer/renderer_main_thread.h"
-#include "content/utility/utility_main_thread.h"
+#include "content/renderer/in_process_renderer_thread.h"
+#include "content/utility/in_process_utility_thread.h"
 #include "crypto/nss_util.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/dpi_win.h"
 #include "webkit/common/user_agent/user_agent.h"
 
 #if defined(USE_TCMALLOC)
@@ -431,10 +431,12 @@ int RunNamedProcessTypeMain(
   };
 
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(CreateUtilityMainThread);
+  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
   RenderProcessHost::RegisterRendererMainThreadFactory(
-      CreateRendererMainThread);
-  GpuProcessHost::RegisterGpuMainThreadFactory(CreateGpuMainThread);
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(
+      CreateInProcessGpuThread);
 #endif
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
@@ -684,6 +686,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
+    if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
+      base::TimeTicks::SetNowIsHighResNowIfSupported();
+
     // This must be done early enough since some helper functions like
     // IsTouchEnabled, needed to load resources, may call into the theme dll.
     EnableThemeSupportOnAllWindowStations();

@@ -37,18 +37,18 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/range/range.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/render_text.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/tray_bubble_view.h"
 #include "ui/views/controls/button/button.h"
@@ -452,11 +452,12 @@ void PublicAccountUserDetails::Layout() {
   // Word-wrap the label text.
   const gfx::Font font;
   std::vector<base::string16> lines;
-  ui::ElideRectangleText(text_, font, contents_area.width(),
-                         contents_area.height(), ui::ELIDE_LONG_WORDS, &lines);
+  gfx::ElideRectangleText(text_, font, contents_area.width(),
+                          contents_area.height(), gfx::ELIDE_LONG_WORDS,
+                          &lines);
   // Loop through the lines, creating a renderer for each.
   gfx::Point position = contents_area.origin();
-  ui::Range display_name(ui::Range::InvalidRange());
+  gfx::Range display_name(gfx::Range::InvalidRange());
   for (std::vector<base::string16>::const_iterator it = lines.begin();
        it != lines.end(); ++it) {
     gfx::RenderText* line = gfx::RenderText::CreateInstance();
@@ -476,14 +477,14 @@ void PublicAccountUserDetails::Layout() {
     if (!display_name.is_empty()) {
       display_name.set_end(
           it->find(kDisplayNameMark, display_name.start() + 1));
-      ui::Range line_range(0, it->size());
+      gfx::Range line_range(0, it->size());
       line->ApplyColor(kPublicAccountUserCardNameColor,
                        display_name.Intersect(line_range));
       // Update the range for the next line.
       if (display_name.end() >= line_range.end())
         display_name.set_start(0);
       else
-        display_name = ui::Range::InvalidRange();
+        display_name = gfx::Range::InvalidRange();
     }
 
     lines_.push_back(line);
@@ -550,8 +551,8 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
   while (min_width < max_width) {
     lines.clear();
     const int width = (min_width + max_width) / 2;
-    const bool too_narrow = ui::ElideRectangleText(
-        text_, font, width, INT_MAX, ui::TRUNCATE_LONG_WORDS, &lines) != 0;
+    const bool too_narrow = gfx::ElideRectangleText(
+        text_, font, width, INT_MAX, gfx::TRUNCATE_LONG_WORDS, &lines) != 0;
     int line_count = lines.size();
     if (!too_narrow && line_count == 3 &&
             width - font.GetStringWidth(lines.back()) <=
@@ -566,8 +567,8 @@ void PublicAccountUserDetails::CalculatePreferredSize(SystemTrayItem* owner,
 
   // Calculate the corresponding height and set the preferred size.
   lines.clear();
-  ui::ElideRectangleText(
-      text_, font, min_width, INT_MAX, ui::TRUNCATE_LONG_WORDS, &lines);
+  gfx::ElideRectangleText(
+      text_, font, min_width, INT_MAX, gfx::TRUNCATE_LONG_WORDS, &lines);
   int line_count = lines.size();
   if (min_width - font.GetStringWidth(lines.back()) <=
       space_width + link_size.width()) {

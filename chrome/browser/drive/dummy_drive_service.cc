@@ -74,16 +74,12 @@ CancelCallback DummyDriveService::GetChangeList(
     int64 start_changestamp,
     const GetResourceListCallback& callback) { return CancelCallback(); }
 
-CancelCallback DummyDriveService::ContinueGetResourceList(
-    const GURL& override_url,
-    const GetResourceListCallback& callback) { return CancelCallback(); }
-
 CancelCallback DummyDriveService::GetRemainingChangeList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetRemainingFileList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) { return CancelCallback(); }
 
 CancelCallback DummyDriveService::GetResourceEntry(
@@ -191,5 +187,13 @@ CancelCallback DummyDriveService::AuthorizeApp(
     const std::string& resource_id,
     const std::string& app_id,
     const AuthorizeAppCallback& callback) { return CancelCallback(); }
+
+CancelCallback DummyDriveService::GetResourceListInDirectoryByWapi(
+    const std::string& directory_resource_id,
+    const GetResourceListCallback& callback) { return CancelCallback(); }
+
+CancelCallback DummyDriveService::GetRemainingResourceList(
+    const GURL& next_link,
+    const GetResourceListCallback& callback) { return CancelCallback(); }
 
 }  // namespace drive

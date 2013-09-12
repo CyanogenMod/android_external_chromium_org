@@ -52,9 +52,9 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/vector2d.h"
@@ -337,6 +337,9 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
 
   // The URL of the frame initiating the open.
   IPC_STRUCT_MEMBER(GURL, opener_url)
+
+  // The URL of the top frame containing the opener.
+  IPC_STRUCT_MEMBER(GURL, opener_top_level_frame_url)
 
   // The security origin of the frame initiating the open.
   IPC_STRUCT_MEMBER(GURL, opener_security_origin)
@@ -1080,7 +1083,7 @@ IPC_MESSAGE_ROUTED4(
 // This message confirms an ongoing composition.
 IPC_MESSAGE_ROUTED3(ViewMsg_ImeConfirmComposition,
                     string16 /* text */,
-                    ui::Range /* replacement_range */,
+                    gfx::Range /* replacement_range */,
                     bool /* keep_selection */)
 
 // Sets the text composition to be between the given start and end offsets
@@ -1641,13 +1644,23 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_DidActivateAcceleratedCompositing,
 
 IPC_STRUCT_BEGIN(ViewHostMsg_BeginSmoothScroll_Params)
   IPC_STRUCT_MEMBER(bool, scroll_down)
-  IPC_STRUCT_MEMBER(int, pixels_to_scroll)
-  IPC_STRUCT_MEMBER(int, mouse_event_x)
-  IPC_STRUCT_MEMBER(int, mouse_event_y)
+  IPC_STRUCT_MEMBER(int32, pixels_to_scroll)
+  IPC_STRUCT_MEMBER(int32, mouse_event_x)
+  IPC_STRUCT_MEMBER(int32, mouse_event_y)
 IPC_STRUCT_END()
 
 IPC_MESSAGE_ROUTED1(ViewHostMsg_BeginSmoothScroll,
                     ViewHostMsg_BeginSmoothScroll_Params /* params */)
+
+IPC_STRUCT_BEGIN(ViewHostMsg_BeginPinch_Params)
+  IPC_STRUCT_MEMBER(bool, zoom_in)
+  IPC_STRUCT_MEMBER(int32, pixels_to_move)
+  IPC_STRUCT_MEMBER(int32, anchor_x)
+  IPC_STRUCT_MEMBER(int32, anchor_y)
+IPC_STRUCT_END()
+
+IPC_MESSAGE_ROUTED1(ViewHostMsg_BeginPinch,
+                    ViewHostMsg_BeginPinch_Params /* params */)
 
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Focus)
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Blur)
@@ -1960,7 +1973,7 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_MoveCaret_ACK)
 IPC_MESSAGE_ROUTED3(ViewHostMsg_SelectionChanged,
                     string16 /* text covers the selection range */,
                     size_t /* the offset of the text in the document */,
-                    ui::Range /* selection range in the document */)
+                    gfx::Range /* selection range in the document */)
 
 // Notification that the selection bounds have changed.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_SelectionBoundsChanged,
@@ -2003,8 +2016,8 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
 
 IPC_MESSAGE_ROUTED3(ViewHostMsg_TextInputTypeChanged,
                     ui::TextInputType /* TextInputType of the focused node */,
-                    bool /* can_compose_inline in the focused node */,
-                    ui::TextInputMode /* TextInputMode of the focused node */)
+                    ui::TextInputMode /* TextInputMode of the focused node */,
+                    bool /* can_compose_inline in the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,
@@ -2015,12 +2028,11 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_ImeCancelComposition)
 
 // WebKit and JavaScript error messages to log to the console
 // or debugger UI.
-IPC_MESSAGE_ROUTED5(ViewHostMsg_AddMessageToConsole,
+IPC_MESSAGE_ROUTED4(ViewHostMsg_AddMessageToConsole,
                     int32, /* log level */
                     string16, /* msg */
                     int32, /* line number */
-                    string16, /* source id */
-                    string16 /* stack trace */ )
+                    string16 /* source id */ )
 
 // Sent by the renderer process to indicate that a plugin instance has crashed.
 // Note: |plugin_pid| should not be trusted. The corresponding process has
@@ -2370,7 +2382,7 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_FreeTransportDIB,
 // synchronously (see crbug.com/120597). This IPC message sends the character
 // bounds after every composition change to always have correct bound info.
 IPC_MESSAGE_ROUTED2(ViewHostMsg_ImeCompositionRangeChanged,
-                    ui::Range /* composition range */,
+                    gfx::Range /* composition range */,
                     std::vector<gfx::Rect> /* character bounds */)
 #endif
 

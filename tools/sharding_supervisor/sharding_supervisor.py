@@ -18,7 +18,7 @@ def pop_known_arguments(args):
   rest = []
   run_test_cases_extra_args = []
   for arg in args:
-    if arg.startswith(('--gtest_filter=', '--gtest_output=')):
+    if arg.startswith(('--gtest_filter=', '--gtest_output=', '--clusters=')):
       run_test_cases_extra_args.append(arg)
     elif arg == '--run-manual':
       run_test_cases_extra_args.append(arg)
@@ -37,6 +37,13 @@ def pop_known_arguments(args):
       rest.append(arg)
     else:
       rest.append(arg)
+
+  # Use --jobs arg if exist.
+  for arg in args:
+    if arg.startswith('--jobs='):
+      run_test_cases_extra_args.append(arg)
+      break
+
   return run_test_cases_extra_args, rest
 
 

@@ -11,10 +11,10 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
 #include "components/autofill/content/browser/wallet/required_action.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "ui/base/range/range.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/range/range.h"
 
 class Profile;
 
@@ -42,6 +42,7 @@ class AutofillDialogViewDelegate {
   virtual string16 DialogTitle() const = 0;
   virtual string16 AccountChooserText() const = 0;
   virtual string16 SignInLinkText() const = 0;
+  virtual string16 SpinnerText() const = 0;
   virtual string16 EditSuggestionText() const = 0;
   virtual string16 CancelButtonText() const = 0;
   virtual string16 ConfirmButtonText() const = 0;
@@ -51,8 +52,8 @@ class AutofillDialogViewDelegate {
 
   // State ---------------------------------------------------------------------
 
-  // Whether the user is known to be signed in.
-  virtual DialogSignedInState SignedInState() const = 0;
+  // Whether the sign-in link should be disabled.
+  virtual bool ShouldDisableSignInLink() const = 0;
 
   // Whether the dialog is in a not exactly well-defined state
   // (while attempting to sign-in or retrieving the wallet data etc).
@@ -61,6 +62,9 @@ class AutofillDialogViewDelegate {
   // Whether to show the checkbox to save data locally (in Autofill).
   virtual bool ShouldOfferToSaveInChrome() const = 0;
 
+  // Whether the checkbox to save data locally should be checked initially.
+  virtual bool ShouldSaveInChrome() const = 0;
+
   // Returns the model for the account chooser. It will return NULL if the
   // account chooser should not show a menu. In this case, clicking on the
   // account chooser should initiate sign-in.
@@ -68,12 +72,6 @@ class AutofillDialogViewDelegate {
 
   // Returns the icon that should be shown in the account chooser.
   virtual gfx::Image AccountChooserImage() = 0;
-
-  // Whether or not the details container should be showing currently.
-  virtual bool ShouldShowDetailArea() const = 0;
-
-  // Whether or not the progress bar in the button strip should be showing.
-  virtual bool ShouldShowProgressBar() const = 0;
 
   // Returns the image that should be shown on the left of the button strip
   // or an empty image if none should be shown.
@@ -87,10 +85,10 @@ class AutofillDialogViewDelegate {
 
   // Returns a struct full of data concerning what overlay, if any, should be
   // displayed on top of the dialog.
-  virtual DialogOverlayState GetDialogOverlay() const = 0;
+  virtual DialogOverlayState GetDialogOverlay() = 0;
 
   // Returns ranges to linkify in the text returned by |LegalDocumentsText()|.
-  virtual const std::vector<ui::Range>& LegalDocumentLinks() = 0;
+  virtual const std::vector<gfx::Range>& LegalDocumentLinks() = 0;
 
   // Detail inputs -------------------------------------------------------------
 
@@ -117,9 +115,6 @@ class AutofillDialogViewDelegate {
 
   // Returns the current state of suggestions for |section|.
   virtual SuggestionState SuggestionStateForSection(DialogSection section) = 0;
-
-  // Should be called when the user starts editing of the section.
-  virtual void EditClickedForSection(DialogSection section) = 0;
 
   // Returns an icon to be displayed along with the input for the given type.
   // |user_input| is the current text in the textfield.
@@ -172,10 +167,9 @@ class AutofillDialogViewDelegate {
   // order from top to bottom.
   virtual std::vector<DialogNotification> CurrentNotifications() = 0;
 
-  // Returns Autocheckout steps that the view should currently be showing in
-  // order from first to last.
-  virtual std::vector<DialogAutocheckoutStep> CurrentAutocheckoutSteps()
-      const = 0;
+  // Called when a generic link has been clicked in the dialog. Opens the URL
+  // out-of-line.
+  virtual void LinkClicked(const GURL& url) = 0;
 
   // Begins or aborts the flow to sign into Wallet.
   virtual void SignInLinkClicked() = 0;
@@ -185,10 +179,7 @@ class AutofillDialogViewDelegate {
                                                 bool checked) = 0;
 
   // A legal document link has been clicked.
-  virtual void LegalDocumentLinkClicked(const ui::Range& range) = 0;
-
-  // A button in the dialog's overlay has been pressed.
-  virtual void OverlayButtonPressed() = 0;
+  virtual void LegalDocumentLinkClicked(const gfx::Range& range) = 0;
 
   // Called when the view has been cancelled. Returns true if the dialog should
   // now close, or false to keep it open.

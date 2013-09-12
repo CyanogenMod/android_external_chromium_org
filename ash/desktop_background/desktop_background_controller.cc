@@ -14,7 +14,6 @@
 #include "ash/shell.h"
 #include "ash/shell_factory.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -115,7 +114,7 @@ class DesktopBackgroundController::WallpaperLoader
   static scoped_ptr<SkBitmap> LoadSkBitmapFromJPEGFile(
       const base::FilePath& path) {
     std::string data;
-    if (!file_util::ReadFileToString(path, &data)) {
+    if (!base::ReadFileToString(path, &data)) {
       LOG(ERROR) << "Unable to read data from " << path.value();
       return scoped_ptr<SkBitmap>();
     }
@@ -414,10 +413,11 @@ void DesktopBackgroundController::InstallDesktopController(
       NOTREACHED();
       return;
   }
-  GetRootWindowController(root_window)->SetAnimatingWallpaperController(
-      new internal::AnimatingDesktopController(component));
+  internal::GetRootWindowController(root_window)->
+      SetAnimatingWallpaperController(
+          new internal::AnimatingDesktopController(component));
 
-  component->StartAnimating(GetRootWindowController(root_window));
+  component->StartAnimating(internal::GetRootWindowController(root_window));
 }
 
 void DesktopBackgroundController::InstallDesktopControllerForAllWindows() {

@@ -347,6 +347,10 @@ class CONTENT_EXPORT WebContentsImpl
       RenderViewHost* render_view_host,
       const ViewHostMsg_DidFailProvisionalLoadWithError_Params& params)
           OVERRIDE;
+  virtual void DidGetResourceResponseStart(
+      const ResourceRequestDetails& details) OVERRIDE;
+  virtual void DidGetRedirectForResourceRequest(
+      const ResourceRedirectDetails& details) OVERRIDE;
   virtual void DidNavigate(
       RenderViewHost* render_view_host,
       const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
@@ -408,8 +412,7 @@ class CONTENT_EXPORT WebContentsImpl
   virtual bool AddMessageToConsole(int32 level,
                                    const string16& message,
                                    int32 line_no,
-                                   const string16& source_id,
-                                   const string16& stack_trace) OVERRIDE;
+                                   const string16& source_id) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
   virtual WebPreferences GetWebkitPrefs() OVERRIDE;
@@ -742,7 +745,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper functions for sending notifications.
   void NotifySwapped(RenderViewHost* old_render_view_host);
-  void NotifyConnected();
   void NotifyDisconnected();
   void NotifyNavigationEntryCommitted(const LoadCommittedDetails& load_details);
 

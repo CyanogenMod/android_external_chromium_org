@@ -62,7 +62,7 @@ scoped_ptr<base::DictionaryValue> ConfigDictionaryFromMessage(
 namespace remoting {
 
 NativeMessagingHost::NativeMessagingHost(
-    scoped_ptr<DaemonController> daemon_controller,
+    scoped_refptr<DaemonController> daemon_controller,
     scoped_refptr<protocol::PairingRegistry> pairing_registry,
     scoped_ptr<OAuthClient> oauth_client,
     base::PlatformFile input,
@@ -73,9 +73,11 @@ NativeMessagingHost::NativeMessagingHost(
       quit_closure_(quit_closure),
       native_messaging_reader_(input),
       native_messaging_writer_(output),
-      daemon_controller_(daemon_controller.Pass()),
+      daemon_controller_(daemon_controller),
       pairing_registry_(pairing_registry),
       oauth_client_(oauth_client.Pass()),
+      pending_requests_(0),
+      shutdown_(false),
       weak_factory_(this) {
   weak_ptr_ = weak_factory_.GetWeakPtr();
 }
@@ -92,17 +94,20 @@ void NativeMessagingHost::Start() {
 
 void NativeMessagingHost::Shutdown() {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
-  if (!quit_closure_.is_null()) {
+
+  if (shutdown_)
+    return;
+
+  shutdown_ = true;
+  if (!pending_requests_)
     caller_task_runner_->PostTask(FROM_HERE, quit_closure_);
-    quit_closure_.Reset();
-  }
 }
 
 void NativeMessagingHost::ProcessMessage(scoped_ptr<base::Value> message) {
   DCHECK(caller_task_runner_->BelongsToCurrentThread());
 
   // Don't process any more messages if Shutdown() has been called.
-  if (quit_closure_.is_null())
+  if (shutdown_)
     return;
 
   const base::DictionaryValue* message_dict;
@@ -128,6 +133,9 @@ void NativeMessagingHost::ProcessMessage(scoped_ptr<base::Value> message) {
   }
 
   response_dict->SetString("type", type + "Response");
+
+  DCHECK_GE(pending_requests_, 0);
+  pending_requests_++;
 
   bool success = false;
   if (type == "hello") {
@@ -165,8 +173,12 @@ void NativeMessagingHost::ProcessMessage(scoped_ptr<base::Value> message) {
     LOG(ERROR) << "Unsupported request type: " << type;
   }
 
-  if (!success)
+  if (!success) {
+    pending_requests_--;
+    DCHECK_GE(pending_requests_, 0);
+
     Shutdown();
+  }
 }
 
 bool NativeMessagingHost::ProcessHello(
@@ -258,11 +270,9 @@ bool NativeMessagingHost::ProcessUpdateDaemonConfig(
   if (!config_dict)
     return false;
 
-  // base::Unretained() is safe because this object owns |daemon_controller_|
-  // which owns the thread that will run the callback.
   daemon_controller_->UpdateConfig(
       config_dict.Pass(),
-      base::Bind(&NativeMessagingHost::SendAsyncResult, base::Unretained(this),
+      base::Bind(&NativeMessagingHost::SendAsyncResult, weak_ptr_,
                  base::Passed(&response)));
   return true;
 }
@@ -271,8 +281,8 @@ bool NativeMessagingHost::ProcessGetDaemonConfig(
     const base::DictionaryValue& message,
     scoped_ptr<base::DictionaryValue> response) {
   daemon_controller_->GetConfig(
-      base::Bind(&NativeMessagingHost::SendConfigResponse,
-                 base::Unretained(this), base::Passed(&response)));
+      base::Bind(&NativeMessagingHost::SendConfigResponse, weak_ptr_,
+                 base::Passed(&response)));
   return true;
 }
 
@@ -295,7 +305,7 @@ bool NativeMessagingHost::ProcessGetUsageStatsConsent(
     scoped_ptr<base::DictionaryValue> response) {
   daemon_controller_->GetUsageStatsConsent(
       base::Bind(&NativeMessagingHost::SendUsageStatsConsentResponse,
-                 base::Unretained(this), base::Passed(&response)));
+                 weak_ptr_, base::Passed(&response)));
   return true;
 }
 
@@ -315,7 +325,7 @@ bool NativeMessagingHost::ProcessStartDaemon(
 
   daemon_controller_->SetConfigAndStart(
       config_dict.Pass(), consent,
-      base::Bind(&NativeMessagingHost::SendAsyncResult, base::Unretained(this),
+      base::Bind(&NativeMessagingHost::SendAsyncResult, weak_ptr_,
                  base::Passed(&response)));
   return true;
 }
@@ -324,7 +334,7 @@ bool NativeMessagingHost::ProcessStopDaemon(
     const base::DictionaryValue& message,
     scoped_ptr<base::DictionaryValue> response) {
   daemon_controller_->Stop(
-      base::Bind(&NativeMessagingHost::SendAsyncResult, base::Unretained(this),
+      base::Bind(&NativeMessagingHost::SendAsyncResult, weak_ptr_,
                  base::Passed(&response)));
   return true;
 }
@@ -406,6 +416,12 @@ void NativeMessagingHost::SendResponse(
 
   if (!native_messaging_writer_.WriteMessage(*response))
     Shutdown();
+
+  pending_requests_--;
+  DCHECK_GE(pending_requests_, 0);
+
+  if (shutdown_ && !pending_requests_)
+    caller_task_runner_->PostTask(FROM_HERE, quit_closure_);
 }
 
 void NativeMessagingHost::SendConfigResponse(
@@ -428,12 +444,10 @@ void NativeMessagingHost::SendPairedClientsResponse(
 
 void NativeMessagingHost::SendUsageStatsConsentResponse(
     scoped_ptr<base::DictionaryValue> response,
-    bool supported,
-    bool allowed,
-    bool set_by_policy) {
-  response->SetBoolean("supported", supported);
-  response->SetBoolean("allowed", allowed);
-  response->SetBoolean("setByPolicy", set_by_policy);
+    const DaemonController::UsageStatsConsent& consent) {
+  response->SetBoolean("supported", consent.supported);
+  response->SetBoolean("allowed", consent.allowed);
+  response->SetBoolean("setByPolicy", consent.set_by_policy);
   SendResponse(response.Pass());
 }
 

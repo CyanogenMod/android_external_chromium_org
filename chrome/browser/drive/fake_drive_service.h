@@ -40,6 +40,12 @@ class FakeDriveService : public DriveServiceInterface {
   // when offline. By default the offline state is false.
   void set_offline(bool offline) { offline_ = offline; }
 
+  // GetAllResourceList never returns result when this is set to true.
+  // Used to emulate the real server's slowness.
+  void set_never_return_all_resource_list(bool value) {
+    never_return_all_resource_list_ = value;
+  }
+
   // Changes the default max results returned from GetResourceList().
   // By default, it's set to 0, which is unlimited.
   void set_default_max_results(int default_max_results) {
@@ -81,6 +87,12 @@ class FakeDriveService : public DriveServiceInterface {
   // GetAppList().
   int app_list_load_count() const { return app_list_load_count_; }
 
+  // Returns the number of times GetAllResourceList are blocked due to
+  // set_never_return_all_resource_list().
+  int blocked_resource_list_load_count() const {
+    return blocked_resource_list_load_count_;
+  }
+
   // Returns the file path whose request is cancelled just before this method
   // invocation.
   const base::FilePath& last_cancelled_file() const {
@@ -121,14 +133,11 @@ class FakeDriveService : public DriveServiceInterface {
   virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback ContinueGetResourceList(
-      const GURL& override_url,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetRemainingChangeList(
-      const std::string& page_token,
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetRemainingFileList(
-      const std::string& page_token,
+      const GURL& next_link,
       const google_apis::GetResourceListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetResourceEntry(
       const std::string& resource_id,
@@ -217,6 +226,12 @@ class FakeDriveService : public DriveServiceInterface {
       const std::string& resource_id,
       const std::string& app_id,
       const google_apis::AuthorizeAppCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetResourceListInDirectoryByWapi(
+      const std::string& directory_resource_id,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetRemainingResourceList(
+      const GURL& next_link,
+      const google_apis::GetResourceListCallback& callback) OVERRIDE;
 
   // Adds a new file with the given parameters. On success, returns
   // HTTP_CREATED with the parsed entry.
@@ -297,7 +312,9 @@ class FakeDriveService : public DriveServiceInterface {
   int directory_load_count_;
   int about_resource_load_count_;
   int app_list_load_count_;
+  int blocked_resource_list_load_count_;
   bool offline_;
+  bool never_return_all_resource_list_;
   base::FilePath last_cancelled_file_;
   GURL share_url_base_;
 

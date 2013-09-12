@@ -136,6 +136,7 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/file_posix.cc \
 	net/disk_cache/in_flight_backend_io.cc \
 	net/disk_cache/in_flight_io.cc \
+	net/disk_cache/mapped_file.cc \
 	net/disk_cache/mapped_file_avoid_mmap_posix.cc \
 	net/disk_cache/mem_backend_impl.cc \
 	net/disk_cache/mem_entry_impl.cc \
@@ -309,6 +310,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/scoped_evp_cipher_ctx.cc \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
+	net/quic/quic_ack_notifier.cc \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
@@ -364,7 +366,8 @@ LOCAL_SRC_FILES := \
 	net/socket/tcp_client_socket.cc \
 	net/socket/tcp_client_socket_libevent.cc \
 	net/socket/tcp_listen_socket.cc \
-	net/socket/tcp_server_socket_libevent.cc \
+	net/socket/tcp_server_socket.cc \
+	net/socket/tcp_socket_libevent.cc \
 	net/socket/transport_client_socket_pool.cc \
 	net/socket/unix_domain_socket_posix.cc \
 	net/socket_stream/socket_stream.cc \
@@ -440,10 +443,13 @@ LOCAL_SRC_FILES := \
 	net/url_request/url_request_throttler_header_adapter.cc \
 	net/url_request/url_request_throttler_manager.cc \
 	net/url_request/view_cache_helper.cc \
+	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
+	net/websockets/websocket_deflater.cc \
 	net/websockets/websocket_errors.cc \
 	net/websockets/websocket_frame.cc \
 	net/websockets/websocket_frame_parser.cc \
+	net/websockets/websocket_handshake_constants.cc \
 	net/websockets/websocket_handshake_handler.cc \
 	net/websockets/websocket_job.cc \
 	net/websockets/websocket_net_log_params.cc \
@@ -485,6 +491,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -497,6 +504,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
@@ -577,6 +585,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -589,6 +598,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DNET_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DENABLE_BUILT_IN_DNS' \
@@ -651,7 +661,9 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -668,7 +680,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

@@ -29,7 +29,6 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -37,10 +36,10 @@
 #include "chrome/browser/extensions/api/runtime/runtime_api.h"
 #include "chrome/browser/extensions/api/storage/settings_frontend.h"
 #include "chrome/browser/extensions/app_sync_data.h"
-#include "chrome/browser/extensions/browser_event_router.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/data_deleter.h"
+#include "chrome/browser/extensions/event_router.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
@@ -55,7 +54,6 @@
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/extensions/external_provider_interface.h"
 #include "chrome/browser/extensions/installed_loader.h"
-#include "chrome/browser/extensions/lazy_background_task_queue.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/permissions_updater.h"
@@ -67,9 +65,9 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -86,8 +84,8 @@
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/notification_service.h"
@@ -367,13 +365,15 @@ ExtensionService::ExtensionService(Profile* profile,
       ready_(ready),
       toolbar_model_(this),
       menu_manager_(profile),
-      event_routers_initialized_(false),
       update_once_all_providers_are_ready_(false),
       browser_terminating_(false),
       installs_delayed_for_gc_(false),
       is_first_run_(false),
       app_sync_bundle_(this),
       extension_sync_bundle_(this) {
+#if defined(OS_CHROMEOS)
+  disable_garbage_collection_ = false;
+#endif
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Figure out if extension installation should be enabled.
@@ -496,16 +496,6 @@ ExtensionService::~ExtensionService() {
 void ExtensionService::SetSyncStartFlare(
     const syncer::SyncableService::StartSyncFlare& flare) {
   flare_ = flare;
-}
-
-void ExtensionService::InitEventRouters() {
-  if (event_routers_initialized_)
-    return;
-
-#if defined(ENABLE_EXTENSIONS)
-  browser_event_router_.reset(new extensions::BrowserEventRouter(profile_));
-#endif  // defined(ENABLE_EXTENSIONS)
-  event_routers_initialized_ = true;
 }
 
 void ExtensionService::Shutdown() {
@@ -1961,6 +1951,17 @@ void ExtensionService::UnloadExtension(
       content::Details<const Extension>(extension.get()));
 }
 
+void ExtensionService::RemoveComponentExtension(
+    const std::string& extension_id) {
+  scoped_refptr<const Extension> extension(
+      GetExtensionById(extension_id, false));
+  UnloadExtension(extension_id, extension_misc::UNLOAD_REASON_UNINSTALL);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+      content::Source<Profile>(profile_),
+      content::Details<const Extension>(extension.get()));
+}
+
 void ExtensionService::UnloadAllExtensions() {
   profile_->GetExtensionSpecialStoragePolicy()->RevokeRightsForAllExtensions();
 
@@ -1983,6 +1984,11 @@ void ExtensionService::ReloadExtensions() {
 }
 
 void ExtensionService::GarbageCollectExtensions() {
+#if defined(OS_CHROMEOS)
+  if (disable_garbage_collection_)
+    return;
+#endif
+
   if (extension_prefs_->pref_service()->ReadOnly())
     return;
 
@@ -2296,7 +2302,7 @@ void ExtensionService::UpdateActiveExtensionsInCrashReporter() {
       extension_ids.insert(extension->id());
   }
 
-  child_process_logging::SetActiveExtensions(extension_ids);
+  crash_keys::SetActiveExtensions(extension_ids);
 }
 
 ExtensionService::ImportStatus ExtensionService::SatisfyImports(
@@ -2948,25 +2954,6 @@ void ExtensionService::SetBackgroundPageReady(const Extension* extension) {
       content::NotificationService::NoDetails());
 }
 
-void ExtensionService::InspectBackgroundPage(const Extension* extension) {
-  DCHECK(extension);
-
-  ExtensionProcessManager* pm = system_->process_manager();
-  extensions::LazyBackgroundTaskQueue* queue =
-      system_->lazy_background_task_queue();
-
-  extensions::ExtensionHost* host =
-      pm->GetBackgroundHostForExtension(extension->id());
-  if (host) {
-    InspectExtensionHost(host);
-  } else {
-    queue->AddPendingTask(
-        profile_, extension->id(),
-        base::Bind(&ExtensionService::InspectExtensionHost,
-                    base::Unretained(this)));
-  }
-}
-
 bool ExtensionService::IsBeingUpgraded(const Extension* extension) const {
   ExtensionRuntimeDataMap::const_iterator it =
       extension_runtime_data_.find(extension->id());
@@ -3002,12 +2989,6 @@ bool ExtensionService::HasUsedWebRequest(const Extension* extension) const {
 void ExtensionService::SetHasUsedWebRequest(const Extension* extension,
                                             bool value) {
   extension_runtime_data_[extension->id()].has_used_webrequest = value;
-}
-
-void ExtensionService::InspectExtensionHost(
-    extensions::ExtensionHost* host) {
-  if (host)
-    DevToolsWindow::OpenDevToolsWindow(host->render_view_host());
 }
 
 bool ExtensionService::ShouldEnableOnInstall(const Extension* extension) {

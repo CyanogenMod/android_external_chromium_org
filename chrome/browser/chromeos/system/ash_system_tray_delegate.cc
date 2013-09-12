@@ -28,6 +28,7 @@
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray_accessibility.h"
 #include "ash/system/tray_caps_lock.h"
+#include "ash/system/user/login_status.h"
 #include "ash/system/user/update_observer.h"
 #include "ash/system/user/user_observer.h"
 #include "ash/volume_control_delegate.h"
@@ -98,6 +99,7 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -227,7 +229,7 @@ void ShowNetworkSettingsPage(const std::string& service_path) {
           service_path);
   if (network) {
     std::string name(network->name());
-    if (name.empty() && network->type() == flimflam::kTypeEthernet)
+    if (name.empty() && network->Matches(NetworkTypePattern::Ethernet()))
       name = l10n_util::GetStringUTF8(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
     page += base::StringPrintf(
         "?servicePath=%s&networkType=%s&networkName=%s",
@@ -320,6 +322,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
                            public content::NotificationObserver,
                            public input_method::InputMethodManager::Observer,
                            public system::TimezoneSettings::Observer,
+                           public chromeos::LoginState::Observer,
                            public chromeos::SystemClockClient::Observer,
                            public device::BluetoothAdapter::Observer,
                            public SystemKeyEventListener::CapsLockObserver,
@@ -390,6 +393,9 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
     ash::Shell::GetInstance()->session_state_delegate()->
         AddSessionStateObserver(this);
+
+    if (LoginState::IsInitialized())
+      LoginState::Get()->AddObserver(this);
   }
 
   virtual void Shutdown() OVERRIDE {
@@ -444,6 +450,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     bluetooth_adapter_->RemoveObserver(this);
     ash::Shell::GetInstance()->session_state_delegate()->
         RemoveSessionStateObserver(this);
+    LoginState::Get()->RemoveObserver(this);
 
     // Stop observing Drive operations.
     UnobserveDriveUpdates();
@@ -788,13 +795,12 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
       ash::IMEPropertyInfoList* list) OVERRIDE {
     input_method::InputMethodManager* manager =
         input_method::InputMethodManager::Get();
-    input_method::InputMethodUtil* util = manager->GetInputMethodUtil();
     input_method::InputMethodPropertyList properties =
         manager->GetCurrentInputMethodProperties();
     for (size_t i = 0; i < properties.size(); ++i) {
       ash::IMEPropertyInfo property;
       property.key = properties[i].key;
-      property.name = util->TranslateString(properties[i].label);
+      property.name = base::UTF8ToUTF16(properties[i].label);
       property.selected = properties[i].is_selection_item_checked;
       list->push_back(property);
     }
@@ -1073,6 +1079,12 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
     GetSystemTrayNotifier()->NotifySessionLengthLimitChanged();
   }
 
+  // LoginState::Observer overrides.
+  virtual void LoggedInStateChanged(
+      chromeos::LoginState::LoggedInState state) OVERRIDE {
+    UpdateClockType();
+  }
+
   // Overridden from PowerManagerClient::Observer.
   virtual void BrightnessChanged(int level, bool user_initiated) OVERRIDE {
     double leveld = static_cast<double>(level);
@@ -1091,7 +1103,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         GetUserLoginStatus());
   }
 
-  virtual void UnlockScreen() OVERRIDE {
+  virtual void ScreenIsUnlocked() OVERRIDE {
     screen_locked_ = false;
     ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
         GetUserLoginStatus());

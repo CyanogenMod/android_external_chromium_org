@@ -11,6 +11,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 #include "media/base/media_keys.h"
 
@@ -32,12 +33,22 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
 
   // Returns a MediaDrmBridge instance if |scheme_uuid| is supported, or a NULL
   // pointer otherwise.
-  static MediaDrmBridge* Create(int media_keys_id,
-                                const std::vector<uint8>& scheme_uuid,
-                                MediaPlayerManager* manager);
+  static scoped_ptr<MediaDrmBridge> Create(
+      int media_keys_id,
+      const std::vector<uint8>& scheme_uuid,
+      const std::string& security_level,
+      MediaPlayerManager* manager);
 
   // Checks whether MediaDRM is available.
   static bool IsAvailable();
+
+  static bool IsSecurityLevelSupported(const std::vector<uint8>& scheme_uuid,
+                                       const std::string& security_level);
+
+  static bool IsCryptoSchemeSupported(const std::vector<uint8>& scheme_uuid,
+                                      const std::string& container_mime_type);
+
+  static bool IsSecureDecoderRequired(const std::string& security_level_str);
 
   static bool RegisterMediaDrmBridge(JNIEnv* env);
 
@@ -78,8 +89,11 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   int media_keys_id() const { return media_keys_id_; }
 
  private:
+  static bool IsSecureDecoderRequired(SecurityLevel security_level);
+
   MediaDrmBridge(int media_keys_id,
                  const std::vector<uint8>& scheme_uuid,
+                 const std::string& security_level,
                  MediaPlayerManager* manager);
 
   // Get the security level of the media.

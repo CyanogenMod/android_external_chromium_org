@@ -19,7 +19,6 @@ class ScreenPositionClient;
 }
 
 namespace views {
-class DesktopActivationClient;
 class DesktopCursorClient;
 class DesktopDispatcherClient;
 class DesktopDragDropClientWin;
@@ -93,6 +92,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
   virtual void FlashFrame(bool flash_frame) OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
   virtual void OnNativeWidgetFocus() OVERRIDE;
   virtual void OnNativeWidgetBlur() OVERRIDE;
 
@@ -179,7 +179,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual bool HandleMouseEvent(const ui::MouseEvent& event) OVERRIDE;
   virtual bool HandleKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual bool HandleUntranslatedKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
+  virtual void HandleTouchEvent(const ui::TouchEvent& event) OVERRIDE;
   virtual bool HandleIMEMessage(UINT message,
                                 WPARAM w_param,
                                 LPARAM l_param,
@@ -215,8 +215,6 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   scoped_ptr<HWNDMessageHandler> message_handler_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  // Depends on focus_manager_.
-  scoped_ptr<DesktopActivationClient> activation_client_;
 
   // TODO(beng): Consider providing an interface to DesktopNativeWidgetAura
   //             instead of providing this route back to Widget.

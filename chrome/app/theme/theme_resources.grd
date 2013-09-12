@@ -148,17 +148,6 @@
       <structure type="chrome_scaled_image" name="IDR_CONSTRAINED_TOP_CENTER_V" file="constrained_top_center_vista.png" />
       <structure type="chrome_scaled_image" name="IDR_CONSTRAINED_TOP_LEFT_CORNER_V" file="constrained_top_left_corner_vista.png" />
       <structure type="chrome_scaled_image" name="IDR_CONSTRAINED_TOP_RIGHT_CORNER_V" file="constrained_top_right_corner_vista.png" />
-      <if expr="pp_ifdef('chromeos')">
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_CHAT" file="contact_action_chat_base.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_CHAT_H" file="contact_action_chat_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_EMAIL" file="contact_action_email_base.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_EMAIL_H" file="contact_action_email_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_PHONE" file="contact_action_phone_base.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_PHONE_H" file="contact_action_phone_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_VIDEO" file="contact_action_video_base.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_ACTION_VIDEO_H" file="contact_action_video_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_CONTACT_DEFAULT_PHOTO" file="contact_default_photo.png" />
-      </if>
       <!-- Ash doesn't draw rounded content area, so needs a special top
            image. -->
       <if expr="not pp_ifdef('use_ash')">
@@ -185,7 +174,7 @@
       <structure type="chrome_scaled_image" name="IDR_CONTROLLED_SETTING_RECOMMENDED_LARGE" file="controlled_setting_recommended_large.png" />
       <structure type="chrome_scaled_image" name="IDR_COOKIE_ICON" file="cookie.png" />
       <structure type="chrome_scaled_image" name="IDR_COOKIE_STORAGE_ICON" file="cookie_storage.png" />
-      <structure type="chrome_scaled_image" name="IDR_CREDIT_CARD_CVC_HINT" file="credit_card_cvc_hint.png" />
+      <structure type="chrome_scaled_image" name="IDR_CREDIT_CARD_CVC_HINT" file="common/credit_card_cvc_hint.png" />
       <if expr="pp_ifdef('chromeos')">
         <structure type="chrome_scaled_image" name="IDR_CRITICAL_ERROR" file="cros/critical_error.png" />
         <structure type="chrome_scaled_image" name="IDR_CROS_DEFAULT_THROBBER" file="cros/default_throbber.png" />
@@ -756,18 +745,6 @@
       <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_MIC_MASK" file="common/speech_input_mic_mask.png" />
       <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_MIC_NOISE" file="common/speech_input_mic_noise.png" />
       <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_SPINNER" file="common/speech_input_spinner.png" />
-      <if expr="is_linux or pp_ifdef('chromeos')">
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_EMPTY" file="speech_input_tray_linux_mic_empty.png" />
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_FULL" file="speech_input_tray_linux_mic_full.png" />
-      </if>
-      <if expr="is_macosx or is_ios">
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_EMPTY" file="speech_input_tray_macosx_mic_empty.png" />
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_FULL" file="speech_input_tray_macosx_mic_full.png" />
-      </if>
-      <if expr="is_win">
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_EMPTY" file="speech_input_tray_windows_mic_empty.png" />
-        <structure type="chrome_scaled_image" name="IDR_SPEECH_INPUT_TRAY_MIC_FULL" file="speech_input_tray_windows_mic_full.png" />
-      </if>
       <if expr="pp_ifdef('chromeos')">
         <structure type="chrome_scaled_image" name="IDR_SPINNER" file="spinner.png" />
       </if>

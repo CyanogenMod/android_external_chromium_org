@@ -56,12 +56,36 @@ RendererCapabilities::RendererCapabilities()
       max_texture_size(0),
       avoid_pow2_textures(false),
       using_map_image(false),
-      using_shared_memory_resources(false) {}
+      using_shared_memory_resources(false),
+      using_discard_framebuffer(false) {}
 
 RendererCapabilities::~RendererCapabilities() {}
 
-UIResourceRequest::UIResourceRequest()
-    : type(UIResourceInvalidRequest), id(0), bitmap(NULL) {}
+UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
+                                     UIResourceId id)
+    : type_(type), id_(id) {}
+
+UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
+                                     UIResourceId id,
+                                     const UIResourceBitmap& bitmap)
+    : type_(type), id_(id), bitmap_(new UIResourceBitmap(bitmap)) {}
+
+UIResourceRequest::UIResourceRequest(const UIResourceRequest& request) {
+  (*this) = request;
+}
+
+UIResourceRequest& UIResourceRequest::operator=(
+    const UIResourceRequest& request) {
+  type_ = request.type_;
+  id_ = request.id_;
+  if (request.bitmap_) {
+    bitmap_ = make_scoped_ptr(new UIResourceBitmap(*request.bitmap_.get()));
+  } else {
+    bitmap_.reset();
+  }
+
+  return *this;
+}
 
 UIResourceRequest::~UIResourceRequest() {}
 
@@ -142,6 +166,9 @@ bool LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
+
+  overhang_ui_resource_.reset();
+
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
 
@@ -369,6 +396,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     if (!settings_.impl_side_painting)
       sync_tree->ProcessUIResourceRequestQueue();
   }
+  if (overhang_ui_resource_) {
+    host_impl->SetOverhangUIResource(
+        overhang_ui_resource_->id(),
+        GetUIResourceSize(overhang_ui_resource_->id()));
+  }
 
   DCHECK(!sync_tree->ViewportSizeInvalid());
 
@@ -434,8 +466,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
 
   if (output_surface_lost_)
     return;
-
-  DidLoseUIResources();
 
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
@@ -621,6 +651,22 @@ void LayerTreeHost::SetPageScaleFactorAndLimits(float page_scale_factor,
   min_page_scale_factor_ = min_page_scale_factor;
   max_page_scale_factor_ = max_page_scale_factor;
   SetNeedsCommit();
+}
+
+void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
+  DCHECK(bitmap.width() && bitmap.height());
+  DCHECK_EQ(bitmap.bytesPerPixel(), 4);
+
+  SkBitmap bitmap_copy;
+  if (bitmap.isImmutable()) {
+    bitmap_copy = bitmap;
+  } else {
+    bitmap.copyTo(&bitmap_copy, bitmap.config());
+    bitmap_copy.setImmutable();
+  }
+
+  overhang_ui_resource_ = ScopedUIResource::Create(
+      this, UIResourceBitmap(bitmap_copy, UIResourceBitmap::REPEAT));
 }
 
 void LayerTreeHost::SetVisible(bool visible) {
@@ -1123,18 +1169,22 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
 UIResourceId LayerTreeHost::CreateUIResource(UIResourceClient* client) {
   DCHECK(client);
 
-  UIResourceRequest request;
-  bool resource_lost = false;
-  request.type = UIResourceRequest::UIResourceCreate;
-  request.id = next_ui_resource_id_++;
-
-  DCHECK(ui_resource_client_map_.find(request.id) ==
+  UIResourceId next_id = next_ui_resource_id_++;
+  DCHECK(ui_resource_client_map_.find(next_id) ==
          ui_resource_client_map_.end());
 
-  request.bitmap = client->GetBitmap(request.id, resource_lost);
+  bool resource_lost = false;
+  UIResourceRequest request(UIResourceRequest::UIResourceCreate,
+                            next_id,
+                            client->GetBitmap(next_id, resource_lost));
   ui_resource_request_queue_.push_back(request);
-  ui_resource_client_map_[request.id] = client;
-  return request.id;
+
+  UIResourceClientData data;
+  data.client = client;
+  data.size = request.GetBitmap().GetSize();
+
+  ui_resource_client_map_[request.GetId()] = data;
+  return request.GetId();
 }
 
 // Deletes a UI resource.  May safely be called more than once.
@@ -1143,34 +1193,33 @@ void LayerTreeHost::DeleteUIResource(UIResourceId uid) {
   if (iter == ui_resource_client_map_.end())
     return;
 
-  UIResourceRequest request;
-  request.type = UIResourceRequest::UIResourceDelete;
-  request.id = uid;
+  UIResourceRequest request(UIResourceRequest::UIResourceDelete, uid);
   ui_resource_request_queue_.push_back(request);
-  ui_resource_client_map_.erase(uid);
+  ui_resource_client_map_.erase(iter);
 }
 
-void LayerTreeHost::UIResourceLost(UIResourceId uid) {
-  UIResourceClientMap::iterator iter = ui_resource_client_map_.find(uid);
-  if (iter == ui_resource_client_map_.end())
-    return;
-
-  UIResourceRequest request;
-  bool resource_lost = true;
-  request.type = UIResourceRequest::UIResourceCreate;
-  request.id = uid;
-  request.bitmap = iter->second->GetBitmap(uid, resource_lost);
-  DCHECK(request.bitmap.get());
-  ui_resource_request_queue_.push_back(request);
-}
-
-void LayerTreeHost::DidLoseUIResources() {
-  // When output surface is lost, we need to recreate the resource.
+void LayerTreeHost::RecreateUIResources() {
   for (UIResourceClientMap::iterator iter = ui_resource_client_map_.begin();
        iter != ui_resource_client_map_.end();
        ++iter) {
-    UIResourceLost(iter->first);
+    UIResourceId uid = iter->first;
+    const UIResourceClientData& data = iter->second;
+    bool resource_lost = true;
+    UIResourceRequest request(UIResourceRequest::UIResourceCreate,
+                              uid,
+                              data.client->GetBitmap(uid, resource_lost));
+    ui_resource_request_queue_.push_back(request);
   }
+}
+
+// Returns the size of a resource given its id.
+gfx::Size LayerTreeHost::GetUIResourceSize(UIResourceId uid) const {
+  UIResourceClientMap::const_iterator iter = ui_resource_client_map_.find(uid);
+  if (iter == ui_resource_client_map_.end())
+    return gfx::Size();
+
+  const UIResourceClientData& data = iter->second;
+  return data.size;
 }
 
 }  // namespace cc

@@ -56,7 +56,7 @@ policy::PolicyLoadResult LoadPolicyFromDisk(const base::FilePath& path) {
     return result;
   }
   std::string data;
-  if (!file_util::ReadFileToString(path, &data) ||
+  if (!base::ReadFileToString(path, &data) ||
       !result.policy.ParseFromArray(data.c_str(), data.size())) {
     LOG(WARNING) << "Failed to read or parse policy data from " << path.value();
     result.status = policy::LOAD_RESULT_LOAD_ERROR;
@@ -210,8 +210,9 @@ void UserCloudPolicyStore::Validate(
     bool validate_in_background,
     const UserCloudPolicyValidator::CompletionCallback& callback) {
   // Configure the validator.
-  scoped_ptr<UserCloudPolicyValidator> validator =
-      CreateValidator(policy.Pass());
+  scoped_ptr<UserCloudPolicyValidator> validator = CreateValidator(
+      policy.Pass(),
+      CloudPolicyValidatorBase::TIMESTAMP_NOT_BEFORE);
   SigninManager* signin = SigninManagerFactory::GetForProfileIfExists(profile_);
   if (signin) {
     std::string username = signin->GetAuthenticatedUsername();

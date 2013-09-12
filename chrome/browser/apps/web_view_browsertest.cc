@@ -233,6 +233,9 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
           fake_speech_recognition_manager_.get());
     }
 
+    // We need real contexts, otherwise the embedder doesn't composite, but the
+    // guest does, and that isn't an expected configuration.
+    UseRealGLContexts();
     extensions::PlatformAppBrowserTest::SetUp();
   }
 
@@ -610,9 +613,8 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
              "web_view/shim");
 }
 
-// This test is flaky. crbug.com/282116
 IN_PROC_BROWSER_TEST_F(WebViewTest,
-                       DISABLED_Shim_TestAutosizeWithPartialAttributes) {
+                       Shim_TestAutosizeWithPartialAttributes) {
   TestHelper("testAutosizeWithPartialAttributes",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -637,6 +639,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestWebRequestAPIExistence) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestEventName) {
   TestHelper("testEventName",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadProgressEvent) {
+  TestHelper("testLoadProgressEvent",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
@@ -1566,6 +1575,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationRequestGone) {
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, ClearData) {
+#if defined(OS_WIN)
+  // Flaky on XP bot http://crbug.com/282674
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "cleardata"))

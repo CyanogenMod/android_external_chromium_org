@@ -18,6 +18,7 @@
 #include "base/threading/thread.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "media/base/android/demuxer_android.h"
 #include "media/base/android/media_codec_bridge.h"
 #include "media/base/android/media_decoder_job.h"
 #include "media/base/android/media_player_android.h"
@@ -34,12 +35,21 @@ class VideoDecoderJob;
 // MediaCodec to decode audio and video streams in two separate threads.
 // IPC is being used to send data from the render process to this object.
 // TODO(qinmin): use shared memory to send data between processes.
-class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
+class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
+                                       public DemuxerAndroidClient {
  public:
-  // Construct a MediaSourcePlayer object with all the needed media player
-  // callbacks.
-  MediaSourcePlayer(int player_id, MediaPlayerManager* manager);
+  // Constructs a player with the given IDs. |manager| and |demuxer| must
+  // outlive the lifetime of this object.
+  MediaSourcePlayer(int player_id,
+                    MediaPlayerManager* manager,
+                    int demuxer_client_id,
+                    DemuxerAndroid* demuxer);
   virtual ~MediaSourcePlayer();
+
+  static bool IsTypeSupported(const std::vector<uint8>& scheme_uuid,
+                              const std::string& security_level,
+                              const std::string& container,
+                              const std::vector<std::string>& codecs);
 
   // MediaPlayerAndroid implementation.
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
@@ -57,11 +67,14 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   virtual bool CanSeekForward() OVERRIDE;
   virtual bool CanSeekBackward() OVERRIDE;
   virtual bool IsPlayerReady() OVERRIDE;
-  virtual void OnSeekRequestAck(unsigned seek_request_id) OVERRIDE;
-  virtual void DemuxerReady(const DemuxerConfigs& configs) OVERRIDE;
-  virtual void ReadFromDemuxerAck(const DemuxerData& data) OVERRIDE;
-  virtual void DurationChanged(const base::TimeDelta& duration) OVERRIDE;
   virtual void SetDrmBridge(MediaDrmBridge* drm_bridge) OVERRIDE;
+  virtual void OnKeyAdded() OVERRIDE;
+
+  // DemuxerAndroidClient implementation.
+  virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) OVERRIDE;
+  virtual void OnDemuxerDataAvailable(const DemuxerData& params) OVERRIDE;
+  virtual void OnDemuxerSeeked(unsigned seek_request_id) OVERRIDE;
+  virtual void OnDemuxerDurationChanged(base::TimeDelta duration) OVERRIDE;
 
  private:
   // Update the current timestamp.
@@ -76,7 +89,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
 
   // Called when the decoder finishes its task.
   void MediaDecoderCallback(
-        bool is_audio, MediaDecoderJob::DecodeStatus decode_status,
+        bool is_audio, MediaCodecStatus status,
         const base::TimeDelta& presentation_timestamp,
         size_t audio_output_bytes);
 
@@ -111,7 +124,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   void OnDecoderStarved();
 
   // Starts the |decoder_starvation_callback_| task with the timeout value.
-  void StartStarvationCallback(const base::TimeDelta& timeout);
+  // |presentation_timestamp| - The presentation timestamp used for starvation
+  // timeout computations. It represents the timestamp of the last piece of
+  // decoded data.
+  void StartStarvationCallback(const base::TimeDelta& presentation_timestamp);
 
   // Schedules a seek event in |pending_events_| and calls StopDecode() on all
   // the MediaDecoderJobs.
@@ -143,6 +159,9 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid {
   bool IsEventPending(PendingEventFlags event) const;
   void SetPendingEvent(PendingEventFlags event);
   void ClearPendingEvent(PendingEventFlags event);
+
+  int demuxer_client_id_;
+  DemuxerAndroid* demuxer_;
 
   // Pending event that the player needs to do.
   unsigned pending_event_;

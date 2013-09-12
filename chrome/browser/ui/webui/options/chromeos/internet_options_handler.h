@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/native_widget_types.h"
@@ -36,7 +37,8 @@ namespace options {
 // ChromeOS internet options page UI handler.
 class InternetOptionsHandler
     : public ::options::OptionsPageUIHandler,
-      public chromeos::NetworkStateHandlerObserver {
+      public chromeos::NetworkStateHandlerObserver,
+      public chromeos::LoginState::Observer {
  public:
   InternetOptionsHandler();
   virtual ~InternetOptionsHandler();
@@ -87,8 +89,17 @@ class InternetOptionsHandler
   // NetworkStateHandlerObserver
   virtual void NetworkManagerChanged() OVERRIDE;
   virtual void NetworkListChanged() OVERRIDE;
+  virtual void NetworkConnectionStateChanged(
+      const chromeos::NetworkState* network) OVERRIDE;
   virtual void NetworkPropertiesUpdated(
       const chromeos::NetworkState* network) OVERRIDE;
+
+  // chromeos::LoginState::Observer
+  virtual void LoggedInStateChanged(
+      chromeos::LoginState::LoggedInState) OVERRIDE;
+
+  // Updates the logged in user type.
+  void UpdateLoggedInUserType();
 
   // content::NotificationObserver (from OptionsPageUIHandler)
   virtual void Observe(int type,
@@ -142,6 +153,9 @@ class InternetOptionsHandler
   void FillNetworkInfo(base::DictionaryValue* dictionary);
 
   content::NotificationRegistrar registrar_;
+
+  // Keep track of the service path for the network shown in the Details view.
+  std::string details_path_;
 
   // Weak pointer factory so we can start connections at a later time
   // without worrying that they will actually try to happen after the lifetime

@@ -15,8 +15,11 @@
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/variations/variations_associated_data.h"
 
 using base::FieldTrial;
 using base::FieldTrialList;
@@ -37,9 +40,20 @@ const char kEnabledGroup[] = "Enabled";
 
 const char kLocalPredictorSpecTrialName[] = "PrerenderLocalPredictorSpec";
 const char kLocalPredictorKeyName[] = "LocalPredictor";
+const char kLocalPredictorUnencryptedSyncOnlyKeyName[] =
+    "LocalPredictorUnencryptedSyncOnly";
 const char kSideEffectFreeWhitelistKeyName[] = "SideEffectFreeWhitelist";
 const char kPrerenderLaunchKeyName[] = "PrerenderLaunch";
 const char kPrerenderAlwaysControlKeyName[] = "PrerenderAlwaysControl";
+const char kPrerenderQueryPrerenderServiceKeyName[] =
+    "PrerenderQueryPrerenderService";
+const char kPrerenderQueryPrerenderServiceCurrentURLKeyName[] =
+    "PrerenderQueryPrerenderServiceCurrentURL";
+const char kPrerenderQueryPrerenderServiceCandidateURLsKeyName[] =
+    "PrerenderQueryPrerenderServiceCandidateURLs";
+const char kPrerenderServiceBehaviorIDKeyName[] = "PrerenderServiceBehaviorID";
+const char kPrerenderServiceFetchTimeoutKeyName[] =
+    "PrerenderServiceFetchTimeoutMs";
 const char kPrerenderTTLKeyName[] = "PrerenderTTLSeconds";
 const char kPrerenderPriorityHalfLifeTimeKeyName[] =
     "PrerenderPriorityHalfLifeTimeSeconds";
@@ -47,8 +61,20 @@ const char kMaxConcurrentPrerenderKeyName[] = "MaxConcurrentPrerenders";
 const char kSkipFragment[] = "SkipFragment";
 const char kSkipHTTPS[] = "SkipHTTPS";
 const char kSkipWhitelist[] = "SkipWhitelist";
+const char kSkipServiceWhitelist[] = "SkipServiceWhitelist";
 const char kSkipLoggedIn[] = "SkipLoggedIn";
 const char kSkipDefaultNoPrerender[] = "SkipDefaultNoPrerender";
+const char kPrerenderServiceURLPrefixParameterName[] =
+    "PrerenderServiceURLPrefix";
+const char kDefaultPrerenderServiceURLPrefix[] =
+    "https://clients4.google.com/prerenderservice/?q=";
+const int kMinPrerenderServiceTimeoutMs = 1;
+const int kMaxPrerenderServiceTimeoutMs = 10000;
+const int kDefaultPrerenderServiceTimeoutMs = 1000;
+const char kSkipPrerenderLocalCanadidates[] = "SkipPrerenderLocalCandidates";
+const char kSkipPrerenderServiceCanadidates[] =
+    "SkipPrerenderServiceCandidates";
+
 
 void SetupPrefetchFieldTrial() {
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
@@ -291,7 +317,16 @@ string GetLocalPredictorSpecValue(string spec_key) {
   return string();
 }
 
-bool IsLocalPredictorEnabled() {
+bool IsUnencryptedSyncEnabled(Profile* profile) {
+  ProfileSyncService* service = ProfileSyncServiceFactory::GetInstance()->
+      GetForProfile(profile);
+  return service && service->GetSessionModelAssociator() &&
+      !service->EncryptEverythingEnabled();
+}
+
+// Indicates whether the Local Predictor is enabled based on field trial
+// selection.
+bool IsLocalPredictorEnabledBasedOnSelection() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   return false;
 #endif
@@ -302,12 +337,27 @@ bool IsLocalPredictorEnabled() {
   return GetLocalPredictorSpecValue(kLocalPredictorKeyName) == kEnabledGroup;
 }
 
+// Usually, we enable the Local Predictor based on field trial selection
+// (see above), so we can just return that setting.
+// However, via Finch, we can specify to not create a LocalPredictor if
+// UnencryptedSync is not enabled. Therefore, we have to perform this additional
+// check to determine whether or not we actually want to enable the
+// LocalPredictor.
+bool IsLocalPredictorEnabled(Profile* profile) {
+  if (GetLocalPredictorSpecValue(kLocalPredictorUnencryptedSyncOnlyKeyName) ==
+      kEnabledGroup &&
+      !IsUnencryptedSyncEnabled(profile)) {
+    return false;
+  }
+  return IsLocalPredictorEnabledBasedOnSelection();
+}
+
 bool IsLoggedInPredictorEnabled() {
-  return IsLocalPredictorEnabled();
+  return IsLocalPredictorEnabledBasedOnSelection();
 }
 
 bool IsSideEffectFreeWhitelistEnabled() {
-  return IsLocalPredictorEnabled() &&
+  return IsLocalPredictorEnabledBasedOnSelection() &&
       GetLocalPredictorSpecValue(kSideEffectFreeWhitelistKeyName) !=
       kDisabledGroup;
 }
@@ -319,6 +369,53 @@ bool IsLocalPredictorPrerenderLaunchEnabled() {
 bool IsLocalPredictorPrerenderAlwaysControlEnabled() {
   return GetLocalPredictorSpecValue(kPrerenderAlwaysControlKeyName) ==
       kEnabledGroup;
+}
+
+bool ShouldQueryPrerenderService(Profile* profile) {
+  return IsUnencryptedSyncEnabled(profile) &&
+      GetLocalPredictorSpecValue(kPrerenderQueryPrerenderServiceKeyName) ==
+      kEnabledGroup;
+}
+
+bool ShouldQueryPrerenderServiceForCurrentURL() {
+  return GetLocalPredictorSpecValue(
+      kPrerenderQueryPrerenderServiceCurrentURLKeyName) != kDisabledGroup;
+}
+
+bool ShouldQueryPrerenderServiceForCandidateURLs() {
+  return GetLocalPredictorSpecValue(
+      kPrerenderQueryPrerenderServiceCandidateURLsKeyName) != kDisabledGroup;
+}
+
+string GetPrerenderServiceURLPrefix() {
+  string prefix = chrome_variations::GetVariationParamValue(
+      kLocalPredictorSpecTrialName,
+      kPrerenderServiceURLPrefixParameterName);
+  if (prefix.empty())
+    prefix = kDefaultPrerenderServiceURLPrefix;
+  return prefix;
+}
+
+int GetPrerenderServiceBehaviorID() {
+  int id;
+  StringToInt(GetLocalPredictorSpecValue(kPrerenderServiceBehaviorIDKeyName),
+              &id);
+  // The behavior ID must be non-negative.
+  if (id < 0)
+    id = 0;
+  return id;
+}
+
+int GetPrerenderServiceFetchTimeoutMs() {
+  int result;
+  StringToInt(GetLocalPredictorSpecValue(kPrerenderServiceFetchTimeoutKeyName),
+              &result);
+  // The behavior ID must be non-negative.
+  if (result < kMinPrerenderServiceTimeoutMs ||
+      result > kMaxPrerenderServiceTimeoutMs) {
+    result = kDefaultPrerenderServiceTimeoutMs;
+  }
+  return result;
 }
 
 int GetLocalPredictorTTLSeconds() {
@@ -365,12 +462,26 @@ bool SkipLocalPredictorWhitelist() {
   return GetLocalPredictorSpecValue(kSkipWhitelist) == kEnabledGroup;
 }
 
+bool SkipLocalPredictorServiceWhitelist() {
+  return GetLocalPredictorSpecValue(kSkipServiceWhitelist) == kEnabledGroup;
+}
+
 bool SkipLocalPredictorLoggedIn() {
   return GetLocalPredictorSpecValue(kSkipLoggedIn) == kEnabledGroup;
 }
 
 bool SkipLocalPredictorDefaultNoPrerender() {
   return GetLocalPredictorSpecValue(kSkipDefaultNoPrerender) == kEnabledGroup;
+}
+
+bool SkipLocalPredictorLocalCandidates() {
+  return GetLocalPredictorSpecValue(kSkipPrerenderLocalCanadidates) ==
+      kEnabledGroup;
+}
+
+bool SkipLocalPredictorServiceCandidates() {
+  return GetLocalPredictorSpecValue(kSkipPrerenderServiceCanadidates) ==
+      kEnabledGroup;
 }
 
 }  // namespace prerender

@@ -42,7 +42,13 @@ need to be translated for each locale.-->
       <output filename="ui_strings_eo.pak" type="data_package" lang="eo" />
     </if>
     <output filename="ui_strings_es.pak" type="data_package" lang="es" />
-    <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    <if expr="is_ios">
+      <!-- iOS uses es-MX for es-419 -->
+      <output filename="ui_strings_es-MX.pak" type="data_package" lang="es-419" />
+    </if>
+    <if expr="not is_ios">
+      <output filename="ui_strings_es-419.pak" type="data_package" lang="es-419" />
+    </if>
     <output filename="ui_strings_et.pak" type="data_package" lang="et" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="ui_strings_eu.pak" type="data_package" lang="eu" />
@@ -1457,6 +1463,18 @@ need to be translated for each locale.-->
       </message>
       <message name="IDS_APP_PERIOD_KEY" desc="Period key">
         Period
+      </message>
+      <message name="IDS_APP_MEDIA_NEXT_TRACK_KEY" desc="Media next track key">
+        Media Next Track
+      </message>
+      <message name="IDS_APP_MEDIA_PLAY_PAUSE_KEY" desc="Media play pause key">
+        Media Play/Pause
+      </message>
+      <message name="IDS_APP_MEDIA_PREV_TRACK_KEY" desc="Media previous track key">
+        Media Previous Track
+      </message>
+      <message name="IDS_APP_MEDIA_STOP_KEY" desc="Media stop key">
+        Media Stop
       </message>
 
       <!-- Shortcut Modifiers -->

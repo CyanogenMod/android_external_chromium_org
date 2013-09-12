@@ -23,6 +23,10 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
   virtual ~ResourceCreationImpl();
 
   // ResourceCreationAPI implementation.
+  virtual PP_Resource CreateAudio1_0(PP_Instance instance,
+                                     PP_Resource config_id,
+                                     PPB_Audio_Callback_1_0 audio_callback,
+                                     void* user_data) OVERRIDE;
   virtual PP_Resource CreateAudio(PP_Instance instance,
                                   PP_Resource config_id,
                                   PPB_Audio_Callback audio_callback,
@@ -103,10 +107,8 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
       PP_InputEvent_Type type,
       PP_TimeTicks time_stamp,
       uint32_t modifiers) OVERRIDE;
-  virtual PP_Resource CreateNetworkMonitor(
-      PP_Instance instance,
-      PPB_NetworkMonitor_Callback callback,
-      void* user_data) OVERRIDE;
+  virtual PP_Resource CreateNetworkMonitorPrivate(
+      PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateResourceArray(PP_Instance instance,
                                           const PP_Resource elements[],
                                           uint32_t size) OVERRIDE;

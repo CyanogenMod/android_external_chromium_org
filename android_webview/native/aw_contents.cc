@@ -27,6 +27,7 @@
 #include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
@@ -147,8 +148,7 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
 
-  web_contents_->GetMutableRendererPrefs()->tap_multiple_targets_strategy =
-      content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
+  SetAndroidWebViewRendererPrefs();
 }
 
 void AwContents::SetJavaPeers(JNIEnv* env,
@@ -214,6 +214,18 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
       AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 }
 
+void AwContents::SetAndroidWebViewRendererPrefs() {
+  content::RendererPreferences* prefs =
+      web_contents_->GetMutableRendererPrefs();
+  prefs->hinting = content::RENDERER_PREFERENCES_HINTING_SLIGHT;
+  prefs->tap_multiple_targets_strategy =
+      content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
+  prefs->use_subpixel_positioning = true;
+  content::RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (host)
+    host->SyncRendererPrefs();
+}
+
 void AwContents::SetAwAutofillManagerDelegate(jobject delegate) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
@@ -239,6 +251,14 @@ jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
   delete this;
+
+  // When the last WebView is destroyed free all discardable memory allocated by
+  // Chromium, because the app process may continue to run for a long time
+  // without ever using another WebView.
+  if (base::subtle::NoBarrier_Load(&g_instance_count) == 0) {
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL);
+  }
 }
 
 static jint Init(JNIEnv* env, jclass, jobject browser_context) {
@@ -310,15 +330,6 @@ void AwContents::GenerateMHTML(JNIEnv* env, jobject obj,
   web_contents_->GenerateMHTML(
       target_path,
       base::Bind(&GenerateMHTMLCallback, base::Owned(j_callback), target_path));
-}
-
-void AwContents::PerformLongClick() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-
-  Java_AwContents_performLongClick(env, obj.obj());
 }
 
 bool AwContents::OnReceivedHttpAuthRequest(const JavaRef<jobject>& handler,

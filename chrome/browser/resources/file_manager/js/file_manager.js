@@ -70,50 +70,6 @@ var DialogType = {
 };
 
 /**
- * TextMeasure constructor.
- *
- * TextMeasure is a measure for text that returns the width of text.  This
- * class has a dummy span element. When measuring the width of text, it sets
- * the text to the element and obtains the element's size by
- * getBoundingClientRect.
- *
- * @constructor
- * @param {HTMLElement} element Element that has styles of measured text. The
- *     width of text is mesures like as it is rendered in this element.
- */
-var TextMeasure = function(element) {
-  var doc = element.ownerDocument;
-  this.dummySpan_ = doc.createElement('span');
-  this.dummySpan_ = doc.getElementsByTagName('body')[0].
-                        appendChild(this.dummySpan_);
-  this.dummySpan_.style.position = 'absolute';
-  this.dummySpan_.style.visibility = 'hidden';
-  var styles = window.getComputedStyle(element, '');
-  var stylesToBeCopied = [
-    'fontSize',
-    'fontStyle',
-    'fontWeight',
-    'fontFamily',
-    'letterSpacing'
-  ];
-  for (var i = 0; i < stylesToBeCopied.length; i++) {
-    this.dummySpan_.style[stylesToBeCopied[i]] = styles[stylesToBeCopied[i]];
-  }
-};
-
-/**
- * Measures the widht of text.
- *
- * @param {string} text Text that is measured the width.
- * @return {number} Width of the specified text.
- */
-TextMeasure.prototype.getWidth = function(text) {
-  this.dummySpan_.innerText = text;
-  var rect = this.dummySpan_.getBoundingClientRect();
-  return rect ? rect.width : 0;
-};
-
-/**
  * @param {string} type Dialog type.
  * @return {boolean} Whether the type is modal.
  */
@@ -126,6 +82,15 @@ DialogType.isModal = function(type) {
 };
 
 /**
+ * @param {string} type Dialog type.
+ * @return {boolean} Whther the type is open dialog.
+ */
+DialogType.isOpenDialog = function(type) {
+  return type == DialogType.SELECT_OPEN_FILE ||
+         type == DialogType.SELECT_OPEN_MULTI_FILE;
+};
+
+/**
  * Bottom magrin of the list and tree for transparent preview panel.
  * @const
  */
@@ -135,29 +100,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 (function() {
 
   // Private variables and helper functions.
-
-  /**
-   * Location of the page to buy more storage for Google Drive.
-   */
-  FileManager.GOOGLE_DRIVE_BUY_STORAGE =
-      'https://www.google.com/settings/storage';
-
-  /**
-   * Location of Google Drive specific help.
-   */
-  FileManager.GOOGLE_DRIVE_HELP =
-      'https://support.google.com/chromeos/?p=filemanager_drivehelp';
-
-  /**
-   * Location of Google Drive specific help.
-   */
-  FileManager.GOOGLE_DRIVE_ROOT = 'https://drive.google.com';
-
-  /**
-   * Location of Files App specific help.
-   */
-  FileManager.FILES_APP_HELP =
-      'https://support.google.com/chromeos/?p=gsg_files_app';
 
   /**
    * Number of milliseconds in a day.
@@ -246,15 +188,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }.bind(this));
     }.bind(this));
 
-    // TODO(yoshiki): Remove the flag when the feature is launched.
-    this.enableExperimentalWebstoreIntegration_ = false;
-    group.add(function(done) {
-      chrome.commandLinePrivate.hasSwitch(
-          'file-manager-enable-webstore-integration', function(flag) {
-        this.enableExperimentalWebstoreIntegration_ = flag;
-        done();
-      }.bind(this));
-    }.bind(this));
+    // TODO(yoshiki): Now the integration is always enabled. Remove this code
+    // when the feature is launched successfully in M31. Until then, we keep it
+    // just in case.
+    this.enableExperimentalWebstoreIntegration_ = true;
 
     group.run(callback);
   };
@@ -272,11 +209,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     util.installFileErrorToString();
 
     metrics.startInterval('Load.FileSystem');
-    chrome.fileBrowserPrivate.requestFileSystem(function(filesystem) {
-      metrics.recordInterval('Load.FileSystem');
-      this.filesystem_ = filesystem;
-      callback();
-    }.bind(this));
+    chrome.fileBrowserPrivate.requestFileSystem(
+      'compatible',
+      function(filesystem) {
+        metrics.recordInterval('Load.FileSystem');
+        this.filesystem_ = filesystem;
+        callback();
+      }.bind(this));
   };
 
   /**
@@ -863,6 +802,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.alert = new d.AlertDialog(this.dialogDom_);
     this.confirm = new d.ConfirmDialog(this.dialogDom_);
     this.prompt = new d.PromptDialog(this.dialogDom_);
+
+    FileManagerDialogBase.setFileManager(this);
     this.shareDialog_ = new ShareDialog(this.dialogDom_);
     this.defaultTaskPicker =
         new cr.filebrowser.DefaultActionDialog(this.dialogDom_);
@@ -911,6 +852,21 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var fullPage = this.dialogType == DialogType.FULL_PAGE;
     FileTable.decorate(this.table_, this.metadataCache_, fullPage);
     FileGrid.decorate(this.grid_, this.metadataCache_);
+
+    this.previewPanel_ = new PreviewPanel(
+        dom.querySelector('.preview-panel'),
+        DialogType.isOpenDialog(this.dialogType) ?
+            PreviewPanel.VisibilityType.ALWAYS_VISIBLE :
+            PreviewPanel.VisibilityType.AUTO,
+        this.getCurrentDirectory(),
+        this.metadataCache_);
+    this.previewPanel_.addEventListener(
+        PreviewPanel.Event.VISIBILITY_CHANGE,
+        this.onPreviewPanelVisibilityChange_.bind(this));
+    this.previewPanel_.initialize();
+
+    this.progressCenterPanel_ = new ProgressCenterPanel(
+        dom.querySelector('#progress-center'));
 
     this.document_.addEventListener('keydown', this.onKeyDown_.bind(this));
     this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
@@ -1129,10 +1085,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.folderShortcutsModel_ = new FolderShortcutsDataModel();
 
     this.selectionHandler_ = new FileSelectionHandler(this);
-    this.selectionHandler_.addEventListener('show-preview-panel',
-        this.onPreviewPanelVisibilityChanged_.bind(this, true));
-    this.selectionHandler_.addEventListener('hide-preview-panel',
-        this.onPreviewPanelVisibilityChanged_.bind(this, false));
 
     var dataModel = this.directoryModel_.getFileList();
 
@@ -1222,20 +1174,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         new NavigationListModel(this.filesystem_,
                                 this.directoryModel_.getRootsList(),
                                 this.folderShortcutsModel_);
-
-    this.navigationList_.addEventListener(
-        'shortcut-target-not-found',
-        function(e) {
-          var path = e.path;
-          var label = e.label;
-          this.confirm.showWithTitle(
-            label,
-            str('SHORTCUT_TARGET_UNAVAILABLE'),
-            // 'Yes' is clicked.
-            function() {
-              this.removeFolderShortcut(path);
-            }.bind(this));
-        }.bind(this));
   };
 
   /**
@@ -1407,7 +1345,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           strf('DRIVE_SERVER_OUT_OF_SPACE_MESSAGE',
               decodeURIComponent(
                   event.error.data.sourceFileUrl.split('/').pop()),
-              FileManager.GOOGLE_DRIVE_BUY_STORAGE));
+              urlConstants.GOOGLE_DRIVE_BUY_STORAGE));
     }
 
     // TODO(benchan): Currently, there is no FileWatcher emulation for
@@ -1437,6 +1375,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var kind = event.kind;
     var entry = event.entry;
     this.directoryModel_.onEntryChanged(kind, entry);
+    this.selectionHandler_.onFileSelectionChanged();
 
     if (kind == util.EntryChangedKind.CREATE && FileType.isImage(entry)) {
       // Preload a thumbnail if the new copied entry an image.
@@ -1570,11 +1509,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * Resize details and thumb views to fit the new window size.
    * @private
    */
-  FileManager.prototype.onPreviewPanelVisibilityChanged_ = function(visible) {
-    var panelHeight = visible ? this.getPreviewPanelHeight_() : 0;
-    this.grid_.setBottomMarginForPanel(panelHeight);
-    this.table_.setBottomMarginForPanel(panelHeight);
-    this.directoryTree_.setBottomMarginForPanel(panelHeight);
+  FileManager.prototype.onPreviewPanelVisibilityChange_ = function() {
+    var panelHeight = this.previewPanel_.visible ?
+        this.previewPanel_.height : 0;
+    if (this.grid_)
+      this.grid_.setBottomMarginForPanel(panelHeight);
+    if (this.table_)
+      this.table_.setBottomMarginForPanel(panelHeight);
+    if (this.directoryTree_)
+      this.directoryTree_.setBottomMarginForPanel(panelHeight);
   };
 
   /**
@@ -1582,7 +1525,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onDragStart_ = function() {
-    this.selectionHandler_.setPreviewPanelMustBeHidden(true);
+    // On open file dialog, the preview panel is always shown.
+    if (DialogType.isOpenDialog(this.dialogType))
+      return;
+    this.previewPanel_.visibilityType =
+        PreviewPanel.VisibilityType.ALWAYS_HIDDEN;
   };
 
   /**
@@ -1590,21 +1537,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onDragEnd_ = function() {
-    this.selectionHandler_.setPreviewPanelMustBeHidden(false);
-  };
-
-  /**
-   * Gets height of the preview panel, using cached value if available. This
-   * returns the value even when the preview panel is hidden.
-   *
-   * @return {number} Height of the preview panel. If failure, returns 0.
-   */
-  FileManager.prototype.getPreviewPanelHeight_ = function() {
-    if (!this.cachedPreviewPanelHeight_) {
-      var previewPanel = this.dialogDom_.querySelector('.preview-panel');
-      this.cachedPreviewPanelHeight_ = previewPanel.clientHeight;
-    }
-    return this.cachedPreviewPanelHeight_;
+    // On open file dialog, the preview panel is always shown.
+    if (DialogType.isOpenDialog(this.dialogType))
+      return;
+    this.previewPanel_.visibilityType = PreviewPanel.VisibilityType.AUTO;
   };
 
   /**
@@ -2007,10 +1943,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.updateCommands();
     if (this.dialogContainer_)
       this.dialogContainer_.setAttribute('connection', connection.type);
-    if (this.shareDialog_.isShowing()) {
-      this.shareDialog_.hide();
-      this.error.show(str('SHARE_ERROR'));
-    }
+    this.shareDialog_.hideWithResult(ShareDialog.Result.NETWORK_ERROR);
   };
 
   /**
@@ -2186,21 +2119,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       console.warn('Unable to share multiple items at once.');
       return;
     }
-    this.shareDialog_.show(entries[0], function() {
-      this.error.show(str('SHARE_ERROR'));
+    // Add the overlapped class to prevent the applicaiton window from
+    // captureing mouse events.
+    this.shareDialog_.show(entries[0], function(result) {
+      if (result == ShareDialog.Result.NETWORK_ERROR)
+        this.error.show(str('SHARE_ERROR'));
     }.bind(this));
-  };
-
-  /**
-   * Folder shared feature is under development and hidden behind flag. This
-   * method returns if the feature is explicitly enabled by the flag or not.
-   * TODO(yoshiki): Remove this after launching folder feature feature.
-   *
-   * @return {boolena} True if the flag is enabled.
-   */
-  FileManager.prototype.isFolderShortcutsEnabled = function() {
-    // TODO(yoshiki): Remove this method in M31.
-    return true;
   };
 
   /**
@@ -2304,7 +2228,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     var entry = selection.entries[0];
     if (entry.isDirectory) {
-      this.onDirectoryAction(entry);
+      this.onDirectoryAction_(entry);
     } else {
       this.dispatchSelectionAction_();
     }
@@ -2343,6 +2267,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             this.alert.showHtml(filename, text, function() {});
           }.bind(this);
 
+          // TODO(yoshiki): Now the integration is always enabled. Remove this
+          // code when the feature is launched successfully in M31.
           if (!this.enableExperimentalWebstoreIntegration_) {
             showAlert();
             return;
@@ -2355,9 +2281,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
               tasks.init(urls, mimeTypes);
               tasks.executeDefault();
             }.bind(this),
-            // Failure callback.
-            function() {},
             // Cancelled callback.
+            function() {},
+            // Failure callback.
             showAlert);
         }.bind(this));
       }
@@ -2395,15 +2321,36 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       var filename = util.extractFilePath(urls[0]);
       var extension = PathUtil.extractExtension(filename);
       var mime = props[0].contentMimeType;
+
+      // Returns with failure if the file has neither extension nor mime.
+      if (!extension || !mime) {
+        onFailure();
+        return;
+      }
+
       this.suggestAppsDialog.show(
           extension, mime,
-          function(installed) {
-            if (installed)
-              onSuccess();
-            else
-              onCancelled();
+          function(result) {
+            switch (result) {
+              case SuggestAppsDialog.Result.INSTALL_SUCCESSFUL:
+                onSuccess();
+                break;
+              case SuggestAppsDialog.Result.FAILED:
+                onFailure();
+                break;
+              default:
+                onCancelled();
+            }
           });
     }.bind(this));
+  };
+
+  /**
+   * Called when a dialog is shown or hidden.
+   * @param {boolean} flag True if a dialog is shown, false if hidden.   */
+  FileManager.prototype.onDialogShownOrHidden = function(show) {
+    // Set/unset a flag to disable dragging on the title area.
+    this.dialogContainer_.classList.toggle('disable-header-drag', show);
   };
 
   /**
@@ -2411,8 +2358,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    *
    * @param {DirectoryEntry} entry Directory entry to which directory should be
    *                               changed.
+   * @private
    */
-  FileManager.prototype.onDirectoryAction = function(entry) {
+  FileManager.prototype.onDirectoryAction_ = function(entry) {
     return this.directoryModel_.changeDirectory(entry.fullPath);
   };
 
@@ -2513,6 +2461,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.updateUnformattedDriveStatus_();
     this.updateTitle_();
     this.updateGearMenu_();
+    this.previewPanel_.currentPath_ = this.getCurrentDirectory();
   };
 
   /**
@@ -3089,7 +3038,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             this.dialogType != DialogType.SELECT_FOLDER &&
             this.dialogType != DialogType.SELECT_UPLOAD_FOLDER) {
           event.preventDefault();
-          this.onDirectoryAction(selection.entries[0]);
+          this.onDirectoryAction_(selection.entries[0]);
         } else if (this.dispatchSelectionAction_()) {
           event.preventDefault();
         }
@@ -3770,7 +3719,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var entry = selectedItem.entry;
     // If the entry is a directory, just change the directory.
     if (entry.isDirectory) {
-      this.onDirectoryAction(entry);
+      this.onDirectoryAction_(entry);
       return;
     }
 
@@ -3842,7 +3791,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         };
         items.push(item);
       }
-      this.defaultTaskPicker.show(
+      var show = this.defaultTaskPicker.showOkCancelDialog(
           str('CHANGE_DEFAULT_APP_BUTTON_LABEL'),
           '',
           items,
@@ -3850,6 +3799,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           function(action) {
             ActionChoiceUtil.setRememberedActionId(action.id);
           });
+      if (!show)
+        console.error('DefaultTaskPicker can\'t be shown.');
     }.bind(this);
 
     ActionChoiceUtil.getDefinedActions(loadTimeData, function(actions) {

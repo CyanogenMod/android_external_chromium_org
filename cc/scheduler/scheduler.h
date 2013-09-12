@@ -20,25 +20,23 @@ namespace cc {
 
 class Thread;
 
-struct ScheduledActionDrawAndSwapResult {
-  ScheduledActionDrawAndSwapResult()
-      : did_draw(false),
-        did_swap(false) {}
-  ScheduledActionDrawAndSwapResult(bool did_draw, bool did_swap)
-      : did_draw(did_draw),
-        did_swap(did_swap) {}
+struct DrawSwapReadbackResult {
+  DrawSwapReadbackResult()
+      : did_draw(false), did_swap(false), did_readback(false) {}
+  DrawSwapReadbackResult(bool did_draw, bool did_swap, bool did_readback)
+      : did_draw(did_draw), did_swap(did_swap), did_readback(did_readback) {}
   bool did_draw;
   bool did_swap;
+  bool did_readback;
 };
 
 class SchedulerClient {
  public:
   virtual void SetNeedsBeginFrameOnImplThread(bool enable) = 0;
   virtual void ScheduledActionSendBeginFrameToMainThread() = 0;
-  virtual ScheduledActionDrawAndSwapResult
-  ScheduledActionDrawAndSwapIfPossible() = 0;
-  virtual ScheduledActionDrawAndSwapResult
-  ScheduledActionDrawAndSwapForced() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() = 0;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() = 0;
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivatePendingTree() = 0;
@@ -72,18 +70,14 @@ class CC_EXPORT Scheduler {
   void SetNeedsCommit();
 
   // Like SetNeedsCommit(), but ensures a commit will definitely happen even if
-  // we are not visible.
-  void SetNeedsForcedCommit();
+  // we are not visible. Will eventually result in a forced draw internally.
+  void SetNeedsForcedCommitForReadback();
 
   void SetNeedsRedraw();
 
   void SetMainThreadNeedsLayerTextures();
 
-  // Like SetNeedsRedraw(), but ensures the draw will definitely happen even if
-  // we are not visible.
-  void SetNeedsForcedRedraw();
-
-  void DidSwapUseIncompleteTile();
+  void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
 
   void FinishCommit();
   void BeginFrameAbortedByMainThread(bool did_handle);
@@ -104,6 +98,7 @@ class CC_EXPORT Scheduler {
   base::TimeTicks LastBeginFrameOnImplThreadTime();
 
   void BeginFrame(const BeginFrameArgs& args);
+  void PollForAnticipatedDrawTriggers();
 
   scoped_ptr<base::Value> StateAsValue() {
     return state_machine_.AsValue().Pass();
@@ -116,6 +111,7 @@ class CC_EXPORT Scheduler {
   void SetupNextBeginFrameIfNeeded();
   void DrawAndSwapIfPossible();
   void DrawAndSwapForced();
+  void DrawAndReadback();
   void ProcessScheduledActions();
 
   const SchedulerSettings settings_;
@@ -124,10 +120,8 @@ class CC_EXPORT Scheduler {
   base::WeakPtrFactory<Scheduler> weak_factory_;
   bool last_set_needs_begin_frame_;
   bool has_pending_begin_frame_;
-  // TODO(brianderson): crbug.com/249806 : Remove safe_to_expect_begin_frame_
-  // workaround.
-  bool safe_to_expect_begin_frame_;
   BeginFrameArgs last_begin_frame_args_;
+  base::CancelableClosure poll_for_draw_triggers_closure_;
 
   SchedulerStateMachine state_machine_;
   bool inside_process_scheduled_actions_;

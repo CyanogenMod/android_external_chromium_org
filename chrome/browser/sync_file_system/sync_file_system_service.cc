@@ -17,7 +17,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync_file_system/drive_backend/drive_file_sync_service.h"
+#include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/sync_direction.h"
@@ -299,7 +299,7 @@ void SyncFileSystemService::DidInitializeFileSystem(
 
   // Local side of initialization for the app is done.
   // Continue on initializing the remote side.
-  remote_file_service_->RegisterOriginForTrackingChanges(
+  remote_file_service_->RegisterOrigin(
       app_origin,
       base::Bind(&SyncFileSystemService::DidRegisterOrigin,
                  AsWeakPtr(), app_origin, callback));
@@ -309,7 +309,10 @@ void SyncFileSystemService::DidRegisterOrigin(
     const GURL& app_origin,
     const SyncStatusCallback& callback,
     SyncStatusCode status) {
-  DVLOG(1) << "DidRegisterOrigin: " << app_origin.spec() << " " << status;
+  util::Log(logging::LOG_VERBOSE, FROM_HERE,
+            "DidInitializeForApp (registered the origin): %s: %s",
+            app_origin.spec().c_str(),
+            SyncStatusCodeToString(status));
 
   callback.Run(status);
 }
@@ -610,7 +613,7 @@ void SyncFileSystemService::HandleExtensionUnloaded(
     return;
   DVLOG(1) << "Handle extension notification for UNLOAD(DISABLE): "
            << app_origin;
-  remote_file_service_->DisableOriginForTrackingChanges(
+  remote_file_service_->DisableOrigin(
       app_origin,
       base::Bind(&DidHandleOriginForExtensionUnloadedEvent,
                  type, app_origin));
@@ -641,7 +644,7 @@ void SyncFileSystemService::HandleExtensionEnabled(
   GURL app_origin =
       extensions::Extension::GetBaseURLFromExtensionId(extension_id);
   DVLOG(1) << "Handle extension notification for ENABLED: " << app_origin;
-  remote_file_service_->EnableOriginForTrackingChanges(
+  remote_file_service_->EnableOrigin(
       app_origin,
       base::Bind(&DidHandleOriginForExtensionEnabledEvent, type, app_origin));
   local_file_service_->SetOriginEnabled(app_origin, true);

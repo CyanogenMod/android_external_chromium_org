@@ -5,6 +5,7 @@
 #include "chrome/app/chrome_main_delegate.h"
 
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
@@ -27,12 +28,12 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/profiling.h"
-#include "chrome/common/startup_metric_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/plugin/chrome_content_plugin_client.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "components/nacl/common/nacl_switches.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_paths.h"
 #include "ui/base/ui_base_switches.h"
@@ -340,7 +341,15 @@ struct MainFunction {
 }  // namespace
 
 ChromeMainDelegate::ChromeMainDelegate() {
+#if defined(OS_ANDROID)
+// On Android the main entry point time is the time when the Java code starts.
+// This happens before the shared library containing this code is even loaded.
+// The Java startup code has recorded that time, but the C++ code can't fetch it
+// from the Java side until it has initialized the JNI. See
+// ChromeMainDelegateAndroid.
+#else
   startup_metric_utils::RecordMainEntryPointTime();
+#endif
 }
 
 ChromeMainDelegate::~ChromeMainDelegate() {
@@ -600,6 +609,19 @@ void ChromeMainDelegate::PreSandboxStartup() {
   // Notice a user data directory override if any
   base::FilePath user_data_dir =
       command_line.GetSwitchValuePath(switches::kUserDataDir);
+#if defined(OS_LINUX)
+  // On Linux, Chrome does not support running multiple copies under different
+  // DISPLAYs, so the profile directory can be specified in the environment to
+  // support the virtual desktop use-case.
+  if (user_data_dir.empty()) {
+    std::string user_data_dir_string;
+    scoped_ptr<base::Environment> environment(base::Environment::Create());
+    if (environment->GetVar("CHROME_USER_DATA_DIR", &user_data_dir_string) &&
+        IsStringUTF8(user_data_dir_string)) {
+      user_data_dir = base::FilePath::FromUTF8Unsafe(user_data_dir_string);
+    }
+  }
+#endif
 #if defined(OS_MACOSX) || defined(OS_WIN)
   policy::path_parser::CheckUserDataDirPolicy(&user_data_dir);
 #endif

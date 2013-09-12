@@ -13,6 +13,7 @@
 #include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
+#include "ash/root_window_settings.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
@@ -31,7 +32,6 @@
 #include "ash/wm/dock/docked_window_layout_manager.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/panels/panel_window_event_handler.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
 #include "ash/wm/stacking_controller.h"
@@ -54,6 +54,7 @@
 #include "ui/aura/window_tracker.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/models/menu_model.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_util.h"
@@ -197,10 +198,8 @@ class EmptyWindowDelegate : public aura::WindowDelegate {
     return false;
   }
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
-  virtual scoped_refptr<ui::Texture> CopyTexture() OVERRIDE {
-    NOTREACHED();
-    return scoped_refptr<ui::Texture>();
-  }
+  virtual void DidRecreateLayer(ui::Layer* old_layer,
+                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EmptyWindowDelegate);
@@ -217,7 +216,7 @@ RootWindowController::RootWindowController(aura::RootWindow* root_window)
       panel_layout_manager_(NULL),
       touch_hud_debug_(NULL),
       touch_hud_projection_(NULL) {
-  SetRootWindowController(root_window, this);
+  GetRootWindowSettings(root_window)->controller = this;
   screen_dimmer_.reset(new ScreenDimmer(root_window));
 
   stacking_controller_.reset(new StackingController);
@@ -246,7 +245,7 @@ RootWindowController* RootWindowController::ForWindow(
 
 // static
 RootWindowController* RootWindowController::ForActiveRootWindow() {
-  return GetRootWindowController(Shell::GetActiveRootWindow());
+  return internal::GetRootWindowController(Shell::GetActiveRootWindow());
 }
 
 void RootWindowController::SetWallpaperController(
@@ -269,18 +268,24 @@ void RootWindowController::Shutdown() {
   wallpaper_controller_.reset();
   animating_wallpaper_controller_.reset();
 
-  CloseChildWindows();
+  // Change the active root window before closing child windows. If any child
+  // being removed triggers a relayout of the shelf it will try to build a
+  // window list adding windows from the active root window's containers which
+  // may have already gone away.
   if (Shell::GetActiveRootWindow() == root_window_) {
     Shell::GetInstance()->set_active_root_window(
         Shell::GetPrimaryRootWindow() == root_window_.get() ?
         NULL : Shell::GetPrimaryRootWindow());
   }
-  SetRootWindowController(root_window_.get(), NULL);
+
+  CloseChildWindows();
+  GetRootWindowSettings(root_window_.get())->controller = NULL;
   screen_dimmer_.reset();
   workspace_controller_.reset();
   // Forget with the display ID so that display lookup
   // ends up with invalid display.
-  root_window_->ClearProperty(kDisplayIdKey);
+  internal::GetRootWindowSettings(root_window_.get())->display_id =
+      gfx::Display::kInvalidDisplayID;
   // And this root window should no longer process events.
   root_window_->PrepareForShutdown();
 
@@ -498,12 +503,13 @@ void RootWindowController::UpdateShelfVisibility() {
   shelf_->shelf_layout_manager()->UpdateVisibilityState();
 }
 
-const aura::Window* RootWindowController::GetFullscreenWindow() const {
-  const aura::Window* container = GetContainer(kShellWindowId_DefaultContainer);
-  for (size_t i = 0; i < container->children().size(); ++i) {
-    aura::Window* child = container->children()[i];
-    if (wm::IsWindowFullscreen(child))
-      return child;
+const aura::Window* RootWindowController::GetTopmostFullscreenWindow() const {
+  const aura::Window::Windows& windows =
+      GetContainer(kShellWindowId_DefaultContainer)->children();
+  for (aura::Window::Windows::const_reverse_iterator iter = windows.rbegin();
+       iter != windows.rend(); ++iter) {
+    if (wm::IsWindowFullscreen(*iter))
+      return *iter;
   }
   return NULL;
 }
@@ -808,6 +814,11 @@ void RootWindowController::OnTouchHudProjectionToggled(bool enabled) {
     EnableTouchHudProjection();
   else
     DisableTouchHudProjection();
+}
+
+RootWindowController* GetRootWindowController(
+    const aura::RootWindow* root_window) {
+  return root_window ? GetRootWindowSettings(root_window)->controller : NULL;
 }
 
 }  // namespace internal

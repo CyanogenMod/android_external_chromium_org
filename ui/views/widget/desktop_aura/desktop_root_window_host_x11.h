@@ -29,7 +29,6 @@ class ScreenPositionClient;
 }
 
 namespace views {
-class DesktopActivationClient;
 class DesktopDragDropClientAuraX11;
 class DesktopDispatcherClient;
 class DesktopRootWindowHostObserverX11;
@@ -120,6 +119,7 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
                               const gfx::ImageSkia& app_icon) OVERRIDE;
   virtual void InitModalType(ui::ModalType modal_type) OVERRIDE;
   virtual void FlashFrame(bool flash_frame) OVERRIDE;
+  virtual void OnRootViewLayout() const OVERRIDE;
   virtual void OnNativeWidgetFocus() OVERRIDE;
   virtual void OnNativeWidgetBlur() OVERRIDE;
 
@@ -219,12 +219,15 @@ private:
   // The window manager state bits.
   std::set< ::Atom> window_properties_;
 
+  // Local flag for fullscreen state to avoid a state mismatch between
+  // server and local window_properties_ during app-initiated fullscreen.
+  bool is_fullscreen_;
+
   // We are owned by the RootWindow, but we have to have a back pointer to it.
   aura::RootWindow* root_window_;
 
   // aura:: objects that we own.
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  scoped_ptr<DesktopActivationClient> activation_client_;
   scoped_ptr<views::corewm::CursorManager> cursor_client_;
   scoped_ptr<DesktopDispatcherClient> dispatcher_client_;
   scoped_ptr<aura::client::ScreenPositionClient> position_client_;

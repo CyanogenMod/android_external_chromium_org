@@ -64,7 +64,7 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
   g_browser_process->AddRefModule();
 }
 
-void  ChromeMetroViewerProcessHost::OnChannelError() {
+void ChromeMetroViewerProcessHost::OnChannelError() {
   // TODO(cpu): At some point we only close the browser. Right now this
   // is very convenient for developing.
   DLOG(INFO) << "viewer channel error : Quitting browser";
@@ -88,7 +88,7 @@ void  ChromeMetroViewerProcessHost::OnChannelError() {
   g_browser_process->platform_part()->OnMetroViewerProcessTerminated();
 }
 
-void  ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
+void ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
   DLOG(INFO) << "ChromeMetroViewerProcessHost::OnChannelConnected: ";
   // Set environment variable to let breakpad know that metro process was
   // connected.
@@ -97,13 +97,11 @@ void  ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
 
 void ChromeMetroViewerProcessHost::OnSetTargetSurface(
     gfx::NativeViewId target_surface) {
-  DLOG(INFO) << __FUNCTION__ << ", target_surface = " << target_surface;
   HWND hwnd = reinterpret_cast<HWND>(target_surface);
+  // Tell our root window host that the viewer has connected.
+  aura::RemoteRootWindowHostWin::Instance()->Connected(this, hwnd);
+  // Now start the Ash shell environment.
   chrome::OpenAsh();
-  scoped_refptr<AcceleratedPresenter> any_window =
-      AcceleratedPresenter::GetForWindow(NULL);
-  any_window->SetNewTargetWindow(hwnd);
-  aura::RemoteRootWindowHostWin::Instance()->Connected(this);
   ash::Shell::GetInstance()->CreateLauncher();
   ash::Shell::GetInstance()->ShowLauncher();
   // Tell the rest of Chrome that Ash is running.

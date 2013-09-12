@@ -2,11 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import base64
+import hashlib
 import os
 import string
 import win32api
 import win32com.client
 from win32com.shell import shell, shellcon
+import win32security
+
+
+def _GetFileVersion(file_path):
+  """Returns the file version of the given file."""
+  return win32com.client.Dispatch('Scripting.FileSystemObject').GetFileVersion(
+      file_path)
 
 
 def _GetProductName(file_path):
@@ -28,62 +37,98 @@ def _GetProductName(file_path):
   return win32api.GetFileVersionInfo(file_path, product_name_entry)
 
 
-def ResolvePath(path):
-  """Resolves variables in a file path, and returns the resolved path.
+def _GetUserSpecificRegistrySuffix():
+  """Returns '.' plus the unpadded Base32 encoding of the MD5 of the user's SID.
 
-  This method resolves only variables defined below. It does not resolve
-  environment variables. Any dollar signs that are not part of variables must be
-  escaped with $$, otherwise a KeyError or a ValueError will be raised.
-
-  Args:
-    path: An absolute or relative path.
-
-  Returns:
-    A new path created by replacing
-        * $PROGRAM_FILES with the path to the Program Files folder,
-        * $LOCAL_APPDATA with the path to the Local Application Data folder,
-        * $MINI_INSTALLER with the path to the mini_installer,
-        * $MINI_INSTALLER_FILE_VERSION with the file version of the
-            mini_installer,
-        * $CHROME_SHORT_NAME with 'Chrome' (or 'Chromium'),
-        * $CHROME_LONG_NAME with 'Google Chrome' (or 'Chromium'),
-        * $CHROME_DIR with the directory of Chrome (or Chromium) from the base
-            installation directory, and
-        * $CHROME_UPDATE_REGISTRY_SUBKEY with the registry key, excluding the
-            root key, of Chrome for Google Update.
+  The result must match the output from the method
+  UserSpecificRegistrySuffix::GetSuffix() in
+  chrome/installer/util/shell_util.cc. It will always be 27 characters long.
   """
-  program_files_path = shell.SHGetFolderPath(0, shellcon.CSIDL_PROGRAM_FILES,
-                                             None, 0)
-  local_appdata_path = shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA,
-                                             None, 0)
-  # TODO(sukolsak): Copy the mini_installer.exe from the build output into here.
-  mini_installer_path = os.path.abspath('mini_installer.exe')
-  mini_installer_file_version = win32com.client.Dispatch(
-      'Scripting.FileSystemObject').GetFileVersion(mini_installer_path)
-  mini_installer_product_name = _GetProductName(mini_installer_path)
-  if mini_installer_product_name == 'Google Chrome':
-    chrome_short_name = 'Chrome'
-    chrome_long_name = 'Google Chrome'
-    chrome_dir = 'Google\\Chrome'
-    chrome_update_registry_subkey = ('Software\\Google\\Update\\Clients\\'
-                                     '{8A69D345-D564-463c-AFF1-A69D9E530F96}')
-  elif mini_installer_product_name == 'Chromium':
-    chrome_short_name = 'Chromium'
-    chrome_long_name = 'Chromium'
-    chrome_dir = 'Chromium'
-    chrome_update_registry_subkey = 'Software\\Chromium'
-  else:
-    raise KeyError("Unknown mini_installer product name '%s'" %
-                   mini_installer_product_name)
+  token_handle = win32security.OpenProcessToken(win32api.GetCurrentProcess(),
+                                                win32security.TOKEN_QUERY)
+  user_sid, _ = win32security.GetTokenInformation(token_handle,
+                                                  win32security.TokenUser)
+  user_sid_string = win32security.ConvertSidToStringSid(user_sid)
+  md5_digest = hashlib.md5(user_sid_string).digest()
+  return '.' + base64.b32encode(md5_digest).rstrip('=')
 
-  variable_mapping = {
-      'PROGRAM_FILES': program_files_path,
-      'LOCAL_APPDATA': local_appdata_path,
-      'MINI_INSTALLER': mini_installer_path,
-      'MINI_INSTALLER_FILE_VERSION': mini_installer_file_version,
-      'CHROME_SHORT_NAME': chrome_short_name,
-      'CHROME_LONG_NAME': chrome_long_name,
-      'CHROME_DIR': chrome_dir,
-      'CHROME_UPDATE_REGISTRY_SUBKEY': chrome_update_registry_subkey,
-  }
-  return string.Template(path).substitute(variable_mapping)
+
+class PathResolver:
+  """Resolves variables in file paths and registry keys."""
+
+  def __init__(self, mini_installer_path):
+    """Constructor.
+
+    The constructor initializes a variable dictionary that maps variables to
+    their values. These are the only acceptable variables:
+        * $PROGRAM_FILE: the unquoted path to the Program Files folder.
+        * $LOCAL_APPDATA: the unquoted path to the Local Application Data
+            folder.
+        * $MINI_INSTALLER: the unquoted path to the mini_installer.
+        * $MINI_INSTALLER_FILE_VERSION: the file version of the mini_installer.
+        * $CHROME_SHORT_NAME: 'Chrome' (or 'Chromium').
+        * $CHROME_LONG_NAME: 'Google Chrome' (or 'Chromium').
+        * $CHROME_DIR: the directory of Chrome (or Chromium) from the base
+            installation directory.
+        * $CHROME_UPDATE_REGISTRY_SUBKEY: the registry key, excluding the root
+            key, of Chrome for Google Update.
+        * $CHROME_HTML_PROG_ID: 'ChromeHTML' (or 'ChromiumHTM').
+        * $USER_SPECIFIC_REGISTRY_SUFFIX: the output from the function
+            _GetUserSpecificRegistrySuffix().
+
+    Args:
+      mini_installer_path: The path to mini_installer.exe.
+    """
+    mini_installer_abspath = os.path.abspath(mini_installer_path)
+    mini_installer_file_version = _GetFileVersion(mini_installer_abspath)
+    mini_installer_product_name = _GetProductName(mini_installer_abspath)
+    program_files_path = shell.SHGetFolderPath(0, shellcon.CSIDL_PROGRAM_FILES,
+                                               None, 0)
+    local_appdata_path = shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA,
+                                               None, 0)
+    user_specific_registry_suffix = _GetUserSpecificRegistrySuffix()
+    if mini_installer_product_name == 'Google Chrome':
+      chrome_short_name = 'Chrome'
+      chrome_long_name = 'Google Chrome'
+      chrome_dir = 'Google\\Chrome'
+      chrome_update_registry_subkey = ('Software\\Google\\Update\\Clients\\'
+                                       '{8A69D345-D564-463c-AFF1-A69D9E530F96}')
+      chrome_html_prog_id = 'ChromeHTML'
+    elif mini_installer_product_name == 'Chromium':
+      chrome_short_name = 'Chromium'
+      chrome_long_name = 'Chromium'
+      chrome_dir = 'Chromium'
+      chrome_update_registry_subkey = 'Software\\Chromium'
+      chrome_html_prog_id = 'ChromiumHTM'
+    else:
+      raise KeyError("Unknown mini_installer product name '%s'" %
+                     mini_installer_product_name)
+
+    self._variable_mapping = {
+        'PROGRAM_FILES': program_files_path,
+        'LOCAL_APPDATA': local_appdata_path,
+        'MINI_INSTALLER': mini_installer_abspath,
+        'MINI_INSTALLER_FILE_VERSION': mini_installer_file_version,
+        'CHROME_SHORT_NAME': chrome_short_name,
+        'CHROME_LONG_NAME': chrome_long_name,
+        'CHROME_DIR': chrome_dir,
+        'CHROME_UPDATE_REGISTRY_SUBKEY': chrome_update_registry_subkey,
+        'CHROME_HTML_PROG_ID': chrome_html_prog_id,
+        'USER_SPECIFIC_REGISTRY_SUFFIX': user_specific_registry_suffix,
+    }
+
+  def ResolvePath(self, path):
+    """Resolves variables in a file path, and returns the resolved path.
+
+    This method resolves only variables defined in the constructor. It does not
+    resolve environment variables. Any dollar signs that are not part of
+    variables must be escaped with $$, otherwise a KeyError or a ValueError will
+    be raised.
+
+    Args:
+      path: An absolute or relative path.
+
+    Returns:
+      A new path created by replacing variables with their values.
+    """
+    return string.Template(path).substitute(self._variable_mapping)

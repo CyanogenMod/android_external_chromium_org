@@ -88,7 +88,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest, OriginPrivileges) {
   // A data URL. Data URLs should always be able to load chrome-extension://
   // resources.
   std::string file_source;
-  ASSERT_TRUE(file_util::ReadFileToString(
+  ASSERT_TRUE(base::ReadFileToString(
       test_data_dir_.AppendASCII("extension_resource_request_policy")
                     .AppendASCII("index.html"), &file_source));
   ui_test_utils::NavigateToURL(browser(),
@@ -249,6 +249,63 @@ IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest,
       "window.domAutomationController.send(document.title)",
       &result));
   EXPECT_EQ("New Tab Page Loaded Successfully", result);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest,
+                       LinkToWebAccessibleResources) {
+  std::string result;
+  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(LoadExtension(test_data_dir_
+      .AppendASCII("extension_resource_request_policy")
+      .AppendASCII("web_accessible")));
+
+  GURL accessible_linked_resource(
+      test_server()->GetURL(
+          "files/extensions/api_test/extension_resource_request_policy/"
+          "web_accessible/accessible_link_resource.html"));
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(),
+      accessible_linked_resource, 2);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.URL)",
+      &result));
+  EXPECT_NE("about:blank", result);
+
+  GURL nonaccessible_linked_resource(
+      test_server()->GetURL(
+          "files/extensions/api_test/extension_resource_request_policy/"
+          "web_accessible/nonaccessible_link_resource.html"));
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(),
+      nonaccessible_linked_resource, 2);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.URL)",
+      &result));
+  EXPECT_EQ("about:blank", result);
+
+  GURL accessible_client_redirect_resource(
+      test_server()->GetURL(
+          "files/extensions/api_test/extension_resource_request_policy/"
+          "web_accessible/accessible_redirect_resource.html"));
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(),
+      accessible_client_redirect_resource, 2);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.URL)",
+      &result));
+  EXPECT_NE("about:blank", result);
+
+  GURL nonaccessible_client_redirect_resource(
+      test_server()->GetURL(
+          "files/extensions/api_test/extension_resource_request_policy/"
+          "web_accessible/nonaccessible_redirect_resource.html"));
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(),
+      nonaccessible_client_redirect_resource, 2);
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send(document.URL)",
+      &result));
+  EXPECT_EQ("about:blank", result);
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest,

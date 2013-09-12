@@ -17,7 +17,7 @@
     <div id="key" pseudo="x-key" inverted?={{invert}}>
       <content></content>
     </div>
-    <div pseudo="x-superscript" inverted?={{invert}}>{{superscript}}</div>
+    <div pseudo="x-hinttext" inverted?={{invert}}>{{hintText}}</div>
   </template>
   <script>
     Polymer('kb-key', {
@@ -39,17 +39,36 @@
        * Keys with a high weighting are wider than normal keys.
        * @type {number}
        */
-      weight: 1
+      weight: 1,
+
+      /**
+       * Returns a subset of the key attributes.
+       * @return {Object} Mapping of attributes for the key element.
+       */
+      PopulateDetails: function() {
+        var details = this.super();
+        details.keyCode = this.keyCode;
+        details.shiftModifier = this.shiftModifier;
+        return details;
+      },
     });
   </script>
 </polymer-element>
 
 <!-- Special keys -->
 
-<polymer-element name="kb-shift-key" class="shift dark" char="Shift"
-    extends="kb-key">
+<polymer-element name="kb-shift-key" attributes="unlockedCase lockedCase"
+    class="shift dark" char="Shift" extends="kb-key">
   <script>
     Polymer('kb-shift-key', {
+       /**
+        * Defines how capslock effects keyset transition. We always transition
+        * from the unlockedCase to the lockedCase if capslock is on.
+        * @type {string}
+        */
+      unlockedCase: 'lower',
+      lockedCase: 'upper',
+
       down: function(event) {
         this.super();
         var detail = {};
@@ -60,7 +79,7 @@
         }
         this.fire('enable-dbl', detail);
         this.fire('enable-sel');
-      }
+      },
     });
   </script>
 </polymer-element>

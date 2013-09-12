@@ -119,6 +119,11 @@ class MemoryHolder : public base::RefCounted<MemoryHolder> {
 
 namespace {
 
+void MailboxReleaseCallback(scoped_ptr<base::SharedMemory> shared_memory,
+                            unsigned sync_point, bool lost_resource) {
+  // NOTE: shared_memory will get released when we go out of scope.
+}
+
 // In mouse lock mode, we need to prevent the (invisible) cursor from hitting
 // the border of the view, in order to get valid movement information. However,
 // forcing the cursor back to the center of the view after each mouse move
@@ -647,8 +652,10 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
       popup_child_host_view_(NULL),
       is_loading_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
+      text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       can_compose_inline_(true),
       has_composition_text_(false),
+      last_output_surface_id_(0),
       last_swapped_surface_scale_factor_(1.f),
       paint_canvas_(NULL),
       synthetic_move_sent_(false),
@@ -1011,18 +1018,6 @@ void RenderWidgetHostViewAura::SetBackground(const SkBitmap& background) {
   window_->layer()->SetFillsBoundsOpaquely(background.isOpaque());
 }
 
-#if defined(OS_WIN)
-gfx::NativeViewAccessible
-RenderWidgetHostViewAura::AccessibleObjectFromChildId(long child_id) {
-  BrowserAccessibilityManager* manager = GetBrowserAccessibilityManager();
-  if (!manager)
-    return NULL;
-
-  return manager->ToBrowserAccessibilityManagerWin()->GetFromUniqueIdWin(
-      child_id);
-}
-#endif  // defined(OS_WIN)
-
 void RenderWidgetHostViewAura::UpdateCursor(const WebCursor& cursor) {
   current_cursor_ = cursor;
   const gfx::Display display = gfx::Screen::GetScreenFor(window_)->
@@ -1040,11 +1035,13 @@ void RenderWidgetHostViewAura::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewAura::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   if (text_input_type_ != type ||
+      text_input_mode_ != input_mode ||
       can_compose_inline_ != can_compose_inline) {
     text_input_type_ = type;
+    text_input_mode_ = input_mode;
     can_compose_inline_ = can_compose_inline;
     if (GetInputMethod())
       GetInputMethod()->OnTextInputTypeChanged(this);
@@ -1060,7 +1057,7 @@ void RenderWidgetHostViewAura::ImeCancelComposition() {
 }
 
 void RenderWidgetHostViewAura::ImeCompositionRangeChanged(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   composition_character_bounds_ = character_bounds;
 }
@@ -1145,7 +1142,7 @@ void RenderWidgetHostViewAura::SetTooltipText(const string16& tooltip_text) {
 
 void RenderWidgetHostViewAura::SelectionChanged(const string16& text,
                                                 size_t offset,
-                                                const ui::Range& range) {
+                                                const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
@@ -1458,6 +1455,17 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
         host_->GetRoutingID(), output_surface_id,
         host_->GetProcess()->GetID(), ack);
     return;
+  }
+  if (output_surface_id != last_output_surface_id_) {
+    // Resource ids are scoped by the output surface.
+    // If the originating output surface doesn't match the last one, it
+    // indicates the renderer's output surface may have been recreated, in which
+    // case we should recreate the DelegatedRendererLayer, to avoid matching
+    // resources from the old one with resources from the new one which would
+    // have the same id.
+    window_->layer()->SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData>(),
+                                        frame_size_in_dip);
+    last_output_surface_id_ = output_surface_id;
   }
   window_->layer()->SetDelegatedFrame(frame_data.Pass(), frame_size_in_dip);
   released_front_lock_ = NULL;
@@ -2044,12 +2052,12 @@ void RenderWidgetHostViewAura::SetScrollOffsetPinning(
   // Not needed. Mac-only.
 }
 
-void RenderWidgetHostViewAura::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewAura::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   BrowserAccessibilityManager* manager =
       GetOrCreateBrowserAccessibilityManager();
   if (manager)
-    manager->OnAccessibilityNotifications(params);
+    manager->OnAccessibilityEvents(params);
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAura::GetCompositingSurface() {
@@ -2140,7 +2148,7 @@ void RenderWidgetHostViewAura::SetCompositionText(
 
 void RenderWidgetHostViewAura::ConfirmCompositionText() {
   if (host_ && has_composition_text_)
-    host_->ImeConfirmComposition(string16(), ui::Range::InvalidRange(), false);
+    host_->ImeConfirmComposition(string16(), gfx::Range::InvalidRange(), false);
   has_composition_text_ = false;
 }
 
@@ -2153,7 +2161,7 @@ void RenderWidgetHostViewAura::ClearCompositionText() {
 void RenderWidgetHostViewAura::InsertText(const string16& text) {
   DCHECK(text_input_type_ != ui::TEXT_INPUT_TYPE_NONE);
   if (host_)
-    host_->ImeConfirmComposition(text, ui::Range::InvalidRange(), false);
+    host_->ImeConfirmComposition(text, gfx::Range::InvalidRange(), false);
   has_composition_text_ = false;
 }
 
@@ -2184,7 +2192,7 @@ ui::TextInputType RenderWidgetHostViewAura::GetTextInputType() const {
 }
 
 ui::TextInputMode RenderWidgetHostViewAura::GetTextInputMode() const {
-  return ui::TEXT_INPUT_MODE_DEFAULT;
+  return text_input_mode_;
 }
 
 bool RenderWidgetHostViewAura::CanComposeInline() const {
@@ -2196,18 +2204,18 @@ gfx::Rect RenderWidgetHostViewAura::ConvertRectToScreen(const gfx::Rect& rect) {
   gfx::Point end = gfx::Point(rect.right(), rect.bottom());
 
   aura::RootWindow* root_window = window_->GetRootWindow();
-  if (root_window) {
-    aura::client::ScreenPositionClient* screen_position_client =
-        aura::client::GetScreenPositionClient(root_window);
-    screen_position_client->ConvertPointToScreen(window_, &origin);
-    screen_position_client->ConvertPointToScreen(window_, &end);
-    return gfx::Rect(origin.x(),
-                     origin.y(),
-                     end.x() - origin.x(),
-                     end.y() - origin.y());
-  }
-
-  return rect;
+  if (!root_window)
+    return rect;
+  aura::client::ScreenPositionClient* screen_position_client =
+      aura::client::GetScreenPositionClient(root_window);
+  if (!screen_position_client)
+    return rect;
+  screen_position_client->ConvertPointToScreen(window_, &origin);
+  screen_position_client->ConvertPointToScreen(window_, &end);
+  return gfx::Rect(origin.x(),
+                   origin.y(),
+                   end.x() - origin.x(),
+                   end.y() - origin.y());
 }
 
 gfx::Rect RenderWidgetHostViewAura::ConvertRectFromScreen(
@@ -2249,40 +2257,40 @@ bool RenderWidgetHostViewAura::HasCompositionText() {
   return has_composition_text_;
 }
 
-bool RenderWidgetHostViewAura::GetTextRange(ui::Range* range) {
+bool RenderWidgetHostViewAura::GetTextRange(gfx::Range* range) {
   range->set_start(selection_text_offset_);
   range->set_end(selection_text_offset_ + selection_text_.length());
   return true;
 }
 
-bool RenderWidgetHostViewAura::GetCompositionTextRange(ui::Range* range) {
+bool RenderWidgetHostViewAura::GetCompositionTextRange(gfx::Range* range) {
   // TODO(suzhe): implement this method when fixing http://crbug.com/55130.
   NOTIMPLEMENTED();
   return false;
 }
 
-bool RenderWidgetHostViewAura::GetSelectionRange(ui::Range* range) {
+bool RenderWidgetHostViewAura::GetSelectionRange(gfx::Range* range) {
   range->set_start(selection_range_.start());
   range->set_end(selection_range_.end());
   return true;
 }
 
-bool RenderWidgetHostViewAura::SetSelectionRange(const ui::Range& range) {
+bool RenderWidgetHostViewAura::SetSelectionRange(const gfx::Range& range) {
   // TODO(suzhe): implement this method when fixing http://crbug.com/55130.
   NOTIMPLEMENTED();
   return false;
 }
 
-bool RenderWidgetHostViewAura::DeleteRange(const ui::Range& range) {
+bool RenderWidgetHostViewAura::DeleteRange(const gfx::Range& range) {
   // TODO(suzhe): implement this method when fixing http://crbug.com/55130.
   NOTIMPLEMENTED();
   return false;
 }
 
 bool RenderWidgetHostViewAura::GetTextFromRange(
-    const ui::Range& range,
+    const gfx::Range& range,
     string16* text) {
-  ui::Range selection_text_range(selection_text_offset_,
+  gfx::Range selection_text_range(selection_text_offset_,
       selection_text_offset_ + selection_text_.length());
 
   if (!selection_text_range.Contains(range)) {
@@ -2464,6 +2472,13 @@ void RenderWidgetHostViewAura::OnWindowDestroying() {
   LPARAM lparam = reinterpret_cast<LPARAM>(this);
   EnumChildWindows(parent, WindowDestroyingCallback, lparam);
 #endif
+
+  // Make sure that the input method no longer references to this object before
+  // this object is removed from the root window (i.e. this object loses access
+  // to the input method).
+  ui::InputMethod* input_method = GetInputMethod();
+  if (input_method)
+    input_method->DetachTextInputClient(this);
 }
 
 void RenderWidgetHostViewAura::OnWindowDestroyed() {
@@ -2481,28 +2496,51 @@ bool RenderWidgetHostViewAura::HasHitTestMask() const {
 void RenderWidgetHostViewAura::GetHitTestMask(gfx::Path* mask) const {
 }
 
-scoped_refptr<ui::Texture> RenderWidgetHostViewAura::CopyTexture() {
-  if (!host_->is_accelerated_compositing_active())
-    return scoped_refptr<ui::Texture>();
-
-  ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
-  GLHelper* gl_helper = factory->GetGLHelper();
-  if (!gl_helper)
-    return scoped_refptr<ui::Texture>();
-
-  if (!current_surface_.get())
-    return scoped_refptr<ui::Texture>();
-
-  WebKit::WebGLId texture_id =
-      gl_helper->CopyTexture(current_surface_->PrepareTexture(),
-                             current_surface_->size());
-  if (!texture_id)
-    return scoped_refptr<ui::Texture>();
-
-  return scoped_refptr<ui::Texture>(
-      factory->CreateOwnedTexture(
+void RenderWidgetHostViewAura::DidRecreateLayer(ui::Layer *old_layer,
+                                                ui::Layer *new_layer) {
+  float mailbox_scale_factor;
+  cc::TextureMailbox old_mailbox =
+      old_layer->GetTextureMailbox(&mailbox_scale_factor);
+  scoped_refptr<ui::Texture> old_texture = old_layer->external_texture();
+  // The new_layer is the one that will be used by our Window, so that's the one
+  // that should keep our texture. old_layer will be returned to the
+  // RecreateLayer caller, and should have a copy.
+  if (old_texture.get()) {
+    ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+    GLHelper* gl_helper = factory->GetGLHelper();
+    scoped_refptr<ui::Texture> new_texture;
+    if (host_->is_accelerated_compositing_active() &&
+        gl_helper && current_surface_.get()) {
+      WebKit::WebGLId texture_id =
+          gl_helper->CopyTexture(current_surface_->PrepareTexture(),
+                                 current_surface_->size());
+      if (texture_id) {
+        new_texture = factory->CreateOwnedTexture(
           current_surface_->size(),
-          current_surface_->device_scale_factor(), texture_id));
+          current_surface_->device_scale_factor(), texture_id);
+      }
+    }
+    old_layer->SetExternalTexture(new_texture);
+    new_layer->SetExternalTexture(old_texture);
+  } else if (old_mailbox.IsSharedMemory()) {
+    base::SharedMemory* old_buffer = old_mailbox.shared_memory();
+    const size_t size = old_mailbox.shared_memory_size_in_bytes();
+
+    scoped_ptr<base::SharedMemory> new_buffer(new base::SharedMemory);
+    new_buffer->CreateAndMapAnonymous(size);
+
+    if (old_buffer->memory() && new_buffer->memory()) {
+      memcpy(new_buffer->memory(), old_buffer->memory(), size);
+      base::SharedMemory* new_buffer_raw_ptr = new_buffer.get();
+      cc::TextureMailbox::ReleaseCallback callback =
+          base::Bind(MailboxReleaseCallback, Passed(&new_buffer));
+      cc::TextureMailbox new_mailbox(new_buffer_raw_ptr,
+                                     old_mailbox.shared_memory_size(),
+                                     callback);
+      new_layer->SetTextureMailbox(new_mailbox, mailbox_scale_factor);
+    }
+  }
+  // TODO(piman): handle delegated frames.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3108,7 +3146,7 @@ void RenderWidgetHostViewAura::FinishImeCompositionSession() {
   if (!has_composition_text_)
     return;
   if (host_)
-    host_->ImeConfirmComposition(string16(), ui::Range::InvalidRange(), false);
+    host_->ImeConfirmComposition(string16(), gfx::Range::InvalidRange(), false);
   ImeCancelComposition();
 }
 

@@ -326,6 +326,26 @@ GURL FilesListRequest::GetURL() const {
   return url_generator_.GetFilesListUrl(max_results_, page_token_, q_);
 }
 
+//======================== FilesListNextPageRequest =========================
+
+FilesListNextPageRequest::FilesListNextPageRequest(
+    RequestSender* sender,
+    const FileListCallback& callback)
+    : GetDataRequest(
+          sender,
+          base::Bind(&ParseJsonOnBlockingPoolAndRun<FileList>,
+                     make_scoped_refptr(sender->blocking_task_runner()),
+                     callback)) {
+  DCHECK(!callback.is_null());
+}
+
+FilesListNextPageRequest::~FilesListNextPageRequest() {
+}
+
+GURL FilesListNextPageRequest::GetURL() const {
+  return next_link_;
+}
+
 //============================ FilesTrashRequest =============================
 
 FilesTrashRequest::FilesTrashRequest(
@@ -391,6 +411,26 @@ GURL ChangesListRequest::GetURL() const {
       include_deleted_, max_results_, page_token_, start_change_id_);
 }
 
+//======================== ChangesListNextPageRequest =========================
+
+ChangesListNextPageRequest::ChangesListNextPageRequest(
+    RequestSender* sender,
+    const ChangeListCallback& callback)
+    : GetDataRequest(
+          sender,
+          base::Bind(&ParseJsonOnBlockingPoolAndRun<ChangeList>,
+                     make_scoped_refptr(sender->blocking_task_runner()),
+                     callback)) {
+  DCHECK(!callback.is_null());
+}
+
+ChangesListNextPageRequest::~ChangesListNextPageRequest() {
+}
+
+GURL ChangesListNextPageRequest::GetURL() const {
+  return next_link_;
+}
+
 //============================== AppsListRequest ===========================
 
 AppsListRequest::AppsListRequest(
@@ -409,199 +449,59 @@ GURL AppsListRequest::GetURL() const {
   return url_generator_.GetAppsListUrl();
 }
 
-//======================= ContinueGetFileListRequest =========================
+//========================== ChildrenInsertRequest ============================
 
-ContinueGetFileListRequest::ContinueGetFileListRequest(
-    RequestSender* sender,
-    const GURL& url,
-    const GetDataCallback& callback)
-    : GetDataRequest(sender, callback),
-      url_(url) {
-  DCHECK(!callback.is_null());
-}
-
-ContinueGetFileListRequest::~ContinueGetFileListRequest() {}
-
-GURL ContinueGetFileListRequest::GetURL() const {
-  return url_;
-}
-
-//=========================== TouchResourceRequest ===========================
-
-TouchResourceRequest::TouchResourceRequest(
+ChildrenInsertRequest::ChildrenInsertRequest(
     RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
-    const std::string& resource_id,
-    const base::Time& modified_date,
-    const base::Time& last_viewed_by_me_date,
-    const FileResourceCallback& callback)
-    : GetDataRequest(sender,
-                     base::Bind(&ParseJsonAndRun<FileResource>, callback)),
-      url_generator_(url_generator),
-      resource_id_(resource_id),
-      modified_date_(modified_date),
-      last_viewed_by_me_date_(last_viewed_by_me_date) {
-  DCHECK(!modified_date.is_null());
-  DCHECK(!last_viewed_by_me_date.is_null());
-  DCHECK(!callback.is_null());
-}
-
-TouchResourceRequest::~TouchResourceRequest() {}
-
-net::URLFetcher::RequestType TouchResourceRequest::GetRequestType() const {
-  return net::URLFetcher::PATCH;
-}
-
-std::vector<std::string>
-TouchResourceRequest::GetExtraRequestHeaders() const {
-  std::vector<std::string> headers;
-  headers.push_back(util::kIfMatchAllHeader);
-  return headers;
-}
-
-GURL TouchResourceRequest::GetURL() const {
-  return url_generator_.GetFileTouchUrl(resource_id_);
-}
-
-bool TouchResourceRequest::GetContentData(std::string* upload_content_type,
-                                          std::string* upload_content) {
-  *upload_content_type = kContentTypeApplicationJson;
-
-  base::DictionaryValue root;
-  root.SetString("modifiedDate", util::FormatTimeAsString(modified_date_));
-  root.SetString("lastViewedByMeDate",
-                 util::FormatTimeAsString(last_viewed_by_me_date_));
-  base::JSONWriter::Write(&root, upload_content);
-
-  DVLOG(1) << "TouchResource data: " << *upload_content_type << ", ["
-           << *upload_content << "]";
-  return true;
-}
-
-//=========================== MoveResourceRequest ============================
-
-MoveResourceRequest::MoveResourceRequest(
-    RequestSender* sender,
-    const DriveApiUrlGenerator& url_generator,
-    const std::string& resource_id,
-    const std::string& parent_resource_id,
-    const std::string& new_title,
-    const FileResourceCallback& callback)
-    : GetDataRequest(sender,
-                     base::Bind(&ParseJsonAndRun<FileResource>, callback)),
-      url_generator_(url_generator),
-      resource_id_(resource_id),
-      parent_resource_id_(parent_resource_id),
-      new_title_(new_title) {
-  DCHECK(!callback.is_null());
-}
-
-MoveResourceRequest::~MoveResourceRequest() {
-}
-
-net::URLFetcher::RequestType MoveResourceRequest::GetRequestType() const {
-  return net::URLFetcher::PATCH;
-}
-
-std::vector<std::string> MoveResourceRequest::GetExtraRequestHeaders() const {
-  std::vector<std::string> headers;
-  headers.push_back(util::kIfMatchAllHeader);
-  return headers;
-}
-
-GURL MoveResourceRequest::GetURL() const {
-  // TODO(hidehiko): This temporarily shares the URL with "Files: get" method.
-  // After the refactoring, this class will be merged with TouchResourceRequest
-  // into FilesPatchRequest. Then, url_generator_ will have the method
-  // for the new class.
-  return url_generator_.GetFilesGetUrl(resource_id_);
-}
-
-bool MoveResourceRequest::GetContentData(std::string* upload_content_type,
-                                         std::string* upload_content) {
-  *upload_content_type = kContentTypeApplicationJson;
-
-  base::DictionaryValue root;
-  root.SetString("title", new_title_);
-
-  if (!parent_resource_id_.empty()) {
-    // Set the parent resource (destination directory) of the new resource.
-    base::ListValue* parents = new base::ListValue;
-    root.Set("parents", parents);
-    base::DictionaryValue* parent_value = new base::DictionaryValue;
-    parents->Append(parent_value);
-    parent_value->SetString("id", parent_resource_id_);
-  }
-
-  base::JSONWriter::Write(&root, upload_content);
-
-  DVLOG(1) << "MoveResource data: " << *upload_content_type << ", ["
-           << *upload_content << "]";
-  return true;
-}
-
-//========================== InsertResourceRequest ===========================
-
-InsertResourceRequest::InsertResourceRequest(
-    RequestSender* sender,
-    const DriveApiUrlGenerator& url_generator,
-    const std::string& parent_resource_id,
-    const std::string& resource_id,
     const EntryActionCallback& callback)
     : EntryActionRequest(sender, callback),
-      url_generator_(url_generator),
-      parent_resource_id_(parent_resource_id),
-      resource_id_(resource_id) {
+      url_generator_(url_generator) {
   DCHECK(!callback.is_null());
 }
 
-InsertResourceRequest::~InsertResourceRequest() {}
+ChildrenInsertRequest::~ChildrenInsertRequest() {}
 
-GURL InsertResourceRequest::GetURL() const {
-  return url_generator_.GetChildrenUrl(parent_resource_id_);
-}
-
-net::URLFetcher::RequestType InsertResourceRequest::GetRequestType() const {
+net::URLFetcher::RequestType ChildrenInsertRequest::GetRequestType() const {
   return net::URLFetcher::POST;
 }
 
-bool InsertResourceRequest::GetContentData(std::string* upload_content_type,
+GURL ChildrenInsertRequest::GetURL() const {
+  return url_generator_.GetChildrenInsertUrl(folder_id_);
+}
+
+bool ChildrenInsertRequest::GetContentData(std::string* upload_content_type,
                                            std::string* upload_content) {
   *upload_content_type = kContentTypeApplicationJson;
 
   base::DictionaryValue root;
-  root.SetString("id", resource_id_);
-  base::JSONWriter::Write(&root, upload_content);
+  root.SetString("id", id_);
 
+  base::JSONWriter::Write(&root, upload_content);
   DVLOG(1) << "InsertResource data: " << *upload_content_type << ", ["
            << *upload_content << "]";
   return true;
 }
 
-//========================== DeleteResourceRequest ===========================
+//========================== ChildrenDeleteRequest ============================
 
-DeleteResourceRequest::DeleteResourceRequest(
+ChildrenDeleteRequest::ChildrenDeleteRequest(
     RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
-    const std::string& parent_resource_id,
-    const std::string& resource_id,
     const EntryActionCallback& callback)
     : EntryActionRequest(sender, callback),
-      url_generator_(url_generator),
-      parent_resource_id_(parent_resource_id),
-      resource_id_(resource_id) {
+      url_generator_(url_generator) {
   DCHECK(!callback.is_null());
 }
 
-DeleteResourceRequest::~DeleteResourceRequest() {}
+ChildrenDeleteRequest::~ChildrenDeleteRequest() {}
 
-GURL DeleteResourceRequest::GetURL() const {
-  return url_generator_.GetChildrenUrlForRemoval(
-      parent_resource_id_, resource_id_);
+net::URLFetcher::RequestType ChildrenDeleteRequest::GetRequestType() const {
+  return net::URLFetcher::DELETE_REQUEST;
 }
 
-net::URLFetcher::RequestType DeleteResourceRequest::GetRequestType() const {
-  return net::URLFetcher::DELETE_REQUEST;
+GURL ChildrenDeleteRequest::GetURL() const {
+  return url_generator_.GetChildrenDeleteUrl(child_id_, folder_id_);
 }
 
 //======================= InitiateUploadNewFileRequest =======================

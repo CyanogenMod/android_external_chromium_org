@@ -32,13 +32,13 @@ ObjectBackedNativeHandler::~ObjectBackedNativeHandler() {
 }
 
 v8::Handle<v8::Object> ObjectBackedNativeHandler::NewInstance() {
-  return object_template_->NewInstance();
+  return object_template_.NewHandle(v8::Isolate::GetCurrent())->NewInstance();
 }
 
 // static
 void ObjectBackedNativeHandler::Router(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(args.GetIsolate());
   v8::Handle<v8::Object> data = args.Data().As<v8::Object>();
 
   v8::Handle<v8::Value> handler_function_value =
@@ -68,7 +68,7 @@ void ObjectBackedNativeHandler::RouteFunction(
                   v8::External::New(new HandlerFunction(handler_function)));
   v8::Handle<v8::FunctionTemplate> function_template =
       v8::FunctionTemplate::New(Router, local_data);
-  object_template_->Set(name.c_str(), function_template);
+  object_template_.NewHandle(isolate)->Set(name.c_str(), function_template);
   router_data_.push_back(UnsafePersistent<v8::Object>(&data));
 }
 

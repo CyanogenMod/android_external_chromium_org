@@ -70,10 +70,7 @@ bool SingleThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
 
     if (layer_tree_host_impl_->IsContextLost())
       return false;
-
-    layer_tree_host_impl_->SwapBuffers(frame);
   }
-  DidSwapFrame();
 
   return true;
 }
@@ -212,6 +209,9 @@ void SingleThreadProxy::DoCommit(scoped_ptr<ResourceUpdateQueue> queue) {
             queue.Pass(),
             layer_tree_host_impl_->resource_provider());
     update_controller->Finalize();
+
+    if (layer_tree_host_impl_->EvictedUIResourcesExist())
+      layer_tree_host_->RecreateUIResources();
 
     layer_tree_host_->FinishCommitOnImplThread(layer_tree_host_impl_.get());
 

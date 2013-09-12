@@ -14,9 +14,9 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/api/extension_api.h"
 #include "chrome/common/extensions/api/runtime.h"
 #include "chrome/common/extensions/background_info.h"
@@ -78,6 +78,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_urls.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest.h"
@@ -118,7 +119,6 @@ namespace {
 
 static const int64 kInitialExtensionIdleHandlerDelayMs = 5*1000;
 static const int64 kMaxExtensionIdleHandlerDelayMs = 5*60*1000;
-static const char kEventModule[] = "event_bindings";
 static const char kEventDispatchFunction[] = "dispatchEvent";
 
 // Returns the global value for "chrome" from |context|. If one doesn't exist
@@ -379,7 +379,7 @@ void CallModuleMethod(const std::string& module_name,
                       const std::string& method_name,
                       const base::ListValue* args,
                       ChromeV8Context* context) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(context->isolate());
   v8::Context::Scope context_scope(context->v8_context());
 
   scoped_ptr<content::V8ValueConverter> converter(
@@ -646,7 +646,7 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateObject(
 }
 
 void Dispatcher::AddOrRemoveBindingsForContext(ChromeV8Context* context) {
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(context->isolate());
   v8::Context::Scope context_scope(context->v8_context());
 
   // TODO(kalman): Make the bindings registration have zero overhead then run
@@ -905,12 +905,12 @@ void Dispatcher::PopulateSourceMap() {
   // Libraries.
   source_map_.RegisterSource("contentWatcher", IDR_CONTENT_WATCHER_JS);
   source_map_.RegisterSource("entryIdManager", IDR_ENTRY_ID_MANAGER);
-  source_map_.RegisterSource(kEventModule, IDR_EVENT_BINDINGS_JS);
+  source_map_.RegisterSource(kEventBindings, IDR_EVENT_BINDINGS_JS);
   source_map_.RegisterSource("imageUtil", IDR_IMAGE_UTIL_JS);
   source_map_.RegisterSource("json_schema", IDR_JSON_SCHEMA_JS);
   source_map_.RegisterSource("lastError", IDR_LAST_ERROR_JS);
   source_map_.RegisterSource("messaging", IDR_MESSAGING_JS);
-  source_map_.RegisterSource("schemaUtils", IDR_SCHEMA_UTILS_JS);
+  source_map_.RegisterSource(kSchemaUtils, IDR_SCHEMA_UTILS_JS);
   source_map_.RegisterSource("sendRequest", IDR_SEND_REQUEST_JS);
   source_map_.RegisterSource("setIcon", IDR_SET_ICON_JS);
   source_map_.RegisterSource("test", IDR_TEST_CUSTOM_BINDINGS_JS);
@@ -1091,7 +1091,7 @@ void Dispatcher::DidCreateScriptContext(
   if (context->extension()) {
     v8::Handle<v8::Object> chrome = AsObjectOrEmpty(GetOrCreateChrome(context));
     if (!chrome.IsEmpty())
-      module_system->SetLazyField(chrome, "Event", kEventModule, "Event");
+      module_system->SetLazyField(chrome, "Event", kEventBindings, "Event");
   }
 
   AddOrRemoveBindingsForContext(context);
@@ -1394,7 +1394,7 @@ void Dispatcher::UpdateActiveExtensions() {
 
   std::set<std::string> active_extensions = active_extension_ids_;
   user_script_slave_->GetActiveExtensions(&active_extensions);
-  child_process_logging::SetActiveExtensions(active_extensions);
+  crash_keys::SetActiveExtensions(active_extensions);
 }
 
 void Dispatcher::OnUsingWebRequestAPI(
@@ -1521,11 +1521,14 @@ void Dispatcher::DispatchEvent(const std::string& extension_id,
   base::ListValue args;
   args.Set(0, new base::StringValue(event_name));
   args.Set(1, new base::ListValue());
+
+  // Needed for Windows compilation, since kEventBindings is declared extern.
+  const char* local_event_bindings = kEventBindings;
   v8_context_set_.ForEach(
       extension_id,
       NULL,  // all render views
       base::Bind(&CallModuleMethod,
-                 kEventModule,
+                 local_event_bindings,
                  kEventDispatchFunction,
                  &args));
 }
@@ -1557,7 +1560,7 @@ void Dispatcher::InvokeModuleSystemMethod(
   // background page active.
   const Extension* extension = extensions_.GetByID(extension_id);
   if (extension && BackgroundInfo::HasLazyBackgroundPage(extension) &&
-      module_name == kEventModule &&
+      module_name == kEventBindings &&
       function_name == kEventDispatchFunction) {
     RenderView* background_view =
         ExtensionHelper::GetBackgroundPage(extension_id);

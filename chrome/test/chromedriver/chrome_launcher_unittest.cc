@@ -18,14 +18,14 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 TEST(ProcessExtensions, NoExtension) {
-  CommandLine command(CommandLine::NO_PROGRAM);
+  Switches switches;
   std::vector<std::string> extensions;
   base::FilePath extension_dir;
   std::vector<std::string> bg_pages;
   Status status = internal::ProcessExtensions(extensions, extension_dir,
-                                              false, &command, &bg_pages);
+                                              false, &switches, &bg_pages);
   ASSERT_TRUE(status.IsOk());
-  ASSERT_FALSE(command.HasSwitch("load-extension"));
+  ASSERT_FALSE(switches.HasSwitch("load-extension"));
   ASSERT_EQ(0u, bg_pages.size());
 }
 
@@ -36,7 +36,7 @@ bool AddExtensionForInstall(const std::string& relative_path,
   base::FilePath crx_file_path = source_root.AppendASCII(
       "chrome/test/data/chromedriver/" + relative_path);
   std::string crx_contents;
-  if (!file_util::ReadFileToString(crx_file_path, &crx_contents))
+  if (!base::ReadFileToString(crx_file_path, &crx_contents))
     return false;
 
   std::string crx_encoded;
@@ -53,16 +53,16 @@ TEST(ProcessExtensions, SingleExtensionWithBgPage) {
   base::ScopedTempDir extension_dir;
   ASSERT_TRUE(extension_dir.CreateUniqueTempDir());
 
-  CommandLine command(CommandLine::NO_PROGRAM);
+  Switches switches;
   std::vector<std::string> bg_pages;
   Status status = internal::ProcessExtensions(extensions, extension_dir.path(),
-                                              false, &command, &bg_pages);
+                                              false, &switches, &bg_pages);
   ASSERT_TRUE(status.IsOk());
-  ASSERT_TRUE(command.HasSwitch("load-extension"));
-  base::FilePath temp_ext_path = command.GetSwitchValuePath("load-extension");
+  ASSERT_TRUE(switches.HasSwitch("load-extension"));
+  base::FilePath temp_ext_path(switches.GetSwitchValueNative("load-extension"));
   ASSERT_TRUE(base::PathExists(temp_ext_path));
   std::string manifest_txt;
-  ASSERT_TRUE(file_util::ReadFileToString(
+  ASSERT_TRUE(base::ReadFileToString(
       temp_ext_path.AppendASCII("manifest.json"), &manifest_txt));
   scoped_ptr<base::Value> manifest(base::JSONReader::Read(manifest_txt));
   ASSERT_TRUE(manifest);
@@ -91,13 +91,13 @@ TEST(ProcessExtensions, MultipleExtensionsNoBgPages) {
   base::ScopedTempDir extension_dir;
   ASSERT_TRUE(extension_dir.CreateUniqueTempDir());
 
-  CommandLine command(CommandLine::NO_PROGRAM);
+  Switches switches;
   std::vector<std::string> bg_pages;
   Status status = internal::ProcessExtensions(extensions, extension_dir.path(),
-                                              false, &command, &bg_pages);
+                                              false, &switches, &bg_pages);
   ASSERT_TRUE(status.IsOk());
-  ASSERT_TRUE(command.HasSwitch("load-extension"));
-  CommandLine::StringType ext_paths = command.GetSwitchValueNative(
+  ASSERT_TRUE(switches.HasSwitch("load-extension"));
+  CommandLine::StringType ext_paths = switches.GetSwitchValueNative(
       "load-extension");
   std::vector<CommandLine::StringType> ext_path_list;
   base::SplitString(ext_paths, FILE_PATH_LITERAL(','), &ext_path_list);
@@ -105,6 +105,24 @@ TEST(ProcessExtensions, MultipleExtensionsNoBgPages) {
   ASSERT_TRUE(base::PathExists(base::FilePath(ext_path_list[0])));
   ASSERT_TRUE(base::PathExists(base::FilePath(ext_path_list[1])));
   ASSERT_EQ(0u, bg_pages.size());
+}
+
+TEST(ProcessExtensions, CommandLineExtensions) {
+  std::vector<std::string> extensions;
+  ASSERT_TRUE(AddExtensionForInstall("ext_test_1.crx", &extensions));
+  base::ScopedTempDir extension_dir;
+  ASSERT_TRUE(extension_dir.CreateUniqueTempDir());
+
+  Switches switches;
+  switches.SetSwitch("load-extension", "/a");
+  std::vector<std::string> bg_pages;
+  Status status = internal::ProcessExtensions(extensions, extension_dir.path(),
+                                              false, &switches, &bg_pages);
+  ASSERT_EQ(kOk, status.code());
+  base::FilePath::StringType load = switches.GetSwitchValueNative(
+      "load-extension");
+  ASSERT_EQ(FILE_PATH_LITERAL("/a,"), load.substr(0, 3));
+  ASSERT_TRUE(base::PathExists(base::FilePath(load.substr(3))));
 }
 
 namespace {
@@ -122,7 +140,6 @@ TEST(PrepareUserDataDir, CustomPrefs) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
-  CommandLine command(CommandLine::NO_PROGRAM);
   base::DictionaryValue prefs;
   prefs.SetString("myPrefsKey", "ok");
   prefs.SetStringWithoutPathExpansion("pref.sub", "1");
@@ -136,7 +153,7 @@ TEST(PrepareUserDataDir, CustomPrefs) {
   base::FilePath prefs_file =
       temp_dir.path().AppendASCII("Default").AppendASCII("Preferences");
   std::string prefs_str;
-  ASSERT_TRUE(file_util::ReadFileToString(prefs_file, &prefs_str));
+  ASSERT_TRUE(base::ReadFileToString(prefs_file, &prefs_str));
   scoped_ptr<base::Value> prefs_value(base::JSONReader::Read(prefs_str));
   const base::DictionaryValue* prefs_dict = NULL;
   ASSERT_TRUE(prefs_value->GetAsDictionary(&prefs_dict));
@@ -145,7 +162,7 @@ TEST(PrepareUserDataDir, CustomPrefs) {
 
   base::FilePath local_state_file = temp_dir.path().AppendASCII("Local State");
   std::string local_state_str;
-  ASSERT_TRUE(file_util::ReadFileToString(local_state_file, &local_state_str));
+  ASSERT_TRUE(base::ReadFileToString(local_state_file, &local_state_str));
   scoped_ptr<base::Value> local_state_value(
       base::JSONReader::Read(local_state_str));
   const base::DictionaryValue* local_state_dict = NULL;

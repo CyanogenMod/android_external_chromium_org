@@ -61,6 +61,10 @@ namespace Page {
 const char kData[] = "data";
 const char kParamDeviceScaleFactor[] = "deviceScaleFactor";
 const char kParamPageScaleFactor[] = "pageScaleFactor";
+const char kParamPageScaleFactorMin[] = "pageScaleFactorMin";
+const char kParamPageScaleFactorMax[] = "pageScaleFactorMax";
+const char kParamOffsetBottom[] = "offsetBottom";
+const char kParamOffsetTop[] = "offsetTop";
 const char kParamViewport[] = "viewport";
 
 namespace disable {
@@ -78,18 +82,30 @@ namespace navigate {
   const char kParamUrl[] = "url";
 }  // navigate
 
+namespace getNavigationHistory {
+  const char kName[] = "Page.getNavigationHistory";
+  const char kResponseCurrentIndex[] = "currentIndex";
+  const char kResponseEntries[] = "entries";
+  const char kResponseEntryId[] = "id";
+  const char kResponseEntryURL[] = "url";
+  const char kResponseEntryTitle[] = "title";
+}  // getNavigationHistory
+
+namespace navigateToHistoryEntry {
+  const char kName[] = "Page.navigateToHistoryEntry";
+  const char kParamEntryId[] = "entryId";
+}  // navigateToHistoryEntry
+
 namespace captureScreenshot {
   const char kName[] = "Page.captureScreenshot";
   const char kParamFormat[] = "format";
   const char kParamQuality[] = "quality";
-  const char kParamScale[] = "scale";
+  const char kParamMaxWidth[] = "maxWidth";
+  const char kParamMaxHeight[] = "maxHeight";
 }  // captureScreenshot
 
 namespace startScreencast {
   const char kName[] = "Page.startScreencast";
-  const char kParamFormat[] = "format";
-  const char kParamQuality[] = "quality";
-  const char kParamScale[] = "scale";
 }  // startScreencast
 
 namespace stopScreencast {

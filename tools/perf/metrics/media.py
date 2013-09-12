@@ -6,6 +6,7 @@ import os
 
 from metrics import Metric
 
+
 class MediaMetric(Metric):
   """MediaMetric class injects and calls JS responsible for recording metrics.
 
@@ -13,15 +14,19 @@ class MediaMetric(Metric):
   such as decoded_frame_count, dropped_frame_count, decoded_video_bytes, and
   decoded_audio_bytes.
   """
+
   def __init__(self, tab):
     super(MediaMetric, self).__init__()
     with open(os.path.join(os.path.dirname(__file__), 'media.js')) as f:
       js = f.read()
       tab.ExecuteJavaScript(js)
     self._results = None
+    self._skip_basic_metrics = False
 
   def Start(self, page, tab):
     """Create the media metrics for all media elements in the document."""
+    if hasattr(page, 'skip_basic_metrics'):
+      self._skip_basic_metrics = page.skip_basic_metrics
     tab.ExecuteJavaScript('window.__createMediaMetricsForDocument()')
 
   def Stop(self, page, tab):
@@ -58,11 +63,14 @@ class MediaMetric(Metric):
     if not trace:
       logging.error('Metrics ID is missing in results.')
       return
-    AddOneResult('decoded_audio_bytes', 'bytes')
-    AddOneResult('decoded_video_bytes', 'bytes')
-    AddOneResult('decoded_frame_count', 'frames')
-    AddOneResult('dropped_frame_count', 'frames')
-    AddOneResult('playback_time', 'sec')
-    AddOneResult('seek', 'sec')
-    AddOneResult('time_to_play', 'sec')
 
+    if not self._skip_basic_metrics:
+      AddOneResult('buffering_time', 'ms')
+      AddOneResult('decoded_audio_bytes', 'bytes')
+      AddOneResult('decoded_video_bytes', 'bytes')
+      AddOneResult('decoded_frame_count', 'frames')
+      AddOneResult('dropped_frame_count', 'frames')
+      AddOneResult('time_to_play', 'ms')
+
+    AddOneResult('avg_loop_time', 'ms')
+    AddOneResult('seek', 'ms')

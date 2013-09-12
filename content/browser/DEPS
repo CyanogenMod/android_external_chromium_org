@@ -1,5 +1,4 @@
 include_rules = [
-  "+content/gpu",  # For gpu_info_collector.h and in-process GPU
   "+content/port/browser",
   "+content/public/browser",
   "+content/child/webkitplatformsupport_impl.h",  # For in-process webkit
@@ -41,6 +40,7 @@ include_rules = [
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
   "+third_party/WebKit/public/platform/WebString.h",
   "+third_party/WebKit/public/platform/WebVibration.h",
+  "+third_party/WebKit/public/web/WebAXEnums.h",
   "+third_party/WebKit/public/web/WebCompositionUnderline.h",
   "+third_party/WebKit/public/web/WebConsoleMessage.h",
   "+third_party/WebKit/public/web/WebCursorInfo.h",

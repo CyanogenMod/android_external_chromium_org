@@ -23,6 +23,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "content/browser/renderer_host/input/input_ack_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
 #include "content/browser/renderer_host/synthetic_gesture_controller.h"
 #include "content/common/browser_rendering_stats.h"
@@ -53,9 +54,12 @@ class CompositorFrame;
 class CompositorFrameAck;
 }
 
+namespace gfx {
+class Range;
+}
+
 namespace ui {
 class KeyEvent;
-class Range;
 }
 
 namespace WebKit {
@@ -85,6 +89,7 @@ struct EditCommand;
 // embedders of content, and adds things only visible to content.
 class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                                             public InputRouterClient,
+                                            public InputAckHandler,
                                             public IPC::Listener {
  public:
   // routing_id can be MSG_ROUTING_NONE, in which case the next available
@@ -103,14 +108,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Returns all RenderWidgetHosts including swapped out ones for
   // internal use. The public interface
   // RendgerWidgetHost::GetRenderWidgetHosts only returns active ones.
-  // Keep in mind that there may be dependencies between these
-  // widgets.  If a caller indirectly causes one of the widgets to be
-  // deleted while iterating over the list, the deleted widget will
-  // stay in the list and possibly causes a use-after-free.  Take care
-  // to avoid deleting widgets as you iterate (e.g., see
-  // http://crbug.com/259859).  TODO(nasko): Improve this interface to
-  // better prevent UaFs.
-  static std::vector<RenderWidgetHost*> GetAllRenderWidgetHosts();
+  static scoped_ptr<RenderWidgetHostIterator> GetAllRenderWidgetHosts();
 
   // Use RenderWidgetHostImpl::From(rwh) to downcast a
   // RenderWidgetHost to a RenderWidgetHostImpl.  Internally, this
@@ -342,7 +340,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // * when it receives a "commit" signal of GtkIMContext (on Linux);
   // * when insertText of NSTextInput is called (on Mac).
   void ImeConfirmComposition(const string16& text,
-                             const ui::Range& replacement_range,
+                             const gfx::Range& replacement_range,
                              bool keep_selection);
 
   // Cancels an ongoing composition.
@@ -655,15 +653,17 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   void OnUpdateIsDelayed();
   void OnBeginSmoothScroll(
       const ViewHostMsg_BeginSmoothScroll_Params& params);
+  void OnBeginPinch(
+      const ViewHostMsg_BeginPinch_Params& params);
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
   void OnTextInputTypeChanged(ui::TextInputType type,
-                              bool can_compose_inline,
-                              ui::TextInputMode input_mode);
+                              ui::TextInputMode input_mode,
+                              bool can_compose_inline);
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
-      const ui::Range& range,
+      const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
 #endif
   void OnImeCancelComposition();
@@ -736,6 +736,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       const TouchEventWithLatencyInfo& touch_event) OVERRIDE;
   virtual bool OnSendGestureEventImmediately(
       const GestureEventWithLatencyInfo& gesture_event) OVERRIDE;
+  virtual void SetNeedsFlush() OVERRIDE;
+  virtual void DidFlush() OVERRIDE;
+
+  // InputAckHandler
   virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
                                   InputEventAckState ack_result) OVERRIDE;
   virtual void OnWheelEventAck(const WebKit::WebMouseWheelEvent& event,
@@ -744,14 +748,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void OnGestureEventAck(const WebKit::WebGestureEvent& event,
                                  InputEventAckState ack_result) OVERRIDE;
-  virtual void OnUnexpectedEventAck(bool bad_message) OVERRIDE;
+  virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE;
 
   void SimulateTouchGestureWithMouse(const WebKit::WebMouseEvent& mouse_event);
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
   void DelayedAutoResized();
-
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.

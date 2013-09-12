@@ -335,7 +335,13 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
         ASCIIToUTF16(prefs.default_video_poster_url.spec()));
   settings->setSupportDeprecatedTargetDensityDPI(
       prefs.support_deprecated_target_density_dpi);
+  settings->setUseLegacyBackgroundSizeShorthandBehavior(
+      prefs.use_legacy_background_size_shorthand_behavior);
   settings->setUseWideViewport(prefs.use_wide_viewport);
+  settings->setViewportMetaLayoutSizeQuirk(
+      prefs.viewport_meta_layout_size_quirk);
+  settings->setViewportMetaZeroValuesQuirk(
+      prefs.viewport_meta_zero_values_quirk);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
@@ -346,6 +352,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   settings->setPinchOverlayScrollbarThickness(
       prefs.pinch_overlay_scrollbar_thickness);
+  settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
 }
 
 }  // namespace content

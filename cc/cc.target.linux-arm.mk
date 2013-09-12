@@ -37,6 +37,7 @@ LOCAL_SRC_FILES := \
 	cc/animation/keyframed_animation_curve.cc \
 	cc/animation/layer_animation_controller.cc \
 	cc/animation/scrollbar_animation_controller_linear_fade.cc \
+	cc/animation/scrollbar_animation_controller_thinning.cc \
 	cc/animation/timing_function.cc \
 	cc/animation/transform_operation.cc \
 	cc/animation/transform_operations.cc \
@@ -84,8 +85,11 @@ LOCAL_SRC_FILES := \
 	cc/layers/picture_layer_impl.cc \
 	cc/layers/render_surface.cc \
 	cc/layers/render_surface_impl.cc \
+	cc/layers/scrollbar_layer_impl_base.cc \
 	cc/layers/solid_color_layer.cc \
 	cc/layers/solid_color_layer_impl.cc \
+	cc/layers/solid_color_scrollbar_layer.cc \
+	cc/layers/solid_color_scrollbar_layer_impl.cc \
 	cc/layers/texture_layer.cc \
 	cc/layers/texture_layer_impl.cc \
 	cc/layers/tiled_layer.cc \
@@ -167,6 +171,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/skpicture_content_layer_updater.cc \
 	cc/resources/sync_point_helper.cc \
 	cc/resources/texture_mailbox.cc \
+	cc/resources/texture_mailbox_deleter.cc \
 	cc/resources/tile.cc \
 	cc/resources/tile_manager.cc \
 	cc/resources/tile_priority.cc \
@@ -234,6 +239,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -246,6 +252,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -349,6 +356,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -361,6 +369,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DCC_IMPLEMENTATION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -446,7 +455,9 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -465,7 +476,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--icf=safe \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

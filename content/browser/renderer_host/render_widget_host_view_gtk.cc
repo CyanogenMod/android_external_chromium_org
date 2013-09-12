@@ -42,12 +42,12 @@
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/gtk/WebInputEventFactory.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
-#include "ui/base/gtk/gtk_compat.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/base/x/active_window_watcher_x.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/gtk_compat.h"
 #include "ui/gfx/gtk_native_view_id_manager.h"
 #include "ui/gfx/gtk_preserve_window.h"
+#include "ui/gfx/text_elider.h"
 #include "webkit/common/cursors/webcursor_gtk_data.h"
 
 using WebKit::WebInputEventFactory;
@@ -839,8 +839,8 @@ void RenderWidgetHostViewGtk::SetIsLoading(bool is_loading) {
 
 void RenderWidgetHostViewGtk::TextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   im_context_->UpdateInputMethodState(type, can_compose_inline);
 }
 
@@ -938,7 +938,7 @@ void RenderWidgetHostViewGtk::SetTooltipText(const string16& tooltip_text) {
   // this itself).
   // I filed https://bugzilla.gnome.org/show_bug.cgi?id=604641 upstream.
   const string16 clamped_tooltip =
-      ui::TruncateString(tooltip_text, kMaxTooltipLength);
+      gfx::TruncateString(tooltip_text, kMaxTooltipLength);
 
   if (clamped_tooltip.empty()) {
     gtk_widget_set_has_tooltip(view_.get(), FALSE);
@@ -950,7 +950,7 @@ void RenderWidgetHostViewGtk::SetTooltipText(const string16& tooltip_text) {
 
 void RenderWidgetHostViewGtk::SelectionChanged(const string16& text,
                                                size_t offset,
-                                               const ui::Range& range) {
+                                               const gfx::Range& range) {
   RenderWidgetHostViewBase::SelectionChanged(text, offset, range);
 
   if (text.empty() || range.is_empty())
@@ -1544,8 +1544,8 @@ void RenderWidgetHostViewGtk::FatalAccessibilityTreeError() {
   }
 }
 
-void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+void RenderWidgetHostViewGtk::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
   if (!GetBrowserAccessibilityManager()) {
     GtkWidget* parent = gtk_widget_get_parent(view_.get());
     SetBrowserAccessibilityManager(
@@ -1554,7 +1554,7 @@ void RenderWidgetHostViewGtk::OnAccessibilityNotifications(
             BrowserAccessibilityManagerGtk::GetEmptyDocument(),
             this));
   }
-  GetBrowserAccessibilityManager()->OnAccessibilityNotifications(params);
+  GetBrowserAccessibilityManager()->OnAccessibilityEvents(params);
 }
 
 AtkObject* RenderWidgetHostViewGtk::GetAccessible() {

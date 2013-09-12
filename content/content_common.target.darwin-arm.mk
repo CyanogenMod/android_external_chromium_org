@@ -47,7 +47,6 @@ LOCAL_SRC_FILES := \
 	content/public/common/menu_item.cc \
 	content/public/common/page_state.cc \
 	content/public/common/page_transition_types.cc \
-	content/public/common/password_form.cc \
 	content/public/common/pepper_plugin_info.cc \
 	content/public/common/renderer_preferences.cc \
 	content/public/common/show_desktop_notification_params.cc \
@@ -77,8 +76,6 @@ LOCAL_SRC_FILES := \
 	content/common/content_paths.cc \
 	content/common/cookie_data.cc \
 	content/common/dom_storage/dom_storage_map.cc \
-	content/common/find_match_rect_android.cc \
-	content/common/font_list.cc \
 	content/common/font_list_android.cc \
 	content/common/gamepad_user_gesture.cc \
 	content/common/gpu/client/command_buffer_proxy_impl.cc \
@@ -114,6 +111,12 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
+	content/common/input/event_packet.cc \
+	content/common/input/ipc_input_event_payload.cc \
+	content/common/input/input_event.cc \
+	content/common/input/input_event_disposition.cc \
+	content/common/input/input_param_traits.cc \
+	content/common/input/web_input_event_payload.cc \
 	content/common/inter_process_time_ticks_converter.cc \
 	content/common/media/media_param_traits.cc \
 	content/common/media/media_stream_options.cc \
@@ -128,7 +131,6 @@ LOCAL_SRC_FILES := \
 	content/common/plugin_list_posix.cc \
 	content/common/process_type.cc \
 	content/common/resource_messages.cc \
-	content/common/sandbox_util.cc \
 	content/common/savable_url_schemes.cc \
 	content/common/set_process_title.cc \
 	content/common/socket_stream_handle_data.cc \
@@ -179,6 +181,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -191,6 +194,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -294,6 +298,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -306,6 +311,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -390,7 +396,9 @@ LOCAL_LDFLAGS_Debug := \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
 	-Wl,--icf=safe \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -409,7 +417,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--icf=safe \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

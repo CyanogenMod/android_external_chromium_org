@@ -133,7 +133,7 @@ void BrowserChildProcessHostImpl::Launch(
     SandboxedProcessLauncherDelegate* delegate,
 #elif defined(OS_POSIX)
     bool use_zygote,
-    const base::EnvironmentVector& environ,
+    const base::EnvironmentMap& environ,
 #endif
     CommandLine* cmd_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -152,6 +152,9 @@ void BrowserChildProcessHostImpl::Launch(
     switches::kVModule,
 #if defined(OS_POSIX)
     switches::kChildCleanExit,
+#endif
+#if defined(OS_WIN)
+    switches::kEnableHighResolutionTime,
 #endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches,

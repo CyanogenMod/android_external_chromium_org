@@ -25,7 +25,7 @@ def _AddDependencyDescriptions(permissions, api_features):
   '''
   for name, permission in permissions.iteritems():
     # Don't overwrite the description created by expanding a partial template.
-    if 'description' in permission or not permission['platforms']:
+    if 'partial' in permission or not permission['platforms']:
       continue
 
     has_deps = False
@@ -58,7 +58,8 @@ class PermissionsDataSource(object):
     '''Initialize a template data source to be used to render partial templates
     into descriptions for permissions. Must be called before .get
     '''
-    self._template_data_source = template_data_source_factory.Create(None, '')
+    self._template_data_source = template_data_source_factory.Create(
+        None, {})
 
   def _CreatePermissionsDataSource(self, _, content):
     '''Combine the contents of |_permissions_json_path| and

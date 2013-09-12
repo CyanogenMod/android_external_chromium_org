@@ -115,6 +115,10 @@
         4: 'Unsupported Language',
         5: 'Identical Languages',
         6: 'Translation Error',
+        7: 'Translation Timeout',
+        8: 'Unexpected Script Error',
+        9: 'Bad Origin',
+        10: 'Script Load Error',
       };
 
       if (error < 0 || errorStrs.length <= error) {
@@ -258,7 +262,7 @@
     function formatDate(date) {
       var year = date.getFullYear();
       var month = date.getMonth() + 1;
-      var day = date.getDay();
+      var day = date.getDate();
       var hour = date.getHours();
       var minute = date.getMinutes();
       var second = date.getSeconds();

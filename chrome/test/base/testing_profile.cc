@@ -55,7 +55,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/bookmark_load_observer.h"
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -80,6 +79,11 @@
 #else
 #include "chrome/browser/policy/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
+#endif
 
 using base::Time;
 using content::BrowserThread;
@@ -332,6 +336,14 @@ void TestingProfile::Init() {
   DesktopNotificationServiceFactory::GetInstance()->SetTestingFactory(
       this, CreateTestDesktopNotificationService);
 #endif
+
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedUserSettingsService* settings_service =
+      ManagedUserSettingsServiceFactory::GetForProfile(this);
+  TestingPrefStore* store = new TestingPrefStore();
+  settings_service->Init(store);
+  store->SetInitializationCompleted();
+#endif
 }
 
 void TestingProfile::FinishInit() {
@@ -462,7 +474,6 @@ static BrowserContextKeyedService* BuildBookmarkModel(
   bookmark_model->Load(profile->GetIOTaskRunner());
   return bookmark_model;
 }
-
 
 void TestingProfile::CreateBookmarkModel(bool delete_file) {
   if (delete_file) {

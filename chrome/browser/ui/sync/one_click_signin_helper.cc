@@ -59,6 +59,7 @@
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/page_navigator.h"
@@ -67,7 +68,6 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
-#include "content/public/common/password_form.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "grit/chromium_strings.h"
@@ -584,6 +584,7 @@ OneClickSigninHelper::OneClickSigninHelper(content::WebContents* web_contents,
       untrusted_navigations_since_signin_visit_(0),
       untrusted_confirmation_required_(false),
       do_not_clear_pending_email_(false),
+      do_not_start_sync_for_testing_(false),
       weak_pointer_factory_(this) {
   // May be NULL during testing.
   if (password_manager) {
@@ -1025,7 +1026,7 @@ void OneClickSigninHelper::CleanTransientState() {
 }
 
 void OneClickSigninHelper::PasswordSubmitted(
-    const content::PasswordForm& form) {
+    const autofill::PasswordForm& form) {
   // We only need to scrape the password for Gaia logins.
   if (gaia::IsGaiaSignonRealm(GURL(form.signon_realm))) {
     VLOG(1) << "OneClickSigninHelper::DidNavigateAnyFrame: got password";
@@ -1035,6 +1036,10 @@ void OneClickSigninHelper::PasswordSubmitted(
 
 void OneClickSigninHelper::SetDoNotClearPendingEmailForTesting() {
   do_not_clear_pending_email_ = true;
+}
+
+void OneClickSigninHelper::set_do_not_start_sync_for_testing() {
+  do_not_start_sync_for_testing_ = true;
 }
 
 void OneClickSigninHelper::NavigateToPendingEntry(
@@ -1212,13 +1217,15 @@ void OneClickSigninHelper::DidStopLoading(
       SigninManager::DisableOneClickSignIn(profile);
       // Start syncing with the default settings - prompt the user to sign in
       // first.
-      StartSync(
-          StartSyncArgs(profile, browser, auto_accept_,
-                        session_index_, email_, password_,
-                        NULL /* don't force to show sync setup in same tab */,
-                        true /* confirmation_required */, source_,
-                        CreateSyncStarterCallback()),
-          OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+      if (!do_not_start_sync_for_testing_) {
+        StartSync(
+            StartSyncArgs(profile, browser, auto_accept_,
+                          session_index_, email_, password_,
+                          NULL /* don't force to show sync setup in same tab */,
+                          true /* confirmation_required */, source_,
+                          CreateSyncStarterCallback()),
+            OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS);
+      }
       break;
     case AUTO_ACCEPT_CONFIGURE:
       LogOneClickHistogramValue(one_click_signin::HISTOGRAM_ACCEPTED);
@@ -1226,13 +1233,15 @@ void OneClickSigninHelper::DidStopLoading(
       SigninManager::DisableOneClickSignIn(profile);
       // Display the extra confirmation (even in the SAML case) in case this
       // was an untrusted renderer.
-      StartSync(
-          StartSyncArgs(profile, browser, auto_accept_,
-                        session_index_, email_, password_,
-                        NULL  /* don't force to show sync setup in same tab */,
-                        true /* confirmation_required */, source_,
-                        CreateSyncStarterCallback()),
-          OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
+      if (!do_not_start_sync_for_testing_) {
+        StartSync(
+            StartSyncArgs(profile, browser, auto_accept_,
+                          session_index_, email_, password_,
+                          NULL  /* don't force sync setup in same tab */,
+                          true  /* confirmation_required */, source_,
+                          CreateSyncStarterCallback()),
+            OneClickSigninSyncStarter::CONFIGURE_SYNC_FIRST);
+      }
       break;
     case AUTO_ACCEPT_EXPLICIT: {
       signin::Source original_source =
@@ -1287,12 +1296,14 @@ void OneClickSigninHelper::DidStopLoading(
                 contents,
                 start_mode));
       } else {
-        StartSync(
-            StartSyncArgs(profile, browser, auto_accept_,
-                          session_index_, email_, password_, contents,
-                          untrusted_confirmation_required_, source_,
-                          CreateSyncStarterCallback()),
-            start_mode);
+        if (!do_not_start_sync_for_testing_) {
+          StartSync(
+              StartSyncArgs(profile, browser, auto_accept_,
+                            session_index_, email_, password_, contents,
+                            untrusted_confirmation_required_, source_,
+                            CreateSyncStarterCallback()),
+              start_mode);
+        }
 
         // If this explicit sign in is not from settings page/webstore, show
         // the NTP/Apps page after sign in completes. In the case of the

@@ -70,6 +70,10 @@ namespace Page {
   extern const char kData[];
   extern const char kParamDeviceScaleFactor[];
   extern const char kParamPageScaleFactor[];
+  extern const char kParamPageScaleFactorMin[];
+  extern const char kParamPageScaleFactorMax[];
+  extern const char kParamOffsetBottom[];
+  extern const char kParamOffsetTop[];
   extern const char kParamViewport[];
 
   namespace disable {
@@ -87,18 +91,30 @@ namespace Page {
     extern const char kParamUrl[];
   }  // navigate
 
+  namespace getNavigationHistory {
+    extern const char kName[];
+    extern const char kResponseCurrentIndex[];
+    extern const char kResponseEntries[];
+    extern const char kResponseEntryId[];
+    extern const char kResponseEntryURL[];
+    extern const char kResponseEntryTitle[];
+  }  // getNavigationHistory
+
+  namespace navigateToHistoryEntry {
+    extern const char kName[];
+    extern const char kParamEntryId[];
+  }  // navigateToHistoryEntry
+
   namespace captureScreenshot {
     extern const char kName[];
     extern const char kParamFormat[];
     extern const char kParamQuality[];
-    extern const char kParamScale[];
+    extern const char kParamMaxWidth[];
+    extern const char kParamMaxHeight[];
   }  // captureScreenshot
 
   namespace startScreencast {
     extern const char kName[];
-    extern const char kParamFormat[];
-    extern const char kParamQuality[];
-    extern const char kParamScale[];
   }  // startScreencast
 
   namespace stopScreencast {

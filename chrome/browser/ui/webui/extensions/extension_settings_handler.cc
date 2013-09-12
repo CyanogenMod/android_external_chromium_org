@@ -28,6 +28,8 @@
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
+#include "chrome/browser/extensions/devtools_util.h"
+#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_disabled_ui.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
@@ -73,6 +75,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "extensions/browser/extension_error.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "grit/browser_resources.h"
@@ -82,7 +85,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
-
+using base::DictionaryValue;
+using base::ListValue;
 using content::RenderViewHost;
 using content::WebContents;
 
@@ -115,7 +119,8 @@ ExtensionSettingsHandler::ExtensionSettingsHandler()
       rvh_created_callback_(
           base::Bind(&ExtensionSettingsHandler::RenderViewHostCreated,
                      base::Unretained(this))),
-      warning_service_observer_(this) {
+      warning_service_observer_(this),
+      error_console_observer_(this) {
 }
 
 ExtensionSettingsHandler::~ExtensionSettingsHandler() {
@@ -134,7 +139,8 @@ ExtensionSettingsHandler::ExtensionSettingsHandler(ExtensionService* service,
       ignore_notifications_(false),
       deleting_rvh_(NULL),
       registered_for_notifications_(false),
-      warning_service_observer_(this) {
+      warning_service_observer_(this),
+      error_console_observer_(this) {
 }
 
 // static
@@ -253,8 +259,30 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
     }
   }
 
-  // Add install warnings (these are not the same as warnings!).
-  if (Manifest::IsUnpackedLocation(extension->location())) {
+  // If the ErrorConsole is enabled, get the errors for the extension and add
+  // them to the list. Otherwise, use the install warnings (using both is
+  // redundant).
+  ErrorConsole* error_console =
+      ErrorConsole::Get(extension_service_->profile());
+  if (error_console->enabled()) {
+    const ErrorConsole::ErrorList& errors =
+        error_console->GetErrorsForExtension(extension->id());
+    if (!errors.empty()) {
+      scoped_ptr<ListValue> manifest_errors(new ListValue);
+      scoped_ptr<ListValue> runtime_errors(new ListValue);
+      for (ErrorConsole::ErrorList::const_iterator iter = errors.begin();
+           iter != errors.end(); ++iter) {
+        if ((*iter)->type() == ExtensionError::MANIFEST_ERROR)
+          manifest_errors->Append((*iter)->ToValue().release());
+        else
+          runtime_errors->Append((*iter)->ToValue().release());
+      }
+      if (!manifest_errors->empty())
+        extension_data->Set("manifestErrors", manifest_errors.release());
+      if (!runtime_errors->empty())
+        extension_data->Set("runtimeErrors", runtime_errors.release());
+    }
+  } else if (Manifest::IsUnpackedLocation(extension->location())) {
     const std::vector<InstallWarning>& install_warnings =
         extension->install_warnings();
     if (!install_warnings.empty()) {
@@ -460,6 +488,13 @@ void ExtensionSettingsHandler::FileSelected(const base::FilePath& path,
 void ExtensionSettingsHandler::MultiFilesSelected(
     const std::vector<base::FilePath>& files, void* params) {
   NOTREACHED();
+}
+
+void ExtensionSettingsHandler::FileSelectionCanceled(void* params) {
+}
+
+void ExtensionSettingsHandler::OnErrorAdded(const ExtensionError* error) {
+  MaybeUpdateAfterNotification();
 }
 
 void ExtensionSettingsHandler::Observe(
@@ -694,13 +729,8 @@ void ExtensionSettingsHandler::HandleInspectMessage(
     const Extension* extension =
         extension_service_->extensions()->GetByID(extension_id);
     DCHECK(extension);
-
-    ExtensionService* service = extension_service_;
-    if (incognito)
-      service = ExtensionSystem::Get(extension_service_->
-          profile()->GetOffTheRecordProfile())->extension_service();
-
-    service->InspectBackgroundPage(extension);
+    devtools_util::InspectBackgroundPage(extension,
+                                         Profile::FromWebUI(web_ui()));
     return;
   }
 
@@ -987,6 +1017,8 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
 
   warning_service_observer_.Add(
       ExtensionSystem::Get(profile)->warning_service());
+
+  error_console_observer_.Add(ErrorConsole::Get(profile));
 
   base::Closure callback = base::Bind(
       &ExtensionSettingsHandler::MaybeUpdateAfterNotification,

@@ -9,6 +9,8 @@
 
 namespace {
 
+const double kMeanGravity = 9.80665;
+
 void FetchMotion(SuddenMotionSensor* sensor,
     content::DeviceMotionHardwareBuffer* buffer) {
   DCHECK(buffer);
@@ -18,11 +20,11 @@ void FetchMotion(SuddenMotionSensor* sensor,
     return;
 
   buffer->seqlock.WriteBegin();
-  buffer->data.accelerationIncludingGravityX = axis_value[0];
+  buffer->data.accelerationIncludingGravityX = axis_value[0] * kMeanGravity;
   buffer->data.hasAccelerationIncludingGravityX = true;
-  buffer->data.accelerationIncludingGravityY = axis_value[1];
+  buffer->data.accelerationIncludingGravityY = axis_value[1] * kMeanGravity;
   buffer->data.hasAccelerationIncludingGravityY = true;
-  buffer->data.accelerationIncludingGravityZ = axis_value[2];
+  buffer->data.accelerationIncludingGravityZ = axis_value[2] * kMeanGravity;
   buffer->data.hasAccelerationIncludingGravityZ = true;
   buffer->data.allAvailableSensorsAreActive = true;
   buffer->seqlock.WriteEnd();
@@ -100,39 +102,35 @@ DataFetcherSharedMemory::~DataFetcherSharedMemory() {
 void DataFetcherSharedMemory::Fetch(unsigned consumer_bitmask) {
   DCHECK(base::MessageLoop::current() == GetPollingMessageLoop());
   DCHECK(sudden_motion_sensor_);
+  DCHECK(consumer_bitmask & CONSUMER_TYPE_ORIENTATION ||
+         consumer_bitmask & CONSUMER_TYPE_MOTION);
 
   if (consumer_bitmask & CONSUMER_TYPE_ORIENTATION)
     FetchOrientation(sudden_motion_sensor_.get(), orientation_buffer_);
-  else if (consumer_bitmask & CONSUMER_TYPE_MOTION)
+  if (consumer_bitmask & CONSUMER_TYPE_MOTION)
     FetchMotion(sudden_motion_sensor_.get(), motion_buffer_);
-
-  NOTREACHED();
 }
 
 bool DataFetcherSharedMemory::IsPolling() const {
   return true;
 }
 
-bool DataFetcherSharedMemory::Start(ConsumerType consumer_type) {
+bool DataFetcherSharedMemory::Start(ConsumerType consumer_type, void* buffer) {
   DCHECK(base::MessageLoop::current() == GetPollingMessageLoop());
+  DCHECK(buffer);
+
   switch (consumer_type) {
     case CONSUMER_TYPE_MOTION:
-      if (void* buffer = InitSharedMemoryBuffer(consumer_type,
-          sizeof(DeviceMotionHardwareBuffer))) {
-        motion_buffer_ = static_cast<DeviceMotionHardwareBuffer*>(buffer);
-        if (!sudden_motion_sensor_)
-          sudden_motion_sensor_.reset(SuddenMotionSensor::Create());
-        return true;
-      }
+      motion_buffer_ = static_cast<DeviceMotionHardwareBuffer*>(buffer);
+      if (!sudden_motion_sensor_)
+        sudden_motion_sensor_.reset(SuddenMotionSensor::Create());
+      return true;
     case CONSUMER_TYPE_ORIENTATION:
-      if (void* buffer = InitSharedMemoryBuffer(consumer_type,
-          sizeof(DeviceOrientationHardwareBuffer))) {
-        orientation_buffer_ =
-            static_cast<DeviceOrientationHardwareBuffer*>(buffer);
-        if (!sudden_motion_sensor_)
-          sudden_motion_sensor_.reset(SuddenMotionSensor::Create());
-        return true;
-      }
+      orientation_buffer_ =
+          static_cast<DeviceOrientationHardwareBuffer*>(buffer);
+      if (!sudden_motion_sensor_)
+        sudden_motion_sensor_.reset(SuddenMotionSensor::Create());
+      return true;
     default:
       NOTREACHED();
   }
@@ -141,18 +139,23 @@ bool DataFetcherSharedMemory::Start(ConsumerType consumer_type) {
 
 bool DataFetcherSharedMemory::Stop(ConsumerType consumer_type) {
   DCHECK(base::MessageLoop::current() == GetPollingMessageLoop());
+
   switch (consumer_type) {
     case CONSUMER_TYPE_MOTION:
-      motion_buffer_->seqlock.WriteBegin();
-      motion_buffer_->data.allAvailableSensorsAreActive = false;
-      motion_buffer_->seqlock.WriteEnd();
-      motion_buffer_ = NULL;
+      if (motion_buffer_) {
+        motion_buffer_->seqlock.WriteBegin();
+        motion_buffer_->data.allAvailableSensorsAreActive = false;
+        motion_buffer_->seqlock.WriteEnd();
+        motion_buffer_ = NULL;
+      }
       return true;
     case CONSUMER_TYPE_ORIENTATION:
-      orientation_buffer_->seqlock.WriteBegin();
-      orientation_buffer_->data.allAvailableSensorsAreActive = false;
-      orientation_buffer_->seqlock.WriteEnd();
-      orientation_buffer_ = NULL;
+      if (orientation_buffer_) {
+        orientation_buffer_->seqlock.WriteBegin();
+        orientation_buffer_->data.allAvailableSensorsAreActive = false;
+        orientation_buffer_->seqlock.WriteEnd();
+        orientation_buffer_ = NULL;
+      }
       return true;
     default:
       NOTREACHED();

@@ -8,6 +8,7 @@ html {
 }
 
 body {
+  background-color: #fbfbfb;
   height: 100%;
   margin: 0;
   padding: 0;
@@ -16,6 +17,7 @@ body {
 
 .title-bar {
   -webkit-align-items: center;
+  -webkit-app-region: drag;
   background-color: #fff;
   box-shadow: 0 1px #d0d0d0;
   color: rgb(80, 80, 82);
@@ -25,7 +27,6 @@ body {
 }
 
 .title-bar #page-title {
-  -webkit-app-region: drag;
   -webkit-flex: 1 1 auto;
   -webkit-margin-start: 20px;
 }
@@ -35,7 +36,6 @@ body {
 }
 
 .content {
-  background-color: #fbfbfb;
   color: #646464;
   font-size: 12px;
   margin: 20px;
@@ -96,7 +96,7 @@ body {
 }
 
 .content #screenshot-image:hover {
-  height: 170px;
+  height: 150px;
   margin-top: 80px;
   z-index: 1;
 }
@@ -114,6 +114,32 @@ body {
   justify-content: flex-end
 }
 
+.content .remove-file-button {
+  -webkit-margin-start: 5px;
+  background-color: transparent;
+  background-image: -webkit-image-set(
+      url('chrome://resources/images/apps/button_butter_bar_close.png') 1x,
+      url('chrome://resources/images/2x/apps/button_butter_bar_close.png') 2x);
+  background-position: 50% 80%;
+  background-repeat: no-repeat;
+  border: none;
+  height: 16px;
+  pointer-events: auto;
+  width: 16px;
+}
+
+.content .remove-file-button:hover {
+  background-image: -webkit-image-set(
+      url('chrome://resources/images/apps/button_butter_bar_close_hover.png') 1x,
+      url('chrome://resources/images/2x/apps/button_butter_bar_close_hover.png') 2x);
+}
+
+.content .remove-file-button:active {
+  background-image: -webkit-image-set(
+      url('chrome://resources/images/apps/button_butter_bar_close_pressed.png') 1x,
+      url('chrome://resources/images/2x/apps/button_butter_bar_close_pressed.png') 2x);
+}
+
 .content #attach-file-note {
   -webkit-margin-start: 112px;
   margin-bottom: 10px;
@@ -121,7 +147,6 @@ body {
 }
 
 .content .attach-file-notification {
-  -webkit-padding-start: 20px;
   color: rgb(204, 0, 0);
   font-weight: bold;
 }

@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -17,6 +18,7 @@
 #include "base/time/time.h"
 #include "cc/layers/texture_layer.h"
 #include "content/common/content_constants_internal.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/pepper/common.h"
@@ -93,6 +95,7 @@
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
+#include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -106,9 +109,9 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkRect.h"
-#include "ui/base/range/range.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "v8/include/v8.h"
@@ -525,11 +528,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
 PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
   DCHECK(!fullscreen_container_);
 
-  // Force-unbind any Graphics. In the case of Graphics2D, if the plugin
-  // leaks the graphics 2D, it may actually get cleaned up after our
-  // destruction, so we need its pointers to be up-to-date.
-  BindGraphics(pp_instance(), 0);
-
   // Free all the plugin objects. This will automatically clear the back-
   // pointer from the NPObject so WebKit can't call into the plugin any more.
   //
@@ -593,8 +591,11 @@ void PepperPluginInstanceImpl::Delete() {
     fullscreen_container_->Destroy();
     fullscreen_container_ = NULL;
   }
-  bound_graphics_3d_ = NULL;
-  UpdateLayer();
+
+  // Force-unbind any Graphics. In the case of Graphics2D, if the plugin
+  // leaks the graphics 2D, it may actually get cleaned up after our
+  // destruction, so we need its pointers to be up-to-date.
+  BindGraphics(pp_instance(), 0);
   container_ = NULL;
 }
 
@@ -630,12 +631,21 @@ void PepperPluginInstanceImpl::InvalidateRect(const gfx::Rect& rect) {
     else
       container_->invalidateRect(rect);
   }
+  if (texture_layer_) {
+    if (rect.IsEmpty()) {
+      texture_layer_->SetNeedsDisplay();
+    } else {
+      texture_layer_->SetNeedsDisplayRect(rect);
+    }
+  }
 }
 
 void PepperPluginInstanceImpl::ScrollRect(int dx,
                                           int dy,
                                           const gfx::Rect& rect) {
-  if (fullscreen_container_) {
+  if (texture_layer_) {
+    InvalidateRect(rect);
+  } else if (fullscreen_container_) {
     fullscreen_container_->ScrollRect(dx, dy, rect);
   } else {
     if (full_frame_ && !IsViewAccelerated()) {
@@ -902,7 +912,7 @@ bool PepperPluginInstanceImpl::HandleTextInput(const base::string16& text) {
 }
 
 void PepperPluginInstanceImpl::GetSurroundingText(base::string16* text,
-                                                  ui::Range* range) const {
+                                                  gfx::Range* range) const {
   std::vector<size_t> offsets;
   offsets.push_back(selection_anchor_);
   offsets.push_back(selection_caret_);
@@ -1665,9 +1675,7 @@ void PepperPluginInstanceImpl::UpdateFlashFullscreenState(
     return;
   }
 
-  PPB_Graphics3D_Impl* graphics_3d  = bound_graphics_3d_.get();
-  if (graphics_3d)
-    UpdateLayer();
+  UpdateLayer();
 
   bool old_plugin_focus = PluginHasFocus();
   flash_fullscreen_ = flash_fullscreen;
@@ -1807,13 +1815,18 @@ void PepperPluginInstanceImpl::UpdateLayer() {
     PlatformContext3D* context = bound_graphics_3d_->platform_context();
     context->GetBackingMailbox(&mailbox);
   }
-  bool want_layer = !mailbox.IsZero();
+  bool want_3d_layer = !mailbox.IsZero();
+  bool want_2d_layer = bound_graphics_2d_platform_ &&
+                       CommandLine::ForCurrentProcess()->HasSwitch(
+                           switches::kEnableSoftwareCompositing);
+  bool want_layer = want_3d_layer || want_2d_layer;
 
-  if (want_layer == !!texture_layer_.get() &&
+  if ((want_layer == !!texture_layer_.get()) &&
+      (want_3d_layer == layer_is_hardware_) &&
       layer_bound_to_fullscreen_ == !!fullscreen_container_)
     return;
 
-  if (texture_layer_.get()) {
+  if (texture_layer_) {
     if (!layer_bound_to_fullscreen_)
       container_->setWebLayer(NULL);
     else if (fullscreen_container_)
@@ -1822,8 +1835,20 @@ void PepperPluginInstanceImpl::UpdateLayer() {
     texture_layer_ = NULL;
   }
   if (want_layer) {
-    DCHECK(bound_graphics_3d_.get());
-    texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
+    bool opaque = false;
+    if (want_3d_layer) {
+      DCHECK(bound_graphics_3d_.get());
+      texture_layer_ = cc::TextureLayer::CreateForMailbox(NULL);
+      opaque = bound_graphics_3d_->IsOpaque();
+      texture_layer_->SetTextureMailbox(
+          cc::TextureMailbox(mailbox, base::Bind(&IgnoreCallback), 0));
+    } else {
+      DCHECK(bound_graphics_2d_platform_);
+      texture_layer_ = cc::TextureLayer::CreateForMailbox(this);
+      bound_graphics_2d_platform_->AttachedToNewLayer();
+      opaque = bound_graphics_2d_platform_->IsAlwaysOpaque();
+      texture_layer_->SetFlipped(false);
+    }
     web_layer_.reset(new webkit::WebLayerImpl(texture_layer_));
     if (fullscreen_container_) {
       fullscreen_container_->SetLayer(web_layer_.get());
@@ -1833,12 +1858,27 @@ void PepperPluginInstanceImpl::UpdateLayer() {
       texture_layer_->SetContentsOpaque(true);
     } else {
       container_->setWebLayer(web_layer_.get());
-      texture_layer_->SetContentsOpaque(bound_graphics_3d_->IsOpaque());
+      texture_layer_->SetContentsOpaque(opaque);
     }
-    texture_layer_->SetTextureMailbox(
-        cc::TextureMailbox(mailbox, base::Bind(&IgnoreCallback), 0));
   }
   layer_bound_to_fullscreen_ = !!fullscreen_container_;
+  layer_is_hardware_ = want_3d_layer;
+}
+
+unsigned PepperPluginInstanceImpl::PrepareTexture() {
+  return 0;
+}
+
+WebKit::WebGraphicsContext3D* PepperPluginInstanceImpl::Context3d() {
+  return NULL;
+}
+
+bool PepperPluginInstanceImpl::PrepareTextureMailbox(
+    cc::TextureMailbox* mailbox,
+    bool use_shared_memory) {
+  if (!bound_graphics_2d_platform_)
+    return false;
+  return bound_graphics_2d_platform_->PrepareTextureMailbox(mailbox);
 }
 
 void PepperPluginInstanceImpl::AddPluginObject(PluginObject* plugin_object) {
@@ -1920,7 +1960,7 @@ bool PepperPluginInstanceImpl::SimulateIMEEvent(
       break;
     case PP_INPUTEVENT_TYPE_IME_TEXT:
       render_view_->SimulateImeConfirmComposition(
-          UTF8ToUTF16(input_event.character_text), ui::Range());
+          UTF8ToUTF16(input_event.character_text), gfx::Range());
       break;
     default:
       return false;
@@ -2501,6 +2541,24 @@ PP_Var PepperPluginInstanceImpl::GetPluginInstanceURL(
     PP_Instance instance,
     PP_URLComponents_Dev* components) {
   return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(plugin_url_,
+                                                      components);
+}
+
+PP_Var PepperPluginInstanceImpl::GetPluginReferrerURL(
+    PP_Instance instance,
+    PP_URLComponents_Dev* components) {
+  WebKit::WebDocument document = container()->element().document();
+  if (!full_frame_)
+    return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(document.url(),
+                                                        components);
+  WebFrame* frame = document.frame();
+  if (!frame)
+    return PP_MakeUndefined();
+  const WebURLRequest& request = frame->dataSource()->originalRequest();
+  WebString referer = request.httpHeaderField("Referer");
+  if (referer.isEmpty())
+    return PP_MakeUndefined();
+  return ppapi::PPB_URLUtil_Shared::GenerateURLReturn(GURL(referer),
                                                       components);
 }
 

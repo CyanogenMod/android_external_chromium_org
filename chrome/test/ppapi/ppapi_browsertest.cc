@@ -963,7 +963,6 @@ TEST_PPAPI_IN_PROCESS_VIA_HTTP(MAYBE_Fullscreen)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(MAYBE_Fullscreen)
 TEST_PPAPI_NACL(MAYBE_Fullscreen)
 
-TEST_PPAPI_IN_PROCESS(X509CertificatePrivate)
 TEST_PPAPI_OUT_OF_PROCESS(X509CertificatePrivate)
 
 // There is no proxy. This is used for PDF metrics reporting, and PDF only
@@ -1066,20 +1065,11 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetAddressPrivate) {
 }
 
 // NetworkMonitor tests.
-IN_PROC_BROWSER_TEST_F(PPAPITest, NetworkMonitor) {
-  RunTestViaHTTP(
-      LIST_TEST(NetworkMonitorPrivate_Basic)
-      LIST_TEST(NetworkMonitorPrivate_2Monitors)
-      LIST_TEST(NetworkMonitorPrivate_DeleteInCallback)
-      LIST_TEST(NetworkMonitorPrivate_ListObserver)
-  );
-}
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, NetworkMonitor) {
   RunTestViaHTTP(
       LIST_TEST(NetworkMonitorPrivate_Basic)
       LIST_TEST(NetworkMonitorPrivate_2Monitors)
       LIST_TEST(NetworkMonitorPrivate_DeleteInCallback)
-      LIST_TEST(NetworkMonitorPrivate_ListObserver)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, NetworkMonitor) {
@@ -1087,7 +1077,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, NetworkMonitor) {
       LIST_TEST(NetworkMonitorPrivate_Basic)
       LIST_TEST(NetworkMonitorPrivate_2Monitors)
       LIST_TEST(NetworkMonitorPrivate_DeleteInCallback)
-      LIST_TEST(NetworkMonitorPrivate_ListObserver)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(NetworkMonitor)) {
@@ -1095,7 +1084,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(NetworkMonitor)) {
       LIST_TEST(NetworkMonitorPrivate_Basic)
       LIST_TEST(NetworkMonitorPrivate_2Monitors)
       LIST_TEST(NetworkMonitorPrivate_DeleteInCallback)
-      LIST_TEST(NetworkMonitorPrivate_ListObserver)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetworkMonitor) {
@@ -1103,7 +1091,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, NetworkMonitor) {
       LIST_TEST(NetworkMonitorPrivate_Basic)
       LIST_TEST(NetworkMonitorPrivate_2Monitors)
       LIST_TEST(NetworkMonitorPrivate_DeleteInCallback)
-      LIST_TEST(NetworkMonitorPrivate_ListObserver)
   );
 }
 
@@ -1338,35 +1325,45 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, MAYBE_Audio) {
           LIST_TEST(Audio_DestroyNoStop)
           LIST_TEST(Audio_Failures)
           LIST_TEST(Audio_AudioCallback1)
-          LIST_TEST(Audio_AudioCallback2));
+          LIST_TEST(Audio_AudioCallback2)
+          LIST_TEST(Audio_AudioCallback3)
+          LIST_TEST(Audio_AudioCallback4));
 }
 IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, Audio) {
   RunTest(LIST_TEST(Audio_Creation)
           LIST_TEST(Audio_DestroyNoStop)
           LIST_TEST(Audio_Failures)
           LIST_TEST(Audio_AudioCallback1)
-          LIST_TEST(Audio_AudioCallback2));
+          LIST_TEST(Audio_AudioCallback2)
+          LIST_TEST(Audio_AudioCallback3)
+          LIST_TEST(Audio_AudioCallback4));
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, Audio) {
   RunTestViaHTTP(LIST_TEST(Audio_Creation)
                  LIST_TEST(Audio_DestroyNoStop)
                  LIST_TEST(Audio_Failures)
                  LIST_TEST(Audio_AudioCallback1)
-                 LIST_TEST(Audio_AudioCallback2));
+                 LIST_TEST(Audio_AudioCallback2)
+                 LIST_TEST(Audio_AudioCallback3)
+                 LIST_TEST(Audio_AudioCallback4));
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(Audio)) {
   RunTestViaHTTP(LIST_TEST(Audio_Creation)
                  LIST_TEST(Audio_DestroyNoStop)
                  LIST_TEST(Audio_Failures)
                  LIST_TEST(Audio_AudioCallback1)
-                 LIST_TEST(Audio_AudioCallback2));
+                 LIST_TEST(Audio_AudioCallback2)
+                 LIST_TEST(Audio_AudioCallback3)
+                 LIST_TEST(Audio_AudioCallback4));
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, Audio) {
   RunTestViaHTTP(LIST_TEST(Audio_Creation)
                  LIST_TEST(Audio_DestroyNoStop)
                  LIST_TEST(Audio_Failures)
                  LIST_TEST(Audio_AudioCallback1)
-                 LIST_TEST(Audio_AudioCallback2));
+                 LIST_TEST(Audio_AudioCallback2)
+                 LIST_TEST(Audio_AudioCallback3)
+                 LIST_TEST(Audio_AudioCallback4));
 }
 
 TEST_PPAPI_IN_PROCESS(View_CreatedVisible);

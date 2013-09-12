@@ -279,8 +279,11 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       widget->UsingSynchronousRendererCompositor();
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
-    settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
+    settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
     settings.solid_color_scrollbars = true;
+  }
+  if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport) ||
+      cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
     settings.solid_color_scrollbar_thickness_dip = 7;
   }
@@ -431,6 +434,10 @@ void RenderWidgetCompositor::setBackgroundColor(WebKit::WebColor color) {
 
 void RenderWidgetCompositor::setHasTransparentBackground(bool transparent) {
   layer_tree_host_->set_has_transparent_background(transparent);
+}
+
+void RenderWidgetCompositor::setOverhangBitmap(const SkBitmap& bitmap) {
+  layer_tree_host_->SetOverhangBitmap(bitmap);
 }
 
 void RenderWidgetCompositor::setVisible(bool visible) {

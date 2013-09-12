@@ -58,7 +58,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
-#include "ui/base/win/dpi.h"
+#include "ui/gfx/dpi_win.h"
 
 // http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
 extern "C" IMAGE_DOS_HEADER __ImageBase;
@@ -228,6 +228,7 @@ void SetPluginInfo(const content::WebPluginInfo& plugin_info,
   plugin->set_name(UTF16ToUTF8(plugin_info.name));
   plugin->set_filename(plugin_info.path.BaseName().AsUTF8Unsafe());
   plugin->set_version(UTF16ToUTF8(plugin_info.version));
+  plugin->set_is_pepper(plugin_info.is_pepper_plugin());
   if (plugin_prefs)
     plugin->set_is_disabled(!plugin_prefs->IsPluginEnabled(plugin_info));
 }
@@ -304,8 +305,8 @@ BOOL CALLBACK GetMonitorDPICallback(HMONITOR, HDC hdc, LPRECT, LPARAM dwData) {
       GetDeviceCaps(hdc, HORZRES) / (size_x / kMillimetersPerInch) : 0;
   double dpi_y = (size_y > 0) ?
       GetDeviceCaps(hdc, VERTRES) / (size_y / kMillimetersPerInch) : 0;
-  dpi_x *= ui::win::GetUndocumentedDPIScale();
-  dpi_y *= ui::win::GetUndocumentedDPIScale();
+  dpi_x *= gfx::win::GetUndocumentedDPIScale();
+  dpi_y *= gfx::win::GetUndocumentedDPIScale();
   screen_info->max_dpi_x = std::max(dpi_x, screen_info->max_dpi_x);
   screen_info->max_dpi_y = std::max(dpi_y, screen_info->max_dpi_y);
   return TRUE;
@@ -860,13 +861,8 @@ void MetricsLog::RecordOmniboxOpenedURL(const OmniboxLog& log) {
   omnibox_event->set_current_page_classification(
       AsOmniboxEventPageClassification(log.current_page_classification));
   omnibox_event->set_input_type(AsOmniboxEventInputType(log.input_type));
-
-  // The view code to hide the top result is currently only implemented on the
-  // Mac and for views.
-#if defined(OS_MACOSX) || defined(TOOLKIT_VIEWS)
   omnibox_event->set_is_top_result_hidden_in_dropdown(
       log.result.ShouldHideTopMatch());
-#endif  // defined(OS_MACOSX) || defined(TOOLKIT_VIEWS)
 
   for (AutocompleteResult::const_iterator i(log.result.begin());
        i != log.result.end(); ++i) {

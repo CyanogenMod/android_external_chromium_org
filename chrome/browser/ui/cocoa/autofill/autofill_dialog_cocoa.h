@@ -25,8 +25,9 @@ namespace autofill {
 
 @class AutofillAccountChooser;
 @class AutofillDialogWindowController;
-@class AutofillSignInContainer;
 @class AutofillMainContainer;
+@class AutofillOverlayController;
+@class AutofillSignInContainer;
 
 namespace autofill {
 
@@ -44,10 +45,10 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual void UpdatesFinished() OVERRIDE;
   virtual void UpdateAccountChooser() OVERRIDE;
   virtual void UpdateButtonStrip() OVERRIDE;
+  virtual void UpdateOverlay() OVERRIDE;
   virtual void UpdateDetailArea() OVERRIDE;
   virtual void UpdateForErrors() OVERRIDE;
   virtual void UpdateNotificationArea() OVERRIDE;
-  virtual void UpdateAutocheckoutStepsArea() OVERRIDE;
   virtual void UpdateSection(DialogSection section) OVERRIDE;
   virtual void FillSection(DialogSection section,
                            const DetailInput& originating_input) OVERRIDE;
@@ -59,7 +60,6 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
-  virtual void UpdateProgressBar(double value) OVERRIDE;
   virtual void ModelChanged() OVERRIDE;
   virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
   virtual TestableAutofillDialogView* GetTestableView() OVERRIDE;
@@ -112,7 +112,9 @@ class AutofillDialogCocoa : public AutofillDialogView,
   base::scoped_nsobject<AutofillMainContainer> mainContainer_;
   base::scoped_nsobject<AutofillSignInContainer> signInContainer_;
   base::scoped_nsobject<AutofillAccountChooser> accountChooser_;
+  base::scoped_nsobject<AutofillOverlayController> overlayController_;
   base::scoped_nsobject<NSTextField> loadingShieldTextField_;
+  base::scoped_nsobject<NSTextField> titleTextField_;
 }
 
 // Designated initializer. The WebContents cannot be NULL.
@@ -130,9 +132,11 @@ class AutofillDialogCocoa : public AutofillDialogView,
 - (IBAction)cancel:(id)sender;
 
 // Forwarding AutofillDialogView calls.
+- (void)show;
 - (void)hide;
 - (void)updateNotificationArea;
 - (void)updateAccountChooser;
+- (void)updateButtonStrip;
 - (void)updateSection:(autofill::DialogSection)section;
 - (void)fillSection:(autofill::DialogSection)section
            forInput:(const autofill::DetailInput&)input;

@@ -320,6 +320,9 @@ const char kDisableCustomJumpList[]         = "disable-custom-jumplist";
 // automated testing.
 const char kDisableDefaultApps[]            = "disable-default-apps";
 
+// Disables device discovery.
+const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
+
 // Disables retrieval of PAC URLs from DHCP as per the WPAD standard.
 const char kDisableDhcpWpad[]               = "disable-dhcp-wpad";
 
@@ -480,6 +483,10 @@ const char kDisableTranslate[]              = "disable-translate";
 // Disables TLS Channel ID extension.
 const char kDisableTLSChannelID[]           = "disable-tls-channel-id";
 
+// Disables some security measures when accessing user media devices like
+// webcams and microphones, especially on non-HTTPS pages.
+const char kDisableUserMediaSecurity[]      = "disable-user-media-security";
+
 // Disables the backend service for web resources.
 const char kDisableWebResources[]           = "disable-web-resources";
 
@@ -551,9 +558,6 @@ const char kEnableComponentCloudPolicy[]    = "enable-component-cloud-policy";
 // Enables fetching the user's contacts from Google and showing them in the
 // Chrome OS apps list.
 const char kEnableContacts[]                = "enable-contacts";
-
-// Enables device discovery.
-const char kEnableDeviceDiscovery[]        = "enable-device-discovery";
 
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
@@ -655,6 +659,9 @@ const char kEnablePanels[]                  = "enable-panels";
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
+// Enables searching for people from the apps list search box.
+const char kEnablePeopleSearch[]            = "enable-people-search";
+
 // Disables the usage of Portable Native Client.
 const char kDisablePnacl[]                  = "disable-pnacl";
 
@@ -680,10 +687,6 @@ const char kEnableQuicHttps[]               = "enable-quic-https";
 
 // Enables the Quickoffoce/Chrome document viewer rather than the editor.
 const char kEnableQuickofficeViewing[]      = "enable-quickoffice-viewing";
-
-// Enables support in chrome://settings to reset settings in your profile
-// that are often touched by malware.
-const char kEnableResetProfileSettings[]    = "enable-reset-profile-settings";
 
 // Enables content settings based on host *and* plug-in in the user
 // preferences.
@@ -745,8 +748,6 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 // With this switch, SSL 3.0 fallback will be enabled for all sites.
 // Without this switch, SSL 3.0 fallback will be disabled for a site
 // pinned to the Google pin list (indicating that it is a Google site).
-// Note: until http://crbug/237055 is resolved, unrestricted SSL 3.0
-// fallback is always enabled, with or without this switch.
 const char kEnableUnrestrictedSSL3Fallback[] =
     "enable-unrestricted-ssl3-fallback";
 
@@ -1457,9 +1458,6 @@ const char kVariationsServerURL[]           = "variations-server-url";
 // Prints version information and quits.
 const char kVersion[]                       = "version";
 
-// Cycle through a series of URLs listed in the specified file.
-const char kVisitURLs[]                     = "visit-urls";
-
 // Adds the given extension ID to all the permission whitelists.
 const char kWhitelistedExtensionID[]        = "whitelisted-extension-id";
 
@@ -1481,23 +1479,31 @@ const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // Enable SPDY proxy.
 const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
+
+// Registers for cloud policy using the BROWSER client type instead of the
+// ANDROID_BROWSER or IOS_BROWSER types.
+// This allows skipping the server whitelist.
+// TODO(joaodasilva): remove this. http://crbug.com/248527
+const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
+
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+// Disables the new NTP.
+const char kDisableNewNTP[]                  = "disable-new-ntp";
+
 // Enable the accessibility tab switcher.
 const char kEnableAccessibilityTabSwitcher[] =
     "enable-accessibility-tab-switcher";
+
+// Makes the "Add to Homescreen" shortcut visible.
+const char kEnableAddToHomescreen[]         = "enable-add-to-homescreen";
 
 // Enables the new NTP.
 const char kEnableNewNTP[]                  = "enable-new-ntp";
 
 // Pops the translate infobar if possible.
 const char kEnableTranslate[]               = "enable-translate";
-
-// Registers for cloud policy using the BROWSER client type instead of the
-// ANDROID_BROWSER type. This enables skipping the server whitelist.
-// TODO(joaodasilva): remove this. http://crbug.com/248527
-const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
 
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
@@ -1519,6 +1525,14 @@ const char kEnableCrashReporterForTesting[] =
 const char kPasswordStore[]                 = "password-store";
 #endif
 #endif  // OS_POSIX
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Triggers migration of user data directory to another directory
+// specified as a parameter. The migration is done under singleton lock,
+// and sanity checks are made to avoid corrupting the profile.
+// The browser exits after migration is complete.
+const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
+#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
 // Forcibly disables Lion-style on newer OSes, to allow developers to test the

@@ -30,7 +30,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const DialogType dialog_type,
       const base::Callback<void(const FormStructure*,
                                 const std::string&)>& callback);
 
@@ -43,13 +42,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual void TabActivated() OVERRIDE;
-  virtual void AddAutocheckoutStep(AutocheckoutStepType step_type) OVERRIDE;
-  virtual void UpdateAutocheckoutStep(
-      AutocheckoutStepType step_type,
-      AutocheckoutStepStatus step_status) OVERRIDE;
-  virtual void OnAutocheckoutError() OVERRIDE;
-  virtual void OnAutocheckoutSuccess() OVERRIDE;
-  virtual DialogType GetDialogType() const OVERRIDE;
 
   // JNI bindings for Java-side AutofillDialogDelegate:
   void DialogCancel(JNIEnv* env, jobject obj);
@@ -70,7 +62,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const DialogType dialog_type,
       const base::Callback<void(const FormStructure*,
                                 const std::string&)>& callback);
 
@@ -87,8 +78,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
   bool RequestingCreditCardInfo() const;
   bool TransmissionWillBeSecure() const;
 
-  void SetAutocheckoutState(AutocheckoutState autocheckout_state);
-
   // The |profile| for |contents_|.
   Profile* const profile_;
 
@@ -99,13 +88,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
   const AutofillMetrics metric_logger_;
   base::Time dialog_shown_timestamp_;
   AutofillMetrics::DialogInitialUserStateMetric initial_user_state_;
-
-  // The time that Autocheckout started running. Reset on error. While this is
-  // a valid time, |AutocheckoutIsRunning()| will return true.
-  base::Time autocheckout_started_timestamp_;
-
-  // Whether this is an Autocheckout or a requestAutocomplete dialog.
-  const DialogType dialog_type_;
 
   FormStructure form_structure_;
 
@@ -126,9 +108,6 @@ class AutofillDialogControllerAndroid : public AutofillDialogController {
 
   base::WeakPtrFactory<AutofillDialogControllerAndroid>
       weak_ptr_factory_;
-
-  // The current state of the Autocheckout flow.
-  AutocheckoutState autocheckout_state_;
 
   // Whether the latency to display to the UI was logged to UMA yet.
   bool was_ui_latency_logged_;

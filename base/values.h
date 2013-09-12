@@ -17,9 +17,12 @@
 #ifndef BASE_VALUES_H_
 #define BASE_VALUES_H_
 
-#include <iterator>
+#include <stddef.h>
+
+#include <iosfwd>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/base_export.h"
@@ -35,7 +38,6 @@
 // http://crbug.com/88666
 namespace base {
 
-class BinaryValue;
 class DictionaryValue;
 class FundamentalValue;
 class ListValue;
@@ -324,7 +326,7 @@ class BASE_EXPORT DictionaryValue : public Value {
 
   // Makes a copy of |this| but doesn't include empty dictionaries and lists in
   // the copy.  This never returns NULL, even if |this| itself is empty.
-  DictionaryValue* DeepCopyWithoutEmptyChildren();
+  DictionaryValue* DeepCopyWithoutEmptyChildren() const;
 
   // Merge |dictionary| into this dictionary. This is done recursively, i.e. any
   // sub-dictionaries will be merged as well. In case of key collisions, the

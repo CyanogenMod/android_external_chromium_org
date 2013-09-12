@@ -41,14 +41,10 @@ std::string GetWebStoreIdFromUrl(const GURL& url) {
   return components[components.size() - 1];
 }
 
-bool SortBySize(const google_apis::InstalledApp::IconList::value_type& a,
-                const google_apis::InstalledApp::IconList::value_type& b) {
-  return a.first < b.first;
-}
-
 }  // namespace
 
-// DriveAppInfo struct implementation.
+DriveAppInfo::DriveAppInfo() {
+}
 
 DriveAppInfo::DriveAppInfo(
     const std::string& app_id,
@@ -70,28 +66,6 @@ DriveAppInfo::DriveAppInfo(
 DriveAppInfo::~DriveAppInfo() {
 }
 
-// FileSystem::DriveAppFileSelector struct implementation.
-
-DriveAppRegistry::DriveAppFileSelector::DriveAppFileSelector(
-    const GURL& product_link,
-    const google_apis::InstalledApp::IconList& app_icons,
-    const google_apis::InstalledApp::IconList& document_icons,
-    const std::string& object_type,
-    const std::string& app_id,
-    bool is_primary_selector)
-    : product_link(product_link),
-      app_icons(app_icons),
-      document_icons(document_icons),
-      object_type(object_type),
-      app_id(app_id),
-      is_primary_selector(is_primary_selector) {
-}
-
-DriveAppRegistry::DriveAppFileSelector::~DriveAppFileSelector() {
-}
-
-// DriveAppRegistry implementation.
-
 DriveAppRegistry::DriveAppRegistry(JobScheduler* scheduler)
     : scheduler_(scheduler),
       is_updating_(false),
@@ -104,32 +78,25 @@ DriveAppRegistry::~DriveAppRegistry() {
 }
 
 void DriveAppRegistry::GetAppsForFile(
-    const base::FilePath& file_path,
+    const base::FilePath::StringType& file_extension,
     const std::string& mime_type,
     ScopedVector<DriveAppInfo>* apps) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  SelectorAppList result_map;
-  if (!file_path.empty()) {
-    base::FilePath::StringType extension = file_path.Extension();
-    if (extension.size() < 2)
-      return;
-
-    extension = extension.substr(1);
-    if (!extension.empty())
-      FindAppsForSelector(extension, app_extension_map_, &result_map);
+  std::vector<DriveAppInfo*> matched_apps;
+  if (!file_extension.empty()) {
+    const base::FilePath::StringType without_dot = file_extension.substr(1);
+    FindAppsForSelector(without_dot, app_extension_map_, &matched_apps);
   }
-
   if (!mime_type.empty())
-    FindAppsForSelector(mime_type, app_mimetypes_map_, &result_map);
+    FindAppsForSelector(mime_type, app_mimetypes_map_, &matched_apps);
 
-  // Insert found web apps into |apps|, but skip duplicate results.
+  // Insert found Drive apps into |apps|, but skip duplicate results.
   std::set<std::string> inserted_app_ids;
-  for (SelectorAppList::const_iterator it = result_map.begin();
-       it != result_map.end(); ++it) {
-    if (inserted_app_ids.find(it->second->app_id) == inserted_app_ids.end()) {
-      inserted_app_ids.insert(it->second->app_id);
-      apps->push_back(it->second);
+  for (size_t i = 0; i < matched_apps.size(); ++i) {
+    if (inserted_app_ids.count(matched_apps[i]->app_id) == 0) {
+      inserted_app_ids.insert(matched_apps[i]->app_id);
+      apps->push_back(new DriveAppInfo(*matched_apps[i]));
     }
   }
 }
@@ -167,12 +134,16 @@ void DriveAppRegistry::UpdateAfterGetAppList(
 
 void DriveAppRegistry::UpdateFromAppList(
     const google_apis::AppList& app_list) {
-  url_to_name_map_.clear();
   STLDeleteValues(&app_extension_map_);
   STLDeleteValues(&app_mimetypes_map_);
+
   for (size_t i = 0; i < app_list.items().size(); ++i) {
     const google_apis::AppResource& app = *app_list.items()[i];
+
     if (app.product_url().is_empty())
+      continue;
+    std::string web_store_id = GetWebStoreIdFromUrl(app.product_url());
+    if (web_store_id.empty())
       continue;
 
     google_apis::InstalledApp::IconList app_icons;
@@ -188,12 +159,9 @@ void DriveAppRegistry::UpdateFromAppList(
         document_icons.push_back(std::make_pair(icon.icon_side_length(),
                                                 icon.icon_url()));
     }
-    std::sort(app_icons.begin(), app_icons.end(), SortBySize);
-    std::sort(document_icons.begin(), document_icons.end(), SortBySize);
 
-    url_to_name_map_.insert(
-        std::make_pair(app.product_url(), app.name()));
-    AddAppSelectorList(app.product_url(),
+    AddAppSelectorList(web_store_id,
+                       app.name(),
                        app_icons,
                        document_icons,
                        app.object_type(),
@@ -201,7 +169,8 @@ void DriveAppRegistry::UpdateFromAppList(
                        true,   // primary
                        app.primary_mimetypes(),
                        &app_mimetypes_map_);
-    AddAppSelectorList(app.product_url(),
+    AddAppSelectorList(web_store_id,
+                       app.name(),
                        app_icons,
                        document_icons,
                        app.object_type(),
@@ -209,7 +178,8 @@ void DriveAppRegistry::UpdateFromAppList(
                        false,   // primary
                        app.secondary_mimetypes(),
                        &app_mimetypes_map_);
-    AddAppSelectorList(app.product_url(),
+    AddAppSelectorList(web_store_id,
+                       app.name(),
                        app_icons,
                        document_icons,
                        app.object_type(),
@@ -217,7 +187,8 @@ void DriveAppRegistry::UpdateFromAppList(
                        true,   // primary
                        app.primary_file_extensions(),
                        &app_extension_map_);
-    AddAppSelectorList(app.product_url(),
+    AddAppSelectorList(web_store_id,
+                       app.name(),
                        app_icons,
                        document_icons,
                        app.object_type(),
@@ -230,7 +201,8 @@ void DriveAppRegistry::UpdateFromAppList(
 
 // static.
 void DriveAppRegistry::AddAppSelectorList(
-    const GURL& product_link,
+    const std::string& web_store_id,
+    const std::string& app_name,
     const google_apis::InstalledApp::IconList& app_icons,
     const google_apis::InstalledApp::IconList& document_icons,
     const std::string& object_type,
@@ -242,45 +214,23 @@ void DriveAppRegistry::AddAppSelectorList(
        it != selectors.end(); ++it) {
     std::string* value = *it;
     map->insert(std::make_pair(
-        *value, new DriveAppFileSelector(product_link,
-                                         app_icons,
-                                         document_icons,
-                                         object_type,
-                                         app_id,
-                                         is_primary_selector)));
+        *value, new DriveAppInfo(app_id,
+                                 app_icons,
+                                 document_icons,
+                                 web_store_id,
+                                 app_name,
+                                 object_type,
+                                 is_primary_selector)));
   }
 }
 
 void DriveAppRegistry::FindAppsForSelector(
     const std::string& file_selector,
     const DriveAppFileSelectorMap& map,
-    SelectorAppList* apps) const {
+    std::vector<DriveAppInfo*>* matched_apps) const {
   for (DriveAppFileSelectorMap::const_iterator it = map.find(file_selector);
        it != map.end() && it->first == file_selector; ++it) {
-    const DriveAppFileSelector* web_app = it->second;
-    std::map<GURL, std::string>::const_iterator product_iter =
-        url_to_name_map_.find(web_app->product_link);
-    if (product_iter == url_to_name_map_.end()) {
-      NOTREACHED();
-      continue;
-    }
-
-    std::string web_store_id = GetWebStoreIdFromUrl(web_app->product_link);
-    if (web_store_id.empty())
-      continue;
-
-    if (apps->find(web_app) != apps->end())
-      continue;
-
-    apps->insert(std::make_pair(
-        web_app,
-        new DriveAppInfo(web_app->app_id,
-                         web_app->app_icons,
-                         web_app->document_icons,
-                         web_store_id,
-                         product_iter->second,  // app name
-                         web_app->object_type,
-                         web_app->is_primary_selector)));
+    matched_apps->push_back(it->second);
   }
 }
 

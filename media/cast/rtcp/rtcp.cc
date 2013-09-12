@@ -12,6 +12,7 @@
 #include "media/cast/rtcp/rtcp_receiver.h"
 #include "media/cast/rtcp/rtcp_sender.h"
 #include "media/cast/rtcp/rtcp_utility.h"
+#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
@@ -20,9 +21,6 @@ static const int kMaxRttMs = 1000000;  // 1000 seconds.
 
 // Time limit for received RTCP messages when we stop using it for lip-sync.
 static const int64 kMaxDiffSinceReceivedRtcpMs = 100000;  // 100 seconds.
-
-// Magic fractional unit.
-static const double kMagicFractionalUnit = 4.294967296E3;
 
 class LocalRtcpRttFeedback : public RtcpRttFeedback {
  public:
@@ -120,17 +118,7 @@ Rtcp::Rtcp(RtcpSenderFeedback* sender_feedback,
 
 Rtcp::~Rtcp() {}
 
-base::TimeTicks Rtcp::TimeToSendNextRtcpReport() {
-  if (next_time_to_send_rtcp_.is_null()) {
-    UpdateNextTimeToSendRtcp();
-  }
-  return next_time_to_send_rtcp_;
-}
-
-void Rtcp::SetRemoteSSRC(uint32 ssrc) {
-  rtcp_receiver_->SetRemoteSSRC(ssrc);
-}
-
+// static
 bool Rtcp::IsRtcpPacket(const uint8* packet, int length) {
   DCHECK_GE(length, 8) << "Invalid RTCP packet";
   if (length < 8) return false;
@@ -140,6 +128,26 @@ bool Rtcp::IsRtcpPacket(const uint8* packet, int length) {
     return true;
   }
   return false;
+}
+
+// static
+uint32 Rtcp::GetSsrcOfSender(const uint8* rtcp_buffer, int length) {
+  uint32 ssrc_of_sender;
+  net::BigEndianReader big_endian_reader(rtcp_buffer, length);
+  big_endian_reader.Skip(4);  // Skip header
+  big_endian_reader.ReadU32(&ssrc_of_sender);
+  return ssrc_of_sender;
+}
+
+base::TimeTicks Rtcp::TimeToSendNextRtcpReport() {
+  if (next_time_to_send_rtcp_.is_null()) {
+    UpdateNextTimeToSendRtcp();
+  }
+  return next_time_to_send_rtcp_;
+}
+
+void Rtcp::SetRemoteSSRC(uint32 ssrc) {
+  rtcp_receiver_->SetRemoteSSRC(ssrc);
 }
 
 void Rtcp::IncomingRtcpPacket(const uint8* rtcp_buffer, int length) {
@@ -376,30 +384,6 @@ bool Rtcp::Rtt(base::TimeDelta* rtt,
   *min_rtt = min_rtt_;
   *max_rtt = max_rtt_;
   return true;
-}
-
-void Rtcp::ConvertTimeToFractions(int64 time_us,
-                                  uint32* seconds,
-                                  uint32* fractions) const {
-  *seconds = static_cast<uint32>(time_us / base::Time::kMicrosecondsPerSecond);
-  *fractions = static_cast<uint32>(
-      (time_us % base::Time::kMicrosecondsPerSecond) * kMagicFractionalUnit);
-}
-
-void Rtcp::ConvertTimeToNtp(const base::TimeTicks& time,
-                            uint32* ntp_seconds,
-                            uint32* ntp_fractions) const {
-  int64 time_us = time.ToInternalValue() - kNtpEpochDeltaMicroseconds;
-  ConvertTimeToFractions(time_us, ntp_seconds, ntp_fractions);
-}
-
-base::TimeTicks Rtcp::ConvertNtpToTime(uint32 ntp_seconds,
-                                       uint32 ntp_fractions) const {
-  int64 ntp_time_us = static_cast<int64>(ntp_seconds) *
-       base::Time::kMicrosecondsPerSecond;
-  ntp_time_us += static_cast<int64>(ntp_fractions) / kMagicFractionalUnit;
-  return base::TimeTicks::FromInternalValue(ntp_time_us +
-      kNtpEpochDeltaMicroseconds);
 }
 
 int Rtcp::CheckForWrapAround(uint32 new_timestamp,

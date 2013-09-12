@@ -79,6 +79,9 @@
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
+#include "net/http/http_cache.h"
+#include "net/http/http_transaction_factory.h"
+#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/layout.h"
 #include "ui/base/touch/touch_device.h"
@@ -263,6 +266,14 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
 
   if (delegate)
     delegate->AddNavigationHeaders(params->url, &params->extra_headers);
+}
+
+void NotifyCacheOnIO(
+    scoped_refptr<net::URLRequestContextGetter> request_context,
+    const GURL& url,
+    const std::string& http_method) {
+  request_context->GetURLRequestContext()->http_transaction_factory()->
+      GetCache()->OnExternalCacheHit(url, http_method);
 }
 
 }  // namespace
@@ -554,6 +565,7 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   }
 
 #if defined(OS_ANDROID)
+  prefs.use_solid_color_scrollbars = true;
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
       switches::kDisableGestureRequirementForMediaPlayback);
 #endif
@@ -1762,8 +1774,11 @@ bool WebContentsImpl::NavigateToEntry(
 
   // The renderer will reject IPC messages with URLs longer than
   // this limit, so don't attempt to navigate with a longer URL.
-  if (entry.GetURL().spec().size() > kMaxURLChars)
+  if (entry.GetURL().spec().size() > kMaxURLChars) {
+    LOG(WARNING) << "Refusing to load URL as it exceeds " << kMaxURLChars
+                 << " characters.";
     return false;
+  }
 
   RenderViewHostImpl* dest_render_view_host =
       static_cast<RenderViewHostImpl*>(render_manager_.Navigate(entry));
@@ -2178,8 +2193,8 @@ void WebContentsImpl::DidRedirectProvisionalLoad(
     const GURL& source_url,
     const GURL& target_url) {
   // TODO(creis): Remove this method and have the pre-rendering code listen to
-  // the ResourceDispatcherHost's RESOURCE_RECEIVED_REDIRECT notification
-  // instead.  See http://crbug.com/78512.
+  // WebContentsObserver::DidGetRedirectForResourceRequest instead.
+  // See http://crbug.com/78512.
   GURL validated_source_url(source_url);
   GURL validated_target_url(target_url);
   RenderProcessHost* render_process_host =
@@ -2241,12 +2256,20 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
       return;
     }
 
-    // Do not clear the pending entry if one exists, so that the user's typed
-    // URL is not lost when a navigation fails or is aborted.  We'll allow
-    // the view to clear the pending entry and typed URL if the user requests.
-
     render_manager_.RendererAbortedProvisionalLoad(render_view_host);
   }
+
+  // Do not usually clear the pending entry if one exists, so that the user's
+  // typed URL is not lost when a navigation fails or is aborted.  However, in
+  // cases that we don't show the pending entry (e.g., renderer-initiated
+  // navigations in an existing tab), we don't keep it around.  That prevents
+  // spoofs on in-page navigations that don't go through
+  // DidStartProvisionalLoadForFrame.
+  // In general, we allow the view to clear the pending entry and typed URL if
+  // the user requests (e.g., hitting Escape with focus in the address bar).
+  // Note: don't touch the transient entry, since an interstitial may exist.
+  if (controller_.GetPendingEntry() != controller_.GetVisibleEntry())
+    controller_.DiscardPendingEntry();
 
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
@@ -2278,10 +2301,29 @@ void WebContentsImpl::OnDidLoadResourceFromMemoryCache(
       url, GetRenderProcessHost()->GetID(), cert_id, cert_status, http_method,
       mime_type, resource_type);
 
+  controller_.ssl_manager()->DidLoadFromMemoryCache(details);
+
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    DidLoadResourceFromMemoryCache(details));
+
+  // TODO(avi): Remove. http://crbug.com/170921
   NotificationService::current()->Notify(
       NOTIFICATION_LOAD_FROM_MEMORY_CACHE,
       Source<NavigationController>(&controller_),
       Details<LoadFromMemoryCacheDetails>(&details));
+
+  if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
+    scoped_refptr<net::URLRequestContextGetter> request_context(
+        resource_type == ResourceType::MEDIA ?
+            GetBrowserContext()->GetMediaRequestContextForRenderProcess(
+                GetRenderProcessHost()->GetID()) :
+            GetBrowserContext()->GetRequestContextForRenderProcess(
+                GetRenderProcessHost()->GetID()));
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&NotifyCacheOnIO, request_context, url, http_method));
+  }
 }
 
 void WebContentsImpl::OnDidDisplayInsecureContent() {
@@ -2794,6 +2836,10 @@ void WebContentsImpl::NotifySwapped(RenderViewHost* old_render_view_host) {
   // notification so that clients that pick up a pointer to |this| can NULL the
   // pointer.  See Bug 1230284.
   notify_disconnection_ = true;
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    RenderViewHostSwapped(old_render_view_host));
+
+  // TODO(avi): Remove. http://crbug.com/170921
   NotificationService::current()->Notify(
       NOTIFICATION_WEB_CONTENTS_SWAPPED,
       Source<WebContents>(this),
@@ -2805,14 +2851,8 @@ void WebContentsImpl::NotifySwapped(RenderViewHost* old_render_view_host) {
   RemoveBrowserPluginEmbedder();
 }
 
-void WebContentsImpl::NotifyConnected() {
-  notify_disconnection_ = true;
-  NotificationService::current()->Notify(
-      NOTIFICATION_WEB_CONTENTS_CONNECTED,
-      Source<WebContents>(this),
-      NotificationService::NoDetails());
-}
-
+// TODO(avi): Remove this entire function because this notification is already
+// covered by two observer functions. http://crbug.com/170921
 void WebContentsImpl::NotifyDisconnected() {
   if (!notify_disconnection_)
     return;
@@ -2899,7 +2939,13 @@ void WebContentsImpl::RenderViewReady(RenderViewHost* rvh) {
     return;
   }
 
-  NotifyConnected();
+  notify_disconnection_ = true;
+  // TODO(avi): Remove. http://crbug.com/170921
+  NotificationService::current()->Notify(
+      NOTIFICATION_WEB_CONTENTS_CONNECTED,
+      Source<WebContents>(this),
+      NotificationService::NoDetails());
+
   bool was_crashed = IsCrashed();
   SetIsCrashed(base::TERMINATION_STATUS_STILL_RUNNING, 0);
 
@@ -2936,6 +2982,34 @@ void WebContentsImpl::RenderViewDeleted(RenderViewHost* rvh) {
   ClearPowerSaveBlockers(rvh);
   render_manager_.RenderViewDeleted(rvh);
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, RenderViewDeleted(rvh));
+}
+
+void WebContentsImpl::DidGetResourceResponseStart(
+  const ResourceRequestDetails& details) {
+  controller_.ssl_manager()->DidStartResourceResponse(details);
+
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    DidGetResourceResponseStart(details));
+
+  // TODO(avi): Remove. http://crbug.com/170921
+  NotificationService::current()->Notify(
+      NOTIFICATION_RESOURCE_RESPONSE_STARTED,
+      Source<WebContents>(this),
+      Details<const ResourceRequestDetails>(&details));
+}
+
+void WebContentsImpl::DidGetRedirectForResourceRequest(
+  const ResourceRedirectDetails& details) {
+  controller_.ssl_manager()->DidReceiveResourceRedirect(details);
+
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_,
+                    DidGetRedirectForResourceRequest(details));
+
+  // TODO(avi): Remove. http://crbug.com/170921
+  NotificationService::current()->Notify(
+      NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
+      Source<WebContents>(this),
+      Details<const ResourceRedirectDetails>(&details));
 }
 
 void WebContentsImpl::DidNavigate(
@@ -3179,10 +3253,8 @@ void WebContentsImpl::DidCancelLoading() {
 }
 
 void WebContentsImpl::DidChangeLoadProgress(double progress) {
-#if defined(OS_ANDROID)
   if (delegate_)
     delegate_->LoadProgressChanged(this, progress);
-#endif
 }
 
 void WebContentsImpl::DidDisownOpener(RenderViewHost* rvh) {
@@ -3250,6 +3322,11 @@ void WebContentsImpl::RequestTransferURL(
     bool user_gesture) {
   WebContents* new_contents = NULL;
   PageTransition transition_type = PAGE_TRANSITION_LINK;
+  GURL dest_url(url);
+  if (!GetContentClient()->browser()->ShouldAllowOpenURL(
+      GetSiteInstance(), url))
+    dest_url = GURL(kAboutBlankURL);
+
   if (render_manager_.web_ui()) {
     // When we're a Web UI, it will provide a page transition type for us (this
     // is so the new tab page can specify AUTO_BOOKMARK for automatically
@@ -3259,14 +3336,14 @@ void WebContentsImpl::RequestTransferURL(
     // want web sites to see a referrer of "chrome://blah" (and some
     // chrome: URLs might have search terms or other stuff we don't want to
     // send to the site), so we send no referrer.
-    OpenURLParams params(url, Referrer(), source_frame_id, disposition,
+    OpenURLParams params(dest_url, Referrer(), source_frame_id, disposition,
         render_manager_.web_ui()->GetLinkTransitionType(),
         false /* is_renderer_initiated */);
     params.transferred_global_request_id = old_request_id;
     new_contents = OpenURL(params);
     transition_type = render_manager_.web_ui()->GetLinkTransitionType();
   } else {
-    OpenURLParams params(url, referrer, source_frame_id, disposition,
+    OpenURLParams params(dest_url, referrer, source_frame_id, disposition,
         PAGE_TRANSITION_LINK, true /* is_renderer_initiated */);
     params.transferred_global_request_id = old_request_id;
     params.should_replace_current_entry = should_replace_current_entry;
@@ -3277,7 +3354,7 @@ void WebContentsImpl::RequestTransferURL(
     // Notify observers.
     FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                       DidOpenRequestedURL(new_contents,
-                                          url,
+                                          dest_url,
                                           referrer,
                                           disposition,
                                           transition_type,
@@ -3386,13 +3463,16 @@ void WebContentsImpl::RunJavaScriptMessage(
         &suppress_this_message);
   }
 
+  *did_suppress_message = suppress_this_message;
+
   if (suppress_this_message) {
     // If we are suppressing messages, just reply as if the user immediately
     // pressed "Cancel".
     OnDialogClosed(rvh, reply_msg, false, string16());
   }
 
-  *did_suppress_message = suppress_this_message;
+  // OnDialogClosed (two lines up) may have caused deletion of this object (see
+  // http://crbug.com/288961 ). The only safe thing to do here is return.
 }
 
 void WebContentsImpl::RunBeforeUnloadConfirm(RenderViewHost* rvh,
@@ -3425,8 +3505,7 @@ void WebContentsImpl::RunBeforeUnloadConfirm(RenderViewHost* rvh,
 bool WebContentsImpl::AddMessageToConsole(int32 level,
                                           const string16& message,
                                           int32 line_no,
-                                          const string16& source_id,
-                                          const string16& stack_trace) {
+                                          const string16& source_id) {
   if (!delegate_)
     return false;
   return delegate_->AddMessageToConsole(this, level, message, line_no,

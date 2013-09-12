@@ -24,8 +24,6 @@ std::string JobTypeToString(JobType type) {
       return "TYPE_SEARCH";
     case TYPE_GET_CHANGE_LIST:
       return "TYPE_GET_CHANGE_LIST";
-    case TYPE_CONTINUE_GET_RESOURCE_LIST:
-      return "TYPE_CONTINUE_GET_RESOURCE_LIST";
     case TYPE_GET_REMAINING_CHANGE_LIST:
       return "TYPE_GET_REMAINING_CHANGE_LIST";
     case TYPE_GET_REMAINING_FILE_LIST:
@@ -60,6 +58,10 @@ std::string JobTypeToString(JobType type) {
       return "TYPE_UPLOAD_EXISTING_FILE";
     case TYPE_CREATE_FILE:
       return "TYPE_CREATE_FILE";
+    case TYPE_GET_RESOURCE_LIST_IN_DIRECTORY_BY_WAPI:
+      return "TYPE_GET_RESOURCE_LIST_IN_DIRECTORY_BY_WAPI";
+    case TYPE_GET_REMAINING_RESOURCE_LIST:
+      return "TYPE_GET_REMAINING_RESOURCE_LIST";
   }
   NOTREACHED();
   return "(unknown job type)";
@@ -121,7 +123,6 @@ bool IsActiveFileTransferJobInfo(const JobInfo& job_info) {
     case TYPE_GET_RESOURCE_LIST_IN_DIRECTORY:
     case TYPE_SEARCH:
     case TYPE_GET_CHANGE_LIST:
-    case TYPE_CONTINUE_GET_RESOURCE_LIST:
     case TYPE_GET_REMAINING_CHANGE_LIST:
     case TYPE_GET_REMAINING_FILE_LIST:
     case TYPE_GET_RESOURCE_ENTRY:
@@ -136,6 +137,8 @@ bool IsActiveFileTransferJobInfo(const JobInfo& job_info) {
     case TYPE_REMOVE_RESOURCE_FROM_DIRECTORY:
     case TYPE_ADD_NEW_DIRECTORY:
     case TYPE_CREATE_FILE:
+    case TYPE_GET_RESOURCE_LIST_IN_DIRECTORY_BY_WAPI:
+    case TYPE_GET_REMAINING_RESOURCE_LIST:
       return false;
     case TYPE_DOWNLOAD_FILE:
     case TYPE_UPLOAD_NEW_FILE:

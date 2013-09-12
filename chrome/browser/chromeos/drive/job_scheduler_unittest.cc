@@ -257,40 +257,6 @@ TEST_F(JobSchedulerTest, GetChangeList) {
   ASSERT_TRUE(resource_list);
 }
 
-TEST_F(JobSchedulerTest, ContinueGetResourceList) {
-  ConnectToWifi();
-  fake_drive_service_->set_default_max_results(2);
-
-  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
-
-  scheduler_->GetAllResourceList(
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
-
-  const google_apis::Link* next_link =
-      resource_list->GetLinkByType(google_apis::Link::LINK_NEXT);
-  ASSERT_TRUE(next_link);
-  // Keep the next url before releasing the |resource_list|.
-  GURL next_url(next_link->href());
-
-  error = google_apis::GDATA_OTHER_ERROR;
-  resource_list.reset();
-
-  scheduler_->ContinueGetResourceList(
-      next_url,
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
-}
-
 TEST_F(JobSchedulerTest, GetRemainingChangeList) {
   ConnectToWifi();
   fake_drive_service_->set_default_max_results(2);
@@ -316,7 +282,7 @@ TEST_F(JobSchedulerTest, GetRemainingChangeList) {
   resource_list.reset();
 
   scheduler_->GetRemainingChangeList(
-      next_url.spec(),
+      next_url,
       google_apis::test_util::CreateCopyResultCallback(
           &error, &resource_list));
   base::RunLoop().RunUntilIdle();
@@ -351,7 +317,7 @@ TEST_F(JobSchedulerTest, GetRemainingFileList) {
   resource_list.reset();
 
   scheduler_->GetRemainingFileList(
-      next_url.spec(),
+      next_url,
       google_apis::test_util::CreateCopyResultCallback(
           &error, &resource_list));
   base::RunLoop().RunUntilIdle();
@@ -658,7 +624,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularDisabled) {
   EXPECT_EQ(google_apis::HTTP_SUCCESS, download_error);
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
-  ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(output_file_path, &content));
   EXPECT_EQ("This is some test content.", content);
 }
 
@@ -711,7 +677,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxDisabled) {
   EXPECT_EQ(google_apis::HTTP_SUCCESS, download_error);
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
-  ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(output_file_path, &content));
   EXPECT_EQ("This is some test content.", content);
 }
 
@@ -756,7 +722,7 @@ TEST_F(JobSchedulerTest, DownloadFileCellularEnabled) {
   EXPECT_EQ(google_apis::HTTP_SUCCESS, download_error);
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
-  ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(output_file_path, &content));
   EXPECT_EQ("This is some test content.", content);
 }
 
@@ -801,7 +767,7 @@ TEST_F(JobSchedulerTest, DownloadFileWimaxEnabled) {
   EXPECT_EQ(google_apis::HTTP_SUCCESS, download_error);
   std::string content;
   EXPECT_EQ(output_file_path, kOutputFilePath);
-  ASSERT_TRUE(file_util::ReadFileToString(output_file_path, &content));
+  ASSERT_TRUE(base::ReadFileToString(output_file_path, &content));
   EXPECT_EQ("This is some test content.", content);
 }
 

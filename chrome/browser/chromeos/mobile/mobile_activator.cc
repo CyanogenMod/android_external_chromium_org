@@ -35,6 +35,7 @@
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -118,7 +119,7 @@ void CellularConfigDocument::SetErrorMap(
 
 bool CellularConfigDocument::LoadFromFile(const base::FilePath& config_path) {
   std::string config;
-  if (!file_util::ReadFileToString(config_path, &config))
+  if (!base::ReadFileToString(config_path, &config))
     return false;
 
   scoped_ptr<Value> root(
@@ -165,7 +166,8 @@ MobileActivator::MobileActivator()
       initial_OTASP_attempts_(0),
       trying_OTASP_attempts_(0),
       final_OTASP_attempts_(0),
-      payment_reconnect_count_(0) {
+      payment_reconnect_count_(0),
+      weak_ptr_factory_(this) {
 }
 
 MobileActivator::~MobileActivator() {
@@ -268,9 +270,35 @@ void MobileActivator::InitiateActivation(const std::string& service_path) {
 }
 
 void MobileActivator::ContinueActivation() {
-  const NetworkState* network = GetNetworkState(service_path_);
-  if (!network ||
-      (network->payment_url().empty() && network->usage_url().empty()))
+  NetworkHandler::Get()->network_configuration_handler()->GetProperties(
+      service_path_,
+      base::Bind(&MobileActivator::GetPropertiesAndContinueActivation,
+                 weak_ptr_factory_.GetWeakPtr()),
+      base::Bind(&MobileActivator::GetPropertiesFailure,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void MobileActivator::GetPropertiesAndContinueActivation(
+    const std::string& service_path,
+    const base::DictionaryValue& properties) {
+  if (service_path != service_path_) {
+    NET_LOG_EVENT("MobileActivator::GetProperties received for stale network",
+                  service_path);
+    return;  // Edge case; abort.
+  }
+  const DictionaryValue* payment_dict;
+  std::string usage_url, payment_url;
+  if (!properties.GetStringWithoutPathExpansion(
+          flimflam::kUsageURLProperty, &usage_url) ||
+      !properties.GetDictionaryWithoutPathExpansion(
+          flimflam::kPaymentPortalProperty, &payment_dict) ||
+      !payment_dict->GetStringWithoutPathExpansion(
+          flimflam::kPaymentPortalURL, &payment_url)) {
+    NET_LOG_ERROR("MobileActivator missing properties", service_path_);
+    return;
+  }
+
+  if (payment_url.empty() && usage_url.empty())
     return;
 
   DisableCertRevocationChecking();
@@ -279,11 +307,18 @@ void MobileActivator::ContinueActivation() {
   DictionaryValue auto_connect_property;
   auto_connect_property.SetBoolean(flimflam::kAutoConnectProperty, true);
   NetworkHandler::Get()->network_configuration_handler()->SetProperties(
-      network->path(),
+      service_path_,
       auto_connect_property,
       base::Bind(&base::DoNothing),
       network_handler::ErrorCallback());
   StartActivation();
+}
+
+void MobileActivator::GetPropertiesFailure(
+    const std::string& error_name,
+    scoped_ptr<base::DictionaryValue> error_data) {
+  NET_LOG_ERROR("MobileActivator GetProperties Failed: " + error_name,
+                service_path_);
 }
 
 void MobileActivator::OnSetTransactionStatus(bool success) {
@@ -370,7 +405,7 @@ void MobileActivator::StartActivation() {
   if (!network) {
     NetworkStateHandler::TechnologyState technology_state =
         NetworkHandler::Get()->network_state_handler()->GetTechnologyState(
-            flimflam::kTypeCellular);
+            NetworkTypePattern::Cellular());
     std::string error;
     if (technology_state == NetworkStateHandler::TECHNOLOGY_UNAVAILABLE) {
       error = kErrorNoDevice;

@@ -62,6 +62,7 @@
 #include "webkit/renderer/compositor_bindings/web_rendering_stats_impl.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
 #endif
 
@@ -215,8 +216,8 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       is_swapped_out_(swapped_out),
       input_method_is_active_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
-      can_compose_inline_(true),
       text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
+      can_compose_inline_(true),
       popup_type_(popup_type),
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
@@ -647,16 +648,13 @@ bool RenderWidget::ForceCompositingModeEnabled() {
 }
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
 #if defined(OS_ANDROID)
-   if (SynchronousCompositorFactory* factory =
-       SynchronousCompositorFactory::GetInstance()) {
+  if (SynchronousCompositorFactory* factory =
+      SynchronousCompositorFactory::GetInstance()) {
     return factory->CreateOutputSurface(routing_id());
   }
 #endif
-
-  uint32 output_surface_id = next_output_surface_id_++;
 
   // Explicitly disable antialiasing for the compositor. As of the time of
   // this writing, the only platform that supported antialiasing for the
@@ -674,14 +672,18 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   attributes.noAutomaticFlushes = true;
   attributes.depth = false;
   attributes.stencil = false;
+
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(cc::switches::kForceDirectLayerDrawing))
     attributes.stencil = true;
+
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   if (!fallback) {
     context_provider = ContextProviderCommandBuffer::Create(
         CreateGraphicsContext3D(attributes));
   }
 
+  uint32 output_surface_id = next_output_surface_id_++;
   if (!context_provider.get()) {
     if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
       return scoped_ptr<cc::OutputSurface>();
@@ -1843,7 +1845,7 @@ void RenderWidget::OnImeSetComposition(
 }
 
 void RenderWidget::OnImeConfirmComposition(const string16& text,
-                                           const ui::Range& replacement_range,
+                                           const gfx::Range& replacement_range,
                                            bool keep_selection) {
   if (!ShouldHandleImeEvent())
     return;
@@ -2185,8 +2187,8 @@ void RenderWidget::UpdateTextInputType() {
       || text_input_mode_ != new_mode) {
     Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
                                               new_type,
-                                              new_can_compose_inline,
-                                              new_mode));
+                                              new_mode,
+                                              new_can_compose_inline));
     text_input_type_ = new_type;
     can_compose_inline_ = new_can_compose_inline;
     text_input_mode_ = new_mode;
@@ -2317,7 +2319,7 @@ ui::TextInputType RenderWidget::GetTextInputType() {
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
-  ui::Range range = ui::Range();
+  gfx::Range range = gfx::Range();
   if (should_update_range) {
     GetCompositionRange(&range);
   } else {
@@ -2340,7 +2342,7 @@ void RenderWidget::GetCompositionCharacterBounds(
   bounds->clear();
 }
 
-void RenderWidget::GetCompositionRange(ui::Range* range) {
+void RenderWidget::GetCompositionRange(gfx::Range* range) {
   size_t location, length;
   if (webwidget_->compositionRange(&location, &length)) {
     range->set_start(location);
@@ -2349,12 +2351,12 @@ void RenderWidget::GetCompositionRange(ui::Range* range) {
     range->set_start(location);
     range->set_end(location + length);
   } else {
-    *range = ui::Range::InvalidRange();
+    *range = gfx::Range::InvalidRange();
   }
 }
 
 bool RenderWidget::ShouldUpdateCompositionInfo(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& bounds) {
   if (composition_range_ != range)
     return true;
@@ -2487,6 +2489,24 @@ void RenderWidget::BeginSmoothScroll(
   pending_synthetic_gesture_ = callback;
 }
 
+void RenderWidget::BeginPinch(
+    bool zoom_in,
+    int pixels_to_move,
+    int anchor_x,
+    int anchor_y,
+    const SyntheticGestureCompletionCallback& callback) {
+  DCHECK(!callback.is_null());
+
+  ViewHostMsg_BeginPinch_Params params;
+  params.zoom_in = zoom_in;
+  params.pixels_to_move = pixels_to_move;
+  params.anchor_x = anchor_x;
+  params.anchor_y = anchor_y;
+
+  Send(new ViewHostMsg_BeginPinch(routing_id_, params));
+  pending_synthetic_gesture_ = callback;
+}
+
 bool RenderWidget::WillHandleMouseEvent(const WebKit::WebMouseEvent& event) {
   return false;
 }
@@ -2523,10 +2543,39 @@ RenderWidget::CreateGraphicsContext3D(
           RenderThreadImpl::current(),
           weak_ptr_factory_.GetWeakPtr()));
 
-  if (!context->InitializeWithDefaultBufferSizes(
+#if defined(OS_ANDROID)
+  // If we raster too fast we become upload bound, and pending
+  // uploads consume memory. For maximum upload throughput, we would
+  // want to allow for upload_throughput * pipeline_time of pending
+  // uploads, after which we are just wasting memory. Since we don't
+  // know our upload throughput yet, this just caps our memory usage.
+  size_t divider = 1;
+  if (base::android::SysUtils::IsLowEndDevice())
+    divider = 3;
+
+  // For reference Nexus10 can upload 1MB in about 2.5ms.
+  const size_t max_bytes_uploaded_per_ms = (2 * 1024 * 1024) / (5 * divider);
+  // Deadline to draw a frame to achieve 60 frames per second.
+  const size_t kMillisecondsPerFrame = 16;
+  // Assuming a two frame deep pipeline between the CPU and the GPU.
+  const size_t max_transfer_buffer_usage_bytes =
+      2 * kMillisecondsPerFrame * max_bytes_uploaded_per_ms;
+  // We keep the MappedMemoryReclaimLimit the same as the upload limit
+  // to avoid unnecessarily stalling the compositor thread.
+  const size_t mapped_memory_reclaim_limit = max_transfer_buffer_usage_bytes;
+#else
+  const size_t mapped_memory_reclaim_limit =
+      WebGraphicsContext3DCommandBufferImpl::kNoLimit;
+#endif
+  if (!context->Initialize(
           attributes,
           false /* bind generates resources */,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE))
+          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
+          kDefaultCommandBufferSize,
+          kDefaultStartTransferBufferSize,
+          kDefaultMinTransferBufferSize,
+          kDefaultMaxTransferBufferSize,
+          mapped_memory_reclaim_limit))
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   return context.Pass();
 }

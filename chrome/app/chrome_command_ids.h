@@ -69,6 +69,10 @@
 #define IDC_WIN8_DESKTOP_RESTART        34042
 #define IDC_WIN8_METRO_RESTART          34043
 #define IDC_TOGGLE_ASH_DESKTOP          34044
+#define IDC_WINDOW_MENU                 34045
+#define IDC_MINIMIZE_WINDOW             34046
+#define IDC_MAXIMIZE_WINDOW             34047
+#define IDC_ALL_WINDOWS_FRONT           34048
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -160,7 +164,9 @@
 #define IDC_DEV_TOOLS                   40003
 #define IDC_DEV_TOOLS_CONSOLE           40004
 #define IDC_TASK_MANAGER                40005
+#if defined(GOOGLE_CHROME_BUILD)
 #define IDC_FEEDBACK                    40008
+#endif
 #define IDC_SHOW_BOOKMARK_BAR           40009
 #define IDC_SHOW_HISTORY                40010
 #define IDC_SHOW_BOOKMARK_MANAGER       40011
@@ -236,6 +242,9 @@
 // Identifiers for platform-specific items.
 // Placed in a common file to help insure they never collide.
 #define IDC_VIEW_MENU                   44000     // OSX only
+#define IDC_FILE_MENU                   44001     // OSX only
+#define IDC_CHROME_MENU                 44002     // OSX only
+#define IDC_HIDE_APP                    44003     // OSX only
 #define IDC_HISTORY_MENU                46000     // OSX only
 #define IDC_PROFILE_MAIN_MENU           46100     // OSX only
 #define IDC_INPUT_METHODS_MENU          46300     // Linux only

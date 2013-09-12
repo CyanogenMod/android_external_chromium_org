@@ -296,6 +296,7 @@ bool BrowserPlugin::ParseSrcAttribute(std::string* error_message) {
 
 void BrowserPlugin::ParseAutoSizeAttribute() {
   last_view_size_ = plugin_rect_.size();
+  is_auto_size_state_dirty_ = true;
   UpdateGuestAutoSizeState(GetAutoSizeAttribute());
 }
 
@@ -320,12 +321,7 @@ void BrowserPlugin::UpdateGuestAutoSizeState(bool auto_size_enabled) {
   // If we haven't yet heard back from the guest about the last resize request,
   // then we don't issue another request until we do in
   // BrowserPlugin::UpdateRect.
-  if (!HasGuestInstanceID())
-    return;
-
-  is_auto_size_state_dirty_ = true;
-
-  if (!paint_ack_received_)
+  if (!HasGuestInstanceID() || !paint_ack_received_)
     return;
 
   BrowserPluginHostMsg_AutoSize_Params auto_size_params;
@@ -620,8 +616,10 @@ void BrowserPlugin::OnUpdateRect(
 
 void BrowserPlugin::ParseSizeContraintsChanged() {
   bool auto_size = GetAutoSizeAttribute();
-  if (auto_size)
+  if (auto_size) {
+    is_auto_size_state_dirty_ = true;
     UpdateGuestAutoSizeState(true);
+  }
 }
 
 bool BrowserPlugin::InAutoSizeBounds(const gfx::Size& size) const {
@@ -786,7 +784,7 @@ void BrowserPlugin::TriggerEvent(const std::string& event_name,
   if (!frame)
     return;
 
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   v8::Local<v8::Context> context = frame->mainWorldScriptContext();
   v8::Context::Scope context_scope(context);
 

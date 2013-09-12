@@ -15,6 +15,7 @@
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service.h"
@@ -30,6 +31,7 @@
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/toolbar/test_toolbar_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -47,10 +49,6 @@
 #if defined(TOOLKIT_GTK)
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
-#endif
-
-#if defined(TOOLKIT_VIEWS)
-#include "chrome/browser/ui/views/frame/browser_view.h"
 #endif
 
 using base::Time;
@@ -311,7 +309,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
     BookmarkModel* bookmark_model =
         BookmarkModelFactory::GetForProfile(profile);
     ASSERT_TRUE(bookmark_model);
-    ui_test_utils::WaitForBookmarkModelToLoad(bookmark_model);
+    test::WaitForBookmarkModelToLoad(bookmark_model);
 
     GURL url(entry.url);
     // Add everything in order of time. We don't want to have a time that
@@ -1255,40 +1253,6 @@ class OmniboxViewTest : public InProcessBrowserTest,
     // Inline autocomplete should still be there.
     EXPECT_EQ(old_text, omnibox_view->GetText());
   }
-
-#if defined(TOOLKIT_VIEWS)
-  const BrowserView* GetBrowserView() const {
-    return BrowserView::GetBrowserViewForBrowser(browser());
-  }
-
-  // Move the mouse to the center of the browser window and left-click.
-  void ClickBrowserWindowCenter() {
-    ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(
-                    GetBrowserView()->GetBoundsInScreen().CenterPoint()));
-    ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(
-                    ui_controls::LEFT, ui_controls::DOWN));
-    ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(
-                    ui_controls::LEFT, ui_controls::UP));
-  }
-
-  // Press and release the mouse in the omnibox at an offset from its origin.
-  // If |release_offset| differs from |press_offset|, the mouse will be moved
-  // between the press and release.
-  void ClickOmnibox(ui_controls::MouseButton button,
-                    const gfx::Vector2d& press_offset,
-                    const gfx::Vector2d& release_offset) {
-    const views::View* omnibox = GetBrowserView()->GetViewByID(VIEW_ID_OMNIBOX);
-    gfx::Point omnibox_origin = omnibox->GetBoundsInScreen().origin();
-    gfx::Point press_point = omnibox_origin + press_offset;
-    ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(press_point));
-    ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(button, ui_controls::DOWN));
-
-    gfx::Point release_point = omnibox_origin + release_offset;
-    if (release_point != press_point)
-      ASSERT_TRUE(ui_test_utils::SendMouseMoveSync(release_point));
-    ASSERT_TRUE(ui_test_utils::SendMouseEventsSync(button, ui_controls::UP));
-  }
-#endif  // defined(TOOLKIT_VIEWS)
 };
 
 // Test if ctrl-* accelerators are workable in omnibox.
@@ -1621,67 +1585,21 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, Paste) {
   EXPECT_TRUE(popup_model->IsOpen());
 }
 
-#if defined(TOOLKIT_VIEWS)
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest, SelectAllOnClick) {
-  OmniboxView* omnibox_view = NULL;
-  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
-  omnibox_view->SetUserText(ASCIIToUTF16("http://www.google.com/"));
-  const gfx::Vector2d click(40, 10);
-
-  // Take the focus away from the omnibox.
-  ASSERT_NO_FATAL_FAILURE(ClickBrowserWindowCenter());
-  EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_FALSE(omnibox_view->IsSelectAll());
-
-  // Clicking in the omnibox should take focus and select all text.
-  ASSERT_NO_FATAL_FAILURE(ClickOmnibox(ui_controls::LEFT, click, click));
-  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_TRUE(omnibox_view->IsSelectAll());
-
-  // Clicking in another view should clear focus and the selection.
-  ASSERT_NO_FATAL_FAILURE(ClickBrowserWindowCenter());
-  EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_FALSE(omnibox_view->IsSelectAll());
-
-  // Clicking in the omnibox again should take focus and select all text again.
-  ASSERT_NO_FATAL_FAILURE(ClickOmnibox(ui_controls::LEFT, click, click));
-  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_TRUE(omnibox_view->IsSelectAll());
-
-  // Clicking another omnibox spot should keep focus but clear the selection.
-  omnibox_view->SelectAll(false);
-  const gfx::Vector2d click_2(click.x() + 10, click.y());
-  ASSERT_NO_FATAL_FAILURE(ClickOmnibox(ui_controls::LEFT, click_2, click_2));
-  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_FALSE(omnibox_view->IsSelectAll());
-
-  // Take the focus away and click in the omnibox again, but drag a bit before
-  // releasing.  We should focus the omnibox but not select all of its text.
-  ASSERT_NO_FATAL_FAILURE(ClickBrowserWindowCenter());
-  const gfx::Vector2d release(click.x() + 10, click.y());
-  ASSERT_NO_FATAL_FAILURE(ClickOmnibox(ui_controls::LEFT, click, release));
-  EXPECT_TRUE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_FALSE(omnibox_view->IsSelectAll());
-
-  // Middle-clicking should not be handled by the omnibox.
-  ASSERT_NO_FATAL_FAILURE(ClickBrowserWindowCenter());
-  ASSERT_NO_FATAL_FAILURE(ClickOmnibox(ui_controls::MIDDLE, click, click));
-  EXPECT_FALSE(ui_test_utils::IsViewFocused(browser(), VIEW_ID_OMNIBOX));
-  EXPECT_FALSE(omnibox_view->IsSelectAll());
-}
-#endif  // defined(TOOLKIT_VIEWS)
-
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CopyURLToClipboard) {
-  OmniboxView* omnibox_view = NULL;
-  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
-  const char* target_url = "http://www.google.com/calendar";
-  omnibox_view->SetUserText(ASCIIToUTF16(target_url));
-
   // Set permanent text thus making sure that omnibox treats 'google.com'
   // as URL (not as ordinary user input).
+  TestToolbarModel* test_toolbar_model = new TestToolbarModel;
+  scoped_ptr<ToolbarModel> toolbar_model(test_toolbar_model);
+  test_toolbar_model->set_text(ASCIIToUTF16("http://www.google.com/"));
+  browser()->swap_toolbar_models(&toolbar_model);
+  OmniboxView* omnibox_view = NULL;
+  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   OmniboxEditModel* edit_model = omnibox_view->model();
   ASSERT_NE(static_cast<OmniboxEditModel*>(NULL), edit_model);
-  edit_model->UpdatePermanentText(ASCIIToUTF16("http://www.google.com/"));
+  edit_model->UpdatePermanentText();
+
+  const char* target_url = "http://www.google.com/calendar";
+  omnibox_view->SetUserText(ASCIIToUTF16(target_url));
 
   // Location bar must have focus.
   chrome::FocusLocationBar(browser());
@@ -1715,16 +1633,20 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CopyURLToClipboard) {
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutURLToClipboard) {
-  OmniboxView* omnibox_view = NULL;
-  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
-  const char* target_url = "http://www.google.com/calendar";
-  omnibox_view->SetUserText(ASCIIToUTF16(target_url));
-
   // Set permanent text thus making sure that omnibox treats 'google.com'
   // as URL (not as ordinary user input).
+  TestToolbarModel* test_toolbar_model = new TestToolbarModel;
+  scoped_ptr<ToolbarModel> toolbar_model(test_toolbar_model);
+  test_toolbar_model->set_text(ASCIIToUTF16("http://www.google.com/"));
+  browser()->swap_toolbar_models(&toolbar_model);
+  OmniboxView* omnibox_view = NULL;
+  ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   OmniboxEditModel* edit_model = omnibox_view->model();
   ASSERT_NE(static_cast<OmniboxEditModel*>(NULL), edit_model);
-  edit_model->UpdatePermanentText(ASCIIToUTF16("http://www.google.com/"));
+  edit_model->UpdatePermanentText();
+
+  const char* target_url = "http://www.google.com/calendar";
+  omnibox_view->SetUserText(ASCIIToUTF16(target_url));
 
   // Location bar must have focus.
   chrome::FocusLocationBar(browser());

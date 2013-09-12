@@ -42,9 +42,7 @@
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "ash/wm/activation_controller.h"
 #include "ash/wm/app_list_controller.h"
-#include "ash/wm/ash_activation_controller.h"
 #include "ash/wm/ash_focus_rules.h"
 #include "ash/wm/ash_native_cursor_manager.h"
 #include "ash/wm/base_layout_manager.h"
@@ -58,7 +56,6 @@
 #include "ash/wm/overlay_event_filter.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/resize_shadow_controller.h"
 #include "ash/wm/root_window_layout_manager.h"
 #include "ash/wm/screen_dimmer.h"
@@ -76,6 +73,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
+#include "base/debug/trace_event.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
@@ -118,7 +116,7 @@
 #include "ash/display/display_error_observer_chromeos.h"
 #include "ash/display/output_configurator_animation.h"
 #include "base/chromeos/chromeos_version.h"
-#include "base/message_loop/message_pump_aurax11.h"
+#include "base/message_loop/message_pump_x11.h"
 #include "chromeos/display/output_configurator.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "gpu/config/gpu_feature_type.h"
@@ -232,11 +230,11 @@ Shell::Shell(ShellDelegate* delegate)
 
   output_configurator_->Init(!is_panel_fitting_disabled);
 
-  base::MessagePumpAuraX11::Current()->AddDispatcherForRootWindow(
+  base::MessagePumpX11::Current()->AddDispatcherForRootWindow(
       output_configurator());
   // We can't do this with a root window listener because XI_HierarchyChanged
   // messages don't have a target window.
-  base::MessagePumpAuraX11::Current()->AddObserver(output_configurator());
+  base::MessagePumpX11::Current()->AddObserver(output_configurator());
 #endif  // defined(OS_CHROMEOS)
   AddPreTargetHandler(this);
 
@@ -246,6 +244,8 @@ Shell::Shell(ShellDelegate* delegate)
 }
 
 Shell::~Shell() {
+  TRACE_EVENT0("shutdown", "ash::Shell::Destructor");
+
   views::FocusManagerFactory::Install(NULL);
 
   // Remove the focus from any window. This will prevent overhead and side
@@ -322,10 +322,6 @@ Shell::~Shell() {
   display_controller_.reset();
   screen_position_controller_.reset();
 
-  // Delete the activation controller after other controllers and launcher
-  // because they might have registered ActivationChangeObserver.
-  activation_controller_.reset();
-
 #if defined(OS_CHROMEOS) && defined(USE_X11)
    if (display_change_observer_)
     output_configurator_->RemoveObserver(display_change_observer_.get());
@@ -333,9 +329,9 @@ Shell::~Shell() {
     output_configurator_->RemoveObserver(output_configurator_animation_.get());
   if (display_error_observer_)
     output_configurator_->RemoveObserver(display_error_observer_.get());
-  base::MessagePumpAuraX11::Current()->RemoveDispatcherForRootWindow(
+  base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(
       output_configurator());
-  base::MessagePumpAuraX11::Current()->RemoveObserver(output_configurator());
+  base::MessagePumpX11::Current()->RemoveObserver(output_configurator());
   display_change_observer_.reset();
 #endif  // defined(OS_CHROMEOS)
 
@@ -374,7 +370,7 @@ void Shell::DeleteInstance() {
 
 // static
 internal::RootWindowController* Shell::GetPrimaryRootWindowController() {
-  return GetRootWindowController(GetPrimaryRootWindow());
+  return internal::GetRootWindowController(GetPrimaryRootWindow());
 }
 
 // static
@@ -482,22 +478,11 @@ void Shell::Init() {
   // initialized first by the ActivationController, but now that FocusController
   // no longer does this we need to do it explicitly.
   aura::Env::GetInstance();
-  if (views::corewm::UseFocusController()) {
-    views::corewm::FocusController* focus_controller =
-        new views::corewm::FocusController(new wm::AshFocusRules);
-    focus_client_.reset(focus_controller);
-    activation_client_ = focus_controller;
-    activation_client_->AddObserver(this);
-  } else {
-    focus_client_.reset(new aura::FocusManager);
-    activation_controller_.reset(
-        new internal::ActivationController(
-            focus_client_.get(),
-            new internal::AshActivationController));
-    activation_client_ = activation_controller_.get();
-    AddPreTargetHandler(activation_controller_.get());
-  }
-
+  views::corewm::FocusController* focus_controller =
+      new views::corewm::FocusController(new wm::AshFocusRules);
+  focus_client_.reset(focus_controller);
+  activation_client_ = focus_controller;
+  activation_client_->AddObserver(this);
   focus_cycler_.reset(new internal::FocusCycler());
 
   screen_position_controller_.reset(new internal::ScreenPositionController);
@@ -663,7 +648,7 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
   // NULL even for the out-of-bounds |location_in_screen| (It should
   // return the primary root). Investigate why/how this is
   // happening. crbug.com/165214.
-  internal::RootWindowController* rwc = GetRootWindowController(root);
+  internal::RootWindowController* rwc = internal::GetRootWindowController(root);
   CHECK(rwc) << "root=" << root
              << ", location:" << location_in_screen.ToString();
   if (rwc)
@@ -813,7 +798,7 @@ void Shell::SetShelfAlignment(ShelfAlignment alignment,
 }
 
 ShelfAlignment Shell::GetShelfAlignment(aura::RootWindow* root_window) {
-  return GetRootWindowController(root_window)->
+  return internal::GetRootWindowController(root_window)->
       GetShelfLayoutManager()->GetAlignment();
 }
 
@@ -927,11 +912,9 @@ void Shell::InitRootWindowController(
   aura::client::SetFocusClient(root_window, focus_client_.get());
   input_method_filter_->SetInputMethodPropertyInRootWindow(root_window);
   aura::client::SetActivationClient(root_window, activation_client_);
-  if (views::corewm::UseFocusController()) {
-    views::corewm::FocusController* controller =
-        static_cast<views::corewm::FocusController*>(activation_client_);
-    root_window->AddPreTargetHandler(controller);
-  }
+  views::corewm::FocusController* focus_controller =
+      static_cast<views::corewm::FocusController*>(activation_client_);
+  root_window->AddPreTargetHandler(focus_controller);
   aura::client::SetVisibilityClient(root_window, visibility_controller_.get());
   aura::client::SetDragDropClient(root_window, drag_drop_controller_.get());
   aura::client::SetScreenPositionClient(root_window,

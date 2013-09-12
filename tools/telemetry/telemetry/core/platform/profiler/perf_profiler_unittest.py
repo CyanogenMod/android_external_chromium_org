@@ -13,7 +13,7 @@ from telemetry.unittest import simple_mock
 class TestPerfProfiler(unittest.TestCase):
   def testPerfProfiler(self):
     options = options_for_unittests.GetCopy()
-    if not perf_profiler.PerfProfiler.is_supported(options):
+    if not perf_profiler.PerfProfiler.is_supported(options.browser_type):
       logging.warning('PerfProfiler is not supported. Skipping test')
       return
 
@@ -33,7 +33,7 @@ class TestPerfProfiler(unittest.TestCase):
     perf_profiler.subprocess = mock_subprocess
     try:
       self.assertEqual(
-          perf_profiler.PerfProfiler.GetTopSamples(profile_file, 10),
+          perf_profiler.PerfProfiler.GetTopSamples('linux', profile_file, 10),
           { 'v8::internal::StaticMarkingVisitor::MarkMapContents': 63615201,
             'v8::internal::RelocIterator::next': 38271931,
             'v8::internal::LAllocator::MeetConstraintsBetween': 42913933,

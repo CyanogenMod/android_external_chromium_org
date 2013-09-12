@@ -84,6 +84,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/gpu/render_widget_compositor.cc \
 	content/renderer/idle_user_detector.cc \
 	content/renderer/image_loading_helper.cc \
+	content/renderer/in_process_renderer_thread.cc \
 	content/renderer/internal_document_state_data.cc \
 	content/renderer/java/java_bridge_channel.cc \
 	content/renderer/java/java_bridge_dispatcher.cc \
@@ -112,7 +113,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/crypto/proxy_decryptor.cc \
 	content/renderer/media/midi_dispatcher.cc \
 	content/renderer/media/midi_message_filter.cc \
-	content/renderer/media/pepper_platform_video_decoder.cc \
 	content/renderer/media/render_media_log.cc \
 	content/renderer/media/renderer_gpu_video_accelerator_factories.cc \
 	content/renderer/media/renderer_webaudiodevice_impl.cc \
@@ -136,7 +136,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/mhtml_generator.cc \
 	content/renderer/mouse_lock_dispatcher.cc \
 	content/renderer/paint_aggregator.cc \
-	content/renderer/password_form_conversion_utils.cc \
 	content/renderer/browser_plugin/browser_plugin.cc \
 	content/renderer/browser_plugin/browser_plugin_backing_store.cc \
 	content/renderer/browser_plugin/browser_plugin_bindings.cc \
@@ -164,7 +163,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_date_time_picker.cc \
 	content/renderer/renderer_main.cc \
 	content/renderer/renderer_main_platform_delegate_android.cc \
-	content/renderer/renderer_main_thread.cc \
 	content/renderer/renderer_webapplicationcachehost_impl.cc \
 	content/renderer/renderer_webcookiejar_impl.cc \
 	content/renderer/renderer_webcolorchooser_impl.cc \
@@ -227,6 +225,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -239,6 +238,7 @@ MY_DEFS_Debug := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -371,6 +371,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
+	'-DWTF_VECTOR_INITIAL_SIZE=16' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -383,6 +384,7 @@ MY_DEFS_Release := \
 	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
+	'-DCLD_VERSION=1' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -491,7 +493,9 @@ LOCAL_LDFLAGS_Debug := \
 	-nostdlib \
 	-Wl,--no-undefined \
 	-Wl,--exclude-libs=ALL \
+	-Wl,--fatal-warnings \
 	-Wl,--gc-sections \
+	-Wl,--warn-shared-textrel \
 	-Wl,-O1 \
 	-Wl,--as-needed
 
@@ -508,7 +512,9 @@ LOCAL_LDFLAGS_Release := \
 	-Wl,--exclude-libs=ALL \
 	-Wl,-O1 \
 	-Wl,--as-needed \
-	-Wl,--gc-sections
+	-Wl,--gc-sections \
+	-Wl,--fatal-warnings \
+	-Wl,--warn-shared-textrel
 
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))

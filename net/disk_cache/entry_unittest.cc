@@ -2874,9 +2874,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOptimistic4) {
   entry2->Close();
 }
 
-// This test is flaky because of the race of Create followed by a Doom.
-// See test SimpleCacheCreateDoomRace.
-TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheOptimistic5) {
+TEST_F(DiskCacheEntryTest, SimpleCacheOptimistic5) {
   // Test sequence:
   // Create, Doom, Write, Read, Close.
   SetSimpleCacheMode();
@@ -2910,7 +2908,9 @@ TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheOptimistic5) {
       static_cast<disk_cache::SimpleEntryImpl*>(entry)->HasOneRef());
 }
 
-TEST_F(DiskCacheEntryTest, SimpleCacheOptimistic6) {
+// TODO(gavinp): Fix this, perhaps by landing
+// https://codereview.chromium.org/23823002/
+TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheOptimistic6) {
   // Test sequence:
   // Create, Write, Doom, Doom, Read, Doom, Close.
   SetSimpleCacheMode();
@@ -2945,10 +2945,6 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOptimistic6) {
   EXPECT_EQ(0, memcmp(buffer1->data(), buffer1_read->data(), kSize1));
 
   entry->Doom();
-
-  // Check that we are not leaking.
-  EXPECT_TRUE(
-      static_cast<disk_cache::SimpleEntryImpl*>(entry)->HasOneRef());
 }
 
 // Confirm that IO buffers are not referenced by the Simple Cache after a write
@@ -2987,7 +2983,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOptimisticWriteReleases) {
   EXPECT_TRUE(buffer1->HasOneRef());
 }
 
-TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheCreateDoomRace) {
+TEST_F(DiskCacheEntryTest, SimpleCacheCreateDoomRace) {
   // Test sequence:
   // Create, Doom, Write, Close, Check files are not on disk anymore.
   SetSimpleCacheMode();
@@ -3005,20 +3001,13 @@ TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheCreateDoomRace) {
             cache_->CreateEntry(key, &entry, net::CompletionCallback()));
   EXPECT_NE(null, entry);
 
-  cache_->DoomEntry(key, cb.callback());
+  EXPECT_EQ(net::ERR_IO_PENDING, cache_->DoomEntry(key, cb.callback()));
   EXPECT_EQ(net::OK, cb.GetResult(net::ERR_IO_PENDING));
 
-  // Lets do a Write so we block until all operations are done, so we can check
-  // the HasOneRef() below. This call can't be optimistic and we are checking
-  // that here.
   EXPECT_EQ(
-      net::ERR_IO_PENDING,
+      kSize1,
       entry->WriteData(0, 0, buffer1.get(), kSize1, cb.callback(), false));
-  EXPECT_EQ(kSize1, cb.GetResult(net::ERR_IO_PENDING));
 
-  // Check that we are not leaking.
-  EXPECT_TRUE(
-      static_cast<disk_cache::SimpleEntryImpl*>(entry)->HasOneRef());
   entry->Close();
 
   // Finish running the pending tasks so that we fully complete the close
@@ -3031,6 +3020,37 @@ TEST_F(DiskCacheEntryTest, DISABLED_SimpleCacheCreateDoomRace) {
     base::PlatformFileInfo info;
     EXPECT_FALSE(file_util::GetFileInfo(entry_file_path, &info));
   }
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheDoomCreateRace) {
+  // This test runs as APP_CACHE to make operations more synchronous. Test
+  // sequence:
+  // Create, Doom, Create.
+  SetCacheType(net::APP_CACHE);
+  SetSimpleCacheMode();
+  InitCache();
+  disk_cache::Entry* null = NULL;
+  const char key[] = "the first key";
+
+  net::TestCompletionCallback create_callback;
+
+  disk_cache::Entry* entry1 = NULL;
+  ASSERT_EQ(net::OK,
+            create_callback.GetResult(
+                cache_->CreateEntry(key, &entry1, create_callback.callback())));
+  ScopedEntryPtr entry1_closer(entry1);
+  EXPECT_NE(null, entry1);
+
+  net::TestCompletionCallback doom_callback;
+  EXPECT_EQ(net::ERR_IO_PENDING,
+            cache_->DoomEntry(key, doom_callback.callback()));
+
+  disk_cache::Entry* entry2 = NULL;
+  ASSERT_EQ(net::OK,
+            create_callback.GetResult(
+                cache_->CreateEntry(key, &entry2, create_callback.callback())));
+  ScopedEntryPtr entry2_closer(entry2);
+  EXPECT_EQ(net::OK, doom_callback.GetResult(net::ERR_IO_PENDING));
 }
 
 // Checks that an optimistic Create would fail later on a racing Open.

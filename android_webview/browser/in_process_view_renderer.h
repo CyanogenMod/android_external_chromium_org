@@ -30,6 +30,8 @@ class AwGLSurface;
 class InProcessViewRenderer : public BrowserViewRenderer,
                               public content::SynchronousCompositorClient {
  public:
+  static void CalculateTileMemoryPolicy();
+
   InProcessViewRenderer(BrowserViewRenderer::Client* client,
                         JavaHelper* java_helper,
                         content::WebContents* web_contents);
@@ -81,7 +83,8 @@ class InProcessViewRenderer : public BrowserViewRenderer,
       gfx::Vector2dF new_value_css) OVERRIDE;
   virtual void DidUpdateContent() OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
-  virtual void DidOverscroll(gfx::Vector2dF latest_overscroll_delta,
+  virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
+                             gfx::Vector2dF latest_overscroll_delta,
                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
 
   void WebContentsGone();

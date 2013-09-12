@@ -131,6 +131,10 @@ class WebGraphicsContext3DCommandBufferImpl
           const WebGraphicsContext3D::Attributes& attributes,
           const GURL& active_url);
 
+  size_t GetMappedMemoryLimit() {
+    return mapped_memory_limit_;
+  }
+
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
 
@@ -671,11 +675,9 @@ class WebGraphicsContext3DCommandBufferImpl
   // and subsequent calls are ignored. Must be called from the thread that is
   // going to use this object to issue GL commands (which might not be the main
   // thread).
-  bool MaybeInitializeGL(const char* allowed_extensions);
+  bool MaybeInitializeGL();
 
-  bool InitializeCommandBuffer(
-      bool onscreen,
-      const char* allowed_extensions);
+  bool InitializeCommandBuffer(bool onscreen);
 
   void Destroy();
 
@@ -692,8 +694,7 @@ class WebGraphicsContext3DCommandBufferImpl
   // allocate both fake PluginWindowHandles and NativeViewIds and map
   // from fake NativeViewIds to PluginWindowHandles, but this seems like
   // unnecessary complexity at the moment.
-  bool CreateContext(bool onscreen,
-                     const char* allowed_extensions);
+  bool CreateContext(bool onscreen);
 
   // SwapBuffers callback.
   void OnSwapBuffersComplete();

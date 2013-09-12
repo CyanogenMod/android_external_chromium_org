@@ -6,14 +6,22 @@ from metrics import smoothness
 from metrics.gpu_rendering_stats import GpuRenderingStats
 from telemetry.page import page_measurement
 
+
 class DidNotScrollException(page_measurement.MeasurementFailure):
   def __init__(self):
     super(DidNotScrollException, self).__init__('Page did not scroll')
+
 
 class MissingDisplayFrameRate(page_measurement.MeasurementFailure):
   def __init__(self, name):
     super(MissingDisplayFrameRate, self).__init__(
         'Missing display frame rate metrics: ' + name)
+
+
+class MissingTimelineMarker(page_measurement.MeasurementFailure):
+  def __init__(self):
+    super(MissingTimelineMarker, self).__init__('Timeline marker not found')
+
 
 class Smoothness(page_measurement.PageMeasurement):
   def __init__(self):
@@ -29,13 +37,15 @@ class Smoothness(page_measurement.PageMeasurement):
   def CustomizeBrowserOptions(self, options):
     smoothness.SmoothnessMetrics.CustomizeBrowserOptions(options)
     if self.force_enable_threaded_compositing:
-      options.extra_browser_args.append('--enable-threaded-compositing')
+      options.AppendExtraBrowserArgs('--enable-threaded-compositing')
 
   def CanRunForPage(self, page):
     return hasattr(page, 'smoothness')
 
   def WillRunAction(self, page, tab, action):
-    tab.browser.StartTracing('webkit,cc,benchmark', 60)
+    # TODO(ernstm): remove 'webkit' category when
+    # https://codereview.chromium.org/23848006/ has landed.
+    tab.browser.StartTracing('webkit,webkit.console,benchmark', 60)
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StartRawDisplayFrameRateMeasurement()
     self._metrics = smoothness.SmoothnessMetrics(tab)
@@ -57,7 +67,7 @@ class Smoothness(page_measurement.PageMeasurement):
                   smoothness.TIMELINE_MARKER)
               if s.parent_slice == None]
     if len(events) != 1:
-      raise LookupError, 'timeline marker not found'
+      raise MissingTimelineMarker()
     return events[0]
 
   def MeasurePage(self, page, tab, results):

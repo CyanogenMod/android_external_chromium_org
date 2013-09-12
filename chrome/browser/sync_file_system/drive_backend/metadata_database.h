@@ -123,6 +123,21 @@ class MetadataDatabase {
   ~MetadataDatabase();
 
   int64 GetLargestChangeID() const;
+  int64 GetSyncRootTrackerID() const;
+  bool HasSyncRoot() const;
+
+  // Populates empty database with initial data.
+  // Adds a file metadata and a file tracker for |sync_root_folder|, and adds
+  // file metadata and file trackers for each |app_root_folders|.
+  // Newly added tracker for |sync_root_folder| is active and non-dirty.
+  // Newly added trackers for |app_root_folders| are inactive and non-dirty.
+  // Trackers for |app_root_folders| are not yet registered as app-roots, but
+  // are ready to register.
+  void PopulateInitialData(
+      int64 largest_change_id,
+      const google_apis::FileResource& sync_root_folder,
+      const ScopedVector<google_apis::FileResource>& app_root_folders,
+      const SyncStatusCallback& callback);
 
   // Registers existing folder as the app-root for |app_id|.  The folder
   // must be an inactive folder that does not yet associated to any App.
@@ -191,9 +206,14 @@ class MetadataDatabase {
   // Adds |child_file_ids| to |folder_id| as its children.
   // This method affects the active tracker only.
   // If the tracker has no further change to sync, unmarks its dirty flag.
-  void PopulateFolder(const std::string& folder_id,
-                      const FileIDList& child_file_ids,
-                      const SyncStatusCallback& callback);
+  void PopulateFolderByChildList(const std::string& folder_id,
+                                 const FileIDList& child_file_ids,
+                                 const SyncStatusCallback& callback);
+
+  // Updates |synced_details| of the tracker with |updated_details|.
+  void UpdateTracker(int64 tracker_id,
+                     const FileDetails& updated_details,
+                     const SyncStatusCallback& callback);
 
  private:
   struct DirtyTrackerComparator {
@@ -233,8 +253,13 @@ class MetadataDatabase {
   void CreateTrackerForParentAndFileID(const FileTracker& parent_tracker,
                                        const std::string& file_id,
                                        leveldb::WriteBatch* batch);
+
+  void RemoveTracker(int64 tracker_id, leveldb::WriteBatch* batch);
   void RemoveTrackerIgnoringSiblings(int64 tracker_id,
                                      leveldb::WriteBatch* batch);
+  void RemoveTrackerInternal(int64 tracker_id,
+                             leveldb::WriteBatch* batch,
+                             bool ignoring_siblings);
   void MaybeAddTrackersForNewFile(const FileMetadata& file,
                                   leveldb::WriteBatch* batch);
 
@@ -256,7 +281,17 @@ class MetadataDatabase {
 
   void RecursiveMarkTrackerAsDirty(int64 root_tracker_id,
                                    leveldb::WriteBatch* batch);
+  bool CanActivateTracker(const FileTracker& tracker);
   bool ShouldKeepDirty(const FileTracker& tracker) const;
+
+  bool HasDisabledAppRoot(const FileTracker& tracker) const;
+  bool HasActiveTrackerForFileID(const std::string& file_id) const;
+  bool HasActiveTrackerForPath(int64 parent_tracker,
+                               const std::string& title) const;
+
+  void UpdateTrackerTitle(FileTracker* tracker,
+                          const std::string& new_title,
+                          leveldb::WriteBatch* batch);
 
   void WriteToDatabase(scoped_ptr<leveldb::WriteBatch> batch,
                        const SyncStatusCallback& callback);

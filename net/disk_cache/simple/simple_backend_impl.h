@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
@@ -42,7 +43,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
     public base::SupportsWeakPtr<SimpleBackendImpl> {
  public:
   SimpleBackendImpl(const base::FilePath& path, int max_bytes,
-                    net::CacheType type,
+                    net::CacheType cache_type,
                     base::SingleThreadTaskRunner* cache_thread,
                     net::NetLog* net_log);
 
@@ -63,6 +64,18 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   // Removes |entry| from the |active_entries_| set, forcing future Open/Create
   // operations to construct a new object.
   void OnDeactivated(const SimpleEntryImpl* entry);
+
+  // Flush our SequencedWorkerPool.
+  static void FlushWorkerPoolForTesting();
+
+  // The entry for |entry_hash| is being doomed; the backend will not attempt
+  // run new operations for this |entry_hash| until the Doom is completed.
+  void OnDoomStart(uint64 entry_hash);
+
+  // The entry for |entry_hash| has been successfully doomed, we can now allow
+  // operations on this entry, and we can run any operations enqueued while the
+  // doom completed.
+  void OnDoomComplete(uint64 entry_hash);
 
   // Backend:
   virtual net::CacheType GetCacheType() const OVERRIDE;
@@ -118,6 +131,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   // Searches |active_entries_| for the entry corresponding to |key|. If found,
   // returns the found entry. Otherwise, creates a new entry and returns that.
   scoped_refptr<SimpleEntryImpl> CreateOrFindActiveEntry(
+      uint64 entry_hash,
       const std::string& key);
 
   // Given a hash, will try to open the corresponding Entry. If we have an Entry
@@ -163,6 +177,7 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
                                  int error_code);
 
   const base::FilePath path_;
+  const net::CacheType cache_type_;
   scoped_ptr<SimpleIndex> index_;
   const scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
   scoped_refptr<base::TaskRunner> worker_pool_;
@@ -170,9 +185,13 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   int orig_max_size_;
   const SimpleEntryImpl::OperationsMode entry_operations_mode_;
 
-  // TODO(gavinp): Store the entry_hash in SimpleEntryImpl, and index this map
-  // by hash. This will save memory, and make IndexReadyForDoom easier.
   EntryMap active_entries_;
+
+  // The set of all entries which are currently being doomed. To avoid races,
+  // these entries cannot have Doom/Create/Open operations run until the doom
+  // is complete. The base::Closure map target is used to store deferred
+  // operations to be run at the completion of the Doom.
+  base::hash_map<uint64, std::vector<base::Closure> > entries_pending_doom_;
 
   net::NetLog* const net_log_;
 };

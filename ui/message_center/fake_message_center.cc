@@ -19,7 +19,11 @@ void FakeMessageCenter::AddObserver(MessageCenterObserver* observer) {
 void FakeMessageCenter::RemoveObserver(MessageCenterObserver* observer) {
 }
 
-void FakeMessageCenter::SetDelegate(Delegate* delegate) {
+void FakeMessageCenter::AddNotificationBlocker(NotificationBlocker* blocker) {
+}
+
+void FakeMessageCenter::RemoveNotificationBlocker(
+    NotificationBlocker* blocker) {
 }
 
 size_t FakeMessageCenter::NotificationCount() const {
@@ -87,9 +91,6 @@ void FakeMessageCenter::DisableNotificationsByNotifier(
     const NotifierId& notifier_id) {
 }
 
-void FakeMessageCenter::ShowNotificationSettings(const std::string& id) {
-}
-
 void FakeMessageCenter::ExpandNotification(const std::string& id) {
 }
 
@@ -122,7 +123,7 @@ void FakeMessageCenter::EnterQuietModeWithExpire(
     const base::TimeDelta& expires_in) {
 }
 
-void FakeMessageCenter::SetMessageCenterVisible(bool visible) {
+void FakeMessageCenter::SetVisibility(Visibility visible) {
 }
 
 bool FakeMessageCenter::IsMessageCenterVisible() {

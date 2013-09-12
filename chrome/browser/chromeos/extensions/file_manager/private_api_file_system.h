@@ -42,7 +42,7 @@ class FileBrowserPrivateRequestFileSystemFunction
 
  private:
   void RespondSuccessOnUIThread(const std::string& name,
-                                const GURL& root_path);
+                                const GURL& root_url);
   void RespondFailedOnUIThread(base::PlatformFileError error_code);
 
   // Called when FileSystemContext::OpenFileSystem() is done.
@@ -50,7 +50,7 @@ class FileBrowserPrivateRequestFileSystemFunction
       scoped_refptr<fileapi::FileSystemContext> file_system_context,
       base::PlatformFileError result,
       const std::string& name,
-      const GURL& root_path);
+      const GURL& root_url);
 
   // Called when something goes wrong. Records the error to |error_| per the
   // error code and reports that the private API function failed.
@@ -215,6 +215,42 @@ class FileBrowserPrivateFormatDeviceFunction
 
  protected:
   virtual ~FileBrowserPrivateFormatDeviceFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+};
+
+// Implements the chrome.fileBrowserPrivate.startCopy method.
+class FileBrowserPrivateStartCopyFunction
+    : public LoggedAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.startCopy",
+                             FILEBROWSERPRIVATE_STARTCOPY)
+
+  FileBrowserPrivateStartCopyFunction();
+
+ protected:
+  virtual ~FileBrowserPrivateStartCopyFunction();
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  // Part of RunImpl(). Called after Copy() is started on IO thread.
+  void RunAfterStartCopy(int operation_id);
+};
+
+// Implements the chrome.fileBrowserPrivate.cancelCopy method.
+class FileBrowserPrivateCancelCopyFunction
+    : public LoggedAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.cancelCopy",
+                             FILEBROWSERPRIVATE_CANCELCOPY)
+
+  FileBrowserPrivateCancelCopyFunction();
+
+ protected:
+  virtual ~FileBrowserPrivateCancelCopyFunction();
 
   // AsyncExtensionFunction overrides.
   virtual bool RunImpl() OVERRIDE;

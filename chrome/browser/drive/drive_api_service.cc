@@ -40,6 +40,7 @@ using google_apis::GetContentCallback;
 using google_apis::GetResourceEntryCallback;
 using google_apis::GetResourceEntryRequest;
 using google_apis::GetResourceListCallback;
+using google_apis::GetResourceListRequest;
 using google_apis::GetShareUrlCallback;
 using google_apis::HTTP_NOT_IMPLEMENTED;
 using google_apis::HTTP_SUCCESS;
@@ -54,19 +55,20 @@ using google_apis::UploadRangeResponse;
 using google_apis::drive::AboutGetRequest;
 using google_apis::drive::AppsListRequest;
 using google_apis::drive::ChangesListRequest;
-using google_apis::drive::ContinueGetFileListRequest;
-using google_apis::drive::DeleteResourceRequest;
+using google_apis::drive::ChangesListNextPageRequest;
+using google_apis::drive::ChildrenDeleteRequest;
+using google_apis::drive::ChildrenInsertRequest;
 using google_apis::drive::DownloadFileRequest;
 using google_apis::drive::FilesCopyRequest;
 using google_apis::drive::FilesGetRequest;
 using google_apis::drive::FilesInsertRequest;
 using google_apis::drive::FilesPatchRequest;
 using google_apis::drive::FilesListRequest;
+using google_apis::drive::FilesListNextPageRequest;
 using google_apis::drive::FilesTrashRequest;
 using google_apis::drive::GetUploadStatusRequest;
 using google_apis::drive::InitiateUploadExistingFileRequest;
 using google_apis::drive::InitiateUploadNewFileRequest;
-using google_apis::drive::InsertResourceRequest;
 using google_apis::drive::ResumeUploadRequest;
 
 namespace drive {
@@ -88,74 +90,13 @@ const char kFolderMimeType[] = "application/vnd.google-apps.folder";
 const int kMaxNumFilesResourcePerRequest = 500;
 const int kMaxNumFilesResourcePerRequestForSearch = 50;
 
-scoped_ptr<ResourceList> ParseChangeListJsonToResourceList(
-    scoped_ptr<base::Value> value) {
-  scoped_ptr<ChangeList> change_list(ChangeList::CreateFrom(*value));
-  if (!change_list) {
-    return scoped_ptr<ResourceList>();
-  }
-
-  return ResourceList::CreateFromChangeList(*change_list);
-}
-
-scoped_ptr<ResourceList> ParseFileListJsonToResourceList(
-    scoped_ptr<base::Value> value) {
-  scoped_ptr<FileList> file_list(FileList::CreateFrom(*value));
-  if (!file_list) {
-    return scoped_ptr<ResourceList>();
-  }
-
-  return ResourceList::CreateFromFileList(*file_list);
-}
-
-// Parses JSON value representing either ChangeList or FileList into
-// ResourceList.
-scoped_ptr<ResourceList> ParseResourceListOnBlockingPool(
-    scoped_ptr<base::Value> value) {
-  DCHECK(value);
-
-  // Dispatch the parsing based on kind field.
-  if (ChangeList::HasChangeListKind(*value)) {
-    return ParseChangeListJsonToResourceList(value.Pass());
-  }
-  if (FileList::HasFileListKind(*value)) {
-    return ParseFileListJsonToResourceList(value.Pass());
-  }
-
-  // The value type is unknown, so give up to parse and return an error.
-  return scoped_ptr<ResourceList>();
-}
-
 // Callback invoked when the parsing of resource list is completed,
 // regardless whether it is succeeded or not.
-void DidParseResourceListOnBlockingPool(
+void DidConvertToResourceListOnBlockingPool(
     const GetResourceListCallback& callback,
     scoped_ptr<ResourceList> resource_list) {
   GDataErrorCode error = resource_list ? HTTP_SUCCESS : GDATA_PARSE_ERROR;
   callback.Run(error, resource_list.Pass());
-}
-
-// Sends a task to parse the JSON value into ResourceList on blocking pool,
-// with a callback which is called when the task is done.
-void ParseResourceListOnBlockingPoolAndRun(
-    scoped_refptr<base::TaskRunner> blocking_task_runner,
-    const GetResourceListCallback& callback,
-    GDataErrorCode error,
-    scoped_ptr<base::Value> value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  if (error != HTTP_SUCCESS) {
-    // An error occurs, so run callback immediately.
-    callback.Run(error, scoped_ptr<ResourceList>());
-    return;
-  }
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner.get(),
-      FROM_HERE,
-      base::Bind(&ParseResourceListOnBlockingPool, base::Passed(&value)),
-      base::Bind(&DidParseResourceListOnBlockingPool, callback));
 }
 
 // Converts the FileResource value to ResourceEntry and runs |callback| on the
@@ -209,7 +150,7 @@ void ConvertFileListToResourceListOnBlockingPoolAndRun(
       blocking_task_runner.get(),
       FROM_HERE,
       base::Bind(&ConvertFileListToResourceList, base::Passed(&value)),
-      base::Bind(&DidParseResourceListOnBlockingPool, callback));
+      base::Bind(&DidConvertToResourceListOnBlockingPool, callback));
 }
 
 // Thin adapter of CreateFromChangeList.
@@ -238,12 +179,12 @@ void ConvertChangeListToResourceListOnBlockingPoolAndRun(
       blocking_task_runner.get(),
       FROM_HERE,
       base::Bind(&ConvertChangeListToResourceList, base::Passed(&value)),
-      base::Bind(&DidParseResourceListOnBlockingPool, callback));
+      base::Bind(&DidConvertToResourceListOnBlockingPool, callback));
 }
 
-// Parses the FileResource value to ResourceEntry for upload range request,
+// Converts the FileResource value to ResourceEntry for upload range request,
 // and runs |callback| on the UI thread.
-void ParseResourceEntryForUploadRangeAndRun(
+void ConvertFileResourceToResourceEntryForUploadRangeAndRun(
     const UploadRangeCallback& callback,
     const UploadRangeResponse& response,
     scoped_ptr<FileResource> value) {
@@ -378,15 +319,12 @@ CancelCallback DriveAPIService::GetAllResourceList(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // The simplest way to fetch the all resources list looks files.list method,
-  // but it seems impossible to know the returned list's changestamp.
-  // Thus, instead, we use changes.list method with includeDeleted=false here.
-  // The returned list should contain only resources currently existing.
-  ChangesListRequest* request = new ChangesListRequest(
+  FilesListRequest* request = new FilesListRequest(
       sender_.get(), url_generator_,
-      base::Bind(&ConvertChangeListToResourceListOnBlockingPoolAndRun,
+      base::Bind(&ConvertFileListToResourceListOnBlockingPoolAndRun,
                  blocking_task_runner_, callback));
-  request->set_include_deleted(false);
+  request->set_max_results(kMaxNumFilesResourcePerRequest);
+  request->set_q("trashed = false");  // Exclude trashed files.
   return sender_->StartRequestWithRetry(request);
 }
 
@@ -476,43 +414,34 @@ CancelCallback DriveAPIService::GetChangeList(
   return sender_->StartRequestWithRetry(request);
 }
 
-CancelCallback DriveAPIService::ContinueGetResourceList(
-    const GURL& override_url,
-    const GetResourceListCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  return sender_->StartRequestWithRetry(
-      new ContinueGetFileListRequest(
-          sender_.get(),
-          override_url,
-          base::Bind(&ParseResourceListOnBlockingPoolAndRun,
-                     blocking_task_runner_,
-                     callback)));
-}
-
 CancelCallback DriveAPIService::GetRemainingChangeList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  // Currently page_token is a URL.
-  // TODO(hidehiko): Use actual page token.
-  return ContinueGetResourceList(GURL(page_token), callback);
+  ChangesListNextPageRequest* request = new ChangesListNextPageRequest(
+      sender_.get(),
+      base::Bind(&ConvertChangeListToResourceListOnBlockingPoolAndRun,
+                 blocking_task_runner_, callback));
+  request->set_next_link(next_link);
+  return sender_->StartRequestWithRetry(request);
 }
 
 CancelCallback DriveAPIService::GetRemainingFileList(
-    const std::string& page_token,
+    const GURL& next_link,
     const GetResourceListCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!page_token.empty());
+  DCHECK(!next_link.is_empty());
   DCHECK(!callback.is_null());
 
-  // Currently page_token is a URL.
-  // TODO(hidehiko): Use actual page token.
-  return ContinueGetResourceList(GURL(page_token), callback);
+  FilesListNextPageRequest* request = new FilesListNextPageRequest(
+      sender_.get(),
+      base::Bind(&ConvertFileListToResourceListOnBlockingPoolAndRun,
+                 blocking_task_runner_, callback));
+  request->set_next_link(next_link);
+  return sender_->StartRequestWithRetry(request);
 }
 
 CancelCallback DriveAPIService::GetResourceEntry(
@@ -712,13 +641,11 @@ CancelCallback DriveAPIService::AddResourceToDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  return sender_->StartRequestWithRetry(
-      new InsertResourceRequest(
-          sender_.get(),
-          url_generator_,
-          parent_resource_id,
-          resource_id,
-          callback));
+  ChildrenInsertRequest* request =
+      new ChildrenInsertRequest(sender_.get(), url_generator_, callback);
+  request->set_folder_id(parent_resource_id);
+  request->set_id(resource_id);
+  return sender_->StartRequestWithRetry(request);
 }
 
 CancelCallback DriveAPIService::RemoveResourceFromDirectory(
@@ -728,13 +655,11 @@ CancelCallback DriveAPIService::RemoveResourceFromDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  return sender_->StartRequestWithRetry(
-      new DeleteResourceRequest(
-          sender_.get(),
-          url_generator_,
-          parent_resource_id,
-          resource_id,
-          callback));
+  ChildrenDeleteRequest* request =
+      new ChildrenDeleteRequest(sender_.get(), url_generator_, callback);
+  request->set_child_id(resource_id);
+  request->set_folder_id(parent_resource_id);
+  return sender_->StartRequestWithRetry(request);
 }
 
 CancelCallback DriveAPIService::InitiateUploadNewFile(
@@ -798,7 +723,8 @@ CancelCallback DriveAPIService::ResumeUpload(
           content_length,
           content_type,
           local_file_path,
-          base::Bind(&ParseResourceEntryForUploadRangeAndRun, callback),
+          base::Bind(&ConvertFileResourceToResourceEntryForUploadRangeAndRun,
+                     callback),
           progress_callback));
 }
 
@@ -813,7 +739,8 @@ CancelCallback DriveAPIService::GetUploadStatus(
       sender_.get(),
       upload_url,
       content_length,
-      base::Bind(&ParseResourceEntryForUploadRangeAndRun, callback)));
+      base::Bind(&ConvertFileResourceToResourceEntryForUploadRangeAndRun,
+                 callback)));
 }
 
 CancelCallback DriveAPIService::AuthorizeApp(
@@ -828,6 +755,40 @@ CancelCallback DriveAPIService::AuthorizeApp(
       base::Bind(&ExtractOpenUrlAndRun, app_id, callback));
   request->set_file_id(resource_id);
   return sender_->StartRequestWithRetry(request);
+}
+
+CancelCallback DriveAPIService::GetResourceListInDirectoryByWapi(
+    const std::string& directory_resource_id,
+    const google_apis::GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!directory_resource_id.empty());
+  DCHECK(!callback.is_null());
+
+  return sender_->StartRequestWithRetry(
+      new GetResourceListRequest(sender_.get(),
+                                 wapi_url_generator_,
+                                 GURL(),         // No override url
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 directory_resource_id,
+                                 callback));
+}
+
+CancelCallback DriveAPIService::GetRemainingResourceList(
+    const GURL& next_link,
+    const google_apis::GetResourceListCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!next_link.is_empty());
+  DCHECK(!callback.is_null());
+
+  return sender_->StartRequestWithRetry(
+      new GetResourceListRequest(sender_.get(),
+                                 wapi_url_generator_,
+                                 next_link,
+                                 0,              // start changestamp
+                                 std::string(),  // empty search query
+                                 std::string(),  // no directory resource id
+                                 callback));
 }
 
 bool DriveAPIService::HasAccessToken() const {

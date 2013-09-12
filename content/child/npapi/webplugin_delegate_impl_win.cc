@@ -31,8 +31,8 @@
 #include "content/public/common/content_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/win/dpi.h"
 #include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/dpi_win.h"
 #include "webkit/common/cursors/webcursor.h"
 
 using WebKit::WebKeyboardEvent;
@@ -220,10 +220,11 @@ LRESULT CALLBACK WebPluginDelegateImpl::MouseHookProc(
 }
 
 WebPluginDelegateImpl::WebPluginDelegateImpl(
+    WebPlugin* plugin,
     PluginInstance* instance)
     : instance_(instance),
       quirks_(0),
-      plugin_(NULL),
+      plugin_(plugin),
       windowless_(false),
       windowed_handle_(NULL),
       windowed_did_set_window_(false),
@@ -439,8 +440,7 @@ void WebPluginDelegateImpl::PlatformDestroyInstance() {
   }
 }
 
-void WebPluginDelegateImpl::Paint(WebKit::WebCanvas* canvas,
-                                  const gfx::Rect& rect) {
+void WebPluginDelegateImpl::Paint(SkCanvas* canvas, const gfx::Rect& rect) {
   if (windowless_ && skia::SupportsPlatformPaint(canvas)) {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas);
     HDC hdc = scoped_platform_paint.GetPlatformSurface();
@@ -776,8 +776,8 @@ bool WebPluginDelegateImpl::WindowedReposition(
     return false;
   }
 
-  gfx::Rect window_rect = ui::win::DIPToScreenRect(window_rect_in_dip);
-  gfx::Rect clip_rect = ui::win::DIPToScreenRect(clip_rect_in_dip);
+  gfx::Rect window_rect = gfx::win::DIPToScreenRect(window_rect_in_dip);
+  gfx::Rect clip_rect = gfx::win::DIPToScreenRect(clip_rect_in_dip);
   if (window_rect_ == window_rect && clip_rect_ == clip_rect)
     return false;
 

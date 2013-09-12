@@ -45,6 +45,7 @@ class TestHooks : public AnimationDelegate {
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) {}
   virtual void SwapBuffersCompleteOnThread(LayerTreeHostImpl* host_impl) {}
+  virtual void UpdateVisibleTilesOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void AnimateLayers(LayerTreeHostImpl* host_impl,
                              base::TimeTicks monotonic_time) {}
   virtual void UpdateAnimationState(LayerTreeHostImpl* host_impl,
@@ -112,6 +113,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void PostAddAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostAddInstantAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostSetNeedsCommitToMainThread();
+  void PostReadbackToMainThread();
   void PostAcquireLayerTextures();
   void PostSetNeedsRedrawToMainThread();
   void PostSetNeedsRedrawRectToMainThread(gfx::Rect damage_rect);
@@ -132,6 +134,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   virtual void DispatchAddInstantAnimation(Layer* layer_to_receive_animation);
   virtual void DispatchAddAnimation(Layer* layer_to_receive_animation);
   void DispatchSetNeedsCommit();
+  void DispatchReadback();
   void DispatchAcquireLayerTextures();
   void DispatchSetNeedsRedraw();
   void DispatchSetNeedsRedrawRect(gfx::Rect damage_rect);

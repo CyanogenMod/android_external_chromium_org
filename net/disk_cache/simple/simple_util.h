@@ -63,7 +63,11 @@ NET_EXPORT_PRIVATE int64 GetFileOffsetFromKeyAndDataOffset(
     const std::string& key,
     int data_offset);
 
-}  // namespace simple_util
+// Fills |out_time| with the time the file last modified time. Unlike the
+// functions in platform_file.h, the time resolution is milliseconds.
+NET_EXPORT_PRIVATE bool GetMTime(const base::FilePath& path,
+                                 base::Time* out_mtime);
+}  // namespace simple_backend
 
 }  // namespace disk_cache
 

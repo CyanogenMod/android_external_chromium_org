@@ -14,6 +14,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/extensions/shell_window_frame_view.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,10 +30,13 @@
 #if defined(OS_WIN)
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
-#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_win.h"
 #include "ui/base/win/shell.h"
 #include "ui/views/win/hwnd_util.h"
+#endif
+
+#if defined(OS_LINUX)
+#include "chrome/browser/shell_integration_linux.h"
 #endif
 
 #if defined(USE_ASH)
@@ -40,7 +44,7 @@
 #include "ash/shell.h"
 #include "ash/wm/custom_frame_view_ash.h"
 #include "ash/wm/panels/panel_frame_view.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_settings.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
@@ -96,7 +100,6 @@ void CreateIconAndSetRelaunchDetails(
       shortcut_info.extension_id,
       shortcut_info.profile_path);
 
-  // TODO(benwells): Change this to use app_host.exe.
   base::FilePath chrome_exe;
   if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
      NOTREACHED();
@@ -156,6 +159,9 @@ NativeAppWindowViews::~NativeAppWindowViews() {
 
 void NativeAppWindowViews::InitializeDefaultWindow(
     const ShellWindow::CreateParams& create_params) {
+  std::string app_name =
+      web_app::GenerateApplicationNameFromExtensionId(extension()->id());
+
   views::Widget::InitParams init_params(views::Widget::InitParams::TYPE_WINDOW);
   init_params.delegate = this;
   init_params.remove_standard_frame = ShouldUseChromeStyleFrame();
@@ -168,6 +174,14 @@ void NativeAppWindowViews::InitializeDefaultWindow(
       window_bounds.x() != INT_MIN && window_bounds.y() != INT_MIN;
   if (position_specified && !window_bounds.IsEmpty())
     init_params.bounds = window_bounds;
+
+#if defined(OS_LINUX)
+  // Set up a custom WM_CLASS for app windows. This allows task switchers in
+  // X11 environments to distinguish them from main browser windows.
+  init_params.wm_class_name = web_app::GetWMClassFromAppName(app_name);
+  init_params.wm_class_class = ShellIntegrationLinux::GetProgramClassName();
+#endif
+
   window_->Init(init_params);
 
   gfx::Rect adjusted_bounds = window_bounds;
@@ -191,11 +205,10 @@ void NativeAppWindowViews::InitializeDefaultWindow(
   }
 
 #if defined(OS_WIN)
-  string16 app_name = UTF8ToWide(
-      web_app::GenerateApplicationNameFromExtensionId(extension()->id()));
+  string16 app_name_wide = UTF8ToWide(app_name);
   HWND hwnd = GetNativeAppWindowHWND();
   ui::win::SetAppIdForWindow(ShellIntegration::GetAppModelIdForProfile(
-      app_name, profile()->GetPath()), hwnd);
+      app_name_wide, profile()->GetPath()), hwnd);
 
   web_app::UpdateShortcutInfoAndIconForApp(
       *extension(), profile(),
@@ -273,7 +286,7 @@ void NativeAppWindowViews::InitializePanelWindow(
                             preferred_size_.width(),
                             preferred_size_.height());
     aura::Window* native_window = GetNativeWindow();
-    native_window->SetProperty(ash::internal::kPanelAttachedKey, false);
+    ash::wm::GetWindowSettings(native_window)->set_panel_attached(false);
     native_window->SetDefaultParentByRootWindow(
         native_window->GetRootWindow(), native_window->GetBoundsInScreen());
     window_->SetBounds(window_bounds);
@@ -400,8 +413,8 @@ bool NativeAppWindowViews::IsAlwaysOnTop() const {
   if (!shell_window_->window_type_is_panel())
     return false;
 #if defined(USE_ASH)
-  return window_->GetNativeWindow()->GetProperty(
-      ash::internal::kPanelAttachedKey);
+  return ash::wm::GetWindowSettings(window_->GetNativeWindow())->
+      panel_attached();
 #else
   return true;
 #endif
@@ -434,6 +447,10 @@ gfx::Point NativeAppWindowViews::GetDialogPosition(const gfx::Size& size) {
   gfx::Size shell_window_size = window_->GetWindowBoundsInScreen().size();
   return gfx::Point(shell_window_size.width() / 2 - size.width() / 2,
                     shell_window_size.height() / 2 - size.height() / 2);
+}
+
+gfx::Size NativeAppWindowViews::GetMaximumDialogSize() {
+  return window_->GetWindowBoundsInScreen().size();
 }
 
 void NativeAppWindowViews::AddObserver(
@@ -734,8 +751,8 @@ bool NativeAppWindowViews::IsDetached() const {
   if (!shell_window_->window_type_is_panel())
     return false;
 #if defined(USE_ASH)
-  return !window_->GetNativeWindow()->GetProperty(
-      ash::internal::kPanelAttachedKey);
+  return !ash::wm::GetWindowSettings(window_->GetNativeWindow())->
+      panel_attached();
 #else
   return false;
 #endif

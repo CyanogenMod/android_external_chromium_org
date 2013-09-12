@@ -36,16 +36,18 @@ class Startup(page_measurement.PageMeasurement):
     # assert options.warm != options.cold, \
     #     "You must specify either --warm or --cold"
     if options.cold:
-      options.clear_sytem_cache_for_browser_and_profile_on_start = True
+      browser_options = options.browser_options
+      browser_options.clear_sytem_cache_for_browser_and_profile_on_start = True
     else:
       self.discard_first_result = True
 
-    options.AppendExtraBrowserArg('--enable-stats-collection-bindings')
+    options.AppendExtraBrowserArgs([
+        '--enable-stats-collection-bindings',
 
-    # Old commandline flags used for reference builds.
-    options.AppendExtraBrowserArg('--dom-automation')
-    options.AppendExtraBrowserArg(
-          '--reduce-security-for-dom-automation-tests')
+        # Old commandline flags used for reference builds.
+        '--dom-automation',
+        '--reduce-security-for-dom-automation-tests'
+    ])
 
   def MeasurePage(self, page, tab, results):
     # TODO(jeremy): Remove references to

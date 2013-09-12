@@ -30,8 +30,6 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/contacts/contact_manager.h"
-#include "chrome/browser/chromeos/cros/cert_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
 #include "chrome/browser/chromeos/extensions/default_app_order.h"
@@ -52,6 +50,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/options/cert_library.h"
 #include "chrome/browser/chromeos/power/brightness_observer.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
 #include "chrome/browser/chromeos/power/peripheral_battery_observer.h"
@@ -253,8 +252,7 @@ namespace internal {
 // destructor will get called if and only if this has been instantiated.
 class DBusServices {
  public:
-  explicit DBusServices(const content::MainFunctionParams& parameters)
-      : network_library_initialized_(false) {
+  explicit DBusServices(const content::MainFunctionParams& parameters) {
     if (!base::chromeos::IsRunningOnChromeOS()) {
       // Override this path on the desktop, so that the user policy key can be
       // stored by the stub SessionManagerClient.
@@ -283,17 +281,6 @@ class DBusServices {
     disks::DiskMountManager::Initialize();
     cryptohome::AsyncMethodCaller::Initialize();
 
-    // Initialize NetworkLibrary only for the browser, unless running tests
-    // (which do their own NetworkLibrary setup with
-    // ScopedStubNetworkLibraryEnabler in InProcessBrowserTest).
-    if (!parameters.ui_task) {
-      const bool use_stub = !base::chromeos::IsRunningOnChromeOS();
-      NetworkLibrary::Initialize(use_stub);
-      network_library_initialized_ = true;
-    }
-
-    // Always initialize these handlers which should not conflict with
-    // NetworkLibrary.
     NetworkHandler::Initialize();
     CertLibrary::Initialize();
 
@@ -324,8 +311,6 @@ class DBusServices {
   ~DBusServices() {
     CertLibrary::Shutdown();
     NetworkHandler::Shutdown();
-    if (network_library_initialized_)
-      NetworkLibrary::Shutdown();
 
     cryptohome::AsyncMethodCaller::Shutdown();
     disks::DiskMountManager::Shutdown();
@@ -341,7 +326,6 @@ class DBusServices {
   }
 
  private:
-  bool network_library_initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(DBusServices);
 };
@@ -620,10 +604,9 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
 
   peripheral_battery_observer_.reset(new PeripheralBatteryObserver());
 
-  // Initialize the network portal detector for Chrome OS. The network
-  // portal detector starts to listen for notifications from
-  // NetworkLibrary about changes in the NetworkManager and initiates
-  // captive portal detection for active networks.
+  // Initialize the network portal detector for Chrome OS. The network portal
+  // detector starts to listen for notifications from NetworkStateHandler and
+  // initiates captive portal detection for active networks.
   NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
   if (NetworkPortalDetector::IsEnabledInCommandLine() && detector) {
     detector->Init();
@@ -699,11 +682,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 
   swap_metrics_.reset();
 
-  // Stops LoginUtils background fetchers. This is needed because IO thread is
-  // going to stop soon after this function. The pending background jobs could
-  // cause it to crash during shutdown.
-  LoginUtils::Get()->StopBackgroundFetchers();
-
   // Stops all in-flight OAuth2 token fetchers before the IO thread stops.
   DeviceOAuth2TokenServiceFactory::Shutdown();
 
@@ -769,7 +747,9 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   AccessibilityManager::Shutdown();
 
   // Let the UserManager and WallpaperManager unregister itself as an observer
-  // of the CrosSettings singleton before it is destroyed.
+  // of the CrosSettings singleton before it is destroyed. This also ensures
+  // that the UserManager has no URLRequest pending (see
+  // http://crbug.com/276659).
   UserManager::Get()->Shutdown();
   WallpaperManager::Get()->Shutdown();
 
@@ -780,12 +760,13 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // Clean up dependency on CrosSettings and stop pending data fetches.
   KioskAppManager::Shutdown();
 
+  // We first call PostMainMessageLoopRun and then destroy UserManager, because
+  // Ash needs to be closed before UserManager is destroyed. Also, on some tests
+  // MergeSessionThrottle::ShouldShowMergeSessionPage gets triggered during
+  // PostMainMessageLoopRun, which also requires UserManager to live (see
+  // http://crbug.com/243364).
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
 
-  // Destroy the UserManager after ash has been destroyed and
-  // ChromeBrowserMainPartsLinux::PostMainMessageLoopRun run.  The latter might
-  // trigger MergeSessionThrottle::ShouldShowMergeSessionPage, which requires
-  // the UserManager to exist.
   UserManager::Destroy();
 }
 

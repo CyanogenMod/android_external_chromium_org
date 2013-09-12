@@ -4,8 +4,9 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_strings.h"
 
-#include "chrome/browser/chromeos/extensions/file_manager/open_with_browser.h"
+#include "chrome/browser/chromeos/file_manager/open_with_browser.h"
 #include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "chrome/common/extensions/extension_l10n_util.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -258,8 +259,6 @@ bool FileBrowserPrivateGetStringsFunction::RunImpl() {
              IDS_FILE_BROWSER_CREATE_FOLDER_SHORTCUT_BUTTON_LABEL);
   SET_STRING("REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL",
              IDS_FILE_BROWSER_REMOVE_FOLDER_SHORTCUT_BUTTON_LABEL);
-  SET_STRING("SHORTCUT_TARGET_UNAVAILABLE",
-             IDS_FILE_BROWSER_SHORTCUT_TARGET_UNAVAILABLE);
   SET_STRING("SHARE_BUTTON_LABEL",
              IDS_FILE_BROWSER_SHARE_BUTTON_LABEL);
 
@@ -525,6 +524,9 @@ bool FileBrowserPrivateGetStringsFunction::RunImpl() {
     board = "unknown";
   }
   dict->SetString(chromeos::system::kMachineInfoBoard, board);
+
+  dict->SetString("UI_LOCALE", extension_l10n_util::CurrentLocaleOrDefault());
+
   return true;
 }
 

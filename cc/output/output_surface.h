@@ -59,7 +59,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
           max_frames_pending(0),
           deferred_gl_initialization(false),
           draw_and_swap_full_viewport_every_frame(false),
-          adjust_deadline_for_parent(true) {}
+          adjust_deadline_for_parent(true),
+          uses_default_gl_framebuffer(true) {}
     bool delegated_rendering;
     int max_frames_pending;
     bool deferred_gl_initialization;
@@ -67,11 +68,16 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
     // This doesn't handle the <webview> case, but once BeginFrame is
     // supported natively, we shouldn't need adjust_deadline_for_parent.
     bool adjust_deadline_for_parent;
+    // Whether this output surface renders to the default OpenGL zero
+    // framebuffer or to an offscreen framebuffer.
+    bool uses_default_gl_framebuffer;
   };
 
   const Capabilities& capabilities() const {
     return capabilities_;
   }
+
+  virtual bool HasExternalStencilTest() const;
 
   // Obtain the 3d context or the software device associated with this output
   // surface. Either of these may return a null pointer, but not both.
@@ -168,7 +174,9 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
   void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                  gfx::Rect viewport);
+                                  gfx::Rect viewport,
+                                  gfx::Rect clip,
+                                  bool valid_for_tile_management);
 
   // virtual for testing.
   virtual base::TimeDelta AlternateRetroactiveBeginFramePeriod();
@@ -191,6 +199,8 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   // check_for_retroactive_begin_frame_pending_ is used to avoid posting
   // redundant checks for a retroactive BeginFrame.
   bool check_for_retroactive_begin_frame_pending_;
+
+  bool external_stencil_test_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

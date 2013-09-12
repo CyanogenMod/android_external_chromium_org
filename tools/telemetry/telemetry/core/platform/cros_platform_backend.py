@@ -40,6 +40,14 @@ class CrosPlatformBackend(platform_backend.PlatformBackend):
     meminfo_contents = self._GetFileContents('/proc/meminfo')
     return proc_util.GetSystemCommitCharge(meminfo_contents)
 
+  def GetCpuStats(self, pid):
+    stats = self._GetFileContents('/proc/%s/stat' % pid).split()
+    return proc_util.GetCpuStats(stats)
+
+  def GetCpuTimestamp(self):
+    timer_list = self._GetFileContents('/proc/timer_list')
+    return proc_util.GetTimestampJiffies(timer_list)
+
   def GetMemoryStats(self, pid):
     status = self._GetFileContents('/proc/%s/status' % pid)
     stats = self._GetFileContents('/proc/%s/stat' % pid).split()
@@ -56,14 +64,13 @@ class CrosPlatformBackend(platform_backend.PlatformBackend):
   def GetChildPids(self, pid):
     """Returns a list of child pids of |pid|."""
     all_process_info = self._cri.ListProcesses()
-    processes = []
-    for pid, _, ppid, state in all_process_info:
-      processes.append((pid, ppid, state))
+    processes = [(curr_pid, curr_ppid, curr_state)
+                 for curr_pid, _, curr_ppid, curr_state in all_process_info]
     return proc_util.GetChildPids(processes, pid)
 
   def GetCommandLine(self, pid):
-    command = self._GetPsOutput(['command'], pid)
-    return command[0] if command else None
+    command = self._GetFileContents('/proc/%s/cmdline' % pid)
+    return command if command else None
 
   def CanFlushIndividualFilesFromSystemCache(self):
     return True

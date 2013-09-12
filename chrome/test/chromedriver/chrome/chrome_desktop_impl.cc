@@ -29,8 +29,9 @@ namespace {
 bool KillProcess(base::ProcessHandle process_id) {
 #if defined(OS_POSIX)
   kill(process_id, SIGKILL);
-  base::Time deadline = base::Time::Now() + base::TimeDelta::FromSeconds(5);
-  while (base::Time::Now() < deadline) {
+  base::TimeTicks deadline =
+      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(5);
+  while (base::TimeTicks::Now() < deadline) {
     pid_t pid = HANDLE_EINTR(waitpid(process_id, NULL, WNOHANG));
     if (pid == process_id)
       return true;
@@ -62,13 +63,11 @@ bool KillProcess(base::ProcessHandle process_id) {
 ChromeDesktopImpl::ChromeDesktopImpl(
     scoped_ptr<DevToolsHttpClient> client,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
-    Log* log,
     base::ProcessHandle process,
     base::ScopedTempDir* user_data_dir,
     base::ScopedTempDir* extension_dir)
     : ChromeImpl(client.Pass(),
-                 devtools_event_listeners,
-                 log),
+                 devtools_event_listeners),
       process_(process),
       quit_(false) {
   if (user_data_dir->IsValid())
@@ -90,9 +89,9 @@ ChromeDesktopImpl::~ChromeDesktopImpl() {
 Status ChromeDesktopImpl::WaitForPageToLoad(const std::string& url,
                                             const base::TimeDelta& timeout,
                                             scoped_ptr<WebView>* web_view) {
-  base::Time deadline = base::Time::Now() + timeout;
+  base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
   std::string id;
-  while (base::Time::Now() < deadline) {
+  while (base::TimeTicks::Now() < deadline) {
     WebViewsInfo views_info;
     Status status = devtools_http_client_->GetWebViewsInfo(&views_info);
     if (status.IsError())
@@ -112,13 +111,13 @@ Status ChromeDesktopImpl::WaitForPageToLoad(const std::string& url,
     return Status(kUnknownError, "page could not be found: " + url);
 
   scoped_ptr<WebView> web_view_tmp(new WebViewImpl(
-      id, GetBuildNo(), devtools_http_client_->CreateClient(id), log_));
+      id, GetBuildNo(), devtools_http_client_->CreateClient(id)));
   Status status = web_view_tmp->ConnectIfNecessary();
   if (status.IsError())
     return status;
 
   status = web_view_tmp->WaitForPendingNavigations(
-      std::string(), deadline - base::Time::Now(), false);
+      std::string(), deadline - base::TimeTicks::Now(), false);
   if (status.IsOk())
     *web_view = web_view_tmp.Pass();
   return status;

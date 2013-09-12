@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "net/base/cache_type.h"
 #include "net/base/net_log.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
@@ -45,7 +46,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
     OPTIMISTIC_OPERATIONS,
   };
 
-  SimpleEntryImpl(const base::FilePath& path,
+  SimpleEntryImpl(net::CacheType cache_type,
+                  const base::FilePath& path,
                   uint64 entry_hash,
                   OperationsMode operations_mode,
                   SimpleBackendImpl* backend,
@@ -177,6 +179,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
                          const CompletionCallback& callback,
                          bool truncate);
 
+  void DoomEntryInternal(const CompletionCallback& callback);
+
   // Called after a SimpleSynchronousEntry has completed CreateEntry() or
   // OpenEntry(). If |in_sync_entry| is non-NULL, creation is successful and we
   // can return |this| SimpleEntryImpl to |*out_entry|. Runs
@@ -214,6 +218,11 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
                               scoped_ptr<SimpleEntryStat> entry_stat,
                               scoped_ptr<int> result);
 
+  // Called after an asynchronous doom completes.
+  void DoomOperationComplete(const CompletionCallback& callback,
+                             State state_to_restore,
+                             int result);
+
   // Called after validating the checksums on an entry. Passes through the
   // original result if successful, propogates the error if the checksum does
   // not validate.
@@ -238,7 +247,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // thread, in all cases. |io_thread_checker_| documents and enforces this.
   base::ThreadChecker io_thread_checker_;
 
-  base::WeakPtr<SimpleBackendImpl> backend_;
+  const base::WeakPtr<SimpleBackendImpl> backend_;
+  const net::CacheType cache_type_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
   const base::FilePath path_;
   const uint64 entry_hash_;
@@ -257,6 +267,8 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   // notify the backend when this entry not used by any callers.
   int open_count_;
 
+  bool doomed_;
+
   State state_;
 
   // When possible, we compute a crc32, for the data in each entry as we read or
@@ -274,8 +286,11 @@ class SimpleEntryImpl : public Entry, public base::RefCounted<SimpleEntryImpl>,
   CheckCrcResult crc_check_state_[kSimpleEntryFileCount];
 
   // The |synchronous_entry_| is the worker thread object that performs IO on
-  // entries. It's owned by this SimpleEntryImpl whenever |operation_running_|
-  // is false (i.e. when an operation is not pending on the worker pool).
+  // entries. It's owned by this SimpleEntryImpl whenever |executing_operation_|
+  // is false (i.e. when an operation is not pending on the worker pool). When
+  // an operation is being executed no one owns the synchronous entry. Therefore
+  // SimpleEntryImpl should not be deleted while an operation is running as that
+  // would leak the SimpleSynchronousEntry.
   SimpleSynchronousEntry* synchronous_entry_;
 
   std::queue<SimpleEntryOperation> pending_operations_;

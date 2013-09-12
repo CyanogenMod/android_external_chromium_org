@@ -19,10 +19,6 @@ namespace aura {
 class Window;
 }
 
-namespace ui {
-class EventHandler;
-}
-
 namespace ash {
 
 namespace internal {
@@ -34,8 +30,7 @@ class WindowSelector;
 // Manages a window selector which displays an overview of all windows and
 // allows selecting a window to activate it.
 class ASH_EXPORT WindowSelectorController
-    : public WindowSelectorDelegate,
-      public aura::WindowObserver {
+    : public WindowSelectorDelegate {
  public:
   WindowSelectorController();
   virtual ~WindowSelectorController();
@@ -54,10 +49,6 @@ class ASH_EXPORT WindowSelectorController
   // released.
   void HandleCycleWindow(WindowSelector::Direction direction);
 
-  // Informs the controller that the Alt key has been released and it can
-  // terminate the existing multi-step cycle.
-  void AltKeyReleased();
-
   // Returns true if window selection mode is active.
   bool IsSelecting();
 
@@ -65,25 +56,10 @@ class ASH_EXPORT WindowSelectorController
   virtual void OnWindowSelected(aura::Window* window) OVERRIDE;
   virtual void OnSelectionCanceled() OVERRIDE;
 
-  // aura::WindowObserver:
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
-
  private:
   friend class internal::WindowSelectorTest;
 
-  // Stores the currently focused window and removes focus from it.
-  void RemoveFocusAndSetRestoreWindow();
-
-  // If |focus|, restores focus to the stored window from
-  // RemoveFocusAndSetRestoreWindow. Resets the stored window to NULL.
-  void ResetFocusRestoreWindow(bool focus);
-
   scoped_ptr<WindowSelector> window_selector_;
-  scoped_ptr<ui::EventHandler> event_handler_;
-
-  // A weak pointer to the window which was focused on entering overview mode.
-  // If overview mode is canceled the focus should be restored to this window.
-  aura::Window* restore_focus_window_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelectorController);
 };

@@ -75,6 +75,10 @@ var WEB_VIEW_EVENTS = {
     evt: CreateEvent('webview.onLoadCommit'),
     fields: ['url', 'isTopLevel']
   },
+  'loadprogress': {
+    evt: CreateEvent('webview.onLoadProgress'),
+    fields: ['url', 'progress']
+  },
   'loadredirect': {
     evt: CreateEvent('webview.onLoadRedirect'),
     fields: ['isTopLevel', 'oldUrl', 'newUrl']
@@ -490,35 +494,43 @@ WebViewInternal.prototype.handleSizeChangedEvent_ =
     function(event, webViewEvent) {
   var node = this.webviewNode_;
 
+  var width = node.offsetWidth;
+  var height = node.offsetHeight;
+
   // Check the current bounds to make sure we do not resize <webview>
   // outside of current constraints.
-  var minWidth = 0;
-  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINWIDTH) &&
-      node[WEB_VIEW_ATTRIBUTE_MINWIDTH]) {
-    minWidth = node[WEB_VIEW_ATTRIBUTE_MINWIDTH];
-  }
   var maxWidth;
   if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MAXWIDTH) &&
       node[WEB_VIEW_ATTRIBUTE_MAXWIDTH]) {
     maxWidth = node[WEB_VIEW_ATTRIBUTE_MAXWIDTH];
   } else {
-    maxWidth = node.offsetWidth;
+    maxWidth = width;
+  }
+
+  var minWidth;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINWIDTH) &&
+      node[WEB_VIEW_ATTRIBUTE_MINWIDTH]) {
+    minWidth = node[WEB_VIEW_ATTRIBUTE_MINWIDTH];
+  } else {
+    minWidth = width;
   }
   if (minWidth > maxWidth) {
     minWidth = maxWidth;
   }
 
-  var minHeight = 0;
-  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINHEIGHT) &&
-      node[WEB_VIEW_ATTRIBUTE_MINHEIGHT]) {
-    minHeight = node[WEB_VIEW_ATTRIBUTE_MINHEIGHT];
-  }
   var maxHeight;
   if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MAXHEIGHT) &&
       node[WEB_VIEW_ATTRIBUTE_MAXHEIGHT]) {
     maxHeight = node[WEB_VIEW_ATTRIBUTE_MAXHEIGHT];
   } else {
-    maxHeight = node.offsetHeight;
+    maxHeight = height;
+  }
+  var minHeight;
+  if (node.hasAttribute(WEB_VIEW_ATTRIBUTE_MINHEIGHT) &&
+      node[WEB_VIEW_ATTRIBUTE_MINHEIGHT]) {
+    minHeight = node[WEB_VIEW_ATTRIBUTE_MINHEIGHT];
+  } else {
+    minHeight = height;
   }
   if (minHeight > maxHeight) {
     minHeight = maxHeight;
@@ -823,7 +835,8 @@ function registerBrowserPluginElement() {
   };
 
   WebViewInternal.BrowserPlugin =
-      DocumentNatives.RegisterElement('browser-plugin', {prototype: proto});
+      DocumentNatives.RegisterElement('browser-plugin', {extends: 'object',
+                                                         prototype: proto});
 
   delete proto.createdCallback;
   delete proto.enteredDocumentCallback;

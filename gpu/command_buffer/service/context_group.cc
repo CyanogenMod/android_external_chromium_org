@@ -77,15 +77,14 @@ static void GetIntegerv(GLenum pname, uint32* var) {
 
 bool ContextGroup::Initialize(
     GLES2Decoder* decoder,
-    const DisallowedFeatures& disallowed_features,
-    const char* allowed_features) {
+    const DisallowedFeatures& disallowed_features) {
   // If we've already initialized the group just add the context.
   if (HaveContexts()) {
     decoders_.push_back(base::AsWeakPtr<GLES2Decoder>(decoder));
     return true;
   }
 
-  if (!feature_info_->Initialize(disallowed_features, allowed_features)) {
+  if (!feature_info_->Initialize(disallowed_features)) {
     LOG(ERROR) << "ContextGroup::Initialize failed because FeatureInfo "
                << "initialization failed.";
     return false;
@@ -128,7 +127,6 @@ bool ContextGroup::Initialize(
   renderbuffer_manager_.reset(new RenderbufferManager(
       memory_tracker_.get(), max_renderbuffer_size, max_samples));
   shader_manager_.reset(new ShaderManager());
-  program_manager_.reset(new ProgramManager(program_cache_));
 
   // Lookup GL things we need to know.
   const GLint kGLES2RequiredMinimumVertexAttribs = 8u;
@@ -234,6 +232,9 @@ bool ContextGroup::Initialize(
        std::min(static_cast<uint32>(kMinVertexUniformVectors * 2),
                 max_vertex_uniform_vectors_);
   }
+
+  program_manager_.reset(new ProgramManager(
+      program_cache_, max_varying_vectors_));
 
   if (!texture_manager_->Initialize()) {
     LOG(ERROR) << "Context::Group::Initialize failed because texture manager "

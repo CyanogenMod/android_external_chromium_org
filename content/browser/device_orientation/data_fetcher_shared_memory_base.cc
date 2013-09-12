@@ -9,11 +9,26 @@
 #include "base/stl_util.h"
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
+#include "content/common/device_motion_hardware_buffer.h"
+#include "content/common/device_orientation/device_orientation_hardware_buffer.h"
 
 namespace content {
 
 namespace {
 const int kPeriodInMilliseconds = 100;
+
+static size_t GetConsumerSharedMemoryBufferSize(ConsumerType consumer_type) {
+  switch (consumer_type) {
+    case CONSUMER_TYPE_MOTION:
+      return sizeof(DeviceMotionHardwareBuffer);
+    case CONSUMER_TYPE_ORIENTATION:
+      return sizeof(DeviceOrientationHardwareBuffer);
+    default:
+      NOTREACHED();
+  }
+  return 0;
+}
+
 }
 
 class DataFetcherSharedMemoryBase::PollingThread : public base::Thread {
@@ -21,7 +36,7 @@ class DataFetcherSharedMemoryBase::PollingThread : public base::Thread {
   PollingThread(const char* name, DataFetcherSharedMemoryBase* fetcher);
   virtual ~PollingThread();
 
-  void AddConsumer(ConsumerType consumer_type);
+  void AddConsumer(ConsumerType consumer_type, void* buffer);
   void RemoveConsumer(ConsumerType consumer_type);
 
   unsigned GetConsumersBitmask() const { return consumers_bitmask_; }
@@ -48,19 +63,19 @@ DataFetcherSharedMemoryBase::PollingThread::~PollingThread() {
 }
 
 void DataFetcherSharedMemoryBase::PollingThread::AddConsumer(
-    ConsumerType consumer_type) {
+    ConsumerType consumer_type, void* buffer) {
   DCHECK(fetcher_);
-  if (!fetcher_->Start(consumer_type))
+  if (!fetcher_->Start(consumer_type, buffer))
     return;
 
   consumers_bitmask_ |= consumer_type;
 
-  if (!timer_)
+  if (!timer_) {
     timer_.reset(new base::RepeatingTimer<PollingThread>());
-
-  timer_->Start(FROM_HERE,
-                base::TimeDelta::FromMilliseconds(kPeriodInMilliseconds),
-                this, &PollingThread::DoPoll);
+    timer_->Start(FROM_HERE,
+                  base::TimeDelta::FromMilliseconds(kPeriodInMilliseconds),
+                  this, &PollingThread::DoPoll);
+  }
 }
 
 void DataFetcherSharedMemoryBase::PollingThread::RemoveConsumer(
@@ -84,7 +99,7 @@ void DataFetcherSharedMemoryBase::PollingThread::DoPoll() {
 // --- end of PollingThread methods
 
 DataFetcherSharedMemoryBase::DataFetcherSharedMemoryBase()
-    :  started_consumers_(0) {
+    : started_consumers_(0) {
 }
 
 DataFetcherSharedMemoryBase::~DataFetcherSharedMemoryBase() {
@@ -104,6 +119,10 @@ bool DataFetcherSharedMemoryBase::StartFetchingDeviceData(
   if (started_consumers_ & consumer_type)
     return true;
 
+  void* buffer = GetSharedMemoryBuffer(consumer_type);
+  if (!buffer)
+    return false;
+
   if (IsPolling()) {
     if (!InitAndStartPollingThreadIfNecessary())
       return false;
@@ -111,9 +130,9 @@ bool DataFetcherSharedMemoryBase::StartFetchingDeviceData(
         FROM_HERE,
         base::Bind(&PollingThread::AddConsumer,
                    base::Unretained(polling_thread_.get()),
-                   consumer_type));
+                   consumer_type, buffer));
   } else {
-    if (!Start(consumer_type))
+    if (!Start(consumer_type, buffer))
       return false;
   }
 
@@ -177,11 +196,15 @@ bool DataFetcherSharedMemoryBase::IsPolling() const {
   return false;
 }
 
-base::SharedMemory* DataFetcherSharedMemoryBase::InitSharedMemory(
-    ConsumerType consumer_type, size_t buffer_size) {
+base::SharedMemory* DataFetcherSharedMemoryBase::GetSharedMemory(
+    ConsumerType consumer_type) {
   SharedMemoryMap::const_iterator it = shared_memory_map_.find(consumer_type);
   if (it != shared_memory_map_.end())
     return it->second;
+
+  size_t buffer_size = GetConsumerSharedMemoryBufferSize(consumer_type);
+  if (buffer_size == 0)
+    return NULL;
 
   scoped_ptr<base::SharedMemory> new_shared_mem(new base::SharedMemory);
   if (new_shared_mem->CreateAndMapAnonymous(buffer_size)) {
@@ -196,10 +219,9 @@ base::SharedMemory* DataFetcherSharedMemoryBase::InitSharedMemory(
   return NULL;
 }
 
-void* DataFetcherSharedMemoryBase::InitSharedMemoryBuffer(
-    ConsumerType consumer_type, size_t buffer_size) {
-  if (base::SharedMemory* shared_memory = InitSharedMemory(consumer_type,
-      buffer_size))
+void* DataFetcherSharedMemoryBase::GetSharedMemoryBuffer(
+    ConsumerType consumer_type) {
+  if (base::SharedMemory* shared_memory = GetSharedMemory(consumer_type))
     return shared_memory->memory();
   return NULL;
 }

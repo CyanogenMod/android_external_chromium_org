@@ -90,6 +90,12 @@ void OnShutdownStarting(ShutdownType type) {
   if (shutdown_type_ != NOT_VALID)
     return;
 
+#if !defined(OS_CHROMEOS)
+  // Start the shutdown tracing. Note that On ChromeOS we have started this
+  // already.
+  chrome::StartShutdownTracing();
+#endif
+
   shutdown_type_ = type;
   // For now, we're only counting the number of renderer processes
   // since we can't safely count the number of plugin processes from this
@@ -263,7 +269,7 @@ void ReadLastShutdownFile(ShutdownType type,
   base::FilePath shutdown_ms_file = GetShutdownMsPath();
   std::string shutdown_ms_str;
   int64 shutdown_ms = 0;
-  if (file_util::ReadFileToString(shutdown_ms_file, &shutdown_ms_str))
+  if (base::ReadFileToString(shutdown_ms_file, &shutdown_ms_str))
     base::StringToInt64(shutdown_ms_str, &shutdown_ms);
   base::DeleteFile(shutdown_ms_file, false);
 

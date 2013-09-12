@@ -35,8 +35,8 @@
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
-#include "ui/base/win/dpi.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/font.h"
 #include "ui/views/controls/menu/native_menu_win.h"
 #include "ui/views/views_delegate.h"
@@ -440,7 +440,7 @@ void BrowserFrameWin::UpdateDWMFrame() {
     if (!IsFullscreen()) {
       gfx::Rect tabstrip_bounds(
           browser_frame_->GetBoundsForTabStrip(browser_view_->tabstrip()));
-      tabstrip_bounds = ui::win::DIPToScreenRect(tabstrip_bounds);
+      tabstrip_bounds = gfx::win::DIPToScreenRect(tabstrip_bounds);
       margins.cyTopHeight = tabstrip_bounds.bottom() + kDWMFrameTopOffset;
     }
   }
@@ -521,14 +521,4 @@ bool BrowserFrame::ShouldLeaveOffsetNearTopBorder() {
       return false;
   }
   return !IsMaximized();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NativeBrowserFrame, public:
-
-// static
-NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
-    BrowserFrame* browser_frame,
-    BrowserView* browser_view) {
-  return new BrowserFrameWin(browser_frame, browser_view);
 }

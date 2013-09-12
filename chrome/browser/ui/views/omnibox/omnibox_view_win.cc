@@ -606,8 +606,7 @@ void OmniboxViewWin::OnTabChanged(const content::WebContents* web_contents) {
 void OmniboxViewWin::Update() {
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
-  if (model()->UpdatePermanentText(
-      controller()->GetToolbarModel()->GetText(true))) {
+  if (model()->UpdatePermanentText()) {
     ScopedFreeze freeze(this, GetTextObjectModel());
 
     // Tweak: if the user had all the text selected, select all the new text.
@@ -959,7 +958,7 @@ void OmniboxViewWin::OnCandidateWindowCountChanged(size_t window_count) {
   }
 }
 
-void OmniboxViewWin::OnTextUpdated(const ui::Range& /*composition_range*/) {
+void OmniboxViewWin::OnTextUpdated(const gfx::Range& /*composition_range*/) {
   if (ignore_ime_messages_)
     return;
   OnAfterPossibleChangeInternal(true);

@@ -30,8 +30,7 @@ using std::vector;
 
 namespace cc {
 
-OutputSurface::OutputSurface(
-    scoped_refptr<ContextProvider> context_provider)
+OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
     : context_provider_(context_provider),
       has_gl_discard_backbuffer_(false),
       has_swap_buffers_complete_callback_(false),
@@ -42,8 +41,8 @@ OutputSurface::OutputSurface(
       needs_begin_frame_(false),
       begin_frame_pending_(false),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false) {
-}
+      check_for_retroactive_begin_frame_pending_(false),
+      external_stencil_test_enabled_(false) {}
 
 OutputSurface::OutputSurface(
     scoped_ptr<cc::SoftwareOutputDevice> software_device)
@@ -57,8 +56,8 @@ OutputSurface::OutputSurface(
       needs_begin_frame_(false),
       begin_frame_pending_(false),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false) {
-}
+      check_for_retroactive_begin_frame_pending_(false),
+      external_stencil_test_enabled_(false) {}
 
 OutputSurface::OutputSurface(
     scoped_refptr<ContextProvider> context_provider,
@@ -74,8 +73,8 @@ OutputSurface::OutputSurface(
       needs_begin_frame_(false),
       begin_frame_pending_(false),
       client_(NULL),
-      check_for_retroactive_begin_frame_pending_(false) {
-}
+      check_for_retroactive_begin_frame_pending_(false),
+      external_stencil_test_enabled_(false) {}
 
 void OutputSurface::InitializeBeginFrameEmulation(
     base::SingleThreadTaskRunner* task_runner,
@@ -220,12 +219,15 @@ void OutputSurface::DidLoseOutputSurface() {
 }
 
 void OutputSurface::SetExternalStencilTest(bool enabled) {
-  client_->SetExternalStencilTest(enabled);
+  external_stencil_test_enabled_ = enabled;
 }
 
 void OutputSurface::SetExternalDrawConstraints(const gfx::Transform& transform,
-                                               gfx::Rect viewport) {
-  client_->SetExternalDrawConstraints(transform, viewport);
+                                               gfx::Rect viewport,
+                                               gfx::Rect clip,
+                                               bool valid_for_tile_management) {
+  client_->SetExternalDrawConstraints(
+      transform, viewport, clip, valid_for_tile_management);
 }
 
 OutputSurface::~OutputSurface() {
@@ -234,9 +236,11 @@ OutputSurface::~OutputSurface() {
   ResetContext3d();
 }
 
-bool OutputSurface::ForcedDrawToSoftwareDevice() const {
-  return false;
+bool OutputSurface::HasExternalStencilTest() const {
+  return external_stencil_test_enabled_;
 }
+
+bool OutputSurface::ForcedDrawToSoftwareDevice() const { return false; }
 
 bool OutputSurface::BindToClient(cc::OutputSurfaceClient* client) {
   DCHECK(client);

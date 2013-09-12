@@ -4,6 +4,8 @@
 
 #include "content/browser/android/browser_media_player_manager.h"
 
+#include "base/command_line.h"
+#include "content/browser/android/browser_demuxer_android.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/android/media_resource_getter_impl.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
@@ -14,9 +16,15 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "media/base/android/media_drm_bridge.h"
+#include "media/base/android/media_player_bridge.h"
+#include "media/base/android/media_source_player.h"
+#include "media/base/media_switches.h"
 
 using media::MediaDrmBridge;
 using media::MediaPlayerAndroid;
+using media::MediaPlayerBridge;
+using media::MediaPlayerManager;
+using media::MediaSourcePlayer;
 
 // Threshold on the number of media players per renderer before we start
 // attempting to release inactive media players.
@@ -39,9 +47,40 @@ BrowserMediaPlayerManager* BrowserMediaPlayerManager::Create(
   return new BrowserMediaPlayerManager(rvh);
 }
 
+#if !defined(GOOGLE_TV)
+// static
+MediaPlayerAndroid* BrowserMediaPlayerManager::CreateMediaPlayer(
+    int player_id,
+    const GURL& url,
+    MediaPlayerHostMsg_Initialize_Type type,
+    const GURL& first_party_for_cookies,
+    bool hide_url_log,
+    MediaPlayerManager* manager,
+    media::DemuxerAndroid* demuxer) {
+  switch (type) {
+    case MEDIA_PLAYER_TYPE_URL: {
+      MediaPlayerBridge* media_player_bridge = new MediaPlayerBridge(
+          player_id, url, first_party_for_cookies, hide_url_log, manager);
+      media_player_bridge->Initialize();
+      return media_player_bridge;
+    }
+
+    case MEDIA_PLAYER_TYPE_MEDIA_SOURCE: {
+      // TODO(scherkus): Use a real ID for |demuxer_client_id| after splitting
+      // demuxer IPC messages into their own group. For now use |player_id|.
+      return new MediaSourcePlayer(player_id, manager, player_id, demuxer);
+    }
+  }
+
+  NOTREACHED();
+  return NULL;
+}
+#endif
+
 BrowserMediaPlayerManager::BrowserMediaPlayerManager(
     RenderViewHost* render_view_host)
     : RenderViewHostObserver(render_view_host),
+      browser_demuxer_(new BrowserDemuxerAndroid(render_view_host)),
       fullscreen_player_id_(-1),
       web_contents_(WebContents::FromRenderViewHost(render_view_host)) {
 }
@@ -62,13 +101,6 @@ bool BrowserMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyMediaPlayer, OnDestroyPlayer)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DestroyAllMediaPlayers,
                         DestroyAllMediaPlayers)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DemuxerReady, OnDemuxerReady)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_ReadFromDemuxerAck,
-                        OnReadFromDemuxerAck)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DurationChanged,
-                        OnDurationChanged)
-    IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_MediaSeekRequestAck,
-                        OnMediaSeekRequestAck)
     IPC_MESSAGE_HANDLER(MediaKeysHostMsg_InitializeCDM,
                         OnInitializeCDM)
     IPC_MESSAGE_HANDLER(MediaKeysHostMsg_GenerateKeyRequest,
@@ -188,11 +220,6 @@ void BrowserMediaPlayerManager::OnVideoSizeChanged(
     video_view_->OnVideoSizeChanged(width, height);
 }
 
-void BrowserMediaPlayerManager::OnReadFromDemuxer(
-    int player_id, media::DemuxerStream::Type type) {
-  Send(new MediaPlayerMsg_ReadFromDemuxer(routing_id(), player_id, type));
-}
-
 void BrowserMediaPlayerManager::RequestMediaResources(int player_id) {
   int num_active_player = 0;
   ScopedVector<MediaPlayerAndroid>::iterator it;
@@ -267,16 +294,6 @@ void BrowserMediaPlayerManager::DestroyAllMediaPlayers() {
     video_view_.reset();
     fullscreen_player_id_ = -1;
   }
-}
-
-void BrowserMediaPlayerManager::OnMediaSeekRequest(
-    int player_id, base::TimeDelta time_to_seek, unsigned seek_request_id) {
-  Send(new MediaPlayerMsg_MediaSeekRequest(
-      routing_id(), player_id, time_to_seek, seek_request_id));
-}
-
-void BrowserMediaPlayerManager::OnMediaConfigRequest(int player_id) {
-  Send(new MediaPlayerMsg_MediaConfigRequest(routing_id(), player_id));
 }
 
 void BrowserMediaPlayerManager::OnProtectedSurfaceRequested(int player_id) {
@@ -372,14 +389,14 @@ void BrowserMediaPlayerManager::OnExitFullscreen(int player_id) {
 void BrowserMediaPlayerManager::OnInitialize(
     int player_id,
     const GURL& url,
-    media::MediaPlayerAndroid::SourceType source_type,
+    MediaPlayerHostMsg_Initialize_Type type,
     const GURL& first_party_for_cookies) {
   RemovePlayer(player_id);
 
   RenderProcessHost* host = render_view_host()->GetProcess();
-  AddPlayer(media::MediaPlayerAndroid::Create(
-      player_id, url, source_type, first_party_for_cookies,
-      host->GetBrowserContext()->IsOffTheRecord(), this));
+  AddPlayer(CreateMediaPlayer(
+      player_id, url, type, first_party_for_cookies,
+      host->GetBrowserContext()->IsOffTheRecord(), this, browser_demuxer_));
 }
 
 void BrowserMediaPlayerManager::OnStart(int player_id) {
@@ -428,29 +445,6 @@ void BrowserMediaPlayerManager::OnDestroyPlayer(int player_id) {
     fullscreen_player_id_ = -1;
 }
 
-void BrowserMediaPlayerManager::OnDemuxerReady(
-    int player_id,
-    const media::DemuxerConfigs& configs) {
-  MediaPlayerAndroid* player = GetPlayer(player_id);
-  if (player)
-    player->DemuxerReady(configs);
-}
-
-void BrowserMediaPlayerManager::OnReadFromDemuxerAck(
-    int player_id,
-    const media::DemuxerData& data) {
-  MediaPlayerAndroid* player = GetPlayer(player_id);
-  if (player)
-    player->ReadFromDemuxerAck(data);
-}
-
-void BrowserMediaPlayerManager::OnMediaSeekRequestAck(
-    int player_id, unsigned seek_request_id) {
-  MediaPlayerAndroid* player = GetPlayer(player_id);
-  if (player)
-    player->OnSeekRequestAck(seek_request_id);
-}
-
 void BrowserMediaPlayerManager::OnInitializeCDM(
     int media_keys_id,
     const std::vector<uint8>& uuid) {
@@ -474,10 +468,17 @@ void BrowserMediaPlayerManager::OnAddKey(int media_keys_id,
                                          const std::vector<uint8>& init_data,
                                          const std::string& session_id) {
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
-  if (drm_bridge) {
-    drm_bridge->AddKey(&key[0], key.size(), &init_data[0], init_data.size(),
-                       session_id);
-  }
+  if (!drm_bridge)
+    return;
+
+  drm_bridge->AddKey(&key[0], key.size(), &init_data[0], init_data.size(),
+                     session_id);
+  // In EME v0.1b MediaKeys lives in the media element. So the |media_keys_id|
+  // is the same as the |player_id|.
+  // TODO(xhwang): Separate |media_keys_id| and |player_id|.
+  MediaPlayerAndroid* player = GetPlayer(media_keys_id);
+  if (player)
+    player->OnKeyAdded();
 }
 
 void BrowserMediaPlayerManager::OnCancelKeyRequest(
@@ -486,13 +487,6 @@ void BrowserMediaPlayerManager::OnCancelKeyRequest(
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (drm_bridge)
     drm_bridge->CancelKeyRequest(session_id);
-}
-
-void BrowserMediaPlayerManager::OnDurationChanged(
-    int player_id, const base::TimeDelta& duration) {
-  MediaPlayerAndroid* player = GetPlayer(player_id);
-  if (player)
-    player->DurationChanged(duration);
 }
 
 void BrowserMediaPlayerManager::AddPlayer(MediaPlayerAndroid* player) {
@@ -513,9 +507,21 @@ void BrowserMediaPlayerManager::RemovePlayer(int player_id) {
 void BrowserMediaPlayerManager::AddDrmBridge(int media_keys_id,
                                              const std::vector<uint8>& uuid) {
   DCHECK(!GetDrmBridge(media_keys_id));
+  // TODO(xhwang/ddorwin): Pass the security level from key system.
+  std::string security_level = "L3";
+  if (CommandLine::ForCurrentProcess()
+          ->HasSwitch(switches::kMediaDrmEnableNonCompositing)) {
+    security_level = "L1";
+  }
+
   scoped_ptr<MediaDrmBridge> drm_bridge(
-      MediaDrmBridge::Create(media_keys_id, uuid, this));
-  DCHECK(drm_bridge) << "failed to create drm bridge. ";
+      MediaDrmBridge::Create(media_keys_id, uuid, security_level, this));
+  if (!drm_bridge) {
+    DVLOG(1) << "failed to create drm bridge.";
+    OnKeyError(media_keys_id, "", media::MediaKeys::kUnknownError, 0);
+    return;
+  }
+
   drm_bridges_.push_back(drm_bridge.release());
 }
 
@@ -534,7 +540,7 @@ void BrowserMediaPlayerManager::OnSetMediaKeys(int player_id,
   MediaPlayerAndroid* player = GetPlayer(player_id);
   MediaDrmBridge* drm_bridge = GetDrmBridge(media_keys_id);
   if (!player || !drm_bridge) {
-    NOTREACHED() << "OnSetMediaKeys(): Player and MediaKeys must be present.";
+    DVLOG(1) << "OnSetMediaKeys(): Player and MediaKeys must be present.";
     return;
   }
   // TODO(qinmin): add the logic to decide whether we should create the

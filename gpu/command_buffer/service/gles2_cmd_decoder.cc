@@ -541,7 +541,6 @@ class GLES2DecoderImpl : public GLES2Decoder {
                           bool offscreen,
                           const gfx::Size& size,
                           const DisallowedFeatures& disallowed_features,
-                          const char* allowed_extensions,
                           const std::vector<int32>& attribs) OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
   virtual void SetSurface(
@@ -2121,7 +2120,6 @@ bool GLES2DecoderImpl::Initialize(
     bool offscreen,
     const gfx::Size& size,
     const DisallowedFeatures& disallowed_features,
-    const char* allowed_extensions,
     const std::vector<int32>& attribs) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::Initialize");
   DCHECK(context->IsCurrent(surface.get()));
@@ -2149,7 +2147,7 @@ bool GLES2DecoderImpl::Initialize(
   context_ = context;
   surface_ = surface;
 
-  if (!group_->Initialize(this, disallowed_features, allowed_extensions)) {
+  if (!group_->Initialize(this, disallowed_features)) {
     LOG(ERROR) << "GpuScheduler::InitializeCommon failed because group "
                << "failed to initialize.";
     group_ = NULL;  // Must not destroy ContextGroup if it is not initialized.
@@ -2483,6 +2481,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     resources.OES_standard_derivatives = derivatives_explicitly_enabled_;
     resources.EXT_frag_depth = frag_depth_explicitly_enabled_;
     resources.EXT_draw_buffers = draw_buffers_explicitly_enabled_;
+    if (!draw_buffers_explicitly_enabled_)
+      resources.MaxDrawBuffers = 1;
   } else {
     resources.OES_standard_derivatives =
         features().oes_standard_derivatives ? 1 : 0;
@@ -2509,15 +2509,17 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
   ShaderTranslatorInterface::GlslImplementationType implementation_type =
       gfx::GetGLImplementation() == gfx::kGLImplementationEGLGLES2 ?
           ShaderTranslatorInterface::kGlslES : ShaderTranslatorInterface::kGlsl;
-  ShaderTranslatorInterface::GlslBuiltInFunctionBehavior function_behavior =
-      workarounds().needs_glsl_built_in_function_emulation ?
-          ShaderTranslatorInterface::kGlslBuiltInFunctionEmulated :
-          ShaderTranslatorInterface::kGlslBuiltInFunctionOriginal;
+  int driver_bug_workarounds = 0;
+  if (workarounds().needs_glsl_built_in_function_emulation)
+    driver_bug_workarounds |= SH_EMULATE_BUILT_IN_FUNCTIONS;
+  if (workarounds().init_gl_position_in_vertex_shader)
+    driver_bug_workarounds |= SH_INIT_GL_POSITION;
 
   ShaderTranslatorCache* cache = ShaderTranslatorCache::GetInstance();
   vertex_translator_ = cache->GetTranslator(
       SH_VERTEX_SHADER, shader_spec, &resources,
-      implementation_type, function_behavior);
+      implementation_type,
+      static_cast<ShCompileOptions>(driver_bug_workarounds));
   if (!vertex_translator_.get()) {
     LOG(ERROR) << "Could not initialize vertex shader translator.";
     Destroy(true);
@@ -2526,7 +2528,8 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
 
   fragment_translator_ = cache->GetTranslator(
       SH_FRAGMENT_SHADER, shader_spec, &resources,
-      implementation_type, function_behavior);
+      implementation_type,
+      static_cast<ShCompileOptions>(driver_bug_workarounds));
   if (!fragment_translator_.get()) {
     LOG(ERROR) << "Could not initialize fragment shader translator.";
     Destroy(true);
@@ -3874,7 +3877,32 @@ void GLES2DecoderImpl::DoDiscardFramebufferEXT(GLenum target,
     }
   }
 
-  glDiscardFramebufferEXT(target, numAttachments, attachments);
+  // If the default framebuffer is bound but we are still rendering to an
+  // FBO, translate attachment names that refer to default framebuffer
+  // channels to corresponding framebuffer attachments.
+  scoped_ptr<GLenum[]> translated_attachments(new GLenum[numAttachments]);
+  for (GLsizei i = 0; i < numAttachments; ++i) {
+    GLenum attachment = attachments[i];
+    if (!framebuffer && GetBackbufferServiceId()) {
+      switch (attachment) {
+        case GL_COLOR_EXT:
+          attachment = GL_COLOR_ATTACHMENT0;
+          break;
+        case GL_DEPTH_EXT:
+          attachment = GL_DEPTH_ATTACHMENT;
+          break;
+        case GL_STENCIL_EXT:
+          attachment = GL_STENCIL_ATTACHMENT;
+          break;
+        default:
+          NOTREACHED();
+          return;
+      }
+    }
+    translated_attachments[i] = attachment;
+  }
+
+  glDiscardFramebufferEXT(target, numAttachments, translated_attachments.get());
 }
 
 void GLES2DecoderImpl::DoEnableVertexAttribArray(GLuint index) {
@@ -8718,7 +8746,7 @@ error::Error GLES2DecoderImpl::HandleGetRequestableExtensionsCHROMIUM(
     const cmds::GetRequestableExtensionsCHROMIUM& c) {
   Bucket* bucket = CreateBucket(c.bucket_id);
   scoped_refptr<FeatureInfo> info(new FeatureInfo());
-  info->Initialize(disallowed_features_, NULL);
+  info->Initialize(disallowed_features_);
   bucket->SetFromString(info->extensions().c_str());
   return error::kNoError;
 }

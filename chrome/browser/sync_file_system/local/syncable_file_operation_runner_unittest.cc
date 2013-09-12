@@ -240,6 +240,7 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
   ResetCallbackStatus();
   file_system_.operation_runner()->Copy(
       URL(kDir), URL("dest-copy"),
+      fileapi::FileSystemOperationRunner::CopyProgressCallback(),
       ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   file_system_.operation_runner()->Move(
       URL(kDir), URL("dest-move"),
@@ -260,6 +261,7 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
   ResetCallbackStatus();
   file_system_.operation_runner()->Copy(
       URL(kDir), URL("dest-copy2"),
+      fileapi::FileSystemOperationRunner::CopyProgressCallback(),
       ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, callback_count_);
@@ -287,16 +289,15 @@ TEST_F(SyncableFileOperationRunnerTest, CopyAndMove) {
 
 TEST_F(SyncableFileOperationRunnerTest, Write) {
   EXPECT_EQ(base::PLATFORM_FILE_OK, file_system_.CreateFile(URL(kFile)));
-  const GURL kBlobURL("blob:foo");
   const std::string kData("Lorem ipsum.");
-  ScopedTextBlob blob(url_request_context_, kBlobURL, kData);
+  ScopedTextBlob blob(url_request_context_, "blob:foo", kData);
 
   sync_status()->StartSyncing(URL(kFile));
 
   ResetCallbackStatus();
   file_system_.operation_runner()->Write(
       &url_request_context_,
-      URL(kFile), kBlobURL, 0, GetWriteCallback(FROM_HERE));
+      URL(kFile), blob.GetBlobDataHandle(), 0, GetWriteCallback(FROM_HERE));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(0, callback_count_);
 
@@ -334,8 +335,7 @@ TEST_F(SyncableFileOperationRunnerTest, QueueAndCancel) {
   EXPECT_EQ(2, callback_count_);
 }
 
-// Test if CopyInForeignFile runs cooperatively with other Sync operations
-// when it is called directly via AsFileSystemOperationImpl.
+// Test if CopyInForeignFile runs cooperatively with other Sync operations.
 TEST_F(SyncableFileOperationRunnerTest, CopyInForeignFile) {
   const std::string kTestData("test data");
 
@@ -386,9 +386,9 @@ TEST_F(SyncableFileOperationRunnerTest, Cancel) {
   fileapi::FileSystemOperationRunner::OperationID id =
       file_system_.operation_runner()->Truncate(
           URL(kFile), 10,
-          ExpectStatus(FROM_HERE, base::PLATFORM_FILE_ERROR_ABORT));
+          ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
   file_system_.operation_runner()->Cancel(
-      id, ExpectStatus(FROM_HERE, base::PLATFORM_FILE_OK));
+      id, ExpectStatus(FROM_HERE, base::PLATFORM_FILE_ERROR_INVALID_OPERATION));
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(2, callback_count_);
 }

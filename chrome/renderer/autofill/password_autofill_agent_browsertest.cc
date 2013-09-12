@@ -23,7 +23,7 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
-using content::PasswordForm;
+using autofill::PasswordForm;
 using WebKit::WebDocument;
 using WebKit::WebElement;
 using WebKit::WebFrame;
@@ -76,6 +76,60 @@ const char kNonVisibleFormHTML[] =
     "    </div>"
     "  </form>"
     "</body>";
+
+const char kEmptyWebpage[] =
+    "<html>"
+    "   <head>"
+    "   </head>"
+    "   <body>"
+    "   </body>"
+    "</html>";
+
+const char kRedirectionWebpage[] =
+    "<html>"
+    "   <head>"
+    "       <meta http-equiv='Content-Type' content='text/html'>"
+    "       <title>Redirection page</title>"
+    "       <script></script>"
+    "   </head>"
+    "   <body>"
+    "       <script type='text/javascript'>"
+    "         function test(){}"
+    "       </script>"
+    "   </body>"
+    "</html>";
+
+const char kSimpleWebpage[] =
+    "<html>"
+    "   <head>"
+    "       <meta charset='utf-8' />"
+    "       <title>Title</title>"
+    "   </head>"
+    "   <body>"
+    "       <form name='LoginTestForm'>"
+    "           <input type='text' id='username'/>"
+    "           <input type='password' id='password'/>"
+    "           <input type='submit' value='Login'/>"
+    "       </form>"
+    "   </body>"
+    "</html>";
+
+const char kWebpageWithDynamicContent[] =
+    "<html>"
+    "   <head>"
+    "       <meta charset='utf-8' />"
+    "       <title>Title</title>"
+    "   </head>"
+    "   <body>"
+    "       <script type='text/javascript'>"
+    "           function addParagraph() {"
+    "             var p = document.createElement('p');"
+    "             document.body.appendChild(p);"
+    "            }"
+    "           window.onload = addParagraph;"
+    "       </script>"
+    "   </body>"
+    "</html>";
 
 }  // namespace
 
@@ -554,7 +608,7 @@ TEST_F(PasswordAutofillAgentTest, SendPasswordFormsTest) {
   const IPC::Message* message = render_thread_->sink()
       .GetFirstMessageMatching(AutofillHostMsg_PasswordFormsRendered::ID);
   EXPECT_TRUE(message);
-  Tuple1<std::vector<content::PasswordForm> > param;
+  Tuple1<std::vector<autofill::PasswordForm> > param;
   AutofillHostMsg_PasswordFormsRendered::Read(message, &param);
   EXPECT_TRUE(param.a.size());
 
@@ -573,6 +627,28 @@ TEST_F(PasswordAutofillAgentTest, SendPasswordFormsTest) {
   EXPECT_TRUE(message);
   AutofillHostMsg_PasswordFormsRendered::Read(message, &param);
   EXPECT_FALSE(param.a.size());
+}
+
+TEST_F(PasswordAutofillAgentTest, SendPasswordFormsTest_Redirection) {
+  render_thread_->sink().ClearMessages();
+  LoadHTML(kEmptyWebpage);
+  EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_PasswordFormsRendered::ID));
+
+  render_thread_->sink().ClearMessages();
+  LoadHTML(kRedirectionWebpage);
+  EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_PasswordFormsRendered::ID));
+
+  render_thread_->sink().ClearMessages();
+  LoadHTML(kSimpleWebpage);
+  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_PasswordFormsRendered::ID));
+
+  render_thread_->sink().ClearMessages();
+  LoadHTML(kWebpageWithDynamicContent);
+  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_PasswordFormsRendered::ID));
 }
 
 }  // namespace autofill

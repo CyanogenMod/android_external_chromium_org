@@ -127,9 +127,10 @@ gfx::Rect DirectRenderer::MoveFromDrawToWindowSpace(
 }
 
 DirectRenderer::DirectRenderer(RendererClient* client,
+                               const LayerTreeSettings* settings,
                                OutputSurface* output_surface,
                                ResourceProvider* resource_provider)
-    : Renderer(client),
+    : Renderer(client, settings),
       output_surface_(output_surface),
       resource_provider_(resource_provider) {}
 
@@ -194,7 +195,9 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
 }
 
 void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
-                               ContextProvider* offscreen_context_provider) {
+                               ContextProvider* offscreen_context_provider,
+                               float device_scale_factor,
+                               bool allow_partial_swap) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
   UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount",
                        render_passes_in_draw_order->size());
@@ -205,8 +208,9 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   DrawingFrame frame;
   frame.root_render_pass = root_render_pass;
   frame.root_damage_rect =
-      Capabilities().using_partial_swap && client_->AllowPartialSwap() ?
-      root_render_pass->damage_rect : root_render_pass->output_rect;
+      Capabilities().using_partial_swap && allow_partial_swap
+          ? root_render_pass->damage_rect
+          : root_render_pass->output_rect;
   frame.root_damage_rect.Intersect(gfx::Rect(client_->DeviceViewport().size()));
   frame.offscreen_context_provider = offscreen_context_provider;
 
@@ -216,12 +220,12 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   // can leave the window at the wrong size if we never draw and the proper
   // viewport size is never set.
   output_surface_->Reshape(client_->DeviceViewport().size(),
-                           client_->DeviceScaleFactor());
+                           device_scale_factor);
 
   BeginDrawingFrame(&frame);
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
     RenderPass* pass = render_passes_in_draw_order->at(i);
-    DrawRenderPass(&frame, pass);
+    DrawRenderPass(&frame, pass, allow_partial_swap);
 
     for (ScopedPtrVector<CopyOutputRequest>::iterator it =
              pass->copy_requests.begin();
@@ -260,14 +264,33 @@ gfx::RectF DirectRenderer::ComputeScissorRectForRenderPass(
   return render_pass_scissor;
 }
 
+bool DirectRenderer::NeedDeviceClip(const DrawingFrame* frame) const {
+  if (frame->current_render_pass != frame->root_render_pass)
+    return false;
+
+  return !client_->DeviceClip().Contains(client_->DeviceViewport());
+}
+
+gfx::Rect DirectRenderer::DeviceClipRect(const DrawingFrame* frame) const {
+  gfx::Rect device_clip_rect = client_->DeviceClip();
+  if (FlippedFramebuffer())
+    device_clip_rect.set_y(current_surface_size_.height() -
+                           device_clip_rect.bottom());
+  return device_clip_rect;
+}
+
 void DirectRenderer::SetScissorStateForQuad(const DrawingFrame* frame,
                                             const DrawQuad& quad) {
   if (quad.isClipped()) {
-    gfx::RectF quad_scissor_rect = quad.clipRect();
-    SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
-  } else {
-    EnsureScissorTestDisabled();
+    SetScissorTestRectInDrawSpace(frame, quad.clipRect());
+    return;
   }
+  if (NeedDeviceClip(frame)) {
+    SetScissorTestRect(DeviceClipRect(frame));
+    return;
+  }
+
+  EnsureScissorTestDisabled();
 }
 
 void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
@@ -286,29 +309,40 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
   }
 
   *should_skip_quad = false;
-  SetScissorTestRect(MoveFromDrawToWindowSpace(quad_scissor_rect));
+  SetScissorTestRectInDrawSpace(frame, quad_scissor_rect);
+}
+
+void DirectRenderer::SetScissorTestRectInDrawSpace(const DrawingFrame* frame,
+                                                   gfx::RectF draw_space_rect) {
+  gfx::Rect window_space_rect = MoveFromDrawToWindowSpace(draw_space_rect);
+  if (NeedDeviceClip(frame))
+    window_space_rect.Intersect(DeviceClipRect(frame));
+  SetScissorTestRect(window_space_rect);
 }
 
 void DirectRenderer::FinishDrawingQuadList() {}
 
 void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
-                                    const RenderPass* render_pass) {
+                                    const RenderPass* render_pass,
+                                    bool allow_partial_swap) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawRenderPass");
   if (!UseRenderPass(frame, render_pass))
     return;
 
   bool using_scissor_as_optimization =
-      Capabilities().using_partial_swap && client_->AllowPartialSwap();
+      Capabilities().using_partial_swap && allow_partial_swap;
   gfx::RectF render_pass_scissor;
 
   if (using_scissor_as_optimization) {
     render_pass_scissor = ComputeScissorRectForRenderPass(frame);
-    SetScissorTestRect(MoveFromDrawToWindowSpace(render_pass_scissor));
+    SetScissorTestRectInDrawSpace(frame, render_pass_scissor);
   }
 
   if (frame->current_render_pass != frame->root_render_pass ||
-      client_->ShouldClearRootRenderPass()) {
-    if (!using_scissor_as_optimization)
+      settings_->should_clear_root_render_pass) {
+    if (NeedDeviceClip(frame))
+      SetScissorTestRect(DeviceClipRect(frame));
+    else if (!using_scissor_as_optimization)
       EnsureScissorTestDisabled();
     ClearFramebuffer(frame);
   }
@@ -373,7 +407,7 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
 
 bool DirectRenderer::HaveCachedResourcesForRenderPassId(RenderPass::Id id)
     const {
-  if (!Settings().cache_render_pass_contents)
+  if (!settings_->cache_render_pass_contents)
     return false;
 
   CachedResource* texture = render_pass_textures_.get(id);

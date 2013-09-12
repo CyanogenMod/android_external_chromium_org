@@ -11,7 +11,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_types.h"
-#include "components/autofill/content/browser/autocheckout_steps.h"
 #include "components/autofill/core/browser/form_structure.h"
 
 class GURL;
@@ -36,7 +35,6 @@ class AutofillDialogController {
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const DialogType dialog_type,
       const base::Callback<void(const FormStructure*,
                                 const std::string&)>& callback);
 
@@ -52,23 +50,6 @@ class AutofillDialogController {
   // Called when the tab hosting this dialog is activated by a user gesture.
   // Used to trigger a refresh of the user's Wallet data.
   virtual void TabActivated() = 0;
-
-  // Adds a step in the flow to the Autocheckout UI.
-  virtual void AddAutocheckoutStep(AutocheckoutStepType step_type) = 0;
-
-  // Updates the status of a step in the Autocheckout UI.
-  virtual void UpdateAutocheckoutStep(
-      AutocheckoutStepType step_type,
-      AutocheckoutStepStatus step_status) = 0;
-
-  // Called when there is an error in an active Autocheckout flow.
-  virtual void OnAutocheckoutError() = 0;
-
-  // Called when an Autocheckout flow completes successfully.
-  virtual void OnAutocheckoutSuccess() = 0;
-
-  // Returns the dialog type.
-  virtual DialogType GetDialogType() const = 0;
 };
 
 }  // namespace autofill

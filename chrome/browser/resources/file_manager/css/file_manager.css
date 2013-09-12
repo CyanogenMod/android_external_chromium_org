@@ -2,6 +2,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+/* The order of z-index:
+ * - 2: drag-selection-bodrder
+ * - 3: preview-panel
+ * - 500: scrollbar
+ * - 500: splitter
+ * - 550: autocomplete-suggestions
+ * - 600: menus
+ * - 600: tooltip
+ * - 1000: preview thumbnail popup
+ * - 1000: overlay panel (ie. image editor)
+ */
+
 /* Special attribute used in HTML to hide elements. */
 body[type='folder'] [invisibleif~='folder'],
 body[type='upload-folder'] [invisibleif~='upload-folder'],
@@ -158,6 +170,12 @@ body {
   display: -webkit-box;
   overflow: hidden;
   position: relative;
+}
+
+/* The style applied when a modal dialog box overlap the dialog container. */
+.dialog-container.disable-header-drag .dialog-navigation-list-header,
+.dialog-container.disable-header-drag .dialog-header {
+  -webkit-app-region: no-drag;
 }
 
 /* List/grid and preview are inside this container. */
@@ -1082,24 +1100,42 @@ input.rename {
   padding-left: 25px;
 }
 
-.preview-thumbnails > .thumbnail {
+.preview-thumbnails > .img-container {
   background-color: white;
-  border: 1px solid #fff;
+  background-size: 35px 35px;  /* For file icons. */
+  border: 2px solid white;
   box-shadow: 0 1px 1px rgba(80, 80, 80, 0.5);
+  box-sizing: border-box;
+  cursor: pointer;
   height: 35px;
   margin: 0 0 0 -25px;  /* Overlapped images. */
+  overflow: hidden;
   position: relative;
   width: 35px;
 }
 
-.preview-thumbnails > .thumbnail > .img-container {
-  background-size: 35px 35px;
-  border: 1px solid white;
-  box-sizing: border-box;
-  height: 35px;
-  overflow: hidden;
-  position: relative;
-  width: 35px;
+.preview-thumbnails > .popup {
+  -webkit-transform: translate(0, 3px) scale(0.95);
+  background-color: #f2f2f2;
+  border: 2px solid #fff;
+  bottom: 8px;
+  box-shadow: 0 0 0 1px #F0F0F0,
+              0 0 0 2px #D0D0D0,
+              2px 2px 6px rgba(0, 0, 0, 0.2);
+  display: -webkit-flex;
+  left: -8px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 180ms ease-in 300ms,
+              -webkit-transform 180ms ease-in 300ms;
+  z-index: 1000;
+}
+
+.preview-thumbnails.has-zoom:hover > .popup {
+  -webkit-transform: translate(0, 0) scale(1.0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 @-webkit-keyframes fadeIn {
@@ -1120,37 +1156,13 @@ input.rename {
   }
 }
 
-.preview-thumbnails > .popup {
-  -webkit-transform: translate(0, 3px) scale(0.95);
-  background-color: #f2f2f2;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px #F0F0F0,
-              0 0 0 2px #D0D0D0,
-              2px 2px 6px rgba(0, 0, 0, 0.2);
-  margin: 6px 0 0 -40px;
-  opacity: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
+.preview-thumbnails img {
+  -webkit-animation: fadeIn 180ms ease-in-out;
 }
 
 .preview-thumbnails > .popup > img {
+  -webkit-flex: 1 1 0;
   -webkit-user-drag: none;
-}
-
-.preview-thumbnails > * {
-  transition: all 180ms ease-in;
-  transition-delay: 300ms;
-}
-
-.preview-thumbnails.has-zoom:hover > .popup {
-  -webkit-transform: translate(0, 0) scale(1.0);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.preview-thumbnails.has-zoom:hover > .thumbnail {
-  opacity: 0;
 }
 
 /* Table splitter element */
@@ -1746,7 +1758,7 @@ list.autocomplete-suggestions {
   padding: 5px 0;
   position: fixed;
   width: 300px !important; /* This overrides the value specified by script. */
-  z-index: 3;
+  z-index: 550;
 }
 
 list.autocomplete-suggestions > li {
@@ -1858,8 +1870,12 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
 }
 
 #suggest-app-dialog #webview-container {
-  border-bottom: solid 2px #bbb;
-  border-top: solid 2px #bbb;
+  border-bottom: solid 1px #bbb;
+  border-top: solid 1px #bbb;
+}
+
+#suggest-app-dialog #webview-container:not(.loaded) webview {
+  visibility: hidden;
 }
 
 #suggest-app-dialog .cr-dialog-buttons,
@@ -1941,4 +1957,34 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
 .share-dialog-frame .cr-dialog-text,
 .share-dialog-frame .cr-dialog-buttons {
   display: none;
+}
+
+/* Progress center */
+
+#progress-center {
+  background-color: #ddd;
+  display: -webkit-flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.progress-center-item {
+  border-bottom: 1px solid #ccc;
+  padding: 8px 9px 8px 8px;
+}
+
+.progress-center-item-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.progress-center-item-progress-frame {
+  border: 1px solid #aaa;
+  height: 8px;
+  width: 100%;
+}
+
+.progress-center-item-progress-bar {
+  background-color: #aaa;
+  height: 100%;
 }

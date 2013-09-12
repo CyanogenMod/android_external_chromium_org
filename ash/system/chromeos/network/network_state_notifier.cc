@@ -16,6 +16,7 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -28,6 +29,7 @@ using chromeos::NetworkConnectionHandler;
 using chromeos::NetworkHandler;
 using chromeos::NetworkState;
 using chromeos::NetworkStateHandler;
+using chromeos::NetworkTypePattern;
 
 namespace {
 
@@ -43,7 +45,7 @@ string16 GetConnectErrorString(const std::string& error_name) {
   if (error_name == NetworkConnectionHandler::kErrorConfigureFailed)
     return l10n_util::GetStringUTF16(
         IDS_CHROMEOS_NETWORK_ERROR_CONFIGURE_FAILED);
-  if (error_name == NetworkConnectionHandler::kErrorActivateFailed)
+  if (error_name == ash::network_connect::kErrorActivateFailed)
     return l10n_util::GetStringUTF16(
         IDS_CHROMEOS_NETWORK_ERROR_ACTIVATION_FAILED);
   return string16();
@@ -65,7 +67,7 @@ void ShowErrorNotification(const std::string& notification_id,
           title,
           message,
           icon,
-          ash::NOTIFIER_NETWORK_ERROR,
+          ash::system_notifier::NOTIFIER_NETWORK_ERROR,
           callback));
 }
 
@@ -137,8 +139,7 @@ void NetworkStateNotifier::UpdateCellularOutOfCredits(
   const NetworkState* default_network = handler->DefaultNetwork();
   if (default_network && default_network != cellular)
     return;
-  if (handler->ConnectingNetworkByType(
-          NetworkStateHandler::kMatchTypeNonVirtual) ||
+  if (handler->ConnectingNetworkByType(NetworkTypePattern::NonVirtual()) ||
       NetworkHandler::Get()->network_connection_handler()
           ->HasPendingConnectRequest())
     return;
@@ -188,7 +189,7 @@ void NetworkStateNotifier::UpdateCellularActivating(
           l10n_util::GetStringFUTF16(IDS_NETWORK_CELLULAR_ACTIVATED,
                                      UTF8ToUTF16((cellular->name()))),
           icon,
-          NOTIFIER_NETWORK,
+          system_notifier::NOTIFIER_NETWORK,
           base::Bind(&ash::network_connect::ShowNetworkSettings,
                      cellular->path())));
 }
@@ -243,7 +244,8 @@ void NetworkStateNotifier::ShowConnectErrorNotification(
                 service_path);
 
   std::string network_name =
-      NetworkState::GetNameFromProperties(service_path, shill_properties);
+      chromeos::shill_property_util::GetNameFromProperties(service_path,
+                                                           shill_properties);
   std::string network_error_details;
   shill_properties.GetStringWithoutPathExpansion(
         shill::kErrorDetailsProperty, &network_error_details);

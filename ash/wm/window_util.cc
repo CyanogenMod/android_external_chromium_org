@@ -10,7 +10,6 @@
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/activation_controller.h"
 #include "ash/wm/window_properties.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
@@ -133,26 +132,8 @@ void CenterWindow(aura::Window* window) {
   window->SetBoundsInScreen(center, display);
 }
 
-bool IsWindowPositionManaged(const aura::Window* window) {
-  return window->GetProperty(ash::internal::kWindowPositionManagedKey);
-}
-
-void SetWindowPositionManaged(aura::Window* window, bool managed) {
-  window->SetProperty(ash::internal::kWindowPositionManagedKey, managed);
-}
-
 void SetAnimateToFullscreen(aura::Window* window, bool animate) {
   window->SetProperty(ash::internal::kAnimateToFullscreenKey, animate);
-}
-
-bool HasUserChangedWindowPositionOrSize(const aura::Window* window) {
-  return window->GetProperty(
-      ash::internal::kUserChangedWindowPositionOrSizeKey);
-}
-
-void SetUserHasChangedWindowPositionOrSize(aura::Window* window, bool changed) {
-  window->SetProperty(ash::internal::kUserChangedWindowPositionOrSizeKey,
-                      changed);
 }
 
 const gfx::Rect* GetPreAutoManageWindowBounds(const aura::Window* window) {

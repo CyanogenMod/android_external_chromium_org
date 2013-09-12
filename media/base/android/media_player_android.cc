@@ -63,22 +63,6 @@ void MediaPlayerAndroid::ReleaseMediaResourcesFromManager() {
     manager_->ReleaseMediaResources(player_id_);
 }
 
-void MediaPlayerAndroid::DemuxerReady(const DemuxerConfigs& configs) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::ReadFromDemuxerAck(const DemuxerData& data) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::OnSeekRequestAck(unsigned seek_request_id) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
-void MediaPlayerAndroid::DurationChanged(const base::TimeDelta& duration) {
-  NOTREACHED() << "Unexpected ipc received";
-}
-
 GURL MediaPlayerAndroid::GetUrl() {
   return GURL();
 }
@@ -89,6 +73,11 @@ GURL MediaPlayerAndroid::GetFirstPartyForCookies() {
 
 void MediaPlayerAndroid::SetDrmBridge(MediaDrmBridge* drm_bridge) {
   // Not all players support DrmBridge. Do nothing by default.
+  return;
+}
+
+void MediaPlayerAndroid::OnKeyAdded() {
+  // Not all players care about the decryption key. Do nothing by default.
   return;
 }
 

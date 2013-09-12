@@ -6,27 +6,45 @@
 
 #include <windows.h>
 
+#include "base/hash.h"
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/win_util.h"
-#include "ui/base/win/dpi.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/dpi_win.h"
 
 namespace {
 
-MONITORINFO GetMonitorInfoForMonitor(HMONITOR monitor) {
-  MONITORINFO monitor_info = { 0 };
+MONITORINFOEX GetMonitorInfoForMonitor(HMONITOR monitor) {
+  MONITORINFOEX monitor_info;
+  ZeroMemory(&monitor_info, sizeof(MONITORINFOEX));
   monitor_info.cbSize = sizeof(monitor_info);
   base::win::GetMonitorInfoWrapper(monitor, &monitor_info);
   return monitor_info;
 }
 
-gfx::Display GetDisplay(MONITORINFO& monitor_info) {
-  // TODO(oshima): Implement ID and Observer.
+gfx::Display GetDisplay(MONITORINFOEX& monitor_info) {
+  // TODO(oshima): Implement Observer.
+  int64 id = static_cast<int64>(base::Hash(WideToUTF8(monitor_info.szDevice)));
   gfx::Rect bounds = gfx::Rect(monitor_info.rcMonitor);
-  gfx::Display display(0, bounds);
+  gfx::Display display(id, bounds);
   display.set_work_area(gfx::Rect(monitor_info.rcWork));
-  display.SetScaleAndBounds(ui::win::GetDeviceScaleFactor(), bounds);
+  display.SetScaleAndBounds(gfx::win::GetDeviceScaleFactor(), bounds);
   return display;
+}
+
+BOOL CALLBACK EnumMonitorCallback(HMONITOR monitor,
+                                  HDC hdc,
+                                  LPRECT rect,
+                                  LPARAM data) {
+  std::vector<gfx::Display>* all_displays =
+      reinterpret_cast<std::vector<gfx::Display>*>(data);
+  DCHECK(all_displays);
+
+  MONITORINFOEX monitor_info = GetMonitorInfoForMonitor(monitor);
+  gfx::Display display = GetDisplay(monitor_info);
+  all_displays->push_back(display);
+  return TRUE;
 }
 
 }  // namespace
@@ -40,7 +58,7 @@ ScreenWin::~ScreenWin() {
 }
 
 bool ScreenWin::IsDIPEnabled() {
-  return ui::IsInHighDPIMode();
+  return IsInHighDPIMode();
 }
 
 gfx::Point ScreenWin::GetCursorScreenPoint() {
@@ -64,8 +82,10 @@ int ScreenWin::GetNumDisplays() const {
 }
 
 std::vector<gfx::Display> ScreenWin::GetAllDisplays() const {
-  NOTIMPLEMENTED();
-  return std::vector<gfx::Display>(1, GetPrimaryDisplay());
+  std::vector<gfx::Display> all_displays;
+  EnumDisplayMonitors(NULL, NULL, EnumMonitorCallback,
+                      reinterpret_cast<LPARAM>(&all_displays));
+  return all_displays;
 }
 
 gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
@@ -77,7 +97,7 @@ gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
     return GetPrimaryDisplay();
   }
 
-  MONITORINFO monitor_info;
+  MONITORINFOEX monitor_info;
   monitor_info.cbSize = sizeof(monitor_info);
   base::win::GetMonitorInfoWrapper(
       MonitorFromWindow(window_hwnd, MONITOR_DEFAULTTONEAREST), &monitor_info);
@@ -87,7 +107,8 @@ gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
 gfx::Display ScreenWin::GetDisplayNearestPoint(const gfx::Point& point) const {
   POINT initial_loc = { point.x(), point.y() };
   HMONITOR monitor = MonitorFromPoint(initial_loc, MONITOR_DEFAULTTONEAREST);
-  MONITORINFO mi = {0};
+  MONITORINFOEX mi;
+  ZeroMemory(&mi, sizeof(MONITORINFOEX));
   mi.cbSize = sizeof(mi);
   if (monitor && base::win::GetMonitorInfoWrapper(monitor, &mi)) {
     return GetDisplay(mi);
@@ -97,18 +118,18 @@ gfx::Display ScreenWin::GetDisplayNearestPoint(const gfx::Point& point) const {
 
 gfx::Display ScreenWin::GetDisplayMatching(const gfx::Rect& match_rect) const {
   RECT other_bounds_rect = match_rect.ToRECT();
-  MONITORINFO monitor_info = GetMonitorInfoForMonitor(MonitorFromRect(
+  MONITORINFOEX monitor_info = GetMonitorInfoForMonitor(MonitorFromRect(
       &other_bounds_rect, MONITOR_DEFAULTTONEAREST));
   return GetDisplay(monitor_info);
 }
 
 gfx::Display ScreenWin::GetPrimaryDisplay() const {
-  MONITORINFO mi = GetMonitorInfoForMonitor(
+  MONITORINFOEX mi = GetMonitorInfoForMonitor(
       MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY));
   gfx::Display display = GetDisplay(mi);
   // TODO(kevers|girard): Test if these checks can be reintroduced for high-DIP
   // once more of the app is DIP-aware.
-  if (!ui::IsInHighDPIMode()) {
+  if (!IsInHighDPIMode()) {
     DCHECK_EQ(GetSystemMetrics(SM_CXSCREEN), display.size().width());
     DCHECK_EQ(GetSystemMetrics(SM_CYSCREEN), display.size().height());
   }

@@ -684,8 +684,16 @@ void LauncherView::EndDrag(bool cancel) {
   // Either destroy the temporarily created item - or - make the item visible.
   if (drag_and_drop_item_pinned_ && cancel)
     delegate_->UnpinAppWithID(drag_and_drop_app_id_);
-  else if (drag_and_drop_view)
-    drag_and_drop_view->SetSize(pre_drag_and_drop_size_);
+  else if (drag_and_drop_view) {
+    if (cancel) {
+      // When a hosted drag gets canceled, the item can remain in the same slot
+      // and it might have moved within the bounds. In that case the item need
+      // to animate back to its correct location.
+      AnimateToIdealBounds();
+    } else {
+      drag_and_drop_view->SetSize(pre_drag_and_drop_size_);
+    }
+  }
 
   drag_and_drop_launcher_id_ = 0;
 }
@@ -805,7 +813,7 @@ void LauncherView::CalculateIdealBounds(IdealBounds* bounds) {
 
   // Create Space for the overflow button
   if (show_overflow && ash::switches::UseAlternateShelfLayout() &&
-      last_visible_index_ > 0)
+      last_visible_index_ > 0 && last_visible_index_ < last_button_index)
     --last_visible_index_;
   for (int i = 0; i < view_model_->view_size(); ++i) {
     bool visible = i <= last_visible_index_ || i > last_hidden_index_;
@@ -821,7 +829,8 @@ void LauncherView::CalculateIdealBounds(IdealBounds* bounds) {
     if (last_visible_index_ == -1) {
       x = shelf->SelectValueForShelfAlignment(inset, 0, 0, inset);
       y = shelf->SelectValueForShelfAlignment(0, inset, inset, 0);
-    } else if (last_visible_index_ == last_button_index) {
+    } else if (last_visible_index_ == last_button_index
+        && !ash::switches::UseAlternateShelfLayout()) {
       x = view_model_->ideal_bounds(last_visible_index_).x();
       y = view_model_->ideal_bounds(last_visible_index_).y();
     } else {
@@ -1175,7 +1184,7 @@ void LauncherView::FinalizeRipOffDrag(bool cancel) {
 
 LauncherView::RemovableState LauncherView::RemovableByRipOff(int index) {
   LauncherItemType type = model_->items()[index].type;
-  if (type == TYPE_APP_LIST)
+  if (type == TYPE_APP_LIST || !delegate_->CanPin())
     return NOT_REMOVABLE;
   std::string app_id =
       delegate_->GetAppIDForLauncherID(model_->items()[index].id);
@@ -1517,7 +1526,6 @@ void LauncherView::PointerPressedOnButton(views::View* view,
   if (drag_view_)
     return;
 
-  tooltip_->Close();
   int index = view_model_->GetIndexOfView(view);
   if (index == -1)
     return;
@@ -1604,8 +1612,6 @@ void LauncherView::ButtonPressed(views::Button* sender,
   // Do not handle mouse release during drag.
   if (dragging())
     return;
-
-  tooltip_->Close();
 
   if (sender == overflow_button_) {
     ToggleOverflowBubble();
@@ -1696,8 +1702,6 @@ void LauncherView::ShowContextMenuForView(views::View* source,
       model_->items()[view_index].type == TYPE_APP_LIST) {
     view_index = -1;
   }
-
-  tooltip_->Close();
 
   if (view_index == -1) {
     Shell::GetInstance()->ShowContextMenu(point, source_type);

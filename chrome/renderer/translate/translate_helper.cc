@@ -195,7 +195,7 @@ bool TranslateHelper::ExecuteScriptAndGetBoolResult(const std::string& script,
   if (!main_frame)
     return fallback;
 
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   WebVector<v8::Local<v8::Value> > results;
   WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
   main_frame->executeScriptInIsolatedWorld(
@@ -218,7 +218,7 @@ std::string TranslateHelper::ExecuteScriptAndGetStringResult(
   if (!main_frame)
     return std::string();
 
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   WebVector<v8::Local<v8::Value> > results;
   WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
   main_frame->executeScriptInIsolatedWorld(
@@ -245,7 +245,7 @@ double TranslateHelper::ExecuteScriptAndGetDoubleResult(
   if (!main_frame)
     return 0.0;
 
-  v8::HandleScope handle_scope;
+  v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   WebVector<v8::Local<v8::Value> > results;
   WebScriptSource source = WebScriptSource(ASCIIToUTF16(script));
   main_frame->executeScriptInIsolatedWorld(
@@ -391,6 +391,7 @@ void TranslateHelper::CheckTranslateStatus() {
 
   // First check if there was an error.
   if (HasTranslationFailed()) {
+    // TODO(toyoshim): Check |errorCode| of translate.js and notify it here.
     NotifyBrowserTranslationFailed(TranslateErrors::TRANSLATION_ERROR);
     return;  // There was an error.
   }

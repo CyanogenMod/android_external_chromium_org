@@ -6,10 +6,13 @@
 
 namespace content {
 
-bool WebCryptoImpl::digestInternal(
+void WebCryptoImpl::Init() {
+}
+
+bool WebCryptoImpl::DigestInternal(
     const WebKit::WebCryptoAlgorithm& algorithm,
     const unsigned char* data,
-    size_t data_size,
+    unsigned data_size,
     WebKit::WebArrayBuffer* buffer) {
   // TODO(bryaneyler): Placeholder for OpenSSL implementation.
   // Issue http://crbug.com/267888.

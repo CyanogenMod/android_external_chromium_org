@@ -71,6 +71,7 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_urls.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/renderer_resources.h"
@@ -1301,7 +1302,17 @@ bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(
 
 bool ChromeContentRendererClient::ShouldReportDetailedMessageForSource(
     const base::string16& source) const {
-  return GURL(source).SchemeIs(extensions::kExtensionScheme);
+  return extensions::IsSourceFromAnExtension(source);
+}
+
+bool ChromeContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
+  // SiteIsolationPolicy is off by default. We would like to activate cross-site
+  // document blocking (for UMA data collection) for normal renderer processes
+  // running a normal web page from the Internet. We only turn on
+  // SiteIsolationPolicy for a renderer process that does not have the extension
+  // flag on.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  return !command_line->HasSwitch(switches::kExtensionProcess);
 }
 
 }  // namespace chrome

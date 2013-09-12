@@ -27,8 +27,6 @@ namespace {
 
 class SoftwareRendererTest : public testing::Test, public RendererClient {
  public:
-  SoftwareRendererTest() : should_clear_root_render_pass_(true) {}
-
   void InitializeRenderer(
       scoped_ptr<SoftwareOutputDevice> software_output_device) {
     output_surface_ = FakeOutputSurface::CreateSoftware(
@@ -37,7 +35,7 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
 
     resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
     renderer_ = SoftwareRenderer::Create(
-        this, output_surface_.get(), resource_provider());
+        this, &settings_, output_surface_.get(), resource_provider());
   }
 
   ResourceProvider* resource_provider() const {
@@ -50,41 +48,23 @@ class SoftwareRendererTest : public testing::Test, public RendererClient {
     viewport_ = viewport;
   }
 
-  void set_should_clear_root_render_pass(bool clear_root_render_pass) {
-    should_clear_root_render_pass_ = clear_root_render_pass;
-  }
-
   // RendererClient implementation.
   virtual gfx::Rect DeviceViewport() const OVERRIDE {
     return viewport_;
   }
-  virtual float DeviceScaleFactor() const OVERRIDE {
-    return 1.f;
-  }
-  virtual const LayerTreeSettings& Settings() const OVERRIDE {
-    return settings_;
-  }
+  virtual gfx::Rect DeviceClip() const OVERRIDE { return DeviceViewport(); }
   virtual void SetFullRootLayerDamage() OVERRIDE {}
-  virtual bool HasImplThread() const OVERRIDE { return false; }
-  virtual bool ShouldClearRootRenderPass() const OVERRIDE {
-    return should_clear_root_render_pass_;
-  }
   virtual CompositorFrameMetadata MakeCompositorFrameMetadata() const OVERRIDE {
     return CompositorFrameMetadata();
   }
-  virtual bool AllowPartialSwap() const OVERRIDE {
-    return true;
-  }
-  virtual bool ExternalStencilTestEnabled() const OVERRIDE { return false; }
 
  protected:
+  LayerTreeSettings settings_;
   FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<FakeOutputSurface> output_surface_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<SoftwareRenderer> renderer_;
   gfx::Rect viewport_;
-  LayerTreeSettings settings_;
-  bool should_clear_root_render_pass_;
 };
 
 TEST_F(SoftwareRendererTest, SolidColorQuad) {
@@ -115,7 +95,9 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
 
   RenderPassList list;
   list.push_back(root_render_pass.PassAs<RenderPass>());
-  renderer()->DrawFrame(&list, NULL);
+
+  float device_scale_factor = 1.f;
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
 
   SkBitmap output;
   output.setConfig(SkBitmap::kARGB_8888_Config,
@@ -143,10 +125,12 @@ TEST_F(SoftwareRendererTest, TileQuad) {
 
   ResourceProvider::ResourceId resource_yellow =
       resource_provider()->CreateResource(
-          outer_size, GL_RGBA, ResourceProvider::TextureUsageAny);
+          outer_size, GL_RGBA, GL_CLAMP_TO_EDGE,
+          ResourceProvider::TextureUsageAny);
   ResourceProvider::ResourceId resource_cyan =
       resource_provider()->CreateResource(
-          inner_size, GL_RGBA, ResourceProvider::TextureUsageAny);
+          inner_size, GL_RGBA, GL_CLAMP_TO_EDGE,
+          ResourceProvider::TextureUsageAny);
 
   SkBitmap yellow_tile;
   yellow_tile.setConfig(
@@ -202,7 +186,9 @@ TEST_F(SoftwareRendererTest, TileQuad) {
 
   RenderPassList list;
   list.push_back(root_render_pass.PassAs<RenderPass>());
-  renderer()->DrawFrame(&list, NULL);
+
+  float device_scale_factor = 1.f;
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
 
   SkBitmap output;
   output.setConfig(SkBitmap::kARGB_8888_Config,
@@ -229,7 +215,8 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
 
   ResourceProvider::ResourceId resource_cyan =
       resource_provider()->CreateResource(
-          tile_size, GL_RGBA, ResourceProvider::TextureUsageAny);
+          tile_size, GL_RGBA, GL_CLAMP_TO_EDGE,
+          ResourceProvider::TextureUsageAny);
 
   SkBitmap cyan_tile;  // The lowest five rows are yellow.
   cyan_tile.setConfig(
@@ -269,7 +256,9 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
 
   RenderPassList list;
   list.push_back(root_render_pass.PassAs<RenderPass>());
-  renderer()->DrawFrame(&list, NULL);
+
+  float device_scale_factor = 1.f;
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
 
   SkBitmap output;
   output.setConfig(SkBitmap::kARGB_8888_Config,
@@ -299,9 +288,11 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
 }
 
 TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
+  float device_scale_factor = 1.f;
   gfx::Rect viewport_rect(0, 0, 100, 100);
   set_viewport(viewport_rect);
-  set_should_clear_root_render_pass(false);
+
+  settings_.should_clear_root_render_pass = false;
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
 
   RenderPassList list;
@@ -319,7 +310,7 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   AddQuad(root_clear_pass, viewport_rect, SK_ColorGREEN);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL);
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   EXPECT_EQ(SK_ColorGREEN, output.getColor(0, 0));
@@ -338,7 +329,7 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
   AddQuad(root_smaller_pass, smaller_rect, SK_ColorMAGENTA);
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL);
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   // If we didn't clear, the borders should still be green.
@@ -353,6 +344,7 @@ TEST_F(SoftwareRendererTest, ShouldClearRootRenderPass) {
 }
 
 TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
+  float device_scale_factor = 1.f;
   gfx::Rect viewport_rect(0, 0, 100, 100);
   set_viewport(viewport_rect);
   InitializeRenderer(make_scoped_ptr(new SoftwareOutputDevice));
@@ -384,7 +376,7 @@ TEST_F(SoftwareRendererTest, RenderPassVisibleRect) {
   root_clear_pass->quad_list[0]->visible_rect = interior_visible_rect;
 
   renderer()->DecideRenderPassAllocationsForFrame(list);
-  renderer()->DrawFrame(&list, NULL);
+  renderer()->DrawFrame(&list, NULL, device_scale_factor, true);
   renderer()->GetFramebufferPixels(output.getPixels(), viewport_rect);
 
   EXPECT_EQ(SK_ColorGREEN, output.getColor(0, 0));

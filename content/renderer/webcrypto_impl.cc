@@ -8,13 +8,17 @@
 
 namespace content {
 
+WebCryptoImpl::WebCryptoImpl() {
+  Init();
+}
+
 void WebCryptoImpl::digest(
     const WebKit::WebCryptoAlgorithm& algorithm,
     const unsigned char* data,
-    size_t data_size,
+    unsigned data_size,
     WebKit::WebCryptoResult result) {
   WebKit::WebArrayBuffer buffer;
-  if (!digestInternal(algorithm, data, data_size, &buffer)) {
+  if (!DigestInternal(algorithm, data, data_size, &buffer)) {
     result.completeWithError();
   } else {
     result.completeWithBuffer(buffer);

@@ -15,12 +15,10 @@
 #include "ash/display/root_window_transformers.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/root_window_controller.h"
+#include "ash/root_window_settings.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
-#include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
@@ -53,8 +51,6 @@
 #undef RootWindow
 #endif  // defined(USE_X11)
 #endif  // defined(OS_CHROMEOS)
-
-DECLARE_WINDOW_PROPERTY_TYPE(int64);
 
 namespace ash {
 namespace {
@@ -132,9 +128,6 @@ void SetDisplayPropertiesOnHostWindow(aura::RootWindow* root,
 }  // namespace
 
 namespace internal {
-
-DEFINE_WINDOW_PROPERTY_KEY(int64, kDisplayIdKey,
-                           gfx::Display::kInvalidDisplayID);
 
 // A utility class to store/restore focused/active window
 // when the display configuration has changed.
@@ -266,7 +259,7 @@ void DisplayController::Shutdown() {
   for (std::map<int64, aura::RootWindow*>::const_reverse_iterator it =
            root_windows_.rbegin(); it != root_windows_.rend(); ++it) {
     internal::RootWindowController* controller =
-        GetRootWindowController(it->second);
+        internal::GetRootWindowController(it->second);
     DCHECK(controller);
     delete controller;
   }
@@ -328,7 +321,7 @@ void DisplayController::CloseChildWindows() {
            root_windows_.begin(); it != root_windows_.end(); ++it) {
     aura::RootWindow* root_window = it->second;
     internal::RootWindowController* controller =
-        GetRootWindowController(root_window);
+        internal::GetRootWindowController(root_window);
     if (controller) {
       controller->CloseChildWindows();
     } else {
@@ -345,7 +338,7 @@ std::vector<aura::RootWindow*> DisplayController::GetAllRootWindows() {
   for (std::map<int64, aura::RootWindow*>::const_iterator it =
            root_windows_.begin(); it != root_windows_.end(); ++it) {
     DCHECK(it->second);
-    if (GetRootWindowController(it->second))
+    if (internal::GetRootWindowController(it->second))
       windows.push_back(it->second);
   }
   return windows;
@@ -366,7 +359,7 @@ DisplayController::GetAllRootWindowControllers() {
   for (std::map<int64, aura::RootWindow*>::const_iterator it =
            root_windows_.begin(); it != root_windows_.end(); ++it) {
     internal::RootWindowController* controller =
-        GetRootWindowController(it->second);
+        internal::GetRootWindowController(it->second);
     if (controller)
       controllers.push_back(controller);
   }
@@ -492,11 +485,12 @@ void DisplayController::SetPrimaryDisplay(
   DCHECK_NE(primary_root, non_primary_root);
 
   root_windows_[new_primary_display.id()] = primary_root;
-  primary_root->SetProperty(internal::kDisplayIdKey, new_primary_display.id());
+  internal::GetRootWindowSettings(primary_root)->display_id =
+      new_primary_display.id();
 
   root_windows_[old_primary_display.id()] = non_primary_root;
-  non_primary_root->SetProperty(internal::kDisplayIdKey,
-                                old_primary_display.id());
+  internal::GetRootWindowSettings(non_primary_root)->display_id =
+      old_primary_display.id();
 
   primary_display_id = new_primary_display.id();
   GetDisplayManager()->layout_store()->UpdatePrimaryDisplayId(
@@ -568,7 +562,7 @@ bool DisplayController::UpdateWorkAreaOfDisplayNearestWindow(
     const aura::Window* window,
     const gfx::Insets& insets) {
   const aura::RootWindow* root_window = window->GetRootWindow();
-  int64 id = root_window->GetProperty(internal::kDisplayIdKey);
+  int64 id = internal::GetRootWindowSettings(root_window)->display_id;
   // if id is |kInvaildDisplayID|, it's being deleted.
   DCHECK(id != gfx::Display::kInvalidDisplayID);
   return GetDisplayManager()->UpdateWorkAreaOfDisplay(id, insets);
@@ -581,7 +575,7 @@ const gfx::Display& DisplayController::GetDisplayNearestWindow(
   const aura::RootWindow* root_window = window->GetRootWindow();
   if (!root_window)
     return GetPrimaryDisplay();
-  int64 id = root_window->GetProperty(internal::kDisplayIdKey);
+  int64 id = internal::GetRootWindowSettings(root_window)->display_id;
   // if id is |kInvaildDisplayID|, it's being deleted.
   DCHECK(id != gfx::Display::kInvalidDisplayID);
 
@@ -638,8 +632,8 @@ void DisplayController::OnDisplayAdded(const gfx::Display& display) {
     DCHECK(root_windows_.empty());
     primary_display_id = display.id();
     root_windows_[display.id()] = primary_root_window_for_replace_;
-    primary_root_window_for_replace_->SetProperty(
-        internal::kDisplayIdKey, display.id());
+    internal::GetRootWindowSettings(primary_root_window_for_replace_)->
+        display_id = display.id();
     primary_root_window_for_replace_ = NULL;
     const internal::DisplayInfo& display_info =
         GetDisplayManager()->GetDisplayInfo(display.id());
@@ -678,17 +672,18 @@ void DisplayController::OnDisplayRemoved(const gfx::Display& display) {
 
     // Delete the other root instead.
     root_to_delete = root_windows_[primary_display_id];
-    root_to_delete->SetProperty(internal::kDisplayIdKey, display.id());
+    internal::GetRootWindowSettings(root_to_delete)->display_id = display.id();
 
     // Setup primary root.
     root_windows_[primary_display_id] = primary_root;
-    primary_root->SetProperty(internal::kDisplayIdKey, primary_display_id);
+    internal::GetRootWindowSettings(primary_root)->display_id =
+        primary_display_id;
 
     OnDisplayBoundsChanged(
         GetDisplayManager()->GetDisplayForId(primary_display_id));
   }
   internal::RootWindowController* controller =
-      GetRootWindowController(root_to_delete);
+      internal::GetRootWindowController(root_to_delete);
   DCHECK(controller);
   controller->MoveWindowsTo(GetPrimaryRootWindow());
   // Delete most of root window related objects, but don't delete
@@ -778,7 +773,7 @@ aura::RootWindow* DisplayController::AddRootWindowForDisplay(
   // No need to remove RootWindowObserver because
   // the DisplayController object outlives RootWindow objects.
   root_window->AddRootWindowObserver(this);
-  root_window->SetProperty(internal::kDisplayIdKey, display.id());
+  internal::InitRootWindowSettings(root_window)->display_id = display.id();
   root_window->Init();
 
   root_windows_[display.id()] = root_window;

@@ -7,11 +7,16 @@
 
 #include "content/browser/device_orientation/data_fetcher_shared_memory_base.h"
 
-#if defined(OS_MACOSX)
+#if !defined(OS_ANDROID)
 #include "content/common/device_motion_hardware_buffer.h"
 #include "content/common/device_orientation/device_orientation_hardware_buffer.h"
+#endif
 
+#if defined(OS_MACOSX)
 class SuddenMotionSensor;
+#elif defined(OS_WIN)
+#include <SensorsApi.h>
+#include "base/win/scoped_comptr.h"
 #endif
 
 namespace content {
@@ -24,17 +29,30 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   virtual ~DataFetcherSharedMemory();
 
  private:
-
-  virtual bool Start(ConsumerType consumer_type) OVERRIDE;
+  virtual bool Start(ConsumerType consumer_type, void* buffer) OVERRIDE;
   virtual bool Stop(ConsumerType consumer_type) OVERRIDE;
 
+#if !defined(OS_ANDROID)
+  DeviceMotionHardwareBuffer* motion_buffer_;
+  DeviceOrientationHardwareBuffer* orientation_buffer_;
+#endif
 #if defined(OS_MACOSX)
   virtual void Fetch(unsigned consumer_bitmask) OVERRIDE;
   virtual bool IsPolling() const OVERRIDE;
 
-  DeviceMotionHardwareBuffer* motion_buffer_;
-  DeviceOrientationHardwareBuffer* orientation_buffer_;
   scoped_ptr<SuddenMotionSensor> sudden_motion_sensor_;
+#elif defined(OS_WIN)
+  class SensorEventSink;
+  class SensorEventSinkMotion;
+  class SensorEventSinkOrientation;
+
+  void SetBufferAvailableState(ConsumerType consumer_type, bool enabled);
+  bool RegisterForSensor(REFSENSOR_TYPE_ID sensor_type, ISensor** sensor,
+      scoped_refptr<SensorEventSink> event_sink);
+
+  base::win::ScopedComPtr<ISensor> sensor_inclinometer_;
+  base::win::ScopedComPtr<ISensor> sensor_accelerometer_;
+  base::win::ScopedComPtr<ISensor> sensor_gyrometer_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(DataFetcherSharedMemory);

@@ -36,12 +36,14 @@ namespace gpu {
 namespace gles2 {
 
 namespace {
+const uint32 kMaxVaryingVectors = 8;
+
 void ShaderCacheCb(const std::string& key, const std::string& shader) {}
-}  // namespace
+}  // namespace anonymous
 
 class ProgramManagerTest : public testing::Test {
  public:
-  ProgramManagerTest() : manager_(NULL) { }
+  ProgramManagerTest() : manager_(NULL, kMaxVaryingVectors) { }
   virtual ~ProgramManagerTest() {
     manager_.Destroy(false);
   }
@@ -139,7 +141,7 @@ TEST_F(ProgramManagerTest, Program) {
 class ProgramManagerWithShaderTest : public testing::Test {
  public:
   ProgramManagerWithShaderTest()
-      :  manager_(NULL), program_(NULL) {
+      :  manager_(NULL, kMaxVaryingVectors), program_(NULL) {
   }
 
   virtual ~ProgramManagerWithShaderTest() {
@@ -210,6 +212,21 @@ class ProgramManagerWithShaderTest : public testing::Test {
   typedef TestHelper::AttribInfo AttribInfo;
   typedef TestHelper::UniformInfo UniformInfo;
 
+  typedef enum {
+    kVarUniform,
+    kVarVarying,
+    kVarAttribute
+  } VarCategory;
+
+  typedef struct {
+    int type;
+    int size;
+    int precision;
+    int static_use;
+    std::string name;
+    VarCategory category;
+  } VarInfo;
+
   virtual void SetUp() {
     gl_.reset(new StrictMock<gfx::MockGLInterface>());
     ::gfx::GLInterface::SetGLInterface(gl_.get());
@@ -272,16 +289,10 @@ class ProgramManagerWithShaderTest : public testing::Test {
     return (static_cast<bool>(link_status) == expected_link_status);
   }
 
-  Program* SetupVaryingsMatchingTest(bool vertex_varying_declare,
-                                     int vertex_varying_type,
-                                     int vertex_varying_size,
-                                     int vertex_varying_precision,
-                                     int vertex_varying_static_use,
-                                     bool frag_varying_declare,
-                                     int frag_varying_type,
-                                     int frag_varying_size,
-                                     int frag_varying_precision,
-                                     int frag_varying_static_use) {
+  Program* SetupShaderVariableTest(const VarInfo* vertex_variables,
+                                   size_t vertex_variable_size,
+                                   const VarInfo* fragment_variables,
+                                   size_t fragment_variable_size) {
     // Set up shader
     const GLuint kVShaderClientId = 1;
     const GLuint kVShaderServiceId = 11;
@@ -292,10 +303,27 @@ class ProgramManagerWithShaderTest : public testing::Test {
     ShaderTranslator::VariableMap vertex_attrib_map;
     ShaderTranslator::VariableMap vertex_uniform_map;
     ShaderTranslator::VariableMap vertex_varying_map;
-    if (vertex_varying_declare) {
-      vertex_varying_map["a"] = ShaderTranslator::VariableInfo(
-          vertex_varying_type, vertex_varying_size,
-          vertex_varying_precision, vertex_varying_static_use, "a");
+    for (size_t ii = 0; ii < vertex_variable_size; ++ii) {
+      ShaderTranslator::VariableMap* map = NULL;
+      switch (vertex_variables[ii].category) {
+        case kVarAttribute:
+          map = &vertex_attrib_map;
+          break;
+        case kVarUniform:
+          map = &vertex_uniform_map;
+          break;
+        case kVarVarying:
+          map = &vertex_varying_map;
+          break;
+        default:
+          NOTREACHED();
+      }
+      (*map)[vertex_variables[ii].name] =
+          ShaderTranslator::VariableInfo(vertex_variables[ii].type,
+                                         vertex_variables[ii].size,
+                                         vertex_variables[ii].precision,
+                                         vertex_variables[ii].static_use,
+                                         vertex_variables[ii].name);
     }
     ShaderTranslator::NameMap vertex_name_map;
     EXPECT_CALL(vertex_shader_translator, attrib_map())
@@ -311,10 +339,27 @@ class ProgramManagerWithShaderTest : public testing::Test {
     ShaderTranslator::VariableMap frag_attrib_map;
     ShaderTranslator::VariableMap frag_uniform_map;
     ShaderTranslator::VariableMap frag_varying_map;
-    if (frag_varying_declare) {
-      frag_varying_map["a"] = ShaderTranslator::VariableInfo(
-          frag_varying_type, frag_varying_size,
-          frag_varying_precision, frag_varying_static_use, "a");
+    for (size_t ii = 0; ii < fragment_variable_size; ++ii) {
+      ShaderTranslator::VariableMap* map = NULL;
+      switch (fragment_variables[ii].category) {
+        case kVarAttribute:
+          map = &frag_attrib_map;
+          break;
+        case kVarUniform:
+          map = &frag_uniform_map;
+          break;
+        case kVarVarying:
+          map = &frag_varying_map;
+          break;
+        default:
+          NOTREACHED();
+      }
+      (*map)[fragment_variables[ii].name] =
+          ShaderTranslator::VariableInfo(fragment_variables[ii].type,
+                                         fragment_variables[ii].size,
+                                         fragment_variables[ii].precision,
+                                         fragment_variables[ii].static_use,
+                                         fragment_variables[ii].name);
     }
     ShaderTranslator::NameMap frag_name_map;
     EXPECT_CALL(frag_shader_translator, attrib_map())
@@ -1167,9 +1212,12 @@ TEST_F(ProgramManagerWithShaderTest, UniformsPrecisionMismatch) {
 // If a varying has different type in the vertex and fragment
 // shader, linking should fail.
 TEST_F(ProgramManagerWithShaderTest, VaryingTypeMismatch) {
-  Program* program = SetupVaryingsMatchingTest(
-      true, SH_FLOAT_VEC3, 1, SH_PRECISION_MEDIUMP, 1,
-      true, SH_FLOAT_VEC4, 1, SH_PRECISION_MEDIUMP, 1);
+  const VarInfo kVertexVarying =
+      { SH_FLOAT_VEC3, 1, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  const VarInfo kFragmentVarying =
+      { SH_FLOAT_VEC4, 1, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  Program* program = SetupShaderVariableTest(
+      &kVertexVarying, 1, &kFragmentVarying, 1);
 
   EXPECT_TRUE(program->DetectVaryingsMismatch());
   EXPECT_TRUE(LinkAsExpected(program, false));
@@ -1178,9 +1226,12 @@ TEST_F(ProgramManagerWithShaderTest, VaryingTypeMismatch) {
 // If a varying has different array size in the vertex and fragment
 // shader, linking should fail.
 TEST_F(ProgramManagerWithShaderTest, VaryingArraySizeMismatch) {
-  Program* program = SetupVaryingsMatchingTest(
-      true, SH_FLOAT, 2, SH_PRECISION_MEDIUMP, 1,
-      true, SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 1);
+  const VarInfo kVertexVarying =
+      { SH_FLOAT, 2, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  const VarInfo kFragmentVarying =
+      { SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  Program* program = SetupShaderVariableTest(
+      &kVertexVarying, 1, &kFragmentVarying, 1);
 
   EXPECT_TRUE(program->DetectVaryingsMismatch());
   EXPECT_TRUE(LinkAsExpected(program, false));
@@ -1189,9 +1240,12 @@ TEST_F(ProgramManagerWithShaderTest, VaryingArraySizeMismatch) {
 // If a varying has different precision in the vertex and fragment
 // shader, linking should succeed.
 TEST_F(ProgramManagerWithShaderTest, VaryingPrecisionMismatch) {
-  Program* program = SetupVaryingsMatchingTest(
-      true, SH_FLOAT, 2, SH_PRECISION_HIGHP, 1,
-      true, SH_FLOAT, 2, SH_PRECISION_MEDIUMP, 1);
+  const VarInfo kVertexVarying =
+      { SH_FLOAT, 2, SH_PRECISION_HIGHP, 1, "a", kVarVarying };
+  const VarInfo kFragmentVarying =
+      { SH_FLOAT, 2, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  Program* program = SetupShaderVariableTest(
+      &kVertexVarying, 1, &kFragmentVarying, 1);
 
   EXPECT_FALSE(program->DetectVaryingsMismatch());
   EXPECT_TRUE(LinkAsExpected(program, true));
@@ -1200,9 +1254,10 @@ TEST_F(ProgramManagerWithShaderTest, VaryingPrecisionMismatch) {
 // If a varying is statically used in fragment shader but not
 // declared in vertex shader, link should fail.
 TEST_F(ProgramManagerWithShaderTest, VaryingMissing) {
-  Program* program = SetupVaryingsMatchingTest(
-      false, 0, 0, 0, 0,
-      true, SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 1);
+  const VarInfo kFragmentVarying =
+      { SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying };
+  Program* program = SetupShaderVariableTest(
+      NULL, 0, &kFragmentVarying, 1);
 
   EXPECT_TRUE(program->DetectVaryingsMismatch());
   EXPECT_TRUE(LinkAsExpected(program, false));
@@ -1212,11 +1267,61 @@ TEST_F(ProgramManagerWithShaderTest, VaryingMissing) {
 // shader, even if it's not declared in vertex shader, link should
 // succeed.
 TEST_F(ProgramManagerWithShaderTest, InactiveVarying) {
-  Program* program = SetupVaryingsMatchingTest(
-      false, 0, 0, 0, 0,
-      true, SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 0);
+  const VarInfo kFragmentVarying =
+      { SH_FLOAT, 3, SH_PRECISION_MEDIUMP, 0, "a", kVarVarying };
+  Program* program = SetupShaderVariableTest(
+      NULL, 0, &kFragmentVarying, 1);
 
   EXPECT_FALSE(program->DetectVaryingsMismatch());
+  EXPECT_TRUE(LinkAsExpected(program, true));
+}
+
+// Uniforms and attributes are both global variables, thus sharing
+// the same namespace. Any name conflicts should cause link
+// failure.
+TEST_F(ProgramManagerWithShaderTest, AttribUniformNameConflict) {
+  const VarInfo kVertexAttribute =
+      { SH_FLOAT_VEC4, 1, SH_PRECISION_MEDIUMP, 1, "a", kVarAttribute };
+  const VarInfo kFragmentUniform =
+      { SH_FLOAT_VEC4, 1, SH_PRECISION_MEDIUMP, 1, "a", kVarUniform };
+  Program* program = SetupShaderVariableTest(
+      &kVertexAttribute, 1, &kFragmentUniform, 1);
+
+  EXPECT_TRUE(program->DetectGlobalNameConflicts());
+  EXPECT_TRUE(LinkAsExpected(program, false));
+}
+
+// Varyings go over 8 rows.
+TEST_F(ProgramManagerWithShaderTest, TooManyVaryings) {
+  const VarInfo kVertexVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  const VarInfo kFragmentVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  Program* program = SetupShaderVariableTest(
+      kVertexVaryings, 2, kFragmentVaryings, 2);
+
+  EXPECT_FALSE(program->CheckVaryingsPacking());
+  EXPECT_TRUE(LinkAsExpected(program, false));
+}
+
+// Varyings go over 8 rows but some are inactive
+TEST_F(ProgramManagerWithShaderTest, TooManyInactiveVaryings) {
+  const VarInfo kVertexVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 1, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  const VarInfo kFragmentVaryings[] = {
+      { SH_FLOAT_VEC4, 4, SH_PRECISION_MEDIUMP, 0, "a", kVarVarying },
+      { SH_FLOAT_VEC4, 5, SH_PRECISION_MEDIUMP, 1, "b", kVarVarying }
+  };
+  Program* program = SetupShaderVariableTest(
+      kVertexVaryings, 2, kFragmentVaryings, 2);
+
+  EXPECT_TRUE(program->CheckVaryingsPacking());
   EXPECT_TRUE(LinkAsExpected(program, true));
 }
 
@@ -1378,7 +1483,7 @@ class ProgramManagerWithCacheTest : public testing::Test {
 
   ProgramManagerWithCacheTest()
       : cache_(new MockProgramCache()),
-        manager_(cache_.get()),
+        manager_(cache_.get(), kMaxVaryingVectors),
         vertex_shader_(NULL),
         fragment_shader_(NULL),
         program_(NULL) {

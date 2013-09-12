@@ -52,7 +52,8 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       ResourceProvider* resource_provider,
       size_t num_raster_threads,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
-      bool use_map_image);
+      bool use_map_image,
+      size_t max_transfer_buffer_usage_bytes);
   virtual ~TileManager();
 
   const GlobalStateThatImpactsTilePriority& GlobalState() const {
@@ -76,10 +77,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
     return memory_stats_from_last_assign_;
   }
 
-  bool AreTilesRequiredForActivationReady() const {
-    return all_tiles_required_for_activation_have_been_initialized_;
-  }
-
   void InitializeTilesWithResourcesForTesting(
       const std::vector<Tile*>& tiles,
       ResourceProvider* resource_provider) {
@@ -96,6 +93,9 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       bytes_releasable_ += tiles[i]->bytes_consumed_if_allocated();
       ++resources_releasable_;
     }
+  }
+  RasterWorkerPool* RasterWorkerPoolForTesting() {
+    return raster_worker_pool_.get();
   }
 
  protected:
@@ -142,7 +142,6 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
       bool was_canceled);
 
   RasterMode DetermineRasterMode(const Tile* tile) const;
-  void CleanUpUnusedImageDecodeTasks();
   void FreeResourceForTile(Tile* tile, RasterMode mode);
   void FreeResourcesForTile(Tile* tile);
   void FreeUnusedResourcesForTile(Tile* tile);
@@ -165,7 +164,9 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
 
   bool all_tiles_that_need_to_be_rasterized_have_memory_;
   bool all_tiles_required_for_activation_have_memory_;
-  bool all_tiles_required_for_activation_have_been_initialized_;
+
+  size_t memory_required_bytes_;
+  size_t memory_nice_to_have_bytes_;
 
   size_t bytes_releasable_;
   size_t resources_releasable_;
@@ -180,6 +181,9 @@ class CC_EXPORT TileManager : public RasterWorkerPoolClient {
   typedef base::hash_map<uint32_t, RasterWorkerPool::Task> PixelRefTaskMap;
   typedef base::hash_map<int, PixelRefTaskMap> LayerPixelRefTaskMap;
   LayerPixelRefTaskMap image_decode_tasks_;
+
+  typedef base::hash_map<int, int> LayerCountMap;
+  LayerCountMap used_layer_counts_;
 
   RasterTaskCompletionStats update_visible_tiles_stats_;
 

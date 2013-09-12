@@ -8,10 +8,11 @@
 
 #include "ash/ash_constants.h"
 #include "ash/root_window_controller.h"
+#include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/property_util.h"
-#include "ash/wm/window_properties.h"
+#include "ash/wm/window_settings.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/frame_caption_button_container_view.h"
 #include "base/logging.h"  // DCHECK
@@ -74,6 +75,9 @@ const int kThemeFrameImageInsetX = 5;
 const int kActivationCrossfadeDurationMs = 200;
 // Alpha/opacity value for fully-opaque headers.
 const int kFullyOpaque = 255;
+
+// A flag to enable/disable solo window header.
+bool solo_window_header_enabled = true;
 
 // Tiles an image into an area, rounding the top corners. Samples |image|
 // starting |image_inset_x| pixels from the left of the image.
@@ -269,9 +273,15 @@ void FramePainter::Init(
   // itself in OnWindowDestroying() below, or in the destructor if we go away
   // before the window.
   window_->AddObserver(this);
+  wm::GetWindowSettings(window_)->AddObserver(this);
 
   // Solo-window header updates are handled by the workspace controller when
   // this window is added to the desktop.
+}
+
+// static
+void FramePainter::SetSoloWindowHeadersEnabled(bool enabled) {
+  solo_window_header_enabled = enabled;
 }
 
 // static
@@ -311,8 +321,6 @@ int FramePainter::NonClientHitTest(views::NonClientFrameView* view,
 
   if (!expanded_bounds.Contains(point))
     return HTNOWHERE;
-
-  // No avatar button.
 
   // Check the frame first, as we allow a small area overlapping the contents
   // to be used for resize handles.
@@ -383,9 +391,9 @@ bool FramePainter::ShouldUseMinimalHeaderStyle(Themed header_themed) const {
   // - If the user has installed a theme with custom images for the header.
   // - For windows which are not tracked by the workspace code (which are used
   //   for tab dragging).
-  return ((frame_->IsMaximized() || frame_->IsFullscreen()) &&
+  return (frame_->IsMaximized() || frame_->IsFullscreen()) &&
       header_themed == THEMED_NO &&
-      GetTrackedByWorkspace(frame_->GetNativeWindow()));
+      wm::GetWindowSettings(frame_->GetNativeWindow())->tracked_by_workspace();
 }
 
 void FramePainter::PaintHeader(views::NonClientFrameView* view,
@@ -610,19 +618,21 @@ void FramePainter::OnThemeChanged() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// WindowSettings::jObserver overrides:
+void FramePainter::OnTrackedByWorkspaceChanged(aura::Window* window,
+                                               bool old) {
+  // When 'TrackedByWorkspace' changes, we are going to paint the header
+  // differently. Schedule a paint to ensure everything is updated correctly.
+  if (wm::GetWindowSettings(window)->tracked_by_workspace())
+    frame_->non_client_view()->SchedulePaint();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // aura::WindowObserver overrides:
 
 void FramePainter::OnWindowPropertyChanged(aura::Window* window,
                                            const void* key,
                                            intptr_t old) {
-  // When 'kWindowTrackedByWorkspaceKey' changes, we are going to paint the
-  // header differently. Schedule a paint to ensure everything is updated
-  // correctly.
-  if (key == internal::kWindowTrackedByWorkspaceKey &&
-      GetTrackedByWorkspace(window)) {
-    frame_->non_client_view()->SchedulePaint();
-  }
-
   if (key != aura::client::kShowStateKey)
     return;
 
@@ -656,6 +666,7 @@ void FramePainter::OnWindowDestroying(aura::Window* destroying) {
   // Must be removed here and not in the destructor, as the aura::Window is
   // already destroyed when our destructor runs.
   window_->RemoveObserver(this);
+  wm::GetWindowSettings(window_)->RemoveObserver(this);
 
   // If we have two or more windows open and we close this one, we might trigger
   // the solo window appearance for another window.
@@ -715,7 +726,7 @@ int FramePainter::GetHeaderCornerRadius() const {
   // tracked by the workspace code. (Windows which are not tracked by the
   // workspace code are used for tab dragging.)
   bool square_corners = ((frame_->IsMaximized() || frame_->IsFullscreen())) &&
-      GetTrackedByWorkspace(frame_->GetNativeWindow());
+      wm::GetWindowSettings(frame_->GetNativeWindow())->tracked_by_workspace();
   const int kCornerRadius = 2;
   return square_corners ? 0 : kCornerRadius;
 }
@@ -747,15 +758,15 @@ int FramePainter::GetHeaderOpacity(
 }
 
 bool FramePainter::UseSoloWindowHeader() const {
+  if (!solo_window_header_enabled)
+    return false;
   // Don't use transparent headers for panels, pop-ups, etc.
   if (!IsSoloWindowHeaderCandidate(window_))
     return false;
   aura::RootWindow* root = window_->GetRootWindow();
-  if (!root || root->GetProperty(internal::kIgnoreSoloWindowFramePainterPolicy))
-    return false;
   // Don't recompute every time, as it would require many window property
   // lookups.
-  return root->GetProperty(internal::kSoloWindowHeaderKey);
+  return internal::GetRootWindowSettings(root)->solo_window_header;
 }
 
 // static
@@ -794,11 +805,14 @@ void FramePainter::UpdateSoloWindowInRoot(RootWindow* root,
 #endif
   if (!root)
     return;
-  bool old_solo_header = root->GetProperty(internal::kSoloWindowHeaderKey);
+  internal::RootWindowSettings* root_window_settings =
+      internal::GetRootWindowSettings(root);
+  bool old_solo_header = root_window_settings->solo_window_header;
   bool new_solo_header = UseSoloWindowHeaderInRoot(root, ignore_window);
   if (old_solo_header == new_solo_header)
     return;
-  root->SetProperty(internal::kSoloWindowHeaderKey, new_solo_header);
+  root_window_settings->solo_window_header = new_solo_header;
+
   // Invalidate all the window frames in the desktop. There should only be
   // a few.
   std::vector<Window*> windows = GetWindowsForSoloHeaderUpdate(root);

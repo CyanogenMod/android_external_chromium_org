@@ -23,7 +23,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "sync/engine/get_commit_ids_command.h"
+#include "sync/engine/get_commit_ids.h"
 #include "sync/engine/net/server_connection_manager.h"
 #include "sync/engine/process_updates_command.h"
 #include "sync/engine/sync_scheduler_impl.h"
@@ -387,30 +387,26 @@ class SyncerTest : public testing::Test,
                 mock_server_->committed_ids().size());
     // If this test starts failing, be aware other sort orders could be valid.
     for (size_t i = 0; i < expected_positions.size(); ++i) {
+      SCOPED_TRACE(i);
       EXPECT_EQ(1u, expected_positions.count(i));
-      EXPECT_TRUE(expected_positions[i] == mock_server_->committed_ids()[i]);
+      EXPECT_EQ(expected_positions[i], mock_server_->committed_ids()[i]);
     }
   }
 
   void DoTruncationTest(const vector<int64>& unsynced_handle_view,
-                        const vector<syncable::Id>& expected_id_order) {
-    for (size_t limit = expected_id_order.size() + 2; limit > 0; --limit) {
+                        const vector<int64>& expected_handle_order) {
+    for (size_t limit = expected_handle_order.size() + 2; limit > 0; --limit) {
       WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
 
       ModelSafeRoutingInfo routes;
       GetModelSafeRoutingInfo(&routes);
       ModelTypeSet types = GetRoutingInfoTypes(routes);
       sessions::OrderedCommitSet output_set(routes);
-      GetCommitIdsCommand command(&wtrans, types, limit, &output_set);
-      std::set<int64> ready_unsynced_set;
-      command.FilterUnreadyEntries(&wtrans, types,
-                                   ModelTypeSet(), false,
-                                   unsynced_handle_view, &ready_unsynced_set);
-      command.BuildCommitIds(&wtrans, routes, ready_unsynced_set);
-      size_t truncated_size = std::min(limit, expected_id_order.size());
+      GetCommitIds(&wtrans, types, limit, &output_set);
+      size_t truncated_size = std::min(limit, expected_handle_order.size());
       ASSERT_EQ(truncated_size, output_set.Size());
       for (size_t i = 0; i < truncated_size; ++i) {
-        ASSERT_EQ(expected_id_order[i], output_set.GetCommitIdAt(i))
+        ASSERT_EQ(expected_handle_order[i], output_set.GetCommitHandleAt(i))
             << "At index " << i << " with batch size limited to " << limit;
       }
       sessions::OrderedCommitSet::Projection proj;
@@ -418,10 +414,10 @@ class SyncerTest : public testing::Test,
       ASSERT_EQ(truncated_size, proj.size());
       for (size_t i = 0; i < truncated_size; ++i) {
         SCOPED_TRACE(::testing::Message("Projection mismatch with i = ") << i);
-        syncable::Id projected = output_set.GetCommitIdAt(proj[i]);
-        ASSERT_EQ(expected_id_order[proj[i]], projected);
+        int64 projected = output_set.GetCommitHandleAt(proj[i]);
+        ASSERT_EQ(expected_handle_order[proj[i]], projected);
         // Since this projection is the identity, the following holds.
-        ASSERT_EQ(expected_id_order[i], projected);
+        ASSERT_EQ(expected_handle_order[i], projected);
       }
     }
   }
@@ -600,6 +596,7 @@ TEST_F(SyncerTest, GetCommitIdsCommandTruncates) {
   CreateUnsyncedDirectory("E", ids_.MakeLocal("e"));
   CreateUnsyncedDirectory("J", ids_.MakeLocal("j"));
 
+  vector<int64> expected_order;
   {
     WriteTransaction wtrans(FROM_HERE, UNITTEST, directory());
     MutableEntry entry_x(&wtrans, GET_BY_ID, ids_.MakeServer("x"));
@@ -620,24 +617,24 @@ TEST_F(SyncerTest, GetCommitIdsCommandTruncates) {
     entry_w.Put(SERVER_VERSION, 20);
     entry_w.Put(IS_UNAPPLIED_UPDATE, true);  // Fake a conflict.
     entry_j.PutPredecessor(entry_w.Get(ID));
+
+    // The expected order is "x", "b", "c", "d", "e", "j", truncated
+    // appropriately.
+    expected_order.push_back(entry_x.Get(META_HANDLE));
+    expected_order.push_back(entry_b.Get(META_HANDLE));
+    expected_order.push_back(entry_c.Get(META_HANDLE));
+    expected_order.push_back(entry_d.Get(META_HANDLE));
+    expected_order.push_back(entry_e.Get(META_HANDLE));
+    expected_order.push_back(entry_j.Get(META_HANDLE));
   }
 
   // The arrangement is now: x (b (d) c (e)) w j
   // Entry "w" is in conflict, so it is not eligible for commit.
   vector<int64> unsynced_handle_view;
-  vector<syncable::Id> expected_order;
   {
     syncable::ReadTransaction rtrans(FROM_HERE, directory());
     GetUnsyncedEntries(&rtrans, &unsynced_handle_view);
   }
-  // The expected order is "x", "b", "c", "d", "e", "j", truncated
-  // appropriately.
-  expected_order.push_back(ids_.MakeServer("x"));
-  expected_order.push_back(ids_.MakeLocal("b"));
-  expected_order.push_back(ids_.MakeLocal("c"));
-  expected_order.push_back(ids_.MakeLocal("d"));
-  expected_order.push_back(ids_.MakeLocal("e"));
-  expected_order.push_back(ids_.MakeLocal("j"));
   DoTruncationTest(unsynced_handle_view, expected_order);
 }
 
@@ -1177,6 +1174,17 @@ TEST_F(SyncerTest, TestCommitListOrderingTwoItemsTall) {
 
 TEST_F(SyncerTest, TestCommitListOrderingThreeItemsTall) {
   CommitOrderingTest items[] = {
+    {1, ids_.FromNumber(-2001), ids_.FromNumber(-2000)},
+    {0, ids_.FromNumber(-2000), ids_.FromNumber(0)},
+    {2, ids_.FromNumber(-2002), ids_.FromNumber(-2001)},
+    CommitOrderingTest::MakeLastCommitItem(),
+  };
+  RunCommitOrderingTest(items);
+}
+
+TEST_F(SyncerTest, TestCommitListOrderingFourItemsTall) {
+  CommitOrderingTest items[] = {
+    {3, ids_.FromNumber(-2003), ids_.FromNumber(-2002)},
     {1, ids_.FromNumber(-2001), ids_.FromNumber(-2000)},
     {0, ids_.FromNumber(-2000), ids_.FromNumber(0)},
     {2, ids_.FromNumber(-2002), ids_.FromNumber(-2001)},
@@ -1822,86 +1830,6 @@ TEST_F(SyncerTest, IllegalAndLegalUpdates) {
   EXPECT_FALSE(saw_syncer_event_);
   EXPECT_EQ(4, status().TotalNumConflictingItems());
   EXPECT_EQ(4, status().num_hierarchy_conflicts());
-}
-
-TEST_F(SyncerTest, CommitTimeRename) {
-  int64 metahandle_folder;
-  int64 metahandle_new_entry;
-
-  // Create a folder and an entry.
-  {
-    WriteTransaction trans(FROM_HERE, UNITTEST, directory());
-    MutableEntry parent(&trans, CREATE, BOOKMARKS, root_id_, "Folder");
-    ASSERT_TRUE(parent.good());
-    parent.Put(IS_DIR, true);
-    parent.Put(syncable::SPECIFICS, DefaultBookmarkSpecifics());
-    parent.Put(IS_UNSYNCED, true);
-    metahandle_folder = parent.Get(META_HANDLE);
-
-    MutableEntry entry(&trans, CREATE, BOOKMARKS, parent.Get(ID), "new_entry");
-    ASSERT_TRUE(entry.good());
-    metahandle_new_entry = entry.Get(META_HANDLE);
-    WriteTestDataToEntry(&trans, &entry);
-  }
-
-  // Mix in a directory creation too for later.
-  mock_server_->AddUpdateDirectory(2, 0, "dir_in_root", 10, 10,
-                                   foreign_cache_guid(), "-2");
-  mock_server_->SetCommitTimeRename("renamed_");
-  SyncShareNudge();
-
-  // Verify it was correctly renamed.
-  {
-    syncable::ReadTransaction trans(FROM_HERE, directory());
-    Entry entry_folder(&trans, GET_BY_HANDLE, metahandle_folder);
-    ASSERT_TRUE(entry_folder.good());
-    EXPECT_EQ("renamed_Folder", entry_folder.Get(NON_UNIQUE_NAME));
-
-    Entry entry_new(&trans, GET_BY_HANDLE, metahandle_new_entry);
-    ASSERT_TRUE(entry_new.good());
-    EXPECT_EQ(entry_folder.Get(ID), entry_new.Get(PARENT_ID));
-    EXPECT_EQ("renamed_new_entry", entry_new.Get(NON_UNIQUE_NAME));
-
-    // And that the unrelated directory creation worked without a rename.
-    Entry new_dir(&trans, GET_BY_ID, ids_.FromNumber(2));
-    EXPECT_TRUE(new_dir.good());
-    EXPECT_EQ("dir_in_root", new_dir.Get(NON_UNIQUE_NAME));
-  }
-}
-
-
-TEST_F(SyncerTest, CommitTimeRenameI18N) {
-  // This is utf-8 for the diacritized Internationalization.
-  const char* i18nString = "\xc3\x8e\xc3\xb1\x74\xc3\xa9\x72\xc3\xb1"
-      "\xc3\xa5\x74\xc3\xae\xc3\xb6\xc3\xb1\xc3\xa5\x6c\xc3\xae"
-      "\xc2\x9e\xc3\xa5\x74\xc3\xae\xc3\xb6\xc3\xb1";
-
-  int64 metahandle;
-  // Create a folder, expect a commit time rename.
-  {
-    WriteTransaction trans(FROM_HERE, UNITTEST, directory());
-    MutableEntry parent(&trans, CREATE, BOOKMARKS, root_id_, "Folder");
-    ASSERT_TRUE(parent.good());
-    parent.Put(IS_DIR, true);
-    parent.Put(SPECIFICS, DefaultBookmarkSpecifics());
-    parent.Put(IS_UNSYNCED, true);
-    metahandle = parent.Get(META_HANDLE);
-  }
-
-  mock_server_->SetCommitTimeRename(i18nString);
-  SyncShareNudge();
-
-  // Verify it was correctly renamed.
-  {
-    syncable::ReadTransaction trans(FROM_HERE, directory());
-    string expected_folder_name(i18nString);
-    expected_folder_name.append("Folder");
-
-
-    Entry entry_folder(&trans, GET_BY_HANDLE, metahandle);
-    ASSERT_TRUE(entry_folder.good());
-    EXPECT_EQ(expected_folder_name, entry_folder.Get(NON_UNIQUE_NAME));
-  }
 }
 
 // A commit with a lost response produces an update that has to be reunited with

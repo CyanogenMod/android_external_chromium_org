@@ -425,7 +425,8 @@ void MessageLoop::RunInternal() {
 
   StartHistogrammer();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
+    !defined(USE_GTK_MESSAGE_PUMP)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {
     static_cast<MessagePumpForUI*>(pump_.get())->
         RunWithDispatcher(this, run_loop_->dispatcher_);
@@ -658,6 +659,20 @@ bool MessageLoop::DoIdleWork() {
     pump_->Quit();
 
   return false;
+}
+
+void MessageLoop::GetQueueingInformation(size_t* queue_size,
+                                         TimeDelta* queueing_delay) {
+  *queue_size = work_queue_.size();
+  if (*queue_size == 0) {
+    *queueing_delay = TimeDelta();
+    return;
+  }
+
+  const PendingTask& next_to_run = work_queue_.front();
+  tracked_objects::Duration duration =
+      tracked_objects::TrackedTime::Now() - next_to_run.EffectiveTimePosted();
+  *queueing_delay = TimeDelta::FromMilliseconds(duration.InMilliseconds());
 }
 
 void MessageLoop::DeleteSoonInternal(const tracked_objects::Location& from_here,

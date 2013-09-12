@@ -179,7 +179,7 @@ LRESULT InputMethodWin::OnDeadChar(UINT message,
   // what dead key was pressed.
   ui::CompositionText composition;
   composition.text.assign(1, static_cast<char16>(wparam));
-  composition.selection = ui::Range(0, 1);
+  composition.selection = gfx::Range(0, 1);
   composition.underlines.push_back(
       ui::CompositionUnderline(0, 1, SK_ColorBLACK, false));
   GetTextInputClient()->SetCompositionText(composition);
@@ -191,12 +191,12 @@ LRESULT InputMethodWin::OnDocumentFeed(RECONVERTSTRING* reconv) {
   if (!client)
     return 0;
 
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!client->GetTextRange(&text_range) || text_range.is_empty())
     return 0;
 
   bool result = false;
-  ui::Range target_range;
+  gfx::Range target_range;
   if (client->HasCompositionText())
     result = client->GetCompositionTextRange(&target_range);
 
@@ -258,11 +258,11 @@ LRESULT InputMethodWin::OnReconvertString(RECONVERTSTRING* reconv) {
   if (client->HasCompositionText())
     return 0;
 
-  ui::Range text_range;
+  gfx::Range text_range;
   if (!client->GetTextRange(&text_range) || text_range.is_empty())
     return 0;
 
-  ui::Range selection_range;
+  gfx::Range selection_range;
   if (!client->GetSelectionRange(&selection_range) ||
       selection_range.is_empty()) {
     return 0;
@@ -348,6 +348,22 @@ HWND InputMethodWin::GetAttachedWindowHandle(
   if (!text_input_client)
     return NULL;
   return text_input_client->GetAttachedWindow();
+#endif
+}
+
+bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
+  if (!client)
+    return false;
+  HWND attached_window_handle = GetAttachedWindowHandle(client);
+#if defined(USE_AURA)
+  // When Aura is enabled, |attached_window_handle| should always be a top-level
+  // window. So we can safely assume that |attached_window_handle| is ready for
+  // receiving keyboard input as long as it is an active window. This works well
+  // even when the |attached_window_handle| becomes active but has not received
+  // WM_FOCUS yet.
+  return attached_window_handle && GetActiveWindow() == attached_window_handle;
+#else
+  return attached_window_handle && GetFocus() == attached_window_handle;
 #endif
 }
 

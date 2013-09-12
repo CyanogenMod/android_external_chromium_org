@@ -31,6 +31,10 @@
       <structure name="IDR_DOWNLOADS_CSS" file="resources\downloads\downloads.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_DOWNLOADS_HTML" file="resources\downloads\downloads.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
       <structure name="IDR_EXTENSIONS_HTML" file="resources\extensions\extensions.html" flattenhtml="true" type="chrome_html" />
+      <if expr="pp_ifdef('chromeos')">
+        <structure name="IDR_FIRST_RUN_HTML" file="resources\chromeos\first_run\first_run.html" flattenhtml="true" type="chrome_html"/>
+        <structure name="IDR_FIRST_RUN_JS" file="resources\chromeos\first_run\first_run.js" flattenhtml="true" type="chrome_html" />
+      </if>
       <structure name="IDR_HELP_CSS" file="resources\help\help.css" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_HTML" file="resources\help\help.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_HELP_CHANNEL_CHANGE_PAGE_CSS" file="resources\help\channel_change_page.css" flattenhtml="true" type="chrome_html" />
@@ -61,8 +65,6 @@
       </if>
       <structure name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SSL_ROAD_BLOCK_HTML" file="resources\ssl\roadblock.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_SSL_FIREFOX_HTML" file="resources\ssl\firefox.html" flattenhtml="true" type="chrome_html" />
-      <structure name="IDR_SSL_FANCY_FIREFOX_HTML" file="resources\ssl\fancy_firefox.html" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_SAFE_BROWSING_MALWARE_BLOCK_V2" file="resources\safe_browsing\malware_block_v2.html" flattenhtml="true" type="chrome_html" />
     </structures>
     <includes>
@@ -155,7 +157,7 @@
       <include name="IDR_LOCAL_DISCOVERY_HTML" file="resources\local_discovery\local_discovery.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_LOCAL_DISCOVERY_CSS" file="resources\local_discovery\local_discovery.css" type="BINDATA" />
       <include name="IDR_LOCAL_DISCOVERY_JS" file="resources\local_discovery\local_discovery.js" flattenhtml="true" type="BINDATA" />
-
+      <include name="IDR_LOCAL_DISCOVERY_PRINTER_PNG" file="resources\local_discovery\printer.png" type="BINDATA" />
       <include name="IDR_INSTANT_IFRAME_VALIDATION_JS" file="resources\local_ntp\instant_iframe_validation.js" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_HTML" file="resources\local_ntp\local_ntp.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_LOCAL_NTP_CSS" file="resources\local_ntp\local_ntp.css" type="BINDATA" />
@@ -375,6 +377,9 @@
         <include name="IDR_NETWORK_HTML" file="resources\chromeos\network.html" type="BINDATA" />
         <include name="IDR_NETWORK_JS" file="resources\chromeos\network.js" type="BINDATA" />
         <include name="IDR_NETWORK_CSS" file="resources\chromeos\network.css" type="BINDATA" />
+      </if>
+      <if expr="pp_ifdef('_google_chrome')">
+        <include name="IDR_PREF_HASH_SEED_BIN" file="resources\settings_internal\pref_hash_seed.bin" type="BINDATA" />
       </if>
     </includes>
   </release>

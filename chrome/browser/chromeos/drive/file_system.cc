@@ -6,11 +6,8 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/platform_file.h"
-#include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_service.h"
-#include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/change_list_loader.h"
@@ -37,7 +34,6 @@
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/search_metadata.h"
 #include "chrome/browser/chromeos/drive/sync_client.h"
-#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/common/pref_names.h"
@@ -57,8 +53,7 @@ FileError GetLocallyStoredResourceEntry(
     const base::FilePath& file_path,
     ResourceEntry* entry) {
   std::string local_id;
-  FileError error =
-      resource_metadata->GetIdByPath(file_path, &local_id);
+  FileError error = resource_metadata->GetIdByPath(file_path, &local_id);
   if (error != FILE_ERROR_OK)
     return error;
 
@@ -255,7 +250,6 @@ FileSystem::FileSystem(
       scheduler_(scheduler),
       resource_metadata_(resource_metadata),
       last_update_check_error_(FILE_ERROR_OK),
-      hide_hosted_docs_(false),
       blocking_task_runner_(blocking_task_runner),
       temporary_file_directory_(temporary_file_directory),
       weak_ptr_factory_(this) {
@@ -351,10 +345,6 @@ void FileSystem::Initialize() {
                                               resource_metadata_,
                                               cache_,
                                               temporary_file_directory_));
-  hide_hosted_docs_ =
-      pref_service_->GetBoolean(prefs::kDisableDriveHostedFiles);
-
-  InitializePreferenceObserver();
 }
 
 void FileSystem::ReloadAfterReset(FileError error) {
@@ -372,7 +362,10 @@ void FileSystem::ReloadAfterReset(FileError error) {
 
 void FileSystem::SetupChangeListLoader() {
   change_list_loader_.reset(new internal::ChangeListLoader(
-      blocking_task_runner_.get(), resource_metadata_, scheduler_));
+      blocking_task_runner_.get(),
+      resource_metadata_,
+      scheduler_,
+      drive_service_));
   change_list_loader_->AddObserver(this);
 }
 
@@ -399,7 +392,8 @@ FileSystem::~FileSystem() {
   // shutdown.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  change_list_loader_->RemoveObserver(this);
+  if (change_list_loader_)
+    change_list_loader_->RemoveObserver(this);
 }
 
 void FileSystem::AddObserver(FileSystemObserver* observer) {
@@ -455,8 +449,9 @@ void FileSystem::CreateDirectory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  change_list_loader_->LoadIfNeeded(
-      internal::DirectoryFetchInfo(),
+  // Ensure its parent directory is loaded to the local metadata.
+  LoadDirectoryIfNeeded(
+      directory_path.DirName(),
       base::Bind(&FileSystem::CreateDirectoryAfterLoad,
                  weak_ptr_factory_.GetWeakPtr(),
                  directory_path, is_exclusive, is_recursive, callback));
@@ -643,19 +638,26 @@ void FileSystem::GetResourceEntryByPathAfterGetEntry(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error == FILE_ERROR_OK) {
-    callback.Run(error, entry.Pass());
-    return;
+  if (error == FILE_ERROR_NOT_FOUND) {
+    // If the information about the path is not in the local ResourceMetadata,
+    // try fetching information of the directory and retry.
+    //
+    // Note: this forms mutual recursion between GetResourceEntryByPath and
+    // LoadDirectoryIfNeeded, because directory loading requires the existence
+    // of directory entry itself. The recursion terminates because we always go
+    // up the hierarchy by .DirName() bounded under the Drive root path.
+    if (util::GetDriveGrandRootPath().IsParent(file_path)) {
+      LoadDirectoryIfNeeded(
+          file_path.DirName(),
+          base::Bind(&FileSystem::GetResourceEntryByPathAfterLoad,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     file_path,
+                     callback));
+      return;
+    }
   }
 
-  // If the information about the path is not in the local ResourceMetadata,
-  // try fetching information of the directory and retry.
-  LoadDirectoryIfNeeded(
-      file_path.DirName(),
-      base::Bind(&FileSystem::GetResourceEntryByPathAfterLoad,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 file_path,
-                 callback));
+  callback.Run(error, entry.Pass());
 }
 
 void FileSystem::GetResourceEntryByPathAfterLoad(
@@ -704,9 +706,7 @@ void FileSystem::LoadDirectoryIfNeeded(const base::FilePath& directory_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  // ResourceMetadata may know about the entry even if the resource
-  // metadata is not yet fully loaded.
-  resource_metadata_->GetResourceEntryByPathOnUIThread(
+  GetResourceEntryByPath(
       directory_path,
       base::Bind(&FileSystem::LoadDirectoryIfNeededAfterGetEntry,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -722,12 +722,8 @@ void FileSystem::LoadDirectoryIfNeededAfterGetEntry(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (error != FILE_ERROR_OK ||
-      entry->resource_id() == util::kDriveOtherDirSpecialResourceId) {
-    // If we don't know about the directory, or it is the "drive/other"
-    // directory that has to gather all orphan entries, start loading full
-    // resource list.
-    change_list_loader_->LoadIfNeeded(internal::DirectoryFetchInfo(), callback);
+  if (error != FILE_ERROR_OK) {
+    callback.Run(error);
     return;
   }
 
@@ -777,10 +773,12 @@ void FileSystem::ReadDirectoryByPathAfterRead(
   }
   DCHECK(entries.get());  // This is valid for empty directories too.
 
-  // TODO(satorux): Stop handling hide_hosted_docs_ here. crbug.com/256520.
+  // TODO(satorux): Stop handling hide_hosted_docs here. crbug.com/256520.
+  const bool hide_hosted_docs =
+      pref_service_->GetBoolean(prefs::kDisableDriveHostedFiles);
   scoped_ptr<ResourceEntryVector> filtered(new ResourceEntryVector);
   for (size_t i = 0; i < entries->size(); ++i) {
-    if (hide_hosted_docs_ &&
+    if (hide_hosted_docs &&
         entries->at(i).file_specific_info().is_hosted_document()) {
       continue;
     }
@@ -895,11 +893,11 @@ void FileSystem::OnGetResourceEntryForGetShareUrl(
 }
 
 void FileSystem::Search(const std::string& search_query,
-                        const std::string& page_token,
+                        const GURL& next_link,
                         const SearchCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
-  search_operation_->Search(search_query, page_token, callback);
+  search_operation_->Search(search_query, next_link, callback);
 }
 
 void FileSystem::SearchMetadata(const std::string& query,
@@ -908,7 +906,8 @@ void FileSystem::SearchMetadata(const std::string& query,
                                 const SearchMetadataCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (hide_hosted_docs_)
+  // TODO(satorux): Stop handling hide_hosted_docs here. crbug.com/256520.
+  if (pref_service_->GetBoolean(prefs::kDisableDriveHostedFiles))
     options |= SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS;
 
   drive::internal::SearchMetadata(blocking_task_runner_,
@@ -1019,36 +1018,6 @@ void FileSystem::GetCacheEntryByPath(
       base::Bind(&RunGetCacheEntryCallback,
                  callback,
                  base::Owned(cache_entry)));
-}
-
-void FileSystem::OnDisableDriveHostedFilesChanged() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  SetHideHostedDocuments(
-      pref_service_->GetBoolean(prefs::kDisableDriveHostedFiles));
-}
-
-void FileSystem::SetHideHostedDocuments(bool hide) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (hide == hide_hosted_docs_)
-    return;
-
-  hide_hosted_docs_ = hide;
-
-  // Kick off directory refresh when this setting changes.
-  FOR_EACH_OBSERVER(FileSystemObserver, observers_,
-                    OnDirectoryChanged(util::GetDriveGrandRootPath()));
-}
-
-void FileSystem::InitializePreferenceObserver() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  pref_registrar_.reset(new PrefChangeRegistrar());
-  pref_registrar_->Init(pref_service_);
-  pref_registrar_->Add(
-      prefs::kDisableDriveHostedFiles,
-      base::Bind(&FileSystem::OnDisableDriveHostedFilesChanged,
-                 base::Unretained(this)));
 }
 
 void FileSystem::OpenFile(const base::FilePath& file_path,

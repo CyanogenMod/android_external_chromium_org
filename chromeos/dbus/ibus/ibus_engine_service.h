@@ -13,11 +13,6 @@
 #include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "chromeos/dbus/ibus/ibus_constants.h"
 
-namespace dbus {
-class Bus;
-class ObjectPath;
-}  // namespace dbus
-
 namespace chromeos {
 
 class IBusLookupTable;
@@ -49,9 +44,6 @@ class CHROMEOS_EXPORT IBusEngineService {
   // handler.
   virtual void UnsetEngine(IBusEngineHandlerInterface* handler) = 0;
 
-  // Emits RegisterProperties signal.
-  virtual void RegisterProperties(
-      const IBusPropertyList& property_list) = 0;
   // Emits UpdatePreedit signal.
   virtual void UpdatePreedit(const IBusText& ibus_text,
                              uint32 cursor_pos,
@@ -76,10 +68,7 @@ class CHROMEOS_EXPORT IBusEngineService {
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static CHROMEOS_EXPORT IBusEngineService* Create(
-      DBusClientImplementationType type,
-      dbus::Bus* bus,
-      const dbus::ObjectPath& object_path);
+  static CHROMEOS_EXPORT IBusEngineService* Create();
 
  protected:
   // Create() should be used instead.

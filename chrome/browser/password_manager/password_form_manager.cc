@@ -15,13 +15,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_messages.h"
+#include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/password_form.h"
 
+using autofill::PasswordForm;
+using autofill::PasswordFormMap;
 using base::Time;
-using content::PasswordForm;
-using content::PasswordFormMap;
 
 PasswordFormManager::PasswordFormManager(Profile* profile,
                                          PasswordManager* password_manager,
@@ -39,7 +39,9 @@ PasswordFormManager::PasswordFormManager(Profile* profile,
       web_contents_(web_contents),
       manager_action_(kManagerActionNone),
       user_action_(kUserActionNone),
-      submit_result_(kSubmitResultNotSubmitted) {
+      submit_result_(kSubmitResultNotSubmitted),
+      should_save_password_(false),
+      should_blacklist_password_(false) {
   DCHECK(profile_);
   if (observed_form_.origin.is_valid())
     base::SplitString(observed_form_.origin.path(), '/', &form_path_tokens_);
@@ -50,6 +52,10 @@ PasswordFormManager::~PasswordFormManager() {
   UMA_HISTOGRAM_ENUMERATION("PasswordManager.ActionsTaken",
                             GetActionsTaken(),
                             kMaxNumActionsTaken);
+  // In case the tab is closed before the next navigation occurs this will
+  // apply outstanding changes.
+  if (should_save_password_ || should_blacklist_password_)
+    ApplyChange();
 }
 
 int PasswordFormManager::GetActionsTaken() {
@@ -104,6 +110,26 @@ bool PasswordFormManager::DoesManage(const PasswordForm& form,
     return false;
   }
   return true;
+}
+
+void PasswordFormManager::ApplyChange() {
+  DCHECK(!should_blacklist_password_ || !should_save_password_);
+  if (should_save_password_)
+    Save();
+  else if (should_blacklist_password_)
+    PermanentlyBlacklist();
+  should_blacklist_password_ = false;
+  should_save_password_ = false;
+}
+
+void PasswordFormManager::SavePassword() {
+  should_blacklist_password_ = false;
+  should_save_password_ = true;
+}
+
+void PasswordFormManager::BlacklistPassword() {
+  should_save_password_ = false;
+  should_blacklist_password_ = true;
 }
 
 bool PasswordFormManager::IsBlacklisted() {
@@ -362,13 +388,13 @@ void PasswordFormManager::OnRequestDone(
 
 void PasswordFormManager::OnPasswordStoreRequestDone(
       CancelableRequestProvider::Handle handle,
-      const std::vector<content::PasswordForm*>& result) {
+      const std::vector<autofill::PasswordForm*>& result) {
   // TODO(kaiwang): Remove this function.
   NOTREACHED();
 }
 
 void PasswordFormManager::OnGetPasswordStoreResults(
-      const std::vector<content::PasswordForm*>& results) {
+      const std::vector<autofill::PasswordForm*>& results) {
   DCHECK_EQ(state_, MATCHING_PHASE);
 
   if (results.empty()) {

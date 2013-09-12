@@ -93,10 +93,10 @@ class ThreadProxy : public Proxy,
   // SchedulerClient implementation
   virtual void SetNeedsBeginFrameOnImplThread(bool enable) OVERRIDE;
   virtual void ScheduledActionSendBeginFrameToMainThread() OVERRIDE;
-  virtual ScheduledActionDrawAndSwapResult
-      ScheduledActionDrawAndSwapIfPossible() OVERRIDE;
-  virtual ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapForced()
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible()
       OVERRIDE;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE;
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
   virtual void ScheduledActionActivatePendingTree() OVERRIDE;
@@ -121,6 +121,7 @@ class ThreadProxy : public Proxy,
     base::TimeTicks monotonic_frame_begin_time;
     scoped_ptr<ScrollAndScaleSet> scroll_info;
     size_t memory_allocation_limit_bytes;
+    bool evicted_ui_resources;
   };
 
   // Called on main thread.
@@ -142,7 +143,9 @@ class ThreadProxy : public Proxy,
   struct CommitPendingRequest;
   struct SchedulerStateRequest;
 
-  void ForceCommitOnImplThread(CompletionEvent* completion);
+  void ForceCommitForReadbackOnImplThread(
+      CompletionEvent* begin_frame_sent_completion,
+      ReadbackRequest* request);
   void StartCommitOnImplThread(
       CompletionEvent* completion,
       ResourceUpdateQueue* queue,
@@ -167,8 +170,9 @@ class ThreadProxy : public Proxy,
   void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
   void AcquireLayerTexturesForMainThreadOnImplThread(
       CompletionEvent* completion);
-  ScheduledActionDrawAndSwapResult ScheduledActionDrawAndSwapInternal(
-      bool forced_draw);
+  DrawSwapReadbackResult DrawSwapReadbackInternal(bool forced_draw,
+                                                  bool swap_requested,
+                                                  bool readback_requested);
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void CheckOutputSurfaceStatusOnImplThread();
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
@@ -177,7 +181,7 @@ class ThreadProxy : public Proxy,
   void AsValueOnImplThread(CompletionEvent* completion,
                            base::DictionaryValue* state) const;
   void RenewTreePriorityOnImplThread();
-  void DidSwapUseIncompleteTileOnImplThread();
+  void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void StartScrollbarAnimationOnImplThread();
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);

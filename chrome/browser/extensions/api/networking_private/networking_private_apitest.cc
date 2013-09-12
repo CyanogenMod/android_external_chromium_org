@@ -74,7 +74,6 @@ class ExtensionNetworkingPrivateApiTest :
     // Whitelist the extension ID of the test extension.
     command_line->AppendSwitchASCII(::switches::kWhitelistedExtensionID,
                                     "epcifkihnkjgphfkloaaleeakhpmgdmn");
-    command_line->AppendSwitch(switches::kUseNewNetworkConfigurationHandlers);
 
     // TODO(pneubeck): Remove the following hack, once the NetworkingPrivateAPI
     // uses the ProfileHelper to obtain the userhash crbug/238623.
@@ -246,6 +245,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
                        StartGetPropertiesNonexistent) {
   EXPECT_TRUE(RunNetworkingSubtest("startGetPropertiesNonexistent"))
       << message_;
+}
+
+IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, CreateNetwork) {
+  EXPECT_TRUE(RunNetworkingSubtest("createNetwork")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest, GetVisibleNetworks) {

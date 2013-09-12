@@ -82,6 +82,14 @@ static const char kSPKIHash_DigiCertEVRoot[] =
     "\x83\x31\x7e\x62\x85\x42\x53\xd6\xd7\x78"
     "\x31\x90\xec\x91\x90\x56\xe9\x91\xb9\xe3";
 
+static const char kSPKIHash_DigiCertAssuredIDRoot[] =
+    "\x68\x33\x0e\x61\x35\x85\x21\x59\x29\x83"
+    "\xa3\xc8\xd2\xd2\xe1\x40\x6e\x7a\xb3\xc1";
+
+static const char kSPKIHash_DigiCertGlobalRoot[] =
+    "\xd5\x2e\x13\xc1\xab\xe3\x49\xda\xe8\xb4"
+    "\x95\x94\xef\x7c\x38\x43\x60\x64\x66\xbd";
+
 static const char kSPKIHash_Tor1[] =
     "\x8e\xe3\x71\x49\x3b\xfd\x50\x03\x66\xa4"
     "\x2f\x64\x17\x91\x8a\xa6\x65\x8d\xc7\x76";
@@ -308,6 +316,9 @@ static const char* const kTwitterComAcceptableCerts[] = {
   kSPKIHash_GeoTrustPrimary,
   kSPKIHash_GeoTrustPrimary_G2,
   kSPKIHash_GeoTrustPrimary_G3,
+  kSPKIHash_DigiCertGlobalRoot,
+  kSPKIHash_DigiCertEVRoot,
+  kSPKIHash_DigiCertAssuredIDRoot,
   kSPKIHash_Twitter1,
   NULL,
 };
@@ -335,6 +346,9 @@ static const char* const kTwitterCDNAcceptableCerts[] = {
   kSPKIHash_GeoTrustPrimary,
   kSPKIHash_GeoTrustPrimary_G2,
   kSPKIHash_GeoTrustPrimary_G3,
+  kSPKIHash_DigiCertGlobalRoot,
+  kSPKIHash_DigiCertEVRoot,
+  kSPKIHash_DigiCertAssuredIDRoot,
   kSPKIHash_Twitter1,
   kSPKIHash_Entrust_2048,
   kSPKIHash_Entrust_EV,
@@ -387,7 +401,7 @@ static const char* const kCryptoCatAcceptableCerts[] = {
 static const struct HSTSPreload kPreloadedSTS[] = {
   {25, true, "\013pinningtest\007appspot\003com", false, kTestPins, DOMAIN_APPSPOT_COM },
   {12, true, "\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
-  {19, true, "\006health\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
+  {19, true, "\006wallet\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {21, true, "\010checkout\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {19, true, "\006chrome\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {17, true, "\004docs\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
@@ -422,6 +436,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {15, true, "\002dl\006google\003com", true, kGooglePins, DOMAIN_GOOGLE_COM },
   {26, true, "\011translate\012googleapis\003com", true, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
   {23, true, "\005chart\004apis\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
+  {28, true, "\012oraprodsso\004corp\006google\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\005ytimg\003com", false, kGooglePins, DOMAIN_YTIMG_COM },
   {23, true, "\021googleusercontent\003com", false, kGooglePins, DOMAIN_GOOGLEUSERCONTENT_COM },
   {13, true, "\007youtube\003com", false, kGooglePins, DOMAIN_YOUTUBE_COM },
@@ -844,6 +859,9 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {13, true, "\010lolicore\002ch", true, kNoPins, DOMAIN_NOT_PINNED },
   {16, true, "\007cloudns\003com\002au", true, kNoPins, DOMAIN_NOT_PINNED },
   {19, true, "\005oplop\007appspot\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, false, "\006bcrook\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\004wiki\006python\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, false, "\004lumi\002do", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

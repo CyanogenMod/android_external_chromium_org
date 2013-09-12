@@ -65,8 +65,6 @@ bool DeviceIDFetcher::Start(const IDCallback& callback) {
 // static
 void DeviceIDFetcher::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* prefs) {
-  // TODO(wad): Once UI is connected, a final default can be set. At that point
-  // change this pref from UNSYNCABLE to SYNCABLE.
   prefs->RegisterBooleanPref(prefs::kEnableDRM,
                              true,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
@@ -168,7 +166,7 @@ void DeviceIDFetcher::ComputeOnBlockingPool(const base::FilePath& profile_path,
   // should just return that.
   base::FilePath id_path = GetLegacyDeviceIDPath(profile_path);
   if (base::PathExists(id_path)) {
-    if (file_util::ReadFileToString(id_path, &id) && !id.empty()) {
+    if (base::ReadFileToString(id_path, &id) && !id.empty()) {
       RunCallbackOnIOThread(id);
       return;
     }

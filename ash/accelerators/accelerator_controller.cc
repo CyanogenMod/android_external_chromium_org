@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 
+#include "ash/accelerators/accelerator_commands.h"
 #include "ash/accelerators/accelerator_table.h"
 #include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
@@ -86,27 +87,54 @@ bool DebugShortcutsEnabled() {
 #endif
 }
 
-bool HandleCycleWindowMRU(WindowCycleController::Direction direction,
-                          bool is_alt_down) {
-  Shell::GetInstance()->
-      window_cycle_controller()->HandleCycleWindow(direction, is_alt_down);
-  // Always report we handled the key, even if the window didn't change.
-  return true;
+bool OverviewEnabled() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAshDisableOverviewMode);
 }
 
-bool HandleCycleWindowOverviewMRU(WindowSelector::Direction direction) {
-  Shell::GetInstance()->
-      window_selector_controller()->HandleCycleWindow(direction);
-  return true;
+void HandleCycleBackwardMRU(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
+
+  if (accelerator.key_code() == ui::VKEY_TAB)
+    shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_TAB);
+
+  if (OverviewEnabled()) {
+    shell->window_selector_controller()->HandleCycleWindow(
+        WindowSelector::BACKWARD);
+    return;
+  }
+  shell->window_cycle_controller()->HandleCycleWindow(
+      WindowCycleController::BACKWARD, accelerator.IsAltDown());
 }
 
-void HandleCycleWindowLinear(CycleDirection direction) {
-  Shell::GetInstance()->
-      window_cycle_controller()->HandleLinearCycleWindow();
+void HandleCycleForwardMRU(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
+
+  if (accelerator.key_code() == ui::VKEY_TAB)
+    shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_TAB);
+
+  if (OverviewEnabled()) {
+    shell->window_selector_controller()->HandleCycleWindow(
+        WindowSelector::FORWARD);
+    return;
+  }
+  shell->window_cycle_controller()->HandleCycleWindow(
+      WindowCycleController::FORWARD, accelerator.IsAltDown());
 }
 
-void ToggleOverviewMode() {
-  Shell::GetInstance()->window_selector_controller()->ToggleOverview();
+void HandleCycleLinear(const ui::Accelerator& accelerator) {
+  Shell* shell = Shell::GetInstance();
+
+  // TODO(jamescook): When overview becomes the default the AcceleratorAction
+  // should be renamed from CYCLE_LINEAR to TOGGLE_OVERVIEW.
+  if (OverviewEnabled()) {
+    shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
+    shell->window_selector_controller()->ToggleOverview();
+    return;
+  }
+  if (accelerator.key_code() == ui::VKEY_MEDIA_LAUNCH_APP1)
+    shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_F5);
+  shell->window_cycle_controller()->HandleLinearCycleWindow();
 }
 
 bool HandleAccessibleFocusCycle(bool reverse) {
@@ -516,50 +544,23 @@ bool AcceleratorController::PerformAction(int action,
   // You *MUST* return true when some action is performed. Otherwise, this
   // function might be called *twice*, via BrowserView::PreHandleKeyboardEvent
   // and BrowserView::HandleKeyboardEvent, for a single accelerator press.
+  //
+  // If your accelerator invokes more than one line of code, please either
+  // implement it in your module's controller code (like TOGGLE_MIRROR_MODE
+  // below) or pull it into a HandleFoo() function above.
   switch (action) {
     case ACCESSIBLE_FOCUS_NEXT:
       return HandleAccessibleFocusCycle(false);
     case ACCESSIBLE_FOCUS_PREVIOUS:
       return HandleAccessibleFocusCycle(true);
     case CYCLE_BACKWARD_MRU:
-      if (key_code == ui::VKEY_TAB)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_TAB);
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        return HandleCycleWindowOverviewMRU(WindowSelector::BACKWARD);
-      }
-      return HandleCycleWindowMRU(WindowCycleController::BACKWARD,
-                                  accelerator.IsAltDown());
-    case CYCLE_FORWARD_MRU:
-      if (key_code == ui::VKEY_TAB)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_TAB);
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        return HandleCycleWindowOverviewMRU(WindowSelector::FORWARD);
-      }
-      return HandleCycleWindowMRU(WindowCycleController::FORWARD,
-                                  accelerator.IsAltDown());
-    case CYCLE_BACKWARD_LINEAR:
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
-        ToggleOverviewMode();
-        return true;
-      }
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP1)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_F5);
-      HandleCycleWindowLinear(CYCLE_BACKWARD);
+      HandleCycleBackwardMRU(accelerator);
       return true;
-    case CYCLE_FORWARD_LINEAR:
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kAshEnableOverviewMode)) {
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
-        ToggleOverviewMode();
-        return true;
-      }
-      if (key_code == ui::VKEY_MEDIA_LAUNCH_APP1)
-        shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_F5);
-      HandleCycleWindowLinear(CYCLE_FORWARD);
+    case CYCLE_FORWARD_MRU:
+      HandleCycleForwardMRU(accelerator);
+      return true;
+    case CYCLE_LINEAR:
+      HandleCycleLinear(accelerator);
       return true;
 #if defined(OS_CHROMEOS)
     case ADD_REMOVE_DISPLAY:
@@ -717,19 +718,15 @@ bool AcceleratorController::PerformAction(int action,
     case VOLUME_MUTE:
       return shell->system_tray_delegate()->GetVolumeControlDelegate()->
           HandleVolumeMute(accelerator);
-      break;
     case VOLUME_DOWN:
       return shell->system_tray_delegate()->GetVolumeControlDelegate()->
           HandleVolumeDown(accelerator);
-      break;
     case VOLUME_UP:
       return shell->system_tray_delegate()->GetVolumeControlDelegate()->
           HandleVolumeUp(accelerator);
-      break;
     case FOCUS_LAUNCHER:
       return shell->focus_cycler()->FocusWidget(
           Launcher::ForPrimaryDisplay()->shelf_widget());
-      break;
     case FOCUS_NEXT_PANE:
       return HandleRotatePaneFocus(Shell::FORWARD);
     case FOCUS_PREVIOUS_PANE:
@@ -843,23 +840,8 @@ bool AcceleratorController::PerformAction(int action,
                                        internal::SnapSizer::RIGHT_EDGE);
       return true;
     }
-    case WINDOW_MINIMIZE: {
-      aura::Window* window = wm::GetActiveWindow();
-      // Attempt to restore the window that would be cycled through next from
-      // the launcher when there is no active window.
-      if (!window)
-        return HandleCycleWindowMRU(WindowCycleController::FORWARD, false);
-      // Disable the shortcut for minimizing full screen window due to
-      // crbug.com/131709, which is a crashing issue related to minimizing
-      // full screen pepper window.
-      if (!wm::IsWindowFullscreen(window) && wm::CanMinimizeWindow(window)) {
-        ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
-            ash::UMA_MINIMIZE_PER_KEY);
-        wm::MinimizeWindow(window);
-        return true;
-      }
-      break;
-    }
+    case WINDOW_MINIMIZE:
+      return accelerators::ToggleMinimized();
     case TOGGLE_FULLSCREEN: {
       if (key_code == ui::VKEY_MEDIA_LAUNCH_APP2) {
         shell->delegate()->RecordUserMetricsAction(

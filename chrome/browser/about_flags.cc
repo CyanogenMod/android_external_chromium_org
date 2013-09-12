@@ -446,11 +446,11 @@ const Experiment kExperiments[] = {
   },
 #if defined(ENABLE_WEBRTC)
   {
-    "enable-sctp-data-channels",
-    IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_NAME,
-    IDS_FLAGS_ENABLE_SCTP_DATA_CHANNELS_DESCRIPTION,
+    "disable-sctp-data-channels",
+    IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_NAME,
+    IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_DESCRIPTION,
     kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableSCTPDataChannels)
+    SINGLE_VALUE_TYPE(switches::kDisableSCTPDataChannels)
   },
   {
     "disable-device-enumeration",
@@ -458,6 +458,20 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisableDeviceEnumeration)
+  },
+  {
+    "disable-webrtc-hw-encoding",
+    IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_NAME,
+    IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kDisableWebRtcHWEncoding)
+  },
+  {
+    "enable-webrtc-hw-decoding",
+    IDS_FLAGS_ENABLE_WEBRTC_HW_DECODING_NAME,
+    IDS_FLAGS_ENABLE_WEBRTC_HW_DECODING_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableWebRtcHWDecoding)
   },
 #endif
 #if defined(OS_ANDROID)
@@ -628,7 +642,8 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_NEW_NTP,
     IDS_FLAGS_ENABLE_NEW_NTP_DESCRIPTION,
     kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableNewNTP)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewNTP,
+                              switches::kDisableNewNTP)
   },
 #endif
   {
@@ -752,9 +767,18 @@ const Experiment kExperiments[] = {
     "override-encrypted-media-canplaytype",
     IDS_FLAGS_ENCRYPTED_MEDIA_CANPLAYTYPE_OVERRIDE_NAME,
     IDS_FLAGS_ENCRYPTED_MEDIA_CANPLAYTYPE_OVERRIDE_DESCRIPTION,
-    kOsMac | kOsWin,
+    kOsMac | kOsWin | kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kOverrideEncryptedMediaCanPlayType)
   },
+#if defined(OS_ANDROID)
+  {
+    "mediadrm-enable-non-compositing",
+    IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_NAME,
+    IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kMediaDrmEnableNonCompositing)
+  },
+#endif  // defined(OS_ANDROID)
   {
     "enable-opus-playback",
     IDS_FLAGS_ENABLE_OPUS_PLAYBACK_NAME,
@@ -763,11 +787,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableOpusPlayback)
   },
  {
-    "enable-vp8-alpha-playback",
-    IDS_FLAGS_ENABLE_VP8_ALPHA_PLAYBACK_NAME,
-    IDS_FLAGS_ENABLE_VP8_ALPHA_PLAYBACK_DESCRIPTION,
+    "disable-vp8-alpha-playback",
+    IDS_FLAGS_DISABLE_VP8_ALPHA_PLAYBACK_NAME,
+    IDS_FLAGS_DISABLE_VP8_ALPHA_PLAYBACK_DESCRIPTION,
     kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableVp8AlphaPlayback)
+    SINGLE_VALUE_TYPE(switches::kDisableVp8AlphaPlayback)
   },
   {
     "enable-managed-users",
@@ -923,14 +947,15 @@ const Experiment kExperiments[] = {
       IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_NAME,
       IDS_FLAGS_ALTERNATE_SHELF_LAYOUT_DESCRIPTION,
       kOsCrOS,
-      SINGLE_VALUE_TYPE(ash::switches::kAshUseAlternateShelfLayout)
+      ENABLE_DISABLE_VALUE_TYPE(ash::switches::kAshUseAlternateShelfLayout,
+                                ash::switches::kAshDisableAlternateShelfLayout)
   },
   {
-      "ash-enable-drag-off-shelf",
+      "ash-disable-drag-off-shelf",
       IDS_FLAGS_DRAG_OFF_SHELF_NAME,
       IDS_FLAGS_DRAG_OFF_SHELF_DESCRIPTION,
       kOsCrOS,
-      SINGLE_VALUE_TYPE(ash::switches::kAshEnableDragOffShelf)
+      SINGLE_VALUE_TYPE(ash::switches::kAshDisableDragOffShelf)
   },
   {
     "enable-background-loader",
@@ -1016,11 +1041,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableMinimizeOnSecondLauncherItemClick)
   },
   {
-    "enable-overview-mode",
-    IDS_FLAGS_OVERVIEW_MODE_NAME,
-    IDS_FLAGS_OVERVIEW_MODE_DESCRIPTION,
+    "disable-overview-mode",
+    IDS_FLAGS_DISABLE_OVERVIEW_MODE_NAME,
+    IDS_FLAGS_DISABLE_OVERVIEW_MODE_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshEnableOverviewMode)
+    SINGLE_VALUE_TYPE(ash::switches::kAshDisableOverviewMode)
   },
   {
     "show-touch-hud",
@@ -1103,14 +1128,6 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableViewsTextfield,
                               switches::kDisableViewsTextfield),
   },
-  {
-    "new-dialog-style",
-    IDS_FLAGS_NEW_DIALOG_STYLE_NAME,
-    IDS_FLAGS_NEW_DIALOG_STYLE_DESCRIPTION,
-    kOsWin | kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableNewDialogStyle,
-                              switches::kDisableNewDialogStyle),
-  },
   { "disable-accelerated-video-decode",
     IDS_FLAGS_DISABLE_ACCELERATED_VIDEO_DECODE_NAME,
     IDS_FLAGS_DISABLE_ACCELERATED_VIDEO_DECODE_DESCRIPTION,
@@ -1169,12 +1186,6 @@ const Experiment kExperiments[] = {
 #endif
 #endif
 #if defined(OS_CHROMEOS)
-  { "use-new-network-configuration-handlers",
-    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONFIGURATION_HANDLERS_NAME,
-    IDS_FLAGS_CHROMEOS_USE_NEW_NETWORK_CONFIGURATION_HANDLERS_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kUseNewNetworkConfigurationHandlers),
-  },
   {
     "ash-audio-device-menu",
     IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME,
@@ -1211,6 +1222,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_PASSWORD_GENERATION_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnablePasswordGeneration)
+  },
+  {
+    "enable-people-search",
+    IDS_FLAGS_ENABLE_PEOPLE_SEARCH_NAME,
+    IDS_FLAGS_ENABLE_PEOPLE_SEARCH_DESCRIPTION,
+    kOsMac | kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnablePeopleSearch)
   },
   {
     "password-autofill-public-suffix-domain-matching",
@@ -1468,18 +1486,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kSyncfsEnableDirectoryOperation),
   },
   {
-    "enable-reset-profile-settings",
-    IDS_FLAGS_ENABLE_RESET_PROFILE_SETTINGS_NAME,
-    IDS_FLAGS_ENABLE_RESET_PROFILE_SETTINGS_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableResetProfileSettings)
-  },
-  {
-    "enable-device-discovery",
-    IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_NAME,
-    IDS_FLAGS_ENABLE_DEVICE_DISCOVERY_DESCRIPTION,
-    kOsDesktop,
-    SINGLE_VALUE_TYPE(switches::kEnableDeviceDiscovery)
+    "disable-device-discovery",
+    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME,
+    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kDisableDeviceDiscovery)
   },
 #if defined(OS_MACOSX)
   {
@@ -1556,8 +1567,8 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_HIDPI_NAME,
     IDS_FLAGS_HIDPI_DESCRIPTION,
     kOsWin,
-    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(switches::kHighDPISupport,"1",
-        switches::kHighDPISupport,"0")
+    ENABLE_DISABLE_VALUE_TYPE_AND_VALUE(gfx::switches::kHighDPISupport, "1",
+                                        gfx::switches::kHighDPISupport, "0")
   },
 #if defined(OS_CHROMEOS)
   {
@@ -1642,6 +1653,17 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION,
     kOsDesktop,
     SINGLE_VALUE_TYPE(switches::kEnableDeviceMotion)
+  },
+  {
+    "enable-add-to-homescreen",
+    IDS_FLAGS_ENABLE_ADD_TO_HOMESCREEN_NAME,
+    IDS_FLAGS_ENABLE_ADD_TO_HOMESCREEN_DESCRIPTION,
+    kOsAndroid,
+#if defined(OS_ANDROID)
+    SINGLE_VALUE_TYPE(switches::kEnableAddToHomescreen)
+#else
+    SINGLE_VALUE_TYPE("")
+#endif
   },
 };
 

@@ -54,20 +54,26 @@ bool IsTextureFormatSupportedForStorage(GLenum format) {
   return (format == GL_RGBA || format == GL_BGRA_EXT);
 }
 
-unsigned CreateTextureId(WebGraphicsContext3D* context3d) {
-  unsigned texture_id = 0;
-  GLC(context3d, texture_id = context3d->createTexture());
-  GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, texture_id));
-  GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-  GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-  GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-  GLC(context3d, context3d->texParameteri(
-      GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-  return texture_id;
-}
+class ScopedSetActiveTexture {
+ public:
+  ScopedSetActiveTexture(WebGraphicsContext3D* context3d, GLenum unit)
+      : context3d_(context3d), unit_(unit) {
+    DCHECK_EQ(GL_TEXTURE0, ResourceProvider::GetActiveTextureUnit(context3d_));
+
+    if (unit_ != GL_TEXTURE0)
+      GLC(context3d_, context3d_->activeTexture(unit_));
+  }
+
+  ~ScopedSetActiveTexture() {
+    // Active unit being GL_TEXTURE0 is effectively the ground state.
+    if (unit_ != GL_TEXTURE0)
+      GLC(context3d_, context3d_->activeTexture(GL_TEXTURE0));
+  }
+
+ private:
+  WebGraphicsContext3D* context3d_;
+  GLenum unit_;
+};
 
 }  // namespace
 
@@ -93,6 +99,7 @@ ResourceProvider::Resource::Resource()
       filter(0),
       image_id(0),
       texture_pool(0),
+      wrap_mode(0),
       hint(TextureUsageAny),
       type(static_cast<ResourceType>(0)) {}
 
@@ -104,6 +111,7 @@ ResourceProvider::Resource::Resource(
     GLenum format,
     GLenum filter,
     GLenum texture_pool,
+    GLint wrap_mode,
     TextureUsageHint hint)
     : gl_id(texture_id),
       gl_pixel_buffer_id(0),
@@ -126,11 +134,18 @@ ResourceProvider::Resource::Resource(
       filter(filter),
       image_id(0),
       texture_pool(texture_pool),
+      wrap_mode(wrap_mode),
       hint(hint),
-      type(GLTexture) {}
+      type(GLTexture) {
+  DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
+}
 
 ResourceProvider::Resource::Resource(
-    uint8_t* pixels, gfx::Size size, GLenum format, GLenum filter)
+    uint8_t* pixels,
+    gfx::Size size,
+    GLenum format,
+    GLenum filter,
+    GLint wrap_mode)
     : gl_id(0),
       gl_pixel_buffer_id(0),
       gl_upload_query_id(0),
@@ -152,8 +167,11 @@ ResourceProvider::Resource::Resource(
       filter(filter),
       image_id(0),
       texture_pool(0),
+      wrap_mode(wrap_mode),
       hint(TextureUsageAny),
-      type(Bitmap) {}
+      type(Bitmap) {
+  DCHECK(wrap_mode == GL_CLAMP_TO_EDGE || wrap_mode == GL_REPEAT);
+}
 
 ResourceProvider::Child::Child() {}
 
@@ -193,13 +211,16 @@ bool ResourceProvider::InUseByConsumer(ResourceId id) {
 }
 
 ResourceProvider::ResourceId ResourceProvider::CreateResource(
-    gfx::Size size, GLenum format, TextureUsageHint hint) {
+    gfx::Size size, GLenum format, GLint wrap_mode, TextureUsageHint hint) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
-      return CreateGLTexture(
-          size, format, GL_TEXTURE_POOL_UNMANAGED_CHROMIUM, hint);
+      return CreateGLTexture(size, format, GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
+                             wrap_mode, hint);
     case Bitmap:
+      // The only wrap_mode currently implemented in software mode is
+      // GL_CLAMP_TO_EDGE.
+      // http://crbug.com/284796
       DCHECK(format == GL_RGBA);
       return CreateBitmap(size);
     case InvalidType:
@@ -211,12 +232,12 @@ ResourceProvider::ResourceId ResourceProvider::CreateResource(
 }
 
 ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
-    gfx::Size size, GLenum format, TextureUsageHint hint) {
+    gfx::Size size, GLenum format, GLint wrap_mode, TextureUsageHint hint) {
   DCHECK(!size.IsEmpty());
   switch (default_resource_type_) {
     case GLTexture:
-      return CreateGLTexture(
-          size, format, GL_TEXTURE_POOL_MANAGED_CHROMIUM, hint);
+      return CreateGLTexture(size, format, GL_TEXTURE_POOL_MANAGED_CHROMIUM,
+                             wrap_mode, hint);
     case Bitmap:
       DCHECK(format == GL_RGBA);
       return CreateBitmap(size);
@@ -229,13 +250,17 @@ ResourceProvider::ResourceId ResourceProvider::CreateManagedResource(
 }
 
 ResourceProvider::ResourceId ResourceProvider::CreateGLTexture(
-    gfx::Size size, GLenum format, GLenum texture_pool, TextureUsageHint hint) {
+    gfx::Size size,
+    GLenum format,
+    GLenum texture_pool,
+    GLint wrap_mode,
+    TextureUsageHint hint) {
   DCHECK_LE(size.width(), max_texture_size_);
   DCHECK_LE(size.height(), max_texture_size_);
   DCHECK(thread_checker_.CalledOnValidThread());
 
   ResourceId id = next_id_++;
-  Resource resource(0, size, format, GL_LINEAR, texture_pool, hint);
+  Resource resource(0, size, format, GL_LINEAR, texture_pool, wrap_mode, hint);
   resource.allocated = false;
   resources_[id] = resource;
   return id;
@@ -247,7 +272,7 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(gfx::Size size) {
   uint8_t* pixels = new uint8_t[4 * size.GetArea()];
 
   ResourceId id = next_id_++;
-  Resource resource(pixels, size, GL_RGBA, GL_LINEAR);
+  Resource resource(pixels, size, GL_RGBA, GL_LINEAR, GL_CLAMP_TO_EDGE);
   resource.allocated = true;
   resources_[id] = resource;
   return id;
@@ -272,7 +297,8 @@ ResourceProvider::CreateResourceFromExternalTexture(
       texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
 
   ResourceId id = next_id_++;
-  Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR, 0, TextureUsageAny);
+  Resource resource(texture_id, gfx::Size(), 0, GL_LINEAR, 0, GL_CLAMP_TO_EDGE,
+                    TextureUsageAny);
   resource.external = true;
   resource.allocated = true;
   resources_[id] = resource;
@@ -287,14 +313,15 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
   DCHECK(mailbox.IsValid());
   Resource& resource = resources_[id];
   if (mailbox.IsTexture()) {
-    resource = Resource(0, gfx::Size(), 0, GL_LINEAR, 0, TextureUsageAny);
+    resource = Resource(0, gfx::Size(), 0, GL_LINEAR, 0, GL_CLAMP_TO_EDGE,
+                        TextureUsageAny);
   } else {
     DCHECK(mailbox.IsSharedMemory());
     base::SharedMemory* shared_memory = mailbox.shared_memory();
     DCHECK(shared_memory->memory());
     uint8_t* pixels = reinterpret_cast<uint8_t*>(shared_memory->memory());
     resource = Resource(pixels, mailbox.shared_memory_size(),
-                        GL_RGBA, GL_LINEAR);
+                        GL_RGBA, GL_LINEAR, GL_CLAMP_TO_EDGE);
   }
   resource.external = true;
   resource.allocated = true;
@@ -884,7 +911,8 @@ void ResourceProvider::ReceiveFromChild(
                                                      it->mailbox.name));
     ResourceId id = next_id_++;
     Resource resource(
-        texture_id, it->size, it->format, it->filter, 0, TextureUsageAny);
+        texture_id, it->size, it->format, it->filter, 0, GL_CLAMP_TO_EDGE,
+        TextureUsageAny);
     resource.mailbox.SetName(it->mailbox);
     // Don't allocate a texture for a child.
     resource.allocated = true;
@@ -1090,10 +1118,8 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
   Resource* resource = &it->second;
   DCHECK(resource->lock_for_read_count);
   DCHECK(!resource->locked_for_write || resource->set_pixels_completion_forced);
-  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(context3d));
 
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(unit));
+  ScopedSetActiveTexture scoped_active_tex(context3d, unit);
   GLC(context3d, context3d->bindTexture(target, resource->gl_id));
   if (filter != resource->filter) {
     GLC(context3d, context3d->texParameteri(target,
@@ -1107,10 +1133,6 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
 
   if (resource->image_id)
     context3d->bindTexImage2DCHROMIUM(target, resource->image_id);
-
-  // Active unit being GL_TEXTURE0 is effectively the ground state.
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(GL_TEXTURE0));
 }
 
 void ResourceProvider::UnbindForSampling(
@@ -1124,13 +1146,8 @@ void ResourceProvider::UnbindForSampling(
     return;
 
   WebGraphicsContext3D* context3d = Context3d();
-  DCHECK_EQ(GL_TEXTURE0, GetActiveTextureUnit(context3d));
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(unit));
+  ScopedSetActiveTexture scoped_active_tex(context3d, unit);
   context3d->releaseTexImage2DCHROMIUM(target, resource->image_id);
-  // Active unit being GL_TEXTURE0 is effectively the ground state.
-  if (unit != GL_TEXTURE0)
-    GLC(context3d, context3d->activeTexture(GL_TEXTURE0));
 }
 
 void ResourceProvider::BeginSetPixels(ResourceId id) {
@@ -1242,6 +1259,11 @@ void ResourceProvider::CreateForTesting(ResourceId id) {
   LazyCreate(GetResource(id));
 }
 
+GLint ResourceProvider::WrapModeForTesting(ResourceId id) {
+  Resource* resource = GetResource(id);
+  return resource->wrap_mode;
+}
+
 void ResourceProvider::LazyCreate(Resource* resource) {
   if (resource->type != GLTexture || resource->gl_id != 0)
     return;
@@ -1252,8 +1274,18 @@ void ResourceProvider::LazyCreate(Resource* resource) {
 
   WebGraphicsContext3D* context3d = Context3d();
   DCHECK(context3d);
+
   // Create and set texture properties. Allocation is delayed until needed.
-  resource->gl_id = CreateTextureId(context3d);
+  GLC(context3d, resource->gl_id = context3d->createTexture());
+  GLC(context3d, context3d->bindTexture(GL_TEXTURE_2D, resource->gl_id));
+  GLC(context3d, context3d->texParameteri(
+      GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+  GLC(context3d, context3d->texParameteri(
+      GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+  GLC(context3d, context3d->texParameteri(
+      GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, resource->wrap_mode));
+  GLC(context3d, context3d->texParameteri(
+      GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, resource->wrap_mode));
   GLC(context3d, context3d->texParameteri(GL_TEXTURE_2D,
                                           GL_TEXTURE_POOL_CHROMIUM,
                                           resource->texture_pool));

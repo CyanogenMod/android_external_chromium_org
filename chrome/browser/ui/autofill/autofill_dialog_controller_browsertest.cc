@@ -47,48 +47,27 @@ void MockCallback(const FormStructure*, const std::string&) {}
 class MockAutofillMetrics : public AutofillMetrics {
  public:
   MockAutofillMetrics()
-      : dialog_type_(static_cast<DialogType>(-1)),
-        dialog_dismissal_action_(
-            static_cast<AutofillMetrics::DialogDismissalAction>(-1)),
-        autocheckout_status_(
-            static_cast<AutofillMetrics::AutocheckoutCompletionStatus>(-1)) {}
+      : dialog_dismissal_action_(
+            static_cast<AutofillMetrics::DialogDismissalAction>(-1)) {}
   virtual ~MockAutofillMetrics() {}
-
-  // AutofillMetrics:
-  virtual void LogAutocheckoutDuration(
-      const base::TimeDelta& duration,
-      AutocheckoutCompletionStatus status) const OVERRIDE {
-    // Ignore constness for testing.
-    MockAutofillMetrics* mutable_this = const_cast<MockAutofillMetrics*>(this);
-    mutable_this->autocheckout_status_ = status;
-  }
 
   virtual void LogDialogUiDuration(
       const base::TimeDelta& duration,
-      DialogType dialog_type,
       DialogDismissalAction dismissal_action) const OVERRIDE {
     // Ignore constness for testing.
     MockAutofillMetrics* mutable_this = const_cast<MockAutofillMetrics*>(this);
-    mutable_this->dialog_type_ = dialog_type;
     mutable_this->dialog_dismissal_action_ = dismissal_action;
   }
 
-  DialogType dialog_type() const { return dialog_type_; }
   AutofillMetrics::DialogDismissalAction dialog_dismissal_action() const {
     return dialog_dismissal_action_;
   }
 
-  AutofillMetrics::AutocheckoutCompletionStatus autocheckout_status() const {
-    return autocheckout_status_;
-  }
-
-  MOCK_CONST_METHOD2(LogDialogDismissalState,
-                     void(DialogType dialog_type, DialogDismissalState state));
+  MOCK_CONST_METHOD1(LogDialogDismissalState,
+                     void(DialogDismissalState state));
 
  private:
-  DialogType dialog_type_;
   AutofillMetrics::DialogDismissalAction dialog_dismissal_action_;
-  AutofillMetrics::AutocheckoutCompletionStatus autocheckout_status_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAutofillMetrics);
 };
@@ -98,12 +77,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   TestAutofillDialogController(content::WebContents* contents,
                                const FormData& form_data,
                                const AutofillMetrics& metric_logger,
-                               scoped_refptr<content::MessageLoopRunner> runner,
-                               const DialogType dialog_type)
+                               scoped_refptr<content::MessageLoopRunner> runner)
       : AutofillDialogControllerImpl(contents,
                                      form_data,
                                      GURL(),
-                                     dialog_type,
                                      base::Bind(&MockCallback)),
         metric_logger_(metric_logger),
         mock_wallet_client_(
@@ -213,6 +190,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     autofill::test::DisableSystemServices(browser()->profile());
+    InitializeController();
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -224,7 +202,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
 #endif
   }
 
-  void InitializeControllerOfType(DialogType dialog_type) {
+  void InitializeController() {
     FormData form;
     form.name = ASCIIToUTF16("TestForm");
     form.method = ASCIIToUTF16("POST");
@@ -241,8 +219,7 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
         GetActiveWebContents(),
         form,
         metric_logger_,
-        message_loop_runner_,
-        dialog_type);
+        message_loop_runner_);
     controller_->Show();
   }
 
@@ -343,46 +320,38 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
 #if defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
 // Submit the form data.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Submit) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->GetTestableView()->SubmitForTesting();
 
   RunMessageLoop();
 
   EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
             metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_REQUEST_AUTOCOMPLETE, metric_logger().dialog_type());
 }
 
 // Cancel out of the dialog.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Cancel) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->GetTestableView()->CancelForTesting();
 
   RunMessageLoop();
 
   EXPECT_EQ(AutofillMetrics::DIALOG_CANCELED,
             metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_REQUEST_AUTOCOMPLETE, metric_logger().dialog_type());
 }
 
 // Take some other action that dismisses the dialog.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, Hide) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->Hide();
 
   RunMessageLoop();
 
   EXPECT_EQ(AutofillMetrics::DIALOG_CANCELED,
             metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_REQUEST_AUTOCOMPLETE, metric_logger().dialog_type());
 }
 
 // Ensure that Hide() will only destroy the controller object after the
 // message loop has run. Otherwise, there may be read-after-free issues
 // during some tests.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, DeferredDestruction) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-
   base::WeakPtr<TestAutofillDialogController> weak_ptr =
       controller()->AsWeakPtr();
   EXPECT_TRUE(weak_ptr.get());
@@ -397,12 +366,10 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, DeferredDestruction) {
 // Ensure that the expected metric is logged when the dialog is closed during
 // signin.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, CloseDuringSignin) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->SignInLinkClicked();
 
   EXPECT_CALL(metric_logger(),
               LogDialogDismissalState(
-                  DIALOG_TYPE_REQUEST_AUTOCOMPLETE,
                   AutofillMetrics::DIALOG_CANCELED_DURING_SIGNIN));
   controller()->GetTestableView()->CancelForTesting();
 
@@ -410,76 +377,9 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, CloseDuringSignin) {
 
   EXPECT_EQ(AutofillMetrics::DIALOG_CANCELED,
             metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_REQUEST_AUTOCOMPLETE, metric_logger().dialog_type());
-}
-
-// Test Autocheckout success metrics.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutSuccess) {
-  InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
-  controller()->GetTestableView()->SubmitForTesting();
-
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
-
-  controller()->OnAutocheckoutSuccess();
-  controller()->GetTestableView()->CancelForTesting();
-  RunMessageLoop();
-
-  EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_SUCCEEDED,
-            metric_logger().autocheckout_status());
-
-  // Ensure closing the dialog doesn't fire any new metrics.
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
-}
-
-// Test Autocheckout failure metric.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutError) {
-  InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
-  controller()->GetTestableView()->SubmitForTesting();
-
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
-
-  controller()->OnAutocheckoutError();
-  controller()->GetTestableView()->CancelForTesting();
-  RunMessageLoop();
-
-  EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_FAILED,
-            metric_logger().autocheckout_status());
-
-  // Ensure closing the dialog doesn't fire any new metrics.
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
-}
-
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutCancelled) {
-  InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
-  controller()->GetTestableView()->SubmitForTesting();
-
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
-
-  controller()->GetTestableView()->CancelForTesting();
-  RunMessageLoop();
-
-  EXPECT_EQ(AutofillMetrics::AUTOCHECKOUT_CANCELLED,
-            metric_logger().autocheckout_status());
-
-  // Ensure closing the dialog doesn't fire any new metrics.
-  EXPECT_EQ(AutofillMetrics::DIALOG_ACCEPTED,
-            metric_logger().dialog_dismissal_action());
-  EXPECT_EQ(DIALOG_TYPE_AUTOCHECKOUT, metric_logger().dialog_type());
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-
   AutofillProfile full_profile(test::GetFullProfile());
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
 
@@ -526,41 +426,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillInputFromAutofill) {
   }
 }
 
-// Test that Autocheckout steps are shown after submitting the
-// dialog for controller with type DIALOG_TYPE_AUTOCHECKOUT.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, AutocheckoutShowsSteps) {
-  InitializeControllerOfType(DIALOG_TYPE_AUTOCHECKOUT);
-  controller()->AddAutocheckoutStep(AUTOCHECKOUT_STEP_PROXY_CARD);
-
-  EXPECT_TRUE(controller()->ShouldShowDetailArea());
-  EXPECT_TRUE(controller()->CurrentAutocheckoutSteps().empty());
-  EXPECT_FALSE(controller()->ShouldShowProgressBar());
-
-  controller()->GetTestableView()->SubmitForTesting();
-  EXPECT_FALSE(controller()->ShouldShowDetailArea());
-  EXPECT_FALSE(controller()->CurrentAutocheckoutSteps().empty());
-  EXPECT_TRUE(controller()->ShouldShowProgressBar());
-  controller()->GetTestableView()->CancelForTesting();
-  RunMessageLoop();
-}
-
-// Test that Autocheckout steps are not showing after submitting the
-// dialog for controller with type DIALOG_TYPE_REQUEST_AUTOCOMPLETE.
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
-                       RequestAutocompleteDoesntShowSteps) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-  controller()->AddAutocheckoutStep(AUTOCHECKOUT_STEP_PROXY_CARD);
-
-  EXPECT_TRUE(controller()->ShouldShowDetailArea());
-  EXPECT_TRUE(controller()->CurrentAutocheckoutSteps().empty());
-  EXPECT_FALSE(controller()->ShouldShowProgressBar());
-
-  controller()->GetTestableView()->SubmitForTesting();
-  EXPECT_TRUE(controller()->ShouldShowDetailArea());
-  EXPECT_TRUE(controller()->CurrentAutocheckoutSteps().empty());
-  EXPECT_FALSE(controller()->ShouldShowProgressBar());
-}
-
 // Tests that changing the value of a CC expiration date combobox works as
 // expected when Autofill is used to fill text inputs.
 //
@@ -574,8 +439,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 #endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                        MAYBE_FillComboboxFromAutofill) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-
   CreditCard card1;
   test::SetCreditCardInfo(&card1, "JJ Smith", "4111111111111111", "12", "2018");
   controller()->GetTestingManager()->AddTestingCreditCard(&card1);
@@ -659,15 +522,16 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 
 // Tests that credit card number is disabled while editing a Wallet instrument.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->OnUserNameFetchSuccess("user@example.com");
 
   scoped_ptr<wallet::WalletItems> wallet_items = wallet::GetTestWalletItems();
-  wallet_items->AddInstrument(wallet::GetTestMaskedInstrument());
+  // An expired card will be forced into edit mode.
+  wallet_items->AddInstrument(wallet::GetTestMaskedInstrumentWithDetails(
+      "instrument_id",
+      wallet::GetTestAddress(),
+      wallet::WalletItems::MaskedInstrument::VISA,
+      wallet::WalletItems::MaskedInstrument::EXPIRED));
   controller()->OnDidGetWalletItems(wallet_items.Pass());
-
-  // Click "Edit" in the billing section (while using Wallet).
-  controller()->EditClickedForSection(SECTION_CC_BILLING);
 
   const DetailInputs& edit_inputs =
       controller()->RequestedFieldsForSection(SECTION_CC_BILLING);
@@ -697,8 +561,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
 
 // Ensure that expired cards trigger invalid suggestions.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ExpiredCard) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-
   CreditCard verified_card(test::GetCreditCard());
   verified_card.set_origin("Chrome settings");
   ASSERT_TRUE(verified_card.IsVerified());
@@ -728,8 +590,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ExpiredCard) {
 
 // Notifications with long message text should not make the dialog bigger.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, LongNotifications) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
-
   const gfx::Size no_notification_size =
       controller()->GetTestableView()->GetSize();
   ASSERT_GT(no_notification_size.width(), 0);
@@ -792,7 +652,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->set_use_validation(true);
 
   CreditCard credit_card(test::GetVerifiedCreditCard());
@@ -810,7 +669,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, NoCvcSegfault) {
 #define MAYBE_PreservedSections PreservedSections
 #endif
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
-  InitializeControllerOfType(DIALOG_TYPE_REQUEST_AUTOCOMPLETE);
   controller()->set_use_validation(true);
 
   // Set up some Autofill state.

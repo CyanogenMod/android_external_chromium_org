@@ -143,10 +143,20 @@ const char kTtsVoicesLang[] = "lang";
 const char kTtsVoicesVoiceName[] = "voice_name";
 const char kType[] = "type";
 const char kUpdateURL[] = "update_url";
+const char kUrlHandlers[] = "url_handlers";
+const char kUrlHandlerTitle[] = "title";
 const char kVersion[] = "version";
 const char kWebAccessibleResources[] = "web_accessible_resources";
 const char kWebURLs[] = "app.urls";
 
 }  // namespace manifest_keys
+
+namespace manifest_errors {
+
+const char kPermissionUnknownOrMalformed[] =
+    "Permission '*' is unknown or URL pattern is malformed.";
+const char kUnrecognizedManifestKey[] = "Unrecognized manifest key '*'.";
+
+}  // namespace manifest_errors
 
 }  // namespace extensions

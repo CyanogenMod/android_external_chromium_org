@@ -52,7 +52,10 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
 
   def Create(self):
     backend = android_browser_backend.AndroidBrowserBackend(
-        self.finder_options, self._backend_settings)
+        self.finder_options.browser_options, self._backend_settings,
+        self.finder_options.android_rndis,
+        output_profile_path=self.finder_options.output_profile_path,
+        extensions_to_load=self.finder_options.extensions_to_load)
     platform_backend = android_platform_backend.AndroidPlatformBackend(
         self._backend_settings.adb.Adb(),
         self.finder_options.no_performance_mode)
@@ -175,7 +178,8 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
 
   # See if the "forwarder" is installed -- we need this to host content locally
   # but make it accessible to the device.
-  if len(possible_browsers) and not adb_commands.HasForwarder():
+  if (len(possible_browsers) and not finder_options.android_rndis and
+      not adb_commands.HasForwarder()):
     logging.warn('telemetry detected an android device. However,')
     logging.warn('Chrome\'s port-forwarder app is not available.')
     logging.warn('To build:')

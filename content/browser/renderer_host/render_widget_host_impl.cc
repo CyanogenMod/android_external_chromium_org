@@ -29,6 +29,7 @@
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/input/buffered_input_router.h"
 #include "content/browser/renderer_host/input/immediate_input_router.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -44,6 +45,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
@@ -91,14 +93,49 @@ const int kPaintMsgTimeoutMS = 50;
 base::LazyInstance<std::vector<RenderWidgetHost::CreatedCallback> >
 g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 
-}  // namespace
-
-
 typedef std::pair<int32, int32> RenderWidgetHostID;
 typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
     RoutingIDWidgetMap;
-static base::LazyInstance<RoutingIDWidgetMap> g_routing_id_widget_map =
+base::LazyInstance<RoutingIDWidgetMap> g_routing_id_widget_map =
     LAZY_INSTANCE_INITIALIZER;
+
+// Implements the RenderWidgetHostIterator interface. It keeps a list of
+// RenderWidgetHosts, and makes sure it returns a live RenderWidgetHost at each
+// iteration (or NULL if there isn't any left).
+class RenderWidgetHostIteratorImpl : public RenderWidgetHostIterator {
+ public:
+  RenderWidgetHostIteratorImpl()
+      : current_index_(0) {
+  }
+
+  virtual ~RenderWidgetHostIteratorImpl() {
+  }
+
+  void Add(RenderWidgetHost* host) {
+    hosts_.push_back(RenderWidgetHostID(host->GetProcess()->GetID(),
+                                        host->GetRoutingID()));
+  }
+
+  // RenderWidgetHostIterator:
+  virtual RenderWidgetHost* GetNextHost() OVERRIDE {
+    RenderWidgetHost* host = NULL;
+    while (current_index_ < hosts_.size() && !host) {
+      RenderWidgetHostID id = hosts_[current_index_];
+      host = RenderWidgetHost::FromID(id.first, id.second);
+      ++current_index_;
+    }
+    return host;
+  }
+
+ private:
+  std::vector<RenderWidgetHostID> hosts_;
+  size_t current_index_;
+
+  DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostIteratorImpl);
+};
+
+}  // namespace
+
 
 // static
 void RenderWidgetHost::RemoveAllBackingStores() {
@@ -189,7 +226,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
   for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
     g_created_callbacks.Get().at(i).Run(this);
 
-  input_router_.reset(new ImmediateInputRouter(process, this, routing_id_));
+  input_router_.reset(
+      new ImmediateInputRouter(process_, this, this, routing_id_));
 
 #if defined(USE_AURA)
   bool overscroll_enabled = CommandLine::ForCurrentProcess()->
@@ -226,6 +264,7 @@ RenderWidgetHost* RenderWidgetHost::FromID(
 RenderWidgetHostImpl* RenderWidgetHostImpl::FromID(
     int32 process_id,
     int32 routing_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
   RoutingIDWidgetMap::iterator it = widgets->find(
       RenderWidgetHostID(process_id, routing_id));
@@ -233,8 +272,8 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::FromID(
 }
 
 // static
-std::vector<RenderWidgetHost*> RenderWidgetHost::GetRenderWidgetHosts() {
-  std::vector<RenderWidgetHost*> hosts;
+scoped_ptr<RenderWidgetHostIterator> RenderWidgetHost::GetRenderWidgetHosts() {
+  RenderWidgetHostIteratorImpl* hosts = new RenderWidgetHostIteratorImpl();
   RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
   for (RoutingIDWidgetMap::const_iterator it = widgets->begin();
        it != widgets->end();
@@ -242,28 +281,31 @@ std::vector<RenderWidgetHost*> RenderWidgetHost::GetRenderWidgetHosts() {
     RenderWidgetHost* widget = it->second;
 
     if (!widget->IsRenderView()) {
-      hosts.push_back(widget);
+      hosts->Add(widget);
       continue;
     }
 
     // Add only active RenderViewHosts.
     RenderViewHost* rvh = RenderViewHost::From(widget);
     if (!static_cast<RenderViewHostImpl*>(rvh)->is_swapped_out())
-      hosts.push_back(widget);
+      hosts->Add(widget);
   }
-  return hosts;
+
+  return scoped_ptr<RenderWidgetHostIterator>(hosts);
 }
 
 // static
-std::vector<RenderWidgetHost*> RenderWidgetHostImpl::GetAllRenderWidgetHosts() {
-  std::vector<RenderWidgetHost*> hosts;
+scoped_ptr<RenderWidgetHostIterator>
+RenderWidgetHostImpl::GetAllRenderWidgetHosts() {
+  RenderWidgetHostIteratorImpl* hosts = new RenderWidgetHostIteratorImpl();
   RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
   for (RoutingIDWidgetMap::const_iterator it = widgets->begin();
        it != widgets->end();
        ++it) {
-    hosts.push_back(it->second);
+    hosts->Add(it->second);
   }
-  return hosts;
+
+  return scoped_ptr<RenderWidgetHostIterator>(hosts);
 }
 
 // static
@@ -434,6 +476,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_BeginSmoothScroll, OnBeginSmoothScroll)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_BeginPinch, OnBeginPinch)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
@@ -477,7 +520,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
 
 bool RenderWidgetHostImpl::Send(IPC::Message* msg) {
   if (IPC_MESSAGE_ID_CLASS(msg->type()) == InputMsgStart)
-    return input_router_->SendInput(msg);
+    return input_router_->SendInput(make_scoped_ptr(msg));
 
   return process_->Send(msg);
 }
@@ -1234,7 +1277,8 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   waiting_for_screen_rects_ack_ = false;
 
   // Reset to ensure that input routing works with a new renderer.
-  input_router_.reset(new ImmediateInputRouter(process_, this, routing_id_));
+  input_router_.reset(
+      new ImmediateInputRouter(process_, this, this, routing_id_));
 
   if (overscroll_controller_)
     overscroll_controller_->Reset();
@@ -1296,7 +1340,7 @@ void RenderWidgetHostImpl::ImeSetComposition(
 
 void RenderWidgetHostImpl::ImeConfirmComposition(
     const string16& text,
-    const ui::Range& replacement_range,
+    const gfx::Range& replacement_range,
     bool keep_selection) {
   Send(new ViewMsg_ImeConfirmComposition(
         GetRoutingID(), text, replacement_range, keep_selection));
@@ -1704,6 +1748,13 @@ void RenderWidgetHostImpl::OnBeginSmoothScroll(
   synthetic_gesture_controller_.BeginSmoothScroll(view_, params);
 }
 
+void RenderWidgetHostImpl::OnBeginPinch(
+    const ViewHostMsg_BeginPinch_Params& params) {
+  if (!view_)
+    return;
+  synthetic_gesture_controller_.BeginPinch(view_, params);
+}
+
 void RenderWidgetHostImpl::OnFocus() {
   // Only RenderViewHost can deal with that message.
   RecordAction(UserMetricsAction("BadMessageTerminate_RWH4"));
@@ -1725,15 +1776,15 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 
 void RenderWidgetHostImpl::OnTextInputTypeChanged(
     ui::TextInputType type,
-    bool can_compose_inline,
-    ui::TextInputMode input_mode) {
+    ui::TextInputMode input_mode,
+    bool can_compose_inline) {
   if (view_)
-    view_->TextInputTypeChanged(type, can_compose_inline, input_mode);
+    view_->TextInputTypeChanged(type, input_mode, can_compose_inline);
 }
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 void RenderWidgetHostImpl::OnImeCompositionRangeChanged(
-    const ui::Range& range,
+    const gfx::Range& range,
     const std::vector<gfx::Rect>& character_bounds) {
   if (view_)
     view_->ImeCompositionRangeChanged(range, character_bounds);
@@ -2101,6 +2152,12 @@ bool RenderWidgetHostImpl::OnSendGestureEventImmediately(
   return !IgnoreInputEvents();
 }
 
+void RenderWidgetHostImpl::SetNeedsFlush() {
+}
+
+void RenderWidgetHostImpl::DidFlush() {
+}
+
 void RenderWidgetHostImpl::OnKeyboardEventAck(
       const NativeWebKeyboardEvent& event,
       InputEventAckState ack_result) {
@@ -2152,13 +2209,13 @@ void RenderWidgetHostImpl::OnTouchEventAck(
     view_->ProcessAckedTouchEvent(event, ack_result);
 }
 
-void RenderWidgetHostImpl::OnUnexpectedEventAck(bool bad_message) {
-  if (bad_message) {
+void RenderWidgetHostImpl::OnUnexpectedEventAck(UnexpectedEventAckType type) {
+  if (type == BAD_ACK_MESSAGE) {
     RecordAction(UserMetricsAction("BadMessageTerminate_RWH2"));
     process_->ReceivedBadMessage();
+  } else if (type == UNEXPECTED_EVENT_TYPE) {
+    suppress_next_char_events_ = false;
   }
-
-  suppress_next_char_events_ = false;
 }
 
 const gfx::Vector2d& RenderWidgetHostImpl::GetLastScrollOffset() const {

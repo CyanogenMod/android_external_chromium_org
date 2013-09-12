@@ -119,6 +119,7 @@ class ExtensionServiceInterface : public syncer::SyncableService {
   virtual void UnloadExtension(
       const std::string& extension_id,
       extension_misc::UnloadedExtensionReason reason) = 0;
+  virtual void RemoveComponentExtension(const std::string& extension_id) = 0;
 
   virtual void SyncExtensionChangeIfNeeded(
       const extensions::Extension& extension) = 0;
@@ -266,9 +267,6 @@ class ExtensionService
   // Initialize and start all installed extensions.
   void Init();
 
-  // Start up the extension event routers.
-  void InitEventRouters();
-
   // Called when the associated Profile is going to be destroyed.
   void Shutdown();
 
@@ -376,6 +374,10 @@ class ExtensionService
   virtual void UnloadExtension(
       const std::string& extension_id,
       extension_misc::UnloadedExtensionReason reason) OVERRIDE;
+
+  // Remove the specified component extension.
+  virtual void RemoveComponentExtension(const std::string& extension_id)
+      OVERRIDE;
 
   // Unload all extensions. This is currently only called on shutdown, and
   // does not send notifications.
@@ -549,10 +551,6 @@ class ExtensionService
 
   extensions::MenuManager* menu_manager() { return &menu_manager_; }
 
-  extensions::BrowserEventRouter* browser_event_router() {
-    return browser_event_router_.get();
-  }
-
   // Notify the frontend that there was an error loading an extension.
   // This method is public because UnpackedInstaller and InstalledLoader
   // can post to here.
@@ -656,10 +654,6 @@ class ExtensionService
   static void RecordPermissionMessagesHistogram(
       const extensions::Extension* e, const char* histogram);
 
-  // Open a dev tools window for the background page for the given extension,
-  // starting the background page first if necessary.
-  void InspectBackgroundPage(const extensions::Extension* extension);
-
 #if defined(UNIT_TEST)
   void TrackTerminatedExtensionForTest(const extensions::Extension* extension) {
     TrackTerminatedExtension(extension);
@@ -694,6 +688,15 @@ class ExtensionService
   // |flare| provides a StartSyncFlare to the SyncableService. See
   // sync_start_util for more.
   void SetSyncStartFlare(const syncer::SyncableService::StartSyncFlare& flare);
+
+#if defined(OS_CHROMEOS)
+  void disable_garbage_collection() {
+    disable_garbage_collection_ = true;
+  }
+  void enable_garbage_collection() {
+    disable_garbage_collection_ = false;
+  }
+#endif
 
  private:
   // Contains Extension data that can change during the life of the process,
@@ -771,9 +774,6 @@ class ExtensionService
 
   // Helper that updates the active extension list used for crash reporting.
   void UpdateActiveExtensionsInCrashReporter();
-
-  // Helper to inspect an ExtensionHost after it has been loaded.
-  void InspectExtensionHost(extensions::ExtensionHost* host);
 
   // Helper to determine whether we should initially enable an installed
   // (or upgraded) extension.
@@ -898,13 +898,6 @@ class ExtensionService
   // Keeps track of menu items added by extensions.
   extensions::MenuManager menu_manager_;
 
-  // Flag to make sure event routers are only initialized once.
-  bool event_routers_initialized_;
-
-  // TODO(yoz): None of these should be owned by ExtensionService.
-  // crbug.com/159265
-  scoped_ptr<extensions::BrowserEventRouter> browser_event_router_;
-
   // A collection of external extension providers.  Each provider reads
   // a source of external extension information.  Examples include the
   // windows registry and external_extensions.json.
@@ -959,6 +952,14 @@ class ExtensionService
   // have started happening. It will cause sync to call us back
   // asynchronously via MergeDataAndStartSyncing as soon as possible.
   syncer::SyncableService::StartSyncFlare flare_;
+
+#if defined(OS_CHROMEOS)
+  // TODO(rkc): HACK alert - this is only in place to allow the
+  // kiosk_mode_screensaver to prevent its extension from getting garbage
+  // collected. Remove this once KioskModeScreensaver is removed.
+  // See crbug.com/280363
+  bool disable_garbage_collection_;
+#endif
 
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            InstallAppsWithUnlimtedStorage);

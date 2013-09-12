@@ -40,6 +40,7 @@
 #include "nacl_io/typed_mount_factory.h"
 #include "sdk_util/auto_lock.h"
 #include "sdk_util/ref_object.h"
+#include "sdk_util/string_util.h"
 
 #ifndef MAXPATHLEN
 #define MAXPATHLEN 256
@@ -85,7 +86,8 @@ KernelProxy::~KernelProxy() {
   delete ppapi_;
 }
 
-void KernelProxy::Init(PepperInterface* ppapi) {
+Error KernelProxy::Init(PepperInterface* ppapi) {
+  Error rtn = 0;
   ppapi_ = ppapi;
   dev_ = 1;
 
@@ -97,15 +99,33 @@ void KernelProxy::Init(PepperInterface* ppapi) {
 
   int result;
   result = mount("", "/", "passthroughfs", 0, NULL);
-  assert(result == 0);
+  if (result != 0) {
+    assert(false);
+    rtn = errno;
+  }
 
   result = mount("", "/dev", "dev", 0, NULL);
-  assert(result == 0);
+  if (result != 0) {
+    assert(false);
+    rtn = errno;
+  }
 
   // Open the first three in order to get STDIN, STDOUT, STDERR
-  open("/dev/stdin", O_RDONLY);
-  open("/dev/stdout", O_WRONLY);
-  open("/dev/stderr", O_WRONLY);
+  int fd;
+  fd = open("/dev/stdin", O_RDONLY);
+  assert(fd == 0);
+  if (fd < 0)
+    rtn = errno;
+
+  fd = open("/dev/stdout", O_WRONLY);
+  assert(fd == 1);
+  if (fd < 0)
+    rtn = errno;
+
+  fd = open("/dev/stderr", O_WRONLY);
+  assert(fd == 2);
+  if (fd < 0)
+    rtn = errno;
 
 #ifdef PROVIDES_SOCKET_API
   host_resolver_.Init(ppapi_);
@@ -113,7 +133,13 @@ void KernelProxy::Init(PepperInterface* ppapi) {
 
   StringMap_t args;
   socket_mount_.reset(new MountSocket());
-  socket_mount_->Init(0, args, ppapi);
+  result = socket_mount_->Init(0, args, ppapi);
+  if (result != 0) {
+    assert(false);
+    rtn = result;
+  }
+
+  return rtn;
 }
 
 int KernelProxy::open_resource(const char* path) {
@@ -347,20 +373,20 @@ int KernelProxy::mount(const char* source,
   smap["TARGET"] = abs_path;
 
   if (data) {
-    char* str = strdup(static_cast<const char*>(data));
-    char* ptr = strtok(str, ",");
-    char* val;
-    while (ptr != NULL) {
-      val = strchr(ptr, '=');
-      if (val) {
-        *val = 0;
-        smap[ptr] = val + 1;
+    std::vector<std::string> elements;
+    sdk_util::SplitString(static_cast<const char*>(data), ',', &elements);
+
+    for (std::vector<std::string>::const_iterator it = elements.begin();
+         it != elements.end(); ++it) {
+      size_t location = it->find('=');
+      if (location != std::string::npos) {
+        std::string key = it->substr(0, location);
+        std::string val = it->substr(location + 1);
+        smap[key] = val;
       } else {
-        smap[ptr] = "TRUE";
+        smap[*it] = "TRUE";
       }
-      ptr = strtok(NULL, ",");
     }
-    free(str);
   }
 
   ScopedMount mnt;

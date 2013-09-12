@@ -62,9 +62,6 @@ class ASH_EXPORT WebNotificationTray
   // shown in the system tray side.
   void SetSystemTrayHeight(int height);
 
-  // Updates tray visibility login status of the system changes.
-  void UpdateAfterLoginStatusChange(user::LoginStatus login_status);
-
   // Returns true if it should block the auto hide behavior of the launcher.
   bool ShouldBlockLauncherAutoHide() const;
 
@@ -118,9 +115,6 @@ class ASH_EXPORT WebNotificationTray
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-
-  // Overridden from TrayBackgroundView.
-  virtual bool IsPressed() OVERRIDE;
 
   message_center::MessageCenter* message_center() const;
 

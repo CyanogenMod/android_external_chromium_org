@@ -7,11 +7,13 @@
 #include <algorithm>
 
 #include "base/i18n/break_iterator.h"
+#include "base/i18n/char_iterator.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/text/utf16_indexing.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_fallback_win.h"
@@ -132,25 +134,25 @@ bool IsUnicodeBidiControlCharacter(char16 c) {
 // Returns the corresponding glyph range of the given character range.
 // |range| is in text-space (0 corresponds to |GetLayoutText()[0]|).
 // Returned value is in run-space (0 corresponds to the first glyph in the run).
-ui::Range CharRangeToGlyphRange(const internal::TextRun& run,
-                                const ui::Range& range) {
+gfx::Range CharRangeToGlyphRange(const internal::TextRun& run,
+                                const gfx::Range& range) {
   DCHECK(run.range.Contains(range));
   DCHECK(!range.is_reversed());
   DCHECK(!range.is_empty());
-  const ui::Range run_range = ui::Range(range.start() - run.range.start(),
+  const gfx::Range run_range = gfx::Range(range.start() - run.range.start(),
                                         range.end() - run.range.start());
-  ui::Range result;
+  gfx::Range result;
   if (run.script_analysis.fRTL) {
-    result = ui::Range(run.logical_clusters[run_range.end() - 1],
+    result = gfx::Range(run.logical_clusters[run_range.end() - 1],
         run_range.start() > 0 ? run.logical_clusters[run_range.start() - 1]
                               : run.glyph_count);
   } else {
-    result = ui::Range(run.logical_clusters[run_range.start()],
+    result = gfx::Range(run.logical_clusters[run_range.start()],
         run_range.end() < run.range.length() ?
             run.logical_clusters[run_range.end()] : run.glyph_count);
   }
   DCHECK(!result.is_reversed());
-  DCHECK(ui::Range(0, run.glyph_count).Contains(result));
+  DCHECK(gfx::Range(0, run.glyph_count).Contains(result));
   return result;
 }
 
@@ -266,7 +268,7 @@ std::vector<RenderText::FontSpan> RenderTextWin::GetFontSpansForTesting() {
   std::vector<RenderText::FontSpan> spans;
   for (size_t i = 0; i < runs_.size(); ++i) {
     spans.push_back(RenderText::FontSpan(runs_[i]->font,
-        ui::Range(LayoutIndexToTextIndex(runs_[i]->range.start()),
+        gfx::Range(LayoutIndexToTextIndex(runs_[i]->range.start()),
                   LayoutIndexToTextIndex(runs_[i]->range.end()))));
   }
 
@@ -364,24 +366,24 @@ SelectionModel RenderTextWin::AdjacentWordSelectionModel(
   return SelectionModel(pos, CURSOR_FORWARD);
 }
 
-ui::Range RenderTextWin::GetGlyphBounds(size_t index) {
+gfx::Range RenderTextWin::GetGlyphBounds(size_t index) {
   const size_t run_index =
       GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
   // Return edge bounds if the index is invalid or beyond the layout text size.
   if (run_index >= runs_.size())
-    return ui::Range(string_size_.width());
+    return gfx::Range(string_size_.width());
   internal::TextRun* run = runs_[run_index];
   const size_t layout_index = TextIndexToLayoutIndex(index);
-  return ui::Range(GetGlyphXBoundary(run, layout_index, false),
+  return gfx::Range(GetGlyphXBoundary(run, layout_index, false),
                    GetGlyphXBoundary(run, layout_index, true));
 }
 
-std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
+std::vector<Rect> RenderTextWin::GetSubstringBounds(const gfx::Range& range) {
   DCHECK(!needs_layout_);
-  DCHECK(ui::Range(0, text().length()).Contains(range));
-  ui::Range layout_range(TextIndexToLayoutIndex(range.start()),
+  DCHECK(gfx::Range(0, text().length()).Contains(range));
+  gfx::Range layout_range(TextIndexToLayoutIndex(range.start()),
                          TextIndexToLayoutIndex(range.end()));
-  DCHECK(ui::Range(0, GetLayoutText().length()).Contains(layout_range));
+  DCHECK(gfx::Range(0, GetLayoutText().length()).Contains(layout_range));
 
   std::vector<Rect> bounds;
   if (layout_range.is_empty())
@@ -391,10 +393,10 @@ std::vector<Rect> RenderTextWin::GetSubstringBounds(const ui::Range& range) {
   // TODO(msw): The bounds should probably not always be leading the range ends.
   for (size_t i = 0; i < runs_.size(); ++i) {
     const internal::TextRun* run = runs_[visual_to_logical_[i]];
-    ui::Range intersection = run->range.Intersect(layout_range);
+    gfx::Range intersection = run->range.Intersect(layout_range);
     if (intersection.IsValid()) {
       DCHECK(!intersection.is_reversed());
-      ui::Range range_x(GetGlyphXBoundary(run, intersection.start(), false),
+      gfx::Range range_x(GetGlyphXBoundary(run, intersection.start(), false),
                         GetGlyphXBoundary(run, intersection.end(), false));
       Rect rect(range_x.GetMin(), 0, range_x.length(), run->font.GetHeight());
       rect.set_origin(ToViewPoint(rect.origin()));
@@ -510,7 +512,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
              colors().GetBreak(run->range.start());
          it != colors().breaks().end() && it->first < run->range.end();
          ++it) {
-      const ui::Range glyph_range = CharRangeToGlyphRange(*run,
+      const gfx::Range glyph_range = CharRangeToGlyphRange(*run,
           colors().GetRange(it).Intersect(run->range));
       if (glyph_range.is_empty())
         continue;
@@ -543,13 +545,14 @@ void RenderTextWin::ItemizeLogicalText() {
   script_state_.uBidiLevel =
       (GetTextDirection() == base::i18n::RIGHT_TO_LEFT) ? 1 : 0;
 
-  if (text().empty())
+  const base::string16& layout_text = GetLayoutText();
+  if (layout_text.empty())
     return;
 
   HRESULT hr = E_OUTOFMEMORY;
   int script_items_count = 0;
   std::vector<SCRIPT_ITEM> script_items;
-  const size_t layout_text_length = GetLayoutText().length();
+  const size_t layout_text_length = layout_text.length();
   // Ensure that |kMaxRuns| is attempted and the loop terminates afterward.
   for (size_t runs = kGuessRuns; hr == E_OUTOFMEMORY && runs <= kMaxRuns;
        runs = std::max(runs + 1, std::min(runs * 2, kMaxRuns))) {
@@ -557,9 +560,9 @@ void RenderTextWin::ItemizeLogicalText() {
     // ScriptItemize always adds a terminal array item so that the length of
     // the last item can be derived from the terminal SCRIPT_ITEM::iCharPos.
     script_items.resize(runs);
-    hr = ScriptItemize(GetLayoutText().c_str(), layout_text_length,
-                       runs - 1, &script_control_, &script_state_,
-                       &script_items[0], &script_items_count);
+    hr = ScriptItemize(layout_text.c_str(), layout_text_length, runs - 1,
+                       &script_control_, &script_state_, &script_items[0],
+                       &script_items_count);
   }
   DCHECK(SUCCEEDED(hr));
   if (!SUCCEEDED(hr) || script_items_count <= 0)
@@ -571,7 +574,7 @@ void RenderTextWin::ItemizeLogicalText() {
   // Build the list of runs from the script items and ranged styles. Use an
   // empty color BreakList to avoid breaking runs at color boundaries.
   BreakList<SkColor> empty_colors;
-  empty_colors.SetMax(text().length());
+  empty_colors.SetMax(layout_text_length);
   internal::StyleIterator style(empty_colors, styles());
   SCRIPT_ITEM* script_item = &script_items[0];
   const size_t max_run_length = kMaxGlyphs / 2;
@@ -592,9 +595,32 @@ void RenderTextWin::ItemizeLogicalText() {
     const size_t script_item_break = (script_item + 1)->iCharPos;
     run_break = std::min(script_item_break,
                          TextIndexToLayoutIndex(style.GetRange().end()));
+
     // Clamp run lengths to avoid exceeding the maximum supported glyph count.
-    if ((run_break - run->range.start()) > max_run_length)
+    if ((run_break - run->range.start()) > max_run_length) {
       run_break = run->range.start() + max_run_length;
+      if (!ui::IsValidCodePointIndex(layout_text, run_break))
+        --run_break;
+    }
+
+    // Break runs between characters in different code blocks. This avoids using
+    // fallback fonts for more characters than needed. http://crbug.com/278913
+    if (run_break > run->range.start()) {
+      const size_t run_start = run->range.start();
+      const int32 run_length = static_cast<int32>(run_break - run_start);
+      base::i18n::UTF16CharIterator iter(layout_text.c_str() + run_start,
+                                         run_length);
+      const UBlockCode first_block_code = ublock_getCode(iter.get());
+      while (iter.Advance() && iter.array_pos() < run_length) {
+        if (ublock_getCode(iter.get()) != first_block_code) {
+          run_break = run_start + iter.array_pos();
+          break;
+        }
+      }
+    }
+
+    DCHECK(ui::IsValidCodePointIndex(layout_text, run_break));
+
     style.UpdatePosition(LayoutIndexToTextIndex(run_break));
     if (script_item_break == run_break)
       script_item++;
@@ -684,7 +710,6 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   // in the case where no font is able to display the entire run.
   int best_partial_font_missing_char_count = INT_MAX;
   Font best_partial_font = original_font;
-  bool using_best_partial_font = false;
   Font current_font;
 
   run->logical_clusters.reset(new WORD[run_length]);

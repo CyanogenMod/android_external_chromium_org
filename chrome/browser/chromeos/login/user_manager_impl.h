@@ -38,6 +38,7 @@ namespace chromeos {
 
 class RemoveUserDelegate;
 class SessionLengthLimiter;
+class UserPolicyStatusManager;
 
 // Implementation of the UserManager.
 class UserManagerImpl
@@ -56,6 +57,7 @@ class UserManagerImpl
   virtual UserList GetUsersAdmittedForMultiProfile() const OVERRIDE;
   virtual const UserList& GetLoggedInUsers() const OVERRIDE;
   virtual const UserList& GetLRULoggedInUsers() OVERRIDE;
+  virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
                             const std::string& username_hash,
                             bool browser_restart) OVERRIDE;
@@ -106,8 +108,6 @@ class UserManagerImpl
   virtual bool IsLoggedInAsStub() const OVERRIDE;
   virtual bool IsSessionStarted() const OVERRIDE;
   virtual bool UserSessionsRestored() const OVERRIDE;
-  virtual MergeSessionState GetMergeSessionState() const OVERRIDE;
-  virtual void SetMergeSessionState(MergeSessionState status) OVERRIDE;
   virtual bool HasBrowserRestarted() const OVERRIDE;
   virtual bool IsUserNonCryptohomeDataEphemeral(
       const std::string& email) const OVERRIDE;
@@ -226,11 +226,7 @@ class UserManagerImpl
   void SetCurrentUserIsOwner(bool is_current_user_owner);
 
   // Updates current user ownership on UI thread.
-  void UpdateOwnership(DeviceSettingsService::OwnershipStatus status,
-                       bool is_owner);
-
-  // Triggers an asynchronous ownership check.
-  void CheckOwnership();
+  void UpdateOwnership();
 
   // Removes data stored or cached outside the user's cryptohome (wallpaper,
   // avatar, OAuth token status, display name, display email).
@@ -368,9 +364,6 @@ class UserManagerImpl
   // policy yet.
   bool ephemeral_users_enabled_;
 
-  // Merge session state (cookie restore process state).
-  MergeSessionState merge_session_state_;
-
   // Cached name of device owner. Defaults to empty string if the value has not
   // been read from trusted device policy yet.
   std::string owner_email_;
@@ -413,6 +406,8 @@ class UserManagerImpl
 
   // Time at which this object was created.
   base::TimeTicks manager_creation_time_;
+
+  scoped_ptr<UserPolicyStatusManager> user_policy_status_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

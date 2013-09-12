@@ -399,6 +399,7 @@ component("base") {
     "process/kill_mac.cc",
     "process/kill_posix.cc",
     "process/kill_win.cc",
+    "process/launch.cc",
     "process/launch.h",
     "process/launch_ios.cc",
     "process/launch_mac.cc",
@@ -807,6 +808,7 @@ component("base") {
 # library. Note that this library cannot depend on base because base depends on
 # base_static.
 static_library("base_static") {
+  external = true
   sources = [
     "base_switches.cc",
     "base_switches.h",
@@ -816,6 +818,7 @@ static_library("base_static") {
 }
 
 component("base_i18n") {
+  external = true
   sources = [
     "i18n/base_i18n_export.h",
     "i18n/bidi_line_iterator.cc",
@@ -854,22 +857,19 @@ component("base_i18n") {
   defines = [
     "BASE_I18N_IMPLEMENTATION",
   ]
+
+  if (toolkit_uses_gtk) {
+    # i18n/rtl.cc uses gtk
+    configs += "//build/config/linux:gtk"
+  }
+
   #'conditions': [
-  #  ['toolkit_uses_gtk==1', {
-  #    'deps': [
-  #      # i18n/rtl.cc uses gtk
-  #      '../build/linux/system.gyp:gtk',
-  #    ],
-  #  }],
   #  ['OS == "win"', {
   #    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
   #    'msvs_disabled_warnings': [
   #      4267,
   #    ],
   #  }],
-  #],
-  #'export_dependent_settings': [
-  #  'base',
   #],
   #'variables': {
   #  'enable_wexit_time_destructors': 1,
@@ -898,6 +898,8 @@ static_library("test_support_base") {
     "test/multiprocess_test_android.cc",
     "test/null_task_runner.cc",
     "test/null_task_runner.h",
+    "test/parallel_test_launcher.cc",
+    "test/parallel_test_launcher.h",
     "test/perf_test_suite.cc",
     "test/perf_test_suite.h",
     "test/perftimer.cc",
@@ -975,15 +977,9 @@ static_library("test_support_base") {
     set_sources_assignment_filter([])
     sources += "test_file_util_mac.cc"
   }
-  #if (!is_bsd) {
-  #  sources -= "test/test_file_util_linux.cc"
-  #}
-  #if (use_gtk) {
-  #  deps += "/build/linux/system:gtk"
-  #}
-  #export_dependent_settings [
-  #  'base',
-  #]
+  if (toolkit_uses_gtk) {
+    configs += "//build/config/linux:gtk"
+  }
 }
 
 # TODO(brettw) move to base/test.
@@ -1005,9 +1001,9 @@ static_library("test_support_perf") {
 
   direct_dependent_configs = [ ":perf_test_config" ]
 
-  #if (toolkit_uses_gtk) {
-  #  deps += "/build/linux/system:gtk",
-  #}
+  if (toolkit_uses_gtk) {
+    configs += "//build/config/linux:gtk"
+  }
 }
 
 # TODO(brettw) move to base/test.

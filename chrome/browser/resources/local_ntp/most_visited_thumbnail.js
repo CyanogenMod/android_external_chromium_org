@@ -30,6 +30,9 @@ window.addEventListener('DOMContentLoaded', function() {
         var link = createMostVisitedLink(params, data.url, data.title);
         link.appendChild(shadow);
         link.appendChild(image);
+        // We add 'position: absolute' in anticipation that there could be more
+        // than one thumbnail. This will superpose the elements.
+        link.style.position = 'absolute';
         document.body.appendChild(link);
       };
       if (!isVisible) {
@@ -51,9 +54,11 @@ window.addEventListener('DOMContentLoaded', function() {
         // The first thumbnail's onerror function will swap the visibility of
         // the two thumbnails.
         image.onerror = function() {
+          logEvent(NTP_LOGGING_EVENT_TYPE.NTP_FALLBACK_THUMBNAIL_USED);
           image.style.visibility = 'hidden';
           image2.style.visibility = 'visible';
         };
+        logEvent(NTP_LOGGING_EVENT_TYPE.NTP_FALLBACK_THUMBNAIL_REQUESTED);
       } else {
         image.onerror = showDomainElement;
       }

@@ -19,14 +19,14 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
-#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "ui/base/gtk/scoped_gobject.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/gtk_compat.h"
+#include "ui/gfx/scoped_gobject.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
-using content::PasswordForm;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 

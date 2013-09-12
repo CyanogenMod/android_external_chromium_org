@@ -112,6 +112,16 @@ cr.define('options.network', function() {
   var defaultIcons_ = {};
 
   /**
+   * Contains the current logged in user type, which is one of 'none',
+   * 'regular', 'owner', 'guest', 'retail-mode', 'public-account',
+   * 'locally-managed', and 'kiosk-app', or empty string if the data has not
+   * been set.
+   * @type {string}
+   * @private
+   */
+  var loggedInUserType_ = '';
+
+  /**
    * Create an element in the network list for controlling network
    * connectivity.
    * @param {Object} data Description of the network list or command.
@@ -463,7 +473,7 @@ cr.define('options.network', function() {
 
         var label = enableDataRoaming_ ? 'disableDataRoaming' :
             'enableDataRoaming';
-        var disabled = !UIAccountTweaks.currentUserIsOwner();
+        var disabled = loggedInUserType_ != 'owner';
         var entry = {label: loadTimeData.getString(label),
                      data: {}};
         if (disabled) {
@@ -933,6 +943,14 @@ cr.define('options.network', function() {
   };
 
   /**
+   * Sets the current logged in user type.
+   * @param {string} userType Current logged in user type.
+   */
+  NetworkList.updateLoggedInUserType = function(userType) {
+    loggedInUserType_ = String(userType);
+  };
+
+  /**
    * Chrome callback for updating network controls.
    * @param {Object} data Description of available network devices and their
    *     corresponding state.
@@ -988,10 +1006,8 @@ cr.define('options.network', function() {
       networkList.deleteItem('wimax');
     }
 
-    // Only show VPN control if there is an available network and an internet
-    // connection.
-    if (data.vpnList.length > 0 && (ethernetConnection ||
-        isConnected_(data.wirelessList)))
+    // Only show VPN control if there is at least one VPN configured.
+    if (data.vpnList.length > 0)
       loadData_('vpn', data.vpnList, data.rememberedList);
     else
       networkList.deleteItem('vpn');
@@ -1111,17 +1127,6 @@ cr.define('options.network', function() {
         menu.parentNode.removeChild(menu);
       activeMenu_ = null;
     }
-  }
-
-  /**
-   * Determines if the user is connected to or in the process of connecting to
-   * a wireless network.
-   * @param {Array.<Object>} networkList List of networks.
-   * @return {boolean} True if connected or connecting to a network.
-   * @private
-   */
-  function isConnected_(networkList) {
-    return getConnection_(networkList) != null;
   }
 
   /**

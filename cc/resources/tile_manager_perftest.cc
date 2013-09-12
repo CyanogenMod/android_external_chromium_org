@@ -14,6 +14,7 @@
 #include "cc/test/test_tile_priorities.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/perf/perf_test.h"
 
 namespace cc {
 
@@ -45,7 +46,9 @@ class TileManagerPerfTest : public testing::Test {
     GlobalStateThatImpactsTilePriority state;
     gfx::Size tile_size = settings_.default_tile_size;
     state.memory_limit_in_bytes =
-        10000 * 4 * tile_size.width() * tile_size.height();
+        10000u * 4u *
+        static_cast<size_t>(tile_size.width() * tile_size.height());
+    state.num_resources_limit = 10000;
     state.memory_limit_policy = ALLOW_ANYTHING;
     state.tree_priority = SMOOTHNESS_TAKES_PRIORITY;
 
@@ -56,12 +59,6 @@ class TileManagerPerfTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     tile_manager_.reset(NULL);
     picture_pile_ = NULL;
-  }
-
-  void AfterTest(const std::string test_name) {
-    // Format matches chrome/test/perf/perf_test.h:PrintResult
-    printf(
-        "*RESULT %s: %.2f runs/s\n", test_name.c_str(), timer_.LapsPerSecond());
   }
 
   TilePriority GetTilePriorityFromBin(ManagedTileBin bin) {
@@ -131,20 +128,21 @@ class TileManagerPerfTest : public testing::Test {
     CreateBinTiles(count - 3 * count_per_bin, NEVER_BIN, tiles);
   }
 
-  void RunManageTilesTest(const std::string test_name,
+  void RunManageTilesTest(const std::string& test_name,
                           unsigned tile_count,
-                          unsigned priority_change_percent) {
+                          int priority_change_percent) {
     DCHECK_GE(tile_count, 100u);
-    DCHECK_LE(priority_change_percent, 100u);
+    DCHECK_GE(priority_change_percent, 0);
+    DCHECK_LE(priority_change_percent, 100);
     TileBinVector tiles;
     CreateTiles(tile_count, &tiles);
     timer_.Reset();
     do {
-      if (priority_change_percent) {
+      if (priority_change_percent > 0) {
         for (unsigned i = 0;
              i < tile_count;
              i += 100 / priority_change_percent) {
-          Tile* tile = tiles[i].first;
+          Tile* tile = tiles[i].first.get();
           ManagedTileBin bin = GetNextBin(tiles[i].second);
           tile->SetPriority(ACTIVE_TREE, GetTilePriorityFromBin(bin));
           tile->SetPriority(PENDING_TREE, GetTilePriorityFromBin(bin));
@@ -153,10 +151,12 @@ class TileManagerPerfTest : public testing::Test {
       }
 
       tile_manager_->ManageTiles();
+      tile_manager_->CheckForCompletedTasks();
       timer_.NextLap();
     } while (!timer_.HasTimeLimitExpired());
 
-    AfterTest(test_name);
+    perf_test::PrintResult("manage_tiles", "", test_name,
+                           timer_.LapsPerSecond(), "runs/s", true);
   }
 
  private:
@@ -171,15 +171,15 @@ class TileManagerPerfTest : public testing::Test {
 };
 
 TEST_F(TileManagerPerfTest, ManageTiles) {
-  RunManageTilesTest("manage_tiles_100_0", 100, 0);
-  RunManageTilesTest("manage_tiles_1000_0", 1000, 0);
-  RunManageTilesTest("manage_tiles_10000_0", 10000, 0);
-  RunManageTilesTest("manage_tiles_100_10", 100, 10);
-  RunManageTilesTest("manage_tiles_1000_10", 1000, 10);
-  RunManageTilesTest("manage_tiles_10000_10", 10000, 10);
-  RunManageTilesTest("manage_tiles_100_100", 100, 100);
-  RunManageTilesTest("manage_tiles_1000_100", 1000, 100);
-  RunManageTilesTest("manage_tiles_10000_100", 10000, 100);
+  RunManageTilesTest("100_0", 100, 0);
+  RunManageTilesTest("1000_0", 1000, 0);
+  RunManageTilesTest("10000_0", 10000, 0);
+  RunManageTilesTest("100_10", 100, 10);
+  RunManageTilesTest("1000_10", 1000, 10);
+  RunManageTilesTest("10000_10", 10000, 10);
+  RunManageTilesTest("100_100", 100, 100);
+  RunManageTilesTest("1000_100", 1000, 100);
+  RunManageTilesTest("10000_100", 10000, 100);
 }
 
 }  // namespace

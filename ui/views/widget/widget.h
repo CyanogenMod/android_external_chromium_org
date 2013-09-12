@@ -176,9 +176,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     Ownership ownership;
     bool mirror_origin_in_rtl;
     bool has_dropshadow;
-    // Only used by NativeWidgetWin. Specifies that the system default caption
-    // and icon should not be rendered, and that the client area should be
-    // equivalent to the window area.
+    // Only used by Windows. Specifies that the system default caption and icon
+    // should not be rendered, and that the client area should be equivalent to
+    // the window area.
     bool remove_standard_frame;
     // Only used by ShellWindow on Windows. Specifies that the default icon of
     // packaged app should be the system default icon.
@@ -216,6 +216,11 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // where it wants your window placed.) NULL is not allowed if you are using
     // aura.
     gfx::NativeView context;
+    // Only used by X11, for root level windows. Specifies the res_name and
+    // res_class fields, respectively, of the WM_CLASS window property. Controls
+    // window grouping and desktop file matching in Linux window managers.
+    std::string wm_class_name;
+    std::string wm_class_class;
   };
 
   Widget();
@@ -626,7 +631,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   }
 
   // Sets capture to the specified view. This makes it so that all mouse, touch
-  // and gesture events go to |view|.
+  // and gesture events go to |view|. If |view| is NULL, the widget still
+  // obtains event capture, but the events will go to the view they'd normally
+  // go to.
   void SetCapture(View* view);
 
   // Releases capture.
@@ -634,6 +641,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   // Returns true if the widget has capture.
   bool HasCapture();
+
+  void set_auto_release_capture(bool auto_release_capture) {
+    auto_release_capture_ = auto_release_capture;
+  }
 
   // Invoked when the tooltip text changes for the specified views.
   void TooltipTextChanged(View* view);
@@ -664,6 +675,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Creates and dispatches synthesized mouse move event using the current
   // mouse location to refresh hovering status in the widget.
   void SynthesizeMouseMoveEvent();
+
+  // Called by our RootView after it has performed a Layout. Used to forward
+  // window sizing information to the window server on some platforms.
+  void OnRootViewLayout();
 
   // Notification that our owner is closing.
   // NOTE: this is not invoked for aura as it's currently not needed there.
@@ -730,9 +745,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   friend class NativeTextfieldViewsTest;
   friend class NativeComboboxViewsTest;
 
-  // Returns whether capture should be released on mouse release.
-  virtual bool ShouldReleaseCaptureOnMouseReleased() const;
-
   // Sets the value of |disable_inactive_rendering_|. If the value changes,
   // both the NonClientView and WidgetDelegate are notified.
   void SetInactiveRenderingDisabled(bool value);
@@ -764,8 +776,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
 
   ObserverList<WidgetObserver> observers_;
 
-  // Non-owned pointer to the Widget's delegate.  May be NULL if no delegate is
-  // being used.
+  // Non-owned pointer to the Widget's delegate. If a NULL delegate is supplied
+  // to Init() a default WidgetDelegate is created.
   WidgetDelegate* widget_delegate_;
 
   // The root of the View hierarchy attached to this window.
@@ -846,6 +858,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // duplicate move events even though the mouse hasn't moved.
   bool last_mouse_event_was_move_;
   gfx::Point last_mouse_event_position_;
+
+  // True if event capture should be released on a mouse up event. Default is
+  // true.
+  bool auto_release_capture_;
 
   // See description in GetRootLayers().
   std::vector<ui::Layer*> root_layers_;

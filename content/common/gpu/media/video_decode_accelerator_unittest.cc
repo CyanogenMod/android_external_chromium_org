@@ -191,7 +191,7 @@ void ParseAndReadTestVideoData(base::FilePath::StringType data,
 
     // Read in the video data.
     base::FilePath filepath(video_file->file_name);
-    CHECK(file_util::ReadFileToString(filepath, &video_file->data_str))
+    CHECK(base::ReadFileToString(filepath, &video_file->data_str))
         << "test_video_file: " << filepath.MaybeAsASCII();
 
     test_video_files->push_back(video_file);
@@ -204,7 +204,7 @@ void ReadGoldenThumbnailMD5s(const TestVideoFile* video_file,
   base::FilePath filepath(video_file->file_name);
   filepath = filepath.AddExtension(FILE_PATH_LITERAL(".md5"));
   std::string all_md5s;
-  file_util::ReadFileToString(filepath, &all_md5s);
+  base::ReadFileToString(filepath, &all_md5s);
   base::SplitString(all_md5s, '\n', md5_strings);
   // Check these are legitimate MD5s.
   for (std::vector<std::string>::iterator md5_string = md5_strings->begin();
@@ -429,7 +429,9 @@ void ThrottlingVDAClient::NotifyError(VideoDecodeAccelerator::Error error) {
 
 // Client that can accept callbacks from a VideoDecodeAccelerator and is used by
 // the TESTs below.
-class GLRenderingVDAClient : public VideoDecodeAccelerator::Client {
+class GLRenderingVDAClient
+    : public VideoDecodeAccelerator::Client,
+      public base::SupportsWeakPtr<GLRenderingVDAClient> {
  public:
   // Doesn't take ownership of |rendering_helper| or |note|, which must outlive
   // |*this|.
@@ -606,8 +608,11 @@ void GLRenderingVDAClient::CreateDecoder() {
   CHECK(!decoder_.get());
 
   VideoDecodeAccelerator::Client* client = this;
-  if (throttling_client_)
+  base::WeakPtr<VideoDecodeAccelerator::Client> weak_client = AsWeakPtr();
+  if (throttling_client_) {
     client = throttling_client_.get();
+    weak_client = throttling_client_->AsWeakPtr();
+  }
 #if defined(OS_WIN)
   decoder_.reset(
       new DXVAVideoDecodeAccelerator(client, base::Bind(&DoNothingReturnTrue)));
@@ -617,6 +622,7 @@ void GLRenderingVDAClient::CreateDecoder() {
       static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
       static_cast<EGLContext>(rendering_helper_->GetGLContext()),
       client,
+      weak_client,
       base::Bind(&DoNothingReturnTrue),
       base::MessageLoopProxy::current()));
 #elif defined(ARCH_CPU_X86_FAMILY)

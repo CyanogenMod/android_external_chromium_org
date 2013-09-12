@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/rand_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/local_discovery/privet_device_lister_impl.h"
 #include "chrome/browser/notifications/notification.h"
@@ -32,6 +33,7 @@ const int kTenMinutesInSeconds = 600;
 const char kPrivetInfoKeyUptime[] = "uptime";
 const char kPrivetNotificationIDPrefix[] = "privet_notification:";
 const char kPrivetNotificationOriginUrl[] = "chrome://devices";
+const int kStartDelaySeconds = 30;
 }
 
 PrivetNotificationsListener::PrivetNotificationsListener(
@@ -125,6 +127,20 @@ void PrivetNotificationsListener::DeviceRemoved(const std::string& name) {
   delegate_->PrivetRemoveNotification(name);
 }
 
+void PrivetNotificationsListener::DeviceCacheFlushed() {
+  for (DeviceContextMap::iterator i = devices_seen_.begin();
+       i != devices_seen_.end(); ++i) {
+    DeviceContext* device = i->second.get();
+
+    device->info_operation.reset();
+    device->privet_http_resolution.reset();
+    if (device->notification_may_be_active) {
+      device->notification_may_be_active = false;
+      delegate_->PrivetRemoveNotification(i->first);
+    }
+  }
+}
+
 PrivetNotificationsListener::DeviceContext::DeviceContext() {
 }
 
@@ -136,9 +152,11 @@ PrivetNotificationService::PrivetNotificationService(
     NotificationUIManager* notification_manager)
     : profile_(profile),
       notification_manager_(notification_manager) {
-  base::MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&PrivetNotificationService::Start, AsWeakPtr()));
+      base::Bind(&PrivetNotificationService::Start, AsWeakPtr()),
+      base::TimeDelta::FromSeconds(kStartDelaySeconds +
+                                   base::RandInt(0, kStartDelaySeconds/4)));
 }
 
 PrivetNotificationService::~PrivetNotificationService() {
@@ -154,6 +172,10 @@ void PrivetNotificationService::DeviceChanged(
 
 void PrivetNotificationService::DeviceRemoved(const std::string& name) {
   privet_notifications_listener_->DeviceRemoved(name);
+}
+
+void PrivetNotificationService::DeviceCacheFlushed() {
+  privet_notifications_listener_->DeviceCacheFlushed();
 }
 
 void PrivetNotificationService::PrivetNotify(

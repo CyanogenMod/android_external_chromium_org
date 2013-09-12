@@ -885,3 +885,51 @@
    fun:net::QuicHttpStream::Close
    fun:net::test::QuicStreamFactoryTest_MaxOpenStream_Test::TestBody
 }
+{
+   bug_282646
+   Heapcheck:Leak
+   ...
+   fun:SyncFileSystemBackend
+   fun:chrome::ChromeContentBrowserClient::GetAdditionalFileSystemBackends
+   fun:content::CreateFileSystemContext
+   fun:content::StoragePartitionImpl::Create
+   fun:content::StoragePartitionImplMap::Get
+   fun:GetStoragePartitionFromConfig
+   fun:content::BrowserContext::GetStoragePartitionForSite
+   fun:ExtensionService::NotifyExtensionUnloaded
+   fun:ExtensionService::UnloadExtension
+   fun:ExtensionService::AddExtension
+   fun:extensions::TestExtensionEnvironment::MakeExtension
+}
+{
+   bug_286185
+   Heapcheck:Leak
+   fun:sqlite3MemMalloc
+   fun:NetworkingPrivateCrypto::VerifyCredentials
+   fun:NetworkingPrivateCryptoTest_VerifyCredentials_Test::TestBody
+}
+{
+   bug_289719_a
+   Heapcheck:Leak
+   fun:SafeBrowsingDatabaseManagerTest::RunSBHashTest
+   fun:SafeBrowsingDatabaseManagerTest_CheckCorrespondsListType_Test::TestBody
+}
+{
+   bug_289719_b
+   Heapcheck:Leak
+   fun:CreateSafeBrowsingService
+   fun:SafeBrowsingService::CreateSafeBrowsingService
+   fun:SafeBrowsingDatabaseManagerTest::RunSBHashTest
+   fun:SafeBrowsingDatabaseManagerTest_CheckCorrespondsListType_Test::TestBody
+}
+{
+   bug_289719_c
+   Heapcheck:Leak
+   fun:__gnu_cxx::new_allocator::allocate
+   fun:std::_Vector_base::_M_allocate
+   fun:_Vector_base
+   fun:vector
+   fun:SafeBrowsingCheck
+   fun:SafeBrowsingDatabaseManagerTest::RunSBHashTest
+   fun:SafeBrowsingDatabaseManagerTest_CheckCorrespondsListType_Test::TestBody
+}

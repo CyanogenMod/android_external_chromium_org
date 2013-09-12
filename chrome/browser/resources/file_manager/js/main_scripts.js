@@ -68,6 +68,7 @@
 
 //<include src="combobutton.js"/>
 //<include src="commandbutton.js"/>
+//<include src="ui/file_manager_dialog_base.js"/>
 //
 //<include src="app_installer.js"/>
 //<include src="async_util.js"/>
@@ -99,7 +100,11 @@
 //<include src="share_client.js"/>
 //<include src="share_dialog.js"/>
 //<include src="suggest_apps_dialog.js"/>
+//<include src="text_measure.js"/>
 //<include src="tree.css.js"/>
+//<include src="ui/preview_panel.js"/>
+//<include src="ui/progress_center_panel.js"/>
+//<include src="url_constants.js"/>
 //<include src="volume_manager.js"/>
 //<include src="media/media_util.js"/>
 //<include src="metadata/metadata_cache.js"/>

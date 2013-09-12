@@ -21,6 +21,7 @@ extern const char kPrivetErrorInvalidXPrivetToken[];
 extern const char kPrivetActionStart[];
 extern const char kPrivetActionGetClaimToken[];
 extern const char kPrivetActionComplete[];
+extern const char kPrivetActionCancel[];
 
 // Name for pseudo-action "info", used only to show info stage in errors.
 extern const char kPrivetActionNameInfo[];
@@ -45,6 +46,8 @@ extern const char kPrivetConnectionStatusNotConfigured[];
 const int kPrivetDefaultTimeout = 15;
 
 const double kPrivetMaximumTimeRandomAddition = 0.2;
+
+const int kAccountIndexUseOAuth2 = -1;
 
 }  // namespace local_discovery
 

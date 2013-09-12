@@ -23,23 +23,12 @@ class FileSystemURL;
 
 namespace drive {
 
+class DriveAppRegistry;
+class DriveServiceInterface;
 class FileSystemInterface;
 class ResourceEntry;
 
 namespace util {
-
-// Path constants.
-
-// Name of the directory used to store metadata.
-const base::FilePath::CharType kMetadataDirectory[] = FILE_PATH_LITERAL("meta");
-
-// Name of the directory used to store cached files.
-const base::FilePath::CharType kCacheFileDirectory[] =
-    FILE_PATH_LITERAL("files");
-
-// Name of the directory used to store temporary files.
-const base::FilePath::CharType kTemporaryFileDirectory[] =
-    FILE_PATH_LITERAL("tmp");
 
 // Special resource IDs introduced to manage pseudo directory tree locally.
 // These strings are supposed to be different from any resource ID used on the
@@ -71,6 +60,10 @@ const base::FilePath& GetDriveMyDriveRootPath();
 // Returns the Drive mount point path, which looks like "/special/drive".
 const base::FilePath& GetDriveMountPointPath();
 
+// Returns the FileSystem for the |profile|. If not available (not mounted
+// or disabled), returns NULL.
+FileSystemInterface* GetFileSystemByProfile(Profile* profile);
+
 // Returns a FileSystemInterface instance for the |profile_id|, or NULL
 // if the Profile for |profile_id| is destructed or Drive File System is
 // disabled for the profile.
@@ -80,6 +73,14 @@ const base::FilePath& GetDriveMountPointPath();
 // NULL for such a case).
 // This function must be called on UI thread.
 FileSystemInterface* GetFileSystemByProfileId(void* profile_id);
+
+// Returns the DriveAppRegistry for the |profile|. If not available (not
+// mounted or disabled), returns NULL.
+DriveAppRegistry* GetDriveAppRegistryByProfile(Profile* profile);
+
+// Returns the DriveService for the |profile|. If not available (not mounted
+// or disabled), returns NULL.
+DriveServiceInterface* GetDriveServiceByProfile(Profile* profile);
 
 // Checks if the resource ID is a special one, which is effective only in our
 // implementation and is not supposed to be sent to the server.
@@ -144,7 +145,8 @@ base::FilePath GetCacheRootPath(Profile* profile);
 // "files" directory (see crbug.com/248905).
 // TODO(hashimoto): Remove this function at some point.
 void MigrateCacheFilesFromOldDirectories(
-    const base::FilePath& cache_root_directory);
+    const base::FilePath& cache_root_directory,
+    const base::FilePath::StringType& cache_file_directory_name);
 
 // Callback type for PrepareWritableFileAndRun.
 typedef base::Callback<void (FileError, const base::FilePath& path)>
