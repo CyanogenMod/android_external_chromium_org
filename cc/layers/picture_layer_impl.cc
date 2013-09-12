@@ -45,11 +45,10 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       raster_contents_scale_(0.f),
       low_res_raster_contents_scale_(0.f),
       raster_source_scale_was_animating_(false),
-      is_using_lcd_text_(tree_impl->settings().can_use_lcd_text) {
-}
+      is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
+      should_update_tile_priorities_(false) {}
 
-PictureLayerImpl::~PictureLayerImpl() {
-}
+PictureLayerImpl::~PictureLayerImpl() {}
 
 const char* PictureLayerImpl::LayerTypeAsString() const {
   return "cc::PictureLayerImpl";
@@ -296,6 +295,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 }
 
 void PictureLayerImpl::UpdateTilePriorities() {
+  CHECK(should_update_tile_priorities_);
+
   if (!tilings_->num_tilings())
     return;
 
@@ -384,6 +385,10 @@ void PictureLayerImpl::CalculateContentsScale(
     float* contents_scale_x,
     float* contents_scale_y,
     gfx::Size* content_bounds) {
+  // This function sets valid raster scales and manages tilings, so tile
+  // priorities can now be updated.
+  should_update_tile_priorities_ = true;
+
   if (!CanHaveTilings()) {
     ideal_page_scale_ = page_scale_factor;
     ideal_device_scale_ = device_scale_factor;
@@ -985,6 +990,10 @@ void PictureLayerImpl::ResetRasterScale() {
   raster_source_scale_ = 0.f;
   raster_contents_scale_ = 0.f;
   low_res_raster_contents_scale_ = 0.f;
+
+  // When raster scales aren't valid, don't update tile priorities until
+  // this layer has been updated via UpdateDrawProperties.
+  should_update_tile_priorities_ = false;
 }
 
 bool PictureLayerImpl::CanHaveTilings() const {
