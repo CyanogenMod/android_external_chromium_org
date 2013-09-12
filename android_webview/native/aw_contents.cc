@@ -30,6 +30,7 @@
 #include "base/atomicops.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/message_loop/message_loop.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
@@ -253,6 +254,14 @@ jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
   delete this;
+
+  // When the last WebView is destroyed free all discardable memory allocated by
+  // Chromium, because the app process may continue to run for a long time
+  // without ever using another WebView.
+  if (base::subtle::NoBarrier_Load(&g_instance_count) == 0) {
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_CRITICAL);
+  }
 }
 
 static jint Init(JNIEnv* env, jclass, jobject browser_context) {
@@ -337,15 +346,6 @@ void AwContents::CreatePdfExporter(JNIEnv* env,
                         web_contents_.get()));
 }
 // END: Printing fork b/10190508
-
-void AwContents::PerformLongClick() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-
-  Java_AwContents_performLongClick(env, obj.obj());
-}
 
 bool AwContents::OnReceivedHttpAuthRequest(const JavaRef<jobject>& handler,
                                            const std::string& host,

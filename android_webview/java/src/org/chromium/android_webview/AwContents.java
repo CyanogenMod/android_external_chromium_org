@@ -490,7 +490,7 @@ public class AwContents {
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
         mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient,
-                mLayoutSizer.getPreferredSizeChangedListener());
+                mLayoutSizer.getPreferredSizeChangedListener(), mContainerView);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient);
         mZoomControls = new AwZoomControls(this);
         mIoThreadClient = new IoThreadClientImpl();
@@ -1786,11 +1786,6 @@ public class AwContents {
         } else {
             mContainerView.postInvalidate();
         }
-    }
-
-    @CalledByNative
-    private boolean performLongClick() {
-        return mContainerView.performLongClick();
     }
 
     @CalledByNative
