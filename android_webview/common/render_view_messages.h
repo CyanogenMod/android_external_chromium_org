@@ -99,3 +99,10 @@ IPC_MESSAGE_ROUTED1(AwViewHostMsg_PageScaleFactorChanged,
 // Sent whenever the contents size (as seen by RenderView) is changed.
 IPC_MESSAGE_ROUTED1(AwViewHostMsg_OnContentsSizeChanged,
                     gfx::Size /* contents_size */)
+
+// Sent when there is a top level navigation. Returning true means
+// the application will handle this request and so will cancel the
+// navigation within Blink.
+IPC_SYNC_MESSAGE_ROUTED1_1(AwViewHostMsg_ShouldOverrideUrlLoading,
+                           string16 /* in - url */,
+                           bool /* out - result */)

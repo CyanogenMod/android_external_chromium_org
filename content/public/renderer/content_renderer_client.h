@@ -49,6 +49,7 @@ struct WebURLError;
 
 namespace content {
 
+class DocumentState;
 class RenderView;
 class SynchronousCompositor;
 struct WebPluginInfo;
@@ -167,7 +168,9 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if the navigation was handled by the embedder and should be
   // ignored by WebKit. This method is used by CEF.
-  virtual bool HandleNavigation(WebKit::WebFrame* frame,
+  virtual bool HandleNavigation(RenderView* view,
+                                DocumentState* document_state,
+                                WebKit::WebFrame* frame,
                                 const WebKit::WebURLRequest& request,
                                 WebKit::WebNavigationType type,
                                 WebKit::WebNavigationPolicy default_policy,

@@ -141,6 +141,8 @@ bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
                         OnPageScaleFactorChanged)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_OnContentsSizeChanged,
                         OnContentsSizeChanged)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_ShouldOverrideUrlLoading,
+                        OnShouldOverrideUrlLoading)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -174,6 +176,12 @@ void AwRenderViewHostExt::OnPageScaleFactorChanged(float page_scale_factor) {
 void AwRenderViewHostExt::OnContentsSizeChanged(
     const gfx::Size& contents_size) {
   client_->OnWebLayoutContentsSizeChanged(contents_size);
+}
+
+void AwRenderViewHostExt::OnShouldOverrideUrlLoading(const base::string16& url,
+                                                     bool* ignore_navigation) {
+
+  *ignore_navigation = client_->OnShouldOverrideUrlLoading(url);
 }
 
 }  // namespace android_webview

@@ -10,6 +10,10 @@
 #include "android_webview/renderer/aw_render_process_observer.h"
 #include "base/compiler_specific.h"
 
+namespace content {
+class DocumentState;
+class RenderView;
+}
 namespace visitedlink {
 class VisitedLinkSlave;
 }
@@ -36,6 +40,14 @@ class AwContentRendererClient : public content::ContentRendererClient {
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
+
+  virtual bool HandleNavigation(content::RenderView* view,
+                                content::DocumentState* document_state,
+                                WebKit::WebFrame* frame,
+                                const WebKit::WebURLRequest& request,
+                                WebKit::WebNavigationType type,
+                                WebKit::WebNavigationPolicy default_policy,
+                                bool is_redirect) OVERRIDE;
 
  private:
   scoped_ptr<AwRenderProcessObserver> aw_render_process_observer_;

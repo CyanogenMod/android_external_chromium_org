@@ -3180,9 +3180,13 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
     const WebURLRequest& request, WebNavigationType type,
     WebNavigationPolicy default_policy, bool is_redirect) {
   if (request.url() != GURL(kSwappedOutURL) &&
-      GetContentClient()->renderer()->HandleNavigation(frame, request, type,
-                                                       default_policy,
-                                                       is_redirect)) {
+      GetContentClient()->renderer()->HandleNavigation(
+          this,
+          static_cast<DocumentState*>(extraData),
+          frame,
+          request, type,
+          default_policy,
+          is_redirect)) {
     return WebKit::WebNavigationPolicyIgnore;
   }
 

@@ -158,6 +158,7 @@ class AwContents : public FindHelper::Listener,
       float page_scale_factor) OVERRIDE;
   virtual void OnWebLayoutContentsSizeChanged(
       const gfx::Size& contents_size) OVERRIDE;
+  virtual bool OnShouldOverrideUrlLoading(const base::string16& url) OVERRIDE;
 
   // BrowserViewRenderer::Client implementation.
   virtual bool RequestDrawGL(jobject canvas) OVERRIDE;
