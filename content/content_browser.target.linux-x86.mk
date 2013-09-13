@@ -42,6 +42,7 @@ GYP_COPIED_SOURCE_ORIGIN_DIRS := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit
 
 LOCAL_SRC_FILES := \
+	content/public/browser/android/synchronous_compositor.cc \
 	content/public/browser/browser_child_process_host_delegate.cc \
 	content/public/browser/browser_child_process_host_iterator.cc \
 	content/public/browser/browser_child_process_observer.cc \
