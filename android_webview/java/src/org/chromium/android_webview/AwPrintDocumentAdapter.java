@@ -47,7 +47,7 @@ public class AwPrintDocumentAdapter extends PrintDocumentAdapter {
         // TODO(sgurun) pass a meaningful string once b/10705082 is resolved
         PrintDocumentInfo documentInfo = new PrintDocumentInfo
                 .Builder("webview")
-                .create();
+                .build();
         // TODO(sgurun) once componentization is done, do layout changes and
         // generate PDF here, set the page range information to documentinfo
         // and call onLayoutFinished with true/false depending on whether
@@ -65,7 +65,7 @@ public class AwPrintDocumentAdapter extends PrintDocumentAdapter {
         if (mAttributes.getResolution() == null) {
             throw new IllegalArgumentException("attributes must specify print resolution");
         }
-        if (mAttributes.getMargins() == null) {
+        if (mAttributes.getMinMargins() == null) {
             throw new IllegalArgumentException("attributes must specify margins");
         }
         // TODO(sgurun) get rid of AwPdfExportAttributes after upstreaming
@@ -74,10 +74,10 @@ public class AwPrintDocumentAdapter extends PrintDocumentAdapter {
         pdfAttributes.pageWidth = mAttributes.getMediaSize().getWidthMils();
         pdfAttributes.pageHeight = mAttributes.getMediaSize().getHeightMils();
         pdfAttributes.dpi = getPrintDpi(mAttributes);
-        pdfAttributes.leftMargin = mAttributes.getMargins().getLeftMils();
-        pdfAttributes.rightMargin = mAttributes.getMargins().getRightMils();
-        pdfAttributes.topMargin = mAttributes.getMargins().getTopMils();
-        pdfAttributes.bottomMargin = mAttributes.getMargins().getBottomMils();
+        pdfAttributes.leftMargin = mAttributes.getMinMargins().getLeftMils();
+        pdfAttributes.rightMargin = mAttributes.getMinMargins().getRightMils();
+        pdfAttributes.topMargin = mAttributes.getMinMargins().getTopMils();
+        pdfAttributes.bottomMargin = mAttributes.getMinMargins().getBottomMils();
         exportPdf(destination, pdfAttributes, cancellationSignal, callback);
     }
 
