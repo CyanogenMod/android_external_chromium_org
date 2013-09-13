@@ -34,8 +34,7 @@ public class AwPdfExporter {
     AwPdfExporter() { }
 
     public void exportToPdf(final ParcelFileDescriptor fd, AwPdfExportAttributes attributes,
-            ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal)
-            throws java.io.IOException {
+            ValueCallback<Boolean> resultCallback, CancellationSignal cancellationSignal) {
 
         if (fd == null) {
             throw new IllegalArgumentException("fd cannot be null");
