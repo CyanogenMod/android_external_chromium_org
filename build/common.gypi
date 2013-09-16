@@ -1364,6 +1364,10 @@
         # When building the WebView in the Android tree, jarjar will remap all
         # the class names, so the JNI generator needs to know this.
         'jni_generator_jarjar_file': '../android_webview/build/jarjar-rules.txt',
+        # WebView Release builds should have minimal logging/tracing like
+        # official Chrome.
+        'logging_like_official_build': 1,
+        'tracing_like_official_build': 1,
       }],
       ['OS=="mac"', {
         # Enable clang on mac by default!
