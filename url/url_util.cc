@@ -233,6 +233,32 @@ bool DoResolveRelative(const char* base_spec,
                                 (base_is_hierarchical || standard_base_scheme),
                                 &is_relative,
                                 &relative_component)) {
+    // === START ===  android workaround for b/10459904
+    if (relative_length && *relative == '#') {
+      // Allow a fragemnt on its own to resolve against any base URL (even non-
+      // hierarchical). First attempt to re-parse the path portion of the base
+      // URL using a more relaxed algorithm for matching fragment sections.
+      url_parse::Parsed base_reparsed = base_parsed;
+      if (base_reparsed.path.is_valid() &&
+          !base_reparsed.query.is_valid() &&
+          !base_reparsed.ref.is_valid()) {
+        const int path_end =  base_reparsed.path.end();
+        for (int i = base_reparsed.path.begin; i < path_end; ++i) {
+          if (base_spec[i] == '#') {
+            base_reparsed.path.len = i - base_reparsed.path.begin;
+            base_reparsed.ref = url_parse::MakeRange(i, path_end);
+            break;
+          }
+        }
+      }
+      return url_canon::ResolveRelativeURL(base_spec, base_reparsed,
+                                           false, relative,
+                                           url_parse::MakeRange(
+                                               0, relative_length),
+                                           charset_converter,
+                                           output, output_parsed);
+    }
+    // === END ===  android workaround for b/10459904
     // Error resolving.
     return false;
   }
