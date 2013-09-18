@@ -9,6 +9,7 @@
 #include "android_webview/native/aw_contents.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
+#include "android_webview/native/aw_dev_tools_server.h"
 // START: Printing fork b/10190508
 #include "android_webview/native/aw_pdf_exporter.h"
 // END: Printing fork b/10190508
@@ -36,6 +37,7 @@ static base::android::RegistrationMethod kWebViewRegisteredMethods[] = {
   { "AwContents", RegisterAwContents },
   { "AwContentsClientBridge", RegisterAwContentsClientBridge },
   { "AwContentsIoThreadClientImpl", RegisterAwContentsIoThreadClientImpl },
+  { "AwDevToolsServer", RegisterAwDevToolsServer },
   { "AwFormDatabase", RegisterAwFormDatabase },
   { "AwPicture", RegisterAwPicture },
   { "AwSettings", RegisterAwSettings },
