@@ -72,7 +72,6 @@ void AwSettings::UpdateEverythingLocked(JNIEnv* env, jobject obj) {
   UpdateWebkitPreferencesLocked(env, obj);
   UpdateUserAgentLocked(env, obj);
   ResetScrollAndScaleState(env, obj);
-  UpdatePreferredSizeMode();
   UpdateFormDataPreferencesLocked(env, obj);
 }
 
@@ -228,12 +227,6 @@ void AwSettings::UpdateInitialPageScaleLocked(JNIEnv* env, jobject obj) {
     float dip_scale = static_cast<float>(
         Java_AwSettings_getDIPScaleLocked(env, obj));
     rvhe->SetInitialPageScale(initial_page_scale_percent / dip_scale / 100.0f);
-  }
-}
-
-void AwSettings::UpdatePreferredSizeMode() {
-  if (web_contents()->GetRenderViewHost()) {
-    web_contents()->GetRenderViewHost()->EnablePreferredSizeMode();
   }
 }
 
