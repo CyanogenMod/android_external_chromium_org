@@ -2306,6 +2306,8 @@ import java.util.Map;
 
         if (needHidePopupZoomer) mPopupZoomer.hide(true);
 
+        android.util.Log.w("ContentViewCore", "updateFrameInfo pageScaleChanged " + pageScaleChanged
+                + " ps: " + pageScaleFactor);
         if (pageScaleChanged) {
             // This function should be called back from native as soon
             // as the scroll is applied to the backbuffer.  We should only
