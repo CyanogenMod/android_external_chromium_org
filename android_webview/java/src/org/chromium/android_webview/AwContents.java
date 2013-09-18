@@ -180,7 +180,6 @@ public class AwContents {
     private Callable<Picture> mPictureListenerContentProvider;
 
     private boolean mContainerViewFocused;
-    private boolean mWindowFocused;
 
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
@@ -599,11 +598,9 @@ public class AwContents {
         final boolean wasWindowVisible = mIsWindowVisible;
         final boolean wasPaused = mIsPaused;
         final boolean wasFocused = mContainerViewFocused;
-        final boolean wasWindowFocused = mWindowFocused;
 
         // Properly clean up existing mContentViewCore and mNativeAwContents.
         if (wasFocused) onFocusChanged(false, 0, null);
-        if (wasWindowFocused) onWindowFocusChanged(false);
         if (wasViewVisible) setViewVisibilityInternal(false);
         if (wasWindowVisible) setWindowVisibilityInternal(false);
         if (!wasPaused) onPause();
@@ -619,7 +616,6 @@ public class AwContents {
         onSizeChanged(mContainerView.getWidth(), mContainerView.getHeight(), 0, 0);
         if (wasWindowVisible) setWindowVisibilityInternal(true);
         if (wasViewVisible) setViewVisibilityInternal(true);
-        if (wasWindowFocused) onWindowFocusChanged(wasWindowFocused);
         if (wasFocused) onFocusChanged(true, 0, null);
     }
 
@@ -1514,8 +1510,7 @@ public class AwContents {
      * @see android.view.View#onWindowFocusChanged()
      */
     public void onWindowFocusChanged(boolean hasWindowFocus) {
-        mWindowFocused = hasWindowFocus;
-        mContentViewCore.onWindowFocusChanged(hasWindowFocus);
+        // If adding any code here, remember to adding correct handling in receivePopupContents().
     }
 
     /**
