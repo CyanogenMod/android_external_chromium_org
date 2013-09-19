@@ -196,6 +196,8 @@ void Scheduler::PollForAnticipatedDrawTriggers() {
   TRACE_EVENT0("cc", "Scheduler::PollForAnticipatedDrawTriggers");
   state_machine_.PollForAnticipatedDrawTriggers();
   ProcessScheduledActions();
+
+  poll_for_draw_triggers_closure_.Cancel();
 }
 
 void Scheduler::DrawAndSwapIfPossible() {
