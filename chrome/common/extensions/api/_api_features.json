@@ -209,10 +209,6 @@
     "dependencies": ["permission:experimental"],
     "contexts": ["blessed_extension"]
   },
-  "experimental.rlz": {
-    "dependencies": ["permission:experimental"],
-    "contexts": ["blessed_extension"]
-  },
   "extension": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
@@ -414,8 +410,8 @@
     "dependencies": ["permission:pushMessaging"],
     "contexts": ["blessed_extension"]
   },
-  "recoveryPrivate": {
-    "dependencies": ["permission:recoveryPrivate"],
+  "imageWriterPrivate": {
+    "dependencies": ["permission:imageWriterPrivate"],
     "extension_types": ["platform_app"],
     "contexts": ["blessed_extension"]
   },
@@ -574,6 +570,11 @@
   "virtualKeyboardPrivate": {
     "platform": "chromeos",
     "dependencies": ["permission:virtualKeyboardPrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "wallpaper": {
+    "platform": "chromeos",
+    "dependencies": ["permission:wallpaper"],
     "contexts": ["blessed_extension"]
   },
   "wallpaperPrivate": {

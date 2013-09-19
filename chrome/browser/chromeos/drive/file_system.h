@@ -71,7 +71,6 @@ class FileSystem : public FileSystemInterface,
   virtual ~FileSystem();
 
   // FileSystemInterface overrides.
-  virtual void Initialize() OVERRIDE;
   virtual void AddObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void CheckForUpdates() OVERRIDE;
@@ -150,7 +149,7 @@ class FileSystem : public FileSystemInterface,
   virtual void GetCacheEntryByPath(
       const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE;
-  virtual void Reload() OVERRIDE;
+  virtual void Reload(const FileOperationCallback& callback) OVERRIDE;
 
   // file_system::OperationObserver overrides.
   virtual void OnDirectoryChangedByOperation(
@@ -172,11 +171,13 @@ class FileSystem : public FileSystemInterface,
   internal::SyncClient* sync_client_for_testing() { return sync_client_.get(); }
 
  private:
-  // Used to implement Reload().
-  void ReloadAfterReset(FileError error);
+  // Part of Reload(). This is called after the cache and the resource metadata
+  // is cleared, and triggers full feed fetching.
+  void ReloadAfterReset(const FileOperationCallback& callback, FileError error);
 
-  // Sets up ChangeListLoader.
-  void SetupChangeListLoader();
+  // Used for initialization and Reload(). (Re-)initializes sub components that
+  // need to be recreated during the reload of resource metadata and the cache.
+  void ResetComponents();
 
   // Part of CreateDirectory(). Called after ChangeListLoader::LoadIfNeeded()
   // is called and made sure that the resource metadata is loaded.

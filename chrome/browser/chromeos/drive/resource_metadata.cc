@@ -92,17 +92,6 @@ void ResourceMetadata::Destroy() {
                  base::Unretained(this)));
 }
 
-void ResourceMetadata::ResetOnUIThread(const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::Reset, base::Unretained(this)),
-      callback);
-}
-
 FileError ResourceMetadata::Reset() {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
 
@@ -151,32 +140,6 @@ bool ResourceMetadata::SetUpDefaultEntries() {
 void ResourceMetadata::DestroyOnBlockingPool() {
   DCHECK(blocking_task_runner_->RunsTasksOnCurrentThread());
   delete this;
-}
-
-void ResourceMetadata::GetLargestChangestampOnUIThread(
-    const GetChangestampCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::GetLargestChangestamp,
-                 base::Unretained(this)),
-      callback);
-}
-
-void ResourceMetadata::SetLargestChangestampOnUIThread(
-    int64 value,
-    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&ResourceMetadata::SetLargestChangestamp,
-                 base::Unretained(this),
-                 value),
-      callback);
 }
 
 int64 ResourceMetadata::GetLargestChangestamp() {

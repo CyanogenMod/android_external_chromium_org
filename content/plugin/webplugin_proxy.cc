@@ -321,7 +321,7 @@ void WebPluginProxy::HandleURLRequest(const char* url,
     if (delegate_->GetQuirks() &
         WebPluginDelegateImpl::PLUGIN_QUIRK_BLOCK_NONSTANDARD_GETURL_REQUESTS) {
       GURL request_url(url);
-      if (!request_url.SchemeIs(chrome::kHttpScheme) &&
+      if (!request_url.SchemeIs(kHttpScheme) &&
           !request_url.SchemeIs(kHttpsScheme) &&
           !request_url.SchemeIs(chrome::kFtpScheme)) {
         return;
@@ -618,6 +618,14 @@ void WebPluginProxy::InitiateHTTPRangeRequest(
     const char* url, const char* range_info, int range_request_id) {
   Send(new PluginHostMsg_InitiateHTTPRangeRequest(
       route_id_, url, range_info, range_request_id));
+}
+
+void WebPluginProxy::DidStartLoading() {
+  Send(new PluginHostMsg_DidStartLoading(route_id_));
+}
+
+void WebPluginProxy::DidStopLoading() {
+  Send(new PluginHostMsg_DidStopLoading(route_id_));
 }
 
 void WebPluginProxy::SetDeferResourceLoading(unsigned long resource_id,

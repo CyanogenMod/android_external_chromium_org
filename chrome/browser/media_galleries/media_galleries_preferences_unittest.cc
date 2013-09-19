@@ -33,8 +33,6 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
 
-namespace chrome {
-
 namespace {
 
 class MockGalleryChangeObserver
@@ -49,10 +47,34 @@ class MockGalleryChangeObserver
 
  private:
   // MediaGalleriesPreferences::GalleryChangeObserver implementation.
-  virtual void OnGalleryChanged(MediaGalleriesPreferences* pref,
-                                const std::string& /*extension_id*/,
-                                MediaGalleryPrefId /* pref_id */,
-                                bool /* has_permission */) OVERRIDE {
+  virtual void OnPermissionAdded(MediaGalleriesPreferences* pref,
+                                 const std::string& extension_id,
+                                 MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
+                                   MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryAdded(MediaGalleriesPreferences* pref,
+                              MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+                                MediaGalleryPrefId pref_id) OVERRIDE {
+    EXPECT_EQ(pref_, pref);
+    ++notifications_;
+  }
+
+  virtual void OnGalleryInfoUpdated(MediaGalleriesPreferences* pref,
+                                    MediaGalleryPrefId pref_id) OVERRIDE {
     EXPECT_EQ(pref_, pref);
     ++notifications_;
   }
@@ -79,7 +101,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(test::TestStorageMonitor::CreateAndInstall());
+    ASSERT_TRUE(TestStorageMonitor::CreateAndInstall());
 
     extensions::TestExtensionSystem* extension_system(
         static_cast<extensions::TestExtensionSystem*>(
@@ -119,7 +141,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     Verify();
-    test::TestStorageMonitor::RemoveSingleton();
+    TestStorageMonitor::RemoveSingleton();
   }
 
   void Verify() {
@@ -242,7 +264,7 @@ class MediaGalleriesPreferencesTest : public testing::Test {
   chromeos::ScopedTestUserManager test_user_manager_;
 #endif
 
-  test::TestStorageMonitor monitor_;
+  TestStorageMonitor monitor_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<MediaGalleriesPreferences> gallery_prefs_;
 
@@ -806,7 +828,7 @@ TEST_F(MediaGalleriesPreferencesTest, UpdateSingletonDeviceIdType) {
 }
 
 TEST(MediaGalleryPrefInfoTest, NameGeneration) {
-  ASSERT_TRUE(test::TestStorageMonitor::CreateAndInstall());
+  ASSERT_TRUE(TestStorageMonitor::CreateAndInstall());
 
   MediaGalleryPrefInfo info;
   info.pref_id = 1;
@@ -846,7 +868,5 @@ TEST(MediaGalleryPrefInfoTest, NameGeneration) {
   EXPECT_EQ(base::FilePath(FILE_PATH_LITERAL("unique")).AsUTF8Unsafe(),
             UTF16ToUTF8(info.GetGalleryTooltip()));
 
-  test::TestStorageMonitor::RemoveSingleton();
+  TestStorageMonitor::RemoveSingleton();
 }
-
-}  // namespace chrome

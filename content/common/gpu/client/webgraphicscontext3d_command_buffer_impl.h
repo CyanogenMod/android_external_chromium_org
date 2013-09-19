@@ -73,8 +73,7 @@ class WebGraphicsContext3DSwapBuffersClient {
 class WebGraphicsContext3DErrorMessageCallback;
 
 class WebGraphicsContext3DCommandBufferImpl
-    : public WebKit::WebGraphicsContext3D,
-      public base::SupportsWeakPtr<WebGraphicsContext3DCommandBufferImpl> {
+    : public WebKit::WebGraphicsContext3D {
  public:
   enum MappedMemoryReclaimLimit {
     kNoLimit = 0,
@@ -142,6 +141,8 @@ class WebGraphicsContext3DCommandBufferImpl
   // Permanently binds to the first calling thread. Returns false if the
   // graphics context fails to create. Do not call from more than one thread.
   virtual bool makeContextCurrent();
+
+  virtual uint32_t lastFlushID();
 
   virtual int width();
   virtual int height();
@@ -764,6 +765,8 @@ class WebGraphicsContext3DCommandBufferImpl
   size_t min_transfer_buffer_size_;
   size_t max_transfer_buffer_size_;
   size_t mapped_memory_limit_;
+
+  uint32_t flush_id_;
 };
 
 }  // namespace content

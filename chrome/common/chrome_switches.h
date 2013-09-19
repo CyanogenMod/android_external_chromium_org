@@ -99,6 +99,7 @@ extern const char kDisableCRLSets[];
 extern const char kDisableCustomJumpList[];
 extern const char kDisableDefaultApps[];
 extern const char kDisableDeviceDiscovery[];
+extern const char kDisableDeviceDiscoveryNotifications[];
 extern const char kDisableDhcpWpad[];
 extern const char kDisableDnsProbes[];
 extern const char kDisableExtensionsFileAccessCheck[];
@@ -155,6 +156,7 @@ extern const char kDiskCacheSize[];
 extern const char kDnsLogDetails[];
 extern const char kDnsPrefetchDisable[];
 extern const char kEasyOffStoreExtensionInstall[];
+extern const char kEmbedFlashFullscreen[];
 extern const char kEnableAdview[];
 extern const char kEnableAdviewSrcAttribute[];
 extern const char kEnableAppList[];
@@ -164,11 +166,13 @@ extern const char kEnableAuthNegotiatePort[];
 extern const char kEnableAutologin[];
 extern const char kEnableBatchedShutdown[];
 extern const char kEnableBenchmarking[];
+extern const char kEnableCloudPolicyPush[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableComponentCloudPolicy[];
 extern const char kEnableContacts[];
 extern const char kEnableDevToolsExperiments[];
 extern const char kEnableDnsProbes[];
+extern const char kEnableDomDistiller[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
@@ -406,6 +410,7 @@ extern const char kFakeCloudPolicyType[];
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+extern const char kDisableAddToHomescreen[];
 extern const char kDisableNewNTP[];
 extern const char kEnableAccessibilityTabSwitcher[];
 extern const char kEnableAddToHomescreen[];
@@ -432,7 +437,6 @@ extern const char kMigrateDataDirForSxS[];
 
 #if defined(OS_MACOSX)
 extern const char kDisableSystemFullscreenForTesting[];
-extern const char kEnableAppListShim[];
 extern const char kEnableAppShims[];
 extern const char kEnableExposeForTabs[];
 extern const char kEnableSimplifiedFullscreen[];

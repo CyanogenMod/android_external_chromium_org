@@ -95,7 +95,8 @@ FileError InitializeMetadata(
     const base::FilePath& cache_root_directory,
     internal::ResourceMetadataStorage* metadata_storage,
     internal::FileCache* cache,
-    internal::ResourceMetadata* resource_metadata) {
+    internal::ResourceMetadata* resource_metadata,
+    const ResourceIdCanonicalizer& id_canonicalizer) {
   if (!file_util::CreateDirectory(cache_root_directory.Append(
           kMetadataDirectory)) ||
       !file_util::CreateDirectory(cache_root_directory.Append(
@@ -122,7 +123,7 @@ FileError InitializeMetadata(
     return FILE_ERROR_FAILED;
   }
 
-  if (!cache->Initialize()) {
+  if (!cache->Initialize() || !cache->CanonicalizeIDs(id_canonicalizer)) {
     LOG(WARNING) << "Failed to initialize the cache.";
     return FILE_ERROR_FAILED;
   }
@@ -178,7 +179,6 @@ DriveIntegrationService::DriveIntegrationService(
     : profile_(profile),
       state_(NOT_INITIALIZED),
       enabled_(false),
-      mounted_(false),
       cache_root_directory_(!test_cache_root.empty() ?
                             test_cache_root : util::GetCacheRootPath(profile)),
       weak_ptr_factory_(this) {
@@ -251,26 +251,6 @@ DriveIntegrationService::~DriveIntegrationService() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void DriveIntegrationService::Initialize() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(NOT_INITIALIZED, state_);
-
-  state_ = INITIALIZING;
-  drive_service_->Initialize();
-  file_system_->Initialize();
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&InitializeMetadata,
-                 cache_root_directory_,
-                 metadata_storage_.get(),
-                 cache_.get(),
-                 resource_metadata_.get()),
-      base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
-                 weak_ptr_factory_.GetWeakPtr()));
-}
-
 void DriveIntegrationService::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -291,8 +271,44 @@ void DriveIntegrationService::Shutdown() {
 }
 
 void DriveIntegrationService::SetEnabled(bool enabled) {
-  enabled_ = enabled;
-  // TODO(hidehiko): Implement actual enable procedure.
+  // Do nothing if not changed.
+  if (enabled_ == enabled)
+    return;
+
+  if (enabled) {
+    enabled_ = true;
+    switch (state_) {
+      case NOT_INITIALIZED:
+        // If the initialization is not yet done, trigger it.
+        Initialize();
+        return;
+
+      case INITIALIZING:
+      case REMOUNTING:
+        // If the state is INITIALIZING or REMOUNTING, at the end of the
+        // process, it tries to mounting (with re-checking enabled state).
+        // Do nothing for now.
+        return;
+
+      case INITIALIZED:
+        // The integration service is already initialized. Add the mount point.
+        AddDriveMountPoint();
+        return;
+    }
+    NOTREACHED();
+  } else {
+    RemoveDriveMountPoint();
+    enabled_ = false;
+  }
+}
+
+bool DriveIntegrationService::IsMounted() const {
+  // Look up the registered path, and just discard it.
+  // GetRegisteredPath() returns true if the path is available.
+  const base::FilePath& drive_mount_point = util::GetDriveMountPointPath();
+  base::FilePath unused;
+  return BrowserContext::GetMountPoints(profile_)->GetRegisteredPath(
+      drive_mount_point.BaseName().AsUTF8Unsafe(), &unused);
 }
 
 void DriveIntegrationService::AddObserver(
@@ -320,16 +336,6 @@ void DriveIntegrationService::OnPushNotificationEnabled(bool enabled) {
   util::Log(logging::LOG_INFO, "Push notification is %s", status);
 }
 
-bool DriveIntegrationService::IsDriveEnabled() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!util::IsDriveEnabledForProfile(profile_))
-    return false;
-
-  // For backword compatibility, REMOUNTING also means enabled.
-  return state_ == INITIALIZED || state_ == REMOUNTING;
-}
-
 void DriveIntegrationService::ClearCacheAndRemountFileSystem(
     const base::Callback<void(bool)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -340,15 +346,13 @@ void DriveIntegrationService::ClearCacheAndRemountFileSystem(
     return;
   }
 
-  state_ = REMOUNTING;
-
   RemoveDriveMountPoint();
-  // Reloading the file system will clear the resource metadata.
-  file_system_->Reload();
-  // Reload the Drive app registry too.
-  drive_app_registry_->Update();
 
-  cache_->ClearAllOnUIThread(base::Bind(
+  state_ = REMOUNTING;
+  // Reloads the Drive app registry.
+  drive_app_registry_->Update();
+  // Reloading the file system clears resource metadata and cache.
+  file_system_->Reload(base::Bind(
       &DriveIntegrationService::AddBackDriveMountPoint,
       weak_ptr_factory_.GetWeakPtr(),
       callback));
@@ -356,24 +360,26 @@ void DriveIntegrationService::ClearCacheAndRemountFileSystem(
 
 void DriveIntegrationService::AddBackDriveMountPoint(
     const base::Callback<void(bool)>& callback,
-    bool success) {
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  if (!success) {
+  state_ = error == FILE_ERROR_OK ? INITIALIZED : NOT_INITIALIZED;
+
+  if (error != FILE_ERROR_OK || !enabled_) {
+    // Failed to reload, or Drive was disabled during the reloading.
     callback.Run(false);
     return;
   }
 
-  file_system_->Initialize();
-  drive_app_registry_->Update();
   AddDriveMountPoint();
-
   callback.Run(true);
 }
 
 void DriveIntegrationService::AddDriveMountPoint() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(INITIALIZED, state_);
+  DCHECK(enabled_);
 
   const base::FilePath drive_mount_point = util::GetDriveMountPointPath();
   fileapi::ExternalMountPoints* mount_points =
@@ -386,13 +392,9 @@ void DriveIntegrationService::AddDriveMountPoint() {
       drive_mount_point);
 
   if (success) {
-    state_ = INITIALIZED;
-    mounted_ = true;
     util::Log(logging::LOG_INFO, "Drive mount point is added");
     FOR_EACH_OBSERVER(DriveIntegrationServiceObserver, observers_,
                       OnFileSystemMounted());
-  } else {
-    state_ = NOT_INITIALIZED;
   }
 }
 
@@ -408,15 +410,36 @@ void DriveIntegrationService::RemoveDriveMountPoint() {
       BrowserContext::GetMountPoints(profile_);
   DCHECK(mount_points);
 
-  mounted_ = false;
   mount_points->RevokeFileSystem(
       util::GetDriveMountPointPath().BaseName().AsUTF8Unsafe());
   util::Log(logging::LOG_INFO, "Drive mount point is removed");
 }
 
+void DriveIntegrationService::Initialize() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(NOT_INITIALIZED, state_);
+  DCHECK(enabled_);
+
+  state_ = INITIALIZING;
+  drive_service_->Initialize();
+
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&InitializeMetadata,
+                 cache_root_directory_,
+                 metadata_storage_.get(),
+                 cache_.get(),
+                 resource_metadata_.get(),
+                 drive_service_->GetResourceIdCanonicalizer()),
+      base::Bind(&DriveIntegrationService::InitializeAfterMetadataInitialized,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
 void DriveIntegrationService::InitializeAfterMetadataInitialized(
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(INITIALIZING, state_);
 
   if (error != FILE_ERROR_OK) {
     LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);
@@ -431,7 +454,7 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     }
 
     // Back to NOT_INITIALIZED state. Then, re-running Initialize() should
-    // work if the error is recovarable manually (such as out of disk space).
+    // work if the error is recoverable manually (such as out of disk space).
     state_ = NOT_INITIALIZED;
     return;
   }
@@ -457,8 +480,13 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
       drive_app_registry_->Update();
   }
 
-  AddDriveMountPoint();
   state_ = INITIALIZED;
+
+  // Mount only when the drive is enabled. Initialize is triggered by
+  // SetEnabled(true), but there is a change to disable it again during
+  // the metadata initialization, so we need to look this up again here.
+  if (enabled_)
+    AddDriveMountPoint();
 }
 
 //===================== DriveIntegrationServiceFactory =======================
@@ -466,11 +494,7 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
 // static
 DriveIntegrationService* DriveIntegrationServiceFactory::GetForProfile(
     Profile* profile) {
-  DriveIntegrationService* service = GetForProfileRegardlessOfStates(profile);
-  if (service && !service->IsDriveEnabled())
-    return NULL;
-
-  return service;
+  return GetForProfileRegardlessOfStates(profile);
 }
 
 // static
@@ -484,11 +508,7 @@ DriveIntegrationServiceFactory::GetForProfileRegardlessOfStates(
 // static
 DriveIntegrationService* DriveIntegrationServiceFactory::FindForProfile(
     Profile* profile) {
-  DriveIntegrationService* service = FindForProfileRegardlessOfStates(profile);
-  if (service && !service->IsDriveEnabled())
-    return NULL;
-
-  return service;
+  return FindForProfileRegardlessOfStates(profile);
 }
 
 // static
@@ -542,7 +562,7 @@ DriveIntegrationServiceFactory::BuildServiceInstanceFor(
     service = factory_for_test_.Run(profile);
   }
 
-  service->Initialize();
+  service->SetEnabled(drive::util::IsDriveEnabledForProfile(profile));
   return service;
 }
 

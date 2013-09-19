@@ -165,15 +165,13 @@ g_created_callbacks = LAZY_INSTANCE_INITIALIZER;
 static int StartDownload(content::RenderViewHost* rvh,
                          const GURL& url,
                          bool is_favicon,
-                         uint32_t preferred_image_size,
-                         uint32_t max_image_size) {
+                         uint32_t max_bitmap_size) {
   static int g_next_image_download_id = 0;
   rvh->Send(new ImageMsg_DownloadImage(rvh->GetRoutingID(),
                                        ++g_next_image_download_id,
                                        url,
                                        is_favicon,
-                                       preferred_image_size,
-                                       max_image_size));
+                                       max_bitmap_size));
   return g_next_image_download_id;
 }
 
@@ -568,6 +566,8 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   prefs.use_solid_color_scrollbars = true;
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
       switches::kDisableGestureRequirementForMediaPlayback);
+  prefs.user_gesture_required_for_media_fullscreen = !command_line.HasSwitch(
+      switches::kDisableGestureRequirementForMediaFullscreen);
 #endif
 
   prefs.touch_enabled = ui::AreTouchEventsEnabled();
@@ -846,6 +846,14 @@ RenderWidgetHostViewPort* WebContentsImpl::GetRenderWidgetHostViewPort() const {
   return RenderWidgetHostViewPort::FromRWHV(GetRenderWidgetHostView());
 }
 
+RenderWidgetHostView* WebContentsImpl::GetFullscreenRenderWidgetHostView()
+    const {
+  RenderWidgetHost* const widget_host =
+      RenderWidgetHostImpl::FromID(GetRenderProcessHost()->GetID(),
+                                   GetFullscreenWidgetRoutingID());
+  return widget_host ? widget_host->GetView() : NULL;
+}
+
 WebContentsView* WebContentsImpl::GetView() const {
   return view_.get();
 }
@@ -886,7 +894,7 @@ void WebContentsImpl::SetUserAgentOverride(const std::string& override) {
 
   // Reload the page if a load is currently in progress to avoid having
   // different parts of the page loaded using different user agents.
-  NavigationEntry* entry = controller_.GetActiveEntry();
+  NavigationEntry* entry = controller_.GetVisibleEntry();
   if (is_loading_ && entry != NULL && entry->GetIsOverridingUserAgent())
     controller_.ReloadIgnoringCache(true);
 
@@ -1328,6 +1336,8 @@ void WebContentsImpl::RenderWidgetDeleted(
 
   if (render_widget_host &&
       render_widget_host->GetRoutingID() == fullscreen_widget_routing_id_) {
+    if (delegate_ && delegate_->EmbedsFullscreenWidget())
+      delegate_->ToggleFullscreenModeForTab(this, false);
     FOR_EACH_OBSERVER(WebContentsObserver,
                       observers_,
                       DidDestroyFullscreenWidget(
@@ -1405,6 +1415,13 @@ void WebContentsImpl::HandleGestureEnd() {
 }
 
 void WebContentsImpl::ToggleFullscreenMode(bool enter_fullscreen) {
+  // This method is being called to enter or leave renderer-initiated fullscreen
+  // mode.  Either way, make sure any existing fullscreen widget is shut down
+  // first.
+  RenderWidgetHostView* const widget_view = GetFullscreenRenderWidgetHostView();
+  if (widget_view)
+    RenderWidgetHostImpl::From(widget_view->GetRenderWidgetHost())->Shutdown();
+
   if (delegate_)
     delegate_->ToggleFullscreenModeForTab(this, enter_fullscreen);
 }
@@ -1601,12 +1618,6 @@ void WebContentsImpl::ShowCreatedWidget(int route_id,
 
 void WebContentsImpl::ShowCreatedFullscreenWidget(int route_id) {
   ShowCreatedWidget(route_id, true, gfx::Rect());
-
-  DCHECK_EQ(MSG_ROUTING_NONE, fullscreen_widget_routing_id_);
-  fullscreen_widget_routing_id_ = route_id;
-  FOR_EACH_OBSERVER(WebContentsObserver,
-                    observers_,
-                    DidShowFullscreenWidget(route_id));
 }
 
 void WebContentsImpl::ShowCreatedWidget(int route_id,
@@ -1619,17 +1630,35 @@ void WebContentsImpl::ShowCreatedWidget(int route_id,
       RenderWidgetHostViewPort::FromRWHV(GetCreatedWidget(route_id));
   if (!widget_host_view)
     return;
-  if (is_fullscreen)
-    widget_host_view->InitAsFullscreen(GetRenderWidgetHostViewPort());
-  else
+  bool allow_privileged = false;
+  if (is_fullscreen) {
+    if (delegate_ && delegate_->EmbedsFullscreenWidget()) {
+      widget_host_view->InitAsChild(GetRenderWidgetHostView()->GetNativeView());
+      delegate_->ToggleFullscreenModeForTab(this, true);
+    } else {
+      widget_host_view->InitAsFullscreen(GetRenderWidgetHostViewPort());
+      // Only allow privileged mouse lock for fullscreen render widget, which is
+      // used to implement Pepper Flash fullscreen.
+      allow_privileged = true;
+    }
+
+    DCHECK_EQ(MSG_ROUTING_NONE, fullscreen_widget_routing_id_);
+    fullscreen_widget_routing_id_ = route_id;
+    FOR_EACH_OBSERVER(WebContentsObserver,
+                      observers_,
+                      DidShowFullscreenWidget(route_id));
+    if (!widget_host_view->HasFocus())
+      widget_host_view->Focus();
+  } else {
     widget_host_view->InitAsPopup(GetRenderWidgetHostViewPort(), initial_pos);
+  }
 
   RenderWidgetHostImpl* render_widget_host_impl =
       RenderWidgetHostImpl::From(widget_host_view->GetRenderWidgetHost());
   render_widget_host_impl->Init();
-  // Only allow privileged mouse lock for fullscreen render widget, which is
-  // used to implement Pepper Flash fullscreen.
-  render_widget_host_impl->set_allow_privileged_mouse_lock(is_fullscreen);
+  render_widget_host_impl->set_allow_privileged_mouse_lock(allow_privileged);
+  // TODO(miu): For now, all mouse lock requests by embedded Flash fullscreen
+  // will be denied.  This is to be rectified in a soon-upcoming change.
 
 #if defined(OS_MACOSX)
   // A RenderWidgetHostViewMac has lifetime scoped to the view. Now that it's
@@ -1927,7 +1956,7 @@ void WebContentsImpl::SaveFrame(const GURL& url,
     return;
   int64 post_id = -1;
   if (is_main_frame) {
-    const NavigationEntry* entry = controller_.GetActiveEntry();
+    const NavigationEntry* entry = controller_.GetLastCommittedEntry();
     if (entry)
       post_id = entry->GetPostID();
   }
@@ -1948,12 +1977,13 @@ void WebContentsImpl::GenerateMHTML(
   MHTMLGenerationManager::GetInstance()->SaveMHTML(this, file, callback);
 }
 
+// TODO(nasko): Rename this method to IsVisibleEntry.
 bool WebContentsImpl::IsActiveEntry(int32 page_id) {
-  NavigationEntryImpl* active_entry =
-      NavigationEntryImpl::FromNavigationEntry(controller_.GetActiveEntry());
-  return (active_entry != NULL &&
-          active_entry->site_instance() == GetSiteInstance() &&
-          active_entry->GetPageID() == page_id);
+  NavigationEntryImpl* visible_entry =
+      NavigationEntryImpl::FromNavigationEntry(controller_.GetVisibleEntry());
+  return (visible_entry != NULL &&
+          visible_entry->site_instance() == GetSiteInstance() &&
+          visible_entry->GetPageID() == page_id);
 }
 
 const std::string& WebContentsImpl::GetContentsMimeType() const {
@@ -2035,10 +2065,10 @@ double WebContentsImpl::GetZoomLevel() const {
         GetRenderProcessHost()->GetID(), GetRenderViewHost()->GetRoutingID());
   } else {
     GURL url;
-    NavigationEntry* active_entry = GetController().GetActiveEntry();
+    NavigationEntry* entry = GetController().GetLastCommittedEntry();
     // Since zoom map is updated using rewritten URL, use rewritten URL
     // to get the zoom level.
-    url = active_entry ? active_entry->GetURL() : GURL::EmptyGURL();
+    url = entry ? entry->GetURL() : GURL::EmptyGURL();
     zoom_level = zoom_map->GetZoomLevelForHostAndScheme(url.scheme(),
         net::GetHostOrSpecFromURL(url));
   }
@@ -2061,11 +2091,11 @@ void WebContentsImpl::ViewSource() {
   if (!delegate_)
     return;
 
-  NavigationEntry* active_entry = GetController().GetActiveEntry();
-  if (!active_entry)
+  NavigationEntry* entry = GetController().GetLastCommittedEntry();
+  if (!entry)
     return;
 
-  delegate_->ViewSourceForTab(this, active_entry->GetURL());
+  delegate_->ViewSourceForTab(this, entry->GetURL());
 }
 
 void WebContentsImpl::ViewFrameSource(const GURL& url,
@@ -2111,18 +2141,16 @@ void WebContentsImpl::DidEndColorChooser() {
 
 int WebContentsImpl::DownloadImage(const GURL& url,
                                    bool is_favicon,
-                                   uint32_t preferred_image_size,
-                                   uint32_t max_image_size,
+                                   uint32_t max_bitmap_size,
                                    const ImageDownloadCallback& callback) {
   RenderViewHost* host = GetRenderViewHost();
-  int id = StartDownload(
-      host, url, is_favicon, preferred_image_size, max_image_size);
+  int id = StartDownload(host, url, is_favicon, max_bitmap_size);
   image_download_map_[id] = callback;
   return id;
 }
 
 bool WebContentsImpl::FocusLocationBarByDefault() {
-  NavigationEntry* entry = controller_.GetActiveEntry();
+  NavigationEntry* entry = controller_.GetVisibleEntry();
   if (entry && entry->GetURL() == GURL(kAboutBlankURL))
     return true;
   return delegate_ && delegate_->ShouldFocusLocationBarByDefault(this);
@@ -2579,8 +2607,8 @@ void WebContentsImpl::OnDidDownloadImage(
     int id,
     int http_status_code,
     const GURL& image_url,
-    int requested_size,
-    const std::vector<SkBitmap>& bitmaps) {
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_bitmap_sizes) {
   ImageDownloadMap::iterator iter = image_download_map_.find(id);
   if (iter == image_download_map_.end()) {
     // Currently WebContents notifies us of ANY downloads so that it is
@@ -2588,7 +2616,8 @@ void WebContentsImpl::OnDidDownloadImage(
     return;
   }
   if (!iter->second.is_null()) {
-    iter->second.Run(id, http_status_code, image_url, requested_size, bitmaps);
+    iter->second.Run(
+        id, http_status_code, image_url, bitmaps, original_bitmap_sizes);
   }
   image_download_map_.erase(id);
 }
@@ -2919,7 +2948,7 @@ void WebContentsImpl::RenderViewCreated(RenderViewHost* render_view_host) {
   if (render_manager_.pending_web_ui())
     render_manager_.pending_web_ui()->RenderViewCreated(render_view_host);
 
-  NavigationEntry* entry = controller_.GetActiveEntry();
+  NavigationEntry* entry = controller_.GetPendingEntry();
   if (entry && entry->IsViewSourceMode()) {
     // Put the renderer in view source mode.
     render_view_host->Send(
@@ -3084,7 +3113,7 @@ void WebContentsImpl::DidNavigate(
     // forward in the history is only stored in the navigation controller's
     // entry list.
     if (did_navigate &&
-        (controller_.GetActiveEntry()->GetTransitionType() &
+        (controller_.GetLastCommittedEntry()->GetTransitionType() &
             PAGE_TRANSITION_FORWARD_BACK)) {
       transition_type = PageTransitionFromInt(
           params.transition | PAGE_TRANSITION_FORWARD_BACK);
@@ -3431,7 +3460,6 @@ void WebContentsImpl::RunJavaScriptMessage(
     const string16& default_prompt,
     const GURL& frame_url,
     JavaScriptMessageType javascript_message_type,
-    bool user_gesture,
     IPC::Message* reply_msg,
     bool* did_suppress_message) {
   // Suppress JavaScript dialogs when requested. Also suppress messages when
@@ -3455,7 +3483,6 @@ void WebContentsImpl::RunJavaScriptMessage(
         javascript_message_type,
         message,
         default_prompt,
-        user_gesture,
         base::Bind(&WebContentsImpl::OnDialogClosed,
                    base::Unretained(this),
                    rvh,
@@ -3515,8 +3542,8 @@ bool WebContentsImpl::AddMessageToConsole(int32 level,
 WebPreferences WebContentsImpl::GetWebkitPrefs() {
   // We want to base the page config off of the real URL, rather than the
   // display URL.
-  GURL url = controller_.GetActiveEntry()
-      ? controller_.GetActiveEntry()->GetURL() : GURL::EmptyGURL();
+  GURL url = controller_.GetLastCommittedEntry()
+      ? controller_.GetLastCommittedEntry()->GetURL() : GURL::EmptyGURL();
   return GetWebkitPrefs(GetRenderViewHost(), url);
 }
 

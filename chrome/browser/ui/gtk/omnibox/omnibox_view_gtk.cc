@@ -166,13 +166,6 @@ guint GetPopupMenuIndexForStockLabel(const char* label, GtkMenu* menu) {
   return index;
 }
 
-// Writes the |url| and |text| to the primary clipboard.
-void DoWriteToClipboard(const GURL& url, const string16& text) {
-  BookmarkNodeData data;
-  data.ReadFromTuple(url, text);
-  data.WriteToClipboard();
-}
-
 }  // namespace
 
 OmniboxViewGtk::OmniboxViewGtk(OmniboxEditController* controller,
@@ -470,10 +463,15 @@ void OmniboxViewGtk::OnTabChanged(const WebContents* web_contents) {
 void OmniboxViewGtk::Update() {
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
-  if (model()->UpdatePermanentText())
+  if (model()->UpdatePermanentText()) {
+    // Something visibly changed.  Re-enable search term replacement.
+    controller()->GetToolbarModel()->set_search_term_replacement_enabled(true);
+    model()->UpdatePermanentText();
+
     RevertAll();
-  else if (old_security_level != security_level_)
+  } else if (old_security_level != security_level_) {
     EmphasizeURLComponents();
+  }
 }
 
 string16 OmniboxViewGtk::GetText() const {
@@ -1242,23 +1240,19 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
       model()->CanPasteAndGo(sanitized_text_for_paste_and_go_));
   gtk_widget_show(paste_and_go_menuitem);
 
-  // Copy URL menu item.
+  // Show URL menu item.
   if (chrome::IsQueryExtractionEnabled()) {
-    GtkWidget* copy_url_menuitem = gtk_menu_item_new_with_mnemonic(
+    GtkWidget* show_url_menuitem = gtk_menu_item_new_with_mnemonic(
         ui::ConvertAcceleratorsFromWindowsStyle(
-            l10n_util::GetStringUTF8(IDS_COPY_URL)).c_str());
-    // Detect the stock Copy menu item by searching for the stock label
-    // GTK_STOCK_COPY.  If we don't find it, the Copy URL item will be appended
-    // at the end of the popup menu.
-    gtk_menu_shell_insert(GTK_MENU_SHELL(menu), copy_url_menuitem,
-                          GetPopupMenuIndexForStockLabel(GTK_STOCK_COPY, menu));
-    g_signal_connect(copy_url_menuitem, "activate",
-                     G_CALLBACK(HandleCopyURLClipboardThunk), this);
+            l10n_util::GetStringUTF8(IDS_SHOW_URL)).c_str());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_url_menuitem);
+    g_signal_connect(show_url_menuitem, "activate",
+                     G_CALLBACK(HandleShowURLThunk), this);
     gtk_widget_set_sensitive(
-        copy_url_menuitem,
-        controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+        show_url_menuitem,
+        controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
             false));
-    gtk_widget_show(copy_url_menuitem);
+    gtk_widget_show(show_url_menuitem);
   }
 
   // Edit Search Engines menu item.
@@ -1281,13 +1275,12 @@ void OmniboxViewGtk::HandlePasteAndGo(GtkWidget* sender) {
   model()->PasteAndGo(sanitized_text_for_paste_and_go_);
 }
 
-void OmniboxViewGtk::HandleCopyURLClipboard(GtkWidget* sender) {
-  DoWriteToClipboard(controller()->GetToolbarModel()->GetURL(),
-                     controller()->GetToolbarModel()->GetText(false));
-}
-
 void OmniboxViewGtk::HandleEditSearchEngines(GtkWidget* sender) {
   command_updater()->ExecuteCommand(IDC_EDIT_SEARCH_ENGINES);
+}
+
+void OmniboxViewGtk::HandleShowURL(GtkWidget* sender) {
+  ShowURL();
 }
 
 void OmniboxViewGtk::HandleMarkSet(GtkTextBuffer* buffer,
@@ -1587,7 +1580,9 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
   // |write_url|.  We don't need to do that here because we fall through to
   // the default signal handlers.
   if (write_url) {
-    DoWriteToClipboard(url, text);
+    BookmarkNodeData data;
+    data.ReadFromTuple(url, text);
+    data.WriteToClipboard();
     SetSelectedRange(selection);
 
     // Stop propagating the signal.

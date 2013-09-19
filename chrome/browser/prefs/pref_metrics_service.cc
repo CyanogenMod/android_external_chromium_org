@@ -104,6 +104,7 @@ PrefMetricsService::PrefMetricsService(Profile* profile,
     : profile_(profile),
       prefs_(profile->GetPrefs()),
       local_state_(local_state),
+      profile_name_(profile_->GetPath().AsUTF8Unsafe()),
       pref_hash_seed_(kSHA256DigestSize, 0),
       device_id_(device_id),
       tracked_pref_paths_(tracked_pref_paths),
@@ -284,7 +285,8 @@ void PrefMetricsService::CheckTrackedPreferences() {
   // Get the hashed prefs dictionary if it exists. If it doesn't, it will be
   // created if we set preference values below.
   const base::DictionaryValue* hashed_prefs = NULL;
-  pref_hash_dicts->GetDictionary(profile_name_, &hashed_prefs);
+  pref_hash_dicts->GetDictionaryWithoutPathExpansion(profile_name_,
+                                                     &hashed_prefs);
   for (int i = 0; i < tracked_pref_path_count_; ++i) {
     // Skip prefs that haven't been registered.
     if (!prefs_->FindPreference(tracked_pref_paths_[i]))
@@ -342,25 +344,37 @@ void PrefMetricsService::CheckTrackedPreferences() {
 
 void PrefMetricsService::UpdateTrackedPreference(const char* path) {
   const base::Value* value = prefs_->GetUserPrefValue(path);
-  if (value) {
-    DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
-    update->SetString(GetHashedPrefPath(path),
-                      GetHashedPrefValue(path, value));
-  } else {
+  // If the pref value is now the default, remove the hash.
+  const ListValue* list_value;
+  const DictionaryValue* dict_value;
+  if (!value ||
+      (value->GetAsList(&list_value) && list_value->GetSize() == 0) ||
+      (value->GetAsDictionary(&dict_value) && dict_value->size() == 0)) {
     RemoveTrackedPreference(path);
+  } else {
+    DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
+    DictionaryValue* child_dictionary = NULL;
+
+    // Get the dictionary corresponding to the profile name,
+    // which may have a '.'
+    if (!update->GetDictionaryWithoutPathExpansion(profile_name_,
+                                                   &child_dictionary)) {
+      child_dictionary = new DictionaryValue;
+      update->SetWithoutPathExpansion(profile_name_, child_dictionary);
+    }
+    child_dictionary->SetString(path, GetHashedPrefValue(path, value));
   }
 }
 
 bool PrefMetricsService::RemoveTrackedPreference(const char* path) {
   DictionaryPrefUpdate update(local_state_, prefs::kProfilePreferenceHashes);
-  return update->Remove(GetHashedPrefPath(path), NULL);
-}
+  DictionaryValue* child_dictionary = NULL;
 
-std::string PrefMetricsService::GetHashedPrefPath(const char* path) {
-  std::string hash_pref_path(profile_name_);
-  hash_pref_path.append(".");
-  hash_pref_path.append(path);
-  return hash_pref_path;
+  if (!update->GetDictionaryWithoutPathExpansion(profile_name_,
+                                                 &child_dictionary)) {
+    return false;
+  }
+  return child_dictionary->Remove(path, NULL);
 }
 
 std::string PrefMetricsService::GetHashedPrefValue(
@@ -368,13 +382,13 @@ std::string PrefMetricsService::GetHashedPrefValue(
     const base::Value* value) {
   DCHECK(value);
 
-  // Dictionary values may contain empty lists and sub-dictionaries. Create
-  // a deep copy with those stripped to make the hash more stable.
-  scoped_ptr<DictionaryValue> dict_value;
-  if (value->IsType(Value::TYPE_DICTIONARY)) {
-    dict_value.reset(static_cast<const DictionaryValue*>(value)
-                         ->DeepCopyWithoutEmptyChildren());
-    value = dict_value.get();
+  // Dictionary values may contain empty lists and sub-dictionaries. Make a
+  // deep copy with those removed to make the hash more stable.
+  const DictionaryValue* dict_value;
+  scoped_ptr<DictionaryValue> canonical_dict_value;
+  if (value->GetAsDictionary(&dict_value)) {
+    canonical_dict_value.reset(dict_value->DeepCopyWithoutEmptyChildren());
+    value = canonical_dict_value.get();
   }
 
   std::string string_to_hash(device_id_);

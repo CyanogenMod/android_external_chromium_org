@@ -12,7 +12,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
-#include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
 #include "chrome/browser/media/audio_stream_indicator.h"
 #include "chrome/browser/media/desktop_streams_registry.h"
 #include "chrome/browser/media/media_stream_capture_indicator.h"
@@ -35,11 +34,8 @@
 #include "content/public/common/media_stream_request.h"
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
+#include "media/audio/audio_manager_base.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if defined(USE_CRAS)
-#include "media/audio/cras/audio_manager_cras.h"
-#endif
 
 using content::BrowserThread;
 using content::MediaStreamDevices;
@@ -58,6 +54,14 @@ const content::MediaStreamDevice* FindDeviceWithId(
   }
   return NULL;
 };
+
+// This is a short-term solution to grant microphone access to virtual keyboard
+// extension for voice input. Once http://crbug.com/292856 is fixed, remove this
+// whitelist.
+bool IsMediaRequestWhitelistedForExtension(
+    const extensions::Extension* extension) {
+  return extension->id() == "mppnpdlheglhdfmldimlhpnegondlapf";
+}
 
 // This is a short-term solution to allow testing of the the Screen Capture API
 // with Google Hangouts in M27.
@@ -203,9 +207,10 @@ void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequest(
              request.audio_type == content::MEDIA_TAB_AUDIO_CAPTURE) {
     ProcessTabCaptureAccessRequest(
         web_contents, request, callback, extension);
-  } else if (extension && extension->is_platform_app()) {
+  } else if (extension && (extension->is_platform_app() ||
+                           IsMediaRequestWhitelistedForExtension(extension))) {
     // For extensions access is approved based on extension permissions.
-    ProcessMediaAccessRequestFromPlatformApp(
+    ProcessMediaAccessRequestFromPlatformAppOrExtension(
         web_contents, request, callback, extension);
   } else {
     ProcessRegularMediaAccessRequest(web_contents, request, callback);
@@ -289,7 +294,7 @@ void MediaCaptureDevicesDispatcher::ProcessScreenCaptureAccessRequest(
   const bool system_audio_capture_requested =
       request.audio_type == content::MEDIA_SYSTEM_AUDIO_CAPTURE;
 
-#if defined(USE_CRAS)
+#if defined(USE_CRAS) || defined(OS_WIN)
   const bool system_audio_capture_supported = true;
 #else
   const bool system_audio_capture_supported = false;
@@ -344,11 +349,11 @@ void MediaCaptureDevicesDispatcher::ProcessScreenCaptureAccessRequest(
       devices.push_back(content::MediaStreamDevice(
           content::MEDIA_DESKTOP_VIDEO_CAPTURE, media_id.ToString(), "Screen"));
       if (system_audio_capture_requested) {
-#if defined(USE_CRAS)
+#if defined(USE_CRAS) || defined(OS_WIN)
         // Use the special loopback device ID for system audio capture.
         devices.push_back(content::MediaStreamDevice(
             content::MEDIA_SYSTEM_AUDIO_CAPTURE,
-            media::AudioManagerCras::kLoopbackDeviceId,
+            media::AudioManagerBase::kLoopbackInputDeviceId,
             "System Audio"));
 #endif
       }
@@ -381,7 +386,7 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   extensions::TabCaptureRegistry* tab_capture_registry =
-      extensions::TabCaptureRegistryFactory::GetForProfile(profile);
+      extensions::TabCaptureRegistry::Get(profile);
   bool tab_capture_allowed =
       tab_capture_registry->VerifyRequest(request.render_process_id,
                                           request.render_view_id);
@@ -408,11 +413,12 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
 #endif  // !defined(OS_ANDROID)
 }
 
-void MediaCaptureDevicesDispatcher::ProcessMediaAccessRequestFromPlatformApp(
-    content::WebContents* web_contents,
-    const content::MediaStreamRequest& request,
-    const content::MediaResponseCallback& callback,
-    const extensions::Extension* extension) {
+void MediaCaptureDevicesDispatcher::
+    ProcessMediaAccessRequestFromPlatformAppOrExtension(
+        content::WebContents* web_contents,
+        const content::MediaStreamRequest& request,
+        const content::MediaResponseCallback& callback,
+        const extensions::Extension* extension) {
   content::MediaStreamDevices devices;
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -623,7 +629,6 @@ void MediaCaptureDevicesDispatcher::OnMediaRequestStateChanged(
           &MediaCaptureDevicesDispatcher::UpdateMediaRequestStateOnUIThread,
           base::Unretained(this), render_process_id, render_view_id,
           page_request_id, device, state));
-
 }
 
 void MediaCaptureDevicesDispatcher::OnAudioStreamPlayingChanged(
@@ -655,7 +660,7 @@ void MediaCaptureDevicesDispatcher::UpdateAudioDevicesOnUIThread(
 }
 
 void MediaCaptureDevicesDispatcher::UpdateVideoDevicesOnUIThread(
-    const content::MediaStreamDevices& devices){
+    const content::MediaStreamDevices& devices) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   devices_enumerated_ = true;
   video_devices_ = devices;

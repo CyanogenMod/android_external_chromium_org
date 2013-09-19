@@ -67,6 +67,7 @@
         'audio/android/opensles_input.h',
         'audio/android/opensles_output.cc',
         'audio/android/opensles_output.h',
+        'audio/android/opensles_wrapper.cc',
         'audio/audio_buffers_state.cc',
         'audio/audio_buffers_state.h',
         'audio/audio_device_name.cc',
@@ -401,8 +402,6 @@
         'video/capture/video_capture.h',
         'video/capture/video_capture_device.cc',
         'video/capture/video_capture_device.h',
-        'video/capture/video_capture_device_dummy.cc',
-        'video/capture/video_capture_device_dummy.h',
         'video/capture/video_capture_proxy.cc',
         'video/capture/video_capture_proxy.h',
         'video/capture/video_capture_types.cc',
@@ -511,11 +510,6 @@
           ],
         }],
         ['OS=="android"', {
-          'link_settings': {
-            'libraries': [
-              '-lOpenSLES',
-            ],
-          },
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)/media',
           ],
@@ -551,15 +545,6 @@
             'webm/chromeos/ebml_writer.h',
             'webm/chromeos/webm_encoder.cc',
             'webm/chromeos/webm_encoder.h',
-          ],
-          'defines': [
-            # TODO(jiayl): figure out why MediaStreamInfoBarTest.
-            # DenyingCameraDoesNotCauseStickyDenyForMics fails on ChromeOS and
-            # remove this.
-            'DISABLE_USER_INPUT_MONITOR',
-          ],
-          'sources!': [
-            'base/user_input_monitor_linux.cc',
           ],
         }],
         ['use_alsa==1', {
@@ -639,8 +624,6 @@
             'audio/cras/cras_input.h',
             'audio/cras/cras_unified.cc',
             'audio/cras/cras_unified.h',
-            'base/keyboard_event_counter.cc',
-            'base/keyboard_event_counter.h',
           ],
         }],
         ['use_pulseaudio==1', {
@@ -834,6 +817,12 @@
             'ENABLE_EAC3_PLAYBACK',
           ],
         }],
+        ['OS!="linux" and OS!="win"', {
+          'sources!': [
+            'base/keyboard_event_counter.cc',
+            'base/keyboard_event_counter.h',
+          ],
+        }],
       ],
     },
     {
@@ -853,8 +842,8 @@
         '../ui/ui.gyp:ui',
       ],
       'sources': [
+        'audio/android/audio_android_unittest.cc',
         'audio/audio_input_controller_unittest.cc',
-        'audio/audio_input_device_unittest.cc',
         'audio/audio_input_unittest.cc',
         'audio/audio_input_volume_unittest.cc',
         'audio/audio_low_latency_input_output_unittest.cc',
@@ -915,6 +904,7 @@
         'base/sinc_resampler_unittest.cc',
         'base/test_data_util.cc',
         'base/test_data_util.h',
+        'base/user_input_monitor_unittest.cc',
         'base/vector_math_testing.h',
         'base/vector_math_unittest.cc',
         'base/video_frame_unittest.cc',
@@ -1437,6 +1427,7 @@
           'type': 'none',
           'dependencies': [
             '../base/base.gyp:base',
+            'media_android_imageformat_list',
           ],
           'export_dependent_settings': [
             '../base/base.gyp:base',
@@ -1446,7 +1437,18 @@
           },
           'includes': ['../build/java.gypi'],
         },
-
+        {
+          'target_name': 'media_android_imageformat_list',
+          'type': 'none',
+          'sources': [
+            'base/android/java/src/org/chromium/media/ImageFormat.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/media',
+            'template_deps': ['video/capture/android/imageformat_list.h'],
+          },
+          'includes': [ '../build/android/java_cpp_template.gypi' ],
+        },                  
       ],
     }],
     ['media_use_ffmpeg==1', {

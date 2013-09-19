@@ -14,7 +14,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 GYP_TARGET_DEPENDENCIES :=
 
 ### Generated for copy rule.
-$(gyp_shared_intermediate_dir)/widevine_cdm_version.h: $(LOCAL_PATH)/third_party/widevine/cdm/widevine_cdm_version.h $(GYP_TARGET_DEPENDENCIES) | $(ACP)
+$(gyp_shared_intermediate_dir)/widevine_cdm_version.h: $(LOCAL_PATH)/third_party/widevine/cdm/android/widevine_cdm_version.h $(GYP_TARGET_DEPENDENCIES) | $(ACP)
 	@echo Copying: $@
 	$(hide) mkdir -p $(dir $@)
 	$(hide) $(ACP) -r $< $@

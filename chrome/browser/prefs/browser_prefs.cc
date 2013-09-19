@@ -47,6 +47,9 @@
 #include "chrome/browser/net/ssl_config_service_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification_prefs_manager.h"
+#if !defined(OS_ANDROID)
+#include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
+#endif  // OS_ANDROID
 #include "chrome/browser/password_manager/password_generation_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
@@ -259,8 +262,10 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #if !defined(OS_ANDROID)
   BackgroundModeManager::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
+#if !defined(OS_CHROMEOS)
   RegisterDefaultBrowserPromptPrefs(registry);
-#endif
+#endif  // !defined(OS_CHROMEOS)
+#endif  // !defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
   chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(registry);
@@ -320,6 +325,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   MediaStreamDevicesController::RegisterProfilePrefs(registry);
   NetPrefObserver::RegisterProfilePrefs(registry);
   NewTabUI::RegisterProfilePrefs(registry);
+#if !defined(OS_ANDROID)
+  notifier::ChromeNotifierService::RegisterProfilePrefs(registry);
+#endif  // OS_ANDROID
   PasswordGenerationManager::RegisterProfilePrefs(registry);
   PasswordManager::RegisterProfilePrefs(registry);
   PrefProxyConfigTrackerImpl::RegisterProfilePrefs(registry);

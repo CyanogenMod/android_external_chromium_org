@@ -14,6 +14,7 @@
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/debugger.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
@@ -104,11 +105,11 @@
 #include "chrome/browser/ui/user_data_dir_dialog.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/browser/user_data_dir_extractor.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/net/net_resource_provider.h"
@@ -175,7 +176,7 @@
 #include "net/base/net_util.h"
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/gfx/dpi_win.h"
+#include "ui/gfx/win/dpi.h"
 #endif  // defined(OS_WIN)
 
 #if defined(OS_MACOSX)
@@ -364,20 +365,6 @@ OSStatus KeychainCallback(SecKeychainEvent keychain_event,
   return noErr;
 }
 #endif
-
-// This code is specific to the Windows-only PreReadExperiment field-trial.
-void AddPreReadHistogramTime(const char* name, base::TimeDelta time) {
-  const base::TimeDelta kMin(base::TimeDelta::FromMilliseconds(1));
-  const base::TimeDelta kMax(base::TimeDelta::FromHours(1));
-  static const size_t kBuckets(100);
-
-  // FactoryTimeGet will always return a pointer to the same histogram object,
-  // keyed on its name. There's no need for us to store it explicitly anywhere.
-  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
-      name, kMin, kMax, kBuckets, base::Histogram::kUmaTargetedHistogramFlag);
-
-  counter->AddTime(time);
-}
 
 void RegisterComponentsForUpdate(const CommandLine& command_line) {
   ComponentUpdateService* cus = g_browser_process->component_updater();
@@ -702,8 +689,8 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
       base::CurrentProcessInfo::CreationTime();
 
   if (!is_first_run && !process_creation_time.is_null()) {
-    RecordPreReadExperimentTime("Startup.BrowserMessageLoopStartTime",
-        base::Time::Now() - process_creation_time);
+    base::TimeDelta delay = base::Time::Now() - process_creation_time;
+    UMA_HISTOGRAM_LONG_TIMES_100("Startup.BrowserMessageLoopStartTime", delay);
   }
 #endif  // defined(OS_MACOSX) || defined(OS_WIN) || defined(OS_LINUX)
 
@@ -712,40 +699,6 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
 
   // Deletes self.
   new LoadCompleteListener();
-}
-
-// This code is specific to the Windows-only PreReadExperiment field-trial.
-void ChromeBrowserMainParts::RecordPreReadExperimentTime(const char* name,
-                                                         base::TimeDelta time) {
-  DCHECK(name != NULL);
-
-  // This gets called with different histogram names, so we don't want to use
-  // the UMA_HISTOGRAM_CUSTOM_TIMES macro--it uses a static variable, and the
-  // first call wins.
-  AddPreReadHistogramTime(name, time);
-
-#if defined(OS_WIN)
-#if defined(GOOGLE_CHROME_BUILD)
-  // The pre-read experiment is Windows and Google Chrome specific.
-  scoped_ptr<base::Environment> env(base::Environment::Create());
-
-  // Only record the sub-histogram result if the experiment is running
-  // (environment variable is set, and valid).
-  std::string pre_read_percentage;
-  if (env->GetVar(chrome::kPreReadEnvironmentVariable, &pre_read_percentage)) {
-    std::string uma_name(name);
-
-    // We want XP to record a separate histogram, as the loader on XP
-    // is very different from the Vista and Win7 loaders.
-    if (base::win::GetVersion() <= base::win::VERSION_XP)
-      uma_name += "_XP";
-
-    uma_name += "_PreRead_";
-    uma_name += pre_read_percentage;
-    AddPreReadHistogramTime(uma_name.c_str(), time);
-  }
-#endif
-#endif
 }
 
 // -----------------------------------------------------------------------------
@@ -897,7 +850,8 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
     about_flags::PrefServiceFlagsStorage flags_storage_(
         g_browser_process->local_state());
     about_flags::ConvertFlagsToSwitches(&flags_storage_,
-                                        CommandLine::ForCurrentProcess());
+                                        CommandLine::ForCurrentProcess(),
+                                        about_flags::kAddSentinels);
   }
 #endif
 
@@ -906,7 +860,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
   // Reset the command line in the crash report details, since we may have
   // just changed it to include experiments.
-  child_process_logging::SetCommandLine(CommandLine::ForCurrentProcess());
+  crash_keys::SetSwitchesFromCommandLine(CommandLine::ForCurrentProcess());
 
   // If we're running tests (ui_task is non-null), then the ResourceBundle
   // has already been initialized.
@@ -1010,7 +964,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
 #if defined(OS_LINUX) || defined(OS_OPENBSD) || defined(OS_MACOSX)
   // Set the product channel for crash reports.
-  child_process_logging::SetChannel(
+  base::debug::SetCrashKeyValue(crash_keys::kChannel,
       chrome::VersionInfo::GetVersionStringModifier());
 #endif
 
@@ -1540,8 +1494,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
       parameters().autorelease_pool->Recycle();
 #endif
 
-    RecordPreReadExperimentTime("Startup.BrowserOpenTabs",
-                                base::TimeTicks::Now() - browser_open_start);
+    base::TimeDelta delay = base::TimeTicks::Now() - browser_open_start;
+    UMA_HISTOGRAM_LONG_TIMES_100("Startup.BrowserOpenTabs", delay);
 
     // If we're running tests (ui_task is non-null), then we don't want to
     // call FetchLanguageListFromTranslateServer or

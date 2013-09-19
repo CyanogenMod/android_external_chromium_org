@@ -56,8 +56,6 @@ class CompositorOutputSurface
 #if defined(OS_ANDROID)
   virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
 #endif
-  virtual void EnsureBackbuffer() OVERRIDE;
-  virtual void DiscardBackbuffer() OVERRIDE;
 
   // TODO(epenner): This seems out of place here and would be a better fit
   // int CompositorThread after it is fully refactored (http://crbug/170828)
@@ -66,6 +64,8 @@ class CompositorOutputSurface
  protected:
   virtual void OnSwapAck(uint32 output_surface_id,
                          const cc::CompositorFrameAck& ack);
+  virtual void OnReclaimResources(uint32 output_surface_id,
+                                  const cc::CompositorFrameAck& ack);
   uint32 output_surface_id_;
 
  private:

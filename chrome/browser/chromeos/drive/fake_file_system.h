@@ -42,12 +42,7 @@ class FakeFileSystem : public FileSystemInterface {
   explicit FakeFileSystem(DriveServiceInterface* drive_service);
   virtual ~FakeFileSystem();
 
-  // Initialization for testing. This can be called instead of Initialize
-  // for testing purpose. Returns true for success.
-  bool InitializeForTesting();
-
   // FileSystemInterface Overrides.
-  virtual void Initialize() OVERRIDE;
   virtual void AddObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE;
   virtual void CheckForUpdates() OVERRIDE;
@@ -126,7 +121,7 @@ class FakeFileSystem : public FileSystemInterface {
   virtual void GetCacheEntryByPath(
       const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE;
-  virtual void Reload() OVERRIDE;
+  virtual void Reload(const FileOperationCallback& callback) OVERRIDE;
 
  private:
   // Helper of GetResourceEntryById.

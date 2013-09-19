@@ -475,15 +475,29 @@ FileError FileCache::Remove(const std::string& id) {
   return storage_->RemoveCacheEntry(id) ? FILE_ERROR_OK : FILE_ERROR_FAILED;
 }
 
-void FileCache::ClearAllOnUIThread(const ClearAllCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
+bool FileCache::ClearAll() {
+  AssertOnSequencedWorkerPool();
 
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&FileCache::ClearAll, base::Unretained(this)),
-      callback);
+  // Remove entries on the metadata.
+  scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
+      storage_->GetCacheEntryIterator();
+  for (; !it->IsAtEnd(); it->Advance()) {
+    if (!storage_->RemoveCacheEntry(it->GetID()))
+      return false;
+  }
+
+  if (it->HasError())
+    return false;
+
+  // Remove files.
+  base::FileEnumerator enumerator(cache_file_directory_,
+                                  false,  // not recursive
+                                  base::FileEnumerator::FILES);
+  for (base::FilePath file = enumerator.Next(); !file.empty();
+       file = enumerator.Next())
+    base::DeleteFile(file, false /* recursive */);
+
+  return true;
 }
 
 bool FileCache::Initialize() {
@@ -491,7 +505,7 @@ bool FileCache::Initialize() {
 
   RenameCacheFilesToNewFormat();
 
-  if (!storage_->opened_existing_db()) {
+  if (storage_->cache_file_scan_is_needed()) {
     CacheMap cache_map;
     ScanCacheDirectory(cache_file_directory_, &cache_map);
     for (CacheMap::const_iterator it = cache_map.begin();
@@ -514,6 +528,24 @@ void FileCache::Destroy() {
   blocking_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&FileCache::DestroyOnBlockingPool, base::Unretained(this)));
+}
+
+bool FileCache::CanonicalizeIDs(
+    const ResourceIdCanonicalizer& id_canonicalizer) {
+  scoped_ptr<Iterator> it = GetIterator();
+  for (; !it->IsAtEnd(); it->Advance()) {
+    const std::string id_canonicalized = id_canonicalizer.Run(it->GetID());
+    if (id_canonicalized != it->GetID()) {
+      // Replace the existing entry and rename the file when needed.
+      const base::FilePath path_old = GetCacheFilePath(it->GetID());
+      const base::FilePath path_new = GetCacheFilePath(id_canonicalized);
+      if (!storage_->RemoveCacheEntry(it->GetID()) ||
+          (base::PathExists(path_old) && !base::Move(path_old, path_new)) ||
+          !storage_->PutCacheEntry(id_canonicalized, it->GetValue()))
+        return false;
+    }
+  }
+  return !it->HasError();
 }
 
 void FileCache::DestroyOnBlockingPool() {
@@ -590,31 +622,6 @@ FileError FileCache::MarkAsUnmounted(const base::FilePath& file_path) {
 
   mounted_files_.erase(it);
   return FILE_ERROR_OK;
-}
-
-bool FileCache::ClearAll() {
-  AssertOnSequencedWorkerPool();
-
-  // Remove entries on the metadata.
-  scoped_ptr<ResourceMetadataStorage::CacheEntryIterator> it =
-      storage_->GetCacheEntryIterator();
-  for (; !it->IsAtEnd(); it->Advance()) {
-    if (!storage_->RemoveCacheEntry(it->GetID()))
-      return false;
-  }
-
-  if (it->HasError())
-    return false;
-
-  // Remove files.
-  base::FileEnumerator enumerator(cache_file_directory_,
-                                  false,  // not recursive
-                                  base::FileEnumerator::FILES);
-  for (base::FilePath file = enumerator.Next(); !file.empty();
-       file = enumerator.Next())
-    base::DeleteFile(file, false /* recursive */);
-
-  return true;
 }
 
 bool FileCache::HasEnoughSpaceFor(int64 num_bytes,

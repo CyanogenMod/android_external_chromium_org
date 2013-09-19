@@ -7,6 +7,7 @@ package org.chromium.chrome.browser;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.text.TextUtils;
 import android.util.Log;
 
 import org.chromium.base.CalledByNative;
@@ -21,60 +22,64 @@ public class ShortcutHelper {
     public static final String EXTRA_ID = "webapp_id";
     public static final String EXTRA_URL = "webapp_url";
 
-    private static String sWebappActivityPackageName;
-    private static String sWebappActivityClassName;
+    private static String sFullScreenAction;
 
     /**
-     * Sets the Activity that gets launched when a webapp shortcut is clicked.
-     * @param packageName Package of the Activity to launch.
-     * @param className Class name of the Activity to launch.
+     * Sets the class names used when launching the shortcuts.
+     * @param browserName Class name of the browser Activity.
+     * @param fullScreenName Class name of the fullscreen Activity.
      */
-    public static void setWebappActivityInfo(String packageName, String className) {
-        sWebappActivityPackageName = packageName;
-        sWebappActivityClassName = className;
+    public static void setFullScreenAction(String fullScreenAction) {
+        sFullScreenAction = fullScreenAction;
     }
 
     /**
      * Adds a shortcut for the current Tab.
      * @param tab Tab to create a shortcut for.
+     * @param userRequestedTitle Updated title for the shortcut.
      */
-    public static void addShortcut(TabBase tab) {
-        if (sWebappActivityPackageName == null || sWebappActivityClassName == null) {
+    public static void addShortcut(TabBase tab, String userRequestedTitle) {
+        if (TextUtils.isEmpty(sFullScreenAction)) {
             Log.e("ShortcutHelper", "ShortcutHelper is uninitialized.  Aborting.");
             return;
         }
-        nativeAddShortcut(tab.getNativePtr());
+        nativeAddShortcut(tab.getNativePtr(), userRequestedTitle);
     }
 
     /**
      * Called when we have to fire an Intent to add a shortcut to the homescreen.
      * If the webpage indicated that it was capable of functioning as a webapp, it is added as a
-     * shortcut to a webapp Activity rather than as a general bookmark.
+     * shortcut to a webapp Activity rather than as a general bookmark. User is sent to the
+     * homescreen as soon as the shortcut is created.
      */
     @SuppressWarnings("unused")
     @CalledByNative
     private static void addShortcut(Context context, String url, String title, Bitmap favicon,
             int red, int green, int blue, boolean isWebappCapable) {
-        Intent addIntent;
-        if (isWebappCapable && !sWebappActivityPackageName.isEmpty()
-                && !sWebappActivityClassName.isEmpty()) {
-            // Add the shortcut as a launcher icon for a Webapp.
-            String id = UUID.randomUUID().toString();
+        assert sFullScreenAction != null;
 
-            Intent shortcutIntent = new Intent();
-            shortcutIntent.setClassName(sWebappActivityPackageName, sWebappActivityClassName);
+        Intent shortcutIntent = null;
+        if (isWebappCapable) {
+            // Add the shortcut as a launcher icon for a full-screen Activity.
+            shortcutIntent = new Intent();
+            shortcutIntent.setAction(sFullScreenAction);
             shortcutIntent.putExtra(EXTRA_URL, url);
-            shortcutIntent.putExtra(EXTRA_ID, id);
-
-            addIntent = BookmarkUtils.createAddToHomeIntent(context, shortcutIntent, title, favicon,
-                            red, green, blue);
+            shortcutIntent.putExtra(EXTRA_ID, UUID.randomUUID().toString());
         } else {
-            // Add the shortcut as a regular bookmark.
-            addIntent = BookmarkUtils.createAddToHomeIntent(context, url, title, favicon, red,
-                            green, blue);
+            // Add the shortcut as a launcher icon to open in the browser Activity.
+            shortcutIntent = BookmarkUtils.createShortcutIntent(context, url);
         }
-        context.sendBroadcast(addIntent);
+
+        shortcutIntent.setPackage(context.getPackageName());
+        context.sendBroadcast(BookmarkUtils.createAddToHomeIntent(context, shortcutIntent, title,
+                favicon, red, green, blue));
+
+        // User is sent to the homescreen as soon as the shortcut is created.
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(homeIntent);
     }
 
-    private static native void nativeAddShortcut(int tabAndroidPtr);
+    private static native void nativeAddShortcut(int tabAndroidPtr, String userRequestedTitle);
 }

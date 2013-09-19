@@ -9,6 +9,7 @@
 
 #include "base/callback_helpers.h"
 #include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "cc/output/managed_memory_policy.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
@@ -82,16 +83,19 @@ class ContextProviderCommandBuffer::MemoryAllocationCallbackProxy
 
 scoped_refptr<ContextProviderCommandBuffer>
 ContextProviderCommandBuffer::Create(
-    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d) {
+    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d,
+    const std::string& debug_name) {
   if (!context3d)
     return NULL;
 
-  return new ContextProviderCommandBuffer(context3d.Pass());
+  return new ContextProviderCommandBuffer(context3d.Pass(), debug_name);
 }
 
 ContextProviderCommandBuffer::ContextProviderCommandBuffer(
-    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d)
+    scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context3d,
+    const std::string& debug_name)
     : context3d_(context3d.Pass()),
+      debug_name_(debug_name),
       leak_on_destroy_(false),
       destroyed_(false) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
@@ -125,6 +129,10 @@ bool ContextProviderCommandBuffer::BindToCurrentThread() {
     return false;
 
   InitializeCapabilities();
+
+  std::string unique_context_name =
+      base::StringPrintf("%s-%p", debug_name_.c_str(), context3d_.get());
+  context3d_->pushGroupMarkerEXT(unique_context_name.c_str());
 
   lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
   swap_buffers_complete_callback_proxy_.reset(
@@ -256,6 +264,8 @@ void ContextProviderCommandBuffer::InitializeCapabilities() {
   caps.texture_format_bgra8888 =
       extension_set.count("GL_EXT_texture_format_BGRA8888") > 0;
   caps.texture_rectangle = extension_set.count("GL_ARB_texture_rectangle") > 0;
+
+  caps.post_sub_buffer = extension_set.count("GL_CHROMIUM_post_sub_buffer") > 0;
 
   // TODO(jamesr): This is unconditionally true on mac, no need to test for it
   // at runtime.

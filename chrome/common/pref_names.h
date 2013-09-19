@@ -403,6 +403,8 @@ extern const char kManagedUsers[];
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
 extern const char kMessageCenterEnabledSyncNotifierIds[];
+extern const char kEnabledSyncedNotificationSendingServices[];
+extern const char kInitializedSyncedNotificationSendingServices[];
 
 extern const char kExtensionsPref[];
 extern const char kExtensionsLastChromeVersion[];
@@ -884,8 +886,6 @@ extern const char kGestureConfigIsTrustworthy[];
 
 extern const char kNetworkProfileWarningsLeft[];
 extern const char kNetworkProfileLastWarningTime[];
-
-extern const char kLastPolicyStatisticsUpdate[];
 
 #if defined(OS_CHROMEOS)
 extern const char kRLZBrand[];

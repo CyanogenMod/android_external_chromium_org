@@ -408,6 +408,24 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_PREVIOUS_PASSWORD" desc="Password field text on the password changed dialog">
     Previous password
   </message>
+  <message name="IDS_LOGIN_CONFIRM_PASSWORD_TITLE" desc="Title for the confirm password dialog.">
+    Please confirm your password.
+  </message>
+  <message name="IDS_LOGIN_CONFIRM_PASSWORD_HINT" desc="Hint for the password field on the confirm password dialog.">
+    Type your password here to confirm.
+  </message>
+  <message name="IDS_LOGIN_CONFIRM_PASSWORD_CONFIRM_BUTTON" desc="Label for the confirm button on the confirm password dialog.">
+    Confirm
+  </message>
+  <message name="IDS_LOGIN_NO_PASSWORD_WARNING_TITLE" desc="Title for the no password warning dialog">
+    No password detected.
+  </message>
+  <message name="IDS_LOGIN_NO_PASSWORD_WARNING" desc="Body text of the no password warning dialog">
+    Password is not detected for your SAML identity provider. Please contact your administrator for more information.
+  </message>
+  <message name="IDS_LOGIN_NO_PASSWORD_WARNING_DISMISS_BUTTON" desc="Label for the dismiss button on the no password warning dialog.">
+    Ok
+  </message>
   <message name="IDS_LOGIN_OFFLINE_EMAIL" desc="Email field text on the offline login screen. Note: should by the same as the one used on the Gaia sign-in page.">
     Email
   </message>
@@ -618,8 +636,8 @@ Press any key to continue exploring.
   <message name="IDS_KIOSK_APPS_BUTTON" desc="Text shown on a button that brings up the kiosk apps menu on login screen">
     Apps
   </message>
-  <message name="IDS_CANCEL_USER_ADDING" desc="Text shown on a button that cancel adding user into multiprofile session.">
-    Cancel multiple sign-in
+  <message name="IDS_LOGIN_USER_ADDING_BANNER" desc="Text shown on a banner in user adding screen.">
+    Sign in with another account
   </message>
   <message name="IDS_LOGIN_OOBE_HELP_DIALOG_TITLE" desc="Default title for help dialogs during OOBE/login">
     Help
@@ -1627,7 +1645,7 @@ Press any key to continue exploring.
     System installation settings
   </message>
   <message name="IDS_EULA_TPM_DESCRIPTION" desc="Dialog box text">
-    Your computer contains a Trusted Platform Module (TPM) security device, which is used to implement many critical security features in Chrome OS.
+    Your computer contains a Trusted Platform Module (TPM) security device, which is used to implement many critical security features in Chrome OS. Visit the Chromebook Help Center to learn more: http://support.google.com/chromebook/?p=tpm
   </message>
   <message name="IDS_EULA_TPM_KEY_DESCRIPTION" desc="Dialog box text">
     Below is the randomly generated TPM password that has been assigned to your computer:
@@ -2304,6 +2322,10 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_CAPS_LOCK"
            desc="The dropdown list item for 'Customize modifier keys' overlay">
     Caps Lock
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_ESCAPE"
+           desc="The dropdown list item for 'Customize modifier keys' overlay">
+    Escape
   </message>
   <message name="IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS"
            desc="The link to open 'Language and input settings' window.">
@@ -3186,14 +3208,14 @@ Battery full
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_CAPS_LOCK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable caps lock).">
     Toggle caps lock
   </message>
+  <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_PROJECTION_TOUCH_HUD" desc="The text in the keyboard overlay to explain the shortcut.">
+    Toggle projection touch HUD
+  </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_SPEECH_INPUT" desc="The text in the keyboard overlay to explain the shortcut (start or stop speech input).">
     Toggle speech input
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_SPOKEN_FEEDBACK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable spoken feedback).">
     Toggle spoken feedback
-  </message>
-  <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_TOUCH_HUD_PROJECTION" desc="The text in the keyboard overlay to explain the shortcut (enable or disable projection touch HUD).">
-    Toggle projection touch HUD
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_UNDO" desc="The text in the keyboard overlay to explain the shortcut.">
     Undo
@@ -3754,6 +3776,11 @@ Battery full
   </message>
   <message name="IDS_UPGRADE_NETWORK_LIST_CELLULAR_DISALLOWED" desc="Status label: for updates you need to connect to an Ethernet, mobile data or Wi-Fi">
     To check for updates, please use Ethernet, Wi-Fi or mobile data.
+  </message>
+
+  <!-- Genius App -->
+  <message name="IDS_GENIUS_APP_NAME" desc="Name of the genius app in the app launcher">
+    Get Help
   </message>
 
 </grit-part>

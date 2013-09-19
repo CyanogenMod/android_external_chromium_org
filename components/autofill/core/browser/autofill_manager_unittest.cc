@@ -84,7 +84,7 @@ class TestPersonalDataManager : public PersonalDataManager {
     return NULL;
   }
 
-  MOCK_METHOD1(SaveImportedProfile, void(const AutofillProfile&));
+  MOCK_METHOD1(SaveImportedProfile, std::string(const AutofillProfile&));
 
   AutofillProfile* GetProfileWithGUID(const char* guid) {
     for (std::vector<AutofillProfile *>::iterator it = web_profiles_.begin();
@@ -2897,6 +2897,12 @@ TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesForUpload) {
   form.fields.push_back(field);
   expected_types.push_back(types);
 
+  test::CreateTestFormField("", "40", "mypassword", "password", &field);
+  types.clear();
+  types.insert(PASSWORD);
+  form.fields.push_back(field);
+  expected_types.push_back(types);
+
   autofill_manager_->set_expected_submitted_field_types(expected_types);
   FormSubmitted(form);
 }
@@ -2975,9 +2981,8 @@ class MockAutofillManagerDelegate : public TestAutofillManagerDelegate {
   virtual void ShowRequestAutocompleteDialog(
       const FormData& form,
       const GURL& source_url,
-      const base::Callback<void(const FormStructure*,
-                                const std::string&)>& callback) OVERRIDE {
-    callback.Run(user_supplied_data_.get(), "google_transaction_id");
+      const base::Callback<void(const FormStructure*)>& callback) OVERRIDE {
+    callback.Run(user_supplied_data_.get());
   }
 
   void SetUserSuppliedData(scoped_ptr<FormStructure> user_supplied_data) {

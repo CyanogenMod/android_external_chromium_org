@@ -95,11 +95,6 @@
         'controls/combobox/combobox.cc',
         'controls/combobox/combobox.h',
         'controls/combobox/combobox_listener.h',
-        'controls/combobox/native_combobox_views.cc',
-        'controls/combobox/native_combobox_views.h',
-        'controls/combobox/native_combobox_win.cc',
-        'controls/combobox/native_combobox_win.h',
-        'controls/combobox/native_combobox_wrapper.h',
         'controls/focusable_border.cc',
         'controls/focusable_border.h',
         'controls/glow_hover_controller.cc',
@@ -317,6 +312,7 @@
         'linux_ui/linux_ui.cc',
         'linux_ui/status_icon_linux.h',
         'linux_ui/status_icon_linux.cc',
+        'linux_ui/window_button_order_observer.h',
         'metrics.cc',
         'metrics.h',
         'metrics_aura.cc',
@@ -461,6 +457,7 @@
         'window/dialog_delegate.h',
         'window/frame_background.cc',
         'window/frame_background.h',
+        'window/frame_buttons.h',
         'window/native_frame_view.cc',
         'window/native_frame_view.h',
         'window/non_client_view.cc',
@@ -488,14 +485,6 @@
             'widget/tooltip_manager_win.h',
           ],
           'conditions': [
-            ['OS=="mac"', {
-              'sources/': [
-                ['exclude', 'mouse_watcher.cc'],
-                ['exclude', 'controls/menu/'],
-                ['exclude', 'controls/scrollbar/'],
-                ['exclude', 'focus/accelerator_handler_aura.cc'],
-              ],
-            }],
             ['OS=="win"', {
               'sources/': [
                 ['include', 'controls/menu/menu_insertion_delegate_win.h'],
@@ -716,7 +705,7 @@
         'controls/button/custom_button_unittest.cc',
         'controls/button/image_button_unittest.cc',
         'controls/button/label_button_unittest.cc',
-        'controls/combobox/native_combobox_views_unittest.cc',
+        'controls/combobox/combobox_unittest.cc',
         'controls/label_unittest.cc',
         'controls/menu/menu_model_adapter_unittest.cc',
         'controls/native/native_view_host_aura_unittest.cc',

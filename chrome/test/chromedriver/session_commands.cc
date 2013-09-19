@@ -25,13 +25,13 @@
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
 #include "chrome/test/chromedriver/chrome/geoposition.h"
 #include "chrome/test/chromedriver/chrome/status.h"
-#include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
 #include "chrome/test/chromedriver/chrome_launcher.h"
 #include "chrome/test/chromedriver/logging.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
 #include "chrome/test/chromedriver/session.h"
 #include "chrome/test/chromedriver/util.h"
+#include "chrome/test/chromedriver/version.h"
 
 namespace {
 
@@ -102,10 +102,10 @@ Status InitSessionHelper(
   if (status.IsError())
     return status;
 
-  if (capabilities.logging_prefs.count(WebDriverLog::kDriverType)) {
-    session->driver_log->set_min_level(
-        capabilities.logging_prefs[WebDriverLog::kDriverType]);
-  }
+  Log::Level driver_level = Log::kWarning;
+  if (capabilities.logging_prefs.count(WebDriverLog::kDriverType))
+    driver_level = capabilities.logging_prefs[WebDriverLog::kDriverType];
+  session->driver_log->set_min_level(driver_level);
 
   // Create Log's and DevToolsEventListener's for ones that are DevTools-based.
   // Session will own the Log's, Chrome will own the listeners.

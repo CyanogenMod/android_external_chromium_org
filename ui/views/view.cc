@@ -43,6 +43,10 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
+
 #if defined(OS_WIN)
 #include "base/win/scoped_gdi_object.h"
 #endif
@@ -1999,7 +2003,7 @@ bool View::ConvertPointForAncestor(const View* ancestor,
   // TODO(sad): Have some way of caching the transformation results.
   bool result = GetTransformRelativeTo(ancestor, &trans);
   gfx::Point3F p(*point);
-  trans.TransformPoint(p);
+  trans.TransformPoint(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
 }
@@ -2009,7 +2013,7 @@ bool View::ConvertPointFromAncestor(const View* ancestor,
   gfx::Transform trans;
   bool result = GetTransformRelativeTo(ancestor, &trans);
   gfx::Point3F p(*point);
-  trans.TransformPointReverse(p);
+  trans.TransformPointReverse(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
 }
@@ -2296,7 +2300,6 @@ void View::UpdateTooltip() {
 bool View::DoDrag(const ui::LocatedEvent& event,
                   const gfx::Point& press_pt,
                   ui::DragDropTypes::DragEventSource source) {
-#if !defined(OS_MACOSX)
   int drag_operations = GetDragOperations(press_pt);
   if (drag_operations == ui::DragDropTypes::DRAG_NONE)
     return false;
@@ -2321,9 +2324,6 @@ bool View::DoDrag(const ui::LocatedEvent& event,
   widget->RunShellDrag(this, data, widget_location, drag_operations, source);
   // WARNING: we may have been deleted.
   return true;
-#else
-  return false;
-#endif  // !defined(OS_MACOSX)
 }
 
 }  // namespace views

@@ -62,7 +62,6 @@
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/pepper_broker_infobar_delegate.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -88,7 +87,6 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/browser_command_controller.h"
@@ -117,6 +115,7 @@
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "chrome/browser/ui/media_utils.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/search/search_delegate.h"
 #include "chrome/browser/ui/search/search_model.h"
@@ -1603,6 +1602,19 @@ void Browser::EnumerateDirectory(WebContents* web_contents,
   FileSelectHelper::EnumerateDirectory(web_contents, request_id, path);
 }
 
+bool Browser::EmbedsFullscreenWidget() const {
+#if defined(TOOLKIT_GTK)
+  // TODO(miu): On GTK, the balloon widget for Tab/HTML5 fullscreen needs to be
+  // fixed before we can implement embedded fullscreen widgets.
+  // http://crbug.com/286545
+  return false;
+#else
+  // TODO(miu): Make this feature switchable in about:flags?
+  return CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEmbedFlashFullscreen);
+#endif
+}
+
 void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
                                          bool enter_fullscreen) {
   fullscreen_controller_->ToggleFullscreenModeForTab(web_contents,
@@ -1663,17 +1675,7 @@ void Browser::RequestMediaAccessPermission(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
     const content::MediaResponseCallback& callback) {
-  const extensions::Extension* extension = NULL;
-  GURL origin(request.security_origin);
-  if (origin.SchemeIs(extensions::kExtensionScheme)) {
-    ExtensionService* extensions_service =
-        extensions::ExtensionSystem::Get(profile_)->extension_service();
-    extension = extensions_service->extensions()->GetByID(origin.host());
-    DCHECK(extension);
-  }
-
-  MediaCaptureDevicesDispatcher::GetInstance()->ProcessMediaAccessRequest(
-      web_contents, request, callback, extension);
+  ::RequestMediaAccessPermission(web_contents, profile_, request, callback);
 }
 
 bool Browser::RequestPpapiBrokerPermission(
@@ -1749,14 +1751,6 @@ void Browser::SetWebContentsBlocked(content::WebContents* web_contents,
 web_modal::WebContentsModalDialogHost*
 Browser::GetWebContentsModalDialogHost() {
   return window_->GetWebContentsModalDialogHost();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Browser, BlockedContentTabHelperDelegate implementation:
-
-content::WebContents* Browser::GetConstrainingWebContents(
-    content::WebContents* source) {
-  return source;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2101,8 +2095,6 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
   web_contents->SetDelegate(delegate);
 
   // ...and all the helpers.
-  BlockedContentTabHelper::FromWebContents(web_contents)->
-      set_delegate(delegate);
   BookmarkTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
       SetDelegate(delegate);

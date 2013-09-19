@@ -9,13 +9,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/default_theme_provider.h"
-#include "ui/base/events/event.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_font_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/view_storage.h"
@@ -31,8 +32,8 @@
 #include "ui/views/window/custom_frame_view.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if !defined(OS_MACOSX)
-#include "ui/views/controls/menu/menu_controller.h"
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
 #endif
 
 namespace views {
@@ -300,6 +301,12 @@ Widget* Widget::GetTopLevelWidgetForNativeView(gfx::NativeView native_view) {
 void Widget::GetAllChildWidgets(gfx::NativeView native_view,
                                 Widgets* children) {
   internal::NativeWidgetPrivate::GetAllChildWidgets(native_view, children);
+}
+
+// static
+void Widget::GetAllOwnedWidgets(gfx::NativeView native_view,
+                                Widgets* owned) {
+  internal::NativeWidgetPrivate::GetAllOwnedWidgets(native_view, owned);
 }
 
 // static
@@ -592,17 +599,6 @@ bool Widget::IsClosed() const {
 void Widget::Show() {
   TRACE_EVENT0("views", "Widget::Show");
   if (non_client_view_) {
-#if defined(OS_MACOSX)
-    // On the Mac the FullScreenBookmarkBar test is different then for any other
-    // OS. Since the new maximize logic from ash does not apply to the mac, we
-    // continue to ignore the fullscreen mode here.
-    if (saved_show_state_ == ui::SHOW_STATE_MAXIMIZED &&
-        !initial_restored_bounds_.IsEmpty()) {
-      native_widget_->ShowMaximizedWithBounds(initial_restored_bounds_);
-    } else {
-      native_widget_->ShowWithWindowState(saved_show_state_);
-    }
-#else
     // While initializing, the kiosk mode will go to full screen before the
     // widget gets shown. In that case we stay in full screen mode, regardless
     // of the |saved_show_state_| member.
@@ -614,7 +610,6 @@ void Widget::Show() {
       native_widget_->ShowWithWindowState(
           IsFullscreen() ? ui::SHOW_STATE_FULLSCREEN : saved_show_state_);
     }
-#endif
     // |saved_show_state_| only applies the first time the window is shown.
     // If we don't reset the value the window may be shown maximized every time
     // it is subsequently shown after being hidden.

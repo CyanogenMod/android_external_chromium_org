@@ -154,10 +154,12 @@ class LoginUtilsImpl
   // Initializes basic preferences for newly created profile. Any other
   // early profile initialization that needs to happen before
   // ProfileManager::DoFinalInit() gets called is done here.
-  void InitProfilePreferences(Profile* user_profile);
+  void InitProfilePreferences(Profile* user_profile,
+                              const std::string& email);
 
   // Callback for asynchronous profile creation.
-  void OnProfileCreated(Profile* profile,
+  void OnProfileCreated(const std::string& email,
+                        Profile* profile,
                         Profile::CreateStatus status);
 
   // Callback for Profile::CREATE_STATUS_INITIALIZED profile state.
@@ -249,7 +251,8 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
 
   CommandLine user_flags(CommandLine::NO_PROGRAM);
   about_flags::PrefServiceFlagsStorage flags_storage_(profile->GetPrefs());
-  about_flags::ConvertFlagsToSwitches(&flags_storage_, &user_flags);
+  about_flags::ConvertFlagsToSwitches(&flags_storage_, &user_flags,
+                                      about_flags::kAddSentinels);
   // Only restart if needed and if not going into managed mode.
   // Don't restart browser if it is not first profile in session.
   if (UserManager::Get()->GetLoggedInUsers().size() == 1 &&
@@ -262,7 +265,7 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
     VLOG(1) << "Restarting to apply per-session flags...";
     DBusThreadManager::Get()->GetSessionManagerClient()->SetFlagsForUser(
         UserManager::Get()->GetActiveUser()->email(), flags);
-    chrome::ExitCleanly();
+    chrome::AttemptExit();
     return;
   }
 
@@ -334,11 +337,13 @@ void LoginUtilsImpl::PrepareProfile(
   delegate_ = delegate;
   InitSessionRestoreStrategy();
 
-  // The default profile will have been changed because the ProfileManager
-  // will process the notification that the UserManager sends out so
-  // username_hash has been already propogated to ProfileManager.
-  ProfileManager::CreateDefaultProfileAsync(
-      base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr()));
+  // Can't use display_email because it is empty when existing user logs in
+  // using sing-in pod on login screen (i.e. user didn't type email).
+  g_browser_process->profile_manager()->CreateProfileAsync(
+      user_manager->GetUserProfileDir(user_context.username),
+      base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
+                 user_context.username),
+      string16(), string16(), std::string());
 }
 
 void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
@@ -346,7 +351,8 @@ void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
     delegate_ = NULL;
 }
 
-void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile) {
+void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
+    const std::string& email) {
   if (UserManager::Get()->IsCurrentUserNew())
     SetFirstLoginPrefs(user_profile->GetPrefs());
 
@@ -369,11 +375,13 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile) {
     StringPrefMember google_services_username;
     google_services_username.Init(prefs::kGoogleServicesUsername,
                                   user_profile->GetPrefs());
-    google_services_username.SetValue(
-        UserManager::Get()->GetLoggedInUser()->display_email());
+    const User* user = UserManager::Get()->FindUser(email);
+    google_services_username.SetValue(user ? user->display_email() : email);
   }
 
-  RespectLocalePreference(user_profile);
+  // For multi-profile case don't apply profile local because it is not safe.
+  if (UserManager::Get()->GetLoggedInUsers().size() == 1)
+    RespectLocalePreference(user_profile);
 }
 
 void LoginUtilsImpl::InitSessionRestoreStrategy() {
@@ -417,6 +425,7 @@ void LoginUtilsImpl::InitSessionRestoreStrategy() {
 
 
 void LoginUtilsImpl::OnProfileCreated(
+    const std::string& email,
     Profile* user_profile,
     Profile::CreateStatus status) {
   CHECK(user_profile);
@@ -426,7 +435,7 @@ void LoginUtilsImpl::OnProfileCreated(
       UserProfileInitialized(user_profile);
       break;
     case Profile::CREATE_STATUS_CREATED:
-      InitProfilePreferences(user_profile);
+      InitProfilePreferences(user_profile, email);
       break;
     case Profile::CREATE_STATUS_LOCAL_FAIL:
     case Profile::CREATE_STATUS_REMOTE_FAIL:

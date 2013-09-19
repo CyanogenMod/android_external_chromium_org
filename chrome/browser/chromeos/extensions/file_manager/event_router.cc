@@ -290,6 +290,23 @@ void BroadcastMountCompletedEvent(
       file_browser_private::OnMountCompleted::Create(event));
 }
 
+file_browser_private::CopyProgressStatus::Type
+CopyProgressTypeToCopyProgressStatusType(
+    fileapi::FileSystemOperation::CopyProgressType type) {
+  using file_browser_private::CopyProgressStatus;
+
+  switch (type) {
+    case fileapi::FileSystemOperation::BEGIN_COPY_ENTRY:
+      return CopyProgressStatus::TYPE_BEGIN_ENTRY_COPY;
+    case fileapi::FileSystemOperation::END_COPY_ENTRY:
+      return CopyProgressStatus::TYPE_END_ENTRY_COPY;
+    case fileapi::FileSystemOperation::PROGRESS:
+      return CopyProgressStatus::TYPE_PROGRESS;
+  }
+  NOTREACHED();
+  return CopyProgressStatus::TYPE_NONE;
+}
+
 }  // namespace
 
 // Pass dummy value to JobInfo's constructor for make it default constructible.
@@ -325,24 +342,26 @@ void EventRouter::Shutdown() {
     return;
   }
 
-  VolumeManager* volume_manager = VolumeManager::Get(profile_);
-  if (volume_manager)
-    volume_manager->RemoveObserver(this);
-
-  DriveIntegrationService* integration_service =
-      DriveIntegrationServiceFactory::FindForProfileRegardlessOfStates(
-          profile_);
-  if (integration_service) {
-    integration_service->RemoveObserver(this);
-    integration_service->file_system()->RemoveObserver(this);
-    integration_service->drive_service()->RemoveObserver(this);
-    integration_service->job_list()->RemoveObserver(this);
-  }
+  pref_change_registrar_->RemoveAll();
 
   if (NetworkHandler::IsInitialized()) {
     NetworkHandler::Get()->network_state_handler()->RemoveObserver(this,
                                                                    FROM_HERE);
   }
+
+  DriveIntegrationService* integration_service =
+      DriveIntegrationServiceFactory::FindForProfileRegardlessOfStates(
+          profile_);
+  if (integration_service) {
+    integration_service->file_system()->RemoveObserver(this);
+    integration_service->drive_service()->RemoveObserver(this);
+    integration_service->job_list()->RemoveObserver(this);
+  }
+
+  VolumeManager* volume_manager = VolumeManager::Get(profile_);
+  if (volume_manager)
+    volume_manager->RemoveObserver(this);
+
   profile_ = NULL;
 }
 
@@ -356,11 +375,17 @@ void EventRouter::ObserveFileSystemEvents() {
     return;
   }
 
+  // VolumeManager's construction triggers DriveIntegrationService's
+  // construction, so it is necessary to call VolumeManager's Get before
+  // accessing DriveIntegrationService.
+  VolumeManager* volume_manager = VolumeManager::Get(profile_);
+  if (volume_manager)
+    volume_manager->AddObserver(this);
+
   DriveIntegrationService* integration_service =
-      DriveIntegrationServiceFactory::GetForProfileRegardlessOfStates(
+      DriveIntegrationServiceFactory::FindForProfileRegardlessOfStates(
           profile_);
   if (integration_service) {
-    integration_service->AddObserver(this);
     integration_service->drive_service()->AddObserver(this);
     integration_service->file_system()->AddObserver(this);
     integration_service->job_list()->AddObserver(this);
@@ -372,12 +397,6 @@ void EventRouter::ObserveFileSystemEvents() {
   }
 
   pref_change_registrar_->Init(profile_->GetPrefs());
-
-  pref_change_registrar_->Add(
-      prefs::kExternalStorageDisabled,
-      base::Bind(&EventRouter::OnExternalStorageDisabledChanged,
-                 weak_factory_.GetWeakPtr()));
-
   base::Closure callback =
       base::Bind(&EventRouter::OnFileManagerPrefsChanged,
                  weak_factory_.GetWeakPtr());
@@ -385,10 +404,6 @@ void EventRouter::ObserveFileSystemEvents() {
   pref_change_registrar_->Add(prefs::kDisableDriveHostedFiles, callback);
   pref_change_registrar_->Add(prefs::kDisableDrive, callback);
   pref_change_registrar_->Add(prefs::kUse24HourClock, callback);
-
-  VolumeManager* volume_manager = VolumeManager::Get(profile_);
-  if (volume_manager)
-    volume_manager->AddObserver(this);
 }
 
 // File watch setup routines.
@@ -459,18 +474,14 @@ void EventRouter::OnCopyCompleted(
     int copy_id, const GURL& url, base::PlatformFileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  using extensions::api::file_browser_private::CopyProgressStatus;
-  namespace OnCopyProgress =
-      extensions::api::file_browser_private::OnCopyProgress;
-
-  CopyProgressStatus status;
+  file_browser_private::CopyProgressStatus status;
   if (error == base::PLATFORM_FILE_OK) {
     // Send success event.
-    status.type = CopyProgressStatus::TYPE_SUCCESS;
+    status.type = file_browser_private::CopyProgressStatus::TYPE_SUCCESS;
     status.url.reset(new std::string(url.spec()));
   } else {
     // Send error event.
-    status.type = CopyProgressStatus::TYPE_ERROR;
+    status.type = file_browser_private::CopyProgressStatus::TYPE_ERROR;
     status.error.reset(
         new int(fileapi::PlatformFileErrorToWebFileError(error)));
   }
@@ -478,10 +489,29 @@ void EventRouter::OnCopyCompleted(
   BroadcastEvent(
       profile_,
       extensions::event_names::kOnFileBrowserCopyProgress,
-      OnCopyProgress::Create(copy_id, status));
+      file_browser_private::OnCopyProgress::Create(copy_id, status));
 }
 
-void EventRouter::NetworkManagerChanged() {
+void EventRouter::OnCopyProgress(
+    int copy_id,
+    fileapi::FileSystemOperation::CopyProgressType type,
+    const GURL& url,
+    int64 size) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  file_browser_private::CopyProgressStatus status;
+  status.type = CopyProgressTypeToCopyProgressStatusType(type);
+  status.url.reset(new std::string(url.spec()));
+  if (type == fileapi::FileSystemOperation::PROGRESS)
+    status.size.reset(new double(size));
+
+  BroadcastEvent(
+      profile_,
+      extensions::event_names::kOnFileBrowserCopyProgress,
+      file_browser_private::OnCopyProgress::Create(copy_id, status));
+}
+
+void EventRouter::DefaultNetworkChanged(const chromeos::NetworkState* network) {
   if (!profile_ ||
       !extensions::ExtensionSystem::Get(profile_)->event_router()) {
     NOTREACHED();
@@ -492,28 +522,6 @@ void EventRouter::NetworkManagerChanged() {
       profile_,
       extensions::event_names::kOnFileBrowserDriveConnectionStatusChanged,
       make_scoped_ptr(new ListValue));
-}
-
-void EventRouter::DefaultNetworkChanged(const chromeos::NetworkState* network) {
-  NetworkManagerChanged();
-}
-
-void EventRouter::OnExternalStorageDisabledChanged() {
-  // If the policy just got disabled we have to unmount every device currently
-  // mounted. The opposite is fine - we can let the user re-plug her device to
-  // make it available.
-  if (profile_->GetPrefs()->GetBoolean(prefs::kExternalStorageDisabled)) {
-    DiskMountManager* manager = DiskMountManager::GetInstance();
-    DiskMountManager::MountPointMap mounts(manager->mount_points());
-    for (DiskMountManager::MountPointMap::const_iterator it = mounts.begin();
-         it != mounts.end(); ++it) {
-      LOG(INFO) << "Unmounting " << it->second.mount_path
-                << " because of policy.";
-      manager->UnmountPath(it->second.mount_path,
-                           chromeos::UNMOUNT_OPTIONS_NONE,
-                           DiskMountManager::UnmountPathCallback());
-    }
-  }
 }
 
 void EventRouter::OnFileManagerPrefsChanged() {
@@ -611,22 +619,6 @@ void EventRouter::SendDriveFileTransferEvent(bool always) {
 
 void EventRouter::OnDirectoryChanged(const base::FilePath& directory_path) {
   HandleFileWatchNotification(directory_path, false);
-}
-
-void EventRouter::OnFileSystemMounted() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Raise mount event.
-  // We can pass chromeos::MOUNT_ERROR_NONE even when authentication is failed
-  // or network is unreachable. These two errors will be handled later.
-  OnVolumeMounted(chromeos::MOUNT_ERROR_NONE,
-                  CreateDriveVolumeInfo(),
-                  false);  // Not remounting.
-}
-
-void EventRouter::OnFileSystemBeingUnmounted() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  OnVolumeUnmounted(chromeos::MOUNT_ERROR_NONE, CreateDriveVolumeInfo());
 }
 
 void EventRouter::OnRefreshTokenInvalid() {

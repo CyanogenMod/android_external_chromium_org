@@ -88,7 +88,7 @@ var WELCOME_HEADER_COUNTER_LIMIT = 25;
  * @private
  */
 FileListBannerController.prototype.initializeWelcomeBanner_ = function() {
-  this.useNewWelcomeBanner_ = (!util.boardIs('x86-mario') &&
+  this.usePromoWelcomeBanner_ = (!util.boardIs('x86-mario') &&
                                !util.boardIs('x86-zgb') &&
                                !util.boardIs('x86-alex'));
 };
@@ -176,7 +176,7 @@ FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
   var links = util.createChild(message, 'drive-welcome-links');
 
   var more;
-  if (this.useNewWelcomeBanner_) {
+  if (this.usePromoWelcomeBanner_) {
     var welcomeTitle = str('DRIVE_WELCOME_TITLE_ALTERNATIVE');
     if (util.boardIs('link'))
       welcomeTitle = str('DRIVE_WELCOME_TITLE_ALTERNATIVE_1TB');
@@ -194,7 +194,7 @@ FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
   more.target = '_blank';
 
   var dismiss;
-  if (this.useNewWelcomeBanner_)
+  if (this.usePromoWelcomeBanner_)
     dismiss = util.createChild(links, 'drive-welcome-button');
   else
     dismiss = util.createChild(links, 'plain-link');
@@ -296,8 +296,9 @@ FileListBannerController.prototype.checkSpaceAndMaybeShowWelcomeBanner_ =
     return;
   }
 
+  var driveVolume = this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE);
   if (this.welcomeHeaderCounter_ >= WELCOME_HEADER_COUNTER_LIMIT ||
-      !this.directoryModel_.isDriveMounted()) {
+      !driveVolume || driveVolume.error) {
     // The banner is already shown enough times or the drive FS is not mounted.
     // So, do nothing here.
     return;
@@ -305,31 +306,52 @@ FileListBannerController.prototype.checkSpaceAndMaybeShowWelcomeBanner_ =
 
   if (!this.showOffers_) {
     // Because it is not necessary to show the offer, set
-    // |useNewWelcomeBanner_| false here. Note that it probably should be able
+    // |usePromoWelcomeBanner_| false here. Note that it probably should be able
     // to do this in the constructor, but there remains non-trivial path,
-    // which may be causes |useNewWelcomeBanner_| == true's behavior even
+    // which may be causes |usePromoWelcomeBanner_| == true's behavior even
     // if |showOffers_| is false.
     // TODO(hidehiko): Make sure if it is expected or not, and simplify
     // |showOffers_| if possible.
-    this.useNewWelcomeBanner_ = false;
+    this.usePromoWelcomeBanner_ = false;
   }
 
-  var self = this;
-  if (self.useNewWelcomeBanner_) {
+  // Perform asynchronous tasks in parallel.
+  var group = new AsyncUtil.Group();
+
+  // Choose the offer basing on the board name. The default one is 100 GB.
+  var offerSize = 100;  // In GB.
+  var offerServiceId = 'drive.cros.echo.1';
+
+  if (util.boardIs('link')) {
+    offerSize = 1024;  // 1 TB.
+    offerServiceId = 'drive.cros.echo.2';
+  }
+
+  // If the offer has been checked, then do not show the promo anymore.
+  group.add(function(onCompleted) {
+    chrome.echoPrivate.getOfferInfo(offerServiceId, function(offerInfo) {
+      // If the offer has not been checked, then an error is raised.
+      if (!chrome.runtime.lastError)
+        this.usePromoWelcomeBanner_ = false;
+      onCompleted();
+    }.bind(this));
+  }.bind(this));
+
+  if (this.usePromoWelcomeBanner_) {
     // getSizeStats for Drive file system accesses to the server, so we should
     // minimize the invocation.
-    chrome.fileBrowserPrivate.getSizeStats(
-        util.makeFilesystemUrl(self.directoryModel_.getCurrentRootPath()),
-        function(result) {
-          var offerSpaceGB =
-              util.boardIs('link') ? 1024 /* 1TB */ : 100 /* 100GB */;
-          if (result && result.totalSize >= offerSpaceGB * 1024 * 1024 * 1024)
-            self.useNewWelcomeBanner_ = false;
-          self.maybeShowWelcomeBanner_();
-        });
-  } else {
-    self.maybeShowWelcomeBanner_();
+    group.add(function(onCompleted) {
+      chrome.fileBrowserPrivate.getSizeStats(
+          util.makeFilesystemUrl(this.directoryModel_.getCurrentRootPath()),
+          function(result) {
+            if (result && result.totalSize >= offerSize * 1024 * 1024 * 1024)
+              this.usePromoWelcomeBanner_ = false;
+            onCompleted();
+          }.bind(this));
+    }.bind(this));
   }
+
+  group.run(this.maybeShowWelcomeBanner_.bind(this));
 };
 
 /**
@@ -560,13 +582,6 @@ FileListBannerController.prototype.ensureDriveUnmountedPanelInitialized_ =
   create(spinnerBox, 'div', 'spinner');
   create(panel, 'div', 'error', str('DRIVE_CANNOT_REACH'));
 
-  var retryButton = create(panel, 'button', 'retry', str('DRIVE_RETRY'));
-  retryButton.hidden = true;
-  var vm = this.volumeManager_;
-  retryButton.onclick = function() {
-    vm.mountDrive(function() {}, function() {});
-  };
-
   var learnMore = create(panel, 'a', 'learn-more plain-link',
                          str('DRIVE_LEARN_MORE'));
   learnMore.href = urlConstants.GOOGLE_DRIVE_ERROR_HELP_URL;
@@ -582,21 +597,13 @@ FileListBannerController.prototype.ensureDriveUnmountedPanelInitialized_ =
 FileListBannerController.prototype.updateDriveUnmountedPanel_ = function() {
   var node = this.document_.body;
   if (this.isOnDrive()) {
-    var status = this.volumeManager_.getDriveStatus();
-    if (status == VolumeManager.DriveStatus.MOUNTING ||
-        status == VolumeManager.DriveStatus.ERROR) {
+    var driveVolume = this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE);
+    if (driveVolume && driveVolume.error) {
       this.ensureDriveUnmountedPanelInitialized_();
-    }
-    if (status == VolumeManager.DriveStatus.MOUNTING &&
-        this.welcomeHeaderCounter_ == 0) {
-      // Do not increment banner counter in order to not prevent the full
-      // page banner of being shown (otherwise it would never be shown).
-      this.showWelcomeBanner_('header', 'DRIVE_WELCOME_TEXT_SHORT');
-    }
-    if (status == VolumeManager.DriveStatus.ERROR)
       this.unmountedPanel_.classList.add('retry-enabled');
-    else
+    } else {
       this.unmountedPanel_.classList.remove('retry-enabled');
+    }
     node.setAttribute('drive', status);
   } else {
     node.removeAttribute('drive');

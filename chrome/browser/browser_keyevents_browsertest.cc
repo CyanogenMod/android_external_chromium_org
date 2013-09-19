@@ -26,7 +26,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/textfield/textfield.h"
 
 // TODO(kbr): remove: http://crbug.com/222296
@@ -676,7 +676,7 @@ IN_PROC_BROWSER_TEST_F(BrowserKeyEventsTest, DISABLED_AccessKeys) {
 }
 
 // Flaky, http://crbug.com/69475.
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || (defined(OS_WIN) && defined(USE_AURA))
 #define MAYBE_ReservedAccelerators DISABLED_ReservedAccelerators
 #else
 #define MAYBE_ReservedAccelerators ReservedAccelerators

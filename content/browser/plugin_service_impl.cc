@@ -33,7 +33,7 @@
 
 #if defined(OS_WIN)
 #include "content/common/plugin_constants_win.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -658,7 +658,7 @@ void PluginServiceImpl::RegisterPepperPlugins() {
 PepperPluginInfo* PluginServiceImpl::GetRegisteredPpapiPluginInfo(
     const base::FilePath& plugin_path) {
   PepperPluginInfo* info = NULL;
-  for (size_t i = 0; i < ppapi_plugins_.size(); i++) {
+  for (size_t i = 0; i < ppapi_plugins_.size(); ++i) {
     if (ppapi_plugins_[i].path == plugin_path) {
       info = &ppapi_plugins_[i];
       break;
@@ -837,7 +837,7 @@ bool PluginServiceImpl::GetPluginInfoFromWindow(
 }
 
 bool PluginServiceImpl::IsPluginWindow(HWND window) {
-  return ui::GetClassName(window) == base::string16(kNativeWindowClassName);
+  return gfx::GetClassName(window) == base::string16(kNativeWindowClassName);
 }
 #endif
 

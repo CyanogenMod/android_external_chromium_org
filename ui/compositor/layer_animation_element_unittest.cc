@@ -96,6 +96,38 @@ TEST(LayerAnimationElementTest, InverseElementDurationScaled) {
   EXPECT_EQ(base_element->duration(), inverse_element->duration());
 }
 
+// Ensures that the GetTargetTransform() method works as intended.
+TEST(LayerAnimationElementTest, InverseElementTargetCalculation) {
+  base::TimeTicks start_time;
+  base::TimeDelta delta = base::TimeDelta::FromSeconds(1);
+  start_time += delta;
+
+  gfx::Transform identity, transform;
+
+  transform.Scale3d(2.0, 2.0, 2.0);
+
+  scoped_ptr<LayerAnimationElement> base_element(
+      LayerAnimationElement::CreateTransformElement(transform, delta));
+  scoped_ptr<LayerAnimationElement> inverse_element(
+      LayerAnimationElement::CreateInverseTransformElement(identity,
+                                                           base_element.get()));
+
+  base_element->set_requested_start_time(start_time);
+  inverse_element->set_requested_start_time(start_time);
+
+  TestLayerAnimationDelegate delegate;
+  delegate.SetTransformFromAnimation(transform);
+
+  base_element->Start(&delegate, 1);
+  inverse_element->Start(&delegate, 1);
+  LayerAnimationElement::TargetValue target;
+  inverse_element->GetTargetValue(&target);
+
+  EXPECT_TRUE(target.transform.IsIdentity())
+    << "Target should be identity such that the initial 2x scale from the start"
+    << " carries over at end when parent is doubled.";
+}
+
 // Check that the bounds element progresses the delegate as expected and
 // that the element can be reused after it completes.
 TEST(LayerAnimationElementTest, BoundsElement) {
@@ -334,7 +366,7 @@ TEST(LayerAnimationElementTest, AbortOpacityElement) {
       LayerAnimationElement::CreateOpacityElement(target, delta));
 
   // Choose a non-linear Tween type.
-  Tween::Type tween_type = Tween::EASE_IN;
+  gfx::Tween::Type tween_type = gfx::Tween::EASE_IN;
   element->set_tween_type(tween_type);
 
   delegate.SetOpacityFromAnimation(start);
@@ -355,7 +387,7 @@ TEST(LayerAnimationElementTest, AbortOpacityElement) {
   // Since the element has started, it should update the delegate when
   // aborted.
   element->Abort(&delegate);
-  EXPECT_FLOAT_EQ(Tween::CalculateValue(tween_type, 0.5),
+  EXPECT_FLOAT_EQ(gfx::Tween::CalculateValue(tween_type, 0.5),
                   delegate.GetOpacityForAnimation());
 }
 
@@ -373,7 +405,7 @@ TEST(LayerAnimationElementTest, AbortTransformElement) {
       LayerAnimationElement::CreateTransformElement(target_transform, delta));
 
   // Choose a non-linear Tween type.
-  Tween::Type tween_type = Tween::EASE_IN;
+  gfx::Tween::Type tween_type = gfx::Tween::EASE_IN;
   element->set_tween_type(tween_type);
 
   delegate.SetTransformFromAnimation(start_transform);
@@ -395,7 +427,7 @@ TEST(LayerAnimationElementTest, AbortTransformElement) {
   // aborted.
   element->Abort(&delegate);
   target_transform.Blend(start_transform,
-                         Tween::CalculateValue(tween_type, 0.5));
+                         gfx::Tween::CalculateValue(tween_type, 0.5));
   CheckApproximatelyEqual(target_transform,
                           delegate.GetTransformForAnimation());
 }

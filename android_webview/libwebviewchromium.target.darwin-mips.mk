@@ -118,9 +118,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_inspector_instrumentation_sources_gyp)/inspector_instrumentation_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_bindings_derived_sources_gyp)/bindings_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_interface_dependencies_gyp)/interface_dependencies.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_deprecated_perl_bindings_sources_gyp)/deprecated_perl_bindings_sources.stamp \
+	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_bindings_sources_gyp)/bindings_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_generate_test_support_idls_gyp)/generate_test_support_idls.stamp \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_bindings_python_bindings_sources_gyp)/python_bindings_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_make_derived_sources_gyp)/make_derived_sources.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_config_gyp)/config.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_weborigin_weborigin_gyp)/third_party_WebKit_Source_weborigin_weborigin_gyp.a \
@@ -267,7 +266,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -352,7 +351,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -585,7 +584,6 @@ LOCAL_SHARED_LIBRARIES := \
 	libexpat \
 	libjnigraphics \
 	libjpeg \
-	libOpenSLES \
 	libstlport \
 	libdl
 

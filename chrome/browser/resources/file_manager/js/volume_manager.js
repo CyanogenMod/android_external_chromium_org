@@ -21,6 +21,10 @@ function VolumeInfo(mountPath, root, error, deviceType, isReadOnly) {
   // TODO(hidehiko): This should include FileSystem instance.
   this.mountPath = mountPath;
   this.root = root;
+
+  // Note: This represents if the mounting of the volume is successfully done
+  // or not. (If error is empty string, the mount is successfully done).
+  // TODO(hidehiko): Rename to make this more understandable.
   this.error = error;
   this.deviceType = deviceType;
   this.isReadOnly = isReadOnly;
@@ -339,8 +343,10 @@ function VolumeManager() {
   this.driveEnabled = false;
 
   this.initMountPoints_();
-  this.driveStatus_ = VolumeManager.DriveStatus.UNMOUNTED;
 
+  // These status should be merged into VolumeManager.
+  // TODO(hidehiko): Remove them after the migration.
+  this.driveStatus_ = VolumeManager.DriveStatus.UNMOUNTED;
   this.driveConnectionState_ = {
       type: VolumeManager.DriveConnectionType.OFFLINE,
       reasons: VolumeManager.DriveConnectionType.NO_SERVICE
@@ -398,7 +404,6 @@ VolumeManager.Error = {
  */
 VolumeManager.DriveStatus = {
   UNMOUNTED: 'unmounted',
-  MOUNTING: 'mounting',
   ERROR: 'error',
   MOUNTED: 'mounted'
 };
@@ -438,12 +443,6 @@ VolumeManager.DriveConnectionReason = {
 VolumeManager.TIMEOUT = 15 * 60 * 1000;
 
 /**
- * Delay in milliseconds DRIVE changes its state from |UNMOUNTED| to
- * |MOUNTING|. Used to display progress in the UI.
- */
-VolumeManager.MOUNTING_DELAY = 500;
-
-/**
  * The singleton instance of VolumeManager. Initialized by the first invocation
  * of getInstance().
  * @type {VolumeManager}
@@ -465,6 +464,8 @@ VolumeManager.getInstance = function(callback) {
  * Enables/disables Drive file system. Dispatches
  * 'drive-enabled-status-changed' event, when the enabled state is actually
  * changed.
+ * TODO(hidehiko): Enable/Disable of drive based on preference is managed by
+ * backend (C++) layer. Remove this.
  * @param {boolean} enabled True if Drive file system is enabled.
  */
 VolumeManager.prototype.setDriveEnabled = function(enabled) {
@@ -475,10 +476,6 @@ VolumeManager.prototype.setDriveEnabled = function(enabled) {
   // When drive is enabled, start to mount.
   if (enabled)
     this.mountDrive(function() {}, function() {});
-
-  var e = new cr.Event('drive-enabled-status-changed');
-  e.enabled = enabled;
-  this.dispatchEvent(e);
 };
 
 /**
@@ -490,22 +487,6 @@ VolumeManager.prototype.setDriveStatus_ = function(newStatus) {
     this.driveStatus_ = newStatus;
     cr.dispatchSimpleEvent(this, 'drive-status-changed');
   }
-};
-
-/**
- * @return {VolumeManager.DriveStatus} Current DRIVE status.
- */
-VolumeManager.prototype.getDriveStatus = function() {
-  return this.driveStatus_;
-};
-
-/**
- * @param {string} mountPath Volume root path.
- * @return {boolean} True if mounted.
- */
-VolumeManager.prototype.isMounted = function(mountPath) {
-  volumeManagerUtil.validateMountPath(mountPath);
-  return !!this.volumeInfoList.find(mountPath);
 };
 
 /**
@@ -531,15 +512,9 @@ VolumeManager.prototype.initMountPoints_ = function() {
     // Create VolumeInfo for each mount point.
     var group = new AsyncUtil.Group();
     for (var i = 0; i < mountPointList.length; i++) {
-      var mountPoint = mountPointList[i];
-
-      // TODO(hidehiko): It should be ok that the drive is mounted already.
-      if (mountPoint.volumeType == 'drive')
-        console.error('Drive is not expected initially mounted');
-
-      var error = mountPoint.mountCondition ?
-          'error_' + mountPoint.mountCondition : '';
-      group.add(function(mountPoint, error, callback) {
+      group.add(function(mountPoint, callback) {
+        var error = mountPoint.mountCondition ?
+            'error_' + mountPoint.mountCondition : '';
         volumeManagerUtil.createVolumeInfo(
             '/' + mountPoint.mountPath, error,
             function(volumeInfo) {
@@ -553,7 +528,7 @@ VolumeManager.prototype.initMountPoints_ = function() {
               }
               callback();
             }.bind(this));
-      }.bind(this, mountPoint, error));
+      }.bind(this, mountPointList[i]));
     }
 
     // Then, finalize the initialization.
@@ -592,15 +567,6 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
           'mount', event.volumeType, event.sourcePath);
       var error = event.status == 'success' ? '' : event.status;
 
-      var timeout = null;
-      if (event.volumeType == 'drive') {
-        timeout = setTimeout(function() {
-          if (this.getDriveStatus() == VolumeManager.DriveStatus.UNMOUNTED)
-            this.setDriveStatus_(VolumeManager.DriveStatus.MOUNTING);
-          timeout = null;
-        }.bind(this), VolumeManager.MOUNTING_DELAY);
-      }
-
       volumeManagerUtil.createVolumeInfo(
           event.mountPath, error, function(volume) {
             this.volumeInfoList.add(volume);
@@ -610,8 +576,6 @@ VolumeManager.prototype.onMountCompleted_ = function(event) {
             // For mounting Drive File System, we need to update some
             // VolumeManager's state.
             if (event.volumeType == 'drive') {
-              if (timeout != null)
-                clearTimeout(timeout);
               // Set Drive status here.
               this.setDriveStatus_(
                   volume.error ? VolumeManager.DriveStatus.ERROR :
@@ -682,16 +646,15 @@ VolumeManager.prototype.makeRequestKey_ = function(requestType,
  * @param {function(VolumeManager.Error)} errorCallback Error callback.
  */
 VolumeManager.prototype.mountDrive = function(successCallback, errorCallback) {
-  if (this.getDriveStatus() == VolumeManager.DriveStatus.ERROR) {
+  if (this.driveStatus_ == VolumeManager.DriveStatus.ERROR) {
     this.setDriveStatus_(VolumeManager.DriveStatus.UNMOUNTED);
   }
-  this.setDriveStatus_(VolumeManager.DriveStatus.MOUNTING);
   var self = this;
   this.mount_(
       '', 'drive',
       successCallback,
       function(error) {
-        if (self.getDriveStatus() != VolumeManager.DriveStatus.MOUNTED)
+        if (self.driveStatus_ != VolumeManager.DriveStatus.MOUNTED)
           self.setDriveStatus_(VolumeManager.DriveStatus.ERROR);
         errorCallback(error);
       });

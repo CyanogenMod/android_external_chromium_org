@@ -5,11 +5,14 @@
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -42,6 +45,19 @@ VolumeType MountTypeToVolumeType(
   }
 
   return VOLUME_TYPE_DOWNLOADS_DIRECTORY;
+}
+
+// Returns the VolumeInfo for Drive file system.
+VolumeInfo CreateDriveVolumeInfo() {
+  const base::FilePath& drive_path = drive::util::GetDriveMountPointPath();
+
+  VolumeInfo volume_info;
+  volume_info.type = VOLUME_TYPE_GOOGLE_DRIVE;
+  volume_info.source_path = drive_path;
+  volume_info.mount_path = drive_path;
+  volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
+  volume_info.is_parent = false;
+  return volume_info;
 }
 
 VolumeInfo CreateDownloadsVolumeInfo(
@@ -83,23 +99,13 @@ VolumeInfo::VolumeInfo() {
 VolumeInfo::~VolumeInfo() {
 }
 
-VolumeInfo CreateDriveVolumeInfo() {
-  const base::FilePath& drive_path = drive::util::GetDriveMountPointPath();
-
-  VolumeInfo volume_info;
-  volume_info.type = VOLUME_TYPE_GOOGLE_DRIVE;
-  volume_info.source_path = drive_path;
-  volume_info.mount_path = drive_path;
-  volume_info.mount_condition = chromeos::disks::MOUNT_CONDITION_NONE;
-  volume_info.is_parent = false;
-  return volume_info;
-}
-
 VolumeManager::VolumeManager(
     Profile* profile,
+    drive::DriveIntegrationService* drive_integration_service,
     chromeos::PowerManagerClient* power_manager_client,
     chromeos::disks::DiskMountManager* disk_mount_manager)
     : profile_(profile),
+      drive_integration_service_(drive_integration_service),
       disk_mount_manager_(disk_mount_manager),
       mounted_disk_monitor_(
           new MountedDiskMonitor(power_manager_client, disk_mount_manager)) {
@@ -114,12 +120,27 @@ VolumeManager* VolumeManager::Get(content::BrowserContext* context) {
 }
 
 void VolumeManager::Initialize() {
+  if (drive_integration_service_)
+    drive_integration_service_->AddObserver(this);
+
+  // Subscribe to DiskMountManager.
   disk_mount_manager_->AddObserver(this);
   disk_mount_manager_->RequestMountInfoRefresh();
+
+  // Subscribe to Profile Preference change.
+  pref_change_registrar_.Init(profile_->GetPrefs());
+  pref_change_registrar_.Add(
+      prefs::kExternalStorageDisabled,
+      base::Bind(&VolumeManager::OnExternalStorageDisabledChanged,
+                 base::Unretained(this)));
 }
 
 void VolumeManager::Shutdown() {
+  pref_change_registrar_.RemoveAll();
   disk_mount_manager_->RemoveObserver(this);
+
+  if (drive_integration_service_)
+    drive_integration_service_->RemoveObserver(this);
 }
 
 void VolumeManager::AddObserver(VolumeManagerObserver* observer) {
@@ -139,7 +160,9 @@ std::vector<VolumeInfo> VolumeManager::GetVolumeInfoList() const {
 
   std::vector<VolumeInfo> result;
 
-  // TODO(hidehiko): Adds Drive if available.
+  // Adds "Drive" volume.
+  if (drive_integration_service_ && drive_integration_service_->IsMounted())
+    result.push_back(CreateDriveVolumeInfo());
 
   // Adds "Downloads".
   base::FilePath home_path;
@@ -162,6 +185,28 @@ std::vector<VolumeInfo> VolumeManager::GetVolumeInfoList() const {
   }
 
   return result;
+}
+
+void VolumeManager::OnFileSystemMounted() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  // Raise mount event.
+  // We can pass chromeos::MOUNT_ERROR_NONE even when authentication is failed
+  // or network is unreachable. These two errors will be handled later.
+  VolumeInfo volume_info = CreateDriveVolumeInfo();
+  FOR_EACH_OBSERVER(VolumeManagerObserver, observers_,
+                    OnVolumeMounted(chromeos::MOUNT_ERROR_NONE,
+                                    volume_info,
+                                    false));  // Not remounting.
+}
+
+void VolumeManager::OnFileSystemBeingUnmounted() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  VolumeInfo volume_info = CreateDriveVolumeInfo();
+  FOR_EACH_OBSERVER(
+      VolumeManagerObserver, observers_,
+      OnVolumeUnmounted(chromeos::MOUNT_ERROR_NONE, volume_info));
 }
 
 void VolumeManager::OnDiskEvent(
@@ -325,6 +370,26 @@ void VolumeManager::OnFormatEvent(
       return;
   }
   NOTREACHED();
+}
+
+void VolumeManager::OnExternalStorageDisabledChanged() {
+  // If the policy just got disabled we have to unmount every device currently
+  // mounted. The opposite is fine - we can let the user re-plug her device to
+  // make it available.
+  if (profile_->GetPrefs()->GetBoolean(prefs::kExternalStorageDisabled)) {
+    // We do not iterate on mount_points directly, because mount_points can
+    // be changed by UnmountPath().
+    // TODO(hidehiko): Is it necessary to unmount mounted archives, too, here?
+    while (!disk_mount_manager_->mount_points().empty()) {
+      std::string mount_path =
+          disk_mount_manager_->mount_points().begin()->second.mount_path;
+      LOG(INFO) << "Unmounting " << mount_path << " because of preference.";
+      disk_mount_manager_->UnmountPath(
+          mount_path,
+          chromeos::UNMOUNT_OPTIONS_NONE,
+          chromeos::disks::DiskMountManager::UnmountPathCallback());
+    }
+  }
 }
 
 }  // namespace file_manager

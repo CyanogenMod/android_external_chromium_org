@@ -42,22 +42,15 @@
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
 // Expectations for Widevine.
-#if defined(WIDEVINE_CDM_AVAILABLE)
+#if defined(WIDEVINE_CDM_AVAILABLE) && \
+    !defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)  // See http://crbug.com/237627
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 // TODO(ddorwin): Remove after bots switch to Precise.
 #define EXPECT_WV(a) \
     EXPECT_EQ((std::string(gnu_get_libc_version()) != "2.11.1"), (a))
 #else
-// See http://crbug.com/237627.
-#if defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
-#define EXPECT_WV EXPECT_FALSE
-#else
 #define EXPECT_WV EXPECT_TRUE
-#endif  // defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
 #endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
-
-#if defined(WIDEVINE_CDM_CENC_SUPPORT_AVAILABLE)
-#define EXPECT_WVCENC EXPECT_TRUE
 
 #if defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
 #define EXPECT_WVAVC1 EXPECT_TRUE
@@ -77,27 +70,26 @@
 #define EXPECT_WVAAC EXPECT_FALSE
 #endif
 
-#else  // !defined(WIDEVINE_CDM_CENC_SUPPORT_AVAILABLE)
-#define EXPECT_WVCENC EXPECT_FALSE
-#define EXPECT_WVAVC1 EXPECT_FALSE
-#define EXPECT_WVAVC1AAC EXPECT_FALSE
-#define EXPECT_WVAAC EXPECT_FALSE
-#endif  // defined(WIDEVINE_CDM_CENC_SUPPORT_AVAILABLE)
-
-#else  // !defined(WIDEVINE_CDM_AVAILABLE)
+#else  // defined(WIDEVINE_CDM_AVAILABLE) &&
+       // !defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
 #define EXPECT_WV EXPECT_FALSE
-#define EXPECT_WVCENC EXPECT_FALSE
 #define EXPECT_WVAVC1 EXPECT_FALSE
 #define EXPECT_WVAVC1AAC EXPECT_FALSE
 #define EXPECT_WVAAC EXPECT_FALSE
-#endif  // defined(WIDEVINE_CDM_AVAILABLE)
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) &&
+        // !defined(DISABLE_WIDEVINE_CDM_CANPLAYTYPE)
 
 namespace chrome {
 
-static const char* const kClearKey = "webkit-org.w3.clearkey";
-static const char* const kExternalClearKey = "org.chromium.externalclearkey";
-static const char* const kWidevine = "com.widevine";
-static const char* const kWidevineAlpha = "com.widevine.alpha";
+static const char kPrefixedClearKey[] = "webkit-org.w3.clearkey";
+static const char kPrefixedClearKeyParent[] = "webkit-org.w3";
+// TODO(ddorwin): Duplicate prefixed tests for unprefixed.
+static const char kUnprefixedClearKey[] = "org.w3.clearkey";
+static const char kUnprefixedClearKeyParent[] = "org.w3";
+static const char kExternalClearKey[] = "org.chromium.externalclearkey";
+static const char kWidevineAlpha[] = "com.widevine.alpha";
+static const char kWidevine[] = "com.widevine";
+static const char kWidevineAlphaHr[] = "com.widevine.alpha.hr";
 
 class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
  protected:
@@ -156,12 +148,13 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
   // |pepper_type_for_key_system|.
   void RegisterPepperCdm(CommandLine* command_line,
                          const std::string& adapter_name,
-                         const std::string& pepper_type_for_key_system) {
+                         const std::string& pepper_type_for_key_system,
+                         bool expect_adapter_exists = true) {
     // Append the switch to register the appropriate adapter.
     base::FilePath plugin_dir;
     EXPECT_TRUE(PathService::Get(base::DIR_MODULE, &plugin_dir));
     base::FilePath plugin_lib = plugin_dir.AppendASCII(adapter_name);
-    EXPECT_TRUE(base::PathExists(plugin_lib));
+    EXPECT_EQ(expect_adapter_exists, base::PathExists(plugin_lib));
     base::FilePath::StringType pepper_plugin = plugin_lib.value();
     pepper_plugin.append(FILE_PATH_LITERAL("#CDM#0.1.0.0;"));
 #if defined(OS_WIN)
@@ -200,7 +193,7 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetActiveWebContents(),
         command,
         &result));
-    DCHECK(result == "success" || result == "NotSupportedError");
+    CHECK(result == "success" || result == "NotSupportedError") << result;
     return (result == "success");
   }
 
@@ -297,27 +290,44 @@ class EncryptedMediaIsTypeSupportedWidevineTest
     const std::string pepper_name("application/x-ppapi-widevine-cdm");
     RegisterPepperCdm(command_line, adapter_file_name, pepper_name);
   }
-#endif  // defined(ENABLE_PEPPER_CDMS)
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
 };
 
+#if defined(ENABLE_PEPPER_CDMS)
+// Registers all possibly supported Pepper CDMs with the wrong path (filename).
+class EncryptedMediaIsTypeSupportedPepperCDMRegisteredWithWrongPathTest
+    : public EncryptedMediaIsTypeSupportedTest {
+ protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+   RegisterPepperCdm(command_line,
+                     "clearkeycdmadapterwrongname.dll",
+                     "application/x-ppapi-clearkey-cdm",
+                     false);
+   RegisterPepperCdm(command_line,
+                     "widevinecdmadapterwrongname.dll",
+                     "application/x-ppapi-widevine-cdm",
+                     false);
+  }
+};
+#endif  // defined(ENABLE_PEPPER_CDMS)
+
+
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest, ClearKey_Basic) {
-  EXPECT_TRUE(IsConcreteSupportedKeySystem(kClearKey));
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", no_codecs(), kClearKey));
+      "video/webm", no_codecs(), kPrefixedClearKey));
 
   // Not yet out from behind the vendor prefix.
-  EXPECT_FALSE(IsConcreteSupportedKeySystem("org.w3.clearkey"));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUnprefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", no_codecs(), "org.w3.clearkey"));
+      "video/webm", no_codecs(), kUnprefixedClearKey));
 }
 
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest, ClearKey_Parent) {
-  const char* const kClearKeyParent = "webkit-org.w3";
-
   // The parent should be supported but is not. See http://crbug.com/164303.
-  EXPECT_FALSE(IsConcreteSupportedKeySystem(kClearKeyParent));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kPrefixedClearKeyParent));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", no_codecs(), kClearKeyParent));
+      "video/webm", no_codecs(), kPrefixedClearKeyParent));
 }
 
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
@@ -368,9 +378,9 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
                        IsSupportedKeySystemWithMediaMimeType_ClearKey_NoType) {
   // These two should be true. See http://crbug.com/164303.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      std::string(), no_codecs(), kClearKey));
+      std::string(), no_codecs(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      std::string(), no_codecs(), "webkit-org.w3"));
+      std::string(), no_codecs(), kPrefixedClearKeyParent));
 
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       std::string(), no_codecs(), "webkit-org.w3.foo"));
@@ -382,98 +392,99 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
                        IsSupportedKeySystemWithMediaMimeType_ClearKey_WebM) {
   // Valid video types.
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", no_codecs(), kClearKey));
+      "video/webm", no_codecs(), kPrefixedClearKey));
   // The parent should be supported but is not. See http://crbug.com/164303.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", no_codecs(), "webkit-org.w3"));
+      "video/webm", no_codecs(), kPrefixedClearKeyParent));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", vp8_codec(), kClearKey));
+      "video/webm", vp8_codec(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", vp80_codec(), kClearKey));
+      "video/webm", vp80_codec(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", vp8_and_vorbis_codecs(), kClearKey));
+      "video/webm", vp8_and_vorbis_codecs(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", vorbis_codec(), kClearKey));
+      "video/webm", vorbis_codec(), kPrefixedClearKey));
 
   // Non-Webm codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", avc1_codec(), kClearKey));
+      "video/webm", avc1_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", unknown_codec(), kClearKey));
+      "video/webm", unknown_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/webm", mixed_codecs(), kClearKey));
+      "video/webm", mixed_codecs(), kPrefixedClearKey));
 
   // Valid audio types.
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/webm", no_codecs(), kClearKey));
+      "audio/webm", no_codecs(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/webm", vorbis_codec(), kClearKey));
+      "audio/webm", vorbis_codec(), kPrefixedClearKey));
 
   // Non-audio codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/webm", vp8_codec(), kClearKey));
+      "audio/webm", vp8_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/webm", vp8_and_vorbis_codecs(), kClearKey));
+      "audio/webm", vp8_and_vorbis_codecs(), kPrefixedClearKey));
 
   // Non-Webm codec.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/webm", aac_codec(), kClearKey));
+      "audio/webm", aac_codec(), kPrefixedClearKey));
 }
 
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
                        IsSupportedKeySystemWithMediaMimeType_ClearKey_MP4) {
   // Valid video types.
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", no_codecs(), kClearKey));
+      "video/mp4", no_codecs(), kPrefixedClearKey));
   // The parent should be supported but is not. See http://crbug.com/164303.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", no_codecs(), "webkit-org.w3"));
+      "video/mp4", no_codecs(), kPrefixedClearKeyParent));
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", avc1_codec(), kClearKey));
+      "video/mp4", avc1_codec(), kPrefixedClearKey));
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", avc1_and_aac_codecs(), kClearKey));
+      "video/mp4", avc1_and_aac_codecs(), kPrefixedClearKey));
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", aac_codec(), kClearKey));
+      "video/mp4", aac_codec(), kPrefixedClearKey));
 
   // Extended codecs.
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", avc1_extended_codec(), kClearKey));
+      "video/mp4", avc1_extended_codec(), kPrefixedClearKey));
 
   // Invalid codec format, but canPlayType() strips away the period.
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", avc1_dot_codec(), kClearKey));
+      "video/mp4", avc1_dot_codec(), kPrefixedClearKey));
 
   // Non-MP4 codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", avc2_codec(), kClearKey));
+      "video/mp4", avc2_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", vp8_codec(), kClearKey));
+      "video/mp4", vp8_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", unknown_codec(), kClearKey));
+      "video/mp4", unknown_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "video/mp4", mixed_codecs(), kClearKey));
+      "video/mp4", mixed_codecs(), kPrefixedClearKey));
 
   // Valid audio types.
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "audio/mp4", no_codecs(), kClearKey));
+      "audio/mp4", no_codecs(), kPrefixedClearKey));
   EXPECT_PROPRIETARY(IsSupportedKeySystemWithMediaMimeType(
-      "audio/mp4", aac_codec(), kClearKey));
+      "audio/mp4", aac_codec(), kPrefixedClearKey));
 
   // Non-audio codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/mp4", avc1_codec(), kClearKey));
+      "audio/mp4", avc1_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/mp4", avc1_and_aac_codecs(), kClearKey));
+      "audio/mp4", avc1_and_aac_codecs(), kPrefixedClearKey));
 
   // Non-MP4 codec.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      "audio/mp4", vorbis_codec(), kClearKey));
+      "audio/mp4", vorbis_codec(), kPrefixedClearKey));
 }
 
 //
 // External Clear Key
 //
 
+// When defined(ENABLE_PEPPER_CDMS), this also tests the Pepper CDM check.
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedExternalClearKeyTest,
                        ExternalClearKey_Basic) {
   EXPECT_ECK(IsConcreteSupportedKeySystem(kExternalClearKey));
@@ -774,23 +785,23 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
                        IsSupportedKeySystemWithMediaMimeType_Widevine_MP4) {
   // Valid video types.
-  EXPECT_WVCENC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAVC1(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", no_codecs(), kWidevineAlpha));
   EXPECT_WVAVC1(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", avc1_codec(), kWidevineAlpha));
   EXPECT_WVAVC1AAC(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", avc1_and_aac_codecs(), kWidevineAlpha));
-  EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAVC1AAC(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", aac_codec(), kWidevineAlpha));
 
   // Valid video types - parent key system.
-  EXPECT_WVCENC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAVC1(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", no_codecs(), kWidevine));
   EXPECT_WVAVC1(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", avc1_codec(), kWidevine));
   EXPECT_WVAVC1AAC(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", avc1_and_aac_codecs(), kWidevine));
-  EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAVC1AAC(IsSupportedKeySystemWithMediaMimeType(
       "video/mp4", aac_codec(), kWidevine));
 
   // Extended codecs.
@@ -812,13 +823,13 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
       "video/mp4", mixed_codecs(), kWidevineAlpha));
 
   // Valid audio types.
-  EXPECT_WVCENC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", no_codecs(), kWidevineAlpha));
   EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", aac_codec(), kWidevineAlpha));
 
   // Valid audio types - parent key system.
-  EXPECT_WVCENC(IsSupportedKeySystemWithMediaMimeType(
+  EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", no_codecs(), kWidevine));
   EXPECT_WVAAC(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", aac_codec(), kWidevine));
@@ -833,5 +844,73 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", vorbis_codec(), kWidevineAlpha));
 }
+
+IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
+                       Widevine_HR_Basic) {
+  // HR support cannot be detected in tests, so this is expected to fail
+  // everywhere.
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kWidevineAlphaHr));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kWidevineAlphaHr));
+}
+
+#if defined(ENABLE_PEPPER_CDMS)
+// Since this test fixture does not register the CDMs on the command line, the
+// check for the CDMs in chrome_key_systems.cc should fail, and they should not
+// be registered with KeySystems.
+IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
+                       PepperCDMsNotRegistered) {
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kExternalClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kExternalClearKey));
+
+  // This will fail in all builds unless widevine is available but not a
+  // component, in which case it is registered internally
+#if !defined(WIDEVINE_CDM_AVAILABLE) || defined(WIDEVINE_CDM_IS_COMPONENT)
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kWidevineAlpha));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kWidevineAlpha));
+#endif
+
+  // Clear Key should still be registered.
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kPrefixedClearKey));
+
+  // Not yet out from behind the vendor prefix.
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUnprefixedClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kUnprefixedClearKey));
+}
+
+// Since this test fixture does not register the CDMs on the command line, the
+// check for the CDMs in chrome_key_systems.cc should fail, and they should not
+// be registered with KeySystems.
+IN_PROC_BROWSER_TEST_F(
+    EncryptedMediaIsTypeSupportedPepperCDMRegisteredWithWrongPathTest,
+    PepperCDMsRegisteredButAdapterNotPresent) {
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kExternalClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kExternalClearKey));
+
+  // This will fail in all builds unless widevine is available but not a
+  // component, in which case it is registered internally
+#if !defined(WIDEVINE_CDM_AVAILABLE) || defined(WIDEVINE_CDM_IS_COMPONENT)
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kWidevineAlpha));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kWidevineAlpha));
+#endif
+
+  // Clear Key should still be registered.
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kPrefixedClearKey));
+
+  // Not yet out from behind the vendor prefix.
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUnprefixedClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kUnprefixedClearKey));
+}
+#endif  // defined(ENABLE_PEPPER_CDMS)
 
 }  // namespace chrome

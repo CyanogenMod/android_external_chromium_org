@@ -76,16 +76,15 @@ function SuggestAppsDialog(parentNode) {
 
   this.frame_.id = 'suggest-app-dialog';
 
+  this.spinner_ = this.document_.createElement('div');
+  this.spinner_.className = 'spinner';
+
   this.spinnerWrapper_ = this.document_.createElement('div');
   this.spinnerWrapper_.className = 'spinner-container';
   this.spinnerWrapper_.style.width = WEBVIEW_WIDTH + 'px';
   this.spinnerWrapper_.style.height = WEBVIEW_HEIGHT + 'px';
-  this.spinnerWrapper_.hidden = true;
-  this.frame_.appendChild(this.spinnerWrapper_);
-
-  this.spinner_ = this.document_.createElement('div');
-  this.spinner_.className = 'spinner';
   this.spinnerWrapper_.appendChild(this.spinner_);
+  this.frame_.insertBefore(this.spinnerWrapper_, this.text_.nextSibling);
 
   this.webviewContainer_ = this.document_.createElement('div');
   this.webviewContainer_.id = 'webview-container';
@@ -183,8 +182,6 @@ SuggestAppsDialog.prototype.onInputFocus = function() {
 
 /**
  * Injects headers into the passed request.
- * TODO(yoshiki): Removes this method  after the CWS widget supports the access
- * token in 'initialization' message.
  *
  * @param {Event} e Request event.
  * @return {{requestHeaders: HttpHeaders}} Modified headers.
@@ -265,27 +262,28 @@ SuggestAppsDialog.prototype.show = function(extension, mime, onDialogClosed) {
 
     this.webviewContainer_.innerHTML =
         '<webview id="cws-widget" partition="persist:cwswidgets"></webview>';
-    this.webviewContainer_.classList.remove('loaded');
 
     this.webview_ = this.container_.querySelector('#cws-widget');
     this.webview_.style.width = WEBVIEW_WIDTH + 'px';
     this.webview_.style.height = WEBVIEW_HEIGHT + 'px';
-
-    // TODO(yoshiki): Removes the 'Authentication' header after the CWS widget
-    // supports the access token in 'initialization' message.
     this.webview_.request.onBeforeSendHeaders.addListener(
         this.authorizeRequest_.bind(this),
         {urls: [this.widgetOrigin_ + '/*']},
         ['blocking', 'requestHeaders']);
+    this.webview_.addEventListener('newwindow', function(event) {
+      // Discard the window object and reopen in an external window.
+      event.window.discard();
+      util.visitURL(event.targetUrl);
+      event.preventDefault();
+    });
 
-    this.spinnerWrapper_.hidden = false;
+    this.frame_.classList.add('show-spinner');
 
     this.webviewClient_ = new CWSContainerClient(
         this.webview_,
         extension, mime,
         WEBVIEW_WIDTH, WEBVIEW_HEIGHT,
-        this.widgetUrl_, this.widgetOrigin_,
-        this.accessToken_);
+        this.widgetUrl_, this.widgetOrigin_);
     this.webviewClient_.addEventListener(CWSContainerClient.Events.LOADED,
                                          this.onWidgetLoaded_.bind(this));
     this.webviewClient_.addEventListener(CWSContainerClient.Events.LOAD_FAILED,
@@ -315,8 +313,7 @@ SuggestAppsDialog.prototype.onWebstoreLinkClicked_ = function(e) {
  * @private
  */
 SuggestAppsDialog.prototype.onWidgetLoaded_ = function(event) {
-  this.spinnerWrapper_.hidden = true;
-  this.webviewContainer_.classList.add('loaded');
+  this.frame_.classList.remove('show-spinner');
   this.state_ = SuggestAppsDialog.State.INITIALIZED;
 
   this.webview_.focus();
@@ -328,7 +325,7 @@ SuggestAppsDialog.prototype.onWidgetLoaded_ = function(event) {
  * @private
  */
 SuggestAppsDialog.prototype.onWidgetLoadFailed_ = function(event) {
-  this.spinnerWrapper_.hidden = true;
+  this.frame_.classList.remove('show-spinner');
   this.state_ = SuggestAppsDialog.State.INITIALIZE_FAILED_CLOSING;
 
   this.hide();
@@ -346,6 +343,7 @@ SuggestAppsDialog.prototype.onInstallRequest_ = function(e) {
   this.appInstaller_ = new AppInstaller(itemId);
   this.appInstaller_.install(this.onInstallCompleted_.bind(this));
 
+  this.frame_.classList.add('show-spinner');
   this.state_ = SuggestAppsDialog.State.INSTALLING;
 };
 
@@ -357,6 +355,8 @@ SuggestAppsDialog.prototype.onInstallRequest_ = function(e) {
  */
 SuggestAppsDialog.prototype.onInstallCompleted_ = function(result, error) {
   var success = (result === AppInstaller.Result.SUCCESS);
+
+  this.frame_.classList.remove('show-spinner');
   this.state_ = success ?
                 SuggestAppsDialog.State.INSTALLED_CLOSING :
                 SuggestAppsDialog.State.INITIALIZED;  // Back to normal state.

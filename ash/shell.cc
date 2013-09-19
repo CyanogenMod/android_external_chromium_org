@@ -7,7 +7,10 @@
 #include <algorithm>
 #include <string>
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerators/accelerator_filter.h"
 #include "ash/accelerators/focus_manager_factory.h"
+#include "ash/accelerators/nested_dispatcher_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/desktop_background/desktop_background_controller.h"
@@ -102,12 +105,6 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
-
-#if !defined(OS_MACOSX)
-#include "ash/accelerators/accelerator_controller.h"
-#include "ash/accelerators/accelerator_filter.h"
-#include "ash/accelerators/nested_dispatcher_controller.h"
-#endif
 
 #if defined(OS_CHROMEOS)
 #if defined(USE_X11)
@@ -263,9 +260,7 @@ Shell::~Shell() {
     RemovePreTargetHandler(mouse_cursor_filter_.get());
   RemovePreTargetHandler(system_gesture_filter_.get());
   RemovePreTargetHandler(event_transformation_handler_.get());
-#if !defined(OS_MACOSX)
   RemovePreTargetHandler(accelerator_filter_.get());
-#endif
 
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
@@ -385,7 +380,7 @@ aura::RootWindow* Shell::GetPrimaryRootWindow() {
 }
 
 // static
-aura::RootWindow* Shell::GetActiveRootWindow() {
+aura::RootWindow* Shell::GetTargetRootWindow() {
   Shell* shell = GetInstance();
   if (shell->scoped_target_root_window_)
     return shell->scoped_target_root_window_;
@@ -498,10 +493,8 @@ void Shell::Init() {
 
   cursor_manager_.SetDisplay(DisplayController::GetPrimaryDisplay());
 
-#if !defined(OS_MACOSX)
   nested_dispatcher_controller_.reset(new NestedDispatcherController);
   accelerator_controller_.reset(new AcceleratorController);
-#endif
 
   // The order in which event filters are added is significant.
   event_rewriter_filter_.reset(new internal::EventRewriterEventFilter);
@@ -520,10 +513,8 @@ void Shell::Init() {
                                  root_window->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
-#if !defined(OS_MACOSX)
   accelerator_filter_.reset(new internal::AcceleratorFilter);
   AddPreTargetHandler(accelerator_filter_.get());
-#endif
 
   event_transformation_handler_.reset(new internal::EventTransformationHandler);
   AddPreTargetHandler(event_transformation_handler_.get());
@@ -597,8 +588,7 @@ void Shell::Init() {
 
   // Initialize system_tray_delegate_ before initializing StatusAreaWidget.
   system_tray_delegate_.reset(delegate()->CreateSystemTrayDelegate());
-  if (!system_tray_delegate_)
-    system_tray_delegate_.reset(SystemTrayDelegate::CreateDummyDelegate());
+  DCHECK(system_tray_delegate_.get());
 
   internal::RootWindowController* root_window_controller =
       new internal::RootWindowController(root_window);
@@ -656,9 +646,9 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
 }
 
 void Shell::ToggleAppList(aura::Window* window) {
-  // If the context window is not given, show it on the active root window.
+  // If the context window is not given, show it on the target root window.
   if (!window)
-    window = GetActiveRootWindow();
+    window = GetTargetRootWindow();
   if (!app_list_controller_)
     app_list_controller_.reset(new internal::AppListController);
   app_list_controller_->SetVisible(!app_list_controller_->IsVisible(), window);

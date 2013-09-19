@@ -4052,10 +4052,7 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_OAUTH_PERMISSIONS_HEADER" desc="A line of explanatory text that precedes all GAIA account permissions that an extension might request. This is shown when an app requests permissions which are optional.">
         On your <ph name="ACCOUNT_EMAIL">$1<ex>user@example.com</ex></ph> account, it could:
       </message>
-      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES" desc="A line of explanatory text that precedes the list of files the app has permanent access to. This is shown when an app has persistent access to files.">
-        It has permanent access to:
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_WITH_COUNT" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files.">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files.">
         It has permanent access to <ph name="NUMBER_OF_FILES">$1<ex>5</ex></ph> files.
       </message>
 
@@ -4080,9 +4077,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_3_HOSTS" desc="Permission string for access to data on three websites.">
         Access your data on <ph name="WEBSITE_1">$1<ex>www.google.com</ex></ph>, <ph name="WEBSITE_2">$2<ex>www.reddit.com</ex></ph>, and <ph name="WEBSITE_3">$3<ex>news.ycombinator.com</ex></ph>
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_4_OR_MORE_HOSTS" desc="Permission string for access to data on four or more websites.">
-        Access your data on <ph name="WEBSITE_1">$1<ex>www.google.com</ex></ph>, <ph name="WEBSITE_2">$2<ex>www.yahoo.com</ex></ph>, and <ph name="NUMBER_OF_OTHER_WEBSITES">$3<ex>3</ex></ph> other websites
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS" desc="Permission string for access to data on four or more websites.">
         Access your data on <ph name="NUMBER_OF_OTHER_WEBSITES">$1<ex>5</ex></ph> website(s)
@@ -4129,6 +4123,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_PRIVACY" desc="Permission string for access to privacy settings.">
         Manipulate privacy-related settings
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_SIGNED_IN_DEVICES" desc="Permission string for access to privacy settings.">
+        Access signed in devices
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_USB" desc="Permission string for access to USB devices.">
         Access USB devices
       </message>
@@ -4161,6 +4158,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN" desc="Permission string for access to downloads.">
         Open downloaded files
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_WALLPAPER" desc="Permission string for access to wallpaper.">
+        Change your wallpaper
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_DIRECTORY" desc="Permission string for read access to directories and their contents.">
         Read folders that you open, and all files and folders within.
@@ -4224,6 +4224,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_DECLARATIVE_WEB_REQUEST" desc="Permission string for Declarative Web Request API.">
         Block parts of web pages
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_NETWORK_STATE" desc="Permission string for network list access.">
+        Access list of network connections
       </message>
 
       <!-- Extension/App error messages -->
@@ -4841,6 +4844,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSIONS_HIDE_DETAILS" desc="Tooltip for the button next to an extension that hides details">
         Hide Details
+      </message>
+      <message name="IDS_EXTENSIONS_DETAILS" desc="Tooltip for the button next to an extension that toggles showing details">
+        Details
       </message>
 
       <!-- chrome://extension-info bubble -->
@@ -5465,6 +5471,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION" desc="Description for 'disable device discovery' flag.">
         Disable device discovery on local network.
       </message>
+      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_NAME" desc="Title of the disable 'disable device discovery notificatios' flag.">
+        Disable Device Discovery Notifications
+      </message>
+      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION" desc="Description for 'disable device discovery notifications' flag.">
+        Disable device discovery notifications on local network.
+      </message>
       <message name="IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME" desc="Title of the touch-optimized UI flag." >
         Touch Optimized UI
       </message>
@@ -5751,6 +5763,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_SMOOTH_SCROLLING_DESCRIPTION" desc="Description for the flag to turn on smooth scrolling">
         Enable the experimental smooth scrolling implementation.
       </message>
+      <message name="IDS_FLAGS_ENABLE_OVERLAY_SCROLLBARS_NAME" desc="Title for the flag to turn on overlay scrollbars">
+        Overlay Scrollbars
+      </message>
+      <message name="IDS_FLAGS_ENABLE_OVERLAY_SCROLLBARS_DESCRIPTION" desc="Description for the flag to turn on overlay scrollbars">
+        Enable the experimental overlay scrollbars implementation. You must also enable threaded compositing to have the scrollbars animate.
+      </message>
       <message name="IDS_FLAGS_ENABLE_AUTOLOGIN_NAME" desc="Title for the flag to auto-login the user">
         Enable auto-login
       </message>
@@ -5921,6 +5939,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_WEBGL_DESCRIPTION" desc="Description for the flag to enable WebGL.">
         Enabling this option allows web applications to access the WebGL API.
       </message>
+      <message name="IDS_FLAGS_ENABLE_D3D11_NAME" desc="Name of the 'Enable D3D11' lab.">
+        Enable D3D11
+      </message>
+      <message name="IDS_FLAGS_ENABLE_D3D11_DESCRIPTION" desc="Description for the flag to enable D3D11.">
+        Enabling this option allows the use of Direct3D 11 on configurations that support it.
+      </message>
       <message name="IDS_FLAGS_ENABLE_WEBGL_DRAFT_EXTENSIONS_NAME" desc="Name of the 'Enable WebGL Draft Extensions' flag.">
         Enable WebGL Draft Extensions
       </message>
@@ -5939,29 +5963,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_WEBRTC_DESCRIPTION" desc="Description for the flag to disable WebRTC.">
         Enabling this option prevents web applications from accessing the WebRTC API.
       </message>
-      <message name="IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_NAME" desc="Name of about:flags option to turn off SCTP data channels support">
-        Disable SCTP Data Channels
-      </message>
-      <message name="IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_DESCRIPTION" desc="Description of about:flags option to turn ooff SCTP data channels support">
-        When enabled, DataChannels created by WebRTC will not use the SCTP wire protocol.
-      </message>
       <message name="IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_NAME" desc="Name of about:flags option to turn off WebRTC device enumeration support.">
         Disable WebRTC device enumeration.
       </message>
       <message name="IDS_FLAGS_DISABLE_DEVICE_ENUMERATION_DESCRIPTION" desc="Description of chrome:flags option to turn off WebRTC device enumeration support">
         Disable support for MediaStreamTrack.getSources().
       </message>
+      <message name="IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_NAME" desc="Name of about:flags option to turn off SCTP data channels support">
+        Disable SCTP Data Channels
+      </message>
+      <message name="IDS_FLAGS_DISABLE_SCTP_DATA_CHANNELS_DESCRIPTION" desc="Description of about:flags option to turn ooff SCTP data channels support">
+        When enabled, DataChannels created by WebRTC will not use the SCTP wire protocol.
+      </message>
+      <message name="IDS_FLAGS_DISABLE_WEBRTC_HW_DECODING_NAME" desc="Name of chrome:flags option to turn off WebRTC hardware video decoding support.">
+        Disable support for WebRTC hardware video decoding.
+      </message>
+      <message name="IDS_FLAGS_DISABLE_WEBRTC_HW_DECODING_DESCRIPTION" desc="Description of chrome:flags option to turn off WebRTC hardware video decoding support.">
+        This option disables support in WebRTC for decoding video streams using platform hardware.
+      </message>
       <message name="IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_NAME" desc="Name of chrome:flags option to turn off WebRTC hardware video encoding support.">
         Disable support for WebRTC hardware video encoding.
       </message>
       <message name="IDS_FLAGS_DISABLE_WEBRTC_HW_ENCODING_DESCRIPTION" desc="Description of chrome:flags option to turn off WebRTC hardware video encoding support.">
         This option disables support in WebRTC for encoding video streams using platform hardware.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_WEBRTC_HW_DECODING_NAME" desc="Name of about:flags option to enable WebRTC HW decoding.">
-        Enable HW decode acceleration for WebRTC
-      </message>
-      <message name="IDS_FLAGS_ENABLE_WEBRTC_HW_DECODING_DESCRIPTION" desc="Description of about:flags to enable WebRTC HW decoding.">
-        When enabled, WebRTC will use HW decoding if HW supports it.
       </message>
       <message name="IDS_FLAGS_DISABLE_WEBAUDIO_NAME" desc="Name of the 'Disable WebAudio' lab.">
         Disable WebAudio
@@ -6100,6 +6124,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_ADVANCED_GESTURES_DESCRIPTION" desc="Title for the flag to enable advanced gestures.">
         Enables advanced gestures (e.g. 4-finger pinch to minimize window etc.).
+      </message>
+      <message name="IDS_FLAGS_ASH_FRAME_CAPTION_BUTTON_STYLE_NAME" desc="Title for the flag for the alternate frame caption button style.">
+        Alternate frame caption button style
+      </message>
+      <message name="IDS_FLAGS_ASH_FRAME_CAPTION_BUTTON_STYLE_DESCRIPTION" desc="Description for the flag for the alternate frame caption button style.">
+        Enables an experimental visual style for the frame caption buttons (minimize, maximize, close).
       </message>
       <message name="IDS_FLAGS_DISABLE_TAB_SCRUBBING_NAME" desc="Title for the flag to disable tab scrubbing.">
         Disable tab scrubbing
@@ -6356,6 +6386,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION" desc="Description for the flag to enable sticky keys.">
           StickyKeys allows the user to press and release a modifier key, such as Shift, Ctrl, or Alt, and have it remain active until any other key is pressed.
         </message>
+        <message name="IDS_FLAGS_ENABLE_SAML_SIGNIN_NAME" desc="Name for the flag to enable SAML signin support.">
+          Enable SAML signin.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_SAML_SIGNIN_DESCRIPTION" desc="Description for the flag to enable SAML signin support.">
+          Enables SAML signin support for ChromeOS login.
+        </message>
       </if>
       <message name="IDS_FLAGS_FULL_HISTORY_SYNC_NAME" desc="Name of the flag to disable full history sync.">
         Disable full history sync
@@ -6448,6 +6484,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_IMPL_SIDE_PAINTING_DESCRIPTION" desc="Description of about:flags option for impl-side painting.">
         If enabled, painting is done on a separate thread instead of the main thread.
+      </message>
+      <message name="IDS_FLAGS_LCD_TEXT_NAME" desc="Name of about:flags option for LCD text.">
+        LCD text antialiasing
+      </message>
+      <message name="IDS_FLAGS_LCD_TEXT_DESCRIPTION" desc="Description of about:flags option for LCD text.">
+        If disabled, text is rendered with grayscale antialiasing instead of LCD (subpixel) when doing accelerated compositing.
       </message>
       <message name="IDS_FLAGS_DELEGATED_RENDERER_NAME" desc="Name of about:flags option for delegated renderer.">
         Delegated Renderer (AKA Übercompositor).
@@ -6558,12 +6600,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enables directory support for sync filesystem.
       </message>
       <if expr="is_macosx">
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_SHIM_NAME" desc="Name of the flag to enable the app launcher app bundle.">
-          Enable App Launcher OSX app bundle.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_APP_LIST_SHIM_DESCRIPTION" desc="Description of the flag to enable the app launcher app bundle.">
-          Enable to ensure an OSX app bundle for the App Launcher exists under the Applications folder.
-        </message>
         <message name="IDS_FLAGS_ENABLE_APP_SHIMS_NAME" desc="Title for the flag to enable shortcuts for packaged apps to be added to Applications and to appear in the dock.">
           Enable packaged app shortcuts.
         </message>
@@ -6588,12 +6624,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to disable the app list on startup.">
         Disable the app launcher on startup. While this flag is set the launcher will be disabled every time Chrome starts. This is used for testing the app launcher install flow.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_NAME" desc="Name of the flag to enable device motion DOM events.">
-        Enable device motion.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_DEVICE_MOTION_DESCRIPTION" desc="Description for the flag to enable device motion.">
-        Enables device motion DOM events in JavaScript.
       </message>
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME" desc="Name of the flag to disable sync of user account image.">
         Disable avatar sync.
@@ -7083,25 +7113,25 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <!-- Omnibox -->
       <if expr="not pp_ifdef('use_titlecase')">
-        <message name="IDS_COPY_URL" desc="The copy url menu option in context menu">
-          Copy URL
-        </message>
         <message name="IDS_PASTE_AND_GO" desc="The text label of the Paste And Go menu item when the clipboard contains a URL">
           Pa&amp;ste and go
         </message>
         <message name="IDS_PASTE_AND_SEARCH" desc="The text label of the Paste And Go menu item when the clipboard contains a string to search for">
           Pa&amp;ste and search
         </message>
+        <message name="IDS_SHOW_URL" desc="The text label of the Show URL item in the omnibox context menu, when the omnibox is showing search terms instead of the underlying search URL.">
+          Show URL
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
-        <message name="IDS_COPY_URL" desc="In Title Case: The copy url menu option in context menu">
-          Copy URL
-        </message>
         <message name="IDS_PASTE_AND_GO" desc="In Title Case: The text label of the Paste And Go menu item when the clipboard contains a URL">
           Pa&amp;ste and Go
         </message>
         <message name="IDS_PASTE_AND_SEARCH" desc="In Title Case: The text label of the Paste And Go menu item when the clipboard contains a string to search for">
           Pa&amp;ste and Search
+        </message>
+        <message name="IDS_SHOW_URL" desc="In Title Case: The text label of the Show URL item in the omnibox context menu, when the omnibox is showing search terms instead of the underlying search URL.">
+          Show URL
         </message>
       </if>
       <message name="IDS_OMNIBOX_KEYWORD_HINT" desc="Shown to the user when the url in the omnibox has a keyword associated with it. $1 is replaced with an image showing the tab key. $2 is replaced with the description of the keyword.">
@@ -7510,7 +7540,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Selected file is too big (max size: 3mb).
       </message>
       <message name="IDS_FEEDBACK_PRIVACY_NOTE" desc="Text for the privacy note included with Chrome OS">
-        Your Chrome and Operating system version will be submitted in addition
+        Your Chrome and operating system version will be submitted in addition
         to any information you choose to include above. This feedback is used to
         diagnose problems and help improve Chrome. Any personal information you
         submit, whether explicitly or incidentally will be protected in
@@ -9959,8 +9989,8 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- Autofill dialog: notification area -->
-      <message name="IDS_AUTOFILL_DIALOG_DETAILS_FROM_WALLET" desc="Text explaining where the dialog got its payment info from (on first run of this dialog while using Google Wallet).">
-        The following details are saved in your Google Wallet.
+      <message name="IDS_AUTOFILL_DIALOG_USE_WALLET" desc="Text that shows on top of the autofill dialog when using data Google Wallet already knows about the user.">
+        Protect my payment with Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SAVE_DETAILS_IN_WALLET" desc="Text that shows on the top of the autofill dialog promoting saving info in Google Wallet.">
         Save and protect my details with Google Wallet.
@@ -9995,13 +10025,10 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Loading payment details
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_IN_PROGRESS" desc="Text the user sees while waiting for the wallet servers to respond with a generated card number.">
-        Generating Google Wallet Virtual Online card...
+        Generating Google Wallet Virtual Card...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_DONE" desc="Text the user sees after the wallet servers respond with a generated card number.">
-        Your card has been protected by Google Wallet.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_EXPLANATION" desc="More detailed text the user sees after the wallet servers respond with a generated card number.">
-        Wallet never shares your credit information with merchants. Shop with confidence knowing that you credit card number is protected online.
+        Your Google Wallet Virtual Card is ready.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_OK_BUTTON" desc="Text for the button users have to press to proceed past the wallet card generation text.">
         Okay, got it
@@ -10054,32 +10081,26 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- Autofill dialog: combobox menu items -->
-      <message name="IDS_AUTOFILL_DIALOG_ADD_EMAIL_ADDRESS" desc="Menu item for adding a new email address in the autofill dialog.">
-        Add email address...
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_MANAGE_EMAIL_ADDRESS" desc="Menu item for directing the user to a different UI that can manage email addresses.">
-        Manage email addresses...
-      </message>
       <message name="IDS_AUTOFILL_DIALOG_ADD_CREDIT_CARD" desc="Menu item for adding a new credit card in the autofill dialog.">
-        Add credit card...
+        New credit card...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_MANAGE_CREDIT_CARD" desc="Menu item for directing the user to a different UI that can manage credit cards.">
         Manage credit cards...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_ADD_BILLING_ADDRESS" desc="Menu item for adding a new billing address in the autofill dialog.">
-        Add billing address...
+        New billing address...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_MANAGE_BILLING_ADDRESS" desc="Menu item for directing the user to a different UI that can manage billing addresses.">
         Manage billing addresses...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_ADD_BILLING_DETAILS" desc="Menu item for adding new billing details (credit card + address) in the autofill dialog.">
-        Add billing details...
+        New billing details...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_MANAGE_BILLING_DETAILS" desc="Menu item for directing the user to a different UI that can manage billing details.">
         Manage billing details...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_ADD_SHIPPING_ADDRESS" desc="Menu item for adding new shipping address in the autofill dialog.">
-        Add shipping address...
+        New shipping address...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_MANAGE_SHIPPING_ADDRESS" desc="Menu item for directing the user to a different UI that can manage shipping addresses.">
         Manage shipping addresses...
@@ -10139,7 +10160,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Google Wallet is protecting your card
       </message>
       <message name="IDS_AUTOFILL_GENERATED_CREDIT_CARD_BUBBLE_CONTENTS" desc="Text in the bubble explaining that a temporary card has been generated for the user's security by Google Wallet.">
-        Your card has been protected with the Google Wallet Virtual Online Card (<ph name="FRONTING_CREDIT_CARD">|$1|<ex>Visa - 1234</ex></ph>) and this number will appear on your receipt. This purchase will still be charged to your <ph name="BACKING_CREDIT_CARD">|$2|<ex>Visa - 5678</ex></ph>.
+        Your card has been protected with the Google Wallet Virtual Card (<ph name="FRONTING_CREDIT_CARD">|$1|<ex>Visa - 1234</ex></ph>) and this number will appear on your receipt. This purchase will still be charged to your <ph name="BACKING_CREDIT_CARD">|$2|<ex>Visa - 5678</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_LINK" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
         Manage Saved Cards
@@ -10922,13 +10943,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_NEW_TAB_CONTEXT_MENU_REMOVE_ALL" desc="Context menu description for removing all items from a list">
           Remove all
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK" desc="Context menu description for editing the selected bookmark" formatter_data="android_java">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_EDIT_BOOKMARK" desc="Context menu description for editing the selected bookmark">
           Edit bookmark
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_DELETE_BOOKMARK" desc="Context menu description for deleting the selected bookmark" formatter_data="android_java">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_DELETE_BOOKMARK" desc="Context menu description for deleting the selected bookmark">
           Delete bookmark
         </message>
-        <message name="IDS_NEW_TAB_CONTEXT_MENU_BOOKMARK_SHORTCUT" desc="Context menu description for creating a shortcut to bookmark on home screen" formatter_data="android_java">
+        <message name="IDS_NEW_TAB_CONTEXT_MENU_BOOKMARK_SHORTCUT" desc="Context menu description for creating a shortcut to bookmark on home screen">
           Add to home screen
         </message>
         <message name="IDS_SYNC_PROMO_DESKTOP_INSTRUCTIONS" desc="Information about sync displayed on the NTP when the user has signed in on mobile but not on desktop">
@@ -11015,7 +11036,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Create, change, or delete profiles.
       </message>
       <message name="IDS_PROFILES_PROFILE_SIGNOUT_BUTTON" desc="Button in the avatar menu bubble view to sign-out the current profile.">
-        Sign-out
+        Sign out
       </message>
       <message name="IDS_PROFILES_PROFILE_SIGNOUT_BUTTON_TIP" desc="Tool-tip text shown for button in the avatar menu bubble view to sign-out the current profile.">
         Sign-out user <ph name="PROFILE_USERNAME">$1<ex>user@gmail.com</ex></ph>.
@@ -11027,16 +11048,28 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         edit
       </message>
       <message name="IDS_PROFILES_PROFILE_USERS_BUTTON" desc="Button in the avatar menu bubble view for switching users.">
-        Users
-      </message>
-      <message name="IDS_PROFILES_GUEST_PROFILE_NAME" desc="Name of the guest profile.">
-        Guest
+        Add person
       </message>
       <message name="IDS_PROFILES_PROFILE_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
-        Guest browsing
+        Browse as guest
+      </message>
+      <message name="IDS_PROFILES_PROFILE_EXIT_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
+        End guest session
+      </message>
+      <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
+        Add account for <ph name="PROFILE_NAME">$1<ex>John</ex></ph>
+      </message>
+      <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
+        Manage accounts
+      </message>
+      <message name="IDS_PROFILES_PROFILE_CHANGE_PHOTO_BUTTON" desc="Button in the avatar menu bubble view used to change the photo for a profile.">
+        Change photo
       </message>
       <message name="IDS_PROFILES_SWITCH_TO_PROFILE_ACCESSIBLE_NAME" desc="Description of the switch to profile button. This is used for accessibility.">
         Switch to user: <ph name="PROFILE_NAME">$1<ex>First user</ex></ph>
+      </message>
+      <message name="IDS_PROFILES_GUEST_PROFILE_NAME" desc="Name of the guest profile.">
+        Guest
       </message>
       <message name="IDS_DEFAULT_PROFILE_NAME" desc="The default name given to a profile. Displayed in wrench menu and settings UI.">
         First user
@@ -13402,9 +13435,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         <message name="IDS_COPY_MAC" desc="The Mac menu item for copy in the edit menu.">
           Copy
         </message>
-        <message name="IDS_COPY_URL_MAC" desc="The Mac menu item for copy url in the context menu.">
-          Copy URL
-        </message>
         <message name="IDS_PASTE_MAC" desc="The Mac menu item for paste in the edit menu.">
           Paste
         </message>
@@ -13416,6 +13446,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
         </message>
         <message name="IDS_EDIT_SELECT_ALL_MAC" desc="The Mac menu item select all in the edit menu.">
           Select All
+        </message>
+        <message name="IDS_SHOW_URL_MAC" desc="The Mac menu item for Show URL in the omnibox context menu, when the omnibox is showing search terms instead of the underlying search URL.">
+          Show URL
         </message>
         <!-- Edit::Find submenu -->
         <message name="IDS_EDIT_FIND_SUBMENU_MAC" desc="The Mac menu item for the find submenu in the edit menu.">
@@ -14170,6 +14203,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_PDF_INFOBAR_ALWAYS_USE_READER_BUTTON" desc="The label of the 'always' button on the infobar that asks the user if they want to set Adobe Reader as default.">
       Always
     </message>
+    <message name="IDS_PDF_PASSWORD_DIALOG_TITLE" desc="The title of the dialog requesting a password to open a protected PDF.">
+      Password required
+    </message>
 
     <!-- Adobe Reader is out of date Blocking Page -->
     <message name="IDS_READER_OUT_OF_DATE_BLOCKING_PAGE_TITLE" desc="The title of the Adobe Reader out of date blocking page.">
@@ -14301,6 +14337,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
 Your account sign-in details are out of date.
     </message>
+    <message name="IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN" desc="Warning message shown in the create-profile dialog when the custodian signed in recently, sync has not yet finished initializing, and so the creation process is likely to take extra time.">
+      Creating your supervised user. This may take a few moments.
+    </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LABEL" desc="Label for the (disabled) 'Supervised user' checkbox in the create-profile dialog when the current user is not signed in. This will be followed by a 'Sign in now' link.">
       This is a supervised user who will be managed by you.
 You need to be signed in to use this feature.
@@ -14364,9 +14403,8 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
     <message name="IDS_IMPORT_EXISTING_MANAGED_USER_TITLE" desc="Title for the dialog used to import existing supervised users. The dialog appears when the custodian clicks on 'Import existing supervised user' during the user creation flow. The dialog displays a list of existing supervised users for the custodian to choose from">
       Import an existing supervised user
     </message>
-    <message name="IDS_IMPORT_EXISTING_MANAGED_USER_TEXT" desc="Text that instructs the user to choose one of the displayed supervised users to import to this device. The text also gives hint to the user about how the supervised user's settings and browsing history will be dealt with across multiple devices.">
+    <message name="IDS_IMPORT_EXISTING_MANAGED_USER_TEXT" desc="Text that instructs the user to choose one of the displayed supervised users to import to this device.">
       Choose a supervised user to add to this device.
-The supervised user's settings and browsing history will be merged across devices.
     </message>
     <message name="IDS_CREATE_NEW_USER_LINK" desc="The text for the 'Create a new user' link button. The button takes the user back from the dialog for importing an existing supervised user to the user creation dialog.">
       Create a new user
@@ -14378,7 +14416,7 @@ The supervised user's settings and browsing history will be merged across device
       (already on this device)
     </message>
     <message name="IDS_MANAGED_USER_NO_EXISTING_ERROR" desc="Message shown to the custodian when he opens the 'supervised user import' overlay but he has no existing supervised users to import.">
-      Oops! looks like you have no existing supervised users to import. Please create one or more from another device then you can import them here.
+      Oops! Looks like you have no existing supervised users to import. Please create one or more from another device then you can import them here.
     </message>
     <message name="IDS_MANAGED_USER_IMPORT_LOCAL_ERROR" desc="Message shown when a local error (for example, a disk error) occurs during supervised user import.">
       Oops! The supervised user couldn't be imported. Please check your hard drive space and permissions and try again.
@@ -14387,7 +14425,16 @@ The supervised user's settings and browsing history will be merged across device
       Oops! The supervised user couldn't be imported. Please check your network connection and try again later.
     </message>
     <message name="IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR" desc="Message shown when a sign in error occurs during supervised user import.">
-      Oops! The supervised user couldn't be imported. Please make sure you're signed in properly and try again.
+      Oops! Looks like there's a problem with your credentials. Please make sure you're signed in properly and try again.
+    </message>
+    <message name="IDS_MANAGED_USER_SELECT_AVATAR_TITLE" desc="Title for the dialog used to select an avatar for a supervised user being imported. The dialog is shown only when the supervised user being imported has no chrome synced avatar.">
+      Select an avatar for this supervised user
+    </message>
+    <message name="IDS_MANAGED_USER_SELECT_AVATAR_TEXT" desc="Text that instructs the user to choose an avatar for the supervised user being imported.">
+      Choose an avatar for this supervised user.
+    </message>
+    <message name="IDS_MANAGED_USER_SELECT_AVATAR_OK" desc="Text on the button to confirm the avatar selection for the supervised user being imported.">
+      Ok, import
     </message>
 
     <if expr="not is_android and not is_ios">
@@ -14905,6 +14952,36 @@ Do you accept?
     <message name="IDS_RESET_PROFILE_SETTINGS_FEEDBACK" desc="Feedback label in the Reset Profile Settings dialog">
       Help make Google Chrome better by reporting the current settings
     </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_LOCALE" desc="Locale field in the feedback details of the Reset Profile Settings dialog">
+      Locale
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_USER_AGENT" desc="User Agent field in the feedback details of the Reset Profile Settings dialog">
+      User Agent
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_STARTUP_URLS" desc="Startup URLs tag in the feedback details of the Reset Profile Settings dialog">
+      Startup URLs
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_STARTUP_TYPE" desc="Startup type tag in the feedback details of the Reset Profile Settings dialog">
+      Startup type
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_HOMEPAGE" desc="Homepage tag in the feedback details of the Reset Profile Settings dialog">
+      Homepage
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_HOMEPAGE_IS_NTP" desc="Tag in the feedback details of the Reset Profile Settings dialog">
+      Homepage is the New Tab page
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_HOMEPAGE_IS_NTP_TRUE" desc="Value of HOMEPAGE_IS_NTP in the feedback details of the Reset Profile Settings dialog">
+      Yes
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_HOMEPAGE_IS_NTP_FALSE" desc="Value of HOMEPAGE_IS_NTP in the feedback details of the Reset Profile Settings dialog">
+      No
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_DSE" desc="Default search engine in the feedback details of the Reset Profile Settings dialog">
+      Default search engine
+    </message>
+    <message name="IDS_RESET_PROFILE_SETTINGS_EXTENSIONS" desc="Extensions tag in the feedback details of the Reset Profile Settings dialog">
+      Extensions
+    </message>
 
     <!-- Identity internals strings -->
     <message name="IDS_IDENTITY_INTERNALS_TOKEN_CACHE_TEXT" desc="The title of the token cache of the Identity API.">
@@ -15071,6 +15148,21 @@ Do you accept?
     </message>
     <message name="IDS_LOCAL_DISCOVERY_NO_PRINTERS_ON_NETWORK_EXPLANATION" desc="Explanatory text in case there are no printers to register on the network">
       Looks like there are no devices available to register on the network. If your device is on and connected to the internet, try registering it using instructions in its instruction manual.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_UNAVAILABLE" desc="Explanatory text in case the list of cloud devices can't be retrieved">
+      Could not load devices.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_RETRY_LOAD_CLOUD_DEVICES" desc="Text on button to retry loading cloud devices">
+      Try again
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_NEED_LOGIN" desc="Text on login promo for local discovery page">
+      You need to sign in to Chrome to see your devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTER_NEED_LOGIN" desc="Text on login promo for local discovery registration">
+      You need to sign in to Chrome to register new devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN" desc="Text on login button for local discovery page">
+      sign in
     </message>
   </messages>
 

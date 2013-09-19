@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -39,14 +38,13 @@
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_view.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_utils.h"
 #include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/web/WebCursorInfo.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/surface/transport_dib.h"
 #include "webkit/common/resource_type.h"
 
@@ -319,8 +317,7 @@ class BrowserPluginGuest::EmbedderRenderViewHostObserver
   // RenderViewHostObserver:
   virtual void RenderViewHostDestroyed(
       RenderViewHost* render_view_host) OVERRIDE {
-    browser_plugin_guest_->embedder_web_contents_ = NULL;
-    browser_plugin_guest_->Destroy();
+    browser_plugin_guest_->EmbedderDestroyed();
   }
 
  private:
@@ -424,6 +421,54 @@ int BrowserPluginGuest::RequestPermission(
   return request_id;
 }
 
+BrowserPluginGuest* BrowserPluginGuest::CreateNewGuestWindow(
+    const OpenURLParams& params) {
+  BrowserPluginGuestManager* guest_manager =
+      GetWebContents()->GetBrowserPluginGuestManager();
+
+  // Allocate a new instance ID for the new guest.
+  int instance_id = guest_manager->get_next_instance_id();
+
+  // Set the attach params to use the same partition as the opener.
+  // We pull the partition information from the site's URL, which is of the form
+  // guest://site/{persist}?{partition_name}.
+  const GURL& site_url = GetWebContents()->GetSiteInstance()->GetSiteURL();
+  BrowserPluginHostMsg_Attach_Params attach_params;
+  attach_params.storage_partition_id = site_url.query();
+  attach_params.persist_storage =
+      site_url.path().find("persist") != std::string::npos;
+
+  // The new guest gets a copy of this guest's extra params so that the content
+  // embedder exposes the same API for this guest as its opener.
+  scoped_ptr<base::DictionaryValue> extra_params(
+      extra_attach_params_->DeepCopy());
+  BrowserPluginGuest* new_guest =
+      GetWebContents()->GetBrowserPluginGuestManager()->CreateGuest(
+          GetWebContents()->GetSiteInstance(), instance_id,
+          attach_params, extra_params.Pass());
+  new_guest->opener_ = AsWeakPtr();
+
+  // Take ownership of |new_guest|.
+  pending_new_windows_.insert(
+      std::make_pair(new_guest, NewWindowInfo(params.url, std::string())));
+
+  // Request permission to show the new window.
+  RequestNewWindowPermission(
+      new_guest->GetWebContents(),
+      params.disposition,
+      gfx::Rect(),
+      params.user_gesture);
+
+  return new_guest;
+}
+
+void BrowserPluginGuest::EmbedderDestroyed() {
+  embedder_web_contents_ = NULL;
+  if (delegate_)
+    delegate_->EmbedderDestroyed();
+  Destroy();
+}
+
 void BrowserPluginGuest::Destroy() {
   is_in_destruction_ = true;
   if (!attached() && opener())
@@ -506,6 +551,8 @@ void BrowserPluginGuest::Initialize(
   // Navigation is disabled in Chrome Apps. We want to make sure guest-initiated
   // navigations still continue to function inside the app.
   renderer_prefs->browser_handles_all_top_level_requests = false;
+  // Disable "client blocked" error page for browser plugin.
+  renderer_prefs->disable_client_blocked_error_page = true;
 
   // Listen to embedder visibility changes so that the guest is in a 'shown'
   // state if both the embedder is visible and the BrowserPlugin is marked as
@@ -579,6 +626,7 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
   } else {
     guest = new BrowserPluginGuest(instance_id, web_contents, NULL, false);
   }
+  guest->extra_attach_params_.reset(extra_params->DeepCopy());
   web_contents->SetBrowserPluginGuest(guest);
   BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
@@ -732,10 +780,14 @@ WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
     it->second = new_window_info;
     return NULL;
   }
-  // This can happen for cross-site redirects.
-  source->GetController().LoadURL(
-        params.url, params.referrer, params.transition, std::string());
-  return source;
+  if (params.disposition == CURRENT_TAB) {
+    // This can happen for cross-site redirects.
+    source->GetController().LoadURL(
+          params.url, params.referrer, params.transition, std::string());
+    return source;
+  }
+
+  return CreateNewGuestWindow(params)->GetWebContents();
 }
 
 void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
@@ -986,9 +1038,8 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
 }
 
 void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
-  bool disable_dragdrop = !CommandLine::ForCurrentProcess()->HasSwitch(
-                              switches::kEnableBrowserPluginDragDrop);
-  if (disable_dragdrop) {
+  bool enable_dragdrop = delegate_ && delegate_->IsDragAndDropEnabled();
+  if (!enable_dragdrop) {
     // Initiating a drag from inside a guest is currently not supported without
     // the kEnableBrowserPluginDragDrop flag on a linux platform. So inject some
     // JS to disable it. http://crbug.com/161112
@@ -1105,9 +1156,12 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
 
 void BrowserPluginGuest::Attach(
     WebContentsImpl* embedder_web_contents,
-    BrowserPluginHostMsg_Attach_Params params) {
+    BrowserPluginHostMsg_Attach_Params params,
+    const base::DictionaryValue& extra_params) {
   if (attached())
     return;
+
+  extra_attach_params_.reset(extra_params.DeepCopy());
 
   // Clear parameters that get inherited from the opener.
   params.storage_partition_id.clear();
@@ -1558,7 +1612,6 @@ void BrowserPluginGuest::RunJavaScriptDialog(
     JavaScriptMessageType javascript_message_type,
     const string16& message_text,
     const string16& default_prompt_text,
-    bool user_gesture,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
   if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {

@@ -4,8 +4,12 @@
 
 #include "webkit/common/gpu/context_provider_in_process.h"
 
+#include <set>
+
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "cc/output/managed_memory_policy.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
 #include "webkit/common/gpu/managed_memory_policy_convert.h"
@@ -78,10 +82,11 @@ class ContextProviderInProcess::MemoryAllocationCallbackProxy
 
 // static
 scoped_refptr<ContextProviderInProcess> ContextProviderInProcess::Create(
-    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d) {
+    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d,
+    const std::string& debug_name) {
   if (!context3d)
     return NULL;
-  return new ContextProviderInProcess(context3d.Pass());
+  return new ContextProviderInProcess(context3d.Pass(), debug_name);
 }
 
 // static
@@ -96,13 +101,15 @@ ContextProviderInProcess::CreateOffscreen() {
 
   return Create(
       WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          attributes));
+          attributes), "Offscreen");
 }
 
 ContextProviderInProcess::ContextProviderInProcess(
-    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d)
+    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d,
+    const std::string& debug_name)
     : context3d_(context3d.Pass()),
-      destroyed_(false) {
+      destroyed_(false),
+      debug_name_(debug_name) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(context3d_);
   context_thread_checker_.DetachFromThread();
@@ -125,6 +132,10 @@ bool ContextProviderInProcess::BindToCurrentThread() {
   if (!context3d_->makeContextCurrent())
     return false;
 
+  std::string unique_context_name =
+      base::StringPrintf("%s-%p", debug_name_.c_str(), context3d_.get());
+  context3d_->pushGroupMarkerEXT(unique_context_name.c_str());
+
   lost_context_callback_proxy_.reset(new LostContextCallbackProxy(this));
   swap_buffers_complete_callback_proxy_.reset(
       new SwapBuffersCompleteCallbackProxy(this));
@@ -146,6 +157,15 @@ ContextProviderInProcess::ContextCapabilities() {
   caps.shallow_flush = true;
   caps.texture_format_bgra8888 = true;
   caps.texture_rectangle = true;
+
+  WebKit::WebString extensions =
+      context3d_->getString(0x1F03 /* GL_EXTENSIONS */);
+  std::vector<std::string> extension_list;
+  base::SplitString(extensions.utf8(), ' ', &extension_list);
+  std::set<std::string> extension_set(extension_list.begin(),
+                                      extension_list.end());
+
+  caps.post_sub_buffer = extension_set.count("GL_CHROMIUM_post_sub_buffer") > 0;
   return caps;
 }
 

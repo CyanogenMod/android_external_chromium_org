@@ -7,27 +7,30 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/platform_file.h"
-#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
-#include "base/threading/thread.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
 #include "chrome/browser/sync_file_system/sync_status_code.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/mock_blob_url_request_context.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/common/blob/scoped_file.h"
 
 #define FPL FILE_PATH_LITERAL
 
+using content::BrowserThread;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemURL;
 using fileapi::FileSystemURLSet;
@@ -48,36 +51,35 @@ const char kOrigin2[] = "http://chromium.org";
 class LocalFileSyncContextTest : public testing::Test {
  protected:
   LocalFileSyncContextTest()
-      : status_(SYNC_FILE_ERROR_FAILED),
+      : thread_bundle_(
+            content::TestBrowserThreadBundle::REAL_FILE_THREAD |
+            content::TestBrowserThreadBundle::REAL_IO_THREAD),
+        status_(SYNC_FILE_ERROR_FAILED),
         file_error_(base::PLATFORM_FILE_ERROR_FAILED),
         async_modify_finished_(false),
         has_inflight_prepare_for_sync_(false) {}
 
   virtual void SetUp() OVERRIDE {
     RegisterSyncableFileSystem();
-
-    io_thread_.reset(new base::Thread("Thread_IO"));
-    io_thread_->StartWithOptions(
-        base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
-
-    file_thread_.reset(new base::Thread("Thread_File"));
-    file_thread_->Start();
+    ASSERT_TRUE(dir_.CreateUniqueTempDir());
 
     ui_task_runner_ = base::MessageLoop::current()->message_loop_proxy();
-    io_task_runner_ = io_thread_->message_loop_proxy();
-    file_task_runner_ = file_thread_->message_loop_proxy();
+    io_task_runner_ = BrowserThread::GetMessageLoopProxyForThread(
+        BrowserThread::IO);
+    file_task_runner_ = BrowserThread::GetMessageLoopProxyForThread(
+        BrowserThread::IO);
   }
 
   virtual void TearDown() OVERRIDE {
     RevokeSyncableFileSystem();
-    io_thread_->Stop();
-    file_thread_->Stop();
   }
 
   void StartPrepareForSync(FileSystemContext* file_system_context,
                            const FileSystemURL& url,
+                           LocalFileSyncContext::SyncMode sync_mode,
                            SyncFileMetadata* metadata,
-                           FileChangeList* changes) {
+                           FileChangeList* changes,
+                           webkit_blob::ScopedFile* snapshot) {
     ASSERT_TRUE(changes != NULL);
     ASSERT_FALSE(has_inflight_prepare_for_sync_);
     status_ = SYNC_STATUS_UNKNOWN;
@@ -85,38 +87,49 @@ class LocalFileSyncContextTest : public testing::Test {
     sync_context_->PrepareForSync(
         file_system_context,
         url,
+        sync_mode,
         base::Bind(&LocalFileSyncContextTest::DidPrepareForSync,
-                   base::Unretained(this), metadata, changes));
+                   base::Unretained(this), metadata, changes, snapshot));
   }
 
   SyncStatusCode PrepareForSync(FileSystemContext* file_system_context,
                                 const FileSystemURL& url,
+                                LocalFileSyncContext::SyncMode sync_mode,
                                 SyncFileMetadata* metadata,
-                                FileChangeList* changes) {
-    StartPrepareForSync(file_system_context, url, metadata, changes);
+                                FileChangeList* changes,
+                                webkit_blob::ScopedFile* snapshot) {
+    StartPrepareForSync(file_system_context, url, sync_mode,
+                        metadata, changes, snapshot);
     base::MessageLoop::current()->Run();
     return status_;
   }
 
-  base::Closure GetPrepareForSyncClosure(FileSystemContext* file_system_context,
-                                         const FileSystemURL& url,
-                                         SyncFileMetadata* metadata,
-                                         FileChangeList* changes) {
+  base::Closure GetPrepareForSyncClosure(
+      FileSystemContext* file_system_context,
+      const FileSystemURL& url,
+      LocalFileSyncContext::SyncMode sync_mode,
+      SyncFileMetadata* metadata,
+      FileChangeList* changes,
+      webkit_blob::ScopedFile* snapshot) {
     return base::Bind(&LocalFileSyncContextTest::StartPrepareForSync,
                       base::Unretained(this),
                       base::Unretained(file_system_context),
-                      url, metadata, changes);
+                      url, sync_mode, metadata, changes, snapshot);
   }
 
   void DidPrepareForSync(SyncFileMetadata* metadata_out,
                          FileChangeList* changes_out,
+                         webkit_blob::ScopedFile* snapshot_out,
                          SyncStatusCode status,
-                         const LocalFileSyncInfo& sync_file_info) {
+                         const LocalFileSyncInfo& sync_file_info,
+                         scoped_ptr<webkit_blob::ScopedFile> snapshot) {
     ASSERT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
     has_inflight_prepare_for_sync_ = false;
     status_ = status;
     *metadata_out = sync_file_info.metadata;
     *changes_out = sync_file_info.changes;
+    if (snapshot_out && snapshot)
+      *snapshot_out = snapshot->Pass();
     base::MessageLoop::current()->Quit();
   }
 
@@ -132,7 +145,9 @@ class LocalFileSyncContextTest : public testing::Test {
     SyncFileMetadata metadata;
     FileChangeList changes;
     EXPECT_EQ(SYNC_STATUS_OK,
-              PrepareForSync(file_system_context, url, &metadata, &changes));
+              PrepareForSync(file_system_context, url,
+                             LocalFileSyncContext::SYNC_EXCLUSIVE,
+                             &metadata, &changes, NULL));
     EXPECT_EQ(expected_file_type, metadata.file_type);
 
     status_ = SYNC_STATUS_UNKNOWN;
@@ -151,9 +166,9 @@ class LocalFileSyncContextTest : public testing::Test {
 
   void StartModifyFileOnIOThread(CannedSyncableFileSystem* file_system,
                                  const FileSystemURL& url) {
-    async_modify_finished_ = false;
     ASSERT_TRUE(file_system != NULL);
     if (!io_task_runner_->RunsTasksOnCurrentThread()) {
+      async_modify_finished_ = false;
       ASSERT_TRUE(ui_task_runner_->RunsTasksOnCurrentThread());
       io_task_runner_->PostTask(
           FROM_HERE,
@@ -188,12 +203,137 @@ class LocalFileSyncContextTest : public testing::Test {
     async_modify_finished_ = true;
   }
 
+  void SimulateFinishSync(FileSystemContext* file_system_context,
+                          const FileSystemURL& url,
+                          SyncStatusCode status) {
+    sync_context_->CommitChangeStatusForURL(
+        file_system_context,
+        url,
+        status,
+        base::Bind(&LocalFileSyncContext::ClearSyncFlagForURL,
+                   sync_context_, url));
+    base::MessageLoop::current()->RunUntilIdle();
+  }
+
+  void PrepareForSync_Basic(LocalFileSyncContext::SyncMode sync_mode,
+                            SyncStatusCode simulate_sync_finish_status) {
+    CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                         io_task_runner_.get(),
+                                         file_task_runner_.get());
+    file_system.SetUp();
+    sync_context_ = new LocalFileSyncContext(
+        dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
+    ASSERT_EQ(SYNC_STATUS_OK,
+              file_system.MaybeInitializeFileSystemContext(
+                  sync_context_.get()));
+    ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
+
+    const FileSystemURL kFile(file_system.URL("file"));
+    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system.CreateFile(kFile));
+
+    SyncFileMetadata metadata;
+    FileChangeList changes;
+    EXPECT_EQ(SYNC_STATUS_OK,
+              PrepareForSync(file_system.file_system_context(), kFile,
+                             sync_mode, &metadata, &changes, NULL));
+    EXPECT_EQ(1U, changes.size());
+    EXPECT_TRUE(changes.list().back().IsFile());
+    EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+
+    // We should see the same set of changes.
+    file_system.GetChangesForURLInTracker(kFile, &changes);
+    EXPECT_EQ(1U, changes.size());
+    EXPECT_TRUE(changes.list().back().IsFile());
+    EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+
+    SimulateFinishSync(file_system.file_system_context(), kFile,
+                       simulate_sync_finish_status);
+
+    file_system.GetChangesForURLInTracker(kFile, &changes);
+    if (simulate_sync_finish_status == SYNC_STATUS_OK) {
+      // The change's cleared.
+      EXPECT_TRUE(changes.empty());
+    } else {
+      EXPECT_EQ(1U, changes.size());
+      EXPECT_TRUE(changes.list().back().IsFile());
+      EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+    }
+
+    sync_context_->ShutdownOnUIThread();
+    sync_context_ = NULL;
+
+    file_system.TearDown();
+  }
+
+  void PrepareForSync_WriteDuringSync(
+      LocalFileSyncContext::SyncMode sync_mode) {
+    CannedSyncableFileSystem file_system(GURL(kOrigin1),
+                                         io_task_runner_.get(),
+                                         file_task_runner_.get());
+    file_system.SetUp();
+    sync_context_ = new LocalFileSyncContext(
+        dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
+    ASSERT_EQ(SYNC_STATUS_OK,
+              file_system.MaybeInitializeFileSystemContext(
+                  sync_context_.get()));
+    ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
+
+    const FileSystemURL kFile(file_system.URL("file"));
+    EXPECT_EQ(base::PLATFORM_FILE_OK, file_system.CreateFile(kFile));
+
+    SyncFileMetadata metadata;
+    FileChangeList changes;
+    webkit_blob::ScopedFile snapshot;
+    EXPECT_EQ(SYNC_STATUS_OK,
+              PrepareForSync(file_system.file_system_context(), kFile,
+                             sync_mode, &metadata, &changes, &snapshot));
+    EXPECT_EQ(1U, changes.size());
+    EXPECT_TRUE(changes.list().back().IsFile());
+    EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+
+    EXPECT_EQ(sync_mode == LocalFileSyncContext::SYNC_SNAPSHOT,
+              !snapshot.path().empty());
+
+    // Tracker keeps same set of changes.
+    file_system.GetChangesForURLInTracker(kFile, &changes);
+    EXPECT_EQ(1U, changes.size());
+    EXPECT_TRUE(changes.list().back().IsFile());
+    EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+
+    StartModifyFileOnIOThread(&file_system, kFile);
+
+    if (sync_mode == LocalFileSyncContext::SYNC_SNAPSHOT) {
+      // Write should succeed.
+      EXPECT_EQ(base::PLATFORM_FILE_OK, WaitUntilModifyFileIsDone());
+    } else {
+      base::MessageLoop::current()->RunUntilIdle();
+      EXPECT_FALSE(async_modify_finished_);
+    }
+
+    SimulateFinishSync(file_system.file_system_context(), kFile,
+                       SYNC_STATUS_OK);
+
+    EXPECT_EQ(base::PLATFORM_FILE_OK, WaitUntilModifyFileIsDone());
+
+    // Sync succeeded, but the other change that was made during or
+    // after sync is recorded.
+    file_system.GetChangesForURLInTracker(kFile, &changes);
+    EXPECT_EQ(1U, changes.size());
+    EXPECT_TRUE(changes.list().back().IsFile());
+    EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
+
+    sync_context_->ShutdownOnUIThread();
+    sync_context_ = NULL;
+
+    file_system.TearDown();
+  }
+
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
 
+  base::ScopedTempDir dir_;
+
   // These need to remain until the very end.
-  scoped_ptr<base::Thread> io_thread_;
-  scoped_ptr<base::Thread> file_thread_;
-  base::MessageLoop loop_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
@@ -209,7 +349,8 @@ class LocalFileSyncContextTest : public testing::Test {
 
 TEST_F(LocalFileSyncContextTest, ConstructAndDestruct) {
   sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+      new LocalFileSyncContext(
+          dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
   sync_context_->ShutdownOnUIThread();
 }
 
@@ -219,8 +360,8 @@ TEST_F(LocalFileSyncContextTest, InitializeFileSystemContext) {
                                        file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
 
   // Initializes file_system using |sync_context_|.
   EXPECT_EQ(SYNC_STATUS_OK,
@@ -264,8 +405,8 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
   file_system1.SetUp();
   file_system2.SetUp();
 
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
 
   // Initializes file_system1 and file_system2.
   EXPECT_EQ(SYNC_STATUS_OK,
@@ -312,7 +453,8 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
   FileChangeList changes;
   EXPECT_EQ(SYNC_STATUS_OK,
             PrepareForSync(file_system1.file_system_context(), kURL1,
-                           &metadata, &changes));
+                           LocalFileSyncContext::SYNC_EXCLUSIVE,
+                           &metadata, &changes, NULL));
   EXPECT_EQ(1U, changes.size());
   EXPECT_TRUE(changes.list().back().IsFile());
   EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
@@ -322,7 +464,8 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
   changes.clear();
   EXPECT_EQ(SYNC_STATUS_OK,
             PrepareForSync(file_system2.file_system_context(), kURL2,
-                           &metadata, &changes));
+                           LocalFileSyncContext::SYNC_EXCLUSIVE,
+                           &metadata, &changes, NULL));
   EXPECT_EQ(1U, changes.size());
   EXPECT_FALSE(changes.list().back().IsFile());
   EXPECT_TRUE(changes.list().back().IsAddOrUpdate());
@@ -334,6 +477,34 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
 
   file_system1.TearDown();
   file_system2.TearDown();
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_SyncSuccess_Exclusive) {
+  PrepareForSync_Basic(LocalFileSyncContext::SYNC_EXCLUSIVE,
+                       SYNC_STATUS_OK);
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_SyncSuccess_Snapshot) {
+  PrepareForSync_Basic(LocalFileSyncContext::SYNC_SNAPSHOT,
+                       SYNC_STATUS_OK);
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_SyncFailure_Exclusive) {
+  PrepareForSync_Basic(LocalFileSyncContext::SYNC_EXCLUSIVE,
+                       SYNC_STATUS_FAILED);
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_SyncFailure_Snapshot) {
+  PrepareForSync_Basic(LocalFileSyncContext::SYNC_SNAPSHOT,
+                       SYNC_STATUS_FAILED);
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_WriteDuringSync_Exclusive) {
+  PrepareForSync_WriteDuringSync(LocalFileSyncContext::SYNC_EXCLUSIVE);
+}
+
+TEST_F(LocalFileSyncContextTest, PrepareSync_WriteDuringSync_Snapshot) {
+  PrepareForSync_WriteDuringSync(LocalFileSyncContext::SYNC_SNAPSHOT);
 }
 
 // LocalFileSyncContextTest.PrepareSyncWhileWriting is flaky on android.
@@ -348,8 +519,8 @@ TEST_F(LocalFileSyncContextTest, MAYBE_PrepareSyncWhileWriting) {
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
   file_system.SetUp();
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
   EXPECT_EQ(SYNC_STATUS_OK,
             file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
 
@@ -368,8 +539,9 @@ TEST_F(LocalFileSyncContextTest, MAYBE_PrepareSyncWhileWriting) {
   metadata.file_type = SYNC_FILE_TYPE_UNKNOWN;
   FileChangeList changes;
   EXPECT_EQ(SYNC_STATUS_FILE_BUSY,
-            PrepareForSync(file_system.file_system_context(),
-                           kURL1, &metadata, &changes));
+            PrepareForSync(file_system.file_system_context(), kURL1,
+                           LocalFileSyncContext::SYNC_EXCLUSIVE,
+                           &metadata, &changes, NULL));
   EXPECT_EQ(SYNC_FILE_TYPE_FILE, metadata.file_type);
 
   // Register PrepareForSync method to be invoked when kURL1 becomes
@@ -378,8 +550,9 @@ TEST_F(LocalFileSyncContextTest, MAYBE_PrepareSyncWhileWriting) {
   metadata.file_type = SYNC_FILE_TYPE_UNKNOWN;
   changes.clear();
   sync_context_->RegisterURLForWaitingSync(
-      kURL1, GetPrepareForSyncClosure(file_system.file_system_context(),
-                                      kURL1, &metadata, &changes));
+      kURL1, GetPrepareForSyncClosure(file_system.file_system_context(), kURL1,
+                                      LocalFileSyncContext::SYNC_EXCLUSIVE,
+                                      &metadata, &changes, NULL));
 
   // Wait for the completion.
   EXPECT_EQ(base::PLATFORM_FILE_OK, WaitUntilModifyFileIsDone());
@@ -408,8 +581,8 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForDeletion) {
                                        file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
             file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
@@ -497,8 +670,8 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate) {
                                        file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
             file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());
@@ -646,8 +819,8 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate_NoParent) {
                                        file_task_runner_.get());
   file_system.SetUp();
 
-  sync_context_ =
-      new LocalFileSyncContext(ui_task_runner_.get(), io_task_runner_.get());
+  sync_context_ = new LocalFileSyncContext(
+      dir_.path(), ui_task_runner_.get(), io_task_runner_.get());
   ASSERT_EQ(SYNC_STATUS_OK,
             file_system.MaybeInitializeFileSystemContext(sync_context_.get()));
   ASSERT_EQ(base::PLATFORM_FILE_OK, file_system.OpenFileSystem());

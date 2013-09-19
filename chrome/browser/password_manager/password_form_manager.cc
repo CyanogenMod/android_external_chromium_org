@@ -13,12 +13,15 @@
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_messages.h"
 #include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 
+using autofill::FormStructure;
 using autofill::PasswordForm;
 using autofill::PasswordFormMap;
 using base::Time;
@@ -40,8 +43,7 @@ PasswordFormManager::PasswordFormManager(Profile* profile,
       manager_action_(kManagerActionNone),
       user_action_(kUserActionNone),
       submit_result_(kSubmitResultNotSubmitted),
-      should_save_password_(false),
-      should_blacklist_password_(false) {
+      password_action_(DO_NOTHING) {
   DCHECK(profile_);
   if (observed_form_.origin.is_valid())
     base::SplitString(observed_form_.origin.path(), '/', &form_path_tokens_);
@@ -54,8 +56,7 @@ PasswordFormManager::~PasswordFormManager() {
                             kMaxNumActionsTaken);
   // In case the tab is closed before the next navigation occurs this will
   // apply outstanding changes.
-  if (should_save_password_ || should_blacklist_password_)
-    ApplyChange();
+  ApplyChange();
 }
 
 int PasswordFormManager::GetActionsTaken() {
@@ -113,23 +114,11 @@ bool PasswordFormManager::DoesManage(const PasswordForm& form,
 }
 
 void PasswordFormManager::ApplyChange() {
-  DCHECK(!should_blacklist_password_ || !should_save_password_);
-  if (should_save_password_)
+  if (password_action_ == SAVE)
     Save();
-  else if (should_blacklist_password_)
+  else if (password_action_ == BLACKLIST)
     PermanentlyBlacklist();
-  should_blacklist_password_ = false;
-  should_save_password_ = false;
-}
-
-void PasswordFormManager::SavePassword() {
-  should_blacklist_password_ = false;
-  should_save_password_ = true;
-}
-
-void PasswordFormManager::BlacklistPassword() {
-  should_save_password_ = false;
-  should_blacklist_password_ = true;
+  password_action_ = DO_NOTHING;
 }
 
 bool PasswordFormManager::IsBlacklisted() {
@@ -500,6 +489,9 @@ void PasswordFormManager::UpdateLogin() {
   // Update metadata.
   ++pending_credentials_.times_used;
 
+  // Check to see if this form is a candidate for password generation.
+  CheckForAccountCreationForm(pending_credentials_, observed_form_);
+
   UpdatePreferredLoginState(password_store);
 
   // Remove alternate usernames. At this point we assume that we have found
@@ -555,6 +547,31 @@ bool PasswordFormManager::UpdatePendingCredentialsIfOtherPossibleUsername(
     }
   }
   return false;
+}
+
+void PasswordFormManager::CheckForAccountCreationForm(
+    const PasswordForm& pending, const PasswordForm& observed) {
+  // We check to see if the saved form_data is the same as the observed
+  // form_data, which should never be true for passwords saved on account
+  // creation forms. This check is only made the first time a password is used
+  // to cut down on false positives. Specifically a site may have multiple login
+  // forms with different markup, which might look similar to a signup form.
+  if (pending.times_used == 1) {
+    FormStructure pending_structure(pending.form_data);
+    FormStructure observed_structure(observed.form_data);
+    if (pending_structure.FormSignature() !=
+            observed_structure.FormSignature()) {
+      autofill::AutofillDriverImpl* driver =
+          autofill::AutofillDriverImpl::FromWebContents(web_contents_);
+      if (driver && driver->autofill_manager()) {
+        // Note that this doesn't guarantee that the upload succeeded, only that
+        // |pending.form_data| is considered uploadable.
+        bool success = driver->autofill_manager()->UploadPasswordGenerationForm(
+            pending.form_data);
+        UMA_HISTOGRAM_BOOLEAN("PasswordGeneration.UploadStarted", success);
+      }
+    }
+  }
 }
 
 int PasswordFormManager::ScoreResult(const PasswordForm& candidate) const {

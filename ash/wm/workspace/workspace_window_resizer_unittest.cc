@@ -31,9 +31,10 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
-namespace ui {
+namespace gfx {
 
 // Class to provide access to SlideAnimation internals for testing.
+// TODO: this should be next to SlideAnimation, not here.
 class SlideAnimation::TestApi {
  public:
   explicit TestApi(SlideAnimation* animation) : animation_(animation) {}
@@ -202,8 +203,8 @@ class WorkspaceWindowResizerTest : public test::AshTestBase {
   }
 
   // Simulate running the animation.
-  void RunAnimationTillComplete(ui::SlideAnimation* animation) {
-    ui::SlideAnimation::TestApi test_api(animation);
+  void RunAnimationTillComplete(gfx::SlideAnimation* animation) {
+    gfx::SlideAnimation::TestApi test_api(animation);
     test_api.RunTillComplete();
   }
 
@@ -1843,14 +1844,14 @@ TEST_F(WorkspaceWindowResizerTest, PhantomWindowShow) {
   EXPECT_EQ(root_windows[0], window_->GetRootWindow());
 
   scoped_ptr<WorkspaceWindowResizer> resizer(WorkspaceWindowResizer::Create(
-      window_.get(), gfx::Point(), HTCAPTION,
+      window_.get(), gfx::Point(0,0), HTCAPTION,
       aura::client::WINDOW_MOVE_SOURCE_MOUSE, empty_windows()));
   ASSERT_TRUE(resizer.get());
   EXPECT_FALSE(resizer->snap_phantom_window_controller_.get());
 
   // The pointer is on the edge but not shared. The snap phantom window
   // controller should be non-NULL.
-  resizer->Drag(CalculateDragPoint(*resizer, 499, 0), 0);
+  resizer->Drag(CalculateDragPoint(*resizer, -1, 0), 0);
   EXPECT_TRUE(resizer->snap_phantom_window_controller_.get());
   PhantomWindowController* phantom_controller(
       resizer->snap_phantom_window_controller_.get());

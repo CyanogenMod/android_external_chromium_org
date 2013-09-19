@@ -63,6 +63,7 @@
 #include "chrome/browser/ui/views/avatar_menu_bubble_view.h"
 #include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
+#include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
@@ -107,11 +108,11 @@
 #include "grit/webkit_resources.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/sys_color_change_listener.h"
@@ -1094,7 +1095,7 @@ void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
   scoped_ptr<BookmarkBubbleDelegate> delegate;
   delegate.reset(new BookmarkBubbleSignInDelegate(browser_.get()));
 
-  chrome::ShowBookmarkBubbleView(GetToolbarView()->GetBookmarkBubbleAnchor(),
+  BookmarkBubbleView::ShowBubble(GetToolbarView()->GetBookmarkBubbleAnchor(),
                                  bookmark_bar_view_.get(),
                                  delegate.Pass(),
                                  browser_->profile(),
@@ -1681,7 +1682,7 @@ void BrowserView::OnWidgetMove() {
   if (status_bubble_.get())
     status_bubble_->Reposition();
 
-  chrome::HideBookmarkBubbleView();
+  BookmarkBubbleView::Hide();
 
   // Close the omnibox popup, if any.
   LocationBarView* location_bar_view = GetLocationBarView();
@@ -1942,6 +1943,9 @@ void BrowserView::InitViews() {
 
   contents_web_view_ = new views::WebView(browser_->profile());
   contents_web_view_->set_id(VIEW_ID_TAB_CONTAINER);
+  contents_web_view_->SetEmbedFullscreenWidgetMode(
+      implicit_cast<content::WebContentsDelegate*>(browser_.get())->
+          EmbedsFullscreenWidget());
   contents_container_ = new ContentsContainer(contents_web_view_);
 
   SkColor bg_color = GetWidget()->GetThemeProvider()->

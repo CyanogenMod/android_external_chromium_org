@@ -131,7 +131,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void ClearFocusedNode() OVERRIDE;
   virtual void ClosePage() OVERRIDE;
   virtual void CopyImageAt(int x, int y) OVERRIDE;
-  virtual void DisassociateFromPopupCount() OVERRIDE;
   virtual void DesktopNotificationPermissionRequestDone(
       int callback_context) OVERRIDE;
   virtual void DesktopNotificationPostDisplay(int callback_context) OVERRIDE;
@@ -537,7 +536,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                               const string16& default_prompt,
                               const GURL& frame_url,
                               JavaScriptMessageType type,
-                              bool user_gesture,
                               IPC::Message* reply_msg);
   void OnRunBeforeUnloadConfirm(const GURL& frame_url,
                                 const string16& message,

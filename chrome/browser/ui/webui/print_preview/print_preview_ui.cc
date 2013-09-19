@@ -338,6 +338,29 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   return source;
 }
 
+int g_auto_cancel_count_for_testing_ = -1;  // Disabled if count < 0.
+
+void EnableAutoCancelAndResetCountForTesting() {
+  g_auto_cancel_count_for_testing_ = 0;
+}
+
+void DisableAutoCancelForTesting() {
+  g_auto_cancel_count_for_testing_ = -1;
+}
+
+bool IsAutoCancelEnabledForTesting() {
+  return (g_auto_cancel_count_for_testing_ >= 0);
+}
+
+void IncrementAutoCancelCountForTesting() {
+  if (g_auto_cancel_count_for_testing_ >= 0)
+    ++g_auto_cancel_count_for_testing_;
+}
+
+int GetAutoCancelCountForTesting() {
+  return std::max(g_auto_cancel_count_for_testing_, -1);
+}
+
 }  // namespace
 
 PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
@@ -520,7 +543,8 @@ void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
   }
   base::FundamentalValue ui_identifier(id_);
   base::FundamentalValue ui_preview_request_id(preview_request_id);
-  if (AutoCancelForTesting()) {
+  if (IsAutoCancelEnabledForTesting()) {
+    IncrementAutoCancelCountForTesting();
     OnClosePrintPreviewDialog();
   } else {
     web_ui()->CallJavascriptFunction("updatePrintPreview", ui_identifier,
@@ -587,12 +611,14 @@ void PrintPreviewUI::OnPrintPreviewScalingDisabled() {
   web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
 }
 
-static bool g_auto_cancel_for_testing_ = false;
-
-void PrintPreviewUI::SetAutoCancelForTesting(bool auto_cancel) {
-  g_auto_cancel_for_testing_ = auto_cancel;
+PrintPreviewUI::ScopedAutoCancelForTesting::ScopedAutoCancelForTesting() {
+  EnableAutoCancelAndResetCountForTesting();
 }
 
-bool PrintPreviewUI::AutoCancelForTesting() {
-  return g_auto_cancel_for_testing_;
+PrintPreviewUI::ScopedAutoCancelForTesting::~ScopedAutoCancelForTesting() {
+  DisableAutoCancelForTesting();
+}
+
+int PrintPreviewUI::ScopedAutoCancelForTesting::GetCountForTesting() {
+  return GetAutoCancelCountForTesting();
 }

@@ -12,6 +12,7 @@
 
 #include "base/memory/singleton.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
 #include "ui/base/accessibility/accessible_text_utils.h"
@@ -22,6 +23,7 @@
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/focus/view_storage.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/win/hwnd_util.h"
 
 using ui::AccessibilityTypes;
@@ -43,12 +45,23 @@ class AccessibleWebViewRegistry {
   // |top_view|'s view hierarchy, if any.
   IAccessible* GetAccessibleFromWebView(View* top_view, long child_id);
 
+  // The system uses IAccessible APIs for many purposes, but only
+  // assistive technology like screen readers uses IAccessible2.
+  // Call this method to note that the IAccessible2 interface was queried and
+  // that WebViews should be proactively notified that this interface will be
+  // used. If this is enabled for the first time, this will explicitly call
+  // QueryService with an argument of IAccessible2 on all WebViews, otherwise
+  // it will just do it from now on.
+  void EnableIAccessible2Support();
+
  private:
   friend struct DefaultSingletonTraits<AccessibleWebViewRegistry>;
   AccessibleWebViewRegistry();
   ~AccessibleWebViewRegistry() {}
 
   IAccessible* AccessibleObjectFromChildId(View* web_view, long child_id);
+
+  void QueryIAccessible2Interface(View* web_view);
 
   // Set of all web views. We check whether each one is contained in a
   // top view dynamically rather than keeping track of a map.
@@ -61,12 +74,18 @@ class AccessibleWebViewRegistry {
   // corresponding to |last_top_view_|.
   View* last_web_view_;
 
+  // If IAccessible2 support is enabled, we query the IAccessible2 interface
+  // of WebViews proactively when they're registered, so that they are
+  // aware that they need to support this interface.
+  bool iaccessible2_support_enabled_;
+
   DISALLOW_COPY_AND_ASSIGN(AccessibleWebViewRegistry);
 };
 
 AccessibleWebViewRegistry::AccessibleWebViewRegistry()
     : last_top_view_(NULL),
-      last_web_view_(NULL) {
+      last_web_view_(NULL),
+      iaccessible2_support_enabled_(false) {
 }
 
 AccessibleWebViewRegistry* AccessibleWebViewRegistry::GetInstance() {
@@ -76,6 +95,9 @@ AccessibleWebViewRegistry* AccessibleWebViewRegistry::GetInstance() {
 void AccessibleWebViewRegistry::RegisterWebView(View* web_view) {
   DCHECK(web_views_.find(web_view) == web_views_.end());
   web_views_.insert(web_view);
+
+  if (iaccessible2_support_enabled_)
+    QueryIAccessible2Interface(web_view);
 }
 
 void AccessibleWebViewRegistry::UnregisterWebView(View* web_view) {
@@ -119,6 +141,16 @@ IAccessible* AccessibleWebViewRegistry::GetAccessibleFromWebView(
   return NULL;
 }
 
+void AccessibleWebViewRegistry::EnableIAccessible2Support() {
+  if (iaccessible2_support_enabled_)
+    return;
+  iaccessible2_support_enabled_ = true;
+  for (std::set<View*>::iterator iter = web_views_.begin();
+       iter != web_views_.end(); ++iter) {
+    QueryIAccessible2Interface(*iter);
+  }
+}
+
 IAccessible* AccessibleWebViewRegistry::AccessibleObjectFromChildId(
     View* web_view,
     long child_id) {
@@ -136,6 +168,20 @@ IAccessible* AccessibleWebViewRegistry::AccessibleObjectFromChildId(
   }
 
   return NULL;
+}
+
+void AccessibleWebViewRegistry::QueryIAccessible2Interface(View* web_view) {
+  IAccessible* web_view_accessible = web_view->GetNativeViewAccessible();
+  if (!web_view_accessible)
+    return;
+
+  base::win::ScopedComPtr<IServiceProvider> service_provider;
+  if (S_OK != web_view_accessible->QueryInterface(service_provider.Receive()))
+    return;
+  base::win::ScopedComPtr<IAccessible2> iaccessible2;
+  service_provider->QueryService(
+      IID_IAccessible, IID_IAccessible2,
+      reinterpret_cast<void**>(iaccessible2.Receive()));
 }
 
 }  // anonymous namespace
@@ -209,6 +255,21 @@ STDMETHODIMP NativeViewAccessibilityWin::accHitTest(
 
   if (!view_)
     return E_FAIL;
+
+  // If this is a root view, our widget might have child widgets.
+  // Search child widgets first, since they're on top in the z-order.
+  if (view_->GetWidget()->GetRootView() == view_) {
+    std::vector<Widget*> child_widgets;
+    PopulateChildWidgetVector(&child_widgets);
+    for (size_t i = 0; i < child_widgets.size(); ++i) {
+      Widget* child_widget = child_widgets[i];
+      IAccessible* child_accessible =
+          child_widget->GetRootView()->GetNativeViewAccessible();
+      HRESULT result = child_accessible->accHitTest(x_left, y_top, child);
+      if (result == S_OK)
+        return result;
+    }
+  }
 
   gfx::Point point(x_left, y_top);
   View::ConvertPointToTarget(NULL, view_, &point);
@@ -410,16 +471,37 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accChild(VARIANT var_child,
     return S_OK;
   }
 
+  // If this is a root view, our widget might have child widgets. Include
+  std::vector<Widget*> child_widgets;
+  if (view_->GetWidget()->GetRootView() == view_)
+    PopulateChildWidgetVector(&child_widgets);
+  int child_widget_count = static_cast<int>(child_widgets.size());
+
   View* child_view = NULL;
   if (child_id > 0) {
     // Positive child ids are a 1-based child index, used by clients
     // that want to enumerate all immediate children.
     int child_id_as_index = child_id - 1;
-    if (child_id_as_index < view_->child_count())
+    if (child_id_as_index < view_->child_count()) {
       child_view = view_->child_at(child_id_as_index);
+    } else if (child_id_as_index < view_->child_count() + child_widget_count) {
+      Widget* child_widget =
+          child_widgets[child_id_as_index - view_->child_count()];
+      child_view = child_widget->GetRootView();
+    }
   } else {
-    // Negative child ids can be used to map to any descendant;
-    // we map child ids to a view storage id that can refer to a
+    // Negative child ids can be used to map to any descendant.
+    // Check child widget first.
+    for (int i = 0; i < child_widget_count; i++) {
+      Widget* child_widget = child_widgets[i];
+      IAccessible* child_accessible =
+          child_widget->GetRootView()->GetNativeViewAccessible();
+      HRESULT result = child_accessible->get_accChild(var_child, disp_child);
+      if (result == S_OK)
+        return result;
+    }
+
+    // We map child ids to a view storage id that can refer to a
     // specific view (if that view still exists).
     int view_storage_id_index =
         base::win::kFirstViewsAccessibilityId - child_id;
@@ -455,6 +537,15 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accChildCount(LONG* child_count) {
     return E_FAIL;
 
   *child_count = view_->child_count();
+
+  // If this is a root view, our widget might have child widgets. Include
+  // them, too.
+  if (view_->GetWidget()->GetRootView() == view_) {
+    std::vector<Widget*> child_widgets;
+    PopulateChildWidgetVector(&child_widgets);
+    *child_count += child_widgets.size();
+  }
+
   return S_OK;
 }
 
@@ -980,6 +1071,9 @@ STDMETHODIMP NativeViewAccessibilityWin::QueryService(
   if (!view_)
     return E_FAIL;
 
+  if (riid == IID_IAccessible2)
+    AccessibleWebViewRegistry::GetInstance()->EnableIAccessible2Support();
+
   if (guidService == IID_IAccessible ||
       guidService == IID_IAccessible2 ||
       guidService == IID_IAccessibleText)  {
@@ -1293,6 +1387,28 @@ LONG NativeViewAccessibilityWin::FindBoundary(
   std::vector<int32> line_breaks;
   return ui::FindAccessibleTextBoundary(
       text, line_breaks, boundary, start_offset, direction);
+}
+
+void NativeViewAccessibilityWin::PopulateChildWidgetVector(
+    std::vector<Widget*>* result_child_widgets) {
+  const Widget* widget = view()->GetWidget();
+  std::set<Widget*> child_widgets;
+  Widget::GetAllChildWidgets(widget->GetNativeView(), &child_widgets);
+  Widget::GetAllOwnedWidgets(widget->GetNativeView(), &child_widgets);
+  for (std::set<Widget*>::const_iterator iter = child_widgets.begin();
+           iter != child_widgets.end(); ++iter) {
+    Widget* child_widget = *iter;
+    if (child_widget == widget)
+      continue;
+
+    if (!child_widget->IsVisible())
+      continue;
+
+    if (widget->GetNativeWindowProperty(kWidgetNativeViewHostKey))
+      continue;
+
+    result_child_widgets->push_back(child_widget);
+  }
 }
 
 }  // namespace views

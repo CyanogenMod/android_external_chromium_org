@@ -70,9 +70,9 @@ class OmniboxViewMac : public OmniboxView,
   virtual void OnControlKeyChanged(bool pressed) OVERRIDE;
   virtual bool CanCopy() OVERRIDE;
   virtual void CopyToPasteboard(NSPasteboard* pboard) OVERRIDE;
-  virtual void CopyURLToPasteboard(NSPasteboard* pboard) OVERRIDE;
+  virtual bool ShouldEnableShowURL() OVERRIDE;
+  virtual void ShowURL() OVERRIDE;
   virtual void OnPaste() OVERRIDE;
-  virtual bool ShouldEnableCopyURL() OVERRIDE;
   virtual bool CanPasteAndGo() OVERRIDE;
   virtual int GetPasteActionStringId() OVERRIDE;
   virtual void OnPasteAndGo() OVERRIDE;
@@ -86,6 +86,7 @@ class OmniboxViewMac : public OmniboxView,
   virtual void OnSetFocus(bool control_down) OVERRIDE;
   virtual void OnKillFocus() OVERRIDE;
   virtual void OnMouseDown(NSInteger button_number) OVERRIDE;
+  virtual bool ShouldSelectAllOnMouseDown() OVERRIDE;
 
   // Helper for LocationBarViewMac.  Optionally selects all in |field_|.
   void FocusLocation(bool select_all);

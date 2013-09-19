@@ -8,12 +8,12 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "157646",
+  "webkit_revision": "158008",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "12146",
+  "nacl_revision": "12177",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
@@ -29,18 +29,18 @@ vars = {
   "ffmpeg_hash": "feb5bc7d3d1fc66d9c52dc316479231b02cbdac1",
 
   "sfntly_revision": "134",
-  "skia_revision": "11190",
-  "skia_hash": "d99d102dd27d7acca1bbc16884a1a5719fef2568",
+  "skia_revision": "11364",
+  "skia_hash": "8249a2fc66738fd4aeb2500aae50c20744f1a744",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16634",
+  "v8_revision": "16802",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4699",
+  "webrtc_revision": "4758",
   "jsoncpp_revision": "248",
-  "nss_revision": "220375",
+  "nss_revision": "223139",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
@@ -53,7 +53,7 @@ vars = {
 
 deps = {
   "src/breakpad/src":
-    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1211",
+    (Var("googlecode_url") % "google-breakpad") + "/trunk/src@1213",
 
   "src/sdch/open-vcdiff":
     (Var("googlecode_url") % "open-vcdiff") + "/trunk@42",
@@ -69,13 +69,13 @@ deps = {
     "/external/angle.git@fc75e21762459c9306fd0c0a060010254d5ad248",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@942",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@1003",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@219032",
+    "/trunk/deps/third_party/icu46@223384",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -103,7 +103,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@136",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1722",
+    (Var("googlecode_url") % "gyp") + "/trunk@1735",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -190,7 +190,7 @@ deps = {
     "/trunk/deps/third_party/libjpeg_turbo@177737",
 
   "src/third_party/flac":
-    "/trunk/deps/third_party/flac@198139",
+    "/trunk/deps/third_party/flac@222897",
 
   "src/third_party/pyftpdlib/src":
     (Var("googlecode_url") % "pyftpdlib") + "/trunk@977",
@@ -251,7 +251,7 @@ deps = {
     "/trunk/deps/third_party/mesa@210110",
 
   "src/third_party/cld_2/src":
-    (Var("googlecode_url") % "cld2") + "/trunk@75",
+    (Var("googlecode_url") % "cld2") + "/trunk@84",
 }
 
 
@@ -456,7 +456,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@d8a5bfea861dfbacd9a74275c00561f7bb27d6e3",
+      "@53862978424412e190e9bc40c7637a71fdd7d298",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

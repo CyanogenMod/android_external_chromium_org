@@ -9,6 +9,7 @@ import hashlib
 import multiprocessing
 import os
 import random
+import re
 import shutil
 import sys
 
@@ -30,6 +31,7 @@ import errors
 
 SLAVE_SCRIPTS_DIR = os.path.join(bb_utils.BB_BUILD_DIR, 'scripts', 'slave')
 LOGCAT_DIR = os.path.join(bb_utils.CHROME_OUT_DIR, 'logcat')
+GS_URL = 'https://storage.googleapis.com'
 
 # Describes an instrumation test suite:
 #   test: Name of test we're running.
@@ -129,9 +131,9 @@ def RunChromeDriverTests(_):
   bb_annotations.PrintNamedStep('chromedriver_annotation')
   RunCmd(['chrome/test/chromedriver/run_buildbot_steps.py',
           '--android-packages=%s,%s,%s' %
-           (constants.CHROMIUM_TEST_SHELL_PACKAGE,
-            constants.CHROME_STABLE_PACKAGE,
-            constants.CHROME_BETA_PACKAGE)])
+           (constants.PACKAGE_INFO['chromium_test_shell'].package,
+            constants.PACKAGE_INFO['chrome_stable'].package,
+            constants.PACKAGE_INFO['chrome_beta'].package)])
 
 def InstallApk(options, test, print_step=False):
   """Install an apk to all phones.
@@ -226,7 +228,7 @@ def RunWebkitLayoutTests(options):
         '--target', options.target,
         '--builder-name', options.build_properties.get('buildername', ''),
         '--build-number', str(options.build_properties.get('buildnumber', '')),
-        '--master-name', options.build_properties.get('mastername', ''),
+        '--master-name', 'ChromiumWebkit', # TODO: Get this from the cfg.
         '--build-name', options.build_properties.get('buildername', ''),
         '--platform=android']
 
@@ -249,14 +251,26 @@ def RunWebkitLayoutTests(options):
 
   if options.factory_properties.get('archive_webkit_results', False):
     bb_annotations.PrintNamedStep('archive_webkit_results')
+    base = 'https://storage.googleapis.com/chromium-layout-test-archives'
+    builder_name = options.build_properties.get('buildername', '')
+    build_number = str(options.build_properties.get('buildnumber', ''))
+    bb_annotations.PrintLink('results',
+        '%s/%s/%s/layout-test-results/results.html' % (
+        base, EscapeBuilderName(builder_name), build_number))
+    bb_annotations.PrintLink('(zip)', '%s/%s/%s/layout-test-results.zip' % (
+        base, EscapeBuilderName(builder_name), build_number))
     gs_bucket = 'gs://chromium-layout-test-archives'
     RunCmd([os.path.join(SLAVE_SCRIPTS_DIR, 'chromium',
                          'archive_layout_test_results.py'),
         '--results-dir', '../../layout-test-results',
         '--build-dir', CHROME_OUT_DIR,
-        '--build-number', str(options.build_properties.get('buildnumber', '')),
-        '--builder-name', options.build_properties.get('buildername', ''),
+        '--build-number', build_number,
+        '--builder-name', builder_name,
         '--gs-bucket', gs_bucket])
+
+
+def EscapeBuilderName(builder_name):
+  return re.sub('[ ()]', '_', builder_name)
 
 
 def SpawnLogcatMonitor():
@@ -316,7 +330,8 @@ def RunWebRTCTests(options):
   RunTestSuites(options, gtest_config.WEBRTC_TEST_SUITES)
 
 
-def RunGPUTests(_):
+def RunGPUTests(options):
+  InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
   bb_annotations.PrintNamedStep('gpu_tests')
   RunCmd(['content/test/gpu/run_gpu_test',
           '--browser=android-content-shell', 'pixel'])
@@ -334,31 +349,28 @@ def GetTestStepCmds():
   ]
 
 
-def UploadCoverageData(options, path, coverage_type):
-  """Uploads directory at |path| to Google Storage.
-
-  The directory at path should ostensibly contain HTML coverage data.
+def UploadHTML(options, gs_base_dir, dir_to_upload, link_text,
+               link_rel_path='index.html', gs_url=GS_URL):
+  """Uploads directory at |dir_to_upload| to Google Storage and output a link.
 
   Args:
     options: Command line options.
-    path: Path to the directory to be uploaded.
-    coverage_type: String used as the first component of the url.
-
-  Returns:
-    None.
+    gs_base_dir: The Google Storage base directory (e.g.
+      'chromium-code-coverage/java')
+    dir_to_upload: Absolute path to the directory to be uploaded.
+    link_text: Link text to be displayed on the step.
+    link_rel_path: Link path relative to |dir_to_upload|.
+    gs_url: Google storage URL.
   """
   revision = options.build_properties.get('got_revision')
   if not revision:
     revision = options.build_properties.get('revision', 'testing')
   bot_id = options.build_properties.get('buildername', 'testing')
   randhash = hashlib.sha1(str(random.random())).hexdigest()
-  gs_path = '%s/%s/%s/%s/%s' % (options.coverage_bucket, coverage_type,
-                                bot_id, revision, randhash)
-
-  RunCmd([bb_utils.GSUTIL_PATH, 'cp', '-R', path, 'gs://%s' % gs_path])
-  bb_annotations.PrintLink(
-      'Coverage report',
-      'https://storage.googleapis.com/%s/index.html' % gs_path)
+  gs_path = '%s/%s/%s/%s' % (gs_base_dir, bot_id, revision, randhash)
+  RunCmd([bb_utils.GSUTIL_PATH, 'cp', '-R', dir_to_upload, 'gs://%s' % gs_path])
+  bb_annotations.PrintLink(link_text,
+      '%s/%s/%s' % (gs_url, gs_path, link_rel_path))
 
 
 def GenerateJavaCoverageReport(options):
@@ -371,7 +383,7 @@ def GenerateJavaCoverageReport(options):
           '--metadata-dir', os.path.join(CHROME_OUT_DIR, options.target),
           '--cleanup',
           '--output', os.path.join(coverage_html, 'index.html')])
-  UploadCoverageData(options, coverage_html, 'java')
+  return coverage_html
 
 
 def LogcatDump(options):
@@ -411,7 +423,9 @@ def MainTestWrapper(options):
       bb_utils.RunSteps(options.test_filter, GetTestStepCmds(), options)
 
     if options.coverage_bucket:
-      GenerateJavaCoverageReport(options)
+      coverage_html = GenerateJavaCoverageReport(options)
+      UploadHTML(options, '%s/java' % options.coverage_bucket, coverage_html,
+                 'Coverage Report')
 
     if options.experimental:
       RunTestSuites(options, gtest_config.EXPERIMENTAL_TEST_SUITES)

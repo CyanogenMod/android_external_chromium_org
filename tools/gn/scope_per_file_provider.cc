@@ -27,22 +27,14 @@ const Value* ScopePerFileProvider::GetProgrammaticValue(
   if (ident == variables::kPythonPath)
     return GetPythonPath();
 
-  if (ident == variables::kRelativeBuildToSourceRootDir)
-    return GetRelativeBuildToSourceRootDir();
-  if (ident == variables::kRelativeRootOutputDir)
-    return GetRelativeRootOutputDir();
-  if (ident == variables::kRelativeRootGenDir)
-    return GetRelativeRootGenDir();
-  if (ident == variables::kRelativeSourceRootDir)
-    return GetRelativeSourceRootDir();
-  if (ident == variables::kRelativeTargetOutputDir)
-    return GetRelativeTargetOutputDir();
-  if (ident == variables::kRelativeTargetGenDir)
-    return GetRelativeTargetGenDir();
   if (ident == variables::kRootGenDir)
     return GetRootGenDir();
+  if (ident == variables::kRootOutDir)
+    return GetRootOutDir();
   if (ident == variables::kTargetGenDir)
     return GetTargetGenDir();
+  if (ident == variables::kTargetOutDir)
+    return GetTargetOutDir();
   return NULL;
 }
 
@@ -73,68 +65,20 @@ const Value* ScopePerFileProvider::GetPythonPath() {
   return python_path_.get();
 }
 
-const Value* ScopePerFileProvider::GetRelativeBuildToSourceRootDir() {
-  if (!relative_build_to_source_root_dir_) {
-    const SourceDir& build_dir =
-        scope_->settings()->build_settings()->build_dir();
-    relative_build_to_source_root_dir_.reset(
-        new Value(NULL, InvertDirWithNoLastSlash(build_dir)));
-  }
-  return relative_build_to_source_root_dir_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeRootOutputDir() {
-  if (!relative_root_output_dir_) {
-    relative_root_output_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootOutputDirWithNoLastSlash(scope_->settings())));
-  }
-  return relative_root_output_dir_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeRootGenDir() {
-  if (!relative_root_gen_dir_) {
-    relative_root_gen_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootGenDirWithNoLastSlash(scope_->settings())));
-  }
-  return relative_root_gen_dir_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeSourceRootDir() {
-  if (!relative_source_root_dir_) {
-    relative_source_root_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash()));
-  }
-  return relative_source_root_dir_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeTargetOutputDir() {
-  if (!relative_target_output_dir_) {
-    relative_target_output_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootOutputDirWithNoLastSlash(scope_->settings()) + "/obj" +
-        GetFileDirWithNoLastSlash()));
-  }
-  return relative_target_output_dir_.get();
-}
-
-const Value* ScopePerFileProvider::GetRelativeTargetGenDir() {
-  if (!relative_target_gen_dir_) {
-    relative_target_gen_dir_.reset(new Value(NULL,
-        GetRelativeRootWithNoLastSlash() +
-        GetRootGenDirWithNoLastSlash(scope_->settings()) +
-        GetFileDirWithNoLastSlash()));
-  }
-  return relative_target_gen_dir_.get();
-}
-
 const Value* ScopePerFileProvider::GetRootGenDir() {
   if (!root_gen_dir_) {
     root_gen_dir_.reset(new Value(NULL,
         "/" + GetRootGenDirWithNoLastSlash(scope_->settings())));
   }
   return root_gen_dir_.get();
+}
+
+const Value* ScopePerFileProvider::GetRootOutDir() {
+  if (!root_out_dir_) {
+    root_out_dir_.reset(new Value(NULL,
+        "/" + GetRootOutputDirWithNoLastSlash(scope_->settings())));
+  }
+  return root_out_dir_.get();
 }
 
 const Value* ScopePerFileProvider::GetTargetGenDir() {
@@ -147,11 +91,24 @@ const Value* ScopePerFileProvider::GetTargetGenDir() {
   return target_gen_dir_.get();
 }
 
+const Value* ScopePerFileProvider::GetTargetOutDir() {
+  if (!target_out_dir_) {
+    target_out_dir_.reset(new Value(NULL,
+        "/" +
+        GetRootOutputDirWithNoLastSlash(scope_->settings()) + "/obj" +
+        GetFileDirWithNoLastSlash()));
+  }
+  return target_out_dir_.get();
+}
+
 // static
 std::string ScopePerFileProvider::GetRootOutputDirWithNoLastSlash(
     const Settings* settings) {
   const std::string& output_dir =
       settings->build_settings()->build_dir().value();
+
+  if (output_dir == "//")
+    return "//.";
 
   // Trim off a leading and trailing slash. So "//foo/bar/" -> /foo/bar".
   DCHECK(output_dir.size() > 2 && output_dir[0] == '/' &&
@@ -168,21 +125,11 @@ std::string ScopePerFileProvider::GetRootGenDirWithNoLastSlash(
 std::string ScopePerFileProvider::GetFileDirWithNoLastSlash() const {
   const std::string& dir_value = scope_->GetSourceDir().value();
 
+  if (dir_value == "//")
+    return "//.";
+
   // Trim off a leading and trailing slash. So "//foo/bar/" -> /foo/bar".
   DCHECK(dir_value.size() > 2 && dir_value[0] == '/' &&
          dir_value[dir_value.size() - 1] == '/');
   return dir_value.substr(1, dir_value.size() - 2);
-}
-
-std::string ScopePerFileProvider::GetRelativeRootWithNoLastSlash() const {
-  return InvertDirWithNoLastSlash(scope_->GetSourceDir());
-}
-
-// static
-std::string ScopePerFileProvider::InvertDirWithNoLastSlash(
-    const SourceDir& dir) {
-  std::string inverted = InvertDir(dir);
-  if (inverted.empty())
-    return ".";
-  return inverted.substr(0, inverted.size() - 1);
 }

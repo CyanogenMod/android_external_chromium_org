@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
@@ -43,7 +44,7 @@
 }
 
 -(CGFloat)dropIndicatorPosition {
-  return dropIndicatorPosition_;
+  return NSMinY([dropIndicator_ frame]);
 }
 
 @end

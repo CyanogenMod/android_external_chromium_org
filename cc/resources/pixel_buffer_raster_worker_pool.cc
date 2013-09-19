@@ -41,13 +41,10 @@ class PixelBufferWorkerPoolTaskImpl : public internal::WorkerPoolTask {
       needs_upload_ = true;
       return;
     }
-    SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                     task_->resource()->size().width(),
-                     task_->resource()->size().height());
-    bitmap.setPixels(buffer_);
-    SkBitmapDevice device(bitmap);
-    needs_upload_ = task_->RunOnWorkerThread(&device, thread_index);
+    needs_upload_ = task_->RunOnWorkerThread(thread_index,
+                                             buffer_,
+                                             task_->resource()->size(),
+                                             0);
   }
   virtual void CompleteOnOriginThread() OVERRIDE {
     // |needs_upload_| must be be false if task didn't run.
@@ -148,6 +145,8 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
   should_notify_client_if_no_tasks_are_pending_ = true;
   should_notify_client_if_no_tasks_required_for_activation_are_pending_ = true;
 
+  tasks_required_for_activation_.clear();
+
   // Build new pixel buffer task set.
   TaskMap new_pixel_buffer_tasks;
   for (RasterTaskVector::const_iterator it = raster_tasks().begin();
@@ -155,16 +154,13 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
     internal::RasterWorkerPoolTask* task = it->get();
     DCHECK(new_pixel_buffer_tasks.find(task) == new_pixel_buffer_tasks.end());
     DCHECK(!task->HasCompleted());
+    DCHECK(!task->WasCanceled());
 
-    // Use existing pixel buffer task if available.
-    TaskMap::iterator pixel_buffer_it = pixel_buffer_tasks_.find(task);
-    if (pixel_buffer_it == pixel_buffer_tasks_.end()) {
-      new_pixel_buffer_tasks[task] = NULL;
-      continue;
-    }
-
-    new_pixel_buffer_tasks[task] = pixel_buffer_it->second;
+    new_pixel_buffer_tasks[task] = pixel_buffer_tasks_[task];
     pixel_buffer_tasks_.erase(task);
+
+    if (IsRasterTaskRequiredForActivation(task))
+      tasks_required_for_activation_.insert(task);
   }
 
   // Transfer remaining pixel buffer tasks to |new_pixel_buffer_tasks|
@@ -184,22 +180,17 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
                        completed_tasks_.end(),
                        task) == completed_tasks_.end());
       completed_tasks_.push_back(task);
-    }
-  }
-
-  tasks_required_for_activation_.clear();
-  for (TaskMap::iterator it = new_pixel_buffer_tasks.begin();
-       it != new_pixel_buffer_tasks.end(); ++it) {
-    internal::RasterWorkerPoolTask* task = it->first;
-    if (IsRasterTaskRequiredForActivation(task))
+    } else if (IsRasterTaskRequiredForActivation(task)) {
       tasks_required_for_activation_.insert(task);
+    }
   }
 
   // |tasks_required_for_activation_| contains all tasks that need to
   // complete before we can send a "ready to activate" signal. Tasks
   // that have already completed should not be part of this set.
   for (TaskDeque::const_iterator it = completed_tasks_.begin();
-       it != completed_tasks_.end(); ++it) {
+       it != completed_tasks_.end() && !tasks_required_for_activation_.empty();
+       ++it) {
     tasks_required_for_activation_.erase(*it);
   }
 
@@ -226,8 +217,8 @@ void PixelBufferRasterWorkerPool::ScheduleTasks(RasterTask::Queue* queue) {
       "state", TracedValue::FromValue(StateAsValue().release()));
 }
 
-GLenum PixelBufferRasterWorkerPool::GetResourceFormat() const {
-  return resource_provider()->best_texture_format();
+ResourceFormat PixelBufferRasterWorkerPool::GetResourceFormat() const {
+  return resource_provider()->memory_efficient_texture_format();
 }
 
 void PixelBufferRasterWorkerPool::CheckForCompletedTasks() {

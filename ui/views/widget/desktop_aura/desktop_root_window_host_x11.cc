@@ -20,9 +20,9 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path_x11.h"
 #include "ui/native_theme/native_theme.h"
@@ -114,7 +114,7 @@ DesktopRootWindowHostX11::DesktopRootWindowHostX11(
     DesktopNativeWidgetAura* desktop_native_widget_aura,
     const gfx::Rect& initial_bounds)
     : close_widget_factory_(this),
-      xdisplay_(base::MessagePumpX11::GetDefaultXDisplay()),
+      xdisplay_(ui::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),

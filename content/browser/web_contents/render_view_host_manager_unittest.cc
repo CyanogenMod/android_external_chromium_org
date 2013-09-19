@@ -305,7 +305,7 @@ TEST_F(RenderViewHostManagerTest, FilterMessagesWhileSwappedOut) {
   ntp_process_host->sink().ClearMessages();
   ViewHostMsg_RunJavaScriptMessage js_msg(
       rvh()->GetRoutingID(), msg, msg, kChromeURL,
-      JAVASCRIPT_MESSAGE_TYPE_CONFIRM, false, &result, &unused);
+      JAVASCRIPT_MESSAGE_TYPE_CONFIRM, &result, &unused);
   js_msg.EnableMessagePumping();
   EXPECT_TRUE(ntp_rvh->OnMessageReceived(js_msg));
   EXPECT_TRUE(ntp_process_host->sink().GetUniqueMessageMatching(IPC_REPLY_ID));
@@ -950,7 +950,8 @@ TEST_F(RenderViewHostManagerTest, PageDoesBackAndReload) {
   EXPECT_EQ(evil_rvh, contents()->GetRenderManagerForTesting()->current_host());
 
   // Also we should not have a pending navigation entry.
-  NavigationEntry* entry = contents()->GetController().GetActiveEntry();
+  EXPECT_TRUE(contents()->GetController().GetPendingEntry() == NULL);
+  NavigationEntry* entry = contents()->GetController().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_EQ(kUrl2, entry->GetURL());
 }

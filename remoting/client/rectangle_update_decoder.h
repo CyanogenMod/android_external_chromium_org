@@ -15,6 +15,7 @@
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/frame_producer.h"
 #include "remoting/protocol/video_stub.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -52,11 +53,12 @@ class RectangleUpdateDecoder
   // FrameProducer implementation.  These methods may be called before we are
   // Initialize()d, or we know the source screen size.
   virtual void DrawBuffer(webrtc::DesktopFrame* buffer) OVERRIDE;
-  virtual void InvalidateRegion(const SkRegion& region) OVERRIDE;
+  virtual void InvalidateRegion(const webrtc::DesktopRegion& region) OVERRIDE;
   virtual void RequestReturnBuffers(const base::Closure& done) OVERRIDE;
-  virtual void SetOutputSizeAndClip(const SkISize& view_size,
-                                    const SkIRect& clip_area) OVERRIDE;
-  virtual const SkRegion* GetBufferShape() OVERRIDE;
+  virtual void SetOutputSizeAndClip(
+      const webrtc::DesktopSize& view_size,
+      const webrtc::DesktopRect& clip_area) OVERRIDE;
+  virtual const webrtc::DesktopRegion* GetBufferShape() OVERRIDE;
 
   // VideoStub implementation.
   virtual void ProcessVideoPacket(scoped_ptr<VideoPacket> packet,
@@ -79,12 +81,9 @@ class RectangleUpdateDecoder
   // executed.
   void DecodePacket(scoped_ptr<VideoPacket> packet, const base::Closure& done);
 
-  // Callback method when a VideoPacket is processed.
-  // If |last_packet| is true then |decode_start| contains the timestamp when
-  // the packet will start to be processed.
-  void OnPacketDone(bool last_packet,
-                    base::Time decode_start,
-                    const base::Closure& done);
+  // Callback method when a VideoPacket is processed. |decode_start| contains
+  // the timestamp when the packet will start to be processed.
+  void OnPacketDone(base::Time decode_start, const base::Closure& done);
 
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> decode_task_runner_;
@@ -92,14 +91,14 @@ class RectangleUpdateDecoder
   scoped_ptr<VideoDecoder> decoder_;
 
   // Remote screen size in pixels.
-  SkISize source_size_;
+  webrtc::DesktopSize source_size_;
 
   // Vertical and horizontal DPI of the remote screen.
-  SkIPoint source_dpi_;
+  webrtc::DesktopVector source_dpi_;
 
   // The current dimensions of the frame consumer view.
-  SkISize view_size_;
-  SkIRect clip_area_;
+  webrtc::DesktopSize view_size_;
+  webrtc::DesktopRect clip_area_;
 
   // The drawing buffers supplied by the frame consumer.
   std::list<webrtc::DesktopFrame*> buffers_;

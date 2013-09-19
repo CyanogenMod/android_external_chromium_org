@@ -65,8 +65,8 @@ PicasaDataProvider::DataType GetDataTypeForURL(
 const char kPicasaDirAlbums[]  = "albums";
 const char kPicasaDirFolders[] = "folders";
 
-PicasaFileUtil::PicasaFileUtil(chrome::MediaPathFilter* media_path_filter)
-    : chrome::NativeMediaFileUtil(media_path_filter),
+PicasaFileUtil::PicasaFileUtil(MediaPathFilter* media_path_filter)
+    : NativeMediaFileUtil(media_path_filter),
       weak_factory_(this) {
 }
 
@@ -103,9 +103,9 @@ base::PlatformFileError PicasaFileUtil::GetFileInfoSync(
     base::PlatformFileInfo* file_info, base::FilePath* platform_path) {
   DCHECK(context);
   DCHECK(file_info);
-  DCHECK(platform_path);
 
-  *platform_path = base::FilePath();
+  if (platform_path)
+    *platform_path = base::FilePath();
 
   std::vector<std::string> components;
   fileapi::VirtualPath::GetComponentsUTF8Unsafe(url.path(), &components);
@@ -367,7 +367,7 @@ void PicasaFileUtil::ReadDirectoryWithFreshDataProvider(
 }
 
 PicasaDataProvider* PicasaFileUtil::GetDataProvider() {
-  return chrome::ImportedMediaGalleryRegistry::PicasaDataProvider();
+  return ImportedMediaGalleryRegistry::PicasaDataProvider();
 }
 
 }  // namespace picasa

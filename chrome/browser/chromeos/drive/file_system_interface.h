@@ -166,10 +166,6 @@ class FileSystemInterface {
  public:
   virtual ~FileSystemInterface() {}
 
-  // Initializes the object. This function should be called before any
-  // other functions.
-  virtual void Initialize() = 0;
-
   // Adds and removes the observer.
   virtual void AddObserver(FileSystemObserver* observer) = 0;
   virtual void RemoveObserver(FileSystemObserver* observer) = 0;
@@ -422,7 +418,7 @@ class FileSystemInterface {
                                    const GetCacheEntryCallback& callback) = 0;
 
   // Reloads the resource metadata from the server.
-  virtual void Reload() = 0;
+  virtual void Reload(const FileOperationCallback& callback) = 0;
 };
 
 }  // namespace drive

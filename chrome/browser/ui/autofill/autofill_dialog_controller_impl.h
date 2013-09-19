@@ -35,10 +35,10 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/ssl_status.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/linear_animation.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/linear_animation.h"
 #include "url/gurl.h"
 
 class Profile;
@@ -79,7 +79,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
                                      public wallet::WalletSigninHelperDelegate,
                                      public PersonalDataManagerObserver,
                                      public AccountChooserModelDelegate,
-                                     public ui::AnimationDelegate {
+                                     public gfx::AnimationDelegate {
  public:
   virtual ~AutofillDialogControllerImpl();
 
@@ -87,8 +87,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const base::Callback<void(const FormStructure*,
-                                const std::string&)>& callback);
+      const base::Callback<void(const FormStructure*)>& callback);
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -132,8 +131,13 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual string16 LabelForSection(DialogSection section) const OVERRIDE;
   virtual SuggestionState SuggestionStateForSection(
       DialogSection section) OVERRIDE;
+  // TODO(groby): Remove this deprecated method after Mac starts using
+  // IconsForFields. http://crbug.com/292876
   virtual gfx::Image IconForField(ServerFieldType type,
                                   const string16& user_input) const OVERRIDE;
+  virtual FieldIconMap IconsForFields(const FieldValueMap& user_inputs)
+      const OVERRIDE;
+  virtual bool FieldControlsIcons(ServerFieldType type) const OVERRIDE;
   virtual string16 InputValidityMessage(DialogSection section,
                                         ServerFieldType type,
                                         const string16& value) OVERRIDE;
@@ -150,7 +154,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual bool HandleKeyPressEventInInput(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void FocusMoved() OVERRIDE;
-  virtual gfx::Image SplashPageImage() const OVERRIDE;
   virtual void ViewClosed() OVERRIDE;
   virtual std::vector<DialogNotification> CurrentNotifications() OVERRIDE;
   virtual void LinkClicked(const GURL& url) OVERRIDE;
@@ -221,9 +224,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual void OnDidFetchWalletCookieValue(
       const std::string& cookie_value) OVERRIDE;
 
-  // ui::AnimationDelegate implementation.
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  // gfx::AnimationDelegate implementation.
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
  protected:
   // Exposed for testing.
@@ -231,8 +234,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
       content::WebContents* contents,
       const FormData& form_structure,
       const GURL& source_url,
-      const base::Callback<void(const FormStructure*,
-                                const std::string&)>& callback);
+      const base::Callback<void(const FormStructure*)>& callback);
 
   // Exposed for testing.
   AutofillDialogView* view() { return view_.get(); }
@@ -312,9 +314,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // Initializes or updates |suggested_cc_| et al.
   void SuggestionsUpdated();
-
-  // Whether the user's wallet items have at least one address and instrument.
-  bool HasCompleteWallet() const;
 
   // Starts fetching the wallet items from Online Wallet.
   void GetWalletItems();
@@ -408,11 +407,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   string16 GetValueFromSection(DialogSection section,
                                ServerFieldType type);
 
-  // Saves the data in |profile| to the personal data manager. This may add
-  // a new profile or tack onto an existing profile.
-  void SaveProfileGleanedFromSection(const AutofillProfile& profile,
-                                     DialogSection section);
-
   // Gets the SuggestionsMenuModel for |section|.
   SuggestionsMenuModel* SuggestionsMenuModelForSection(DialogSection section);
   const SuggestionsMenuModel* SuggestionsMenuModelForSection(
@@ -431,7 +425,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   string16 RequiredActionTextForSection(DialogSection section) const;
   gfx::Image SuggestionIconForSection(DialogSection section);
   string16 ExtraSuggestionTextForSection(DialogSection section) const;
-  gfx::Image ExtraSuggestionIconForSection(DialogSection section) const;
+  gfx::Image ExtraSuggestionIconForSection(DialogSection section);
 
   // Loads profiles that can suggest data for |type|. |field_contents| is the
   // part the user has already typed. |inputs| is the rest of section.
@@ -525,23 +519,17 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // Writes to prefs the choice of AutofillDataModel for |section|.
   void PersistAutofillChoice(DialogSection section,
-                             const std::string& guid,
-                             int variant);
+                             const std::string& guid);
 
   // Sets the outparams to the default AutofillDataModel for |section| (which is
   // the first one in the menu that is a suggestion item).
   void GetDefaultAutofillChoice(DialogSection section,
-                                std::string* guid,
-                                int* variant);
+                                std::string* guid);
 
   // Reads from prefs the choice of AutofillDataModel for |section|. Returns
   // whether there was a setting to read.
   bool GetAutofillChoice(DialogSection section,
-                         std::string* guid,
-                         int* variant);
-
-  // Calculates which AutofillDataModel variant |model| is referring to.
-  size_t GetSelectedVariantForModel(const SuggestionsMenuModel& model);
+                         std::string* guid);
 
   // Logs metrics when the dialog is submitted.
   void LogOnFinishSubmitMetrics();
@@ -587,9 +575,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // The URL of the invoking site.
   GURL source_url_;
 
-  // The callback via which we return the collected data and, if Online Wallet
-  // was used, the Google transaction id.
-  base::Callback<void(const FormStructure*, const std::string&)> callback_;
+  // The callback via which we return the collected data.
+  base::Callback<void(const FormStructure*)> callback_;
 
   // The AccountChooserModel acts as the MenuModel for the account chooser,
   // and also tracks which data source the dialog is using.
@@ -678,11 +665,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   base::WeakPtrFactory<AutofillDialogControllerImpl> weak_ptr_factory_;
 
-  // Whether the wallet promos should be shown in the notification area. Based
-  // on whether the user has paid with Wallet or has signed into this dialog.
-  bool should_show_wallet_promo_;
-  bool has_shown_wallet_usage_confirmation_;
-
   // Whether a user accepted legal documents while this dialog is running.
   bool has_accepted_legal_documents_;
 
@@ -719,6 +701,11 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // to Wallet.
   std::string wallet_cookie_value_;
 
+  // A map from dialog sections to the GUID of a newly saved Autofill data
+  // models for that section. No entries present that don't have newly saved
+  // data models.
+  std::map<DialogSection, std::string> newly_saved_data_model_guids_;
+
   // Populated if the user chose to save a newly inputted credit card. Used to
   // show a bubble as the dialog closes to confirm a user's new card info was
   // saved. Never populated while incognito (as nothing's actually saved).
@@ -740,7 +727,7 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
 
   // An animation which controls the background fade when the card is done
   // scrambling.
-  ui::LinearAnimation card_generated_animation_;
+  gfx::LinearAnimation card_generated_animation_;
 
   // A username string we display in the card scrambling/generated overlay.
   base::string16 submitted_cardholder_name_;

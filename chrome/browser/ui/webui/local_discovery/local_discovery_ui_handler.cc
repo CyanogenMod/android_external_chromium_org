@@ -10,8 +10,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/local_discovery/cloud_print_account_manager.h"
+#include "chrome/browser/local_discovery/privet_confirm_api_flow.h"
+#include "chrome/browser/local_discovery/privet_constants.h"
 #include "chrome/browser/local_discovery/privet_device_lister_impl.h"
+#include "chrome/browser/local_discovery/privet_http_asynchronous_factory.h"
+#include "chrome/browser/local_discovery/privet_http_asynchronous_factory.h"
 #include "chrome/browser/local_discovery/privet_http_impl.h"
+#include "chrome/browser/local_discovery/service_discovery_host_client.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
@@ -19,8 +25,10 @@
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/page_transition_types.h"
 #include "net/base/host_port_pair.h"
@@ -49,10 +57,6 @@ LocalDiscoveryUIHandler::LocalDiscoveryUIHandler(
 LocalDiscoveryUIHandler::~LocalDiscoveryUIHandler() {
   ResetCurrentRegistration();
   SetIsVisible(false);
-  if (service_discovery_client_.get()) {
-    service_discovery_client_ = NULL;
-    ServiceDiscoveryHostClientFactory::ReleaseClient();
-  }
 }
 
 // static
@@ -90,6 +94,9 @@ void LocalDiscoveryUIHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("openCloudPrintURL", base::Bind(
       &LocalDiscoveryUIHandler::HandleOpenCloudPrintURL,
       base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("showSyncUI", base::Bind(
+      &LocalDiscoveryUIHandler::HandleShowSyncUI,
+      base::Unretained(this)));
 }
 
 void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
@@ -98,16 +105,18 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
   // If privet_lister_ is already set, it is a mock used for tests or the result
   // of a reload.
   if (!privet_lister_) {
-    service_discovery_client_ = ServiceDiscoveryHostClientFactory::GetClient();
+    service_discovery_client_ = ServiceDiscoverySharedClient::GetInstance();
     privet_lister_.reset(new PrivetDeviceListerImpl(
         service_discovery_client_.get(), this));
-    privet_http_factory_.reset(new PrivetHTTPAsynchronousFactoryImpl(
-        service_discovery_client_.get(),
-        profile->GetRequestContext()));
+    privet_http_factory_ =
+        PrivetHTTPAsynchronousFactory::CreateInstance(
+            service_discovery_client_.get(), profile->GetRequestContext());
   }
 
   privet_lister_->Start();
   privet_lister_->DiscoverNewDevices(false);
+
+  CheckUserLoggedIn();
 }
 
 void LocalDiscoveryUIHandler::HandleIsVisible(const base::ListValue* args) {
@@ -166,6 +175,22 @@ void LocalDiscoveryUIHandler::HandleOpenCloudPrintURL(
   chrome::AddSelectedTabWithURL(browser,
                                 url_full,
                                 content::PAGE_TRANSITION_FROM_API);
+}
+
+void LocalDiscoveryUIHandler::HandleShowSyncUI(
+    const base::ListValue* args) {
+  Browser* browser = chrome::FindBrowserWithWebContents(
+      web_ui()->GetWebContents());
+  DCHECK(browser);
+
+  // We use SOURCE_SETTINGS because the URL for SOURCE_SETTINGS is detected on
+  // redirect.
+  GURL url(signin::GetPromoURL(signin::SOURCE_SETTINGS,
+                               true));  // auto close after success.
+
+  browser->OpenURL(
+      content::OpenURLParams(url, content::Referrer(), SINGLETON_TAB,
+                             content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
 }
 
 void LocalDiscoveryUIHandler::StartRegisterHTTP(
@@ -348,6 +373,8 @@ void LocalDiscoveryUIHandler::OnCloudPrintPrinterListReady() {
 }
 
 void LocalDiscoveryUIHandler::OnCloudPrintPrinterListUnavailable() {
+  web_ui()->CallJavascriptFunction(
+      "local_discovery.onCloudDeviceListUnavailable");
 }
 
 
@@ -405,6 +432,12 @@ scoped_ptr<base::DictionaryValue> LocalDiscoveryUIHandler::CreatePrinterInfo(
   return_value->SetString("description", description.description);
 
   return return_value.Pass();
+}
+
+void LocalDiscoveryUIHandler::CheckUserLoggedIn() {
+  base::FundamentalValue logged_in_value(!GetSyncAccount().empty());
+  web_ui()->CallJavascriptFunction("local_discovery.setUserLoggedIn",
+                                   logged_in_value);
 }
 
 }  // namespace local_discovery

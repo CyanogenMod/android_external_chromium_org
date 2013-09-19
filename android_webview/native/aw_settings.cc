@@ -13,7 +13,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_zoom.h"
 #include "jni/AwSettings_jni.h"
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/common/webpreferences.h"
@@ -72,7 +71,6 @@ void AwSettings::UpdateEverythingLocked(JNIEnv* env, jobject obj) {
   UpdateWebkitPreferencesLocked(env, obj);
   UpdateUserAgentLocked(env, obj);
   ResetScrollAndScaleState(env, obj);
-  UpdatePreferredSizeMode();
   UpdateFormDataPreferencesLocked(env, obj);
 }
 
@@ -111,12 +109,11 @@ void AwSettings::UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj) {
   if (prefs.text_autosizing_enabled) {
     prefs.font_scale_factor = text_size_percent / 100.0f;
     prefs.force_enable_zoom = text_size_percent >= 130;
-    // Use the default zoom level value when Text Autosizer is turned on.
-    render_view_host_ext->SetTextZoomLevel(0);
+    // Use the default zoom factor value when Text Autosizer is turned on.
+    render_view_host_ext->SetTextZoomFactor(1);
   } else {
     prefs.force_enable_zoom = false;
-    render_view_host_ext->SetTextZoomLevel(content::ZoomFactorToZoomLevel(
-        text_size_percent / 100.0f));
+    render_view_host_ext->SetTextZoomFactor(text_size_percent / 100.0f);
   }
 
   prefs.standard_font_family_map[webkit_glue::kCommonScript] =
@@ -189,6 +186,7 @@ void AwSettings::UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj) {
 
   prefs.databases_enabled = Java_AwSettings_getDatabaseEnabledLocked(env, obj);
 
+  prefs.wide_viewport_quirk = true;
   prefs.double_tap_to_zoom_enabled = prefs.use_wide_viewport =
       Java_AwSettings_getUseWideViewportLocked(env, obj);
 
@@ -227,12 +225,6 @@ void AwSettings::UpdateInitialPageScaleLocked(JNIEnv* env, jobject obj) {
     float dip_scale = static_cast<float>(
         Java_AwSettings_getDIPScaleLocked(env, obj));
     rvhe->SetInitialPageScale(initial_page_scale_percent / dip_scale / 100.0f);
-  }
-}
-
-void AwSettings::UpdatePreferredSizeMode() {
-  if (web_contents()->GetRenderViewHost()) {
-    web_contents()->GetRenderViewHost()->EnablePreferredSizeMode();
   }
 }
 

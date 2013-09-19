@@ -19,8 +19,7 @@ import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 
 public class ShortcutHelperTest extends ChromiumTestShellTestBase {
-    private static final String WEBAPP_PACKAGE_NAME = "packageName";
-    private static final String WEBAPP_CLASS_NAME = "className";
+    private static final String WEBAPP_ACTION_NAME = "WEBAPP_ACTION";
 
     private static final String WEBAPP_TITLE = "Webapp shortcut";
     private static final String WEBAPP_HTML = UrlUtils.encodeHtmlDataUri(
@@ -28,6 +27,7 @@ public class ShortcutHelperTest extends ChromiumTestShellTestBase {
             + "<meta name=\"mobile-web-app-capable\" content=\"yes\" />"
             + "<title>" + WEBAPP_TITLE + "</title>"
             + "</head><body>Webapp capable</body></html>");
+    private static final String EDITED_WEBAPP_TITLE = "Webapp shortcut edited";
 
     private static final String SECOND_WEBAPP_TITLE = "Webapp shortcut #2";
     private static final String SECOND_WEBAPP_HTML = UrlUtils.encodeHtmlDataUri(
@@ -66,7 +66,7 @@ public class ShortcutHelperTest extends ChromiumTestShellTestBase {
 
     @Override
     public void setUp() throws Exception {
-        ShortcutHelper.setWebappActivityInfo(WEBAPP_PACKAGE_NAME, WEBAPP_CLASS_NAME);
+        ShortcutHelper.setFullScreenAction(WEBAPP_ACTION_NAME);
         mActivity = launchChromiumTestShellWithBlankPage();
 
         // Set up the observer.
@@ -82,44 +82,62 @@ public class ShortcutHelperTest extends ChromiumTestShellTestBase {
     @Feature("{Webapp}")
     public void testAddWebappShortcuts() throws InterruptedException {
         // Add a webapp shortcut and make sure the intent's parameters make sense.
-        addShortcutToURL(WEBAPP_HTML);
+        addShortcutToURL(WEBAPP_HTML, "");
         Intent firedIntent = mTestObserver.firedIntent;
         assertEquals(WEBAPP_TITLE, firedIntent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME));
 
         Intent launchIntent = firedIntent.getParcelableExtra(Intent.EXTRA_SHORTCUT_INTENT);
         assertEquals(WEBAPP_HTML, launchIntent.getStringExtra(ShortcutHelper.EXTRA_URL));
-        assertEquals(WEBAPP_PACKAGE_NAME, launchIntent.getComponent().getPackageName());
-        assertEquals(WEBAPP_CLASS_NAME, launchIntent.getComponent().getClassName());
+        assertEquals(WEBAPP_ACTION_NAME, launchIntent.getAction());
+        assertEquals(mActivity.getPackageName(), launchIntent.getPackage());
 
         // Add a second shortcut and make sure it matches the second webapp's parameters.
         mTestObserver.reset();
-        addShortcutToURL(SECOND_WEBAPP_HTML);
+        addShortcutToURL(SECOND_WEBAPP_HTML, "");
         Intent newFiredIntent = mTestObserver.firedIntent;
         assertEquals(SECOND_WEBAPP_TITLE,
                 newFiredIntent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME));
 
         Intent newLaunchIntent = newFiredIntent.getParcelableExtra(Intent.EXTRA_SHORTCUT_INTENT);
         assertEquals(SECOND_WEBAPP_HTML, newLaunchIntent.getStringExtra(ShortcutHelper.EXTRA_URL));
-        assertEquals(WEBAPP_PACKAGE_NAME, newLaunchIntent.getComponent().getPackageName());
-        assertEquals(WEBAPP_CLASS_NAME, newLaunchIntent.getComponent().getClassName());
+        assertEquals(WEBAPP_ACTION_NAME, newLaunchIntent.getAction());
+        assertEquals(mActivity.getPackageName(), newLaunchIntent.getPackage());
     }
 
     @MediumTest
     @Feature("{Webapp}")
     public void testAddBookmarkShortcut() throws InterruptedException {
-        addShortcutToURL(NORMAL_HTML);
+        addShortcutToURL(NORMAL_HTML, "");
 
         // Make sure the intent's parameters make sense.
         Intent firedIntent = mTestObserver.firedIntent;
         assertEquals(NORMAL_TITLE, firedIntent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME));
 
         Intent launchIntent = firedIntent.getParcelableExtra(Intent.EXTRA_SHORTCUT_INTENT);
+        assertEquals(mActivity.getPackageName(), launchIntent.getPackage());
         assertEquals(Intent.ACTION_VIEW, launchIntent.getAction());
         assertEquals(NORMAL_HTML, launchIntent.getDataString());
-        assertNull(launchIntent.getComponent());
     }
 
-    private void addShortcutToURL(String url) throws InterruptedException {
+    @MediumTest
+    @Feature("{Webapp}")
+    public void testAddWebappShortcutsWithoutTitleEdit() throws InterruptedException {
+        // Add a webapp shortcut to check unedited title.
+        addShortcutToURL(WEBAPP_HTML, "");
+        Intent firedIntent = mTestObserver.firedIntent;
+        assertEquals(WEBAPP_TITLE, firedIntent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME));
+    }
+
+    @MediumTest
+    @Feature("{Webapp}")
+    public void testAddWebappShortcutsWithTitleEdit() throws InterruptedException {
+        // Add a webapp shortcut to check edited title.
+        addShortcutToURL(WEBAPP_HTML, EDITED_WEBAPP_TITLE);
+        Intent firedIntent = mTestObserver.firedIntent;
+        assertEquals(EDITED_WEBAPP_TITLE , firedIntent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME));
+    }
+
+    private void addShortcutToURL(String url, final String title) throws InterruptedException {
         loadUrlWithSanitization(url);
         assertTrue(waitForActiveShellToBeDoneLoading());
 
@@ -127,7 +145,7 @@ public class ShortcutHelperTest extends ChromiumTestShellTestBase {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                ShortcutHelper.addShortcut(mActivity.getActiveTab());
+                ShortcutHelper.addShortcut(mActivity.getActiveTab(), title);
             }
         });
 

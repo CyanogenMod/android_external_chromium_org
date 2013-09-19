@@ -7,7 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 
@@ -20,6 +23,10 @@ class PowerManagerClient;
 namespace content {
 class BrowserContext;
 }  // namespace content
+
+namespace drive {
+class DriveIntegrationService;
+}  // namespace drive
 
 namespace file_manager {
 
@@ -69,12 +76,6 @@ struct VolumeInfo {
   bool is_parent;
 };
 
-// Returns the VolumeInfo for Drive file system.
-// This is temporarily exposed for EventRouter's FileSystem mounting event
-// handling.
-// TODO(hidehiko): Hide this when the observing code is moved to VolumeManager.
-VolumeInfo CreateDriveVolumeInfo();
-
 // Manages "Volume"s for file manager. Here are "Volume"s.
 // - Drive File System (not yet supported).
 // - Downloads directory.
@@ -82,9 +83,11 @@ VolumeInfo CreateDriveVolumeInfo();
 //   for a device).
 // - Mounted zip archives.
 class VolumeManager : public BrowserContextKeyedService,
+                      public drive::DriveIntegrationServiceObserver,
                       public chromeos::disks::DiskMountManager::Observer {
  public:
   VolumeManager(Profile* profile,
+                drive::DriveIntegrationService* drive_integration_service,
                 chromeos::PowerManagerClient* power_manager_client,
                 chromeos::disks::DiskMountManager* disk_mount_manager);
   virtual ~VolumeManager();
@@ -105,8 +108,11 @@ class VolumeManager : public BrowserContextKeyedService,
   void RemoveObserver(VolumeManagerObserver* observer);
 
   // Returns the information about all volumes currently mounted.
-  // TODO(hidehiko): make this just an accessor.
   std::vector<VolumeInfo> GetVolumeInfoList() const;
+
+  // drive::DriveIntegrationServiceObserver overrides.
+  virtual void OnFileSystemMounted() OVERRIDE;
+  virtual void OnFileSystemBeingUnmounted() OVERRIDE;
 
   // chromeos::disks::DiskMountManager::Observer overrides.
   virtual void OnDiskEvent(
@@ -125,10 +131,15 @@ class VolumeManager : public BrowserContextKeyedService,
       chromeos::FormatError error_code,
       const std::string& device_path) OVERRIDE;
 
+  // Called on change to kExternalStorageDisabled pref.
+  void OnExternalStorageDisabledChanged();
+
  private:
   Profile* profile_;
+  drive::DriveIntegrationService* drive_integration_service_;
   chromeos::disks::DiskMountManager* disk_mount_manager_;
   scoped_ptr<MountedDiskMonitor> mounted_disk_monitor_;
+  PrefChangeRegistrar pref_change_registrar_;
   ObserverList<VolumeManagerObserver> observers_;
   DISALLOW_COPY_AND_ASSIGN(VolumeManager);
 };

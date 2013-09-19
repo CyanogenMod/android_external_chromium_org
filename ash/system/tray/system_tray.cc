@@ -34,9 +34,9 @@
 #include "base/timer/timer.h"
 #include "grit/ash_strings.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
@@ -585,6 +585,10 @@ void SystemTray::AnchorUpdated() {
 
 base::string16 SystemTray::GetAccessibleNameForTray() {
   return l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_ACCESSIBLE_NAME);
+}
+
+void SystemTray::BubbleResized(const TrayBubbleView* bubble_view) {
+  UpdateWebNotifications();
 }
 
 void SystemTray::HideBubbleWithView(const TrayBubbleView* bubble_view) {

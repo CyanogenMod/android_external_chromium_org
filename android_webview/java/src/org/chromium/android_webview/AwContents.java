@@ -180,6 +180,7 @@ public class AwContents {
     private Callable<Picture> mPictureListenerContentProvider;
 
     private boolean mContainerViewFocused;
+    private boolean mWindowFocused;
 
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
@@ -343,6 +344,11 @@ public class AwContents {
         public void setMeasuredDimension(int measuredWidth, int measuredHeight) {
             mInternalAccessAdapter.setMeasuredDimension(measuredWidth, measuredHeight);
         }
+
+        @Override
+        public void setFixedLayoutSize(int widthDip, int heightDip) {
+            nativeSetFixedLayoutSize(mNativeAwContents, widthDip, heightDip);
+        }
     }
 
     //--------------------------------------------------------------------------------------------
@@ -489,8 +495,7 @@ public class AwContents {
         mDIPScale = DeviceDisplayInfo.create(containerView.getContext()).getDIPScale();
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
-        mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient,
-                mLayoutSizer.getPreferredSizeChangedListener(), mContainerView);
+        mWebContentsDelegate = new AwWebContentsDelegateAdapter(contentsClient, mContainerView);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient);
         mZoomControls = new AwZoomControls(this);
         mIoThreadClient = new IoThreadClientImpl();
@@ -593,9 +598,11 @@ public class AwContents {
         final boolean wasWindowVisible = mIsWindowVisible;
         final boolean wasPaused = mIsPaused;
         final boolean wasFocused = mContainerViewFocused;
+        final boolean wasWindowFocused = mWindowFocused;
 
         // Properly clean up existing mContentViewCore and mNativeAwContents.
         if (wasFocused) onFocusChanged(false, 0, null);
+        if (wasWindowFocused) onWindowFocusChanged(false);
         if (wasViewVisible) setViewVisibilityInternal(false);
         if (wasWindowVisible) setWindowVisibilityInternal(false);
         if (!wasPaused) onPause();
@@ -611,6 +618,7 @@ public class AwContents {
         onSizeChanged(mContainerView.getWidth(), mContainerView.getHeight(), 0, 0);
         if (wasWindowVisible) setWindowVisibilityInternal(true);
         if (wasViewVisible) setViewVisibilityInternal(true);
+        if (wasWindowFocused) onWindowFocusChanged(wasWindowFocused);
         if (wasFocused) onFocusChanged(true, 0, null);
     }
 
@@ -1287,7 +1295,11 @@ public class AwContents {
 
         nativeUpdateLastHitTestData(mNativeAwContents);
         Bundle data = msg.getData();
-        data.putString("url", mPossiblyStaleHitTestData.href);
+
+        // In order to maintain compatibility with the old WebView's implementation,
+        // the absolute (full) url is passed in the |url| field, not only the href attribute.
+        // Note: HitTestData could be cleaned up at this point. See http://crbug.com/290992.
+        data.putString("url", mPossiblyStaleHitTestData.hitTestResultExtraData);
         data.putString("title", mPossiblyStaleHitTestData.anchorText);
         data.putString("src", mPossiblyStaleHitTestData.imgSrc);
         msg.setData(data);
@@ -1486,7 +1498,8 @@ public class AwContents {
      * @see android.view.View#onWindowFocusChanged()
      */
     public void onWindowFocusChanged(boolean hasWindowFocus) {
-        // If adding any code here, remember to adding correct handling in receivePopupContents().
+        mWindowFocused = hasWindowFocus;
+        mContentViewCore.onWindowFocusChanged(hasWindowFocus);
     }
 
     /**
@@ -1505,6 +1518,7 @@ public class AwContents {
         mScrollOffsetManager.setContainerViewSize(w, h);
         mContentViewCore.onPhysicalBackingSizeChanged(w, h);
         mContentViewCore.onSizeChanged(w, h, ow, oh);
+        mLayoutSizer.onSizeChanged(w, h, ow, oh);
         nativeOnSizeChanged(mNativeAwContents, w, h, ow, oh);
     }
 
@@ -1777,6 +1791,12 @@ public class AwContents {
     }
 
     @CalledByNative
+    private void onWebLayoutContentsSizeChanged(int widthCss, int heightCss) {
+        // This change notification comes from the renderer thread, not from the cc/ impl thread.
+        mLayoutSizer.onContentSizeChanged(widthCss, heightCss);
+    }
+
+    @CalledByNative
     private void scrollContainerViewTo(int x, int y) {
         mScrollOffsetManager.scrollContainerViewTo(x, y);
     }
@@ -1898,6 +1918,7 @@ public class AwContents {
     private native void nativeSetDipScale(int nativeAwContents, float dipScale);
     private native void nativeSetDisplayedPageScaleFactor(int nativeAwContents,
             float pageScaleFactor);
+    private native void nativeSetFixedLayoutSize(int nativeAwContents, int widthDip, int heightDip);
 
     // Returns null if save state fails.
     private native byte[] nativeGetOpaqueState(int nativeAwContents);

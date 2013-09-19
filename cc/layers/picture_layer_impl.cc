@@ -46,10 +46,10 @@ PictureLayerImpl::PictureLayerImpl(LayerTreeImpl* tree_impl, int id)
       low_res_raster_contents_scale_(0.f),
       raster_source_scale_was_animating_(false),
       is_using_lcd_text_(tree_impl->settings().can_use_lcd_text),
-      needs_post_commit_initialization_(true) {}
+      needs_post_commit_initialization_(true),
+      should_update_tile_priorities_(false) {}
 
-PictureLayerImpl::~PictureLayerImpl() {
-}
+PictureLayerImpl::~PictureLayerImpl() {}
 
 const char* PictureLayerImpl::LayerTypeAsString() const {
   return "cc::PictureLayerImpl";
@@ -136,7 +136,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
                  opaque_rect,
                  texture_rect,
                  texture_size,
-                 false,
+                 RGBA_8888,
                  quad_content_rect,
                  contents_scale,
                  draw_direct_to_backbuffer,
@@ -248,17 +248,17 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
         gfx::Rect opaque_rect = iter->opaque_rect();
         opaque_rect.Intersect(content_rect);
 
+        ResourceProvider* resource_provider =
+            layer_tree_impl()->resource_provider();
+        ResourceFormat format =
+            resource_provider->memory_efficient_texture_format();
         scoped_ptr<PictureDrawQuad> quad = PictureDrawQuad::Create();
         quad->SetNew(shared_quad_state,
                      geometry_rect,
                      opaque_rect,
                      texture_rect,
                      iter.texture_size(),
-                     // TODO(reveman): This assumes the renderer will use
-                     // GL_RGBA as format of temporary resource. The need
-                     // to swizzle should instead be determined by the
-                     // renderer.
-                     !PlatformColor::SameComponentOrder(GL_RGBA),
+                     format,
                      iter->content_rect(),
                      iter->contents_scale(),
                      draw_direct_to_backbuffer,
@@ -293,6 +293,8 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
 void PictureLayerImpl::UpdateTilePriorities() {
   DCHECK(!needs_post_commit_initialization_);
+  CHECK(should_update_tile_priorities_);
+
   if (!layer_tree_impl()->device_viewport_valid_for_tile_management()) {
     for (size_t i = 0; i < tilings_->num_tilings(); ++i)
       DCHECK(tilings_->tiling_at(i)->has_ever_been_updated());
@@ -316,9 +318,6 @@ void PictureLayerImpl::UpdateTilePriorities() {
   }
   if (!tiling_needs_update)
     return;
-
-  // At this point, tile priorities are going to be modified.
-  layer_tree_impl()->WillModifyTilePriorities();
 
   UpdateLCDTextStatus(can_use_lcd_text());
 
@@ -357,12 +356,15 @@ void PictureLayerImpl::UpdateTilePriorities() {
   last_screen_space_transform_ = current_screen_space_transform;
   last_bounds_ = bounds();
   last_content_scale_ = contents_scale_x();
+
+  // Tile priorities were modified.
+  layer_tree_impl()->DidModifyTilePriorities();
 }
 
 void PictureLayerImpl::DidBecomeActive() {
   LayerImpl::DidBecomeActive();
   tilings_->DidBecomeActive();
-  layer_tree_impl()->WillModifyTilePriorities();
+  layer_tree_impl()->DidModifyTilePriorities();
 }
 
 void PictureLayerImpl::DidBeginTracing() {
@@ -385,6 +387,11 @@ void PictureLayerImpl::CalculateContentsScale(
     float* contents_scale_y,
     gfx::Size* content_bounds) {
   DoPostCommitInitializationIfNeeded();
+
+  // This function sets valid raster scales and manages tilings, so tile
+  // priorities can now be updated.
+  should_update_tile_priorities_ = true;
+
   if (!CanHaveTilings()) {
     ideal_page_scale_ = page_scale_factor;
     ideal_device_scale_ = device_scale_factor;
@@ -1002,6 +1009,10 @@ void PictureLayerImpl::ResetRasterScale() {
   raster_source_scale_ = 0.f;
   raster_contents_scale_ = 0.f;
   low_res_raster_contents_scale_ = 0.f;
+
+  // When raster scales aren't valid, don't update tile priorities until
+  // this layer has been updated via UpdateDrawProperties.
+  should_update_tile_priorities_ = false;
 }
 
 bool PictureLayerImpl::CanHaveTilings() const {
@@ -1049,6 +1060,7 @@ void PictureLayerImpl::GetDebugBorderProperties(
 void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   LayerImpl::AsValueInto(state);
   state->SetDouble("ideal_contents_scale", ideal_contents_scale_);
+  state->SetDouble("geometry_contents_scale", contents_scale_x());
   state->Set("tilings", tilings_->AsValue().release());
   state->Set("pictures", pile_->AsValue().release());
   state->Set("invalidation", invalidation_.AsValue().release());
@@ -1056,7 +1068,7 @@ void PictureLayerImpl::AsValueInto(base::DictionaryValue* state) const {
   scoped_ptr<base::ListValue> coverage_tiles(new base::ListValue);
   for (PictureLayerTilingSet::CoverageIterator iter(tilings_.get(),
                                                     contents_scale_x(),
-                                                    gfx::Rect(bounds()),
+                                                    gfx::Rect(content_bounds()),
                                                     ideal_contents_scale_);
        iter;
        ++iter) {

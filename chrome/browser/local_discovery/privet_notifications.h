@@ -8,23 +8,25 @@
 #include <map>
 #include <string>
 
-#include "base/memory/linked_ptr.h"
-#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/local_discovery/privet_device_lister.h"
-#include "chrome/browser/local_discovery/privet_device_lister_impl.h"
 #include "chrome/browser/local_discovery/privet_http.h"
-#include "chrome/browser/local_discovery/privet_http_asynchronous_factory.h"
-#include "chrome/browser/local_discovery/service_discovery_host_client.h"
 #include "chrome/browser/notifications/notification_delegate.h"
-#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "ui/message_center/notification_delegate.h"
+
+class NotificationUIManager;
 
 namespace content {
 class BrowserContext;
 }  // namespace content
 
 namespace local_discovery {
+
+class ServiceDiscoverySharedClient;
+class PrivetDeviceLister;
+class PrivetHTTPAsynchronousFactory;
+class PrivetHTTPResolution;
+class PrivetTrafficDetector;
+struct DeviceDescription;
 
 // Contains logic related to notifications not tied actually displaying them.
 class PrivetNotificationsListener : public PrivetInfoOperation::Delegate {
@@ -72,8 +74,7 @@ class PrivetNotificationsListener : public PrivetInfoOperation::Delegate {
     std::string human_readable_name;
     std::string description;
     scoped_ptr<PrivetInfoOperation> info_operation;
-    scoped_ptr<PrivetHTTPAsynchronousFactory::Resolution>
-        privet_http_resolution;
+    scoped_ptr<PrivetHTTPResolution> privet_http_resolution;
     scoped_ptr<PrivetHTTPClient> privet_http;
   };
 
@@ -93,8 +94,7 @@ class PrivetNotificationService
       public PrivetNotificationsListener::Delegate,
       public base::SupportsWeakPtr<PrivetNotificationService> {
  public:
-  PrivetNotificationService(content::BrowserContext* profile,
-                            NotificationUIManager* notification_manager);
+  explicit PrivetNotificationService(content::BrowserContext* profile);
   virtual ~PrivetNotificationService();
 
   // PrivetDeviceLister::Delegate implementation:
@@ -113,11 +113,13 @@ class PrivetNotificationService
 
  private:
   void Start();
+  void StartLister();
 
   content::BrowserContext* profile_;
-  NotificationUIManager* notification_manager_;
   scoped_ptr<PrivetDeviceLister> device_lister_;
-  scoped_refptr<ServiceDiscoveryHostClient> service_discovery_client_;
+  scoped_refptr<ServiceDiscoverySharedClient> service_discovery_client_;
+  scoped_refptr<PrivetTrafficDetector> traffic_detector_v4_;
+  scoped_refptr<PrivetTrafficDetector> traffic_detector_v6_;
   scoped_ptr<PrivetNotificationsListener> privet_notifications_listener_;
 };
 

@@ -11,9 +11,9 @@
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
 #include "content/public/browser/overscroll_configuration.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
 
 namespace content {
 
@@ -166,7 +166,7 @@ void WindowSlider::UpdateForFling(float x_velocity, float y_velocity) {
   ui::ScopedLayerAnimationSettings settings(sliding->GetAnimator());
   settings.SetPreemptionStrategy(
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   settings.AddObserver(new CallbackAnimationObserver(
       base::Bind(&WindowSlider::CompleteWindowSlideAfterAnimation,
                  weak_factory_.GetWeakPtr())));
@@ -190,7 +190,7 @@ void WindowSlider::ResetScroll() {
     ui::ScopedLayerAnimationSettings settings(layer->GetAnimator());
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(ui::Tween::EASE_OUT);
+    settings.SetTweenType(gfx::Tween::EASE_OUT);
 
     // Delete the layer and the shadow at the end of the animation.
     settings.AddObserver(new CallbackAnimationObserver(
@@ -208,7 +208,7 @@ void WindowSlider::ResetScroll() {
     ui::ScopedLayerAnimationSettings settings(owner_->layer()->GetAnimator());
     settings.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-    settings.SetTweenType(ui::Tween::EASE_OUT);
+    settings.SetTweenType(gfx::Tween::EASE_OUT);
     settings.AddObserver(new CallbackAnimationObserver(
         base::Bind(&WindowSlider::AbortWindowSlideAfterAnimation,
                    weak_factory_.GetWeakPtr())));

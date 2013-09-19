@@ -31,13 +31,26 @@ cr.define('local_discovery', function() {
   var devices = {};
 
   /**
+   * Whether or not the user is currently logged in.
+   * @type bool
+   */
+  var isUserLoggedIn = true;
+
+  /**
+   * Focus manager for page.
+   */
+  var focusManager = null;
+
+  /**
    * Object that represents a device in the device list.
    * @param {Object} info Information about the device.
    * @constructor
    */
-  function Device(info) {
+  function Device(info, registerEnabled) {
     this.info = info;
     this.domElement = null;
+    this.registerButton = null;
+    this.registerEnabled = registerEnabled;
   }
 
   Device.prototype = {
@@ -68,10 +81,14 @@ cr.define('local_discovery', function() {
         this.deviceContainer().appendChild(this.domElement);
       }
 
-      fillDeviceDescription(this.domElement, this.info.human_readable_name,
-                            this.info.description,
-                            loadTimeData.getString('serviceRegister'),
-                            this.register.bind(this));
+      this.registerButton = fillDeviceDescription(
+        this.domElement,
+        this.info.human_readable_name,
+        this.info.description,
+        loadTimeData.getString('serviceRegister'),
+        this.register.bind(this));
+
+      this.setRegisterEnabled(this.registerEnabled);
     },
 
     /**
@@ -89,6 +106,34 @@ cr.define('local_discovery', function() {
       recordUmaAction('DevicesPage_RegisterClicked');
       chrome.send('registerDevice', [this.info.service_name]);
       setRegisterPage('register-page-adding1');
+    },
+    /**
+     * Set registration button enabled/disabled
+     */
+    setRegisterEnabled: function(isEnabled) {
+      this.registerEnabled = isEnabled;
+      if (this.registerButton) {
+        this.registerButton.disabled = !isEnabled;
+      }
+    }
+  };
+
+  /**
+   * Manages focus for local devices page.
+   * @constructor
+   * @extends {cr.ui.FocusManager}
+   */
+  function LocalDiscoveryFocusManager() {
+    cr.ui.FocusManager.call(this);
+    this.focusParent_ = document.body;
+  }
+
+  LocalDiscoveryFocusManager.prototype = {
+    __proto__: cr.ui.FocusManager.prototype,
+    /** @override */
+    getFocusParent: function() {
+      return document.querySelector('#overlay .showing') ||
+        $('main-page');
     }
   };
 
@@ -114,6 +159,7 @@ cr.define('local_discovery', function() {
    * @param {string} description Description of device.
    * @param {string} button_text Text to appear on button.
    * @param {function()} button_action Action for button.
+   * @return {HTMLElement} The button (for enabling/disabling/rebinding)
    */
   function fillDeviceDescription(device_dom_element,
                                 name,
@@ -141,6 +187,8 @@ cr.define('local_discovery', function() {
     button.textContent = button_text;
     button.addEventListener('click', button_action);
     device_dom_element.appendChild(button);
+
+    return button;
   }
 
   /**
@@ -148,7 +196,11 @@ cr.define('local_discovery', function() {
    */
   function showRegisterOverlay() {
     recordUmaAction('DevicesPage_AddPrintersClicked');
-    $('register-overlay').classList.add('showing');
+
+    var registerOverlay = $('register-overlay');
+    registerOverlay.classList.add('showing');
+    registerOverlay.focus();
+
     $('overlay').hidden = false;
     uber.invokeMethodOnParent('beginInterceptingEvents');
     setRegisterPage('register-page-choose');
@@ -200,7 +252,7 @@ cr.define('local_discovery', function() {
       if (devices.hasOwnProperty(name)) {
         devices[name].updateDevice(info);
       } else {
-        devices[name] = new Device(info);
+        devices[name] = new Device(info, isUserLoggedIn);
         devices[name].renderDevice();
       }
     } else {
@@ -210,7 +262,7 @@ cr.define('local_discovery', function() {
       }
     }
 
-    updateUIToReflectNumberOfLocalDevices();
+    updateUIToReflectState();
   }
 
   /**
@@ -241,16 +293,32 @@ cr.define('local_discovery', function() {
     }
   }
 
+  /**
+   * Handle the case where the list of cloud devices is not available.
+   */
+  function onCloudDeviceListUnavailable() {
+    if (isUserLoggedIn) {
+      $('cloud-devices-loading').hidden = true;
+      $('cloud-devices-unavailable').hidden = false;
+    }
+  }
+
+  /**
+   * Handle the case where the cache for local devices has been flushed..
+   */
   function onDeviceCacheFlushed() {
     for (var deviceName in devices) {
       devices[deviceName].removeDevice();
       delete devices[deviceName];
     }
 
-    updateUIToReflectNumberOfLocalDevices();
+    updateUIToReflectState();
   }
 
-  function updateUIToReflectNumberOfLocalDevices() {
+  /**
+   * Update UI strings to reflect the number of local devices.
+   */
+  function updateUIToReflectState() {
     var numberPrinters = $('register-device-list').children.length;
     $('printer-num').textContent = generateNumberPrintersAvailableText(
       numberPrinters);
@@ -258,7 +326,11 @@ cr.define('local_discovery', function() {
     if (numberPrinters == 0) {
       $('register-message').textContent = loadTimeData.getString(
         'noPrintersOnNetworkExplanation');
+
+      $('register-login-promo').hidden = true;
     } else {
+      $('register-login-promo').hidden = isUserLoggedIn;
+
       $('register-message').textContent = loadTimeData.getString(
         'registerConfirmMessage');
     }
@@ -299,9 +371,13 @@ cr.define('local_discovery', function() {
    * Request the printer list.
    */
   function requestPrinterList() {
-    clearElement($('cloud-devices'));
-    $('cloud-devices-loading').hidden = false;
-    chrome.send('requestPrinterList');
+    if (isUserLoggedIn) {
+      clearElement($('cloud-devices'));
+      $('cloud-devices-loading').hidden = false;
+      $('cloud-devices-unavailable').hidden = true;
+
+      chrome.send('requestPrinterList');
+    }
   }
 
   /**
@@ -331,6 +407,51 @@ cr.define('local_discovery', function() {
     recordUmaAction('DevicesPage_RegisterCancel');
   }
 
+  /**
+   * Retry loading the devices from Google Cloud Print.
+   */
+  function retryLoadCloudDevices() {
+    requestPrinterList();
+  }
+
+  /**
+   * User is not logged in.
+   */
+  function setUserLoggedIn(userLoggedIn) {
+    isUserLoggedIn = userLoggedIn;
+
+    $('cloud-devices-login-promo').hidden = isUserLoggedIn;
+
+
+    if (isUserLoggedIn) {
+      requestPrinterList();
+      $('register-login-promo').hidden = true;
+    } else {
+      $('cloud-devices-loading').hidden = true;
+      $('cloud-devices-unavailable').hidden = true;
+    }
+
+    updateUIToReflectState();
+
+    for (var device in devices) {
+      devices[device].setRegisterEnabled(isUserLoggedIn);
+    }
+  }
+
+  function openSignInPage() {
+    chrome.send('showSyncUI');
+  }
+
+  function registerLoginButtonClicked() {
+    recordUmaAction('DevicesPage_LogInStartedFromRegisterPromo');
+    openSignInPage();
+  }
+
+  function cloudDevicesLoginButtonClicked() {
+    recordUmaAction('DevicesPage_LogInStartedFromDeviceListPromo');
+    openSignInPage();
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
     uber.onContentFrameLoaded();
 
@@ -346,8 +467,20 @@ cr.define('local_discovery', function() {
 
     $('register-error-exit').addEventListener('click', cancelRegistration);
 
+
     $('add-printers-button').addEventListener('click',
                                               showRegisterOverlay);
+
+    $('cloud-devices-retry-button').addEventListener('click',
+                                                     retryLoadCloudDevices);
+
+    $('cloud-devices-login-button').addEventListener(
+      'click',
+      cloudDevicesLoginButtonClicked);
+
+    $('register-login-button').addEventListener(
+      'click',
+      registerLoginButtonClicked);
 
     updateVisibility();
     document.addEventListener('webkitvisibilitychange', updateVisibility,
@@ -356,9 +489,11 @@ cr.define('local_discovery', function() {
     var title = loadTimeData.getString('devicesTitle');
     uber.invokeMethodOnParent('setTitle', {title: title});
 
+    focusManager = new LocalDiscoveryFocusManager();
+    focusManager.initialize();
+
     chrome.send('start');
     recordUmaAction('DevicesPage_Opened');
-    requestPrinterList();
   });
 
   return {
@@ -367,6 +502,8 @@ cr.define('local_discovery', function() {
     onUnregisteredDeviceUpdate: onUnregisteredDeviceUpdate,
     onRegistrationConfirmedOnPrinter: onRegistrationConfirmedOnPrinter,
     onCloudDeviceListAvailable: onCloudDeviceListAvailable,
-    onDeviceCacheFlushed: onDeviceCacheFlushed
+    onCloudDeviceListUnavailable: onCloudDeviceListUnavailable,
+    onDeviceCacheFlushed: onDeviceCacheFlushed,
+    setUserLoggedIn: setUserLoggedIn
   };
 });

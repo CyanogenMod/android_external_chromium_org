@@ -378,6 +378,56 @@ public class AwSettingsTest extends AwTestBase {
         }
     }
 
+
+    class AwSettingsImagesEnabledHelper extends AwSettingsTestHelper<Boolean> {
+
+        AwSettingsImagesEnabledHelper(
+                AwContents awContents,
+                TestAwContentsClient contentViewClient,
+                TestWebServer webServer,
+                ImagePageGenerator generator) throws Throwable {
+            super(awContents, contentViewClient, true);
+            mWebServer = webServer;
+            mGenerator = generator;
+        }
+
+        @Override
+        protected Boolean getAlteredValue() {
+            return DISABLED;
+        }
+
+        @Override
+        protected Boolean getInitialValue() {
+            return ENABLED;
+        }
+
+        @Override
+        protected Boolean getCurrentValue() {
+            return mAwSettings.getImagesEnabled();
+        }
+
+        @Override
+        protected void setCurrentValue(Boolean value) {
+            mAwSettings.setImagesEnabled(value);
+        }
+
+        @Override
+        protected void doEnsureSettingHasValue(Boolean value) throws Throwable {
+            final String httpImageUrl = mGenerator.getPageUrl(mWebServer);
+            AwSettingsTest.this.loadUrlSync(
+                    mAwContents,
+                    mContentViewClient.getOnPageFinishedHelper(),
+                    httpImageUrl);
+            assertEquals(value == ENABLED ?
+                         ImagePageGenerator.IMAGE_LOADED_STRING :
+                         ImagePageGenerator.IMAGE_NOT_LOADED_STRING,
+                         getTitleOnUiThread());
+        }
+
+        private TestWebServer mWebServer;
+        private ImagePageGenerator mGenerator;
+    }
+
     class AwSettingsDefaultTextEncodingTestHelper extends AwSettingsTestHelper<String> {
         AwSettingsDefaultTextEncodingTestHelper(
                 AwContents awContents,
@@ -1773,13 +1823,7 @@ public class AwSettingsTest extends AwTestBase {
         TestWebServer webServer = null;
         try {
             webServer = new TestWebServer(false);
-            final String imagePath = "/image.png";
-            webServer.setResponseBase64(imagePath, generator.getImageSourceNoAdvance(),
-                    CommonResources.getImagePngHeaders(false));
-
-            final String pagePath = "/html_image.html";
-            final String httpUrlImageHtml = generator.getPageTemplateSource(imagePath);
-            final String httpImageUrl = webServer.setResponse(pagePath, httpUrlImageHtml, null);
+            final String httpImageUrl = generator.getPageUrl(webServer);
 
             settings.setImagesEnabled(false);
             loadUrlSync(awContents, contentClient.getOnPageFinishedHelper(), httpImageUrl);
@@ -1800,6 +1844,29 @@ public class AwSettingsTest extends AwTestBase {
                     }
                 }
             }, TEST_TIMEOUT, CHECK_INTERVAL));
+        } finally {
+            if (webServer != null) webServer.shutdown();
+        }
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testBlockNetworkImagesWithTwoViews() throws Throwable {
+        ViewPair views = createViews();
+        TestWebServer webServer = null;
+        try {
+            webServer = new TestWebServer(false);
+            runPerViewSettingsTest(
+                    new AwSettingsImagesEnabledHelper(
+                            views.getContents0(),
+                            views.getClient0(),
+                            webServer,
+                            new ImagePageGenerator(0, true)),
+                    new AwSettingsImagesEnabledHelper(
+                            views.getContents1(),
+                            views.getClient1(),
+                            webServer,
+                            new ImagePageGenerator(1, true)));
         } finally {
             if (webServer != null) webServer.shutdown();
         }
@@ -2240,19 +2307,18 @@ public class AwSettingsTest extends AwTestBase {
             new AwSettingsUseWideViewportTestHelper(views.getContents1(), views.getClient1()));
     }
 
-    /*
-     * @SmallTest
-     * @Feature({"AndroidWebView", "Preferences"})
-     * Failing after Blink r157293, see crbug.com/285995
-     */
-    @DisabledTest
-    public void testUseWideViewportLayoutWidth() throws Throwable {
-        final TestAwContentsClient contentClient = new TestAwContentsClient();
-        final AwTestContainerView testContainerView =
-                createAwTestContainerViewOnMainSync(contentClient);
-        final AwContents awContents = testContainerView.getAwContents();
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testUseWideViewportWithTwoViewsNoQuirks() throws Throwable {
+        ViewPair views = createViews(false);
+        runPerViewSettingsTest(
+            new AwSettingsUseWideViewportTestHelper(views.getContents0(), views.getClient0()),
+            new AwSettingsUseWideViewportTestHelper(views.getContents1(), views.getClient1()));
+    }
+
+    private void useWideViewportLayoutWidthTest(
+            final AwContents awContents, CallbackHelper onPageFinishedHelper) throws Throwable {
         AwSettings settings = getAwSettingsOnUiThread(awContents);
-        CallbackHelper onPageFinishedHelper = contentClient.getOnPageFinishedHelper();
 
         final String pageTemplate = "<html><head>%s</head>" +
                 "<body onload='document.title=document.body.clientWidth'></body></html>";
@@ -2303,6 +2369,26 @@ public class AwSettingsTest extends AwTestBase {
         loadDataSync(
                 awContents, onPageFinishedHelper, pageViewportSpecifiedWidth, "text/html", false);
         assertEquals(viewportTagSpecifiedWidth, getTitleOnUiThread(awContents));
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testUseWideViewportLayoutWidth() throws Throwable {
+        TestAwContentsClient contentClient = new TestAwContentsClient();
+        AwTestContainerView testContainerView =
+                createAwTestContainerViewOnMainSync(contentClient);
+        useWideViewportLayoutWidthTest(testContainerView.getAwContents(),
+                contentClient.getOnPageFinishedHelper());
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testUseWideViewportLayoutWidthNoQuirks() throws Throwable {
+        TestAwContentsClient contentClient = new TestAwContentsClient();
+        AwTestContainerView testContainerView =
+                createAwTestContainerViewOnMainSync(contentClient, false);
+        useWideViewportLayoutWidthTest(testContainerView.getAwContents(),
+                contentClient.getOnPageFinishedHelper());
     }
 
     /*
@@ -2619,12 +2705,16 @@ public class AwSettingsTest extends AwTestBase {
     }
 
     private ViewPair createViews() throws Throwable {
+        return createViews(true);
+    }
+
+    private ViewPair createViews(boolean supportsLegacyQuirks) throws Throwable {
         TestAwContentsClient client0 = new TestAwContentsClient();
         TestAwContentsClient client1 = new TestAwContentsClient();
         return new ViewPair(
-            createAwTestContainerViewOnMainSync(client0).getAwContents(),
+            createAwTestContainerViewOnMainSync(client0, supportsLegacyQuirks).getAwContents(),
             client0,
-            createAwTestContainerViewOnMainSync(client1).getAwContents(),
+            createAwTestContainerViewOnMainSync(client1, supportsLegacyQuirks).getAwContents(),
             client1);
     }
 

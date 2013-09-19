@@ -34,6 +34,7 @@ static const int kMaxInputChannels = 2;
 
 const char AudioManagerBase::kDefaultDeviceName[] = "Default";
 const char AudioManagerBase::kDefaultDeviceId[] = "default";
+const char AudioManagerBase::kLoopbackInputDeviceId[] = "loopback";
 
 struct AudioManagerBase::DispatcherParams {
   DispatcherParams(const AudioParameters& input,
@@ -310,8 +311,6 @@ void AudioManagerBase::GetAudioInputDeviceNames(
 
 void AudioManagerBase::GetAudioOutputDeviceNames(
     AudioDeviceNames* device_names) {
-  // TODO(joi): Remove this and keep pure virtual once implemented everywhere.
-  NOTREACHED() << "Don't use this yet, it's not ready on all platforms!";
 }
 
 void AudioManagerBase::ReleaseOutputStream(AudioOutputStream* stream) {

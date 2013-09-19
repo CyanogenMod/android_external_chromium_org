@@ -32,9 +32,6 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
@@ -42,6 +39,9 @@
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_CHROMEOS)
@@ -363,7 +363,7 @@ class RootWindowHostX11::MouseMoveFilter {
 
 RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
     : delegate_(NULL),
-      xdisplay_(base::MessagePumpX11::GetDefaultXDisplay()),
+      xdisplay_(ui::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_cursor_(ui::kCursorNull),
@@ -1090,7 +1090,7 @@ RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
 
 // static
 gfx::Size RootWindowHost::GetNativeScreenSize() {
-  ::Display* xdisplay = base::MessagePumpX11::GetDefaultXDisplay();
+  ::Display* xdisplay = ui::GetXDisplay();
   return gfx::Size(DisplayWidth(xdisplay, 0), DisplayHeight(xdisplay, 0));
 }
 

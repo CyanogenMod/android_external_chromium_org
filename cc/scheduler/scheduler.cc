@@ -17,9 +17,9 @@ Scheduler::Scheduler(SchedulerClient* client,
       client_(client),
       weak_factory_(this),
       last_set_needs_begin_frame_(false),
-      has_pending_begin_frame_(false),
       state_machine_(scheduler_settings),
-      inside_process_scheduled_actions_(false) {
+      inside_process_scheduled_actions_(false),
+      inside_action_(SchedulerStateMachine::ACTION_NONE) {
   DCHECK(client_);
   DCHECK(!state_machine_.BeginFrameNeededToDrawByImplThread());
 }
@@ -64,6 +64,12 @@ void Scheduler::SetNeedsRedraw() {
   ProcessScheduledActions();
 }
 
+void Scheduler::SetNeedsManageTiles() {
+  DCHECK(!IsInsideAction(SchedulerStateMachine::ACTION_MANAGE_TILES));
+  state_machine_.SetNeedsManageTiles();
+  ProcessScheduledActions();
+}
+
 void Scheduler::SetSwapUsedIncompleteTile(bool used_incomplete_tile) {
   state_machine_.SetSwapUsedIncompleteTile(used_incomplete_tile);
   ProcessScheduledActions();
@@ -95,7 +101,6 @@ void Scheduler::DidLoseOutputSurface() {
 void Scheduler::DidCreateAndInitializeOutputSurface() {
   TRACE_EVENT0("cc", "Scheduler::DidCreateAndInitializeOutputSurface");
   state_machine_.DidCreateAndInitializeOutputSurface();
-  has_pending_begin_frame_ = false;
   last_set_needs_begin_frame_ = false;
   ProcessScheduledActions();
 }
@@ -130,27 +135,16 @@ void Scheduler::SetupNextBeginFrameIfNeeded() {
       settings_.throttle_frame_production;
   bool needs_begin_frame = needs_begin_frame_to_draw ||
                            proactive_begin_frame_wanted;
-  bool immediate_disables_needed =
-      settings_.using_synchronous_renderer_compositor;
 
-  // Determine if we need BeginFrame notifications.
-  // If we do, always request the BeginFrame immediately.
-  // If not, only disable on the next BeginFrame to avoid unnecessary toggles.
-  // The synchronous renderer compositor requires immediate disables though.
-  if ((needs_begin_frame ||
-       state_machine_.inside_begin_frame() ||
-       immediate_disables_needed) &&
-      (needs_begin_frame != last_set_needs_begin_frame_)) {
-    has_pending_begin_frame_ = false;
+  bool should_call_set_needs_begin_frame =
+      // Always request the BeginFrame immediately if it wasn't needed before.
+      (needs_begin_frame && !last_set_needs_begin_frame_) ||
+      // We always need to explicitly request our next BeginFrame.
+      state_machine_.inside_begin_frame();
+
+  if (should_call_set_needs_begin_frame) {
     client_->SetNeedsBeginFrameOnImplThread(needs_begin_frame);
     last_set_needs_begin_frame_ = needs_begin_frame;
-  }
-
-  // Request another BeginFrame if we haven't drawn for now until we have
-  // deadlines implemented.
-  if (state_machine_.inside_begin_frame() && has_pending_begin_frame_) {
-    has_pending_begin_frame_ = false;
-    client_->SetNeedsBeginFrameOnImplThread(true);
   }
 
   // Setup PollForAnticipatedDrawTriggers for cases where we want a proactive
@@ -173,8 +167,7 @@ void Scheduler::SetupNextBeginFrameIfNeeded() {
 
 void Scheduler::BeginFrame(const BeginFrameArgs& args) {
   TRACE_EVENT0("cc", "Scheduler::BeginFrame");
-  DCHECK(!has_pending_begin_frame_);
-  has_pending_begin_frame_ = true;
+  DCHECK(!state_machine_.inside_begin_frame());
   last_begin_frame_args_ = args;
   state_machine_.DidEnterBeginFrame(args);
   ProcessScheduledActions();
@@ -183,22 +176,21 @@ void Scheduler::BeginFrame(const BeginFrameArgs& args) {
 
 void Scheduler::PollForAnticipatedDrawTriggers() {
   TRACE_EVENT0("cc", "Scheduler::PollForAnticipatedDrawTriggers");
-  state_machine_.PollForAnticipatedDrawTriggers();
+  state_machine_.DidEnterPollForAnticipatedDrawTriggers();
   ProcessScheduledActions();
+  state_machine_.DidLeavePollForAnticipatedDrawTriggers();
+
+  poll_for_draw_triggers_closure_.Cancel();
 }
 
 void Scheduler::DrawAndSwapIfPossible() {
   DrawSwapReadbackResult result =
       client_->ScheduledActionDrawAndSwapIfPossible();
   state_machine_.DidDrawIfPossibleCompleted(result.did_draw);
-  if (result.did_swap)
-    has_pending_begin_frame_ = false;
 }
 
 void Scheduler::DrawAndSwapForced() {
-  DrawSwapReadbackResult result = client_->ScheduledActionDrawAndSwapForced();
-  if (result.did_swap)
-    has_pending_begin_frame_ = false;
+  client_->ScheduledActionDrawAndSwapForced();
 }
 
 void Scheduler::DrawAndReadback() {
@@ -223,6 +215,8 @@ void Scheduler::ProcessScheduledActions() {
                  "state",
                  TracedValue::FromValue(state_machine_.AsValue().release()));
     state_machine_.UpdateState(action);
+    base::AutoReset<SchedulerStateMachine::Action>
+        mark_inside_action(&inside_action_, action);
     switch (action) {
       case SchedulerStateMachine::ACTION_NONE:
         break;
@@ -256,6 +250,9 @@ void Scheduler::ProcessScheduledActions() {
         break;
       case SchedulerStateMachine::ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD:
         client_->ScheduledActionAcquireLayerTexturesForMainThread();
+        break;
+      case SchedulerStateMachine::ACTION_MANAGE_TILES:
+        client_->ScheduledActionManageTiles();
         break;
     }
   } while (action != SchedulerStateMachine::ACTION_NONE);

@@ -18,8 +18,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "ui/aura/client/activation_change_observer.h"
-#include "ui/base/events/event_target.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event_target.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
@@ -184,8 +184,7 @@ class ASH_EXPORT Shell
   // be overridden by using ScopedTargetRootWindow().
   // If you want to get a RootWindow of the active window, just use
   // |wm::GetActiveWindow()->GetRootWindow()|.
-  // TODO(oshima): Rename to GetTargetRootWindow() crbug.com/266378.
-  static aura::RootWindow* GetActiveRootWindow();
+  static aura::RootWindow* GetTargetRootWindow();
 
   // Returns the global Screen object that's always active in ash.
   static gfx::Screen* GetScreen();
@@ -209,7 +208,7 @@ class ASH_EXPORT Shell
   // application windows to be maximized only.
   static bool IsForcedMaximizeMode();
 
-  void set_active_root_window(aura::RootWindow* target_root_window) {
+  void set_target_root_window(aura::RootWindow* target_root_window) {
     target_root_window_ = target_root_window;
   }
 
@@ -276,11 +275,9 @@ class ASH_EXPORT Shell
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
 
-#if !defined(OS_MACOSX)
   AcceleratorController* accelerator_controller() {
     return accelerator_controller_.get();
   }
-#endif  // !defined(OS_MACOSX)
 
   internal::DisplayManager* display_manager() {
     return display_manager_.get();
@@ -533,12 +530,8 @@ class ASH_EXPORT Shell
 
   std::vector<WindowAndBoundsPair> to_restore_;
 
-#if !defined(OS_MACOSX)
   scoped_ptr<NestedDispatcherController> nested_dispatcher_controller_;
-
   scoped_ptr<AcceleratorController> accelerator_controller_;
-#endif  // !defined(OS_MACOSX)
-
   scoped_ptr<ShellDelegate> delegate_;
   scoped_ptr<SystemTrayDelegate> system_tray_delegate_;
   scoped_ptr<SystemTrayNotifier> system_tray_notifier_;
@@ -595,10 +588,8 @@ class ASH_EXPORT Shell
   // An event filter which handles system level gestures
   scoped_ptr<internal::SystemGestureEventFilter> system_gesture_filter_;
 
-#if !defined(OS_MACOSX)
   // An event filter that pre-handles global accelerators.
   scoped_ptr<internal::AcceleratorFilter> accelerator_filter_;
-#endif
 
   // An event filter that pre-handles all key events to send them to an IME.
   scoped_ptr<views::corewm::InputMethodEventFilter> input_method_filter_;

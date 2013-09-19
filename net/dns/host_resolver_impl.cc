@@ -1455,8 +1455,12 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
                                 queue_time_after_change);
     }
 
+    bool system_only =
+        (key_.host_resolver_flags & HOST_RESOLVER_SYSTEM_ONLY) != 0;
+
     // Caution: Job::Start must not complete synchronously.
-    if (had_dns_config_ && !ResemblesMulticastDNSName(key_.hostname)) {
+    if (!system_only && had_dns_config_ &&
+        !ResemblesMulticastDNSName(key_.hostname)) {
       StartDnsTask();
     } else {
       StartProcTask();
@@ -1799,6 +1803,7 @@ HostResolverImpl::HostResolverImpl(
       received_dns_config_(false),
       num_dns_failures_(0),
       probe_ipv6_support_(true),
+      use_local_ipv6_(false),
       resolved_known_ipv6_hostname_(false),
       additional_resolver_flags_(0),
       fallback_to_proctask_(true) {
@@ -1824,12 +1829,12 @@ HostResolverImpl::HostResolverImpl(
   EnsureDnsReloaderInit();
 #endif
 
-  // TODO(szym): Remove when received_dns_config_ is removed, once
-  // http://crbug.com/137914 is resolved.
   {
     DnsConfig dns_config;
     NetworkChangeNotifier::GetDnsConfig(&dns_config);
     received_dns_config_ = dns_config.IsValid();
+    // Conservatively assume local IPv6 is needed when DnsConfig is not valid.
+    use_local_ipv6_ = !dns_config.IsValid() || dns_config.use_local_ipv6;
   }
 
   fallback_to_proctask_ = !ConfigureAsyncDnsNoFallbackFieldTrial();
@@ -2142,7 +2147,7 @@ HostResolverImpl::Key HostResolverImpl::GetEffectiveKeyForRequest(
   AddressFamily effective_address_family = info.address_family();
 
   if (info.address_family() == ADDRESS_FAMILY_UNSPECIFIED) {
-    if (probe_ipv6_support_) {
+    if (probe_ipv6_support_ && !use_local_ipv6_) {
       base::TimeTicks start_time = base::TimeTicks::Now();
       // Google DNS address.
       const uint8 kIPv6Address[] =
@@ -2266,6 +2271,8 @@ void HostResolverImpl::OnDNSChanged() {
 
   // TODO(szym): Remove once http://crbug.com/137914 is resolved.
   received_dns_config_ = dns_config.IsValid();
+  // Conservatively assume local IPv6 is needed when DnsConfig is not valid.
+  use_local_ipv6_ = !dns_config.IsValid() || dns_config.use_local_ipv6;
 
   num_dns_failures_ = 0;
 

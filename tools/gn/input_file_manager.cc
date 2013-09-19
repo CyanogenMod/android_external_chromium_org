@@ -106,13 +106,12 @@ const ParseNode* InputFileManager::SyncLoadFile(
   InputFileData* data = NULL;
   InputFileMap::iterator found = input_files_.find(file_name);
   if (found == input_files_.end()) {
-    base::AutoUnlock unlock(lock_);
-
     // Haven't seen this file yet, start loading right now.
     data = new InputFileData(file_name);
     data->sync_invocation = true;
     input_files_[file_name] = data;
 
+    base::AutoUnlock unlock(lock_);
     if (!LoadFile(origin, build_settings, file_name, &data->file, err))
       return NULL;
   } else {
@@ -195,8 +194,12 @@ bool InputFileManager::LoadFile(const LocationRange& origin,
                                 Err* err) {
   // Do all of this stuff outside the lock. We should not give out file
   // pointers until the read is complete.
-  if (g_scheduler->verbose_logging())
-    g_scheduler->Log("Loading", name.value());
+  if (g_scheduler->verbose_logging()) {
+    std::string logmsg = name.value();
+    if (origin.begin().file())
+      logmsg += " (referenced from " + origin.begin().Describe(false) + ")";
+    g_scheduler->Log("Loading", logmsg);
+  }
 
   // Read.
   base::FilePath primary_path = build_settings->GetFullPath(name);
@@ -239,6 +242,20 @@ bool InputFileManager::LoadFile(const LocationRange& origin,
     data->loaded = true;
     data->tokens.swap(tokens);
     data->parsed_root = root.Pass();
+
+    // Unblock waiters on this event.
+    //
+    // It's somewhat bad to signal this inside the lock. When it's used, it's
+    // lazily created inside the lock. So we need to do the check and signal
+    // inside the lock to avoid race conditions on the lazy creation of the
+    // lock.
+    //
+    // We could avoid this by creating the lock every time, but the lock is
+    // very seldom used and will generally be NULL, so my current theory is that
+    // several signals of a completion event inside a lock is better than
+    // creating about 1000 extra locks (one for each file).
+    if (data->completion_event)
+      data->completion_event->Signal();
 
     callbacks.swap(data->scheduled_callbacks);
   }

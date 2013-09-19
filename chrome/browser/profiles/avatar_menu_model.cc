@@ -21,6 +21,7 @@
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/signin_promo.h"
+#include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -268,9 +269,16 @@ bool AvatarMenuModel::ShouldShowAvatarMenu() {
     return true;
   }
   if (profiles::IsMultipleProfilesEnabled()) {
+#if defined(OS_CHROMEOS)
+    // On ChromeOS the menu will be always visible when it is possible to have
+    // two users logged in at the same time.
+    return ChromeShellDelegate::instance() &&
+           ChromeShellDelegate::instance()->IsMultiProfilesEnabled();
+#else
     return profiles::IsNewProfileManagementEnabled() ||
            (g_browser_process->profile_manager() &&
             g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
+#endif
   }
   return false;
 }
@@ -323,8 +331,8 @@ content::WebContents* AvatarMenuModel::BeginSignOut() {
   cache.SetProfileSigninRequiredAtIndex(index, true);
 
   std::string landing_url = signin::GetLandingURL("close", 1).spec();
-  GURL logout_url(GaiaUrls::GetInstance()->service_logout_url() +
-                  "?continue=" + landing_url);
+  GURL logout_url(GaiaUrls::GetInstance()->service_logout_url().Resolve(
+                  "?continue=" + landing_url));
   if (!logout_override_.empty()) {
     // We're testing...
     landing_url = logout_override_;

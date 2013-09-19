@@ -23,6 +23,7 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/launcher_test_api.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
@@ -31,10 +32,10 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
-#include "ui/base/animation/animation_container_element.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/gfx/animation/animation_container_element.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/label.h"
@@ -52,8 +53,8 @@ namespace internal {
 namespace {
 
 void StepWidgetLayerAnimatorToEnd(views::Widget* widget) {
-  ui::AnimationContainerElement* element =
-      static_cast<ui::AnimationContainerElement*>(
+  gfx::AnimationContainerElement* element =
+      static_cast<gfx::AnimationContainerElement*>(
       widget->GetNativeView()->layer()->GetAnimator());
   element->Step(base::TimeTicks::Now() + base::TimeDelta::FromSeconds(1));
 }
@@ -652,8 +653,8 @@ void ShelfLayoutManagerTest::RunGestureDragTests(gfx::Vector2d delta) {
   EXPECT_EQ(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS, shelf->auto_hide_behavior());
 }
 
-// Fails on Mac only.  Need to be implemented.  http://crbug.com/111279.
-#if defined(OS_MACOSX) || defined(OS_WIN)
+// Need to be implemented.  http://crbug.com/111279.
+#if defined(OS_WIN)
 #define MAYBE_SetVisible DISABLED_SetVisible
 #else
 #define MAYBE_SetVisible SetVisible
@@ -784,7 +785,7 @@ TEST_F(ShelfLayoutManagerTest, LauncherUpdatedWhenStatusAreaChangesSize) {
   shelf_widget->status_area_widget()->SetBounds(
       gfx::Rect(0, 0, 200, 200));
   EXPECT_EQ(200, shelf_widget->GetContentsView()->width() -
-            launcher->GetLauncherViewForTest()->width());
+            test::LauncherTestAPI(launcher).launcher_view()->width());
 }
 
 
@@ -1833,6 +1834,46 @@ TEST_F(ShelfLayoutManagerTest, ShelfBackgroundColorAutoHide) {
   EXPECT_EQ(SHELF_BACKGROUND_OVERLAP, GetShelfWidget()->GetBackgroundType());
   w1->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
   EXPECT_EQ(SHELF_BACKGROUND_OVERLAP, GetShelfWidget()->GetBackgroundType());
+}
+
+#if defined(OS_CHROMEOS)
+#define MAYBE_StatusAreaHitBoxCoversEdge StatusAreaHitBoxCoversEdge
+#else
+#define MAYBE_StatusAreaHitBoxCoversEdge DISABLED_StatusAreaHitBoxCoversEdge
+#endif
+
+// Verify the hit bounds of the status area extend to the edge of the shelf.
+TEST_F(ShelfLayoutManagerTest, MAYBE_StatusAreaHitBoxCoversEdge) {
+  UpdateDisplay("400x400");
+  ShelfLayoutManager* shelf = GetShelfLayoutManager();
+  StatusAreaWidget* status_area_widget =
+      Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget();
+  aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
+  generator.MoveMouseTo(399,399);
+
+  // Test bottom right pixel for bottom alignment.
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_TRUE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
+
+  // Test bottom right pixel for right alignment.
+  shelf->SetAlignment(SHELF_ALIGNMENT_RIGHT);
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_TRUE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
+
+  // Test bottom left pixel for left alignment.
+  generator.MoveMouseTo(0, 399);
+  shelf->SetAlignment(SHELF_ALIGNMENT_LEFT);
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_TRUE(status_area_widget->IsMessageBubbleShown());
+  generator.ClickLeftButton();
+  EXPECT_FALSE(status_area_widget->IsMessageBubbleShown());
 }
 
 }  // namespace internal

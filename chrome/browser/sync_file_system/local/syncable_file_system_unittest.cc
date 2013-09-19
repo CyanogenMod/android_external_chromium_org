@@ -8,6 +8,7 @@
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
@@ -38,10 +39,13 @@ class SyncableFileSystemTest : public testing::Test {
         weak_factory_(this) {}
 
   virtual void SetUp() {
+    ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
+
     file_system_.SetUp();
 
     sync_context_ =
-        new LocalFileSyncContext(base::MessageLoopProxy::current().get(),
+        new LocalFileSyncContext(data_dir_.path(),
+                                 base::MessageLoopProxy::current().get(),
                                  base::MessageLoopProxy::current().get());
     ASSERT_EQ(
         sync_file_system::SYNC_STATUS_OK,
@@ -93,7 +97,7 @@ class SyncableFileSystemTest : public testing::Test {
   ScopedEnableSyncFSDirectoryOperation enable_directory_operation_;
 
   base::ScopedTempDir data_dir_;
-  base::MessageLoop message_loop_;
+  content::TestBrowserThreadBundle thread_bundle_;
   CannedSyncableFileSystem file_system_;
 
  private:

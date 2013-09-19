@@ -303,6 +303,10 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     [suggestContainer_ showInputField:extraText withIcon:extraIcon];
   }
   [view_ setShouldHighlightOnHover:showSuggestions];
+  if (showSuggestions)
+    [view_ setClickTarget:suggestButton_];
+  else
+    [view_ setClickTarget:nil];
   [view_ setHidden:!delegate_->SectionIsActive(section_)];
 }
 
@@ -379,7 +383,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   string16 fieldValue = base::SysNSStringToUTF16([textfield fieldValue]);
 
   // Get the frame rectangle for the designated field, in screen coordinates.
-  NSRect textFrameInScreen = [field convertRect:[field frame] toView:nil];
+  NSRect textFrameInScreen = [field convertRect:[field bounds] toView:nil];
   textFrameInScreen.origin =
       [[field window] convertBaseToScreen:textFrameInScreen.origin];
 

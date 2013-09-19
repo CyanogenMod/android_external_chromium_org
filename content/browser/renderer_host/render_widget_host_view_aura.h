@@ -18,6 +18,7 @@
 #include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/aura/image_transport_factory.h"
+#include "content/browser/renderer_host/frame_memory_manager.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -59,9 +60,10 @@ namespace content {
 class MemoryHolder;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
+class ResizeLock;
 
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
-class RenderWidgetHostViewAura
+class CONTENT_EXPORT RenderWidgetHostViewAura
     : public RenderWidgetHostViewBase,
       public ui::CompositorObserver,
       public ui::TextInputClient,
@@ -74,6 +76,7 @@ class RenderWidgetHostViewAura
       public aura::client::CursorClientObserver,
       public ImageTransportFactoryObserver,
       public BrowserAccessibilityDelegate,
+      public FrameContainer,
       public base::SupportsWeakPtr<RenderWidgetHostViewAura> {
  public:
   // Used to notify whenever the paint-content of the view changes.
@@ -326,6 +329,9 @@ class RenderWidgetHostViewAura
   virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
                                      const gfx::Point& new_origin) OVERRIDE;
 
+  // FrameContainer implementation:
+  virtual void ReleaseCurrentFrame() OVERRIDE;
+
   bool CanCopyToBitmap() const;
 
 #if defined(OS_WIN)
@@ -337,25 +343,21 @@ class RenderWidgetHostViewAura
 
  protected:
   friend class RenderWidgetHostView;
+  virtual ~RenderWidgetHostViewAura();
 
-  // Should construct only via RenderWidgetHostView::CreateViewForWidget.
+  // Should be constructed via RenderWidgetHostView::CreateViewForWidget.
   explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
 
   RenderWidgetHostViewFrameSubscriber* frame_subscriber() const {
     return frame_subscriber_.get();
   }
 
- private:
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
-  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
+  virtual bool ShouldCreateResizeLock();
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock);
 
-  class WindowObserver;
-  friend class WindowObserver;
-#if defined(OS_WIN)
-  class TransientWindowObserver;
-  friend class TransientWindowObserver;
-#endif
+  // Exposed for tests.
+  aura::Window* window() { return window_; }
+  gfx::Size current_frame_size() const { return current_frame_size_; }
 
   // Overridden from ui::CompositorObserver:
   virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE;
@@ -368,6 +370,21 @@ class RenderWidgetHostViewAura
   virtual void OnUpdateVSyncParameters(ui::Compositor* compositor,
                                        base::TimeTicks timebase,
                                        base::TimeDelta interval) OVERRIDE;
+
+ private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           SkippedDelegatedFrames);
+
+  class WindowObserver;
+  friend class WindowObserver;
+#if defined(OS_WIN)
+  class TransientWindowObserver;
+  friend class TransientWindowObserver;
+#endif
 
   // Overridden from ImageTransportFactoryObserver:
   virtual void OnLostResources() OVERRIDE;
@@ -383,8 +400,6 @@ class RenderWidgetHostViewAura
       int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
   virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
   virtual void FatalAccessibilityTreeError() OVERRIDE;
-
-  virtual ~RenderWidgetHostViewAura();
 
   void UpdateCursorIfOverSelf();
   bool ShouldSkipFrame(gfx::Size size_in_dip) const;
@@ -506,7 +521,9 @@ class RenderWidgetHostViewAura
       scoped_ptr<cc::SoftwareFrameData> frame_data,
       float frame_device_scale_factor,
       const ui::LatencyInfo& latency_info);
-  void SendSoftwareFrameAck(uint32 output_surface_id,
+  void SendSoftwareFrameAck(uint32 output_surface_id);
+  void SendReclaimSoftwareFrames();
+  void ReleaseSoftwareFrame(uint32 output_surface_id,
                             unsigned software_frame_id);
 
   void DidReceiveFrameFromRenderer();
@@ -598,6 +615,10 @@ class RenderWidgetHostViewAura
   // Pending damage from previous frames that we skipped.
   SkRegion skipped_damage_;
 
+  // True after a delegated frame has been skipped, until a frame is not
+  // skipped.
+  bool skipped_frames_;
+
   // The size of the last frame that was swapped (even if we skipped it).
   // Used to determine when the skipped_damage_ needs to be reset due to
   // size changes between front- and backbuffer.
@@ -628,9 +649,6 @@ class RenderWidgetHostViewAura
   // This is used to signal to turn off the external texture as soon as the
   // software backing store is updated.
   bool accelerated_compositing_state_changed_;
-
-  // Used to prevent further resizes while a resize is pending.
-  class ResizeLock;
 
   // This lock is the one waiting for a frame of the right size to come back
   // from the renderer/GPU process. It is set from the moment the aura window
@@ -703,6 +721,14 @@ class RenderWidgetHostViewAura
   TouchEditingClient* touch_editing_client_;
 
   ui::LatencyInfo software_latency_info_;
+
+  struct ReleasedFrameInfo {
+    ReleasedFrameInfo(uint32 output_id, unsigned software_frame_id)
+        : output_surface_id(output_id), frame_id(software_frame_id) {}
+    uint32 output_surface_id;
+    unsigned frame_id;
+  };
+  std::vector<ReleasedFrameInfo> released_software_frames_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };

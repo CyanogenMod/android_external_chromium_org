@@ -8,6 +8,10 @@
 #include <InputScope.h>
 #include <OleCtl.h>
 
+#include <algorithm>
+
+#include <algorithm>
+
 #include "base/win/scoped_variant.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/win/tsf_input_scope.h"

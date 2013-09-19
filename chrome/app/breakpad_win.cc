@@ -13,12 +13,14 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/atomicops.h"
 #include "base/basictypes.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/safe_sprintf.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -103,10 +105,6 @@ typedef NTSTATUS (WINAPI* NtTerminateProcessPtr)(HANDLE ProcessHandle,
 char* g_real_terminate_process_stub = NULL;
 
 static size_t g_client_id_offset = 0;
-static size_t g_printer_info_offset = 0;
-static size_t g_num_of_views_offset = 0;
-static size_t g_num_switches_offset = 0;
-static size_t g_switches_offset = 0;
 static size_t g_dynamic_keys_offset = 0;
 typedef std::map<std::wstring, google_breakpad::CustomInfoEntry*>
     DynamicEntriesMap;
@@ -119,55 +117,77 @@ const size_t kMaxDynamicEntries = 256;
 // Maximum length for plugin path to include in plugin crash reports.
 const size_t kMaxPluginPathLength = 256;
 
-// These values track the browser crash dump registry key and pre-computed
-// registry value name, which we use as a "smoke-signal" for counting dumps.
-static HKEY g_browser_crash_dump_regkey = NULL;
-static const wchar_t kBrowserCrashDumpValueFormatStr[] = L"%08x-%08x";
-static const int kBrowserCrashDumpValueLength = 17;
-static wchar_t g_browser_crash_dump_value[kBrowserCrashDumpValueLength+1] = {0};
+// The value name prefix will be of the form {chrome-version}-{pid}-{timestamp}
+// (i.e., "#####.#####.#####.#####-########-########") which easily fits into a
+// 63 character buffer.
+const char kBrowserCrashDumpPrefixTemplate[] = "%s-%08x-%08x";
+const size_t kBrowserCrashDumpPrefixLength = 63;
+char g_browser_crash_dump_prefix[kBrowserCrashDumpPrefixLength + 1] = {};
+
+// These registry key to which we'll write a value for each crash dump attempt.
+HKEY g_browser_crash_dump_regkey = NULL;
+
+// A atomic counter to make each crash dump value name unique.
+base::subtle::Atomic32 g_browser_crash_dump_count = 0;
 
 void InitBrowserCrashDumpsRegKey() {
   DCHECK(g_browser_crash_dump_regkey == NULL);
 
-  base::string16 key_str(chrome::kBrowserCrashDumpAttemptsRegistryPath);
-  key_str += L"\\";
-  key_str += UTF8ToWide(chrome::kChromeVersion);
-
   base::win::RegKey regkey;
   if (regkey.Create(HKEY_CURRENT_USER,
-                    key_str.c_str(),
+                    chrome::kBrowserCrashDumpAttemptsRegistryPath,
                     KEY_ALL_ACCESS) != ERROR_SUCCESS) {
     return;
   }
 
-  g_browser_crash_dump_regkey = regkey.Take();
-
-  // We use the current process id and the curren tick count as a (hopefully)
+  // We use the current process id and the current tick count as a (hopefully)
   // unique combination for the crash dump value. There's a small chance that
   // across a reboot we might have a crash dump signal written, and the next
   // browser process might have the same process id and tick count, but crash
   // before consuming the signal (overwriting the signal with an identical one).
   // For now, we're willing to live with that risk.
-  int length = swprintf(g_browser_crash_dump_value,
-                        arraysize(g_browser_crash_dump_value),
-                        kBrowserCrashDumpValueFormatStr,
-                        ::GetCurrentProcessId(),
-                        ::GetTickCount());
-  DCHECK_EQ(kBrowserCrashDumpValueLength, length);
+  int length = base::strings::SafeSPrintf(g_browser_crash_dump_prefix,
+                                          kBrowserCrashDumpPrefixTemplate,
+                                          chrome::kChromeVersion,
+                                          ::GetCurrentProcessId(),
+                                          ::GetTickCount());
+  if (length <= 0) {
+    NOTREACHED();
+    g_browser_crash_dump_prefix[0] = '\0';
+    return;
+  }
+
+  // Hold the registry key in a global for update on crash dump.
+  g_browser_crash_dump_regkey = regkey.Take();
 }
 
-void SendSmokeSignalForCrashDump() {
-  if (g_browser_crash_dump_regkey != NULL) {
-    base::win::RegKey regkey(g_browser_crash_dump_regkey);
-    regkey.WriteValue(g_browser_crash_dump_value, 1);
-    g_browser_crash_dump_regkey = NULL;
+void RecordCrashDumpAttempt(bool is_real_crash) {
+  // If we're not a browser (or the registry is unavailable to us for some
+  // reason) then there's nothing to do.
+  if (g_browser_crash_dump_regkey == NULL)
+    return;
+
+  // Generate the final value name we'll use (appends the crash number to the
+  // base value name).
+  const size_t kMaxValueSize = 2 * kBrowserCrashDumpPrefixLength;
+  char value_name[kMaxValueSize + 1] = {};
+  int length = base::strings::SafeSPrintf(
+      value_name,
+      "%s-%x",
+      g_browser_crash_dump_prefix,
+      base::subtle::NoBarrier_AtomicIncrement(&g_browser_crash_dump_count, 1));
+
+  if (length > 0) {
+    DWORD value_dword = is_real_crash ? 1 : 0;
+    ::RegSetValueExA(g_browser_crash_dump_regkey, value_name, 0, REG_DWORD,
+                     reinterpret_cast<BYTE*>(&value_dword),
+                     sizeof(value_dword));
   }
 }
 
 // Dumps the current process memory.
 extern "C" void __declspec(dllexport) __cdecl DumpProcess() {
   if (g_breakpad) {
-    SendSmokeSignalForCrashDump();
     g_breakpad->WriteMinidump();
   }
 }
@@ -175,7 +195,6 @@ extern "C" void __declspec(dllexport) __cdecl DumpProcess() {
 // Used for dumping a process state when there is no crash.
 extern "C" void __declspec(dllexport) __cdecl DumpProcessWithoutCrash() {
   if (g_dumphandler_no_crash) {
-    SendSmokeSignalForCrashDump();
     g_dumphandler_no_crash->WriteMinidump();
   }
 }
@@ -222,7 +241,6 @@ InjectDumpForHangDebugging(HANDLE process) {
 extern "C" void DumpProcessAbnormalSignature() {
   if (!g_breakpad)
     return;
-  SendSmokeSignalForCrashDump();
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"unusual-crash-signature", L""));
   g_breakpad->WriteMinidump();
@@ -244,63 +262,6 @@ static void SetIntegerValue(size_t offset, int value) {
   base::wcslcpy((*g_custom_entries)[offset].value,
                 base::StringPrintf(L"%d", value).c_str(),
                 google_breakpad::CustomInfoEntry::kValueMaxLength);
-}
-
-bool IsBoringCommandLineSwitch(const std::wstring& flag) {
-  return StartsWith(flag, L"--channel=", true) ||
-
-         // No point to including this since we already have a ptype field.
-         StartsWith(flag, L"--type=", true) ||
-
-         // Not particularly interesting
-         StartsWith(flag, L"--flash-broker=", true) ||
-
-         // Just about everything has this, don't bother.
-         StartsWith(flag, L"/prefetch:", true) ||
-
-         // We handle the plugin path separately since it is usually too big
-         // to fit in the switches (limited to 63 characters).
-         StartsWith(flag, L"--plugin-path=", true) ||
-
-         // This is too big so we end up truncating it anyway.
-         StartsWith(flag, L"--force-fieldtest=", true) ||
-
-         // These surround the flags that were added by about:flags, it lets
-         // you distinguish which flags were added manually via the command
-         // line versus those added through about:flags. For the most part
-         // we don't care how an option was enabled, so we strip these.
-         // (If you need to know can always look at the PEB).
-         flag == L"--flag-switches-begin" ||
-         flag == L"--flag-switches-end";
-}
-
-// Note that this is suffixed with "2" due to a parameter change that was made
-// to the predecessor "SetCommandLine()". If the signature changes again, use
-// a new name.
-extern "C" void __declspec(dllexport) __cdecl SetCommandLine2(
-    const wchar_t** argv, size_t argc) {
-  if (!g_custom_entries)
-    return;
-
-  // Copy up to the kMaxSwitches arguments into the custom entries array. Skip
-  // past the first argument, as it is just the executable path.
-  size_t argv_i = 1;
-  size_t num_added = 0;
-
-  for (; argv_i < argc && num_added < kMaxSwitches; ++argv_i) {
-    // Don't bother including boring command line switches in crash reports.
-    if (IsBoringCommandLineSwitch(argv[argv_i]))
-      continue;
-
-    base::wcslcpy((*g_custom_entries)[g_switches_offset + num_added].value,
-                  argv[argv_i],
-                  google_breakpad::CustomInfoEntry::kValueMaxLength);
-    num_added++;
-  }
-
-  // Make note of the total number of switches. This is useful in case we have
-  // truncated at kMaxSwitches, to see how many were unaccounted for.
-  SetIntegerValue(g_num_switches_offset, static_cast<int>(argc) - 1);
 }
 
 // Appends the plugin path to |g_custom_entries|.
@@ -437,16 +398,6 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
     g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
         L"special", UTF16ToWide(special_build).c_str()));
 
-  // Add empty values for the prn_info-*. We'll put the actual values when we
-  // collect them at this location.
-  g_printer_info_offset = g_custom_entries->size();
-  // one-based index for the name suffix.
-  for (size_t i = 1; i <= kMaxReportedPrinterRecords; ++i) {
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(
-            base::StringPrintf(L"prn-info-%d", i).c_str(), L""));
-  }
-
   // Read the id from registry. If reporting has never been enabled
   // the result will be empty string. Its OK since when user enables reporting
   // we will insert the new value at this location.
@@ -456,42 +407,11 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"guid", guid.c_str()));
 
-  // Add empty values for the command line switches. We will fill them with
-  // actual values as part of SetCommandLine2().
-  g_num_switches_offset = g_custom_entries->size();
-  g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"num-switches", L""));
-
-  g_switches_offset = g_custom_entries->size();
-  // one-based index for the name suffix.
-  for (int i = 1; i <= kMaxSwitches; ++i) {
-    g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-        base::StringPrintf(L"switch-%i", i).c_str(), L""));
-  }
-
-  // Fill in the command line arguments using CommandLine::ForCurrentProcess().
-  // The browser process may call SetCommandLine2() again later on with a
-  // command line that has been augmented with the about:flags experiments.
-  std::vector<const wchar_t*> switches;
-  StringVectorToCStringVector(
-      CommandLine::ForCurrentProcess()->argv(), &switches);
-  SetCommandLine2(&switches[0], switches.size());
-
-  if (type == L"renderer" || type == L"plugin" || type == L"ppapi" ||
-      type == L"gpu-process") {
-    g_num_of_views_offset = g_custom_entries->size();
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(L"num-views", L""));
-
-    if (type == L"plugin" || type == L"ppapi") {
-      std::wstring plugin_path =
-          CommandLine::ForCurrentProcess()->GetSwitchValueNative("plugin-path");
-      if (!plugin_path.empty())
-        SetPluginPath(plugin_path);
-    }
-  } else {
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(L"num-views", L"N/A"));
+  if (type == L"plugin" || type == L"ppapi") {
+    std::wstring plugin_path =
+        CommandLine::ForCurrentProcess()->GetSwitchValueNative("plugin-path");
+    if (!plugin_path.empty())
+      SetPluginPath(plugin_path);
   }
 
   // Check whether configuration management controls crash reporting.
@@ -588,6 +508,7 @@ volatile LONG handling_exception = 0;
 // to implement it.
 bool FilterCallbackWhenNoCrash(
     void*, EXCEPTION_POINTERS*, MDRawAssertionInfo*) {
+  RecordCrashDumpAttempt(false);
   return true;
 }
 
@@ -601,6 +522,7 @@ bool FilterCallback(void*, EXCEPTION_POINTERS*, MDRawAssertionInfo*) {
   if (::InterlockedCompareExchange(&handling_exception, 1, 0) == 1) {
     ::Sleep(INFINITE);
   }
+  RecordCrashDumpAttempt(true);
   return true;
 }
 
@@ -638,26 +560,6 @@ extern "C" void __declspec(dllexport) __cdecl SetClientId(
   base::wcslcpy((*g_custom_entries)[g_client_id_offset].value,
                 client_id,
                 google_breakpad::CustomInfoEntry::kValueMaxLength);
-}
-
-extern "C" void __declspec(dllexport) __cdecl SetPrinterInfo(
-    const wchar_t* printer_info) {
-  if (!g_custom_entries)
-    return;
-  std::vector<string16> info;
-  base::SplitString(printer_info, L';', &info);
-  DCHECK_LE(info.size(), kMaxReportedPrinterRecords);
-  info.resize(kMaxReportedPrinterRecords);
-  for (size_t i = 0; i < info.size(); ++i) {
-    base::wcslcpy((*g_custom_entries)[g_printer_info_offset + i].value,
-                info[i].c_str(),
-                google_breakpad::CustomInfoEntry::kValueMaxLength);
-  }
-}
-
-extern "C" void __declspec(dllexport) __cdecl SetNumberOfViews(
-    int number_of_views) {
-  SetIntegerValue(g_num_of_views_offset, number_of_views);
 }
 
 // NOTE: This function is used by SyzyASAN to annotate crash reports. If you
@@ -773,7 +675,6 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
 extern "C" int __declspec(dllexport) CrashForException(
     EXCEPTION_POINTERS* info) {
   if (g_breakpad) {
-    SendSmokeSignalForCrashDump();
     g_breakpad->WriteMinidumpForException(info);
     // Patched stub exists based on conditions (See InitCrashReporter).
     // As a side note this function also gets called from

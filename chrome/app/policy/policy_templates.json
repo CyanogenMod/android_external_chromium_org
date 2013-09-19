@@ -101,9 +101,10 @@
 #   'can_be_recommended' can be set to True to include that policy in the
 #   recommended policies templates. This only affects the template generation;
 #   all policies can be at the recommended level. The default is False.
-#   'max_size' specifies the maximal size of the external data that a policy can
-#   reference, in bytes. This annotation is compulsory for policies of type
-#   'external'. It is ignored for all other policy types.
+#
+#   The 'max_size' key is used to specify the maximal size of the external data
+#   that a policy can reference, in bytes. This annotation is compulsory for
+#   policies of type 'external'. It is ignored for all other policy types.
 #
 #   The 'future' key is used to indicate that a policy isn't yet ready for
 #   usage. It defaults to False, and currently affects the generated policy
@@ -117,7 +118,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 242
+#   For your editing convenience: highest ID currently used: 243
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -3733,6 +3734,24 @@
       'desc': ''' The types of connections that are allowed to use for OS updates. OS updates potentially put heavy strain on the connection due to their size and may incur additional cost. Therefore, they are by default not enabled for connection types that are considered expensive, which include WiMax, Bluetooth and Cellular at the moment.
 
       The recognized connection type identifiers are "ethernet", "wifi", "wimax", "bluetooth" and "cellular".''',
+    },
+    {
+      'name': 'DeviceUpdateHttpDownloadsEnabled',
+      'type': 'main',
+      'schema': {
+        'type': 'boolean',
+      },
+      'supported_on': ['chrome_os:29-'],
+      'device_only': True,
+      'features': {
+        'dynamic_refresh': True,
+      },
+      'example_value': True,
+      'id': 243,
+      'caption': '''Allow autoupdate downloads via HTTP''',
+      'desc': '''Auto-update payloads on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> can be downloaded via HTTP instead of HTTPS. This allowes transparent HTTP caching of HTTP downloads.
+
+      If this policy is set to true, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will attempt to download auto-update payloads via HTTP. If the policy is set to false or not set, HTTPS will be used for downloading auto-update payloads.''',
     },
     {
       'name': 'DeviceLocalAccounts',

@@ -746,6 +746,12 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Aura.CreatedGpuBrowserCompositor" enum="CompositorType">
+  <summary>
+    Whether the browser compositor uses GPU or the software renderer.
+  </summary>
+</histogram>
+
 <histogram name="Autocheckout.Bubble" enum="AutocheckoutBubble">
   <obsolete>
     Deprecated as of 8/2013.
@@ -1223,7 +1229,23 @@ other types of suffix sets.
 
 <histogram name="Chrome.BrowserCrashDumpAttempts">
   <summary>
-    Number of time the browser processes attempts to generate a crash dump.
+    The total number of times the browser process has attempted to generate a
+    crash dump. This should be the sum of Chrome.BrowserDumpsWithCrash and
+    Chrome.BrowserDumpsWithNoCrash.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.BrowserDumpsWithCrash">
+  <summary>
+    The number of times the browser process has attempted to generate a crash
+    dump because of an actual browser crash.
+  </summary>
+</histogram>
+
+<histogram name="Chrome.BrowserDumpsWithNoCrash">
+  <summary>
+    The number of times the browser process has attempted to generate a crash
+    dump in a non-crashing (i.e., reporting only) context.
   </summary>
 </histogram>
 
@@ -5736,6 +5758,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.RTCVideoDecoderError" enum="PepperVideoDecodeError">
+  <summary>Counts of video decode errors reported to RTCVideoDecoder.</summary>
+</histogram>
+
+<histogram name="Media.RTCVideoDecoderInitDecodeStatus" enum="BooleanSuccess">
+  <summary>Results of attempts to RTCVideoDecoder::InitDecode().</summary>
+</histogram>
+
 <histogram name="Media.TimeToPipelineStarted" units="ms">
   <summary>
     Time in milliseconds from HTML5 media pipeline creation to playing event.
@@ -6197,6 +6227,13 @@ other types of suffix sets.
     Memory notifications delivered through system callbacks to Chrome while in
     the foreground - we count LowMemory notification vs particular levels of
     TrimMemory foreground notification.
+  </summary>
+</histogram>
+
+<histogram name="Mist.SwitchResult" enum="MistSwitchResult">
+  <summary>
+    The result (e.g. success or the type of failure) of a modem interface switch
+    operation performed by mist on Chrome OS.
   </summary>
 </histogram>
 
@@ -10184,6 +10221,74 @@ other types of suffix sets.
   <summary>The pane selected when the user switches panes in the NTP.</summary>
 </histogram>
 
+<histogram name="OAuth2Login.GetOAuth2AccessTokenFailure" enum="GaiaAuthError">
+  <summary>
+    Failure reason of final OAuth2 access token retreival call during ChromeOS
+    login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.GetOAuth2AccessTokenRetry" enum="GaiaAuthError">
+  <summary>
+    Retry reason of failed OAuth2 access token retreival call call during
+    ChromeOS login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.MergeSessionFailure" enum="GaiaAuthError">
+  <summary>
+    Failure reason of final MergeSession call during ChromeOS login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.MergeSessionRetry" enum="GaiaAuthError">
+  <summary>
+    Retry reason of failed MergeSession call during ChromeOS login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.OAuthLoginGaiaCredFailure" enum="GaiaAuthError">
+  <summary>
+    Failure reason of final OAuthLogin (with SID+LSID) call during ChromeOS
+    login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.OAuthLoginGaiaCredRetry" enum="GaiaAuthError">
+  <summary>
+    Retry reason of failed OAuthLogin (with SID+LSID) call during ChromeOS
+    login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.OAuthLoginUberTokenFailure" enum="GaiaAuthError">
+  <summary>
+    Failure reason of final OAuthLogin (with uber token) call during ChromeOS
+    login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.OAuthLoginUberTokenRetry" enum="GaiaAuthError">
+  <summary>
+    Retry reason of failed OAuthLogin (with uber token) call during ChromeOS
+    login.
+  </summary>
+</histogram>
+
+<histogram name="OAuth2Login.SessionRestore" enum="GaiaSessionRestoreOutcome">
+  <summary>Outcome of ChromeOS GAIA cookie session restore process.</summary>
+</histogram>
+
+<histogram name="OAuth2Login.SessionRestoreTimeToFailure" units="milliseconds">
+  <summary>How long it takes for the session restore to fail.</summary>
+</histogram>
+
+<histogram name="OAuth2Login.SessionRestoreTimeToSuccess" units="milliseconds">
+  <summary>
+    How long it takes for the session restore to finish succeessfully.
+  </summary>
+</histogram>
+
 <histogram name="OfflinePolicy.SuccessfulResourceLoadPercentage" units="%">
   <summary>
     When a page is loaded in offline mode, the percentage of resources on that
@@ -10283,6 +10388,22 @@ other types of suffix sets.
   <summary>
     Counts about the number of suggest requests the omnibox sent, invalidated,
     and replies received.
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.ZeroSuggest.MostVisitedResultsCounterfactual">
+  <summary>
+    The number of most visited suggestions returned when ZeroSuggest would have
+    triggered.  The suggestions appear when the user has focused but not
+    modified the omnibox.
+  </summary>
+</histogram>
+
+<histogram name="Omnibox.ZeroSuggestRequests" enum="OmniboxZeroSuggestRequests">
+  <summary>
+    Counts about the number of zero suggest requests (requests for suggestions
+    when the user has focused but not modified the omnibox) the omnibox sent,
+    invalidated, and replies received.
   </summary>
 </histogram>
 
@@ -10439,10 +10560,27 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="PasswordGeneration.UploadStarted" enum="Boolean">
+  <summary>
+    The number of times that we try to upload a form that we believe should
+    trigger password generation. False means that something about the form would
+    not allow us to try upload (not an Autofillable field, uploading disabled,
+    Autofill servers in backoff, etc.). True does not mean that the upload
+    actually completed successfully, just that it was started.
+  </summary>
+</histogram>
+
 <histogram name="PasswordManager.BlacklistedSites">
   <summary>
     The total number of sites that the user has blacklisted. Recorded by
     iterating over stored passwords once per run of Chrome.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.Enabled" enum="BooleanEnabled">
+  <summary>
+    Indicates whether the password manager is enabled when a tab is opened. This
+    includes prerendered tabs.
   </summary>
 </histogram>
 
@@ -10459,6 +10597,27 @@ other types of suffix sets.
   <summary>
     Breakdown of cases where a password is submitted, but we don't even try and
     save it. Recorded for every password form submit.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.SavePasswordPromptDisappearedQuickly"
+    enum="Boolean">
+  <summary>
+    Indicates whether the save password prompt disappeared in less than one
+    second. This most likely indicates that the prompt was dismissed
+    automatically, e.g. due to a page navigation, before the user was able to
+    respond to the infobar.
+  </summary>
+</histogram>
+
+<histogram name="PasswordManager.SavePasswordPromptDisplayed" enum="Boolean">
+  <summary>Indicates whether the save password prompt was displayed.</summary>
+</histogram>
+
+<histogram name="PasswordManager.SavePasswordPromptResponse"
+    enum="SavePasswordPromptResponseType">
+  <summary>
+    Breakdown of which response the user selected from the save password prompt.
   </summary>
 </histogram>
 
@@ -16744,7 +16903,7 @@ other types of suffix sets.
   </summary>
 </histogram>
 
-<histogram name="Tab.RestoreResult" enum="BooleanSuccess">
+<histogram name="Tab.RestoreResult" enum="TabRestoreResult">
   <summary>
     When the browser restores a tab, whether the load was successful. Loads can
     fail for instance when there is no connectivity.
@@ -16815,6 +16974,48 @@ other types of suffix sets.
   <summary>
     Age (time since the last display in previous sessions) of the foreground tab
     being restored on the browser cold start.
+  </summary>
+</histogram>
+
+<histogram name="Tabs.SpeculativeRestoreApplicability"
+    enum="SpeculativeRestoreApplicability">
+  <summary>
+    Applicability of speculative tab restore, recorded every time a tab is
+    switched. This allows to estimate the fraction of tab restores experienced
+    on mobile that can be mitigated using speculative restore. Options higher in
+    the enum take precedence over the lower ones (i.e. low-memory tablet will be
+    accounted as tablet).
+  </summary>
+</histogram>
+
+<histogram name="Tabs.SpeculativeRestorePredictionAccuracy.SideSwipe"
+    enum="SpeculativeRestorePredictionAccuracy">
+  <summary>
+    Accuracy of the tab switch predictions made when the user begins the side
+    swipe gesture.
+  </summary>
+</histogram>
+
+<histogram name="Tabs.SpeculativeRestorePredictionAccuracy.TabSwitcher"
+    enum="SpeculativeRestorePredictionAccuracy">
+  <summary>
+    Accuracy of the tab switch predictions made when the user enters the tab
+    switcher.
+  </summary>
+</histogram>
+
+<histogram name="Tabs.SpeculativeRestoreTimeAhead.SideSwipe" units="ms">
+  <summary>
+    Time between starting the speculative load and actual tab switch for correct
+    speculative load predictions made when the user begins the side swipe
+    gesture.
+  </summary>
+</histogram>
+
+<histogram name="Tabs.SpeculativeRestoreTimeAhead.TabSwitcher" units="ms">
+  <summary>
+    Time between starting the speculative load and actual tab switch for correct
+    speculative load predictions made when the user enters the tab switcher.
   </summary>
 </histogram>
 
@@ -17186,6 +17387,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="UMA.ProtoGzipped" enum="Boolean">
+  <obsolete>
+    Deprecated as of Sep, 2013. Gzipping protobufs is now the default.
+  </obsolete>
   <summary>Was the UMA protobuf uploaded earlier compressed or not.</summary>
 </histogram>
 
@@ -17321,6 +17525,46 @@ other types of suffix sets.
     Measures the time elapsed on Chrome OS between when the X server has been
     terminated from a previous logout and when Chrome is started again to show
     the login screen.
+  </summary>
+</histogram>
+
+<histogram name="UserImage.ChangeChoice" enum="ChromeOSUserImageId">
+  <summary>
+    Distribution of the default images that users choose in Change Picture
+    dialog (Chrome OS). One sample is taken each time the user changes picture.
+  </summary>
+</histogram>
+
+<histogram name="UserImage.FirstTimeChoice" enum="ChromeOSUserImageId">
+  <summary>
+    Distribution of the default images chosen on user image screen during
+    out-of-the-box experience (Chrome OS). One sample is taken each time the
+    user confirms the choice by clicking OK button.
+  </summary>
+</histogram>
+
+<histogram name="UserImage.LoggedIn" enum="ChromeOSUserImageId">
+  <summary>
+    Distribution of the default images that existing users login with (Chrome
+    OS). One sample is taken each time the user logs in.
+  </summary>
+</histogram>
+
+<histogram name="UserImage.ProfileDownloadResult"
+    enum="ProfileImageDownloadResult">
+  <summary>
+    Profile image download result for UserManager (either on behalf of the
+    Change Picture prefs page, OOBE or scheduled refresh after user login).
+  </summary>
+</histogram>
+
+<histogram name="UserImage.ProfileDownloadTime" units="milliseconds">
+  <summary>The time it took to download user's profile picture.</summary>
+</histogram>
+
+<histogram name="UserImage.ScreenIsShownTime" units="milliseconds">
+  <summary>
+    Time histogram of the &quot;Choose Picture&quot; OOBE screen display delay.
   </summary>
 </histogram>
 
@@ -17798,6 +18042,29 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebCore.ResourceFetcher.ActionUponResourceRequest"
+    enum="ActionUponResourceRequest">
+  <summary>
+    The resulting action (e.g. load resource, use resource from in-memory
+    cache...) upon a resource request.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.ResourceFetcher.ResourceHasClientUponCacheHit"
+    enum="ResourceHasClient">
+  <summary>
+    Whether the resource in the cache is being used by at least one client (live
+    resource) or not (dead resource) upon a cache hit.
+  </summary>
+</histogram>
+
+<histogram name="WebCore.ResourceFetcher.ResourceTypeUponCacheHit"
+    enum="ResourceType">
+  <summary>
+    The type of the resource (e.g. image, script...) upon a cache hit.
+  </summary>
+</histogram>
+
 <histogram name="WebCore.V8DOMWindowShell.createContext.IsolatedWorld"
     units="milliseconds">
   <summary>
@@ -18204,6 +18471,12 @@ other types of suffix sets.
   <int value="2" label="ScrolledMainFrameWithUnacceleratedFixedRootBackground"/>
 </enum>
 
+<enum name="ActionUponResourceRequest" type="int">
+  <int value="0" label="Load resource"/>
+  <int value="1" label="Revalidate resource"/>
+  <int value="2" label="Use resource from cache"/>
+</enum>
+
 <enum name="AndroidEvictionReason" type="int">
   <int value="0" label="TabUnusedTooLong"/>
   <int value="1" label="TabUnusedInSession"/>
@@ -18313,6 +18586,7 @@ other types of suffix sets.
   <int value="9" label="READ_PRIMARY_SUFFIX"/>
   <int value="10" label="BAD_ADDRESS"/>
   <int value="11" label="NO_NAMESERVERS"/>
+  <int value="12" label="UNHANDLED_OPTIONS"/>
 </enum>
 
 <enum name="AsyncDNSHostsParseWin" type="int">
@@ -18599,6 +18873,9 @@ other types of suffix sets.
   <int value="42" label="Credit card: date, Unknown"/>
   <int value="43" label="Credit card: date, Match"/>
   <int value="44" label="Credit card: date, Mismatch"/>
+  <int value="45" label="Password, Unknown"/>
+  <int value="46" label="Password, Match"/>
+  <int value="47" label="Password, Mismatch"/>
 </enum>
 
 <enum name="AutofillUserHappiness" type="int">
@@ -18832,6 +19109,37 @@ other types of suffix sets.
   <int value="4" label="Initiated by Plugin Installer"/>
 </enum>
 
+<enum name="ChromeOSUserImageId" type="int">
+  <summary>
+    Indices of the default images as defined in
+    chrome/browser/chromeos/login/default_user_images.cc. The last three values
+    are for taken photo, downloaded file and the image previously used by user.
+  </summary>
+  <int value="0" label="Default, Beaker"/>
+  <int value="1" label="Default, Bee"/>
+  <int value="2" label="Default, Briefcase"/>
+  <int value="3" label="Default, Circles"/>
+  <int value="4" label="Default, Cloud"/>
+  <int value="5" label="Default, Cupcake"/>
+  <int value="6" label="Default, Day"/>
+  <int value="7" label="Default, Flower"/>
+  <int value="8" label="Default, Globe"/>
+  <int value="9" label="Default, Hot air"/>
+  <int value="10" label="Default, Ladybug"/>
+  <int value="11" label="Default, Leaf"/>
+  <int value="12" label="Default, Night"/>
+  <int value="13" label="Default, Plane"/>
+  <int value="14" label="Default, Robot body"/>
+  <int value="15" label="Default, Robot head"/>
+  <int value="16" label="Default, Toolbox"/>
+  <int value="17" label="Default, User color"/>
+  <int value="18" label="Default, User enterprise"/>
+  <int value="19" label="Photo taken"/>
+  <int value="20" label="Downloaded file"/>
+  <int value="21" label="Old image"/>
+  <int value="22" label="Profile image"/>
+</enum>
+
 <enum name="ClipboardAction" type="int">
   <int value="0" label="Write from non-Incognito"/>
   <int value="1" label="Write from Incognito"/>
@@ -18848,6 +19156,11 @@ other types of suffix sets.
   <int value="0" label="Is scrollable area"/>
   <int value="1" label="Needs to be stacking container"/>
   <int value="2" label="Will use composited scrolling"/>
+</enum>
+
+<enum name="CompositorType" type="int">
+  <int value="0" label="Software compositor"/>
+  <int value="1" label="GPU compositor"/>
 </enum>
 
 <enum name="ConnectionType" type="int">
@@ -19956,7 +20269,7 @@ other types of suffix sets.
   <int value="45" label="EXPERIMENTAL_DISCOVERY_REMOVESUGGESTION"/>
   <int value="46" label="VIRTUALKEYBOARDPRIVATE_SENDKEYEVENT"/>
   <int value="47" label="BOOKMARKMANAGERPRIVATE_GETSUBTREE"/>
-  <int value="48" label="EXPERIMENTAL_RLZ_RECORDPRODUCTEVENT"/>
+  <int value="48" label="DELETED_EXPERIMENTAL_RLZ_RECORDPRODUCTEVENT"/>
   <int value="49" label="BOOKMARKS_GETRECENT"/>
   <int value="50" label="APP_CURRENTWINDOWINTERNAL_SETBOUNDS"/>
   <int value="51" label="CLOUDPRINTPRIVATE_SETUPCONNECTOR"/>
@@ -20028,7 +20341,7 @@ other types of suffix sets.
   <int value="117" label="EXTENSION_SETUPDATEURLDATA"/>
   <int value="118" label="SERIAL_WRITE"/>
   <int value="119" label="IDLE_QUERYSTATE"/>
-  <int value="120" label="EXPERIMENTAL_RLZ_GETACCESSPOINTRLZ"/>
+  <int value="120" label="DELETED_EXPERIMENTAL_RLZ_GETACCESSPOINTRLZ"/>
   <int value="121" label="WEBSTOREPRIVATE_SETSTORELOGIN"/>
   <int value="122" label="PAGEACTIONS_ENABLEFORTAB"/>
   <int value="123" label="COOKIES_SET"/>
@@ -20076,7 +20389,7 @@ other types of suffix sets.
   <int value="164" label="MANAGEMENT_GET"/>
   <int value="165" label="PERMISSIONS_GETALL"/>
   <int value="166" label="DOWNLOADS_SHOW"/>
-  <int value="167" label="EXPERIMENTAL_RLZ_CLEARPRODUCTSTATE"/>
+  <int value="167" label="DELETED_EXPERIMENTAL_RLZ_CLEARPRODUCTSTATE"/>
   <int value="168" label="TABS_REMOVE"/>
   <int value="169" label="MANAGEMENT_GETPERMISSIONWARNINGSBYID"/>
   <int value="170" label="WINDOWS_GET"/>
@@ -20176,7 +20489,7 @@ other types of suffix sets.
   <int value="264" label="DEVELOPERPRIVATE_GETITEMSINFO"/>
   <int value="265" label="BLUETOOTH_STOPDISCOVERY"/>
   <int value="266" label="COOKIES_REMOVE"/>
-  <int value="267" label="EXPERIMENTAL_RLZ_SENDFINANCIALPING"/>
+  <int value="267" label="DELETED_EXPERIMENTAL_RLZ_SENDFINANCIALPING"/>
   <int value="268" label="TABCAPTURE_GETCAPTUREDTABS"/>
   <int value="269" label="WINDOWS_REMOVE"/>
   <int value="270" label="WALLPAPERPRIVATE_GETOFFLINEWALLPAPERLIST"/>
@@ -20429,6 +20742,8 @@ other types of suffix sets.
   <int value="516" label="INFOBARS_SHOW"/>
   <int value="517" label="VIRTUALKEYBOARDPRIVATE_MOVECURSOR"/>
   <int value="518" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
+  <int value="519" label="WALLPAPER_SETWALLPAPER"/>
+  <int value="520" label="VIRTUALKEYBOARDPRIVATE_HIDEKEYBOARD"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -21141,6 +21456,31 @@ other types of suffix sets.
   <int value="8" label="win16">
     win16 hosts: SuperTCP or NetManage Chameleon
   </int>
+</enum>
+
+<enum name="GaiaAuthError" type="int">
+  <summary>Google service authentication error cause.</summary>
+  <int value="0" label="NONE"/>
+  <int value="1" label="INVALID_GAIA_CREDENTIALS"/>
+  <int value="2" label="USER_NOT_SIGNED_UP"/>
+  <int value="3" label="CONNECTION_FAILED"/>
+  <int value="4" label="CAPTCHA_REQUIRED"/>
+  <int value="5" label="ACCOUNT_DELETED"/>
+  <int value="6" label="ACCOUNT_DISABLED"/>
+  <int value="7" label="SERVICE_UNAVAILABLE"/>
+  <int value="8" label="TWO_FACTOR"/>
+  <int value="9" label="REQUEST_CANCELED"/>
+  <int value="10" label="HOSTED_NOT_ALLOWED"/>
+  <int value="11" label="NUM_STATES"/>
+</enum>
+
+<enum name="GaiaSessionRestoreOutcome" type="int">
+  <int value="0" label="UNDEFINED"/>
+  <int value="1" label="SUCCESS"/>
+  <int value="2" label="RESTORE_TOKEN_FETCH_FAILED"/>
+  <int value="3" label="NO_REFRESH_TOKEN_FAILED"/>
+  <int value="4" label="OAUTHLOGIN_FAILED"/>
+  <int value="5" label="MERGESESSION_FAILED"/>
 </enum>
 
 <enum name="GDataAuthResult" type="int">
@@ -22789,6 +23129,11 @@ other types of suffix sets.
   <int value="3" label="kInvalidPlayerState"/>
 </enum>
 
+<enum name="MistSwitchResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Failure"/>
+</enum>
+
 <enum name="MobileSessionCallerApp" type="int">
   <int value="0" label="Google Search"/>
   <int value="1" label="GMail"/>
@@ -23495,6 +23840,12 @@ other types of suffix sets.
   <int value="3" label="(non-invalidated) replies received"/>
 </enum>
 
+<enum name="OmniboxZeroSuggestRequests" type="int">
+  <int value="1" label="requests sent"/>
+  <int value="2" label="requests invalidated"/>
+  <int value="3" label="(non-invalidated) replies received"/>
+</enum>
+
 <enum name="OSAgnosticErrno" type="int">
   <summary>Errno values with the same meanings on Mac/Win/Linux.</summary>
   <int value="0" label="0">No error</int>
@@ -23935,6 +24286,26 @@ other types of suffix sets.
   <int value="4" label="Canceled"/>
 </enum>
 
+<enum name="ProfileImageDownloadResult" type="int">
+  <int value="0" label="DownloadSuccessChanged">
+    <summary>
+      Reported when image download succeeds and the image is newer than what we
+      already have so we update it.
+    </summary>
+  </int>
+  <int value="1" label="DownloadSuccess">
+    <summary>Reported anytime we download profile image successfully.</summary>
+  </int>
+  <int value="2" label="DownloadFailure">
+    <summary>Download failed because of network errors.</summary>
+  </int>
+  <int value="3" label="DownloadDefault">
+    <summary>
+      We didn't download the image because it's the default one.
+    </summary>
+  </int>
+</enum>
+
 <enum name="ProtectorError" type="int">
   <obsolete>
     Deprecated 8/2013. No longer generated.
@@ -24137,6 +24508,18 @@ other types of suffix sets.
   <int value="69" label="pps invalid file format"/>
   <int value="70" label="ppsx invalid file format"/>
   <int value="71" label="ppsm invalid file format"/>
+  <int value="72" label="doc editing dom sync error"/>
+  <int value="73" label="docx editing dom sync error"/>
+  <int value="74" label="docm editing dom sync error"/>
+  <int value="75" label="xls editing dom sync error"/>
+  <int value="76" label="xlsx editing dom sync error"/>
+  <int value="77" label="xlsm editing dom sync error"/>
+  <int value="78" label="ppt editing dom sync error"/>
+  <int value="79" label="pptx editing dom sync error"/>
+  <int value="80" label="pptm editing dom sync error"/>
+  <int value="81" label="pps editing dom sync error"/>
+  <int value="82" label="ppsx editing dom sync error"/>
+  <int value="83" label="ppsm editing dom sync error"/>
 </enum>
 
 <enum name="QuickofficeFileFormat" type="int">
@@ -24190,6 +24573,33 @@ other types of suffix sets.
   <int value="6" label="AF_WASTE_NONE_UNSPEC">
     A new job was needed for this UNSPEC lookup.  No waste.
   </int>
+</enum>
+
+<enum name="ResourceHasClient" type="int">
+  <int value="0" label="No client"/>
+  <int value="1" label="Has client"/>
+</enum>
+
+<enum name="ResourceType" type="int">
+  <int value="0" label="Main resource"/>
+  <int value="1" label="Image"/>
+  <int value="2" label="CSSS"/>
+  <int value="3" label="Script"/>
+  <int value="4" label="Font"/>
+  <int value="5" label="Raw"/>
+  <int value="6" label="SVG"/>
+  <int value="7" label="XSL"/>
+  <int value="8" label="Link prefetch"/>
+  <int value="9" label="Link subresource"/>
+  <int value="10" label="Text track"/>
+  <int value="11" label="Shader"/>
+  <int value="12" label="Import resource"/>
+</enum>
+
+<enum name="SavePasswordPromptResponseType" type="int">
+  <int value="0" label="NO_RESPONSE"/>
+  <int value="1" label="REMEMBER_PASSWORD"/>
+  <int value="2" label="DONT_REMEMBER_PASSWORD"/>
 </enum>
 
 <enum name="SB2BloomFailure" type="int">
@@ -24808,6 +25218,19 @@ other types of suffix sets.
   <int value="65652" label="Destination root"/>
 </enum>
 
+<enum name="SpeculativeRestoreApplicability" type="int">
+  <int value="0" label="Applicable"/>
+  <int value="1" label="Not applicable (tablet)"/>
+  <int value="2" label="Not applicable (low-memory device)"/>
+  <int value="3" label="Not applicable (bandwidth management)"/>
+</enum>
+
+<enum name="SpeculativeRestorePredictionAccuracy" type="int">
+  <int value="0" label="Hit"/>
+  <int value="1" label="Miss (different tab)"/>
+  <int value="2" label="Miss (tab not switched)"/>
+</enum>
+
 <enum name="SqliteErrorCode" type="int">
   <summary>Error codes returned by SQLite - see sqlite3.h</summary>
   <int value="0" label="SQLITE_OK">Successful result</int>
@@ -25301,6 +25724,12 @@ other types of suffix sets.
   <int value="1" label="Failure"/>
   <int value="2" label="Cancelled"/>
   <int value="3" label="Attempted"/>
+</enum>
+
+<enum name="TabRestoreResult" type="int">
+  <int value="0" label="Failure (other)"/>
+  <int value="1" label="Success"/>
+  <int value="2" label="Failure due to network connectivity"/>
 </enum>
 
 <enum name="TabRestoreUserAction" type="int">
@@ -27432,6 +27861,35 @@ other types of suffix sets.
   <affected-histogram name="Renderer4.BeginToFinishDoc"/>
 </fieldtrial>
 
+<fieldtrial name="PasswordManagerMonitor">
+  <group name="group_1" label="group 1"/>
+  <group name="group_2" label="group 2"/>
+  <group name="group_3" label="group 3"/>
+  <group name="group_4" label="group 4"/>
+  <group name="group_5" label="group 5"/>
+  <group name="group_6" label="group 6"/>
+  <group name="group_7" label="group 7"/>
+  <group name="group_8" label="group 8"/>
+  <group name="group_9" label="group 9"/>
+  <group name="group_10" label="group 10"/>
+  <group name="group_11" label="group 11"/>
+  <group name="group_12" label="group 12"/>
+  <group name="group_13" label="group 13"/>
+  <group name="group_14" label="group 14"/>
+  <group name="group_15" label="group 15"/>
+  <group name="group_16" label="group 16"/>
+  <group name="group_17" label="group 17"/>
+  <group name="group_18" label="group 18"/>
+  <group name="group_19" label="group 19"/>
+  <group name="group_20" label="group 20"/>
+  <group name="" label=""/>
+  <affected-histogram name="PasswordManager.ProvisionalSaveFailure"/>
+  <affected-histogram
+      name="PasswordManager.SavePasswordPromptDisappearedQuickly"/>
+  <affected-histogram name="PasswordManager.SavePasswordPromptDisplayed"/>
+  <affected-histogram name="PasswordManager.SavePasswordPromptResponse"/>
+</fieldtrial>
+
 <fieldtrial name="PpapiPluginName">
   <group name="libpepflashplayer.so" label="Flash player on Linux or Cros"/>
   <group name="libwidevinecdmadapter.so" label="Widevine CDM on Linux or Cros"/>
@@ -27719,6 +28177,19 @@ other types of suffix sets.
   <affected-histogram name="Prerender.TimeBetweenPrerenderRequests"/>
   <affected-histogram name="Prerender.TimeSinceLastRecentVisit"/>
   <affected-histogram name="Prerender.TimeUntilUsed2"/>
+</fieldtrial>
+
+<fieldtrial name="ProfilePictureDownload" separator=".">
+  <group name="Default.OOBE" label="default picture, in OOBE"/>
+  <group name="Default.LoggedIn" label="default picture, after login"/>
+  <group name="Default.Preferences" label="default picture, in Prefs"/>
+  <group name="Failure.OOBE" label="download has failed, in OOBE"/>
+  <group name="Failure.LoggedIn" label="download has failed, after login"/>
+  <group name="Failure.Preferences" label="download has failed, in Prefs"/>
+  <group name="Success.OOBE" label="download was successful, in OOBE"/>
+  <group name="Success.LoggedIn" label="download was successful, after login"/>
+  <group name="Success.Preferences" label="download was successful, in Prefs"/>
+  <affected-histogram name="UserImage.ProfileDownloadTime"/>
 </fieldtrial>
 
 <fieldtrial name="ProgressiveScan">

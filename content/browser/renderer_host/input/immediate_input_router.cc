@@ -21,8 +21,8 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -285,10 +285,6 @@ bool ImmediateInputRouter::ShouldForwardTouchEvent() const {
 bool ImmediateInputRouter::ShouldForwardGestureEvent(
     const GestureEventWithLatencyInfo& touch_event) const {
   return gesture_event_filter_->ShouldForward(touch_event);
-}
-
-bool ImmediateInputRouter::HasQueuedGestureEvents() const {
-  return gesture_event_filter_->HasQueuedGestureEvents();
 }
 
 bool ImmediateInputRouter::OnMessageReceived(const IPC::Message& message) {

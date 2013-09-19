@@ -66,11 +66,15 @@ class FakeSchedulerClient : public SchedulerClient {
   const char* Action(int i) const { return actions_[i]; }
   base::Value& StateForAction(int i) const { return *states_[i]; }
 
-  bool HasAction(const char* action) const {
+  int ActionIndex(const char* action) const {
     for (size_t i = 0; i < actions_.size(); i++)
       if (!strcmp(actions_[i], action))
-        return true;
-    return false;
+        return i;
+    return -1;
+  }
+
+  bool HasAction(const char* action) const {
+    return ActionIndex(action) >= 0;
   }
 
   void SetDrawWillHappen(bool draw_will_happen) {
@@ -137,6 +141,10 @@ class FakeSchedulerClient : public SchedulerClient {
     actions_.push_back("ScheduledActionAcquireLayerTexturesForMainThread");
     states_.push_back(scheduler_->StateAsValue().release());
   }
+  virtual void ScheduledActionManageTiles() OVERRIDE {
+    actions_.push_back("ScheduledActionManageTiles");
+    states_.push_back(scheduler_->StateAsValue().release());
+  }
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks) OVERRIDE {}
   virtual base::TimeDelta DrawDurationEstimate() OVERRIDE {
     return base::TimeDelta();
@@ -201,7 +209,7 @@ TEST(SchedulerTest, RequestCommit) {
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 2);
   EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 1, 2);
-  EXPECT_FALSE(client.needs_begin_frame());
+  EXPECT_TRUE(client.needs_begin_frame());
   client.Reset();
 }
 
@@ -232,15 +240,26 @@ TEST(SchedulerTest, RequestCommitAfterBeginFrameSentToMainThread) {
   client.Reset();
 
   // Tick should draw but then begin another frame for the second commit.
+  // Because we just swapped, the Scheduler should also request the next
+  // BeginFrame from the OutputSurface.
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_TRUE(client.needs_begin_frame());
-  EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 2);
-  EXPECT_ACTION("ScheduledActionSendBeginFrameToMainThread", client, 1, 2);
+  EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 3);
+  EXPECT_ACTION("ScheduledActionSendBeginFrameToMainThread", client, 1, 3);
+  EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 2, 3);
   client.Reset();
 
-  // Finish the second commit to go back to quiescent state and verify we no
-  // longer request BeginFrames.
+  // Finish the second commit.
   scheduler->FinishCommit();
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_ACTION("ScheduledActionCommit", client, 0, 3);
+  EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 1, 3);
+  EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 2, 3);
+  EXPECT_TRUE(client.needs_begin_frame());
+  client.Reset();
+
+  // On the next BeginFrame, verify we go back to a quiescent state and
+  // no longer request BeginFrames.
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_FALSE(client.needs_begin_frame());
 }
@@ -265,6 +284,12 @@ TEST(SchedulerTest, TextureAcquisitionCausesCommitInsteadOfDraw) {
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 2);
   EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 1, 2);
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_TRUE(client.needs_begin_frame());
+
+  client.Reset();
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("SetNeedsBeginFrameOnImplThread", client);
   EXPECT_FALSE(scheduler->RedrawPending());
   EXPECT_FALSE(client.needs_begin_frame());
 
@@ -305,8 +330,13 @@ TEST(SchedulerTest, TextureAcquisitionCausesCommitInsteadOfDraw) {
   EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 2);
   EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 1, 2);
   EXPECT_FALSE(scheduler->RedrawPending());
-  EXPECT_FALSE(client.needs_begin_frame());
+  EXPECT_TRUE(client.needs_begin_frame());
+
+  // Make sure we stop requesting BeginFrames if we don't swap.
   client.Reset();
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("SetNeedsBeginFrameOnImplThread", client);
+  EXPECT_FALSE(client.needs_begin_frame());
 }
 
 TEST(SchedulerTest, TextureAcquisitionCollision) {
@@ -353,11 +383,15 @@ TEST(SchedulerTest, TextureAcquisitionCollision) {
                 1,
                 3);
   EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 2, 3);
+  EXPECT_TRUE(client.needs_begin_frame());
   client.Reset();
 
   // Compositor not scheduled to draw because textures are locked by main
   // thread.
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("SetNeedsBeginFrameOnImplThread", client);
   EXPECT_FALSE(client.needs_begin_frame());
+  client.Reset();
 
   // Needs an explicit commit from the main thread.
   scheduler->SetNeedsCommit();
@@ -367,7 +401,16 @@ TEST(SchedulerTest, TextureAcquisitionCollision) {
 
   // Trigger the commit
   scheduler->FinishCommit();
+  EXPECT_SINGLE_ACTION("ScheduledActionCommit", client);
   EXPECT_TRUE(client.needs_begin_frame());
+  client.Reset();
+
+  // Verify we draw on the next BeginFrame.
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_ACTION("ScheduledActionDrawAndSwapIfPossible", client, 0, 2);
+  EXPECT_ACTION("SetNeedsBeginFrameOnImplThread", client, 1, 2);
+  EXPECT_TRUE(client.needs_begin_frame());
+  client.Reset();
 }
 
 TEST(SchedulerTest, VisibilitySwitchWithTextureAcquisition) {
@@ -455,6 +498,12 @@ TEST(SchedulerTest, RequestRedrawInsideDraw) {
   EXPECT_TRUE(scheduler->RedrawPending());
   EXPECT_TRUE(client.needs_begin_frame());
 
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_EQ(2, client.num_draws());
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_TRUE(client.needs_begin_frame());
+
+  // We stop requesting BeginFrames after a BeginFrame where we don't swap.
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_EQ(2, client.num_draws());
   EXPECT_FALSE(scheduler->RedrawPending());
@@ -565,6 +614,13 @@ TEST(SchedulerTest, RequestCommitInsideDraw) {
 
   scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
   EXPECT_EQ(2, client.num_draws());;
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_FALSE(scheduler->CommitPending());
+  EXPECT_TRUE(client.needs_begin_frame());
+
+  // We stop requesting BeginFrames after a BeginFrame where we don't swap.
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_EQ(2, client.num_draws());
   EXPECT_FALSE(scheduler->RedrawPending());
   EXPECT_FALSE(scheduler->CommitPending());
   EXPECT_FALSE(client.needs_begin_frame());
@@ -685,6 +741,89 @@ TEST(SchedulerTest, BackToBackReadbackAllowed) {
   // The replacement commit comes in after 2 readbacks.
   client.Reset();
   scheduler->FinishCommit();
+}
+
+
+class SchedulerClientNeedsManageTilesInDraw : public FakeSchedulerClient {
+ public:
+  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible()
+      OVERRIDE {
+    scheduler_->SetNeedsManageTiles();
+    return FakeSchedulerClient::ScheduledActionDrawAndSwapIfPossible();
+  }
+};
+
+// Test manage tiles is independant of draws.
+TEST(SchedulerTest, ManageTiles) {
+  SchedulerClientNeedsManageTilesInDraw client;
+  SchedulerSettings default_scheduler_settings;
+  Scheduler* scheduler = client.CreateScheduler(default_scheduler_settings);
+  scheduler->SetCanStart();
+  scheduler->SetVisible(true);
+  scheduler->SetCanDraw(true);
+  InitializeOutputSurfaceAndFirstCommit(scheduler);
+
+  // Request both draw and manage tiles. ManageTiles shouldn't
+  // be trigged until BeginFrame.
+  client.Reset();
+  scheduler->SetNeedsManageTiles();
+  scheduler->SetNeedsRedraw();
+  EXPECT_TRUE(scheduler->RedrawPending());
+  EXPECT_TRUE(scheduler->ManageTilesPending());
+  EXPECT_TRUE(client.needs_begin_frame());
+  EXPECT_EQ(0, client.num_draws());
+  EXPECT_FALSE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_FALSE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  // The actions should have occured, in the right order.
+  EXPECT_EQ(1, client.num_draws());
+  EXPECT_TRUE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_TRUE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_LT(client.ActionIndex("ScheduledActionDrawAndSwapIfPossible"),
+            client.ActionIndex("ScheduledActionManageTiles"));
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_FALSE(scheduler->ManageTilesPending());
+
+  // Request a draw. We don't need a ManageTiles yet.
+  client.Reset();
+  scheduler->SetNeedsRedraw();
+  EXPECT_TRUE(scheduler->RedrawPending());
+  EXPECT_FALSE(scheduler->ManageTilesPending());
+  EXPECT_TRUE(client.needs_begin_frame());
+  EXPECT_EQ(0, client.num_draws());
+
+  // Draw. The draw will trigger SetNeedsManageTiles, and
+  // then the ManageTiles action will be triggered after the Draw.
+  // Afterwards, neither a draw nor ManageTiles are pending.
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_EQ(1, client.num_draws());
+  EXPECT_TRUE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_TRUE(client.HasAction("ScheduledActionManageTiles"));
+  EXPECT_LT(client.ActionIndex("ScheduledActionDrawAndSwapIfPossible"),
+            client.ActionIndex("ScheduledActionManageTiles"));
+  EXPECT_FALSE(scheduler->RedrawPending());
+  EXPECT_FALSE(scheduler->ManageTilesPending());
+
+  // We need a BeginFrame where we don't swap to go idle.
+  client.Reset();
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_SINGLE_ACTION("SetNeedsBeginFrameOnImplThread", client);
+  EXPECT_EQ(0, client.num_draws());
+
+  // Now trigger a ManageTiles outside of a draw. We will then need
+  // a begin-frame for the ManageTiles, but we don't need a draw.
+  client.Reset();
+  EXPECT_FALSE(client.needs_begin_frame());
+  scheduler->SetNeedsManageTiles();
+  EXPECT_TRUE(client.needs_begin_frame());
+  EXPECT_TRUE(scheduler->ManageTilesPending());
+  EXPECT_FALSE(scheduler->RedrawPending());
+
+  // BeginFrame. There will be no draw, only ManageTiles.
+  scheduler->BeginFrame(BeginFrameArgs::CreateForTesting());
+  EXPECT_EQ(0, client.num_draws());
+  EXPECT_FALSE(client.HasAction("ScheduledActionDrawAndSwapIfPossible"));
+  EXPECT_TRUE(client.HasAction("ScheduledActionManageTiles"));
 }
 
 }  // namespace

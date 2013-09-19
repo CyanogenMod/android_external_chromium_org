@@ -100,7 +100,11 @@ OperationID FileSystemOperationRunner::Copy(
   PrepareForWrite(handle.id, dest_url);
   PrepareForRead(handle.id, src_url);
   operation->Copy(
-      src_url, dest_url, progress_callback,
+      src_url, dest_url,
+      progress_callback.is_null() ?
+          CopyProgressCallback() :
+          base::Bind(&FileSystemOperationRunner::OnCopyProgress, AsWeakPtr(),
+                     handle, progress_callback),
       base::Bind(&FileSystemOperationRunner::DidFinish, AsWeakPtr(),
                  handle, callback));
   return handle.id;
@@ -300,7 +304,11 @@ void FileSystemOperationRunner::Cancel(
     return;
   }
   FileSystemOperation* operation = operations_.Lookup(id);
-  DCHECK(operation);
+  if (!operation) {
+    // There is no operation with |id|.
+    callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
+    return;
+  }
   operation->Cancel(callback);
 }
 
@@ -597,6 +605,21 @@ void FileSystemOperationRunner::DidCreateSnapshot(
   }
   callback.Run(rv, file_info, platform_path, file_ref);
   FinishOperation(handle.id);
+}
+
+void FileSystemOperationRunner::OnCopyProgress(
+    const OperationHandle& handle,
+    const CopyProgressCallback& callback,
+    FileSystemOperation::CopyProgressType type,
+    const FileSystemURL& url,
+    int64 size) {
+  if (handle.scope) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&FileSystemOperationRunner::OnCopyProgress,
+                              AsWeakPtr(), handle, callback, type, url, size));
+    return;
+  }
+  callback.Run(type, url, size);
 }
 
 void FileSystemOperationRunner::PrepareForWrite(OperationID id,

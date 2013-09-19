@@ -55,6 +55,8 @@
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/dom_distiller/core/dom_distiller_constants.h"
+#include "components/dom_distiller/webui/dom_distiller_ui.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
@@ -231,12 +233,17 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host() == chrome::kChromeUICrashesHost)
     return &NewWebUI<CrashesUI>;
 #if defined(ENABLE_MDNS)
-  if (url.host() == chrome::kChromeUIDevicesFrameHost &&
+  if (url.host() == chrome::kChromeUIDevicesHost &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kDisableDeviceDiscovery)) {
     return &NewWebUI<LocalDiscoveryUI>;
   }
 #endif
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller) &&
+      url.host() == dom_distiller::kChromeUIDomDistillerHost) {
+    return &NewWebUI<dom_distiller::DomDistillerUI>;
+  }
   if (url.host() == chrome::kChromeUIFlagsHost)
     return &NewWebUI<FlagsUI>;
   if (url.host() == chrome::kChromeUIHistoryFrameHost)

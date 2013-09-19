@@ -370,7 +370,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   bool ShouldForwardTouchEvent() const;
   bool ShouldForwardGestureEvent(
       const GestureEventWithLatencyInfo& gesture_event) const;
-  bool HasQueuedGestureEvents() const;
 
   bool has_touch_handler() const { return has_touch_handler_; }
 
@@ -467,6 +466,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
       uint32 output_surface_id,
       int renderer_host_id,
       const cc::CompositorFrameAck& ack);
+
+  // Called by the view to return resources to the compositor.
+  static void SendReclaimCompositorResources(int32 route_id,
+                                             uint32 output_surface_id,
+                                             int renderer_host_id,
+                                             const cc::CompositorFrameAck& ack);
 
   // Called by the view in response to AcceleratedSurfaceBuffersSwapped for
   // platforms that support deferred GPU process descheduling. This does

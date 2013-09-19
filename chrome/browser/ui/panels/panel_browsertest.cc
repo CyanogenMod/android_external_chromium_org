@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/panels/test_panel_active_state_observer.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -41,7 +40,7 @@
 #include "extensions/common/constants.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 
 using content::WebContents;

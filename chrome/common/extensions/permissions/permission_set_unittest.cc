@@ -656,7 +656,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kPushMessaging);
   skip.insert(APIPermission::kScreensaver);
   skip.insert(APIPermission::kSessions);
-  skip.insert(APIPermission::kSignedInDevices);
   skip.insert(APIPermission::kStorage);
   skip.insert(APIPermission::kSystemCpu);
   skip.insert(APIPermission::kSystemDisplay);
@@ -721,10 +720,11 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kMetricsPrivate);
   skip.insert(APIPermission::kMDns);
   skip.insert(APIPermission::kPreferencesPrivate);
-  skip.insert(APIPermission::kRecoveryPrivate);
+  skip.insert(APIPermission::kImageWriterPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
   skip.insert(APIPermission::kSystemPrivate);
+  skip.insert(APIPermission::kTabCaptureForTab);
   skip.insert(APIPermission::kTerminalPrivate);
   skip.insert(APIPermission::kVirtualKeyboardPrivate);
   skip.insert(APIPermission::kWallpaperPrivate);

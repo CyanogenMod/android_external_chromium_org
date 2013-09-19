@@ -13,10 +13,6 @@
 
 namespace autofill {
 
-const int kSplashDisplayDurationMs = 1200;
-const int kSplashFadeOutDurationMs = 200;
-const int kSplashFadeInDialogDurationMs = 150;
-
 static const base::char16 kRangeSeparator = '|';
 
 DialogNotification::DialogNotification() : type_(NONE) {}
@@ -24,8 +20,7 @@ DialogNotification::DialogNotification() : type_(NONE) {}
 DialogNotification::DialogNotification(Type type, const string16& display_text)
     : type_(type),
       display_text_(display_text),
-      checked_(false),
-      interactive_(true) {
+      checked_(false) {
   // If there's a range separated by bars, mark that as the anchor text.
   std::vector<base::string16> pieces;
   base::SplitStringDontTrim(display_text, kRangeSeparator, &pieces);

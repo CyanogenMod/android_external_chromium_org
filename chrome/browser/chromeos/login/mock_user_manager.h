@@ -96,15 +96,19 @@ class MockUserManager : public UserManager {
   MOCK_METHOD2(SetAppModeChromeClientOAuthInfo, void(const std::string&,
                                                      const std::string&));
   MOCK_CONST_METHOD0(AreLocallyManagedUsersAllowed, bool(void));
+  MOCK_CONST_METHOD1(GetUserProfileDir,
+                     base::FilePath(const std::string& email));
 
   // You can't mock these functions easily because nobody can create
   // User objects but the UserManagerImpl and us.
   virtual const UserList& GetUsers() const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
+  virtual UserList GetUnlockUsers() const OVERRIDE;
   virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
+  virtual const User* GetPrimaryUser() const OVERRIDE;
 
   virtual UserImageManager* GetUserImageManager() OVERRIDE;
 

@@ -146,16 +146,21 @@ void DeterminePossibleFieldTypesForUpload(
   // profile or credit card, identify any stored types that match the value.
   for (size_t i = 0; i < submitted_form->field_count(); ++i) {
     AutofillField* field = submitted_form->field(i);
-    base::string16 value = CollapseWhitespace(field->value, false);
-
     ServerFieldTypeSet matching_types;
-    for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
-         it != profiles.end(); ++it) {
-      it->GetMatchingTypes(value, app_locale, &matching_types);
-    }
-    for (std::vector<CreditCard>::const_iterator it = credit_cards.begin();
-          it != credit_cards.end(); ++it) {
-      it->GetMatchingTypes(value, app_locale, &matching_types);
+
+    // If it's a password field, set the type directly.
+    if (field->form_control_type == "password") {
+      matching_types.insert(autofill::PASSWORD);
+    } else {
+      base::string16 value = CollapseWhitespace(field->value, false);
+      for (std::vector<AutofillProfile>::const_iterator it = profiles.begin();
+           it != profiles.end(); ++it) {
+        it->GetMatchingTypes(value, app_locale, &matching_types);
+      }
+      for (std::vector<CreditCard>::const_iterator it = credit_cards.begin();
+            it != credit_cards.end(); ++it) {
+        it->GetMatchingTypes(value, app_locale, &matching_types);
+      }
     }
 
     if (matching_types.empty())
@@ -248,21 +253,14 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
   // Let Autocomplete know as well.
   autocomplete_history_manager_->OnFormSubmitted(form);
 
-  if (!IsAutofillEnabled())
-    return false;
+  // Grab a copy of the form data.
+  scoped_ptr<FormStructure> submitted_form(new FormStructure(form));
 
-  if (driver_->GetWebContents()->GetBrowserContext()->IsOffTheRecord())
+  if (!ShouldUploadForm(*submitted_form))
     return false;
 
   // Don't save data that was submitted through JavaScript.
   if (!form.user_submitted)
-    return false;
-
-  // Grab a copy of the form data.
-  scoped_ptr<FormStructure> submitted_form(new FormStructure(form));
-
-  // Disregard forms that we wouldn't ever autofill in the first place.
-  if (!submitted_form->ShouldBeParsed(true))
     return false;
 
   // Ignore forms not present in our cache.  These are typically forms with
@@ -618,15 +616,6 @@ const std::vector<FormStructure*>& AutofillManager::GetFormStructures() {
   return form_structures_.get();
 }
 
-void AutofillManager::ShowRequestAutocompleteDialog(
-    const FormData& form,
-    const GURL& source_url,
-    const base::Callback<void(const FormStructure*,
-                              const std::string&)>& callback) {
-  manager_delegate_->ShowRequestAutocompleteDialog(
-      form, source_url, callback);
-}
-
 void AutofillManager::SetTestDelegate(
     autofill::AutofillManagerTestDelegate* delegate) {
   test_delegate_ = delegate;
@@ -666,7 +655,7 @@ void AutofillManager::OnRequestAutocomplete(
     return;
   }
 
-  base::Callback<void(const FormStructure*, const std::string&)> callback =
+  base::Callback<void(const FormStructure*)> callback =
       base::Bind(&AutofillManager::ReturnAutocompleteData,
                  weak_ptr_factory_.GetWeakPtr());
   ShowRequestAutocompleteDialog(form, frame_url, callback);
@@ -688,9 +677,7 @@ void AutofillManager::ReturnAutocompleteResult(
                                                        form_data));
 }
 
-void AutofillManager::ReturnAutocompleteData(
-    const FormStructure* result,
-    const std::string& unused_transaction_id) {
+void AutofillManager::ReturnAutocompleteData(const FormStructure* result) {
   if (!result) {
     ReturnAutocompleteResult(WebFormElement::AutocompleteResultErrorCancel,
                              FormData());
@@ -734,8 +721,9 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
     manager_delegate_->ConfirmSaveCreditCard(
         *metric_logger_,
         *imported_credit_card,
-        base::Bind(&PersonalDataManager::SaveImportedCreditCard,
-                   base::Unretained(personal_data_), *imported_credit_card));
+        base::Bind(
+            base::IgnoreResult(&PersonalDataManager::SaveImportedCreditCard),
+            base::Unretained(personal_data_), *imported_credit_card));
   }
 }
 
@@ -774,9 +762,59 @@ void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
 
   ServerFieldTypeSet non_empty_types;
   personal_data_->GetNonEmptyTypes(&non_empty_types);
+  // Always add PASSWORD to |non_empty_types| so that if |submitted_form|
+  // contains a password field it will be uploaded to the server. If
+  // |submitted_form| doesn't contain a password field, there is no side
+  // effect from adding PASSWORD to |non_empty_types|.
+  non_empty_types.insert(autofill::PASSWORD);
 
   download_manager_->StartUploadRequest(submitted_form, was_autofilled,
-                                       non_empty_types);
+                                        non_empty_types);
+}
+
+bool AutofillManager::UploadPasswordGenerationForm(const FormData& form) {
+  FormStructure form_structure(form);
+
+  if (!ShouldUploadForm(form_structure))
+    return false;
+
+  if (!form_structure.ShouldBeCrowdsourced())
+    return false;
+
+  // TODO(gcasto): Check that PasswordGeneration is enabled?
+
+  // Find the first password field to label. We don't try to label anything
+  // else.
+  bool found_password_field = false;
+  for (size_t i = 0; i < form_structure.field_count(); ++i) {
+    AutofillField* field = form_structure.field(i);
+
+    ServerFieldTypeSet types;
+    if (!found_password_field && field->form_control_type == "password") {
+      types.insert(ACCOUNT_CREATION_PASSWORD);
+      found_password_field = true;
+    } else {
+      types.insert(UNKNOWN_TYPE);
+    }
+    field->set_possible_types(types);
+  }
+  DCHECK(found_password_field);
+
+  // Only one field type should be present.
+  ServerFieldTypeSet available_field_types;
+  available_field_types.insert(ACCOUNT_CREATION_PASSWORD);
+
+  // Force uploading as these events are relatively rare and we want to make
+  // sure to receive them. It also makes testing easier if these requests
+  // always pass.
+  form_structure.set_upload_required(UPLOAD_REQUIRED);
+
+  if (!download_manager_)
+    return false;
+
+  return download_manager_->StartUploadRequest(form_structure,
+                                               false /* was_autofilled */,
+                                               available_field_types);
 }
 
 void AutofillManager::Reset() {
@@ -1116,12 +1154,34 @@ void AutofillManager::UnpackGUIDs(int id,
   *profile_guid = IDToGUID(profile_id);
 }
 
+void AutofillManager::ShowRequestAutocompleteDialog(
+    const FormData& form,
+    const GURL& source_url,
+    const base::Callback<void(const FormStructure*)>& callback) {
+  manager_delegate_->ShowRequestAutocompleteDialog(
+      form, source_url, callback);
+}
+
 void AutofillManager::UpdateInitialInteractionTimestamp(
     const TimeTicks& interaction_timestamp) {
   if (initial_interaction_timestamp_.is_null() ||
       interaction_timestamp < initial_interaction_timestamp_) {
     initial_interaction_timestamp_ = interaction_timestamp;
   }
+}
+
+bool AutofillManager::ShouldUploadForm(const FormStructure& form) {
+  if (!IsAutofillEnabled())
+    return false;
+
+  if (driver_->GetWebContents()->GetBrowserContext()->IsOffTheRecord())
+    return false;
+
+  // Disregard forms that we wouldn't ever autofill in the first place.
+  if (!form.ShouldBeParsed(true))
+    return false;
+
+  return true;
 }
 
 }  // namespace autofill

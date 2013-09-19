@@ -147,6 +147,8 @@ class AwContents : public FindHelper::Listener,
   // AwRenderViewHostExtClient implementation.
   virtual void OnWebLayoutPageScaleFactorChanged(
       float page_scale_factor) OVERRIDE;
+  virtual void OnWebLayoutContentsSizeChanged(
+      const gfx::Size& contents_size) OVERRIDE;
 
   // BrowserViewRenderer::Client implementation.
   virtual bool RequestDrawGL(jobject canvas) OVERRIDE;
@@ -162,11 +164,14 @@ class AwContents : public FindHelper::Listener,
   jint ReleasePopupAwContents(JNIEnv* env, jobject obj);
 
   void ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix);
-  void SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale);
+  void SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale);
   void SetDisplayedPageScaleFactor(JNIEnv* env,
                                    jobject obj,
-                                   jfloat pageScaleFactor);
-
+                                   jfloat page_scale_factor);
+  void SetFixedLayoutSize(JNIEnv* env,
+                          jobject obj,
+                          jint width_dip,
+                          jint height_dip);
   void SetSaveFormData(bool enabled);
 
   // Sets the java delegate

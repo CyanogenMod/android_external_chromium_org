@@ -40,7 +40,10 @@ class GuestView : public content::BrowserPluginGuestDelegate {
     scoped_ptr<DictionaryValue> args_;
   };
 
-  explicit GuestView(content::WebContents* guest_web_contents);
+  static Type GetViewTypeFromString(const std::string& api_type);
+
+  static GuestView* Create(content::WebContents* guest_web_contents,
+                           Type view_type);
 
   static GuestView* FromWebContents(content::WebContents* web_contents);
 
@@ -85,10 +88,8 @@ class GuestView : public content::BrowserPluginGuestDelegate {
   // Returns the embedder's process ID.
   int embedder_render_process_id() const { return embedder_render_process_id_; }
 
-  // Returns the embedder's routing ID.
-  int embedder_routing_id() const { return embedder_routing_id_; }
-
  protected:
+  explicit GuestView(content::WebContents* guest_web_contents);
   virtual ~GuestView();
 
   // Dispatches an event |event_name| to the embedder with the |event| fields.
@@ -101,7 +102,6 @@ class GuestView : public content::BrowserPluginGuestDelegate {
   content::WebContents* embedder_web_contents_;
   std::string extension_id_;
   int embedder_render_process_id_;
-  int embedder_routing_id_;
   content::BrowserContext* browser_context_;
   // |guest_instance_id_| is a profile-wide unique identifier for a guest
   // WebContents.

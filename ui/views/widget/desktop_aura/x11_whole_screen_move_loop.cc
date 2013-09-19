@@ -14,8 +14,8 @@
 #include "base/run_loop.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 
 namespace views {
@@ -64,7 +64,7 @@ bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
   DCHECK(!in_move_loop_);  // Can only handle one nested loop at a time.
   in_move_loop_ = true;
 
-  Display* display = base::MessagePumpX11::GetDefaultXDisplay();
+  Display* display = ui::GetXDisplay();
 
   // Creates an invisible, InputOnly toplevel window. This window will receive
   // all mouse movement for drags. It turns out that normal windows doing a
@@ -116,7 +116,7 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
   // the chrome process.
 
   // Ungrab before we let go of the window.
-  Display* display = base::MessagePumpX11::GetDefaultXDisplay();
+  Display* display = ui::GetXDisplay();
   XUngrabPointer(display, CurrentTime);
 
   base::MessagePumpX11::Current()->RemoveDispatcherForWindow(
@@ -129,7 +129,7 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
 }
 
 bool X11WholeScreenMoveLoop::GrabPointerWithCursor(gfx::NativeCursor cursor) {
-  Display* display = base::MessagePumpX11::GetDefaultXDisplay();
+  Display* display = ui::GetXDisplay();
   XGrabServer(display);
   XUngrabPointer(display, CurrentTime);
   int ret = XGrabPointer(

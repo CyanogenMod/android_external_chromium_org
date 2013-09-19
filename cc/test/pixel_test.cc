@@ -50,7 +50,8 @@ class PixelTest::PixelTestRendererClient
   virtual void ReleaseGL() OVERRIDE {}
   virtual void SetNeedsRedrawRect(gfx::Rect damage_rect) OVERRIDE {}
   virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {}
-  virtual void OnSwapBuffersComplete(const CompositorFrameAck* ack) OVERRIDE {}
+  virtual void OnSwapBuffersComplete() OVERRIDE {}
+  virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE {}
   virtual void DidLoseOutputSurface() OVERRIDE {}
   virtual void SetExternalDrawConstraints(
       const gfx::Transform& transform,
@@ -161,7 +162,8 @@ void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
       ContextProviderInProcess::CreateOffscreen()));
   output_surface_->BindToClient(fake_client_.get());
 
-  resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
+  resource_provider_ =
+      ResourceProvider::Create(output_surface_.get(), 0, false);
 
   texture_mailbox_deleter_ = make_scoped_ptr(new TextureMailboxDeleter);
 
@@ -203,7 +205,8 @@ void PixelTest::SetUpSoftwareRenderer() {
   scoped_ptr<SoftwareOutputDevice> device(new PixelTestSoftwareOutputDevice());
   output_surface_.reset(new PixelTestOutputSurface(device.Pass()));
   output_surface_->BindToClient(fake_client_.get());
-  resource_provider_ = ResourceProvider::Create(output_surface_.get(), 0);
+  resource_provider_ =
+      ResourceProvider::Create(output_surface_.get(), 0, false);
   renderer_ = SoftwareRenderer::Create(fake_client_.get(),
                                        &settings_,
                                        output_surface_.get(),

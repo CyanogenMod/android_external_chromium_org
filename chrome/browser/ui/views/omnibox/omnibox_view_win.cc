@@ -54,19 +54,19 @@
 #include "ui/base/dragdrop/drop_target_win.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/ime/win/tsf_bridge.h"
 #include "ui/base/ime/win/tsf_event_router.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/base/touch/touch_enabled.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/touch_input.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/views/button_drag_utils.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -129,13 +129,6 @@ struct AutocompleteEditState : public base::SupportsUserData::Data {
 bool IsDrag(const POINT& origin, const POINT& current) {
   return views::View::ExceededDragThreshold(
       gfx::Point(current) - gfx::Point(origin));
-}
-
-// Writes |url| and |text| to the clipboard as a well-formed URL.
-void DoCopyURL(const GURL& url, const string16& text) {
-  BookmarkNodeData data;
-  data.ReadFromTuple(url, text);
-  data.WriteToClipboard();
 }
 
 }  // namespace
@@ -608,6 +601,10 @@ void OmniboxViewWin::Update() {
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
   if (model()->UpdatePermanentText()) {
     ScopedFreeze freeze(this, GetTextObjectModel());
+
+    // Something visibly changed.  Re-enable search term replacement.
+    controller()->GetToolbarModel()->set_search_term_replacement_enabled(true);
+    model()->UpdatePermanentText();
 
     // Tweak: if the user had all the text selected, select all the new text.
     // This makes one particular case better: the user clicks in the box to
@@ -1139,16 +1136,15 @@ bool OmniboxViewWin::IsCommandIdEnabled(int command_id) const {
       return !!CanCut();
     case IDC_COPY:
       return !!CanCopy();
-    case IDC_COPY_URL:
-      return !!CanCopy() &&
-          controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
-              false);
     case IDC_PASTE:
       return !!CanPaste();
     case IDS_PASTE_AND_GO:
       return model()->CanPasteAndGo(GetClipboardText());
     case IDS_SELECT_ALL:
       return !!CanSelectAll();
+    case IDS_SHOW_URL:
+      return controller()->GetToolbarModel()->
+          WouldPerformSearchTermReplacement(false);
     case IDC_EDIT_SEARCH_ENGINES:
       return command_updater()->IsCommandEnabled(command_id);
     default:
@@ -1183,13 +1179,12 @@ void OmniboxViewWin::ExecuteCommand(int command_id, int event_flags) {
     Copy();
     return;
   }
-  if (command_id == IDC_COPY_URL) {
-    DoCopyURL(controller()->GetToolbarModel()->GetURL(),
-              controller()->GetToolbarModel()->GetText(false));
-    return;
-  }
   if (command_id == IDS_PASTE_AND_GO) {
     model()->PasteAndGo(GetClipboardText());
+    return;
+  }
+  if (command_id == IDS_SHOW_URL) {
+    ShowURL();
     return;
   }
   if (command_id == IDC_EDIT_SEARCH_ENGINES) {
@@ -1400,7 +1395,9 @@ void OmniboxViewWin::OnCopy() {
   // the smaller value.
   model()->AdjustTextForCopy(sel.cpMin, IsSelectAll(), &text, &url, &write_url);
   if (write_url) {
-    DoCopyURL(url, text);
+    BookmarkNodeData data;
+    data.ReadFromTuple(url, text);
+    data.WriteToClipboard();
   } else {
     ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
                                   ui::Clipboard::BUFFER_STANDARD);
@@ -2037,7 +2034,7 @@ void OmniboxViewWin::OnSysChar(TCHAR ch,
   // something useful, so discard those. Note that [Ctrl]+[Alt]+<xxx> generates
   // WM_CHAR instead of WM_SYSCHAR, so it is not handled here.
   if (ch == VK_SPACE) {
-    ui::ShowSystemMenu(
+    gfx::ShowSystemMenu(
       native_view_host_->GetWidget()->GetTopLevelWidget()->GetNativeWindow());
   }
 }
@@ -2750,8 +2747,6 @@ void OmniboxViewWin::BuildContextMenu() {
     context_menu_contents_->AddItemWithStringId(IDC_CUT, IDS_CUT);
   }
   context_menu_contents_->AddItemWithStringId(IDC_COPY, IDS_COPY);
-  if (chrome::IsQueryExtractionEnabled())
-    context_menu_contents_->AddItemWithStringId(IDC_COPY_URL, IDS_COPY_URL);
   if (!popup_window_mode_) {
     context_menu_contents_->AddItemWithStringId(IDC_PASTE, IDS_PASTE);
     // GetContextualLabel() will override this next label with the
@@ -2761,10 +2756,14 @@ void OmniboxViewWin::BuildContextMenu() {
   }
   context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
   context_menu_contents_->AddItemWithStringId(IDS_SELECT_ALL, IDS_SELECT_ALL);
-  if (!popup_window_mode_) {
+  if (chrome::IsQueryExtractionEnabled() || !popup_window_mode_) {
     context_menu_contents_->AddSeparator(ui::NORMAL_SEPARATOR);
-    context_menu_contents_->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
-                                                IDS_EDIT_SEARCH_ENGINES);
+    if (chrome::IsQueryExtractionEnabled())
+      context_menu_contents_->AddItemWithStringId(IDS_SHOW_URL, IDS_SHOW_URL);
+    if (!popup_window_mode_) {
+      context_menu_contents_->AddItemWithStringId(IDC_EDIT_SEARCH_ENGINES,
+                                                  IDS_EDIT_SEARCH_ENGINES);
+    }
   }
 }
 
@@ -2774,7 +2773,7 @@ void OmniboxViewWin::SelectAllIfNecessary(MouseButton button,
   // we're doing search term replacement (in which case refining the existing
   // query is common enough that we do click-to-place-cursor).
   if (tracking_click_[button] && !IsDrag(click_point_[button], point) &&
-      !controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+      !controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
           false)) {
     // Select all in the reverse direction so as not to scroll the caret
     // into view and shift the contents jarringly.

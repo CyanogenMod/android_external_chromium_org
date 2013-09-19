@@ -70,13 +70,6 @@ void QuicPacketGenerator::AddControlFrame(const QuicFrame& frame) {
 QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
                                                   StringPiece data,
                                                   QuicStreamOffset offset,
-                                                  bool fin) {
-  return ConsumeData(id, data, offset, fin, NULL);
-}
-
-QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
-                                                  StringPiece data,
-                                                  QuicStreamOffset offset,
                                                   bool fin,
                                                   QuicAckNotifier* notifier) {
   IsHandshake handshake = id == kCryptoStreamId ? IS_HANDSHAKE : NOT_HANDSHAKE;
@@ -88,6 +81,9 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
   size_t total_bytes_consumed = 0;
   bool fin_consumed = false;
 
+  if (!packet_creator_->HasRoomForStreamFrame(id, offset)) {
+    SerializeAndSendPacket();
+  }
   while (delegate_->CanWrite(NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
                              handshake)) {
     QuicFrame frame;
@@ -100,8 +96,13 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
       bytes_consumed = packet_creator_->CreateStreamFrame(
         id, data, offset + total_bytes_consumed, fin, &frame);
     }
-    bool success = AddFrame(frame);
-    DCHECK(success);
+    if (!AddFrame(frame)) {
+      LOG(DFATAL) << "Failed to add stream frame.";
+      // Inability to add a STREAM frame creates an unrecoverable hole in a
+      // the stream, so it's best to close the connection.
+      delegate_->CloseConnection(QUIC_INTERNAL_ERROR, false);
+      return QuicConsumedData(0, false);
+    }
 
     total_bytes_consumed += bytes_consumed;
     fin_consumed = fin && bytes_consumed == data.size();
@@ -195,7 +196,7 @@ bool QuicPacketGenerator::HasPendingFrames() const {
 
 bool QuicPacketGenerator::AddNextPendingFrame() {
   if (should_send_ack_) {
-    pending_ack_frame_.reset((delegate_->CreateAckFrame()));
+    pending_ack_frame_.reset(delegate_->CreateAckFrame());
     // If we can't this add the frame now, then we still need to do so later.
     should_send_ack_ = !AddFrame(QuicFrame(pending_ack_frame_.get()));
     // Return success if we have cleared out this flag (i.e., added the frame).
@@ -204,7 +205,7 @@ bool QuicPacketGenerator::AddNextPendingFrame() {
   }
 
   if (should_send_feedback_) {
-    pending_feedback_frame_.reset((delegate_->CreateFeedbackFrame()));
+    pending_feedback_frame_.reset(delegate_->CreateFeedbackFrame());
     // If we can't this add the frame now, then we still need to do so later.
     should_send_feedback_ = !AddFrame(QuicFrame(pending_feedback_frame_.get()));
     // Return success if we have cleared out this flag (i.e., added the frame).

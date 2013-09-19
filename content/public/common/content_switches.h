@@ -51,6 +51,7 @@ CONTENT_EXPORT extern const char kDisableCompositingForTransition[];
 CONTENT_EXPORT extern const char kDisableDatabases[];
 CONTENT_EXPORT extern const char kDisableDelegatedRenderer[];
 extern const char kDisableDesktopNotifications[];
+CONTENT_EXPORT extern const char kDisableDeviceMotion[];
 CONTENT_EXPORT extern const char kDisableDeviceOrientation[];
 CONTENT_EXPORT extern const char kDisableExperimentalWebGL[];
 CONTENT_EXPORT extern const char kDisableFileSystem[];
@@ -114,7 +115,6 @@ CONTENT_EXPORT extern const char kEnableCompositingForTransition[];
 CONTENT_EXPORT extern const char kEnableCssShaders[];
 CONTENT_EXPORT extern const char kEnableDeferredImageDecoding[];
 CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
-CONTENT_EXPORT extern const char kEnableDeviceMotion[];
 CONTENT_EXPORT extern const char kEnableDownloadResumption[];
 extern const char kEnableEncryptedMedia[];
 CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
@@ -163,7 +163,6 @@ extern const char kEnableWebAnimationsCSS[];
 extern const char kEnableWebAnimationsSVG[];
 CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 extern const char kEnableWebMIDI[];
-extern const char kEnableWebRtcTcpServerSocket[];
 CONTENT_EXPORT extern const char kExtraPluginDir[];
 CONTENT_EXPORT extern const char kForceCompositingMode[];
 extern const char kForceFieldTrials[];
@@ -252,14 +251,15 @@ CONTENT_EXPORT extern const char kZygoteProcess[];
 
 #if defined(ENABLE_WEBRTC)
 CONTENT_EXPORT extern const char kDisableDeviceEnumeration[];
-extern const char kDisableWebRtcHWEncoding[];
 CONTENT_EXPORT extern const char kDisableSCTPDataChannels[];
+CONTENT_EXPORT extern const char kDisableWebRtcHWDecoding[];
+extern const char kDisableWebRtcHWEncoding[];
 extern const char kEnableWebRtcAecRecordings[];
-CONTENT_EXPORT extern const char kEnableWebRtcHWDecoding[];
+extern const char kEnableWebRtcTcpServerSocket[];
 #endif
 
 #if defined(OS_ANDROID)
-CONTENT_EXPORT extern const char kDisableDeviceMotion[];
+CONTENT_EXPORT extern const char kDisableGestureRequirementForMediaFullscreen[];
 CONTENT_EXPORT extern const char kDisableGestureRequirementForMediaPlayback[];
 extern const char kDisableMediaHistoryLogging[];
 CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];

@@ -21,12 +21,16 @@ leak:net::NSSCertDatabase::ImportFromPKCS12
 leak:net::NSSCertDatabase::ListCerts
 leak:net::NSSCertDatabase::DeleteCertAndKey
 leak:crypto::ScopedTestNSSDB::ScopedTestNSSDB
-# The suppressions above will not fire when the fast stack unwinder is used,
+# Another leak due to not shutting down NSS properly. http://crbug.com/124445
+leak:error_get_my_stack
+
+# The NSS suppressions above will not fire when the fast stack unwinder is used,
 # because it can't unwind through NSS libraries. Apply blanket supressions for now.
 leak:libnssutil3
 leak:libnspr4
 leak:libnss3
 leak:libplds4
+leak:libnssckbi
 
 # Skia leaks. http://crbug.com/189170
 leak:FontConfigTypeface::LegacyCreateTypeface
@@ -43,6 +47,10 @@ leak:base::WeakPtrTest_MoveOwnershipAfterInvalidate_Test::TestBody
 # Leak in cc_unittests. http://crbug.com/285174
 leak:gpu::gles2::GLES2DecoderImpl::DoBindRenderbuffer
 leak:gpu::gles2::GLES2DecoderImpl::DoRenderbufferStorage
+
+# Leak in unit_tests. http://crbug.com/282646
+leak:DeclarativeContentActionTest_ShowPageAction_Test::TestBody
+leak:DeclarativeContentRulesRegistryTest_ActiveRulesDoesntGrow_Test::TestBody
 
 # GTK leaks. GTK is deprecated, so we won't be fixing these.
 # Most of them should apply to the full browser process only.

@@ -77,6 +77,7 @@ class LayerTreeHostImplTest : public testing::Test,
         did_notify_ready_to_activate_(false),
         did_request_commit_(false),
         did_request_redraw_(false),
+        did_request_manage_tiles_(false),
         did_upload_visible_tile_(false),
         did_lose_output_surface_(false),
         reduce_memory_result_(true),
@@ -119,6 +120,9 @@ class LayerTreeHostImplTest : public testing::Test,
   }
   virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect damage_rect) OVERRIDE {
     did_request_redraw_ = true;
+  }
+  virtual void SetNeedsManageTilesOnImplThread() OVERRIDE {
+    did_request_manage_tiles_ = true;
   }
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE {
     did_upload_visible_tile_ = true;
@@ -360,6 +364,7 @@ class LayerTreeHostImplTest : public testing::Test,
   bool did_notify_ready_to_activate_;
   bool did_request_commit_;
   bool did_request_redraw_;
+  bool did_request_manage_tiles_;
   bool did_upload_visible_tile_;
   bool did_lose_output_surface_;
   bool reduce_memory_result_;
@@ -1524,9 +1529,9 @@ class MissingTextureAnimatingLayer : public DidDrawCheckLayer {
     if (!tile_missing) {
       ResourceProvider::ResourceId resource =
           resource_provider->CreateResource(gfx::Size(1, 1),
-                                            GL_RGBA,
                                             GL_CLAMP_TO_EDGE,
-                                            ResourceProvider::TextureUsageAny);
+                                            ResourceProvider::TextureUsageAny,
+                                            RGBA_8888);
       resource_provider->AllocateForTesting(resource);
       PushTileProperties(0, 0, resource, gfx::Rect(), false);
     }
@@ -2616,9 +2621,9 @@ class BlendStateCheckLayer : public LayerImpl {
         quad_visible_rect_(5, 5, 5, 5),
         resource_id_(resource_provider->CreateResource(
             gfx::Size(1, 1),
-            GL_RGBA,
             GL_CLAMP_TO_EDGE,
-            ResourceProvider::TextureUsageAny)) {
+            ResourceProvider::TextureUsageAny,
+            RGBA_8888)) {
     resource_provider->AllocateForTesting(resource_id_);
     SetAnchorPoint(gfx::PointF());
     SetBounds(gfx::Size(10, 10));
@@ -3070,13 +3075,12 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCoveredOverhangBitmap) {
   host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   SetupActiveTreeLayers();
 
-  SkBitmap skbitmap;
-  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
-  skbitmap.allocPixels();
-  skbitmap.setImmutable();
-
   // Specify an overhang bitmap to use.
-  UIResourceBitmap ui_resource_bitmap(skbitmap, UIResourceBitmap::REPEAT);
+  scoped_refptr<UIResourceBitmap> ui_resource_bitmap(UIResourceBitmap::Create(
+      new uint8_t[4],
+      UIResourceBitmap::RGBA8,
+      UIResourceBitmap::REPEAT,
+      gfx::Size(1, 1)));
   UIResourceId ui_resource_id = 12345;
   host_impl_->CreateUIResource(ui_resource_id, ui_resource_bitmap);
   host_impl_->SetOverhangUIResource(ui_resource_id, gfx::Size(32, 32));
@@ -5367,7 +5371,7 @@ TEST_F(LayerTreeHostImplTest, TestRemoveRenderPasses) {
   ASSERT_TRUE(output_surface->context_provider());
 
   scoped_ptr<ResourceProvider> resource_provider =
-      ResourceProvider::Create(output_surface.get(), 0);
+      ResourceProvider::Create(output_surface.get(), 0, false);
 
   scoped_ptr<TestRenderer> renderer = TestRenderer::Create(
       &settings, resource_provider.get(), output_surface.get(), &proxy_);
@@ -6245,7 +6249,8 @@ TEST_F(CompositorFrameMetadataTest, CompositorFrameAckCountsAsSwapComplete) {
     host_impl_->DidDrawAllLayers(frame);
   }
   CompositorFrameAck ack;
-  host_impl_->OnSwapBuffersComplete(&ack);
+  host_impl_->ReclaimResources(&ack);
+  host_impl_->OnSwapBuffersComplete();
   EXPECT_EQ(swap_buffers_complete_, 1);
 }
 
@@ -6527,7 +6532,7 @@ class LayerTreeHostImplTestManageTiles : public LayerTreeHostImplTest {
 };
 
 TEST_F(LayerTreeHostImplTestManageTiles, ManageTilesWhenInvisible) {
-  fake_host_impl_->SetNeedsManageTiles();
+  fake_host_impl_->DidModifyTilePriorities();
   EXPECT_TRUE(fake_host_impl_->manage_tiles_needed());
   fake_host_impl_->SetVisible(false);
   EXPECT_FALSE(fake_host_impl_->manage_tiles_needed());
@@ -6542,13 +6547,12 @@ TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
 
   EXPECT_EQ(0u, context3d->NumTextures());
 
-  SkBitmap skbitmap;
-  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-  skbitmap.allocPixels();
-  skbitmap.setImmutable();
-
   UIResourceId ui_resource_id = 1;
-  UIResourceBitmap bitmap(skbitmap);
+  scoped_refptr<UIResourceBitmap> bitmap = UIResourceBitmap::Create(
+      new uint8_t[1],
+      UIResourceBitmap::RGBA8,
+      UIResourceBitmap::CLAMP_TO_EDGE,
+      gfx::Size(1, 1));
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
   EXPECT_EQ(1u, context3d->NumTextures());
   ResourceProvider::ResourceId id1 =

@@ -10,15 +10,19 @@
 #include "base/message_loop/message_loop.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/widget_deletion_observer.h"
+
+#if defined(USE_AURA)
+#include "ui/base/cursor/cursor.h"
+#endif
 
 namespace views {
 namespace internal {

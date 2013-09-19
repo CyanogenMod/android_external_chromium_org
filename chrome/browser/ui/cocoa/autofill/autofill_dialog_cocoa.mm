@@ -261,8 +261,7 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     [mainContainer_ setTarget:self];
 
     signInContainer_.reset(
-        [[AutofillSignInContainer alloc]
-            initWithDelegate:autofillDialog->delegate()]);
+        [[AutofillSignInContainer alloc] initWithDialog:autofillDialog]);
     [[signInContainer_ view] setHidden:YES];
 
     NSRect clientRect = [[mainContainer_ view] frame];
@@ -445,14 +444,6 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 }
 
 - (void)show {
-  gfx::Image splashImage = autofillDialog_->delegate()->SplashPageImage();
-  if (!splashImage.IsEmpty()) {
-    autofill::DialogOverlayState state;
-    state.image = splashImage;
-    [overlayController_ setState:state];
-    [overlayController_ beginFadeOut];
-  }
-
   // Resizing the browser causes the ConstrainedWindow to move.
   // Observe that to allow resizes based on browser size.
   // NOTE: This MUST come last after all initial setup is done, because there

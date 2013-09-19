@@ -648,7 +648,8 @@ UserView::UserView(SystemTrayItem* owner,
   // The logout button must be added before the user card so that the user card
   // can correctly calculate the remaining available width.
   // Note that only the current multiprofile user gets a button.
-  AddLogoutButton(!multiprofile_index_ ? login : ash::user::LOGGED_IN_LOCKED);
+  if (!multiprofile_index_)
+    AddLogoutButton(login);
   AddUserCard(owner, login);
 }
 
@@ -1259,9 +1260,9 @@ void TrayUser::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
     }
     if (label_) {
       label_->set_border(views::Border::CreateEmptyBorder(
-          kTrayLabelItemVerticalPaddingVeriticalAlignment,
+          kTrayLabelItemVerticalPaddingVerticalAlignment,
           kTrayLabelItemHorizontalPaddingBottomAlignment,
-          kTrayLabelItemVerticalPaddingVeriticalAlignment,
+          kTrayLabelItemVerticalPaddingVerticalAlignment,
           kTrayLabelItemHorizontalPaddingBottomAlignment));
     }
     layout_view_->SetLayoutManager(

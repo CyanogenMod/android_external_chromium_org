@@ -19,6 +19,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/apps/chrome_apps_client.h"
 #include "chrome/browser/automation/automation_provider_list.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/chrome_browser_main.h"
@@ -182,6 +183,7 @@ BrowserProcessImpl::BrowserProcessImpl(
   InitIdleMonitor();
 #endif
 
+  apps::AppsClient::Set(ChromeAppsClient::GetInstance());
   extensions::ExtensionsClient::Set(
       extensions::ChromeExtensionsClient::GetInstance());
   extension_event_router_forwarder_ = new extensions::EventRouterForwarder;
@@ -336,8 +338,7 @@ unsigned int BrowserProcessImpl::ReleaseModule() {
     // Wait for the pending print jobs to finish. Don't do this later, since
     // this might cause a nested message loop to run, and we don't want pending
     // tasks to run once teardown has started.
-    print_job_manager_->OnQuit();
-    print_job_manager_.reset();
+    print_job_manager_->Shutdown();
 #endif
 
     CHECK(base::MessageLoop::current()->is_running());
@@ -558,11 +559,7 @@ bool BrowserProcessImpl::IsShuttingDown() {
 }
 
 printing::PrintJobManager* BrowserProcessImpl::print_job_manager() {
-  // TODO(abarth): DCHECK(CalledOnValidThread());
-  // http://code.google.com/p/chromium/issues/detail?id=6828
-  // print_job_manager_ is initialized in the constructor and destroyed in the
-  // destructor, so it should always be valid.
-  DCHECK(print_job_manager_.get());
+  DCHECK(CalledOnValidThread());
   return print_job_manager_.get();
 }
 
@@ -622,7 +619,7 @@ BookmarkPromptController* BrowserProcessImpl::bookmark_prompt_controller() {
 #endif
 }
 
-chrome::StorageMonitor* BrowserProcessImpl::storage_monitor() {
+StorageMonitor* BrowserProcessImpl::storage_monitor() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   return NULL;
 #else
@@ -631,19 +628,18 @@ chrome::StorageMonitor* BrowserProcessImpl::storage_monitor() {
 }
 
 void BrowserProcessImpl::set_storage_monitor_for_test(
-    scoped_ptr<chrome::StorageMonitor> monitor) {
+    scoped_ptr<StorageMonitor> monitor) {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   storage_monitor_ = monitor.Pass();
 #endif
 }
 
-chrome::MediaFileSystemRegistry*
-BrowserProcessImpl::media_file_system_registry() {
+MediaFileSystemRegistry* BrowserProcessImpl::media_file_system_registry() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
     return NULL;
 #else
   if (!media_file_system_registry_)
-    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+    media_file_system_registry_.reset(new MediaFileSystemRegistry());
   return media_file_system_registry_.get();
 #endif
 }
@@ -928,7 +924,7 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  storage_monitor_.reset(chrome::StorageMonitor::Create());
+  storage_monitor_.reset(StorageMonitor::Create());
 #endif
 
   platform_part_->PreMainMessageLoopRun();

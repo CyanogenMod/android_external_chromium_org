@@ -6,20 +6,24 @@
 
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_api.h"
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/tab_capture/tab_capture_registry.h"
-#include "chrome/browser/extensions/api/tab_capture/tab_capture_registry_factory.h"
 #include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/features/simple_feature.h"
+#include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "extensions/common/features/feature.h"
@@ -47,6 +51,17 @@ const char kMediaStreamSource[] = "chromeMediaSource";
 const char kMediaStreamSourceId[] = "chromeMediaSourceId";
 const char kMediaStreamSourceTab[] = "tab";
 
+// Whitelisted extensions that do not check for a browser action grant because
+// they provide API's.
+const char* whitelisted_extensions[] = {
+  "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
+  "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+  "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+  "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+  "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+  "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
+};
+
 }  // namespace
 
 bool TabCaptureCaptureFunction::RunImpl() {
@@ -73,14 +88,19 @@ bool TabCaptureCaptureFunction::RunImpl() {
   const Extension* extension = GetExtension();
   const std::string& extension_id = extension->id();
 
+  const int tab_id = SessionID::IdForTab(target_contents);
+
   // Make sure either we have been granted permission to capture through an
   // extension icon click or our extension is whitelisted.
-  if (!TabHelper::FromWebContents(target_contents)->
-          active_tab_permission_granter()->IsGranted(extension) &&
+  if (!PermissionsData::HasAPIPermissionForTab(
+          extension, tab_id, APIPermission::kTabCaptureForTab) &&
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kWhitelistedExtensionID) != extension_id &&
-      !FeatureProvider::GetByName("permission")->GetFeature("tabCapture")->
-          IsIdInWhitelist(extension_id)) {
+      !SimpleFeature::IsIdInWhitelist(
+          extension_id,
+          std::set<std::string>(
+              whitelisted_extensions,
+              whitelisted_extensions + arraysize(whitelisted_extensions)))) {
     error_ = kGrantError;
     return false;
   }
@@ -88,8 +108,6 @@ bool TabCaptureCaptureFunction::RunImpl() {
   content::RenderViewHost* const rvh = target_contents->GetRenderViewHost();
   int render_process_id = rvh->GetProcess()->GetID();
   int routing_id = rvh->GetRoutingID();
-  int tab_id = SessionTabHelper::FromWebContents(target_contents)->
-                   session_id().id();
 
   // Create a constraints vector. We will modify all the constraints in this
   // vector to append our chrome specific constraints.
@@ -128,7 +146,7 @@ bool TabCaptureCaptureFunction::RunImpl() {
   }
 
   extensions::TabCaptureRegistry* registry =
-      extensions::TabCaptureRegistryFactory::GetForProfile(profile());
+      extensions::TabCaptureRegistry::Get(profile());
   if (!registry->AddRequest(render_process_id,
                             routing_id,
                             extension_id,
@@ -150,7 +168,7 @@ bool TabCaptureCaptureFunction::RunImpl() {
 
 bool TabCaptureGetCapturedTabsFunction::RunImpl() {
   extensions::TabCaptureRegistry* registry =
-      extensions::TabCaptureRegistryFactory::GetForProfile(profile());
+      extensions::TabCaptureRegistry::Get(profile());
 
   const TabCaptureRegistry::RegistryCaptureInfo& captured_tabs =
       registry->GetCapturedTabs(GetExtension()->id());

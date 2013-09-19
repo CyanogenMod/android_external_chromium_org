@@ -5,8 +5,8 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop/message_loop.h"
 #include "base/platform_file.h"
+#include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
@@ -47,7 +47,7 @@ class FileSystemOperationRunnerTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     file_system_context_ = NULL;
-    base::MessageLoop::current()->RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   FileSystemURL URL(const std::string& path) {
@@ -76,7 +76,7 @@ TEST_F(FileSystemOperationRunnerTest, NotFoundError) {
   operation_runner()->Truncate(URL("foo"), 0,
                                base::Bind(&GetStatus, &done, &status));
   ASSERT_FALSE(done);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(done);
   ASSERT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status);
 }
@@ -91,7 +91,7 @@ TEST_F(FileSystemOperationRunnerTest, InvalidURLError) {
   // The error call back shouldn't be fired synchronously.
   ASSERT_FALSE(done);
 
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(done);
   ASSERT_EQ(base::PLATFORM_FILE_ERROR_INVALID_URL, status);
 }
@@ -113,7 +113,7 @@ TEST_F(FileSystemOperationRunnerTest, NotFoundErrorAndCancel) {
 
   ASSERT_FALSE(done);
   ASSERT_FALSE(cancel_done);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   ASSERT_TRUE(done);
   ASSERT_TRUE(cancel_done);
@@ -138,11 +138,24 @@ TEST_F(FileSystemOperationRunnerTest, InvalidURLErrorAndCancel) {
 
   ASSERT_FALSE(done);
   ASSERT_FALSE(cancel_done);
-  base::MessageLoop::current()->RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   ASSERT_TRUE(done);
   ASSERT_TRUE(cancel_done);
   ASSERT_EQ(base::PLATFORM_FILE_ERROR_INVALID_URL, status);
+  ASSERT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, cancel_status);
+}
+
+TEST_F(FileSystemOperationRunnerTest, CancelWithInvalidId) {
+  const FileSystemOperationRunner::OperationID kInvalidId = -1;
+  bool done = true;  // The operation is not running.
+  bool cancel_done = false;
+  base::PlatformFileError cancel_status = base::PLATFORM_FILE_ERROR_FAILED;
+  operation_runner()->Cancel(kInvalidId, base::Bind(&GetCancelStatus,
+                                                    &done, &cancel_done,
+                                                    &cancel_status));
+
+  ASSERT_TRUE(cancel_done);
   ASSERT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, cancel_status);
 }
 

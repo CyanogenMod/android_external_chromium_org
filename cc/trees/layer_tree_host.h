@@ -24,6 +24,7 @@
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
+#include "cc/resources/resource_format.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/resources/ui_resource_client.h"
@@ -73,7 +74,7 @@ struct CC_EXPORT RendererCapabilities {
   RendererCapabilities();
   ~RendererCapabilities();
 
-  unsigned best_texture_format;
+  ResourceFormat best_texture_format;
   bool using_partial_swap;
   bool using_set_visibility;
   bool using_egl_image;
@@ -86,35 +87,18 @@ struct CC_EXPORT RendererCapabilities {
   bool using_discard_framebuffer;
 };
 
-class CC_EXPORT UIResourceRequest {
- public:
+struct CC_EXPORT UIResourceRequest {
   enum UIResourceRequestType {
     UIResourceCreate,
     UIResourceDelete,
     UIResourceInvalidRequest
   };
 
-  UIResourceRequest(UIResourceRequestType type, UIResourceId id);
-  UIResourceRequest(UIResourceRequestType type,
-                    UIResourceId id,
-                    const UIResourceBitmap& bitmap);
-  UIResourceRequest(const UIResourceRequest& request);
-
+  UIResourceRequest();
   ~UIResourceRequest();
-
-  UIResourceRequestType GetType() const { return type_; }
-  UIResourceId GetId() const { return id_; }
-  UIResourceBitmap GetBitmap() const {
-    DCHECK(bitmap_);
-    return *bitmap_.get();
-  }
-
-  UIResourceRequest& operator=(const UIResourceRequest& request);
-
- private:
-  UIResourceRequestType type_;
-  UIResourceId id_;
-  scoped_ptr<UIResourceBitmap> bitmap_;
+  UIResourceRequestType type;
+  UIResourceId id;
+  scoped_refptr<UIResourceBitmap> bitmap;
 };
 
 class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
@@ -218,6 +202,10 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
   const Layer* root_layer() const { return root_layer_.get(); }
+  void RegisterViewportLayers(
+      scoped_refptr<Layer> page_scale_layer,
+      scoped_refptr<Layer> inner_viewport_scroll_layer,
+      scoped_refptr<Layer> outer_viewport_scroll_layer);
 
   const LayerTreeSettings& settings() const { return settings_; }
 
@@ -307,8 +295,6 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   // were evicted on the impl thread.
   void RecreateUIResources();
 
-  virtual gfx::Size GetUIResourceSize(UIResourceId id) const;
-
   bool UsingSharedMemoryResources();
   int id() const { return tree_id_; }
 
@@ -345,13 +331,7 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
 
   bool AnimateLayersRecursive(Layer* current, base::TimeTicks time);
 
-  struct UIResourceClientData {
-    UIResourceClient* client;
-    gfx::Size size;
-  };
-
-  typedef base::hash_map<UIResourceId, UIResourceClientData>
-      UIResourceClientMap;
+  typedef base::hash_map<UIResourceId, UIResourceClient*> UIResourceClientMap;
   UIResourceClientMap ui_resource_client_map_;
   int next_ui_resource_id_;
 
@@ -443,6 +423,10 @@ class CC_EXPORT LayerTreeHost : NON_EXPORTED_BASE(public RateLimiterClient) {
   };
   LCDTextMetrics lcd_text_metrics_;
   int tree_id_;
+
+  scoped_refptr<Layer> page_scale_layer_;
+  scoped_refptr<Layer> inner_viewport_scroll_layer_;
+  scoped_refptr<Layer> outer_viewport_scroll_layer_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

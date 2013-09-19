@@ -59,26 +59,28 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual ~QuicSession();
 
   // QuicConnectionVisitorInterface methods:
-  virtual bool OnPacket(const IPEndPoint& self_address,
-                        const IPEndPoint& peer_address,
-                        const QuicPacketHeader& header,
-                        const std::vector<QuicStreamFrame>& frame) OVERRIDE;
+  virtual bool OnStreamFrames(
+      const std::vector<QuicStreamFrame>& frames) OVERRIDE;
   virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual void OnGoAway(const QuicGoAwayFrame& frame) OVERRIDE;
   virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE;
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE{}
   // Not needed for HTTP.
-  virtual void OnAck(const SequenceNumberSet& acked_packets) OVERRIDE {}
   virtual bool OnCanWrite() OVERRIDE;
+  virtual bool HasPendingHandshake() const OVERRIDE;
 
   // Called by streams when they want to write data to the peer.
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
   // if the socket was unexpectedly blocked.
-  virtual QuicConsumedData WriteData(QuicStreamId id,
-                                     base::StringPiece data,
-                                     QuicStreamOffset offset,
-                                     bool fin);
+  virtual QuicConsumedData WritevData(QuicStreamId id,
+                                      const struct iovec* iov,
+                                      int iov_count,
+                                      QuicStreamOffset offset,
+                                      bool fin);
+
   // Called by streams when they want to close the stream in both directions.
   virtual void SendRstStream(QuicStreamId id, QuicRstStreamErrorCode error);
 
@@ -137,7 +139,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // been implicitly created.
   virtual size_t GetNumOpenStreams() const;
 
-  void MarkWriteBlocked(QuicStreamId id);
+  void MarkWriteBlocked(QuicStreamId id, QuicPriority priority);
 
   // Marks that |stream_id| is blocked waiting to decompress the
   // headers identified by |decompression_id|.
@@ -281,6 +283,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   bool goaway_received_;
   // Whether a GoAway has been sent.
   bool goaway_sent_;
+
+  // Indicate if there is pending data for the crypto stream.
+  bool has_pending_handshake_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

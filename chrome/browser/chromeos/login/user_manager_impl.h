@@ -22,7 +22,6 @@
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -38,13 +37,11 @@ namespace chromeos {
 
 class RemoveUserDelegate;
 class SessionLengthLimiter;
-class UserPolicyStatusManager;
 
 // Implementation of the UserManager.
 class UserManagerImpl
     : public UserManager,
       public LoginUtils::Delegate,
-      public ProfileSyncServiceObserver,
       public content::NotificationObserver,
       public policy::DeviceLocalAccountPolicyService::Observer {
  public:
@@ -57,6 +54,7 @@ class UserManagerImpl
   virtual UserList GetUsersAdmittedForMultiProfile() const OVERRIDE;
   virtual const UserList& GetLoggedInUsers() const OVERRIDE;
   virtual const UserList& GetLRULoggedInUsers() OVERRIDE;
+  virtual UserList GetUnlockUsers() const OVERRIDE;
   virtual const std::string& GetOwnerEmail() OVERRIDE;
   virtual void UserLoggedIn(const std::string& email,
                             const std::string& username_hash,
@@ -75,6 +73,7 @@ class UserManagerImpl
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
+  virtual const User* GetPrimaryUser() const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
@@ -141,14 +140,13 @@ class UserManagerImpl
       const std::string& chrome_client_id,
       const std::string& chrome_client_secret) OVERRIDE;
   virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
+  virtual base::FilePath GetUserProfileDir(
+      const std::string& email) const OVERRIDE;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
-
-  // ProfileSyncServiceObserver implementation.
-  virtual void OnStateChanged() OVERRIDE;
 
   // policy::DeviceLocalAccountPolicyService::Observer implementation.
   virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
@@ -336,6 +334,10 @@ class UserManagerImpl
   // ephemeral user instance.
   User* active_user_;
 
+  // The primary user of the current session. It is recorded for the first
+  // signed-in user and does not change thereafter.
+  User* primary_user_;
+
   // True if SessionStarted() has been called.
   bool session_started_;
 
@@ -374,11 +376,6 @@ class UserManagerImpl
 
   content::NotificationRegistrar registrar_;
 
-  // Profile sync service which is observed to take actions after sync
-  // errors appear. NOTE: there is no guarantee that it is the current sync
-  // service, so do NOT use it outside |OnStateChanged| method.
-  ProfileSyncService* observed_sync_service_;
-
   ObserverList<UserManager::Observer> observer_list_;
 
   // TODO(nkostylev): Merge with session state refactoring CL.
@@ -406,8 +403,6 @@ class UserManagerImpl
 
   // Time at which this object was created.
   base::TimeTicks manager_creation_time_;
-
-  scoped_ptr<UserPolicyStatusManager> user_policy_status_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

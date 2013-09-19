@@ -14,8 +14,8 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "ui/base/accessibility/accessibility_types.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
@@ -150,9 +150,14 @@ void MessagePopupCollection::UpdateWidgets() {
     toasts_.push_back(toast);
 
     gfx::Size preferred_size = toast->GetPreferredSize();
-    gfx::Point origin(
-        GetToastOriginX(gfx::Rect(preferred_size)) + preferred_size.width(),
-        top_down ? base + view_height : base);
+    gfx::Point origin(GetToastOriginX(gfx::Rect(preferred_size)), base);
+    // The toast slides in from the edge of the screen horizontally.
+    if (alignment_ & POPUP_ALIGNMENT_LEFT)
+      origin.set_x(origin.x() - preferred_size.width());
+    else
+      origin.set_x(origin.x() + preferred_size.width());
+    if (top_down)
+      origin.set_y(origin.y() + view_height);
     toast->RevealWithAnimation(origin);
 
     // Shift the base line to be a few pixels above the last added toast or (few

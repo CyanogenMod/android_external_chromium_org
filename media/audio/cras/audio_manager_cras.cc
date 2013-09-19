@@ -16,13 +16,20 @@
 
 namespace media {
 
+static void AddDefaultDevice(AudioDeviceNames* device_names) {
+  DCHECK(device_names->empty());
+
+  // Cras will route audio from a proper physical device automatically.
+  device_names->push_back(
+      AudioDeviceName(AudioManagerBase::kDefaultDeviceName,
+                      AudioManagerBase::kDefaultDeviceId));
+}
+
 // Maximum number of output streams that can be open simultaneously.
 static const int kMaxOutputStreams = 50;
 
 // Default sample rate for input and output streams.
 static const int kDefaultSampleRate = 48000;
-
-const char AudioManagerCras::kLoopbackDeviceId[] = "loopback";
 
 bool AudioManagerCras::HasAudioOutputDevices() {
   return true;
@@ -45,10 +52,13 @@ void AudioManagerCras::ShowAudioInputSettings() {
 }
 
 void AudioManagerCras::GetAudioInputDeviceNames(
-    media::AudioDeviceNames* device_names) {
-  DCHECK(device_names->empty());
-  GetCrasAudioInputDevices(device_names);
-  return;
+    AudioDeviceNames* device_names) {
+  AddDefaultDevice(device_names);
+}
+
+void AudioManagerCras::GetAudioOutputDeviceNames(
+    AudioDeviceNames* device_names) {
+  AddDefaultDevice(device_names);
 }
 
 AudioParameters AudioManagerCras::GetInputStreamParameters(
@@ -59,14 +69,6 @@ AudioParameters AudioManagerCras::GetInputStreamParameters(
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
       kDefaultSampleRate, 16, kDefaultInputBufferSize);
-}
-
-void AudioManagerCras::GetCrasAudioInputDevices(
-    media::AudioDeviceNames* device_names) {
-  // Cras will route audio from a proper physical device automatically.
-  device_names->push_back(
-      AudioDeviceName(AudioManagerBase::kDefaultDeviceName,
-                      AudioManagerBase::kDefaultDeviceId));
 }
 
 AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(

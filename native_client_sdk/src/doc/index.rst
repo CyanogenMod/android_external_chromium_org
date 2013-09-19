@@ -9,6 +9,7 @@ Contents:
    rest-devsite-examples.rst
    overview.rst
    quick-start.rst
+   nacl-and-pnacl.rst
    sdk/download.rst
    sdk/examples.rst
    sdk/index.rst
@@ -28,4 +29,5 @@ Contents:
    devguide/coding/progress-events.rst
    devguide/distributing.rst
    community/application-gallery.rst
+   community/middleware.rst
    peppercpp/index.rst

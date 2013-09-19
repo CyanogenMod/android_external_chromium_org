@@ -91,5 +91,40 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
     },
+    {
+      'target_name': 'google_apis_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:run_all_unittests',
+        '../testing/gtest.gyp:gtest',
+        'google_apis',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'google_api_keys_unittest.cc',
+      ],
+    },
+    {
+      'target_name': 'google_apis_test_support',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../net/net.gyp:net',
+        '../net/net.gyp:net_test_support',
+      ],
+      'export_dependent_settings': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
+        '../net/net.gyp:net',
+        '../net/net.gyp:net_test_support',
+      ],
+      'sources': [
+        'gaia/fake_gaia.cc',
+        'gaia/fake_gaia.h',
+      ],
+    },
   ],
 }

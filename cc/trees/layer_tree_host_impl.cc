@@ -197,7 +197,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
       did_lock_scrolling_layer_(false),
       should_bubble_scrolls_(false),
       wheel_scrolling_(false),
-      manage_tiles_needed_(false),
+      tile_priorities_dirty_(false),
       root_layer_scroll_offset_delegate_(NULL),
       settings_(settings),
       visible_(true),
@@ -279,7 +279,7 @@ void LayerTreeHostImpl::CommitComplete() {
     pending_tree_->set_needs_update_draw_properties();
     pending_tree_->UpdateDrawProperties();
     // Start working on newly created tiles immediately if needed.
-    if (!tile_manager_ || !manage_tiles_needed_)
+    if (!tile_manager_ || !tile_priorities_dirty_)
       NotifyReadyToActivate();
     else
       ManageTiles();
@@ -357,12 +357,12 @@ void LayerTreeHostImpl::Animate(base::TimeTicks monotonic_time,
 void LayerTreeHostImpl::ManageTiles() {
   if (!tile_manager_)
     return;
-  if (!manage_tiles_needed_)
+  if (!tile_priorities_dirty_)
     return;
   if (!device_viewport_valid_for_tile_management_)
     return;
 
-  manage_tiles_needed_ = false;
+  tile_priorities_dirty_ = false;
   tile_manager_->ManageTiles();
 
   size_t memory_required_bytes;
@@ -1138,8 +1138,16 @@ void LayerTreeHostImpl::UpdateTileManagerMemoryPolicy(
           policy.priority_cutoff_when_visible :
           policy.priority_cutoff_when_not_visible);
   new_state.num_resources_limit = policy.num_resources_limit;
+
   tile_manager_->SetGlobalState(new_state);
-  manage_tiles_needed_ = true;
+  DidModifyTilePriorities();
+}
+
+void LayerTreeHostImpl::DidModifyTilePriorities() {
+  DCHECK(settings_.impl_side_painting);
+  // Mark priorities as dirty and schedule a ManageTiles().
+  tile_priorities_dirty_ = true;
+  client_->SetNeedsManageTilesOnImplThread();
 }
 
 void LayerTreeHostImpl::DidInitializeVisibleTile() {
@@ -1230,14 +1238,15 @@ void LayerTreeHostImpl::BeginFrame(const BeginFrameArgs& args) {
   client_->BeginFrameOnImplThread(args);
 }
 
-void LayerTreeHostImpl::OnSwapBuffersComplete(
-    const CompositorFrameAck* ack) {
+void LayerTreeHostImpl::OnSwapBuffersComplete() {
+  client_->OnSwapBuffersCompleteOnImplThread();
+}
+
+void LayerTreeHostImpl::ReclaimResources(const CompositorFrameAck* ack) {
   // TODO(piman): We may need to do some validation on this ack before
   // processing it.
-  if (ack && renderer_)
+  if (renderer_)
     renderer_->ReceiveSwapBuffersAck(*ack);
-
-  client_->OnSwapBuffersCompleteOnImplThread();
 }
 
 void LayerTreeHostImpl::OnCanDrawStateChangedForTree() {
@@ -1639,6 +1648,13 @@ void LayerTreeHostImpl::CreateAndSetRenderer(
   if (renderer_) {
     renderer_->SetVisible(visible_);
     SetFullRootLayerDamage();
+
+    // See note in LayerTreeImpl::UpdateDrawProperties.  Renderer needs to be
+    // initialized to get max texture size.  Also, after releasing resources,
+    // trees need another update to generate new ones.
+    active_tree_->set_needs_update_draw_properties();
+    if (pending_tree_)
+      pending_tree_->set_needs_update_draw_properties();
   }
 }
 
@@ -1683,7 +1699,9 @@ bool LayerTreeHostImpl::InitializeRenderer(
     return false;
 
   scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
-      output_surface.get(), settings_.highp_threshold_min);
+      output_surface.get(),
+      settings_.highp_threshold_min,
+      settings_.use_rgba_4444_textures);
   if (!resource_provider)
     return false;
 
@@ -1726,12 +1744,6 @@ bool LayerTreeHostImpl::InitializeRenderer(
   output_surface_ = output_surface.Pass();
 
   client_->OnCanDrawStateChanged(CanDraw());
-
-  // See note in LayerTreeImpl::UpdateDrawProperties.  Renderer needs
-  // to be initialized to get max texture size.
-  active_tree_->set_needs_update_draw_properties();
-  if (pending_tree_)
-    pending_tree_->set_needs_update_draw_properties();
 
   return true;
 }
@@ -2550,7 +2562,7 @@ void LayerTreeHostImpl::SetTreePriority(TreePriority priority) {
 
   new_state.tree_priority = priority;
   tile_manager_->SetGlobalState(new_state);
-  manage_tiles_needed_ = true;
+  DidModifyTilePriorities();
 }
 
 void LayerTreeHostImpl::ResetCurrentFrameTimeForNextFrame() {
@@ -2617,13 +2629,14 @@ void LayerTreeHostImpl::SetDebugState(
   SetFullRootLayerDamage();
 }
 
-void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
-                                         const UIResourceBitmap& bitmap) {
+void LayerTreeHostImpl::CreateUIResource(
+    UIResourceId uid,
+    scoped_refptr<UIResourceBitmap> bitmap) {
   DCHECK_GT(uid, 0);
-  DCHECK_EQ(bitmap.GetFormat(), UIResourceBitmap::RGBA8);
+  DCHECK_EQ(bitmap->GetFormat(), UIResourceBitmap::RGBA8);
 
   GLint wrap_mode = 0;
-  switch (bitmap.GetWrapMode()) {
+  switch (bitmap->GetWrapMode()) {
     case UIResourceBitmap::CLAMP_TO_EDGE:
       wrap_mode = GL_CLAMP_TO_EDGE;
       break;
@@ -2638,16 +2651,16 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   if (id)
     DeleteUIResource(uid);
   id = resource_provider_->CreateResource(
-      bitmap.GetSize(),
-      resource_provider_->best_texture_format(),
+      bitmap->GetSize(),
       wrap_mode,
-      ResourceProvider::TextureUsageAny);
+      ResourceProvider::TextureUsageAny,
+      resource_provider_->best_texture_format());
 
   ui_resource_map_[uid] = id;
   resource_provider_->SetPixels(id,
-                                bitmap.GetPixels(),
-                                gfx::Rect(bitmap.GetSize()),
-                                gfx::Rect(bitmap.GetSize()),
+                                reinterpret_cast<uint8_t*>(bitmap->GetPixels()),
+                                gfx::Rect(bitmap->GetSize()),
+                                gfx::Rect(bitmap->GetSize()),
                                 gfx::Vector2d(0, 0));
   MarkUIResourceNotEvicted(uid);
 }

@@ -80,6 +80,21 @@ WalletItems::MaskedInstrument::Status
   return WalletItems::MaskedInstrument::INAPPLICABLE;
 }
 
+base::string16 DisplayStringFromType(WalletItems::MaskedInstrument::Type type) {
+  switch (type) {
+    case WalletItems::MaskedInstrument::AMEX:
+      return CreditCard::TypeForDisplay(kAmericanExpressCard);
+    case WalletItems::MaskedInstrument::DISCOVER:
+      return CreditCard::TypeForDisplay(kDiscoverCard);
+    case WalletItems::MaskedInstrument::MASTER_CARD:
+      return CreditCard::TypeForDisplay(kMasterCard);
+    case WalletItems::MaskedInstrument::VISA:
+      return CreditCard::TypeForDisplay(kVisaCard);
+    default:
+      return CreditCard::TypeForDisplay(kGenericCard);
+  }
+}
+
 }  // anonymous namespace
 
 WalletItems::MaskedInstrument::MaskedInstrument(
@@ -261,21 +276,9 @@ base::string16 WalletItems::MaskedInstrument::DisplayNameDetail() const {
 }
 
 base::string16 WalletItems::MaskedInstrument::TypeAndLastFourDigits() const {
-  base::string16 display_type;
-
-  if (type_ == AMEX)
-    display_type = CreditCard::TypeForDisplay(kAmericanExpressCard);
-  else if (type_ == DISCOVER)
-    display_type = CreditCard::TypeForDisplay(kDiscoverCard);
-  else if (type_ == MASTER_CARD)
-    display_type = CreditCard::TypeForDisplay(kMasterCard);
-  else if (type_ == VISA)
-    display_type = CreditCard::TypeForDisplay(kVisaCard);
-  else
-    display_type = CreditCard::TypeForDisplay(kGenericCard);
-
   // TODO(dbeam): i18n.
-  return display_type + ASCIIToUTF16(" - ") + last_four_digits();
+  return DisplayStringFromType(type_) + ASCIIToUTF16(" - ") +
+         last_four_digits();
 }
 
 const gfx::Image& WalletItems::MaskedInstrument::CardIcon() const {
@@ -326,6 +329,9 @@ base::string16 WalletItems::MaskedInstrument::GetInfo(
 
     case CREDIT_CARD_VERIFICATION_CODE:
       break;
+
+    case CREDIT_CARD_TYPE:
+      return DisplayStringFromType(type_);
 
     default:
       NOTREACHED();

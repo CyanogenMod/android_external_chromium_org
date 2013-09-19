@@ -1210,6 +1210,16 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 extern const char kMessageCenterEnabledSyncNotifierIds[] =
     "message_center.enabled_sync_notifier_ids";
 
+// List pref containing synced notification sending services that are currently
+// enabled.
+extern const char kEnabledSyncedNotificationSendingServices[] =
+    "synced_notification.enabled_sending_services";
+
+// List pref containing which synced notification sending services have already
+// been turned on once for the user (so we don't turn them on again).
+extern const char kInitializedSyncedNotificationSendingServices[] =
+    "synced_notification.initialized_sending_services";
+
 // Dictionary pref that keeps track of per-extension settings. The keys are
 // extension ids.
 const char kExtensionsPref[] = "extensions.settings";
@@ -2452,10 +2462,6 @@ const char kNetworkProfileWarningsLeft[] = "network_profile.warnings_left";
 // |network_profile.warnings_left| after a silence period.
 const char kNetworkProfileLastWarningTime[] =
     "network_profile.last_warning_time";
-
-// 64-bit serialization of the time last policy usage statistics were collected
-// by UMA_HISTOGRAM_ENUMERATION.
-const char kLastPolicyStatisticsUpdate[] = "policy.last_statistics_update";
 
 #if defined(OS_CHROMEOS)
 // The RLZ brand code, if enabled.

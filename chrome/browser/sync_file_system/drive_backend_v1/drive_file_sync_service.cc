@@ -48,15 +48,6 @@ typedef RemoteFileSyncService::OriginStatusMap OriginStatusMap;
 namespace {
 
 const base::FilePath::CharType kTempDirName[] = FILE_PATH_LITERAL("tmp");
-const base::FilePath::CharType kSyncFileSystemDir[] =
-    FILE_PATH_LITERAL("Sync FileSystem");
-const base::FilePath::CharType kSyncFileSystemDirDev[] =
-    FILE_PATH_LITERAL("Sync FileSystem Dev");
-
-const base::FilePath::CharType* GetSyncFileSystemDir() {
-  return IsSyncFSDirectoryOperationEnabled()
-      ? kSyncFileSystemDirDev : kSyncFileSystemDir;
-}
 
 void EmptyStatusCallback(SyncStatusCode status) {}
 
@@ -142,6 +133,17 @@ void DriveFileSyncService::AddFileStatusObserver(
 void DriveFileSyncService::RegisterOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  if (!pending_origin_operations_.HasPendingOperation(origin) &&
+      metadata_store_->IsIncrementalSyncOrigin(origin) &&
+      !metadata_store_->GetResourceIdForOrigin(origin).empty()) {
+    DCHECK(!metadata_store_->IsOriginDisabled(origin));
+    callback.Run(SYNC_STATUS_OK);
+    MaybeStartFetchChanges();
+    return;
+  }
+
+  pending_origin_operations_.Push(origin, OriginOperation::REGISTERING);
+
   task_manager_->ScheduleTaskAtPriority(
       base::Bind(&DriveFileSyncService::DoRegisterOrigin, AsWeakPtr(), origin),
       SyncTaskManager::PRIORITY_HIGH,
@@ -151,6 +153,7 @@ void DriveFileSyncService::RegisterOrigin(
 void DriveFileSyncService::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  pending_origin_operations_.Push(origin, OriginOperation::ENABLING);
   task_manager_->ScheduleTaskAtPriority(
       base::Bind(&DriveFileSyncService::DoEnableOrigin, AsWeakPtr(), origin),
       SyncTaskManager::PRIORITY_HIGH,
@@ -160,6 +163,7 @@ void DriveFileSyncService::EnableOrigin(
 void DriveFileSyncService::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  pending_origin_operations_.Push(origin, OriginOperation::DISABLING);
   task_manager_->ScheduleTaskAtPriority(
       base::Bind(&DriveFileSyncService::DoDisableOrigin, AsWeakPtr(), origin),
       SyncTaskManager::PRIORITY_HIGH,
@@ -169,6 +173,7 @@ void DriveFileSyncService::DisableOrigin(
 void DriveFileSyncService::UninstallOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  pending_origin_operations_.Push(origin, OriginOperation::UNINSTALLING);
   task_manager_->ScheduleTaskAtPriority(
       base::Bind(&DriveFileSyncService::DoUninstallOrigin, AsWeakPtr(), origin),
       SyncTaskManager::PRIORITY_HIGH,
@@ -337,14 +342,14 @@ void DriveFileSyncService::Initialize(
 
   task_manager_ = task_manager.Pass();
 
-  temporary_file_dir_ =
-      profile_->GetPath().Append(GetSyncFileSystemDir()).Append(kTempDirName);
+  temporary_file_dir_ = sync_file_system::GetSyncFileSystemDir(
+      profile_->GetPath()).Append(kTempDirName);
 
   api_util_.reset(new drive_backend::APIUtil(profile_, temporary_file_dir_));
   api_util_->AddObserver(this);
 
   metadata_store_.reset(new DriveMetadataStore(
-      profile_->GetPath().Append(GetSyncFileSystemDir()),
+      GetSyncFileSystemDir(profile_->GetPath()),
       content::BrowserThread::GetMessageLoopProxyForThread(
           content::BrowserThread::FILE).get()));
 
@@ -445,7 +450,7 @@ void DriveFileSyncService::UpdateServiceStateFromLastOperationStatus(
       break;
 
     // Errors which could make the service temporarily unavailable.
-    case SYNC_STATUS_RETRY:
+    case SYNC_STATUS_SERVICE_TEMPORARILY_UNAVAILABLE:
     case SYNC_STATUS_NETWORK_ERROR:
     case SYNC_STATUS_ABORT:
     case SYNC_STATUS_FAILED:
@@ -488,6 +493,11 @@ void DriveFileSyncService::DoRegisterOrigin(
     const SyncStatusCallback& callback) {
   DCHECK(origin.SchemeIs(extensions::kExtensionScheme));
 
+  OriginOperation op = pending_origin_operations_.Pop();
+  DCHECK_EQ(origin, op.origin);
+  DCHECK_EQ(OriginOperation::REGISTERING, op.type);
+  DCHECK(!op.aborted);
+
   DCHECK(!metadata_store_->IsOriginDisabled(origin));
   if (!metadata_store_->GetResourceIdForOrigin(origin).empty()) {
     callback.Run(SYNC_STATUS_OK);
@@ -502,6 +512,16 @@ void DriveFileSyncService::DoRegisterOrigin(
 void DriveFileSyncService::DoEnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  OriginOperation op = pending_origin_operations_.Pop();
+  DCHECK_EQ(origin, op.origin);
+  DCHECK_EQ(OriginOperation::ENABLING, op.type);
+
+  // If it's aborted just return ok.
+  if (op.aborted) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
   // If origin cannot be found in disabled list, then it's not a SyncFS app
   // and should be ignored.
   if (!metadata_store_->IsOriginDisabled(origin)) {
@@ -517,6 +537,16 @@ void DriveFileSyncService::DoEnableOrigin(
 void DriveFileSyncService::DoDisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  OriginOperation op = pending_origin_operations_.Pop();
+  DCHECK_EQ(origin, op.origin);
+  DCHECK_EQ(OriginOperation::DISABLING, op.type);
+
+  // If it's aborted just return ok.
+  if (op.aborted) {
+    callback.Run(SYNC_STATUS_OK);
+    return;
+  }
+
   pending_batch_sync_origins_.erase(origin);
   if (!metadata_store_->IsIncrementalSyncOrigin(origin)) {
     callback.Run(SYNC_STATUS_OK);
@@ -530,6 +560,11 @@ void DriveFileSyncService::DoDisableOrigin(
 void DriveFileSyncService::DoUninstallOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
+  OriginOperation op = pending_origin_operations_.Pop();
+  DCHECK_EQ(origin, op.origin);
+  DCHECK_EQ(OriginOperation::UNINSTALLING, op.type);
+  DCHECK(!op.aborted);
+
   // Because origin management is now split between DriveFileSyncService and
   // DriveMetadataStore, resource_id must be checked for in two places.
   std::string resource_id = metadata_store_->GetResourceIdForOrigin(origin);
@@ -860,12 +895,20 @@ void DriveFileSyncService::DidGetDirectoryContentForBatchSync(
     else
       continue;
 
+    DCHECK(file_type == SYNC_FILE_TYPE_FILE ||
+           file_type == SYNC_FILE_TYPE_DIRECTORY);
+
     // Save to be fetched file to DB for restore in case of crash.
     DriveMetadata metadata;
     metadata.set_resource_id(entry.resource_id());
     metadata.set_md5_checksum(std::string());
     metadata.set_conflicted(false);
     metadata.set_to_be_fetched(true);
+
+    if (file_type == SYNC_FILE_TYPE_FILE)
+      metadata.set_type(DriveMetadata::RESOURCE_TYPE_FILE);
+    else
+      metadata.set_type(DriveMetadata::RESOURCE_TYPE_FOLDER);
 
     base::FilePath path = TitleToPath(entry.title());
     fileapi::FileSystemURL url(CreateSyncableFileSystemURL(
@@ -1001,6 +1044,14 @@ bool DriveFileSyncService::AppendRemoteChangeInternal(
   if (!remote_file_md5.empty() &&
       !local_file_md5.empty() &&
       remote_file_md5 == local_file_md5)
+    return false;
+
+  // Drop the change if remote change is for directory addition that is
+  // already known.
+  if (file_type == SYNC_FILE_TYPE_DIRECTORY &&
+      !is_deleted &&
+      !local_resource_id.empty() &&
+      metadata.type() == DriveMetadata_ResourceType_RESOURCE_TYPE_FOLDER)
     return false;
 
   // Drop any change if the change has unknown resource id.

@@ -82,8 +82,6 @@ LOCAL_SRC_FILES := \
 	content/browser/accessibility/browser_accessibility_manager_android.cc \
 	content/browser/accessibility/browser_accessibility_state_impl.cc \
 	content/browser/android/browser_jni_registrar.cc \
-	content/browser/android/browser_demuxer_android.cc \
-	content/browser/android/browser_media_player_manager.cc \
 	content/browser/android/browser_startup_controller.cc \
 	content/browser/android/child_process_launcher_android.cc \
 	content/browser/android/content_settings.cc \
@@ -101,7 +99,6 @@ LOCAL_SRC_FILES := \
 	content/browser/android/in_process/synchronous_input_event_filter.cc \
 	content/browser/android/interstitial_page_delegate_android.cc \
 	content/browser/android/load_url_params.cc \
-	content/browser/android/media_resource_getter_impl.cc \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/touch_point.cc \
@@ -269,6 +266,9 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/throttling_resource_handler.cc \
 	content/browser/loader/transfer_navigation_resource_throttle.cc \
 	content/browser/loader/upload_data_stream_builder.cc \
+	content/browser/media/android/browser_demuxer_android.cc \
+	content/browser/media/android/browser_media_player_manager.cc \
+	content/browser/media/android/media_resource_getter_impl.cc \
 	content/browser/media/media_internals.cc \
 	content/browser/media/media_internals_handler.cc \
 	content/browser/media/media_internals_proxy.cc \
@@ -299,6 +299,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/database_message_filter.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
+	content/browser/renderer_host/frame_memory_manager.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
@@ -460,7 +461,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -593,7 +594,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

@@ -57,25 +57,26 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/win/imm32_manager.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#include "ui/base/sequential_id_generator.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/touch_input.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "webkit/common/cursors/webcursor.h"
 #include "win8/util/win8_util.h"
 
@@ -356,8 +357,6 @@ class WebTouchState {
   bool is_changed() { return touch_event_.changedTouchesLength != 0; }
 
  private:
-  typedef std::map<unsigned int, int> MapType;
-
   // Adds a touch point or returns NULL if there's not enough space.
   WebKit::WebTouchPoint* AddTouchPoint(TOUCHINPUT* touch_input);
 
@@ -375,9 +374,7 @@ class WebTouchState {
   WebKit::WebTouchEvent touch_event_;
   const RenderWidgetHostViewWin* const window_;
 
-  // Maps OS touch Id's into an internal (WebKit-friendly) touch-id.
-  // WebKit expects small consecutive integers, starting at 0.
-  MapType touch_map_;
+  ui::SequentialIDGenerator id_generator_;
 
   DISALLOW_COPY_AND_ASSIGN(WebTouchState);
 };
@@ -451,7 +448,7 @@ void RenderWidgetHostViewWin::InitAsFullscreen(
   gfx::Rect pos = gfx::Screen::GetNativeScreen()->GetDisplayNearestWindow(
       reference_host_view->GetNativeView()).bounds();
   is_fullscreen_ = true;
-  DoPopupOrFullscreenInit(ui::GetWindowToParentTo(true), pos, 0);
+  DoPopupOrFullscreenInit(gfx::GetWindowToParentTo(true), pos, 0);
 }
 
 RenderWidgetHost* RenderWidgetHostViewWin::GetRenderWidgetHost() const {
@@ -575,7 +572,7 @@ void RenderWidgetHostViewWin::CleanupCompositorWindow() {
   if (!compositor_host_window_)
     return;
 
-  ui::SetWindowUserData(compositor_host_window_, NULL);
+  gfx::SetWindowUserData(compositor_host_window_, NULL);
 
   // Hide the compositor and parent it to the desktop rather than destroying
   // it immediately. The GPU process has a grace period to stop accessing the
@@ -626,7 +623,7 @@ void RenderWidgetHostViewWin::Show() {
 }
 
 void RenderWidgetHostViewWin::Hide() {
-  if (!is_fullscreen_ && GetParent() == ui::GetWindowToParentTo(true)) {
+  if (!is_fullscreen_ && GetParent() == gfx::GetWindowToParentTo(true)) {
     LOG(WARNING) << "Hide() called twice in a row: " << this << ":"
         << GetParent();
     return;
@@ -2017,7 +2014,9 @@ LRESULT RenderWidgetHostViewWin::OnWheelEvent(UINT message, WPARAM wparam,
 }
 
 WebTouchState::WebTouchState(const RenderWidgetHostViewWin* window)
-    : window_(window) { }
+    : window_(window),
+      id_generator_(0) {
+}
 
 size_t WebTouchState::UpdateTouchPoints(
     TOUCHINPUT* points, size_t count) {
@@ -2117,22 +2116,12 @@ size_t WebTouchState::UpdateTouchPoints(
 }
 
 void WebTouchState::RemoveExpiredMappings() {
-  WebTouchState::MapType new_map;
-  for (MapType::iterator it = touch_map_.begin();
-      it != touch_map_.end();
-      ++it) {
-    WebKit::WebTouchPoint* point = touch_event_.touches;
-    WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
-    while (point < end) {
-      if ((point->id == it->second) &&
-          (point->state != WebKit::WebTouchPoint::StateReleased)) {
-        new_map.insert(*it);
-        break;
-      }
-      point++;
-    }
+  WebKit::WebTouchPoint* point = touch_event_.touches;
+  WebKit::WebTouchPoint* end = point + touch_event_.touchesLength;
+  for (; point < end; ++point) {
+    if (point->state == WebKit::WebTouchPoint::StateReleased)
+      id_generator_.ReleaseGeneratedID(point->id);
   }
-  touch_map_.swap(new_map);
 }
 
 
@@ -2211,14 +2200,7 @@ bool WebTouchState::UpdateTouchPoint(
 
 // Find (or create) a mapping for _os_touch_id_.
 unsigned int WebTouchState::GetMappedTouch(unsigned int os_touch_id) {
-  MapType::iterator it = touch_map_.find(os_touch_id);
-  if (it != touch_map_.end())
-    return it->second;
-  int next_value = 0;
-  for (it = touch_map_.begin(); it != touch_map_.end(); ++it)
-    next_value = std::max(next_value, it->second + 1);
-  touch_map_[os_touch_id] = next_value;
-  return next_value;
+  return id_generator_.GetGeneratedID(os_touch_id);
 }
 
 LRESULT RenderWidgetHostViewWin::OnTouchEvent(UINT message, WPARAM wparam,
@@ -2318,7 +2300,7 @@ LRESULT RenderWidgetHostViewWin::OnMouseActivate(UINT message,
     ::ScreenToClient(m_hWnd, &cursor_pos);
     HWND child_window = ::RealChildWindowFromPoint(m_hWnd, cursor_pos);
     if (::IsWindow(child_window) && child_window != m_hWnd) {
-      if (ui::GetClassName(child_window) == kWrapperNativeWindowClassName)
+      if (gfx::GetClassName(child_window) == kWrapperNativeWindowClassName)
         child_window = ::GetWindow(child_window, GW_CHILD);
 
       ::SetFocus(child_window);
@@ -2464,7 +2446,7 @@ static void PaintCompositorHostWindow(HWND hWnd) {
   BeginPaint(hWnd, &paint);
 
   RenderWidgetHostViewWin* win = static_cast<RenderWidgetHostViewWin*>(
-      ui::GetWindowUserData(hWnd));
+      gfx::GetWindowUserData(hWnd));
   // Trigger composite to rerender window.
   if (win)
     win->AcceleratedPaint(paint.hdc);
@@ -2563,9 +2545,9 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
       MAKEINTATOM(atom), 0,
       WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_DISABLED,
       0, 0, width, height, m_hWnd, 0, instance, 0);
-  ui::CheckWindowCreated(compositor_host_window_);
+  gfx::CheckWindowCreated(compositor_host_window_);
 
-  ui::SetWindowUserData(compositor_host_window_, this);
+  gfx::SetWindowUserData(compositor_host_window_, this);
 
   gfx::GLSurfaceHandle surface_handle(compositor_host_window_,
                                       gfx::NATIVE_TRANSPORT);

@@ -4,12 +4,14 @@
 
 #include "chrome/browser/guestview/webview/webview_guest.h"
 
+#include "base/command_line.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/guestview/guestview_constants.h"
 #include "chrome/browser/guestview/webview/webview_constants.h"
+#include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
@@ -20,6 +22,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "net/base/net_errors.h"
 
@@ -71,15 +74,13 @@ void RemoveWebViewEventListenersOnIOThread(
     void* profile,
     const std::string& extension_id,
     int embedder_process_id,
-    int embedder_routing_id,
-    int guest_instance_id) {
+    int view_instance_id) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   ExtensionWebRequestEventRouter::GetInstance()->RemoveWebViewEventListeners(
       profile,
       extension_id,
       embedder_process_id,
-      embedder_routing_id,
-      guest_instance_id);
+      view_instance_id);
 }
 
 void AttachWebViewHelpers(WebContents* contents) {
@@ -154,6 +155,24 @@ void WebViewGuest::Close() {
   DispatchEvent(new GuestView::Event(webview::kEventClose, args.Pass()));
 }
 
+void WebViewGuest::EmbedderDestroyed() {
+  // TODO(fsamuel): WebRequest event listeners for <webview> should survive
+  // reparenting of a <webview> within a single embedder. Right now, we keep
+  // around the browser state for the listener for the lifetime of the embedder.
+  // Ideally, the lifetime of the listeners should match the lifetime of the
+  // <webview> DOM node. Once http://crbug.com/156219 is resolved we can move
+  // the call to RemoveWebViewEventListenersOnIOThread back to
+  // WebViewGuest::WebContentsDestroyed.
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &RemoveWebViewEventListenersOnIOThread,
+          browser_context(), extension_id(),
+          embedder_render_process_id(),
+          view_instance_id()));
+}
+
 void WebViewGuest::GuestProcessGone(base::TerminationStatus status) {
   scoped_ptr<DictionaryValue> args(new DictionaryValue());
   args->SetInteger(webview::kProcessId,
@@ -193,6 +212,22 @@ bool WebViewGuest::HandleKeyboardEvent(
   }
 #endif
   return false;
+}
+
+bool WebViewGuest::IsDragAndDropEnabled() {
+#if defined(OS_CHROMEOS)
+  return true;
+#else
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel != chrome::VersionInfo::CHANNEL_STABLE &&
+      channel != chrome::VersionInfo::CHANNEL_BETA) {
+    // Drag and drop is enabled in canary and dev channel.
+    return true;
+  }
+
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBrowserPluginDragDrop);
+#endif
 }
 
 void WebViewGuest::LoadProgressed(double progress) {
@@ -399,20 +434,6 @@ void WebViewGuest::DidStopLoading(content::RenderViewHost* render_view_host) {
 
 void WebViewGuest::WebContentsDestroyed(WebContents* web_contents) {
   RemoveWebViewFromExtensionRendererState(web_contents);
-  // TODO(fsamuel): WebRequest event listeners for <webview> should survive
-  // reparenting of a <webview> within a single embedder. The lifetime of
-  // WebRequest event listeners should be equal to the lifetime of the embedder
-  // WebContents rather than the guest until http://crbug.com/156219 is
-  // resolved.
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(
-          &RemoveWebViewEventListenersOnIOThread,
-          browser_context(), extension_id(),
-          embedder_render_process_id(),
-          embedder_routing_id(),
-          view_instance_id()));
 }
 
 void WebViewGuest::LoadHandlerCalled() {
@@ -433,7 +454,6 @@ void WebViewGuest::LoadRedirect(const GURL& old_url,
 void WebViewGuest::AddWebViewToExtensionRendererState() {
   ExtensionRendererState::WebViewInfo webview_info;
   webview_info.embedder_process_id = embedder_render_process_id();
-  webview_info.embedder_routing_id = embedder_web_contents()->GetRoutingID();
   webview_info.instance_id = view_instance_id();
 
   content::BrowserThread::PostTask(

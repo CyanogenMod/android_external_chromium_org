@@ -36,19 +36,12 @@ LOCAL_SRC_FILES := \
 	ui/android/window_android.cc \
 	ui/base/accelerators/accelerator.cc \
 	ui/base/accelerators/accelerator_manager.cc \
-	ui/base/animation/animation.cc \
-	ui/base/animation/animation_container.cc \
-	ui/base/animation/linear_animation.cc \
-	ui/base/animation/multi_animation.cc \
-	ui/base/animation/slide_animation.cc \
-	ui/base/animation/tween.cc \
 	ui/base/base_window.cc \
 	ui/base/clipboard/clipboard.cc \
 	ui/base/clipboard/clipboard_android.cc \
 	ui/base/clipboard/clipboard_constants.cc \
 	ui/base/clipboard/custom_data_helper.cc \
 	ui/base/clipboard/scoped_clipboard_writer.cc \
-	ui/base/keycodes/keyboard_code_conversion_android.cc \
 	ui/base/latency_info.cc \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
@@ -64,8 +57,8 @@ LOCAL_SRC_FILES := \
 	ui/base/resource/data_pack.cc \
 	ui/base/resource/resource_bundle.cc \
 	ui/base/resource/resource_bundle_android.cc \
+	ui/base/sequential_id_generator.cc \
 	ui/base/text/bytes_formatting.cc \
-	ui/base/text/utf16_indexing.cc \
 	ui/base/touch/touch_device_android.cc \
 	ui/base/touch/touch_enabled.cc \
 	ui/base/ui_base_exports.cc \
@@ -73,8 +66,15 @@ LOCAL_SRC_FILES := \
 	ui/base/ui_base_switches.cc \
 	ui/base/ui_base_switches_util.cc \
 	ui/base/window_open_disposition.cc \
+	ui/events/keycodes/keyboard_code_conversion_android.cc \
 	ui/gfx/android/device_display_info.cc \
 	ui/gfx/android/java_bitmap.cc \
+	ui/gfx/animation/animation.cc \
+	ui/gfx/animation/animation_container.cc \
+	ui/gfx/animation/linear_animation.cc \
+	ui/gfx/animation/multi_animation.cc \
+	ui/gfx/animation/slide_animation.cc \
+	ui/gfx/animation/tween.cc \
 	ui/gfx/blit.cc \
 	ui/gfx/box_f.cc \
 	ui/gfx/canvas.cc \
@@ -129,6 +129,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/text_utils_android.cc \
 	ui/gfx/transform.cc \
 	ui/gfx/transform_util.cc \
+	ui/gfx/utf16_indexing.cc \
 	ui/gfx/vector2d.cc \
 	ui/gfx/vector2d_conversions.cc \
 	ui/gfx/vector2d_f.cc \
@@ -177,7 +178,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -191,6 +192,7 @@ MY_DEFS_Debug := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DGFX_IMPLEMENTATION' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
@@ -298,7 +300,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -312,6 +314,7 @@ MY_DEFS_Release := \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DGFX_IMPLEMENTATION' \
 	'-DUI_IMPLEMENTATION' \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \

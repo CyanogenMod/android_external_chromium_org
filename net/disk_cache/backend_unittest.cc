@@ -132,10 +132,8 @@ int DiskCacheBackendTest::GeneratePendingIO(net::TestCompletionCallback* cb) {
     return net::ERR_FAILED;
   }
 
-  disk_cache::EntryImpl* entry;
-  int rv = cache_->CreateEntry("some key",
-                               reinterpret_cast<disk_cache::Entry**>(&entry),
-                               cb->callback());
+  disk_cache::Entry* entry;
+  int rv = cache_->CreateEntry("some key", &entry, cb->callback());
   if (cb->GetResult(rv) != net::OK)
     return net::ERR_CACHE_CREATE_FAILURE;
 
@@ -147,7 +145,13 @@ int DiskCacheBackendTest::GeneratePendingIO(net::TestCompletionCallback* cb) {
     // We are using the current thread as the cache thread because we want to
     // be able to call directly this method to make sure that the OS (instead
     // of us switching thread) is returning IO pending.
-    rv = entry->WriteDataImpl(0, i, buffer.get(), kSize, cb->callback(), false);
+    if (!simple_cache_mode_) {
+      rv = static_cast<disk_cache::EntryImpl*>(entry)->WriteDataImpl(
+          0, i, buffer.get(), kSize, cb->callback(), false);
+    } else {
+      rv = entry->WriteData(0, i, buffer.get(), kSize, cb->callback(), false);
+    }
+
     if (rv == net::ERR_IO_PENDING)
       break;
     if (rv != kSize)
@@ -156,7 +160,11 @@ int DiskCacheBackendTest::GeneratePendingIO(net::TestCompletionCallback* cb) {
 
   // Don't call Close() to avoid going through the queue or we'll deadlock
   // waiting for the operation to finish.
-  entry->Release();
+  if (!simple_cache_mode_)
+    static_cast<disk_cache::EntryImpl*>(entry)->Release();
+  else
+    entry->Close();
+
   return rv;
 }
 
@@ -502,7 +510,7 @@ void DiskCacheBackendTest::BackendShutdownWithPendingFileIO(bool fast) {
   cache_.reset();
 
   if (rv == net::ERR_IO_PENDING) {
-    if (fast)
+    if (fast || simple_cache_mode_)
       EXPECT_FALSE(cb.have_result());
     else
       EXPECT_TRUE(cb.have_result());
@@ -3128,9 +3136,22 @@ TEST_F(DiskCacheBackendTest, TracingBackendBasics) {
   TracingBackendBasics();
 }
 
-// The simple cache backend isn't intended to work on windows, which has very
-// different file system guarantees from Windows.
-#if !defined(OS_WIN)
+// The Simple Cache backend requires a few guarantees from the filesystem like
+// atomic renaming of recently open files. Those guarantees are not provided in
+// general on Windows.
+#if defined(OS_POSIX)
+
+TEST_F(DiskCacheBackendTest, SimpleCacheShutdownWithPendingCreate) {
+  SetCacheType(net::APP_CACHE);
+  SetSimpleCacheMode();
+  BackendShutdownWithPendingCreate(false);
+}
+
+TEST_F(DiskCacheBackendTest, SimpleCacheShutdownWithPendingFileIO) {
+  SetCacheType(net::APP_CACHE);
+  SetSimpleCacheMode();
+  BackendShutdownWithPendingFileIO(false);
+}
 
 TEST_F(DiskCacheBackendTest, SimpleCacheBasics) {
   SetSimpleCacheMode();
@@ -3190,10 +3211,7 @@ TEST_F(DiskCacheBackendTest, SimpleDoomBetween) {
   BackendDoomBetween();
 }
 
-// See http://crbug.com/237450.
-// TODO(gavinp): Consider enabling this test again when
-// https://codereview.chromium.org/23823002/ lands.
-TEST_F(DiskCacheBackendTest, DISABLED_SimpleCacheDoomAll) {
+TEST_F(DiskCacheBackendTest, SimpleCacheDoomAll) {
   SetSimpleCacheMode();
   BackendDoomAll();
 }
@@ -3232,7 +3250,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenMissingFile) {
 
   // Delete one of the files in the entry.
   base::FilePath to_delete_file = cache_path_.AppendASCII(
-      disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, 0));
+      disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(key, 0));
   EXPECT_TRUE(base::PathExists(to_delete_file));
   EXPECT_TRUE(disk_cache::DeleteCacheFile(to_delete_file));
 
@@ -3241,9 +3259,8 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenMissingFile) {
 
   // Confirm the rest of the files are gone.
   for (int i = 1; i < disk_cache::kSimpleEntryFileCount; ++i) {
-    base::FilePath
-        should_be_gone_file(cache_path_.AppendASCII(
-            disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, i)));
+    base::FilePath should_be_gone_file(cache_path_.AppendASCII(
+        disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(key, i)));
     EXPECT_FALSE(base::PathExists(should_be_gone_file));
   }
 }
@@ -3268,9 +3285,9 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenBadFile) {
   entry->Close();
   entry = NULL;
 
-  // Write an invalid header on stream 1.
+  // Write an invalid header for stream 0 and stream 1.
   base::FilePath entry_file1_path = cache_path_.AppendASCII(
-      disk_cache::simple_util::GetFilenameFromKeyAndIndex(key, 1));
+      disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(key, 0));
 
   disk_cache::SimpleFileHeader header;
   header.initial_magic_number = GG_UINT64_C(0xbadf00d);
@@ -3453,4 +3470,8 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
   EXPECT_TRUE(keys_to_match.empty());
 }
 
-#endif  // !defined(OS_WIN)
+// TODO(pasko): Add a Simple Cache test that would simulate upgrade from the
+// version with the index file in the cache directory to the version with the
+// index file in subdirectory.
+
+#endif  // defined(OS_POSIX)

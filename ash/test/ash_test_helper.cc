@@ -6,11 +6,11 @@
 
 #include "ash/ash_switches.h"
 #include "ash/shell.h"
-#include "ash/system/tray/test_system_tray_delegate.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
+#include "ash/test/test_system_tray_delegate.h"
 #include "base/run_loop.h"
 #include "ui/aura/env.h"
 #include "ui/base/ime/input_method_initializer.h"
@@ -109,15 +109,13 @@ void AshTestHelper::TearDown() {
 }
 
 void AshTestHelper::RunAllPendingInMessageLoop() {
-#if !defined(OS_MACOSX)
   DCHECK(base::MessageLoopForUI::current() == message_loop_);
   base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
   run_loop.RunUntilIdle();
-#endif
 }
 
 aura::RootWindow* AshTestHelper::CurrentContext() {
-  aura::RootWindow* root_window = Shell::GetActiveRootWindow();
+  aura::RootWindow* root_window = Shell::GetTargetRootWindow();
   if (!root_window)
     root_window = Shell::GetPrimaryRootWindow();
   DCHECK(root_window);

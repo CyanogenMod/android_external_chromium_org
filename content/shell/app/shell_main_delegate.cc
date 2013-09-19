@@ -22,6 +22,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
@@ -124,7 +125,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
         switches::kUseGL, gfx::kGLImplementationOSMesaName);
 #endif
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
-    command_line.AppendSwitch(switches::kDisableGpuVsync);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
     command_line.AppendSwitch(switches::kEnableGestureTapHighlight);

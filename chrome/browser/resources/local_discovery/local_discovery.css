@@ -66,3 +66,13 @@ html[dir='rtl'] .controls {
 .controls .subline {
   -webkit-margin-start: 10px;
 }
+
+.login-promo {
+  padding-bottom: 5px;
+  padding-top: 5px;
+}
+
+.inline-spinner {
+    position: relative;
+    top: 3px;
+}

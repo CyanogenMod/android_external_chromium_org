@@ -238,7 +238,8 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
     CompositorFrameAck ack;
     for (size_t i = 0; i < resources_to_return.size(); ++i)
       output_surface()->ReturnResource(resources_to_return[i], &ack);
-    host_impl->OnSwapBuffersComplete(&ack);
+    host_impl->ReclaimResources(&ack);
+    host_impl->OnSwapBuffersComplete();
   }
 };
 
@@ -583,6 +584,28 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
         // Should create zero damage.
         layer_tree_host()->SetNeedsCommit();
         break;
+      case 16:
+        // Moving the layer out of the tree and back in will damage the whole
+        // impl layer.
+        delegated_->RemoveFromParent();
+        layer_tree_host()->root_layer()->AddChild(delegated_);
+        break;
+      case 17:
+        // Make a larger frame with lots of damage. Then a frame smaller than
+        // the first frame's damage. The entire layer should be damaged, but
+        // nothing more.
+        delegated_->SetFrameData(CreateFrameData(gfx::Rect(0, 0, 10, 10),
+                                                 gfx::Rect(0, 0, 10, 10)));
+        delegated_->SetFrameData(CreateFrameData(gfx::Rect(0, 0, 5, 5),
+                                                 gfx::Rect(1, 1, 2, 2)));
+        break;
+      case 18:
+        // Make a frame with lots of damage. Then replace it with an empty
+        // frame. The entire layer should be damaged, but nothing more.
+        delegated_->SetFrameData(CreateFrameData(gfx::Rect(0, 0, 10, 10),
+                                                 gfx::Rect(0, 0, 10, 10)));
+        delegated_->SetFrameData(CreateEmptyFrameData());
+        break;
     }
     first_draw_for_source_frame_ = true;
   }
@@ -667,6 +690,18 @@ class LayerTreeHostDelegatedTestLayerUsesFrameDamage
         break;
       case 15:
         EXPECT_EQ(gfx::RectF(0.f, 0.f, 0.f, 0.f).ToString(),
+                  damage_rect.ToString());
+        break;
+      case 16:
+        EXPECT_EQ(gfx::RectF(0.f, 0.f, 6.f, 6.f).ToString(),
+                  damage_rect.ToString());
+        break;
+      case 17:
+        EXPECT_EQ(gfx::RectF(0.f, 0.f, 6.f, 6.f).ToString(),
+                  damage_rect.ToString());
+        break;
+      case 18:
+        EXPECT_EQ(gfx::RectF(0.f, 0.f, 6.f, 6.f).ToString(),
                   damage_rect.ToString());
         EndTest();
         break;
@@ -1603,7 +1638,8 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         // Receive 999 back from the grandparent.
         CompositorFrameAck ack;
         output_surface()->ReturnResource(map.find(999)->second, &ack);
-        host_impl->OnSwapBuffersComplete(&ack);
+        host_impl->ReclaimResources(&ack);
+        host_impl->OnSwapBuffersComplete();
         break;
       }
       case 3:

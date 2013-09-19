@@ -241,13 +241,16 @@ void KioskAppManager::AddApp(const std::string& app_id) {
   device_local_accounts.push_back(policy::DeviceLocalAccount(
       policy::DeviceLocalAccount::TYPE_KIOSK_APP,
       GenerateKioskAppAccountId(app_id),
-      app_id,
-      std::string()));
+      app_id));
 
   policy::SetDeviceLocalAccounts(CrosSettings::Get(), device_local_accounts);
 }
 
 void KioskAppManager::RemoveApp(const std::string& app_id) {
+  // Resets auto launch app if it is the removed app.
+  if (auto_launch_app_id_ == app_id)
+    SetAutoLaunchApp(std::string());
+
   std::vector<policy::DeviceLocalAccount> device_local_accounts =
       policy::GetDeviceLocalAccounts(CrosSettings::Get());
   if (device_local_accounts.empty())

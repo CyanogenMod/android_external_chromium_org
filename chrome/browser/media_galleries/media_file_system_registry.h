@@ -16,12 +16,16 @@
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/media_galleries/mtp_device_delegate_impl.h"
 #include "chrome/browser/storage_monitor/removable_storage_observer.h"
 
+class ExtensionGalleriesHost;
+class MediaFileSystemContext;
+class MediaGalleriesPreferences;
 class Profile;
+class ScopedMTPDeviceMapEntry;
+
 
 namespace content {
 class RenderViewHost;
@@ -34,13 +38,6 @@ class Extension;
 namespace fileapi {
 class IsolatedContext;
 }
-
-namespace chrome {
-
-class ExtensionGalleriesHost;
-class MediaFileSystemContext;
-class MediaGalleriesPreferences;
-class ScopedMTPDeviceMapEntry;
 
 struct MediaFileSystemInfo {
   MediaFileSystemInfo(const string16& fs_name,
@@ -65,7 +62,9 @@ struct MediaFileSystemInfo {
 typedef base::Callback<void(const std::vector<MediaFileSystemInfo>&)>
     MediaFileSystemsCallback;
 
-class MediaFileSystemRegistry : public RemovableStorageObserver {
+class MediaFileSystemRegistry
+    : public RemovableStorageObserver,
+      public MediaGalleriesPreferences::GalleryChangeObserver {
  public:
   MediaFileSystemRegistry();
   virtual ~MediaFileSystemRegistry();
@@ -99,8 +98,6 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
                    scoped_refptr<ExtensionGalleriesHost> > ExtensionHostMap;
   // Map a profile and extension to the ExtensionGalleriesHost.
   typedef std::map<Profile*, ExtensionHostMap> ExtensionGalleriesHostMap;
-  // Map a profile to a PrefChangeRegistrar.
-  typedef std::map<Profile*, PrefChangeRegistrar*> PrefChangeRegistrarMap;
 
   // Map a MTP or PTP device location to the raw pointer of
   // ScopedMTPDeviceMapEntry. It is safe to store a raw pointer in this
@@ -108,7 +105,11 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
   typedef std::map<const base::FilePath::StringType, ScopedMTPDeviceMapEntry*>
       MTPDeviceDelegateMap;
 
-  void OnRememberedGalleriesChanged(PrefService* service);
+  virtual void OnPermissionRemoved(MediaGalleriesPreferences* pref,
+                                   const std::string& extension_id,
+                                   MediaGalleryPrefId pref_id) OVERRIDE;
+  virtual void OnGalleryRemoved(MediaGalleriesPreferences* pref,
+                                MediaGalleryPrefId pref_id) OVERRIDE;
 
   // Returns ScopedMTPDeviceMapEntry object for the given |device_location|.
   scoped_refptr<ScopedMTPDeviceMapEntry> GetOrCreateScopedMTPDeviceMapEntry(
@@ -126,8 +127,6 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
   // ExtensionGalleriesHost objects created.
   ExtensionGalleriesHostMap extension_hosts_map_;
 
-  PrefChangeRegistrarMap pref_change_registrar_map_;
-
   // Only accessed on the UI thread.
   MTPDeviceDelegateMap mtp_device_delegate_map_;
 
@@ -135,7 +134,5 @@ class MediaFileSystemRegistry : public RemovableStorageObserver {
 
   DISALLOW_COPY_AND_ASSIGN(MediaFileSystemRegistry);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_MEDIA_GALLERIES_MEDIA_FILE_SYSTEM_REGISTRY_H_

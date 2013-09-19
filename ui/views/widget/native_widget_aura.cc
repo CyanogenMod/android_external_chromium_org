@@ -21,9 +21,9 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/screen.h"
@@ -169,10 +169,8 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
       params.type != Widget::InitParams::TYPE_CONTROL &&
       params.type != Widget::InitParams::TYPE_TOOLTIP;
   DCHECK(GetWidget()->GetRootView());
-#if !defined(OS_MACOSX)
   if (params.type != Widget::InitParams::TYPE_TOOLTIP)
     tooltip_manager_.reset(new views::TooltipManagerAura(window_, GetWidget()));
-#endif  // !defined(OS_MACOSX)
 
   drop_helper_.reset(new DropHelper(GetWidget()->GetRootView()));
   if (params.type != Widget::InitParams::TYPE_TOOLTIP &&
@@ -1075,6 +1073,21 @@ void NativeWidgetPrivate::GetAllChildWidgets(gfx::NativeView native_view,
   for (aura::Window::Windows::const_iterator i = child_windows.begin();
        i != child_windows.end(); ++i) {
     GetAllChildWidgets((*i), children);
+  }
+}
+
+// static
+void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
+                                             Widget::Widgets* owned) {
+  const aura::Window::Windows& transient_children =
+      native_view->transient_children();
+  for (aura::Window::Windows::const_iterator i = transient_children.begin();
+       i != transient_children.end(); ++i) {
+    NativeWidgetPrivate* native_widget = static_cast<NativeWidgetPrivate*>(
+        GetNativeWidgetForNativeView(*i));
+    if (native_widget && native_widget->GetWidget())
+      owned->insert(native_widget->GetWidget());
+    GetAllOwnedWidgets((*i), owned);
   }
 }
 

@@ -65,13 +65,13 @@
 #include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
-#import "ui/base/animation/animation_container.h"
 #include "ui/base/cocoa/animation_utils.h"
 #import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/image/image.h"
 
 using content::OpenURLParams;
@@ -166,7 +166,7 @@ NSImage* CreateImageWithSize(NSSize size,
   [NSGraphicsContext saveGraphicsState];
   for (ui::ScaleFactor scale_factor : ui::GetSupportedScaleFactors()) {
     float scale = GetScaleFactorScale(scale_factor);
-    NSBitmapImageRep *bmpImageRep = [[NSBitmapImageRep alloc]
+    NSBitmapImageRep *bmpImageRep = [[[NSBitmapImageRep alloc]
         initWithBitmapDataPlanes:NULL
                       pixelsWide:size.width * scale
                       pixelsHigh:size.height * scale
@@ -176,7 +176,7 @@ NSImage* CreateImageWithSize(NSSize size,
                         isPlanar:NO
                   colorSpaceName:NSDeviceRGBColorSpace
                      bytesPerRow:0
-                    bitsPerPixel:0];
+                    bitsPerPixel:0] autorelease];
     [bmpImageRep setSize:size];
     [NSGraphicsContext setCurrentContext:
         [NSGraphicsContext graphicsContextWithBitmapImageRep:bmpImageRep]];
@@ -502,7 +502,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
         [[TabStripDragController alloc] initWithTabStripController:self]);
     tabContentsArray_.reset([[NSMutableArray alloc] init]);
     tabArray_.reset([[NSMutableArray alloc] init]);
-    animationContainer_ = new ui::AnimationContainer;
+    animationContainer_ = new gfx::AnimationContainer;
     NSWindow* browserWindow = [view window];
 
     // Important note: any non-tab subviews not added to |permanentSubviews_|
@@ -1296,8 +1296,12 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
 
   // Make a new tab. Load the contents of this tab from the nib and associate
   // the new controller with |contents| so it can be looked up later.
+  const BOOL autoEmbedFullscreen =
+      implicit_cast<content::WebContentsDelegate*>(browser_)->
+          EmbedsFullscreenWidget();
   base::scoped_nsobject<TabContentsController> contentsController(
-      [[TabContentsController alloc] initWithContents:contents]);
+      [[TabContentsController alloc] initWithContents:contents
+                               andAutoEmbedFullscreen:autoEmbedFullscreen]);
   [tabContentsArray_ insertObject:contentsController atIndex:index];
 
   // Make a new tab and add it to the strip. Keep track of its controller.
@@ -1410,8 +1414,12 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   // Simply create a new TabContentsController for |newContents| and place it
   // into the array, replacing |oldContents|.  An ActiveTabChanged notification
   // will follow, at which point we will install the new view.
+  const BOOL autoEmbedFullscreen =
+      implicit_cast<content::WebContentsDelegate*>(browser_)->
+          EmbedsFullscreenWidget();
   base::scoped_nsobject<TabContentsController> newController(
-      [[TabContentsController alloc] initWithContents:newContents]);
+      [[TabContentsController alloc] initWithContents:newContents
+                               andAutoEmbedFullscreen:autoEmbedFullscreen]);
 
   // Bye bye, |oldController|.
   [tabContentsArray_ replaceObjectAtIndex:index withObject:newController];

@@ -10,11 +10,11 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/selection_model.h"
@@ -514,6 +514,11 @@ void Textfield::GetAccessibleState(ui::AccessibleViewState* state) {
 
 ui::TextInputClient* Textfield::GetTextInputClient() {
   return native_wrapper_ ? native_wrapper_->GetTextInputClient() : NULL;
+}
+
+gfx::Point Textfield::GetKeyboardContextMenuLocation() {
+  return native_wrapper_ ? native_wrapper_->GetContextMenuLocation() :
+                           View::GetKeyboardContextMenuLocation();
 }
 
 void Textfield::OnEnabledChanged() {

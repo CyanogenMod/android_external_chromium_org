@@ -14,8 +14,6 @@
          clear_alpha_in_readpixels)                          \
   GPU_OP(CLEAR_UNIFORMS_BEFORE_PROGRAM_USE,                  \
          clear_uniforms_before_program_use)                  \
-  GPU_OP(DELETE_INSTEAD_OF_RESIZE_FBO,                       \
-         delete_instead_of_resize_fbo)                       \
   GPU_OP(DISABLE_ANGLE_FRAMEBUFFER_MULTISAMPLE,              \
          disable_angle_framebuffer_multisample)              \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
@@ -70,6 +68,10 @@
          use_non_zero_size_for_client_side_stream_buffers)   \
   GPU_OP(USE_VIRTUALIZED_GL_CONTEXTS,                        \
          use_virtualized_gl_contexts)                        \
+  GPU_OP(VALIDATE_MULTISAMPLE_BUFFER_ALLOCATION,             \
+         validate_multisample_buffer_allocation)             \
+  GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
+         disable_ext_discard_framebuffer)                    \
 
 namespace gpu {
 

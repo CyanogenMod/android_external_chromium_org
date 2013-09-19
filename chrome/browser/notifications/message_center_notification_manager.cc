@@ -98,14 +98,6 @@ void MessageCenterNotificationManager::Add(const Notification& notification,
 
 bool MessageCenterNotificationManager::Update(const Notification& notification,
                                               Profile* profile) {
-  // Only progress notification update can be reflected immediately in the
-  // message center.
-  bool update_progress_notification =
-      notification.type() == message_center::NOTIFICATION_TYPE_PROGRESS;
-  bool is_message_center_visible = message_center_->IsMessageCenterVisible();
-  if (!update_progress_notification && is_message_center_visible)
-    return false;
-
   const string16& replace_id = notification.replace_id();
   if (replace_id.empty())
     return false;
@@ -124,12 +116,6 @@ bool MessageCenterNotificationManager::Update(const Notification& notification,
         old_notification->profile() == profile) {
       // Changing the type from non-progress to progress does not count towards
       // the immediate update allowed in the message center.
-      if (update_progress_notification && is_message_center_visible &&
-          old_notification->notification().type() !=
-              message_center::NOTIFICATION_TYPE_PROGRESS) {
-        return false;
-      }
-
       std::string old_id =
           old_notification->notification().notification_id();
       DCHECK(message_center_->HasNotification(old_id));
@@ -310,7 +296,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification,
       &notification.icon(),
       notification.icon_url(),
-      message_center::kNotificationIconSize,
       base::Bind(&message_center::MessageCenter::SetNotificationIcon,
                  base::Unretained(message_center_),
                  notification.notification_id()));
@@ -320,7 +305,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification,
       NULL,
       notification.image_url(),
-      message_center::kNotificationPreferredImageSize,
       base::Bind(&message_center::MessageCenter::SetNotificationImage,
                  base::Unretained(message_center_),
                  notification.notification_id()));
@@ -330,7 +314,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification,
       NULL,
       notification.button_one_icon_url(),
-      message_center::kNotificationButtonIconSize,
       base::Bind(&message_center::MessageCenter::SetNotificationButtonIcon,
                  base::Unretained(message_center_),
                  notification.notification_id(),
@@ -339,7 +322,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification,
       NULL,
       notification.button_two_icon_url(),
-      message_center::kNotificationButtonIconSize,
       base::Bind(&message_center::MessageCenter::SetNotificationButtonIcon,
                  base::Unretained(message_center_),
                  notification.notification_id(),
@@ -353,7 +335,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloadWithImage(
     const Notification& notification,
     const gfx::Image* image,
     const GURL& url,
-    int size,
     const SetImageCallback& callback) {
   // Set the image directly if we have it.
   if (image && !image->IsEmpty()) {
@@ -383,7 +364,6 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloadWithImage(
   contents->DownloadImage(
       url,
       false,  // Not a favicon
-      size,  // Preferred size
       0,  // No maximum size
       base::Bind(
           &MessageCenterNotificationManager::ImageDownloads::DownloadComplete,
@@ -396,8 +376,8 @@ void MessageCenterNotificationManager::ImageDownloads::DownloadComplete(
     int download_id,
     int http_status_code,
     const GURL& image_url,
-    int requested_size,
-    const std::vector<SkBitmap>& bitmaps) {
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_bitmap_sizes) {
   PendingDownloadCompleted();
 
   if (bitmaps.empty())

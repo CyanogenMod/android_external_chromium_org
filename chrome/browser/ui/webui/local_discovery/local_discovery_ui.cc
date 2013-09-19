@@ -17,7 +17,7 @@ namespace {
 
 content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
   content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIDevicesFrameHost);
+      content::WebUIDataSource::Create(chrome::kChromeUIDevicesHost);
 
   source->SetDefaultResource(IDR_LOCAL_DISCOVERY_HTML);
   source->AddResourcePath("local_discovery.css", IDR_LOCAL_DISCOVERY_CSS);
@@ -61,7 +61,16 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
   source->AddLocalizedString(
       "noPrintersOnNetworkExplanation",
       IDS_LOCAL_DISCOVERY_NO_PRINTERS_ON_NETWORK_EXPLANATION);
-
+  source->AddLocalizedString("cloudDevicesUnavailable",
+                             IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_UNAVAILABLE);
+  source->AddLocalizedString("retryLoadCloudDevices",
+                             IDS_LOCAL_DISCOVERY_RETRY_LOAD_CLOUD_DEVICES);
+  source->AddLocalizedString("cloudDevicesNeedLogin",
+                             IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_NEED_LOGIN);
+  source->AddLocalizedString("cloudDevicesLogin",
+                             IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN);
+  source->AddLocalizedString("registerNeedLogin",
+                             IDS_LOCAL_DISCOVERY_REGISTER_NEED_LOGIN);
 
   source->SetJsonPath("strings.js");
 

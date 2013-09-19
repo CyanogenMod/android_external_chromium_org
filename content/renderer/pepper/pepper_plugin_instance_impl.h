@@ -349,8 +349,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual ppapi::VarTracker* GetVarTracker() OVERRIDE;
   virtual const GURL& GetPluginURL() OVERRIDE;
   virtual base::FilePath GetModulePath() OVERRIDE;
-  virtual PP_Resource CreateExternalFileReference(
-      const base::FilePath& external_file_path) OVERRIDE;
   virtual PP_Resource CreateImage(gfx::ImageSkia* source_image,
                                   float scale) OVERRIDE;
   virtual PP_ExternalPluginResult SwitchToOutOfProcessProxy(
@@ -366,6 +364,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual int32_t Navigate(const ppapi::URLRequestInfoData& request,
                            const char* target,
                            bool from_user_action) OVERRIDE;
+  virtual int MakePendingFileRefRendererHost(
+      const base::FilePath& path) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -504,8 +504,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // cc::TextureLayerClient implementation.
   virtual unsigned PrepareTexture() OVERRIDE;
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE;
-  virtual bool PrepareTextureMailbox(cc::TextureMailbox* mailbox,
-                                     bool use_shared_memory) OVERRIDE;
+  virtual bool PrepareTextureMailbox(
+      cc::TextureMailbox* mailbox,
+      scoped_ptr<cc::SingleReleaseCallback>* release_callback,
+      bool use_shared_memory) OVERRIDE;
 
  private:
   friend class base::RefCounted<PepperPluginInstanceImpl>;

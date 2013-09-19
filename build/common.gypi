@@ -69,8 +69,8 @@
           'branding%': 'Chromium',
 
           'conditions': [
-            # ChromeOS implies ash.
-            ['chromeos==1', {
+            # ChromeOS and Windows use Aura and Ash.
+            ['chromeos==1 or OS=="win"', {
               'use_ash%': 1,
               'use_aura%': 1,
             }],
@@ -381,11 +381,11 @@
       # Enable FTP support by default.
       'disable_ftp_support%': 0,
 
-      # XInput2 multitouch support is disabled by default (use_xi2_mt=0).
-      # Setting to non-zero value enables XI2 MT. When XI2 MT is enabled,
+      # XInput2 multitouch support is enabled by default (use_xi2_mt=2).
+      # Setting to zero value disables XI2 MT. When XI2 MT is enabled,
       # the input value also defines the required XI2 minor minimum version.
       # For example, use_xi2_mt=2 means XI2.2 or above version is required.
-      'use_xi2_mt%': 0,
+      'use_xi2_mt%': 2,
 
       # Use of precompiled headers on Windows.
       #
@@ -524,10 +524,6 @@
           'enable_one_click_signin%': 1,
         }],
 
-        ['OS=="win"', {
-          'cld_version%': 1,
-        }],
-
         ['OS=="android"', {
           'enable_automation%': 0,
           'enable_extensions%': 0,
@@ -655,7 +651,7 @@
         #
         # On Aura, this allows per-tile painting to be used in the browser
         # compositor.
-        ['OS!="mac" and OS!="android"', {
+        ['OS!="android"', {
           'use_canvas_skia%': 1,
         }],
 
@@ -1156,6 +1152,9 @@
 
     # Use brlapi from brltty for braille display support.
     'use_brlapi%': 0,
+
+    # Relative path to icu.gyp from this file.
+    'icu_gyp_path': '../third_party/icu/icu.gyp',
 
     'conditions': [
       # The version of GCC in use, set later in platforms that use GCC and have
@@ -1919,7 +1918,7 @@
       # Set this to use the new DX11 version of ANGLE.
       # TODO(apatrick): Remove this when the transition is complete.
       'ANGLE_DX11',
-      'WTF_VECTOR_INITIAL_SIZE=16',
+      'WTF_VECTOR_INITIAL_SIZE=4',
     ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
@@ -2013,7 +2012,7 @@
       ['google_tv==1', {
         'defines': ['GOOGLE_TV=1'],
       }],
-      ['use_xi2_mt!=0', {
+      ['use_xi2_mt!=0 and use_x11==1', {
         'defines': ['USE_XI2_MT=<(use_xi2_mt)'],
       }],
       ['file_manager_extension==1', {
@@ -2549,7 +2548,6 @@
           'WTF_USE_DYNAMIC_ANNOTATIONS=1',
         ],
         'xcode_settings': {
-          'COPY_PHASE_STRIP': 'NO',
           'GCC_OPTIMIZATION_LEVEL': '<(mac_debug_optimization)',
           'OTHER_CFLAGS': [
             '<@(debug_extra_cflags)',
@@ -3843,6 +3841,7 @@
           'ALWAYS_SEARCH_USER_PATHS': 'NO',
           # Don't link in libarclite_macosx.a, see http://crbug.com/156530.
           'CLANG_LINK_OBJC_RUNTIME': 'NO',          # -fno-objc-link-runtime
+          'COPY_PHASE_STRIP': 'NO',
           'GCC_C_LANGUAGE_STANDARD': 'c99',         # -std=c99
           'GCC_CW_ASM_SYNTAX': 'NO',                # No -fasm-blocks
           'GCC_ENABLE_CPP_EXCEPTIONS': 'NO',        # -fno-exceptions

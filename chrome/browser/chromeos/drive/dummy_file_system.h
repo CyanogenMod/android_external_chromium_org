@@ -13,7 +13,6 @@ namespace drive {
 class DummyFileSystem : public FileSystemInterface {
  public:
   virtual ~DummyFileSystem() {}
-  virtual void Initialize() OVERRIDE {}
   virtual void AddObserver(FileSystemObserver* observer) OVERRIDE {}
   virtual void RemoveObserver(FileSystemObserver* observer) OVERRIDE {}
   virtual void CheckForUpdates() OVERRIDE {}
@@ -95,7 +94,7 @@ class DummyFileSystem : public FileSystemInterface {
   virtual void GetCacheEntryByPath(
       const base::FilePath& drive_file_path,
       const GetCacheEntryCallback& callback) OVERRIDE {}
-  virtual void Reload() OVERRIDE {}
+  virtual void Reload(const FileOperationCallback& callback) OVERRIDE {}
 };
 
 }  // namespace drive

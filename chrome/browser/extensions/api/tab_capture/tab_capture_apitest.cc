@@ -256,4 +256,37 @@ IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_FullscreenEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
+// Times out on Win dbg bots: http://crbug.com/177163
+// #if defined(OS_WIN) && !defined(NDEBUG)
+// Times out on all Win bots: http://crbug.com/294431
+#if defined(OS_WIN)
+#define MAYBE_GrantForChromePages DISABLED_GrantForChromePages
+#else
+#define MAYBE_GrantForChromePages GrantForChromePages
+#endif
+// Make sure tabCapture API can be granted for Chrome:// pages.
+IN_PROC_BROWSER_TEST_F(TabCaptureApiTest, MAYBE_GrantForChromePages) {
+  ExtensionTestMessageListener before_open_tab("ready1", true);
+  ASSERT_TRUE(RunExtensionSubtest("tab_capture/experimental",
+                                  "active_tab_chrome_pages.html")) << message_;
+  EXPECT_TRUE(before_open_tab.WaitUntilSatisfied());
+
+  // Open a tab on a chrome:// page and make sure we can capture.
+  content::OpenURLParams params(GURL("chrome://version"), content::Referrer(),
+                                NEW_FOREGROUND_TAB,
+                                content::PAGE_TRANSITION_LINK, false);
+  content::WebContents* web_contents = browser()->OpenURL(params);
+  ExtensionService* extension_service =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          ->GetExtensionService();
+  extensions::TabHelper::FromWebContents(web_contents)
+      ->active_tab_permission_granter()->GrantIfRequested(
+            extension_service->GetExtensionById(kExtensionId, false));
+  before_open_tab.Reply("");
+
+  ResultCatcher catcher;
+  catcher.RestrictToProfile(browser()->profile());
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+}
+
 }  // namespace chrome

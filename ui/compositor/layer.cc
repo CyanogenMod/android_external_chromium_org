@@ -20,10 +20,10 @@
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/resources/transferable_resource.h"
-#include "ui/base/animation/animation.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/interpolated_transform.h"
@@ -498,13 +498,16 @@ void Layer::SetExternalTexture(Texture* texture) {
           cc::ContentLayer::Create(this);
       SwitchToLayer(new_layer);
       content_layer_ = new_layer;
+      mailbox_ = cc::TextureMailbox();
     }
   }
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::SetTextureMailbox(const cc::TextureMailbox& mailbox,
-                              float scale_factor) {
+void Layer::SetTextureMailbox(
+    const cc::TextureMailbox& mailbox,
+    scoped_ptr<cc::SingleReleaseCallback> release_callback,
+    float scale_factor) {
   DCHECK_EQ(type_, LAYER_TEXTURED);
   DCHECK(!solid_color_layer_.get());
   layer_updated_externally_ = true;
@@ -516,7 +519,7 @@ void Layer::SetTextureMailbox(const cc::TextureMailbox& mailbox,
     SwitchToLayer(new_layer);
     texture_layer_ = new_layer;
   }
-  texture_layer_->SetTextureMailbox(mailbox);
+  texture_layer_->SetTextureMailbox(mailbox, release_callback.Pass());
   mailbox_ = mailbox;
   mailbox_scale_factor_ = scale_factor;
   RecomputeDrawsContentAndUVRect();
@@ -525,8 +528,7 @@ void Layer::SetTextureMailbox(const cc::TextureMailbox& mailbox,
 cc::TextureMailbox Layer::GetTextureMailbox(float* scale_factor) {
   if (scale_factor)
     *scale_factor = mailbox_scale_factor_;
-  cc::TextureMailbox::ReleaseCallback callback;
-  return mailbox_.CopyWithNewCallback(callback);
+  return mailbox_;
 }
 
 void Layer::SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData> frame,
@@ -664,8 +666,10 @@ WebKit::WebGraphicsContext3D* Layer::Context3d() {
   return NULL;
 }
 
-bool Layer::PrepareTextureMailbox(cc::TextureMailbox* mailbox,
-                                  bool use_shared_memory) {
+bool Layer::PrepareTextureMailbox(
+    cc::TextureMailbox* mailbox,
+    scoped_ptr<cc::SingleReleaseCallback>* release_callback,
+    bool use_shared_memory) {
   return false;
 }
 
@@ -714,7 +718,7 @@ bool Layer::ConvertPointForAncestor(const Layer* ancestor,
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
   gfx::Point3F p(*point);
-  transform.TransformPoint(p);
+  transform.TransformPoint(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
 }
@@ -724,7 +728,7 @@ bool Layer::ConvertPointFromAncestor(const Layer* ancestor,
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
   gfx::Point3F p(*point);
-  transform.TransformPointReverse(p);
+  transform.TransformPointReverse(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
 }

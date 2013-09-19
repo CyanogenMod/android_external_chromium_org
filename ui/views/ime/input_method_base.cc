@@ -5,8 +5,8 @@
 #include "ui/views/ime/input_method_base.h"
 
 #include "base/logging.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/events/event.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -29,10 +29,10 @@ void InputMethodBase::Init(Widget* widget) {
   DCHECK(!widget_) << "The input method is already initialized.";
 
   widget_ = widget;
-  if (IsWidgetActive()) {
-    // Alert the InputMethod of the Widget's currently focused view.
-    OnFocus();
-  }
+  // Alert the InputMethod of the Widget's currently focused view.
+  View* focused = widget->GetFocusManager()->GetFocusedView();
+  if (focused)
+    OnWillChangeFocus(NULL, focused);
   widget->GetFocusManager()->AddFocusChangeListener(this);
 }
 
@@ -60,12 +60,8 @@ void InputMethodBase::OnWillChangeFocus(View* focused_before, View* focused) {}
 
 void InputMethodBase::OnDidChangeFocus(View* focused_before, View* focused) {}
 
-bool InputMethodBase::IsWidgetActive() const {
-  return widget_ ? widget_->IsActive() : false;
-}
-
 bool InputMethodBase::IsViewFocused(View* view) const {
-  return IsWidgetActive() && view && GetFocusedView() == view;
+  return widget_ && widget_->IsActive() && view && GetFocusedView() == view;
 }
 
 bool InputMethodBase::IsTextInputTypeNone() const {

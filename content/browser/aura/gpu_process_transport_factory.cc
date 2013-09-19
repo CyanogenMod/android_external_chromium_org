@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
 #include "content/browser/aura/browser_compositor_output_surface.h"
@@ -226,8 +227,12 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
     context_provider = ContextProviderCommandBuffer::Create(
         GpuProcessTransportFactory::CreateContextCommon(
             data->swap_client->AsWeakPtr(),
-            data->surface_id));
+            data->surface_id),
+            "Compositor");
   }
+
+  UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
+
   if (!context_provider.get()) {
     if (ui::Compositor::WasInitializedWithThread()) {
       LOG(FATAL) << "Failed to create UI context, but can't use software"
@@ -393,7 +398,8 @@ GpuProcessTransportFactory::OffscreenContextProviderForMainThread() {
   // context notification is sent to the ImageTransportFactoryObserver clients.
   if (!shared_contexts_main_thread_.get()) {
     shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
-        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext());
+        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+        "Compositor-Offscreen-MainThread");
     if (shared_contexts_main_thread_) {
       shared_contexts_main_thread_->SetLostContextCallback(base::Bind(
           &GpuProcessTransportFactory::
@@ -414,7 +420,8 @@ GpuProcessTransportFactory::OffscreenContextProviderForCompositorThread() {
   // DestroyedOnMainThread().
   if (!shared_contexts_compositor_thread_.get()) {
     shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
-        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext());
+        GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+        "Compositor-Offscreen");
   }
   return shared_contexts_compositor_thread_;
 }

@@ -158,12 +158,14 @@ LOCAL_SRC_FILES := \
 	net/disk_cache/simple/simple_net_log_parameters.cc \
 	net/disk_cache/simple/simple_synchronous_entry.cc \
 	net/disk_cache/simple/simple_util.cc \
+	net/disk_cache/simple/simple_version_upgrade.cc \
 	net/disk_cache/flash/flash_entry_impl.cc \
 	net/disk_cache/flash/internal_entry.cc \
 	net/disk_cache/flash/log_store.cc \
 	net/disk_cache/flash/log_store_entry.cc \
 	net/disk_cache/flash/segment.cc \
 	net/disk_cache/flash/storage.cc \
+	net/disk_cache/v3/block_bitmaps.cc \
 	net/dns/address_sorter_posix.cc \
 	net/dns/dns_client.cc \
 	net/dns/dns_config_service.cc \
@@ -328,12 +330,14 @@ LOCAL_SRC_FILES := \
 	net/quic/quic_fec_group.cc \
 	net/quic/quic_framer.cc \
 	net/quic/quic_http_stream.cc \
+	net/quic/quic_http_utils.cc \
 	net/quic/quic_packet_creator.cc \
 	net/quic/quic_packet_generator.cc \
 	net/quic/quic_protocol.cc \
 	net/quic/quic_received_packet_manager.cc \
 	net/quic/quic_reliable_client_stream.cc \
 	net/quic/quic_sent_entropy_manager.cc \
+	net/quic/quic_sent_packet_manager.cc \
 	net/quic/quic_session.cc \
 	net/quic/quic_spdy_compressor.cc \
 	net/quic/quic_spdy_decompressor.cc \
@@ -364,9 +368,9 @@ LOCAL_SRC_FILES := \
 	net/socket/stream_listen_socket.cc \
 	net/socket/stream_socket.cc \
 	net/socket/tcp_client_socket.cc \
-	net/socket/tcp_client_socket_libevent.cc \
 	net/socket/tcp_listen_socket.cc \
 	net/socket/tcp_server_socket.cc \
+	net/socket/tcp_socket.cc \
 	net/socket/tcp_socket_libevent.cc \
 	net/socket/transport_client_socket_pool.cc \
 	net/socket/unix_domain_socket_posix.cc \
@@ -447,6 +451,8 @@ LOCAL_SRC_FILES := \
 	net/websockets/websocket_channel.cc \
 	net/websockets/websocket_deflater.cc \
 	net/websockets/websocket_errors.cc \
+	net/websockets/websocket_extension.cc \
+	net/websockets/websocket_extension_parser.cc \
 	net/websockets/websocket_frame.cc \
 	net/websockets/websocket_frame_parser.cc \
 	net/websockets/websocket_handshake_constants.cc \
@@ -492,7 +498,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -587,7 +593,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

@@ -70,9 +70,14 @@ const AwHitTestData& AwRenderViewHostExt::GetLastHitTestData() const {
   return last_hit_test_data_;
 }
 
-void AwRenderViewHostExt::SetTextZoomLevel(double level) {
+void AwRenderViewHostExt::SetTextZoomFactor(float factor) {
   DCHECK(CalledOnValidThread());
-  Send(new AwViewMsg_SetTextZoomLevel(web_contents()->GetRoutingID(), level));
+  Send(new AwViewMsg_SetTextZoomFactor(web_contents()->GetRoutingID(), factor));
+}
+
+void AwRenderViewHostExt::SetFixedLayoutSize(const gfx::Size& size) {
+  DCHECK(CalledOnValidThread());
+  Send(new AwViewMsg_SetFixedLayoutSize(web_contents()->GetRoutingID(), size));
 }
 
 void AwRenderViewHostExt::ResetScrollAndScaleState() {
@@ -134,6 +139,8 @@ bool AwRenderViewHostExt::OnMessageReceived(const IPC::Message& message) {
                         OnUpdateHitTestData)
     IPC_MESSAGE_HANDLER(AwViewHostMsg_PageScaleFactorChanged,
                         OnPageScaleFactorChanged)
+    IPC_MESSAGE_HANDLER(AwViewHostMsg_OnContentsSizeChanged,
+                        OnContentsSizeChanged)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -162,6 +169,11 @@ void AwRenderViewHostExt::OnUpdateHitTestData(
 
 void AwRenderViewHostExt::OnPageScaleFactorChanged(float page_scale_factor) {
   client_->OnWebLayoutPageScaleFactorChanged(page_scale_factor);
+}
+
+void AwRenderViewHostExt::OnContentsSizeChanged(
+    const gfx::Size& contents_size) {
+  client_->OnWebLayoutContentsSizeChanged(contents_size);
 }
 
 }  // namespace android_webview

@@ -66,6 +66,9 @@
 (function() {
 // 'strict mode' is invoked for this scope.
 
+// // This script must be loaded before all other Files.app's scripts.
+//<include src="error_counter.js"/>
+//
 //<include src="combobutton.js"/>
 //<include src="commandbutton.js"/>
 //<include src="ui/file_manager_dialog_base.js"/>
@@ -75,7 +78,6 @@
 //<include src="path_util.js"/>
 //<include src="util.js"/>
 //<include src="action_choice_util.js"/>
-//<include src="breadcrumbs_controller.js"/>
 //<include src="butter_bar.js"/>
 //<include src="cws_container_client.js"/>
 //<include src="directory_contents.js"/>
@@ -87,7 +89,6 @@
 //<include src="file_operation_manager_wrapper.js"/>
 //<include src="file_grid.js"/>
 //<include src="file_manager.js"/>
-//<include src="file_manager_pyauto.js"/>
 //<include src="file_selection.js"/>
 //<include src="file_table.js"/>
 //<include src="file_tasks.js"/>
@@ -102,6 +103,7 @@
 //<include src="suggest_apps_dialog.js"/>
 //<include src="text_measure.js"/>
 //<include src="tree.css.js"/>
+//<include src="ui/breadcrumbs_controller.js"/>
 //<include src="ui/preview_panel.js"/>
 //<include src="ui/progress_center_panel.js"/>
 //<include src="url_constants.js"/>

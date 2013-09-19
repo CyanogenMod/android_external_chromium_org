@@ -58,7 +58,7 @@ class TestOutputSurface : public OutputSurface {
   }
 
   void OnSwapBuffersCompleteForTesting() {
-    OnSwapBuffersComplete(NULL);
+    OnSwapBuffersComplete();
   }
 
   void SetAlternateRetroactiveBeginFramePeriod(base::TimeDelta period) {
@@ -77,6 +77,38 @@ class TestOutputSurface : public OutputSurface {
 
   base::TimeDelta alternate_retroactive_begin_frame_period_;
 };
+
+class TestSoftwareOutputDevice : public SoftwareOutputDevice {
+ public:
+  TestSoftwareOutputDevice();
+  virtual ~TestSoftwareOutputDevice();
+
+  // Overriden from cc:SoftwareOutputDevice
+  virtual void DiscardBackbuffer() OVERRIDE;
+  virtual void EnsureBackbuffer() OVERRIDE;
+
+  int discard_backbuffer_count() { return discard_backbuffer_count_; }
+  int ensure_backbuffer_count() { return ensure_backbuffer_count_; }
+
+ private:
+  int discard_backbuffer_count_;
+  int ensure_backbuffer_count_;
+};
+
+TestSoftwareOutputDevice::TestSoftwareOutputDevice()
+    : discard_backbuffer_count_(0), ensure_backbuffer_count_(0) {}
+
+TestSoftwareOutputDevice::~TestSoftwareOutputDevice() {}
+
+void TestSoftwareOutputDevice::DiscardBackbuffer() {
+  SoftwareOutputDevice::DiscardBackbuffer();
+  discard_backbuffer_count_++;
+}
+
+void TestSoftwareOutputDevice::EnsureBackbuffer() {
+  SoftwareOutputDevice::EnsureBackbuffer();
+  ensure_backbuffer_count_++;
+}
 
 TEST(OutputSurfaceTest, ClientPointerIndicatesBindToClientSuccess) {
   TestOutputSurface output_surface(TestContextProvider::Create());
@@ -210,8 +242,10 @@ TEST(OutputSurfaceTest, BeginFrameEmulation) {
   EXPECT_EQ(client.begin_frame_count(), 1);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 0);
 
-  // DidSwapBuffers should clear the pending BeginFrame.
+  // SetNeedsBeginFrame should clear the pending BeginFrame after
+  // a SwapBuffers.
   output_surface.DidSwapBuffersForTesting();
+  output_surface.SetNeedsBeginFrame(true);
   EXPECT_EQ(client.begin_frame_count(), 1);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
   task_runner->RunPendingTasks();
@@ -220,6 +254,7 @@ TEST(OutputSurfaceTest, BeginFrameEmulation) {
 
   // BeginFrame should be throttled by pending swap buffers.
   output_surface.DidSwapBuffersForTesting();
+  output_surface.SetNeedsBeginFrame(true);
   EXPECT_EQ(client.begin_frame_count(), 2);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
   task_runner->RunPendingTasks();
@@ -284,12 +319,14 @@ TEST(OutputSurfaceTest, OptimisticAndRetroactiveBeginFrames) {
   output_surface.BeginFrameForTesting();
   EXPECT_EQ(client.begin_frame_count(), 2);
   output_surface.DidSwapBuffersForTesting();
+  output_surface.SetNeedsBeginFrame(true);
   EXPECT_EQ(client.begin_frame_count(), 3);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 1);
 
   // Optimistically injected BeginFrames should be by throttled by pending
   // swap buffers...
   output_surface.DidSwapBuffersForTesting();
+  output_surface.SetNeedsBeginFrame(true);
   EXPECT_EQ(client.begin_frame_count(), 3);
   EXPECT_EQ(output_surface.pending_swap_buffers(), 2);
   output_surface.BeginFrameForTesting();
@@ -405,6 +442,27 @@ TEST(OutputSurfaceTest, MemoryAllocation) {
   context_provider->SetMemoryAllocation(policy,
                                         discard_backbuffer_when_not_visible);
   EXPECT_EQ(1234u, client.memory_policy().bytes_limit_when_visible);
+}
+
+TEST(OutputSurfaceTest, SoftwareOutputDeviceBackbufferManagement) {
+  TestSoftwareOutputDevice* software_output_device =
+      new TestSoftwareOutputDevice();
+
+  // TestOutputSurface now owns software_output_device and has responsibility to
+  // free it.
+  scoped_ptr<TestSoftwareOutputDevice> p(software_output_device);
+  TestOutputSurface output_surface(p.PassAs<SoftwareOutputDevice>());
+
+  EXPECT_EQ(0, software_output_device->ensure_backbuffer_count());
+  EXPECT_EQ(0, software_output_device->discard_backbuffer_count());
+
+  output_surface.EnsureBackbuffer();
+  EXPECT_EQ(1, software_output_device->ensure_backbuffer_count());
+  EXPECT_EQ(0, software_output_device->discard_backbuffer_count());
+  output_surface.DiscardBackbuffer();
+
+  EXPECT_EQ(1, software_output_device->ensure_backbuffer_count());
+  EXPECT_EQ(1, software_output_device->discard_backbuffer_count());
 }
 
 }  // namespace

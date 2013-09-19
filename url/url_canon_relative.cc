@@ -372,9 +372,8 @@ bool DoResolveRelativeHost(const char* base_url,
   // Parse the relative URL, just like we would for anything following a
   // scheme.
   url_parse::Parsed relative_parsed;  // Everything but the scheme is valid.
-  url_parse::ParseAfterScheme(&relative_url[relative_component.begin],
-                              relative_component.len, relative_component.begin,
-                              &relative_parsed);
+  url_parse::ParseAfterScheme(relative_url, relative_component.end(),
+                              relative_component.begin, &relative_parsed);
 
   // Now we can just use the replacement function to replace all the necessary
   // parts of the old URL with the new one.
@@ -476,11 +475,14 @@ bool DoResolveRelativeURL(const char* base_url,
 #else
   // Other platforms need explicit handling for file: URLs with multiple
   // slashes because the generic scheme parsing always extracts a host, but a
-  // file: URL only has a host if it has exactly 2 slashes. This also
-  // handles the special case where the URL is only slashes, since that
-  // doesn't have a host part either.
+  // file: URL only has a host if it has exactly 2 slashes. Even if it does
+  // have a host, we want to use the special host detection logic for file
+  // URLs provided by DoResolveAbsoluteFile(), as opposed to the generic host
+  // detection logic, for consistency with parsing file URLs from scratch.
+  // This also handles the special case where the URL is only slashes,
+  // since that doesn't have a host part either.
   if (base_is_file &&
-      (num_slashes > 2 || num_slashes == relative_component.len)) {
+      (num_slashes >= 2 || num_slashes == relative_component.len)) {
     return DoResolveAbsoluteFile(relative_url, relative_component,
                                  query_converter, output, out_parsed);
   }

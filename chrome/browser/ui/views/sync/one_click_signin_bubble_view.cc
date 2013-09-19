@@ -16,9 +16,9 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
@@ -127,7 +127,7 @@ ui::ModalType OneClickSigninBubbleView::GetModalType() const {
   return is_sync_dialog_? ui::MODAL_TYPE_CHILD : ui::MODAL_TYPE_NONE;
 }
 
-void OneClickSigninBubbleView::AnimationEnded(const ui::Animation* animation) {
+void OneClickSigninBubbleView::AnimationEnded(const gfx::Animation* animation) {
   views::BubbleDelegateView::AnimationEnded(animation);
   if (message_loop_for_testing_)
     message_loop_for_testing_->Quit();
@@ -208,7 +208,7 @@ void OneClickSigninBubbleView::InitDialogContent(views::GridLayout* layout) {
     layout->StartRow(0, COLUMN_SET_TITLE_BAR);
 
     views::Label* label = new views::Label(
-        l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE));
+        l10n_util::GetStringUTF16(IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW));
     label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     label->SetFont(label->font().DeriveFont(3, gfx::Font::BOLD));
     layout->AddView(label);

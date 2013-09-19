@@ -81,7 +81,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                           int line);
 
   bool CanUseSkiaGPUBackend() const;
-  void LazyLabelOffscreenContext(ContextProvider* offscreen_context_provider);
 
  protected:
   GLRenderer(RendererClient* client,
@@ -103,7 +102,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void GetFramebufferPixelsAsync(gfx::Rect rect,
                                  scoped_ptr<CopyOutputRequest> request);
   void GetFramebufferTexture(unsigned texture_id,
-                             unsigned texture_format,
+                             ResourceFormat texture_format,
                              gfx::Rect device_rect);
   void ReleaseRenderPassTextures();
 
@@ -445,7 +444,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   TexturedQuadDrawCache draw_cache_;
   int highp_threshold_min_;
   int highp_threshold_cache_;
-  bool offscreen_context_labelled_;
 
   struct PendingAsyncReadPixels;
   ScopedPtrVector<PendingAsyncReadPixels> pending_async_read_pixels_;

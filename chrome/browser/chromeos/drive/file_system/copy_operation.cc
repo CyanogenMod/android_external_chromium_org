@@ -46,7 +46,7 @@ FileError PrepareCopy(internal::ResourceMetadata* metadata,
 
   // Drive File System doesn't support recursive copy.
   if (src_entry->file_info().is_directory())
-    return FILE_ERROR_INVALID_OPERATION;
+    return FILE_ERROR_NOT_A_FILE;
 
   *parent_resource_id = parent_entry.resource_id();
   return FILE_ERROR_OK;
@@ -328,7 +328,7 @@ void CopyOperation::TransferFileFromLocalToRemoteAfterPrepare(
 
   // GDoc file may contain a resource ID in the old format.
   const std::string canonicalized_resource_id =
-      drive_service_->CanonicalizeResourceId(*gdoc_resource_id);
+      drive_service_->GetResourceIdCanonicalizer().Run(*gdoc_resource_id);
 
   // If Drive API v2 is enabled, we can copy resources on server side.
   if (util::IsDriveV2ApiEnabled()) {

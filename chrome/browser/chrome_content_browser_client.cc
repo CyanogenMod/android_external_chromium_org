@@ -163,6 +163,7 @@
 #include "chrome/browser/android/crash_dump_manager.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/chrome_browser_main_android.h"
+#include "chrome/browser/media/encrypted_media_message_filter_android.h"
 #include "chrome/common/descriptors_android.h"
 #elif defined(OS_POSIX)
 #include "chrome/browser/chrome_browser_main_posix.h"
@@ -768,19 +769,9 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
       return;
     }
 
-    switch (guest->GetViewType()) {
-      case GuestView::WEBVIEW: {
-        *guest_delegate = new WebViewGuest(guest_web_contents);
-        break;
-      }
-      case GuestView::ADVIEW: {
-        *guest_delegate = new AdViewGuest(guest_web_contents);
-        break;
-      }
-      default:
-        NOTREACHED();
-        break;
-    }
+    // Create a new GuestView of the same type as the opener.
+    *guest_delegate =
+        GuestView::Create(guest_web_contents, guest->GetViewType());
     return;
   }
 
@@ -791,13 +782,9 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
   std::string api_type;
   extra_params->GetString(guestview::kParameterApi, &api_type);
 
-  if (api_type == "adview") {
-    *guest_delegate  = new AdViewGuest(guest_web_contents);
-  } else if (api_type == "webview") {
-    *guest_delegate = new WebViewGuest(guest_web_contents);
-  } else {
-    NOTREACHED();
-  }
+  *guest_delegate =
+      GuestView::Create(guest_web_contents,
+                        GuestView::GetViewTypeFromString(api_type));
 }
 
 void ChromeContentBrowserClient::GuestWebContentsAttached(
@@ -870,6 +857,9 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
       id, profile->IsOffTheRecord(),
       profile->GetPath(), extension_info_map,
       context));
+#endif
+#if defined(OS_ANDROID)
+  host->GetChannel()->AddFilter(new EncryptedMediaMessageFilterAndroid());
 #endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(

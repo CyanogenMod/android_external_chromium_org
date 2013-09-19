@@ -20,6 +20,7 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/network/network_state_handler_observer.h"
+#include "webkit/browser/fileapi/file_system_operation.h"
 
 class PrefChangeRegistrar;
 class Profile;
@@ -40,7 +41,6 @@ class DesktopNotifications;
 // affecting File Manager. Dispatches appropriate File Browser events.
 class EventRouter
     : public chromeos::NetworkStateHandlerObserver,
-      public drive::DriveIntegrationServiceObserver,
       public drive::FileSystemObserver,
       public drive::JobListObserver,
       public drive::DriveServiceObserver,
@@ -74,8 +74,13 @@ class EventRouter
   void OnCopyCompleted(
       int copy_id, const GURL& url, base::PlatformFileError error);
 
+  // Called when a copy task progress is updated.
+  void OnCopyProgress(int copy_id,
+                      fileapi::FileSystemOperation::CopyProgressType type,
+                      const GURL& url,
+                      int64 size);
+
   // chromeos::NetworkStateHandlerObserver overrides.
-  virtual void NetworkManagerChanged() OVERRIDE;
   virtual void DefaultNetworkChanged(
       const chromeos::NetworkState* network) OVERRIDE;
 
@@ -91,11 +96,6 @@ class EventRouter
   // drive::FileSystemObserver overrides.
   virtual void OnDirectoryChanged(
       const base::FilePath& directory_path) OVERRIDE;
-
-  // drive::DriveIntegrationServiceObserver overrides.
-  // TODO(hidehiko): Move these to VolumeManager.
-  virtual void OnFileSystemMounted() OVERRIDE;
-  virtual void OnFileSystemBeingUnmounted() OVERRIDE;
 
   // VolumeManagerObserver overrides.
   virtual void OnDiskAdded(
@@ -117,10 +117,6 @@ class EventRouter
 
  private:
   typedef std::map<base::FilePath, FileWatcher*> WatcherMap;
-
-  // Called on change to kExternalStorageDisabled pref.
-  // TODO(hidehiko): Move this to VolumeManager.
-  void OnExternalStorageDisabledChanged();
 
   // Called when prefs related to file manager change.
   void OnFileManagerPrefsChanged();

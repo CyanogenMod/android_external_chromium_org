@@ -47,12 +47,6 @@ bool IsAuthenticationError(const std::string& error) {
           error == shill::kErrorEapAuthenticationFailed);
 }
 
-bool NetworkRequiresActivation(const NetworkState* network) {
-  return (network->type() == flimflam::kTypeCellular &&
-      ((network->activation_state() != flimflam::kActivationStateActivated &&
-        network->activation_state() != flimflam::kActivationStateUnknown)));
-}
-
 bool VPNIsConfigured(const std::string& service_path,
                      const std::string& provider_type,
                      const base::DictionaryValue& provider_properties) {
@@ -157,8 +151,7 @@ void NetworkConnectionHandler::Init(
     NetworkConfigurationHandler* network_configuration_handler) {
   if (LoginState::IsInitialized()) {
     LoginState::Get()->AddObserver(this);
-    logged_in_ =
-        LoginState::Get()->GetLoggedInState() == LoginState::LOGGED_IN_ACTIVE;
+    logged_in_ = LoginState::Get()->IsUserLoggedIn();
   }
   if (CertLoader::IsInitialized()) {
     cert_loader_ = CertLoader::Get();
@@ -175,9 +168,8 @@ void NetworkConnectionHandler::Init(
   network_configuration_handler_ = network_configuration_handler;
 }
 
-void NetworkConnectionHandler::LoggedInStateChanged(
-    LoginState::LoggedInState state) {
-  if (state == LoginState::LOGGED_IN_ACTIVE) {
+void NetworkConnectionHandler::LoggedInStateChanged() {
+  if (LoginState::Get()->IsUserLoggedIn()) {
     logged_in_ = true;
     NET_LOG_EVENT("Logged In", "");
   }
@@ -232,7 +224,7 @@ void NetworkConnectionHandler::ConnectToNetwork(
       InvokeErrorCallback(service_path, error_callback, kErrorConnecting);
       return;
     }
-    if (NetworkRequiresActivation(network)) {
+    if (network->RequiresActivation()) {
       InvokeErrorCallback(service_path, error_callback,
                           kErrorActivationRequired);
       return;
@@ -454,21 +446,16 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
 
   if (!config_properties.empty()) {
     NET_LOG_EVENT("Configuring Network", service_path);
-    if (shill_property_util::CopyIdentifyingProperties(service_properties,
-                                                       &config_properties)) {
-      network_configuration_handler_->SetProperties(
-          service_path,
-          config_properties,
-          base::Bind(&NetworkConnectionHandler::CallShillConnect,
-                     AsWeakPtr(),
-                     service_path),
-          base::Bind(&NetworkConnectionHandler::HandleConfigurationFailure,
-                     AsWeakPtr(),
-                     service_path));
-      return;
-    }
-    NET_LOG_ERROR("Shill dictionary is missing some relevant entries",
-                  service_path);
+    network_configuration_handler_->SetProperties(
+        service_path,
+        config_properties,
+        base::Bind(&NetworkConnectionHandler::CallShillConnect,
+                   AsWeakPtr(),
+                   service_path),
+        base::Bind(&NetworkConnectionHandler::HandleConfigurationFailure,
+                   AsWeakPtr(),
+                   service_path));
+    return;
   }
 
   // Otherwise, we probably still need to configure the network since
@@ -595,7 +582,7 @@ void NetworkConnectionHandler::CheckPendingRequest(
   if (error_callback.is_null())
     return;
   scoped_ptr<base::DictionaryValue> error_data(
-      network_handler::CreateErrorData(service_path, error_name, error_msg));
+      network_handler::CreateErrorData(service_path, error_name, error_detail));
   error_callback.Run(error_name, error_data.Pass());
 }
 

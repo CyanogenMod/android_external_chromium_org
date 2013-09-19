@@ -52,10 +52,10 @@ IPC_MESSAGE_ROUTED2(AwViewMsg_DoHitTest,
                     int /* view_x */,
                     int /* view_y */)
 
-// Sets the zoom level for text only. Used in layout modes other than
+// Sets the zoom factor for text only. Used in layout modes other than
 // Text Autosizing.
-IPC_MESSAGE_ROUTED1(AwViewMsg_SetTextZoomLevel,
-                    double /* zoom_level */)
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetTextZoomFactor,
+                    float /* zoom_factor */)
 
 // Resets WebKit WebView scrolling and scale state. We need to send this
 // message whenever we want to guarantee that page's scale will be
@@ -67,9 +67,14 @@ IPC_MESSAGE_ROUTED0(AwViewMsg_ResetScrollAndScaleState)
 IPC_MESSAGE_ROUTED1(AwViewMsg_SetInitialPageScale,
                     double /* page_scale_factor */)
 
+// Makes the WebKit::WebView use the given size for layout regardless of what
+// the size of the RenderWidget or viewport settings are.
+IPC_MESSAGE_ROUTED1(AwViewMsg_SetFixedLayoutSize,
+                    gfx::Size /* size */)
+
 // Sets the base background color for this view.
 IPC_MESSAGE_ROUTED1(AwViewMsg_SetBackgroundColor,
-                    SkColor);
+                    SkColor)
 
 IPC_MESSAGE_CONTROL1(AwViewMsg_SetJsOnlineProperty,
                      bool /* network_up */)
@@ -90,3 +95,7 @@ IPC_MESSAGE_ROUTED1(AwViewHostMsg_UpdateHitTestData,
 // Sent whenever the page scale factor (as seen by RenderView) is changed.
 IPC_MESSAGE_ROUTED1(AwViewHostMsg_PageScaleFactorChanged,
                     float /* page_scale_factor */)
+
+// Sent whenever the contents size (as seen by RenderView) is changed.
+IPC_MESSAGE_ROUTED1(AwViewHostMsg_OnContentsSizeChanged,
+                    gfx::Size /* contents_size */)

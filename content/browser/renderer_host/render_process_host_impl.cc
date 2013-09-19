@@ -129,6 +129,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/common/resource_type.h"
@@ -883,6 +884,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(ENABLE_WEBRTC)
     switches::kDisableDeviceEnumeration,
     switches::kDisableSCTPDataChannels,
+    switches::kDisableWebRtcHWDecoding,
+    switches::kDisableWebRtcHWEncoding,
 #endif
     switches::kEnableWebAnimationsCSS,
     switches::kEnableWebAnimationsSVG,
@@ -923,8 +926,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(ENABLE_WEBRTC)
     switches::kEnableWebRtcAecRecordings,
     switches::kEnableWebRtcTcpServerSocket,
-    switches::kDisableWebRtcHWEncoding,
-    switches::kEnableWebRtcHWDecoding,
 #endif
     switches::kDisableWebKitMediaSource,
     switches::kEnableOverscrollNotifications,
@@ -1013,19 +1014,18 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableHTMLImports,
     switches::kEnableInputModeAttribute,
     switches::kTraceToConsole,
-    switches::kEnableDeviceMotion,
-#if defined(OS_ANDROID)
     switches::kDisableDeviceMotion,
-#endif
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
     cc::switches::kCompositeToMailbox,
     cc::switches::kDisableCompositedAntialiasing,
     cc::switches::kDisableImplSidePainting,
+    cc::switches::kDisableLCDText,
     cc::switches::kDisableMapImage,
     cc::switches::kDisableThreadedAnimation,
     cc::switches::kEnableImplSidePainting,
+    cc::switches::kEnableLCDText,
     cc::switches::kEnableMapImage,
     cc::switches::kEnablePartialSwap,
     cc::switches::kEnablePerTilePainting,

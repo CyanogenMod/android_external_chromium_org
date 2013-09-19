@@ -72,7 +72,6 @@
 #include "chrome/common/badge_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
@@ -180,10 +179,11 @@ class ContentSettingImageViewGtk : public LocationBarViewGtk::PageToolViewGtk,
   virtual ~ContentSettingImageViewGtk();
 
   // PageToolViewGtk
-  virtual void Update(WebContents* web_contents) OVERRIDE;
+  virtual void UpdatePreLayout(WebContents* web_contents) OVERRIDE;
+  virtual void UpdatePostLayout(WebContents* web_contents) OVERRIDE;
 
-  // ui::AnimationDelegate
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  // gfx::AnimationDelegate
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
 
  private:
   // PageToolViewGtk
@@ -195,6 +195,8 @@ class ContentSettingImageViewGtk : public LocationBarViewGtk::PageToolViewGtk,
   // BubbleDelegateGtk
   virtual void BubbleClosing(BubbleGtk* bubble,
                              bool closed_by_escape) OVERRIDE;
+
+  void CreateBubble(WebContents* web_contents);
 
   // The owning LocationBarViewGtk.
   LocationBarViewGtk* parent_;
@@ -224,7 +226,7 @@ ContentSettingImageViewGtk::~ContentSettingImageViewGtk() {
     content_setting_bubble_->Close();
 }
 
-void ContentSettingImageViewGtk::Update(WebContents* web_contents) {
+void ContentSettingImageViewGtk::UpdatePreLayout(WebContents* web_contents) {
   if (web_contents)
     content_setting_image_model_->UpdateFromWebContents(web_contents);
 
@@ -250,11 +252,6 @@ void ContentSettingImageViewGtk::Update(WebContents* web_contents) {
       content_setting_image_model_->get_content_settings_type()))
     return;
 
-  // The content blockage was not yet indicated to the user. Start indication
-  // animation and clear "not yet shown" flag.
-  content_settings->SetBlockageHasBeenIndicated(
-      content_setting_image_model_->get_content_settings_type());
-
   int label_string_id =
       content_setting_image_model_->explanatory_string_id();
   // If there's no string for the content type, we don't animate.
@@ -264,10 +261,33 @@ void ContentSettingImageViewGtk::Update(WebContents* web_contents) {
   gtk_label_set_text(GTK_LABEL(label_.get()),
       l10n_util::GetStringUTF8(label_string_id).c_str());
   StartAnimating();
+
+  // Since indicating blockage may include showing a bubble, which must be done
+  // in UpdatePostLayout() in order for the bubble to have the right anchor
+  // coordinates, we delay calling SetBlockageHasBeeenIndicated() until that
+  // function completes.
+}
+
+void ContentSettingImageViewGtk::UpdatePostLayout(WebContents* web_contents) {
+  if (!content_setting_image_model_->is_visible())
+    return;
+
+  TabSpecificContentSettings* content_settings = web_contents ?
+     TabSpecificContentSettings::FromWebContents(web_contents) : NULL;
+  if (!content_settings)
+    return;
+
+  if (!content_settings->IsBlockageIndicated(
+      content_setting_image_model_->get_content_settings_type())) {
+    if (content_setting_image_model_->ShouldShowBubbleOnBlockage())
+      CreateBubble(web_contents);
+    content_settings->SetBlockageHasBeenIndicated(
+        content_setting_image_model_->get_content_settings_type());
+  }
 }
 
 void ContentSettingImageViewGtk::AnimationEnded(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   if (animation_.IsShowing()) {
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
@@ -317,6 +337,19 @@ void ContentSettingImageViewGtk::BubbleClosing(
     BubbleGtk* bubble,
     bool closed_by_escape) {
   content_setting_bubble_ = NULL;
+}
+
+void ContentSettingImageViewGtk::CreateBubble(
+    content::WebContents* web_contents) {
+  content_setting_bubble_ = new ContentSettingBubbleGtk(
+      widget(), this,
+      ContentSettingBubbleModel::CreateContentSettingBubbleModel(
+          parent_->browser()->content_setting_bubble_model_delegate(),
+          web_contents,
+          parent_->browser()->profile(),
+          content_setting_image_model_->get_content_settings_type()),
+      parent_->browser()->profile(), web_contents);
+  return;
 }
 
 gfx::Rect AllocationToRect(const GtkAllocation& allocation) {
@@ -679,6 +712,7 @@ void LocationBarViewGtk::Update(const WebContents* contents) {
     gtk_widget_queue_draw(widget());
   }
   ZoomBubbleGtk::CloseBubble();
+  UpdatePostLayout();
 }
 
 void LocationBarViewGtk::OnAutocompleteAccept(const GURL& url,
@@ -887,7 +921,7 @@ void LocationBarViewGtk::UpdateContentSettingsIcons() {
   for (ScopedVector<PageToolViewGtk>::iterator i(
            content_setting_views_.begin());
        i != content_setting_views_.end(); ++i) {
-    (*i)->Update(GetToolbarModel()->input_in_progress() ?
+    (*i)->UpdatePreLayout(GetToolbarModel()->input_in_progress() ?
         NULL : GetWebContents());
     any_visible = (*i)->IsVisible() || any_visible;
   }
@@ -895,6 +929,15 @@ void LocationBarViewGtk::UpdateContentSettingsIcons() {
   // If there are no visible content things, hide the top level box so it
   // doesn't mess with padding.
   gtk_widget_set_visible(content_setting_hbox_.get(), any_visible);
+}
+
+void LocationBarViewGtk::UpdatePostLayout() {
+  for (ScopedVector<PageToolViewGtk>::iterator i(
+           content_setting_views_.begin());
+       i != content_setting_views_.end(); ++i) {
+    (*i)->UpdatePostLayout(GetToolbarModel()->input_in_progress() ?
+        NULL : GetWebContents());
+  }
 }
 
 void LocationBarViewGtk::UpdatePageActions() {
@@ -1095,6 +1138,7 @@ void LocationBarViewGtk::Observe(int type,
       UpdateStarIcon();
       UpdateSiteTypeArea();
       UpdateContentSettingsIcons();
+      UpdatePostLayout();
       break;
     }
 
@@ -1765,7 +1809,7 @@ void LocationBarViewGtk::PageToolViewGtk::CloseAnimation() {
 }
 
 void LocationBarViewGtk::PageToolViewGtk::AnimationProgressed(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   gtk_widget_set_size_request(
       label_.get(),
       animation->GetCurrentValue() * label_req_.width,
@@ -1773,11 +1817,11 @@ void LocationBarViewGtk::PageToolViewGtk::AnimationProgressed(
 }
 
 void LocationBarViewGtk::PageToolViewGtk::AnimationEnded(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
 }
 
 void LocationBarViewGtk::PageToolViewGtk::AnimationCanceled(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
 }
 
 gboolean LocationBarViewGtk::PageToolViewGtk::OnButtonPressed(

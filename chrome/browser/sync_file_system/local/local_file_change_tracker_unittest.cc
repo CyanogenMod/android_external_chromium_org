@@ -43,7 +43,8 @@ class LocalFileChangeTrackerTest : public testing::Test {
     file_system_.SetUp();
 
     sync_context_ =
-        new LocalFileSyncContext(base::MessageLoopProxy::current().get(),
+        new LocalFileSyncContext(base::FilePath(),
+                                 base::MessageLoopProxy::current().get(),
                                  base::MessageLoopProxy::current().get());
     ASSERT_EQ(
         sync_file_system::SYNC_STATUS_OK,
@@ -491,14 +492,17 @@ TEST_F(LocalFileChangeTrackerTest, RestoreMoveChanges) {
 
   // Make sure the changes are restored from the DB.
   file_system_.GetChangedURLsInTracker(&urls);
-  // Deletion for children in the deleted directory cannot be restored,
-  // so we will only have 7 changes.
-  EXPECT_EQ(7U, urls.size());
+  // Deletion for child files in the deleted directory cannot be restored,
+  // so we will only have 8 changes.
+  EXPECT_EQ(8U, urls.size());
 
   VerifyAndClearChange(URL(kPath0),
                        FileChange(FileChange::FILE_CHANGE_DELETE,
                                   sync_file_system::SYNC_FILE_TYPE_UNKNOWN));
   VerifyAndClearChange(URL(kPath1),
+                       FileChange(FileChange::FILE_CHANGE_DELETE,
+                                  sync_file_system::SYNC_FILE_TYPE_UNKNOWN));
+  VerifyAndClearChange(URL(kPath3),
                        FileChange(FileChange::FILE_CHANGE_DELETE,
                                   sync_file_system::SYNC_FILE_TYPE_UNKNOWN));
   VerifyAndClearChange(URL(kPath5),

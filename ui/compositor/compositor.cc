@@ -124,7 +124,8 @@ scoped_ptr<cc::OutputSurface> DefaultContextFactory::CreateOutputSurface(
 
   using webkit::gpu::ContextProviderInProcess;
   scoped_refptr<ContextProviderInProcess> context_provider =
-      ContextProviderInProcess::Create(context3d.Pass());
+      ContextProviderInProcess::Create(context3d.Pass(),
+                                       "UICompositor");
 
   return make_scoped_ptr(new cc::OutputSurface(context_provider));
 }
@@ -440,7 +441,10 @@ Compositor::~Compositor() {
 
 // static
 void Compositor::InitializeContextFactoryForTests(bool allow_test_contexts) {
-  DCHECK(!g_context_factory) << "ContextFactory already initialized.";
+  // The factory may already have been initialized by the content layer, in
+  // which case, use that one.
+  if (g_context_factory)
+    return;
   DCHECK(!g_implicit_factory) <<
       "ContextFactory for tests already initialized.";
 
@@ -487,7 +491,18 @@ void Compositor::Initialize() {
 #endif
   if (use_thread) {
     g_compositor_thread = new base::Thread("Browser Compositor");
+#if defined(OS_POSIX)
+    // Workaround for crbug.com/293736
+    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+    // compositor scheduling) work incorrectly across system time changes (e.g.
+    // tlsdate). So instead, use an IO loop, which uses libevent, that uses
+    // monotonic time (immune to these problems).
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
+    g_compositor_thread->StartWithOptions(options);
+#else
     g_compositor_thread->Start();
+#endif
   }
 
   DCHECK(!g_compositor_initialized) << "Compositor initialized twice.";

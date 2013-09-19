@@ -10,11 +10,16 @@
 
 #include "base/debug/crash_logging.h"
 
+class CommandLine;
+
 namespace crash_keys {
 
 // Registers all of the potential crash keys that can be sent to the crash
 // reporting server. Returns the size of the union of all keys.
 size_t RegisterChromeCrashKeys();
+
+// Sets the kSwitch and kNumSwitches keys based on the given |command_line|.
+void SetSwitchesFromCommandLine(const CommandLine* command_line);
 
 // Sets the list of "active" extensions in this process. We overload "active" to
 // mean different things depending on the process type:
@@ -24,10 +29,32 @@ size_t RegisterChromeCrashKeys();
 //   multiple because of process collapsing).
 void SetActiveExtensions(const std::set<std::string>& extensions);
 
+// Sets the printer info. Data should be separated by ';' up to
+// kPrinterInfoCount substrings. Each substring will be truncated if necessary.
+class ScopedPrinterInfo {
+ public:
+  explicit ScopedPrinterInfo(const base::StringPiece& data);
+  ~ScopedPrinterInfo();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScopedPrinterInfo);
+};
+
 // Crash Key Name Constants ////////////////////////////////////////////////////
+
+// The product release/distribution channel.
+extern const char kChannel[];
 
 // The URL of the active tab.
 extern const char kActiveURL[];
+
+// Process command line switches. |kSwitch| should be formatted with an integer,
+// in the range [1, kSwitchesMaxCount].
+const size_t kSwitchesMaxCount = 15;
+extern const char kSwitch[];
+// The total number of switches, used to report the total in case more than
+// |kSwitchesMaxCount| are present.
+extern const char kNumSwitches[];
 
 // Installed extensions. |kExtensionID| should be formatted with an integer,
 // in the range [0, kExtensionIDMaxCount).
@@ -37,6 +64,9 @@ extern const char kExtensionID[];
 // kExtensionIDMaxCount. Also used in chrome/app, but defined here to avoid
 // a common->app dependency.
 extern const char kNumExtensionsCount[];
+
+// The number of render views/tabs open in a renderer process.
+extern const char kNumberOfViews[];
 
 // GPU information.
 #if !defined(OS_ANDROID)
@@ -52,6 +82,11 @@ extern const char kGPURenderer[];
 #elif defined(OS_MACOSX)
 extern const char kGPUGLVersion[];
 #endif
+
+// The user's printers, up to kPrinterInfoCount. Should be set with
+// ScopedPrinterInfo.
+const size_t kPrinterInfoCount = 4;
+extern const char kPrinterInfo[];
 
 #if defined(OS_MACOSX)
 namespace mac {
@@ -76,6 +111,9 @@ extern const char kSendAction[];
 // deliberate crash.
 extern const char kZombie[];
 extern const char kZombieTrace[];
+
+// Backtrace of a Thread's dtor for <http://crbug.com/274705>.
+extern const char kPasswordThreadDtorTrace[];
 
 }  // namespace mac
 #endif

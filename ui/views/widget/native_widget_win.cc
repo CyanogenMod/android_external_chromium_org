@@ -18,22 +18,22 @@
 #include "ui/base/dragdrop/drag_source_win.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/input_method_factory.h"
-#include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/shell.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
-#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/native_control_win.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -61,9 +61,10 @@ namespace views {
 
 namespace {
 
-// Enumeration callback for NativeWidget::GetAllChildWidgets(). Called for each
-// child HWND beneath the original HWND.
-BOOL CALLBACK EnumerateChildWindowsForNativeWidgets(HWND hwnd, LPARAM l_param) {
+// Enumeration callback for NativeWidget::GetAllChildWidgets() and
+// NativeWidget::GetAllOwnedWidgets. Adds any HWNDs that correspond to
+// Widgets to a set.
+BOOL CALLBACK EnumerateNativeWidgets(HWND hwnd, LPARAM l_param) {
   Widget* widget = Widget::GetWidgetForNativeView(hwnd);
   if (widget) {
     Widget::Widgets* widgets = reinterpret_cast<Widget::Widgets*>(l_param);
@@ -990,8 +991,23 @@ void NativeWidgetPrivate::GetAllChildWidgets(gfx::NativeView native_view,
   Widget* widget = Widget::GetWidgetForNativeView(native_view);
   if (widget)
     children->insert(widget);
-  EnumChildWindows(native_view, EnumerateChildWindowsForNativeWidgets,
+  EnumChildWindows(native_view, EnumerateNativeWidgets,
                    reinterpret_cast<LPARAM>(children));
+}
+
+// static
+void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
+                                             Widget::Widgets* owned) {
+  if (!native_view)
+    return;
+
+  Widget::Widgets all;
+  EnumWindows(EnumerateNativeWidgets, reinterpret_cast<LPARAM>(&all));
+  for (Widget::Widgets::const_iterator iter = all.begin();
+           iter != all.end(); ++iter) {
+    if (native_view == GetWindow((*iter)->GetNativeView(), GW_OWNER))
+      owned->insert(*iter);
+  }
 }
 
 // static

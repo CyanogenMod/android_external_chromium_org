@@ -17,8 +17,6 @@
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
@@ -588,6 +586,8 @@ SavePasswordBubbleModel::SavePasswordBubbleModel(Delegate* delegate,
   SetTitle();
 }
 
+SavePasswordBubbleModel::~SavePasswordBubbleModel() {}
+
 void SavePasswordBubbleModel::SetTitle() {
   int title_id = 0;
   // If the save password icon was accessed, the icon is displayed and the
@@ -601,13 +601,13 @@ void SavePasswordBubbleModel::SetTitle() {
 void SavePasswordBubbleModel::OnCancelClicked() {
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
-  content_settings->PasswordFormBlacklisted();
+  content_settings->set_password_action(PasswordFormManager::BLACKLIST);
 }
 
 void SavePasswordBubbleModel::OnSaveClicked() {
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
-  content_settings->PasswordAccepted();
+  content_settings->set_password_action(PasswordFormManager::SAVE);
 }
 
 // The model of the content settings bubble for media settings.
@@ -621,7 +621,6 @@ class ContentSettingMediaStreamBubbleModel
   virtual ~ContentSettingMediaStreamBubbleModel();
 
  private:
-  // Sets the title of the bubble.
   void SetTitle();
   // Sets the data for the radio buttons of the bubble.
   void SetRadioGroup();

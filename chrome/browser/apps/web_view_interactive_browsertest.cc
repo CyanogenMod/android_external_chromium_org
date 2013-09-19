@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -20,8 +21,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/test/ui_controls.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 using apps::ShellWindow;
 
@@ -141,31 +142,54 @@ class WebViewInteractiveTest
     }
   }
 
-  void TestHelper(const std::string& test_name,
-                  const std::string& test_passed_msg,
-                  const std::string& test_failed_msg,
-                  const std::string& app_location) {
-    ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
+  scoped_ptr<ExtensionTestMessageListener> RunAppHelper(
+      const std::string& test_name,
+      const std::string& app_location,
+      content::WebContents** embedder_web_contents) {
+    // For serving guest pages.
+    if (!StartEmbeddedTestServer()) {
+      LOG(ERROR) << "FAILED TO START TEST SERVER.";
+      return scoped_ptr<ExtensionTestMessageListener>();
+    }
+
     ExtensionTestMessageListener launched_listener("Launched", false);
     LoadAndLaunchPlatformApp(app_location.c_str());
-    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+    if (!launched_listener.WaitUntilSatisfied()) {
+      LOG(ERROR) << "TEST DID NOT LAUNCH.";
+      return scoped_ptr<ExtensionTestMessageListener>();
+    }
 
-    ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
-        GetPlatformAppWindow()));
+    if (!ui_test_utils::ShowAndFocusNativeWindow(GetPlatformAppWindow())) {
+      LOG(ERROR) << "UNABLE TO FOCUS TEST WINDOW.";
+      return scoped_ptr<ExtensionTestMessageListener>();
+    }
 
     // Flush any pending events to make sure we start with a clean slate.
     content::RunAllPendingInMessageLoop();
 
-    content::WebContents* embedder_web_contents =
-        GetFirstShellWindowWebContents();
-    ASSERT_TRUE(embedder_web_contents);
+    *embedder_web_contents = GetFirstShellWindowWebContents();
 
-    ExtensionTestMessageListener done_listener(test_passed_msg, false);
-    done_listener.AlsoListenForFailureMessage(test_failed_msg);
-    EXPECT_TRUE(content::ExecuteScript(
-                    embedder_web_contents,
-                    base::StringPrintf("runTest('%s')", test_name.c_str())));
-    ASSERT_TRUE(done_listener.WaitUntilSatisfied());
+    scoped_ptr<ExtensionTestMessageListener> done_listener(
+        new ExtensionTestMessageListener("TEST_PASSED", false));
+    done_listener->AlsoListenForFailureMessage("TEST_FAILED");
+    if (!content::ExecuteScript(
+            *embedder_web_contents,
+            base::StringPrintf("runTest('%s')", test_name.c_str()))) {
+      LOG(ERROR) << "UNABLE TO START TEST";
+      return scoped_ptr<ExtensionTestMessageListener>();
+    }
+
+    return done_listener.Pass();
+  }
+
+  void TestHelper(const std::string& test_name,
+                  const std::string& app_location) {
+    content::WebContents* embedder_web_contents = NULL;
+    scoped_ptr<ExtensionTestMessageListener> done_listener(
+        RunAppHelper(test_name, app_location, &embedder_web_contents));
+
+    ASSERT_TRUE(done_listener);
+    ASSERT_TRUE(done_listener->WaitUntilSatisfied());
   }
 
   void SetupTest(const std::string& app_name,
@@ -381,11 +405,6 @@ class WebViewInteractiveTest
   }
 
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kEnableBrowserPluginDragDrop);
-    extensions::PlatformAppBrowserTest::SetUpCommandLine(command_line);
-  }
-
   content::WebContents* guest_web_contents_;
   content::WebContents* embedder_web_contents_;
   gfx::Point corner_;
@@ -397,8 +416,10 @@ class WebViewInteractiveTest
 
 // ui_test_utils::SendMouseMoveSync doesn't seem to work on OS_MACOSX, and
 // likely won't work on many other platforms as well, so for now this test
-// is for Windows and Linux only.
-#if (defined(OS_WIN) || defined(OS_LINUX))
+// is for Windows and Linux only. As of Sept 17th, 2013 this test is disabled
+// on Windows due to flakines, see http://crbug.com/293445.
+
+#if defined(OS_LINUX)
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
   SetupTest("web_view/pointer_lock",
@@ -474,15 +495,14 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, PointerLock) {
 
 #endif  // (defined(OS_WIN) || defined(OS_LINUX))
 
-// Fails on Windows. crbug.com/236040
-// Also flaky on ChromiumOS. crbug.com/281815
-// Appears to be flaky on Mac and Linux too.
-#define MAYBE_Focus DISABLED_Focus
 // Tests that setting focus on the <webview> sets focus on the guest.
-IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, MAYBE_Focus) {
-  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
-  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/focus"))
-      << message_;
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Focus_FocusEvent) {
+  TestHelper("testFocusEvent", "web_view/focus");
+}
+
+// Tests that setting focus on the <webview> sets focus on the guest.
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Focus_BlurEvent) {
+  TestHelper("testBlurEvent", "web_view/focus");
 }
 
 // Tests that guests receive edit commands and respond appropriately.
@@ -523,62 +543,71 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, EditCommandsNoMenu) {
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
                        NewWindow_NewWindowNameTakesPrecedence) {
-  TestHelper("testNewWindowNameTakesPrecedence",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowNameTakesPrecedence", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
                        NewWindow_WebViewNameTakesPrecedence) {
-  TestHelper("testWebViewNameTakesPrecedence",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testWebViewNameTakesPrecedence", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_NoName) {
-  TestHelper("testNoName",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNoName", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_Redirect) {
-  TestHelper("testNewWindowRedirect",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowRedirect", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_Close) {
-  TestHelper("testNewWindowClose",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowClose", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_ExecuteScript) {
-  TestHelper("testNewWindowExecuteScript",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowExecuteScript", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_WebRequest) {
-  TestHelper("testNewWindowWebRequest",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowWebRequest", "web_view/newwindow");
+}
+
+// A custom elements bug needs to be addressed to enable this test:
+// See http://crbug.com/282477 for more information.
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
+                       DISABLED_NewWindow_WebRequestCloseWindow) {
+  TestHelper("testNewWindowWebRequestCloseWindow", "web_view/newwindow");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
                        NewWindow_WebRequestRemoveElement) {
-  TestHelper("testNewWindowWebRequestRemoveElement",
-             "DoneNewWindowTest.PASSED",
-             "DoneNewWindowTest.FAILED",
-             "web_view/newwindow");
+  TestHelper("testNewWindowWebRequestRemoveElement", "web_view/newwindow");
 }
+
+// Tests that Ctrl+Click/Cmd+Click on a link fires up the newwindow API.
+IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, NewWindow_OpenInNewTab) {
+  content::WebContents* embedder_web_contents = NULL;
+
+  ExtensionTestMessageListener loaded_listener("Loaded", false);
+  scoped_ptr<ExtensionTestMessageListener> done_listener(
+    RunAppHelper("testNewWindowOpenInNewTab",
+                 "web_view/newwindow",
+                 &embedder_web_contents));
+
+  loaded_listener.WaitUntilSatisfied();
+#if defined(OS_MACOSX)
+  ASSERT_TRUE(ui_test_utils::SendKeyPressToWindowSync(
+      GetPlatformAppWindow(), ui::VKEY_RETURN,
+      false, false, false, true /* cmd */));
+#else
+  ASSERT_TRUE(ui_test_utils::SendKeyPressToWindowSync(
+      GetPlatformAppWindow(), ui::VKEY_RETURN,
+      true /* ctrl */, false, false, false));
+#endif
+
+  // Wait for the embedder to receive a 'newwindow' event.
+  ASSERT_TRUE(done_listener->WaitUntilSatisfied());
+}
+
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, ExecuteCode) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
@@ -619,7 +648,6 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DISABLED_PopupPositioningMoved) {
 // but the tests don't work on anything except chromeos for now. This is because
 // of simulating mouse drag code's dependency on platforms.
 #if defined(OS_CHROMEOS)
-// http://crbug.com/281001
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DragDropWithinWebView) {
   SetupTest(
       "web_view/dnd_within_webview",
@@ -639,10 +667,7 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, DragDropWithinWebView) {
 #endif  // (defined(OS_CHROMEOS))
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Navigation) {
-  TestHelper("testNavigation",
-             "DoneNavigationTest.PASSED",
-             "DoneNavigationTest.FAILED",
-             "web_view/navigation");
+  TestHelper("testNavigation", "web_view/navigation");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Navigation_BackForwardKeys) {
@@ -661,8 +686,8 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Navigation_BackForwardKeys) {
   ASSERT_TRUE(embedder_web_contents);
 
   ExtensionTestMessageListener done_listener(
-      "DoneNavigationTest.PASSED", false);
-  done_listener.AlsoListenForFailureMessage("DoneNavigationTest.FAILED");
+      "TEST_PASSED", false);
+  done_listener.AlsoListenForFailureMessage("TEST_FAILED");
   ExtensionTestMessageListener ready_back_key_listener(
       "ReadyForBackKey", false);
   ExtensionTestMessageListener ready_forward_key_listener(
@@ -681,10 +706,16 @@ IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest, Navigation_BackForwardKeys) {
   ASSERT_TRUE(done_listener.WaitUntilSatisfied());
 }
 
+// Fail at least once a day on Windows. See http://crbug.com/293445.
+#if defined(OS_WIN)
+#define MAYBE_PointerLock_PointerLockLostWithFocus \
+    DISABLED_PointerLock_PointerLockLostWithFocus
+#else
+#define MAYBE_PointerLock_PointerLockLostWithFocus \
+    PointerLock_PointerLockLostWithFocus
+#endif
+
 IN_PROC_BROWSER_TEST_F(WebViewInteractiveTest,
-                       PointerLock_PointerLockLostWithFocus) {
-  TestHelper("testPointerLockLostWithFocus",
-             "DonePointerLockTest.PASSED",
-             "DonePointerLockTest.FAILED",
-             "web_view/pointerlock");
+                       MAYBE_PointerLock_PointerLockLostWithFocus) {
+  TestHelper("testPointerLockLostWithFocus", "web_view/pointerlock");
 }

@@ -148,6 +148,9 @@ bool GetOrCreateV8Value(const PP_Var& var,
       *result = v8::Object::New();
       break;
     case PP_VARTYPE_OBJECT:
+    case PP_VARTYPE_RESOURCE:
+      // TODO(mgiuca): Convert PP_VARTYPE_RESOURCE vars into the correct V8
+      // type. (http://crbug.com/177017)
       NOTREACHED();
       result->Clear();
       return false;
@@ -243,9 +246,8 @@ V8VarConverter::V8VarConverter(PP_Instance instance)
 
 V8VarConverter::V8VarConverter(
     PP_Instance instance,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
     scoped_ptr<ResourceConverter> resource_converter)
-    : message_loop_proxy_(message_loop_proxy),
+    : message_loop_proxy_(base::MessageLoopProxy::current()),
       resource_converter_(resource_converter.release()) {
 }
 

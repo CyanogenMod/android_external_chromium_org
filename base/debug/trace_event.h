@@ -195,6 +195,7 @@
 #include "base/atomicops.h"
 #include "base/debug/trace_event_impl.h"
 #include "base/debug/trace_event_memory.h"
+#include "base/debug/trace_event_system_stats_monitor.h"
 #include "build/build_config.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -967,7 +968,7 @@ class TraceID {
  public:
   class DontMangle {
    public:
-    explicit DontMangle(void* id)
+    explicit DontMangle(const void* id)
         : data_(static_cast<unsigned long long>(
               reinterpret_cast<unsigned long>(id))) {}
     explicit DontMangle(unsigned long long id) : data_(id) {}

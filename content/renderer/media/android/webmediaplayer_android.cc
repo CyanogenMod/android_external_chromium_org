@@ -55,9 +55,6 @@ const char* kMediaEme = "Media.EME.";
 
 namespace content {
 
-#define BIND_TO_RENDER_LOOP(function) \
-  media::BindToLoop(main_loop_, base::Bind(function, AsWeakPtr()))
-
 WebMediaPlayerAndroid::WebMediaPlayerAndroid(
     WebKit::WebFrame* frame,
     WebKit::WebMediaPlayerClient* client,
@@ -97,6 +94,7 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
       demuxer_(NULL),
       media_stream_client_(NULL),
 #endif  // defined(GOOGLE_TV)
+      pending_playback_(false),
       player_type_(MEDIA_PLAYER_TYPE_URL),
       proxy_(proxy),
       current_time_(0),
@@ -231,7 +229,11 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
   if (player_type_ != MEDIA_PLAYER_TYPE_URL) {
     has_media_info_ = true;
     media_source_delegate_.reset(
-        new MediaSourceDelegate(proxy_, player_id_, media_loop_, media_log_));
+        new MediaSourceDelegate(proxy_->renderer_demuxer_android(),
+                                player_id_,
+                                media_loop_,
+                                media_log_));
+
     // |media_source_delegate_| is owned, so Unretained() is safe here.
     if (player_type_ == MEDIA_PLAYER_TYPE_MEDIA_SOURCE) {
       media_source_delegate_->InitializeMediaSource(
@@ -241,7 +243,10 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
           set_decryptor_ready_cb,
           base::Bind(&WebMediaPlayerAndroid::UpdateNetworkState,
                      base::Unretained(this)),
-          BIND_TO_RENDER_LOOP(&WebMediaPlayerAndroid::OnDurationChange));
+          base::Bind(&WebMediaPlayerAndroid::OnDurationChanged,
+                     base::Unretained(this)),
+          base::Bind(&WebMediaPlayerAndroid::OnTimeUpdate,
+                     base::Unretained(this)));
     }
 #if defined(GOOGLE_TV)
     // TODO(xhwang): Pass set_decryptor_ready_cb in InitializeMediaStream() to
@@ -316,11 +321,15 @@ void WebMediaPlayerAndroid::play() {
 }
 
 void WebMediaPlayerAndroid::pause() {
+  pause(true);
+}
+
+void WebMediaPlayerAndroid::pause(bool is_media_related_action) {
 #if defined(GOOGLE_TV)
   if (audio_renderer_ && !paused())
     audio_renderer_->Pause();
 #endif
-  proxy_->Pause(player_id_);
+  proxy_->Pause(player_id_, is_media_related_action);
   UpdatePlayingState(false);
 }
 
@@ -533,7 +542,7 @@ unsigned WebMediaPlayerAndroid::videoDecodedByteCount() const {
 }
 
 void WebMediaPlayerAndroid::OnMediaMetadataChanged(
-    base::TimeDelta duration, int width, int height, bool success) {
+    const base::TimeDelta& duration, int width, int height, bool success) {
   bool need_to_signal_duration_changed = false;
 
   if (url_.SchemeIs("file"))
@@ -551,7 +560,7 @@ void WebMediaPlayerAndroid::OnMediaMetadataChanged(
     // already triggers a durationchanged event. If this is a different
     // transition, remember to signal durationchanged.
     // Do not ever signal durationchanged on metadata change in MSE case
-    // because OnDurationChange() handles this.
+    // because OnDurationChanged() handles this.
     if (ready_state_ > WebMediaPlayer::ReadyStateHaveNothing &&
         player_type_ != MEDIA_PLAYER_TYPE_MEDIA_SOURCE) {
       need_to_signal_duration_changed = true;
@@ -587,6 +596,15 @@ void WebMediaPlayerAndroid::OnPlaybackComplete() {
   // current time to media duration when OnPlaybackComplete() get called.
   OnTimeUpdate(duration_);
   client_->timeChanged();
+
+  // if the loop attribute is set, timeChanged() will update the current time
+  // to 0. It will perform a seek to 0. As the requests to the renderer
+  // process are sequential, the OnSeekCompelete() will only occur
+  // once OnPlaybackComplete() is done. As the playback can only be executed
+  // upon completion of OnSeekComplete(), the request needs to be saved.
+  is_playing_ = false;
+  if (seeking_ && pending_seek_ == 0)
+    pending_playback_ = true;
 }
 
 void WebMediaPlayerAndroid::OnBufferingUpdate(int percentage) {
@@ -594,7 +612,8 @@ void WebMediaPlayerAndroid::OnBufferingUpdate(int percentage) {
   did_loading_progress_ = true;
 }
 
-void WebMediaPlayerAndroid::OnSeekComplete(base::TimeDelta current_time) {
+void WebMediaPlayerAndroid::OnSeekComplete(
+    const base::TimeDelta& current_time) {
   seeking_ = false;
 
   OnTimeUpdate(current_time);
@@ -602,6 +621,11 @@ void WebMediaPlayerAndroid::OnSeekComplete(base::TimeDelta current_time) {
   UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
 
   client_->timeChanged();
+
+  if (pending_playback_) {
+    play();
+    pending_playback_ = false;
+  }
 }
 
 void WebMediaPlayerAndroid::OnMediaError(int error_type) {
@@ -654,7 +678,8 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
   ReallocateVideoFrame();
 }
 
-void WebMediaPlayerAndroid::OnTimeUpdate(base::TimeDelta current_time) {
+void WebMediaPlayerAndroid::OnTimeUpdate(const base::TimeDelta& current_time) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
   current_time_ = current_time.InSecondsF();
 }
 
@@ -696,23 +721,8 @@ void WebMediaPlayerAndroid::OnMediaPlayerPause() {
   client_->playbackStateChanged();
 }
 
-void WebMediaPlayerAndroid::OnMediaSeekRequest(base::TimeDelta time_to_seek,
-                                               unsigned seek_request_id) {
-  if (!media_source_delegate_)
-    return;
-
-  media_source_delegate_->Seek(time_to_seek, seek_request_id);
-  OnTimeUpdate(time_to_seek);
-}
-
-void WebMediaPlayerAndroid::OnMediaConfigRequest() {
-  if (!media_source_delegate_)
-    return;
-
-  media_source_delegate_->OnMediaConfigRequest();
-}
-
-void WebMediaPlayerAndroid::OnDurationChange(const base::TimeDelta& duration) {
+void WebMediaPlayerAndroid::OnDurationChanged(const base::TimeDelta& duration) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
   // Only MSE |player_type_| registers this callback.
   DCHECK_EQ(player_type_, MEDIA_PLAYER_TYPE_MEDIA_SOURCE);
 
@@ -724,10 +734,6 @@ void WebMediaPlayerAndroid::OnDurationChange(const base::TimeDelta& duration) {
   duration_ = duration;
   ignore_metadata_duration_change_ = true;
 
-  // Send message to Android MediaSourcePlayer to update duration.
-  if (proxy_)
-    proxy_->DurationChanged(player_id_, duration_);
-
   // Notify MediaPlayerClient that duration has changed, if > HAVE_NOTHING.
   if (ready_state_ > WebMediaPlayer::ReadyStateHaveNothing)
     client_->durationChanged();
@@ -735,6 +741,7 @@ void WebMediaPlayerAndroid::OnDurationChange(const base::TimeDelta& duration) {
 
 void WebMediaPlayerAndroid::UpdateNetworkState(
     WebMediaPlayer::NetworkState state) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
   if (ready_state_ == WebMediaPlayer::ReadyStateHaveNothing &&
       (state == WebMediaPlayer::NetworkStateNetworkError ||
        state == WebMediaPlayer::NetworkStateDecodeError)) {
@@ -770,7 +777,7 @@ void WebMediaPlayerAndroid::ReleaseMediaResources() {
     case WebMediaPlayer::NetworkStateIdle:
     case WebMediaPlayer::NetworkStateLoading:
     case WebMediaPlayer::NetworkStateLoaded:
-      pause();
+      pause(false);
       client_->playbackStateChanged();
       break;
     // If a WebMediaPlayer instance has entered into one of these states,
@@ -1136,6 +1143,7 @@ void WebMediaPlayerAndroid::OnMediaSourceOpened(
 void WebMediaPlayerAndroid::OnNeedKey(const std::string& session_id,
                                       const std::string& type,
                                       const std::vector<uint8>& init_data) {
+  DCHECK(main_loop_->BelongsToCurrentThread());
   // Do not fire NeedKey event if encrypted media is not enabled.
   if (!WebKit::WebRuntimeFeatures::isEncryptedMediaEnabled() &&
       !WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
@@ -1167,13 +1175,6 @@ bool WebMediaPlayerAndroid::InjectMediaStream(
   return true;
 }
 #endif
-
-void WebMediaPlayerAndroid::OnReadFromDemuxer(media::DemuxerStream::Type type) {
-  if (media_source_delegate_)
-    media_source_delegate_->OnReadFromDemuxer(type);
-  else
-    NOTIMPLEMENTED();
-}
 
 void WebMediaPlayerAndroid::enterFullscreen() {
   if (manager_->CanEnterFullscreen(frame_)) {

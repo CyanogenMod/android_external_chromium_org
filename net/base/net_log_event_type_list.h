@@ -1460,6 +1460,12 @@ EVENT_TYPE(QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED)
 //   }
 EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATION_PACKET_RECEIVED)
 
+// Session sucessfully negotiated QUIC version number.
+//   {
+//     "version": <String of QUIC version negotiated with the server>,
+//   }
+EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATED)
+
 // Session revived a QUIC packet packet via FEC.
 //   {
 //     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
@@ -1632,14 +1638,8 @@ EVENT_TYPE(NETWORK_CHANGED)
 //   {
 //     "nameservers":                <List of name server IPs>,
 //     "search":                     <List of domain suffixes>,
-//     "unhandled_options":          <See DnsConfig>,
-//     "append_to_multi_label_name": <See DnsConfig>,
-//     "ndots":                      <See DnsConfig>,
-//     "timeout":                    <See DnsConfig>,
-//     "attempts":                   <See DnsConfig>,
-//     "rotate":                     <See DnsConfig>,
-//     "edns0":                      <See DnsConfig>,
-//     "num_hosts":                  <Number of entries in the HOSTS file>
+//     "num_hosts":                  <Number of entries in the HOSTS file>,
+//     <other>:                      <See DnsConfig>
 //   }
 EVENT_TYPE(DNS_CONFIG_CHANGED)
 

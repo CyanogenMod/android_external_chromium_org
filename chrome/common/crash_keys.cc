@@ -4,10 +4,13 @@
 
 #include "chrome/common/crash_keys.h"
 
+#include "base/command_line.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 
 #if defined(OS_MACOSX)
 #include "breakpad/src/common/simple_string_dictionary.h"
@@ -48,10 +51,17 @@ COMPILE_ASSERT(kMediumSize <= kSingleChunkLength,
                mac_has_medium_size_crash_key_chunks);
 #endif
 
+const char kChannel[] = "channel";
+
 const char kActiveURL[] = "url-chunk";
+
+const char kSwitch[] = "switch-%" PRIuS;
+const char kNumSwitches[] = "num-switches";
 
 const char kExtensionID[] = "extension-%" PRIuS;
 const char kNumExtensionsCount[] = "num-extensions";
+
+const char kNumberOfViews[] = "num-views";
 
 #if !defined(OS_ANDROID)
 const char kGPUVendorID[] = "gpu-venid";
@@ -66,6 +76,8 @@ const char kGPURenderer[] = "gpu-gl-renderer";
 #elif defined(OS_MACOSX)
 const char kGPUGLVersion[] = "gpu-glver";
 #endif
+
+const char kPrinterInfo[] = "prn-info-%" PRIuS;
 
 #if defined(OS_MACOSX)
 namespace mac {
@@ -84,6 +96,8 @@ const char kSendAction[] = "sendaction";
 const char kZombie[] = "zombie";
 const char kZombieTrace[] = "zombie_dealloc_bt";
 
+const char kPasswordThreadDtorTrace[] = "password_thread_dtor";
+
 }  // namespace mac
 #endif
 
@@ -91,8 +105,11 @@ size_t RegisterChromeCrashKeys() {
   // The following keys may be chunked by the underlying crash logging system,
   // but ultimately constitute a single key-value pair.
   base::debug::CrashKey fixed_keys[] = {
+    { kChannel, kSmallSize },
     { kActiveURL, kLargeSize },
+    { kNumSwitches, kSmallSize },
     { kNumExtensionsCount, kSmallSize },
+    { kNumberOfViews, kSmallSize },
 #if !defined(OS_ANDROID)
     { kGPUVendorID, kSmallSize },
     { kGPUDeviceID, kSmallSize },
@@ -120,6 +137,7 @@ size_t RegisterChromeCrashKeys() {
     { mac::kSendAction, kMediumSize },
     { mac::kZombie, kMediumSize },
     { mac::kZombieTrace, kMediumSize },
+    { mac::kPasswordThreadDtorTrace, kLargeSize },
     // content/:
     { "channel_error_bt", kMediumSize },
     { "remove_route_bt", kMediumSize },
@@ -134,11 +152,26 @@ size_t RegisterChromeCrashKeys() {
   std::vector<base::debug::CrashKey> keys(
       fixed_keys, fixed_keys + arraysize(fixed_keys));
 
-  // Register the extension IDs.
+  // Register the switches.
   {
     // The fixed_keys names are string constants. Use static storage for
     // formatted key names as well, since they will persist for the duration of
     // the program.
+    static char formatted_keys[kSwitchesMaxCount][sizeof(kSwitch) + 1] =
+        {{ 0 }};
+    const size_t formatted_key_len = sizeof(formatted_keys[0]);
+    for (size_t i = 0; i < kSwitchesMaxCount; ++i) {
+      // Name the keys using 1-based indexing.
+      int n = base::snprintf(
+          formatted_keys[i], formatted_key_len, kSwitch, i + 1);
+      DCHECK_GT(n, 0);
+      base::debug::CrashKey crash_key = { formatted_keys[i], kSmallSize };
+      keys.push_back(crash_key);
+    }
+  }
+
+  // Register the extension IDs.
+  {
     static char formatted_keys[kExtensionIDMaxCount][sizeof(kExtensionID) + 1] =
         {{ 0 }};
     const size_t formatted_key_len = sizeof(formatted_keys[0]);
@@ -151,8 +184,90 @@ size_t RegisterChromeCrashKeys() {
     }
   }
 
+  // Register the printer info.
+  {
+    static char formatted_keys[kPrinterInfoCount][sizeof(kPrinterInfo) + 1] =
+        {{ 0 }};
+    const size_t formatted_key_len = sizeof(formatted_keys[0]);
+    for (size_t i = 0; i < kPrinterInfoCount; ++i) {
+      // Key names are 1-indexed.
+      int n = base::snprintf(
+          formatted_keys[i], formatted_key_len, kPrinterInfo, i + 1);
+      DCHECK_GT(n, 0);
+      base::debug::CrashKey crash_key = { formatted_keys[i], kSmallSize };
+      keys.push_back(crash_key);
+    }
+  }
+
   return base::debug::InitCrashKeys(&keys.at(0), keys.size(),
                                     kSingleChunkLength);
+}
+
+static bool IsBoringSwitch(const std::string& flag) {
+#if defined(OS_WIN)
+  return StartsWithASCII(flag, "--channel=", true) ||
+
+         // No point to including this since we already have a ptype field.
+         StartsWithASCII(flag, "--type=", true) ||
+
+         // Not particularly interesting
+         StartsWithASCII(flag, "--flash-broker=", true) ||
+
+         // Just about everything has this, don't bother.
+         StartsWithASCII(flag, "/prefetch:", true) ||
+
+         // We handle the plugin path separately since it is usually too big
+         // to fit in the switches (limited to 63 characters).
+         StartsWithASCII(flag, "--plugin-path=", true) ||
+
+         // This is too big so we end up truncating it anyway.
+         StartsWithASCII(flag, "--force-fieldtest=", true) ||
+
+         // These surround the flags that were added by about:flags, it lets
+         // you distinguish which flags were added manually via the command
+         // line versus those added through about:flags. For the most part
+         // we don't care how an option was enabled, so we strip these.
+         // (If you need to know can always look at the PEB).
+         flag == "--flag-switches-begin" ||
+         flag == "--flag-switches-end";
+#else
+  return false;
+#endif
+}
+
+void SetSwitchesFromCommandLine(const CommandLine* command_line) {
+  DCHECK(command_line);
+  if (!command_line)
+    return;
+
+  const CommandLine::StringVector& argv = command_line->argv();
+
+  // Set the number of switches in case size > kNumSwitches.
+  base::debug::SetCrashKeyValue(kNumSwitches,
+      base::StringPrintf("%" PRIuS, argv.size() - 1));
+
+  size_t key_i = 1;  // Key names are 1-indexed.
+
+  // Go through the argv, skipping the exec path.
+  for (size_t i = 1; i < argv.size(); ++i) {
+#if defined(OS_WIN)
+    std::string switch_str = base::WideToUTF8(argv[i]);
+#else
+    std::string switch_str = argv[i];
+#endif
+
+    // Skip uninteresting switches.
+    if (IsBoringSwitch(switch_str))
+      continue;
+
+    std::string key = base::StringPrintf(kSwitch, key_i++);
+    base::debug::SetCrashKeyValue(key, switch_str);
+  }
+
+  // Clear any remaining switches.
+  for (; key_i <= kSwitchesMaxCount; ++key_i) {
+    base::debug::ClearCrashKey(base::StringPrintf(kSwitch, key_i));
+  }
 }
 
 void SetActiveExtensions(const std::set<std::string>& extensions) {
@@ -168,6 +283,25 @@ void SetActiveExtensions(const std::set<std::string>& extensions) {
       base::debug::SetCrashKeyValue(key, *it);
       ++it;
     }
+  }
+}
+
+ScopedPrinterInfo::ScopedPrinterInfo(const base::StringPiece& data) {
+  std::vector<std::string> info;
+  base::SplitString(data.as_string(), ';', &info);
+  for (size_t i = 0; i < kPrinterInfoCount; ++i) {
+    std::string key = base::StringPrintf(kPrinterInfo, i + 1);
+    std::string value;
+    if (i < info.size())
+      value = info[i];
+    base::debug::SetCrashKeyValue(key, value);
+  }
+}
+
+ScopedPrinterInfo::~ScopedPrinterInfo() {
+  for (size_t i = 0; i < kPrinterInfoCount; ++i) {
+    std::string key = base::StringPrintf(kPrinterInfo, i + 1);
+    base::debug::ClearCrashKey(key);
   }
 }
 

@@ -11,10 +11,10 @@
 #include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/wm/property_util.h"
 #include "ash/wm/window_settings.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/frame_caption_button_container_view.h"
 #include "base/logging.h"  // DCHECK
 #include "grit/ash_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -25,11 +25,11 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
@@ -230,6 +230,7 @@ FramePainter::~FramePainter() {
   // Sometimes we are destroyed before the window closes, so ensure we clean up.
   if (window_) {
     window_->RemoveObserver(this);
+    wm::GetWindowSettings(window_)->RemoveObserver(this);
   }
 }
 
@@ -417,7 +418,7 @@ void FramePainter::PaintHeader(views::NonClientFrameView* view,
          parent->layer()->GetAnimator()->IsAnimatingProperty(
              ui::LayerAnimationElement::VISIBILITY));
     if (!parent_animating) {
-      crossfade_animation_.reset(new ui::SlideAnimation(this));
+      crossfade_animation_.reset(new gfx::SlideAnimation(this));
       crossfade_theme_frame_id_ = previous_theme_frame_id_;
       crossfade_theme_frame_overlay_id_ = previous_theme_frame_overlay_id_;
       crossfade_opacity_ = previous_opacity_;
@@ -701,9 +702,9 @@ void FramePainter::OnWindowRemovingFromRootWindow(aura::Window* window) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ui::AnimationDelegate overrides:
+// gfx::AnimationDelegate overrides:
 
-void FramePainter::AnimationProgressed(const ui::Animation* animation) {
+void FramePainter::AnimationProgressed(const gfx::Animation* animation) {
   frame_->non_client_view()->SchedulePaintInRect(header_frame_bounds_);
 }
 

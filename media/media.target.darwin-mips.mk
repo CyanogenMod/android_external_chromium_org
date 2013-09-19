@@ -31,6 +31,7 @@ LOCAL_SRC_FILES := \
 	media/audio/android/audio_manager_android.cc \
 	media/audio/android/opensles_input.cc \
 	media/audio/android/opensles_output.cc \
+	media/audio/android/opensles_wrapper.cc \
 	media/audio/audio_buffers_state.cc \
 	media/audio/audio_device_name.cc \
 	media/audio/audio_device_thread.cc \
@@ -203,7 +204,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -316,7 +317,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

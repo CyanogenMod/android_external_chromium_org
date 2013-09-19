@@ -30,25 +30,6 @@ TEST(DriveAPIParserTest, AboutResourceParser) {
   EXPECT_EQ(8177LL, resource->largest_change_id());
 }
 
-TEST(DriveAPIParserTest, AboutResourceFromAccountMetadata) {
-  AccountMetadata account_metadata;
-  // Set up AccountMetadata instance.
-  {
-    account_metadata.set_quota_bytes_total(10000);
-    account_metadata.set_quota_bytes_used(1000);
-    account_metadata.set_largest_changestamp(100);
-  }
-
-  scoped_ptr<AboutResource> about_resource(
-      AboutResource::CreateFromAccountMetadata(account_metadata,
-                                               "dummy_root_id"));
-
-  EXPECT_EQ(10000, about_resource->quota_bytes_total());
-  EXPECT_EQ(1000, about_resource->quota_bytes_used());
-  EXPECT_EQ(100, about_resource->largest_change_id());
-  EXPECT_EQ("dummy_root_id", about_resource->root_folder_id());
-}
-
 // Test app list parsing.
 TEST(DriveAPIParserTest, AppListParser) {
   std::string error;
@@ -129,102 +110,6 @@ TEST(DriveAPIParserTest, AppListParser) {
   EXPECT_EQ(DriveAppIcon::DOCUMENT, icon2.category());
   EXPECT_EQ(10, icon2.icon_side_length());
   EXPECT_EQ("http://www.example.com/d10.png", icon2.icon_url().spec());
-}
-
-TEST(DriveAPIParserTest, AppListFromAccountMetadata) {
-  AccountMetadata account_metadata;
-  // Set up AccountMetadata instance.
-  {
-    ScopedVector<InstalledApp> installed_apps;
-    scoped_ptr<InstalledApp> installed_app(new InstalledApp);
-    installed_app->set_app_id("app_id");
-    installed_app->set_app_name("name");
-    installed_app->set_object_type("object_type");
-    installed_app->set_supports_create(true);
-
-    {
-      ScopedVector<Link> links;
-      scoped_ptr<Link> link(new Link);
-      link->set_type(Link::LINK_PRODUCT);
-      link->set_href(GURL("http://product/url"));
-      links.push_back(link.release());
-      installed_app->set_links(&links);
-    }
-    {
-      ScopedVector<std::string> primary_mimetypes;
-      primary_mimetypes.push_back(new std::string("primary_mimetype"));
-      installed_app->set_primary_mimetypes(&primary_mimetypes);
-    }
-    {
-      ScopedVector<std::string> secondary_mimetypes;
-      secondary_mimetypes.push_back(new std::string("secondary_mimetype"));
-      installed_app->set_secondary_mimetypes(&secondary_mimetypes);
-    }
-    {
-      ScopedVector<std::string> primary_extensions;
-      primary_extensions.push_back(new std::string("primary_extension"));
-      installed_app->set_primary_extensions(&primary_extensions);
-    }
-    {
-      ScopedVector<std::string> secondary_extensions;
-      secondary_extensions.push_back(new std::string("secondary_extension"));
-      installed_app->set_secondary_extensions(&secondary_extensions);
-    }
-    {
-      ScopedVector<AppIcon> app_icons;
-      scoped_ptr<AppIcon> app_icon(new AppIcon);
-      app_icon->set_category(AppIcon::ICON_DOCUMENT);
-      app_icon->set_icon_side_length(10);
-      {
-        ScopedVector<Link> links;
-        scoped_ptr<Link> link(new Link);
-        link->set_type(Link::LINK_ICON);
-        link->set_href(GURL("http://icon/url"));
-        links.push_back(link.release());
-        app_icon->set_links(&links);
-      }
-      app_icons.push_back(app_icon.release());
-      installed_app->set_app_icons(&app_icons);
-    }
-
-    installed_apps.push_back(installed_app.release());
-    account_metadata.set_installed_apps(&installed_apps);
-  }
-
-  scoped_ptr<AppList> app_list(
-      AppList::CreateFromAccountMetadata(account_metadata));
-  const ScopedVector<AppResource>& items = app_list->items();
-  ASSERT_EQ(1U, items.size());
-
-  const AppResource& app_resource = *items[0];
-  EXPECT_EQ("app_id", app_resource.application_id());
-  EXPECT_EQ("name", app_resource.name());
-  EXPECT_EQ("object_type", app_resource.object_type());
-  EXPECT_TRUE(app_resource.supports_create());
-  EXPECT_EQ("http://product/url", app_resource.product_url().spec());
-  const ScopedVector<std::string>& primary_mimetypes =
-      app_resource.primary_mimetypes();
-  ASSERT_EQ(1U, primary_mimetypes.size());
-  EXPECT_EQ("primary_mimetype", *primary_mimetypes[0]);
-  const ScopedVector<std::string>& secondary_mimetypes =
-      app_resource.secondary_mimetypes();
-  ASSERT_EQ(1U, secondary_mimetypes.size());
-  EXPECT_EQ("secondary_mimetype", *secondary_mimetypes[0]);
-  const ScopedVector<std::string>& primary_file_extensions =
-      app_resource.primary_file_extensions();
-  ASSERT_EQ(1U, primary_file_extensions.size());
-  EXPECT_EQ("primary_extension", *primary_file_extensions[0]);
-  const ScopedVector<std::string>& secondary_file_extensions =
-      app_resource.secondary_file_extensions();
-  ASSERT_EQ(1U, secondary_file_extensions.size());
-  EXPECT_EQ("secondary_extension", *secondary_file_extensions[0]);
-
-  const ScopedVector<DriveAppIcon>& icons = app_resource.icons();
-  ASSERT_EQ(1U, icons.size());
-  const DriveAppIcon& icon = *icons[0];
-  EXPECT_EQ(DriveAppIcon::DOCUMENT, icon.category());
-  EXPECT_EQ(10, icon.icon_side_length());
-  EXPECT_EQ("http://icon/url", icon.icon_url().spec());
 }
 
 // Test file list parsing.
@@ -369,21 +254,11 @@ TEST(DriveAPIParserTest, ChangeListParser) {
   EXPECT_EQ("1Pc8jzfU1ErbN_eucMMqdqzY3eBm0v8sxXm_1CtLxABC", change1.file_id());
   EXPECT_EQ(change1.file_id(), change1.file()->file_id());
 
-  scoped_ptr<ResourceEntry> entry1(
-      ResourceEntry::CreateFromChangeResource(change1));
-  EXPECT_EQ(change1.file_id(), entry1->resource_id());
-  EXPECT_EQ(change1.is_deleted(), entry1->deleted());
-
   const ChangeResource& change2 = *changelist->items()[1];
   EXPECT_EQ(8424, change2.change_id());
   EXPECT_FALSE(change2.is_deleted());
   EXPECT_EQ("0B4v7G8yEYAWHUmRrU2lMS2hLABC", change2.file_id());
   EXPECT_EQ(change2.file_id(), change2.file()->file_id());
-
-  scoped_ptr<ResourceEntry> entry2(
-      ResourceEntry::CreateFromChangeResource(change2));
-  EXPECT_EQ(change2.file_id(), entry2->resource_id());
-  EXPECT_EQ(change2.is_deleted(), entry2->deleted());
 
   const ChangeResource& change3 = *changelist->items()[2];
   EXPECT_EQ(8429, change3.change_id());
@@ -391,21 +266,11 @@ TEST(DriveAPIParserTest, ChangeListParser) {
   EXPECT_EQ("0B4v7G8yEYAWHYW1OcExsUVZLABC", change3.file_id());
   EXPECT_EQ(change3.file_id(), change3.file()->file_id());
 
-  scoped_ptr<ResourceEntry> entry3(
-      ResourceEntry::CreateFromChangeResource(change3));
-  EXPECT_EQ(change3.file_id(), entry3->resource_id());
-  EXPECT_EQ(change3.is_deleted(), entry3->deleted());
-
   // Deleted entry.
   const ChangeResource& change4 = *changelist->items()[3];
   EXPECT_EQ(8430, change4.change_id());
   EXPECT_EQ("ABCv7G8yEYAWHc3Y5X0hMSkJYXYZ", change4.file_id());
   EXPECT_TRUE(change4.is_deleted());
-
-  scoped_ptr<ResourceEntry> entry4(
-      ResourceEntry::CreateFromChangeResource(change4));
-  EXPECT_EQ(change4.file_id(), entry4->resource_id());
-  EXPECT_EQ(change4.is_deleted(), entry4->deleted());
 }
 
 TEST(DriveAPIParserTest, HasKind) {

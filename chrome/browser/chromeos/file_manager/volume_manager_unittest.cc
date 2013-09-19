@@ -147,6 +147,7 @@ class VolumeManagerTest : public testing::Test {
     disk_mount_manager_.reset(new FakeDiskMountManager);
     profile_.reset(new TestingProfile);
     volume_manager_.reset(new VolumeManager(profile_.get(),
+                                            NULL,  // DriveIntegrationService
                                             power_manager_client_.get(),
                                             disk_mount_manager_.get()));
   }
@@ -157,6 +158,39 @@ class VolumeManagerTest : public testing::Test {
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<VolumeManager> volume_manager_;
 };
+
+TEST_F(VolumeManagerTest, OnFileSystemMounted) {
+  LoggingObserver observer;
+  volume_manager_->AddObserver(&observer);
+
+  volume_manager_->OnFileSystemMounted();
+
+  ASSERT_EQ(1U, observer.events().size());
+  const LoggingObserver::Event& event = observer.events()[0];
+  EXPECT_EQ(LoggingObserver::Event::VOLUME_MOUNTED, event.type);
+  EXPECT_EQ(drive::util::GetDriveMountPointPath().AsUTF8Unsafe(),
+            event.device_path);
+  EXPECT_EQ(chromeos::MOUNT_ERROR_NONE, event.mount_error);
+  EXPECT_FALSE(event.is_remounting);
+
+  volume_manager_->RemoveObserver(&observer);
+}
+
+TEST_F(VolumeManagerTest, OnFileSystemBeingUnmounted) {
+  LoggingObserver observer;
+  volume_manager_->AddObserver(&observer);
+
+  volume_manager_->OnFileSystemBeingUnmounted();
+
+  ASSERT_EQ(1U, observer.events().size());
+  const LoggingObserver::Event& event = observer.events()[0];
+  EXPECT_EQ(LoggingObserver::Event::VOLUME_UNMOUNTED, event.type);
+  EXPECT_EQ(drive::util::GetDriveMountPointPath().AsUTF8Unsafe(),
+            event.device_path);
+  EXPECT_EQ(chromeos::MOUNT_ERROR_NONE, event.mount_error);
+
+  volume_manager_->RemoveObserver(&observer);
+}
 
 TEST_F(VolumeManagerTest, OnDiskEvent_Hidden) {
   LoggingObserver observer;
@@ -580,6 +614,42 @@ TEST_F(VolumeManagerTest, OnFormatEvent_CompletedFailed) {
   EXPECT_EQ(0U, disk_mount_manager_->mount_requests().size());
 
   volume_manager_->RemoveObserver(&observer);
+}
+
+TEST_F(VolumeManagerTest, OnExternalStorageDisabledChanged) {
+  // Here create two mount points.
+  disk_mount_manager_->MountPath(
+      "mount1", "", "", chromeos::MOUNT_TYPE_DEVICE);
+  disk_mount_manager_->MountPath(
+      "mount2", "", "", chromeos::MOUNT_TYPE_DEVICE);
+
+  // Initially, there are two mount points.
+  ASSERT_EQ(2U, disk_mount_manager_->mount_points().size());
+  ASSERT_EQ(0U, disk_mount_manager_->unmount_requests().size());
+
+  // Emulate to set kExternalStorageDisabled to false.
+  profile_->GetPrefs()->SetBoolean(prefs::kExternalStorageDisabled, false);
+  volume_manager_->OnExternalStorageDisabledChanged();
+
+  // Expect no effects.
+  EXPECT_EQ(2U, disk_mount_manager_->mount_points().size());
+  EXPECT_EQ(0U, disk_mount_manager_->unmount_requests().size());
+
+  // Emulate to set kExternalStorageDisabled to true.
+  profile_->GetPrefs()->SetBoolean(prefs::kExternalStorageDisabled, true);
+  volume_manager_->OnExternalStorageDisabledChanged();
+
+  // The all mount points should be unmounted.
+  EXPECT_EQ(0U, disk_mount_manager_->mount_points().size());
+
+  EXPECT_EQ(2U, disk_mount_manager_->unmount_requests().size());
+  const FakeDiskMountManager::UnmountRequest& unmount_request1 =
+      disk_mount_manager_->unmount_requests()[0];
+  EXPECT_EQ("mount1", unmount_request1.mount_path);
+
+  const FakeDiskMountManager::UnmountRequest& unmount_request2 =
+      disk_mount_manager_->unmount_requests()[1];
+  EXPECT_EQ("mount2", unmount_request2.mount_path);
 }
 
 }  // namespace file_manager

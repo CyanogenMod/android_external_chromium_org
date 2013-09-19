@@ -24,15 +24,6 @@ namespace autofill {
 
 class AutofillField;
 
-// The time (in milliseconds) to show the splash page when the dialog is first
-// started.
-extern const int kSplashDisplayDurationMs;
-// The time (in milliseconds) spend fading out the splash image.
-extern const int kSplashFadeOutDurationMs;
-// The time (in milliseconds) spend fading in the dialog (after the splash image
-// has been faded out).
-extern const int kSplashFadeInDialogDurationMs;
-
 // This struct describes a single input control for the imperative autocomplete
 // dialog.
 struct DetailInput {
@@ -125,9 +116,6 @@ class DialogNotification {
   void set_checked(bool checked) { checked_ = checked; }
   bool checked() const { return checked_; }
 
-  void set_interactive(bool interactive) { interactive_ = interactive; }
-  bool interactive() const { return interactive_; }
-
  private:
   Type type_;
   string16 display_text_;
@@ -144,11 +132,6 @@ class DialogNotification {
   // Whether the dialog notification's checkbox should be checked. Only applies
   // when |HasCheckbox()| is true.
   bool checked_;
-
-  // When false, this disables user interaction with the notification. For
-  // example, WALLET_USAGE_CONFIRMATION notifications set this to false after
-  // the submit flow has started.
-  bool interactive_;
 };
 
 extern SkColor const kWarningColor;

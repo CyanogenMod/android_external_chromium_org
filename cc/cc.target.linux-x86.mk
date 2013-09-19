@@ -161,6 +161,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
 	cc/resources/resource.cc \
+	cc/resources/resource_format.cc \
 	cc/resources/resource_pool.cc \
 	cc/resources/resource_provider.cc \
 	cc/resources/resource_update.cc \
@@ -168,6 +169,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/resource_update_queue.cc \
 	cc/resources/scoped_resource.cc \
 	cc/resources/scoped_ui_resource.cc \
+	cc/resources/single_release_callback.cc \
 	cc/resources/skpicture_content_layer_updater.cc \
 	cc/resources/sync_point_helper.cc \
 	cc/resources/texture_mailbox.cc \
@@ -241,7 +243,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -360,7 +362,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

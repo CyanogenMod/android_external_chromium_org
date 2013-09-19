@@ -446,7 +446,6 @@ void SigninScreenHandler::DeclareLocalizedValues(
   builder->Add("signinButton", IDS_LOGIN_BUTTON);
   builder->Add("shutDown", IDS_SHUTDOWN_BUTTON);
   builder->Add("addUser", IDS_ADD_USER_BUTTON);
-  builder->Add("cancelUserAdding", IDS_CANCEL_USER_ADDING);
   builder->Add("browseAsGuest", IDS_GO_INCOGNITO_BUTTON);
   builder->Add("cancel", IDS_CANCEL);
   builder->Add("signOutUser", IDS_SCREEN_LOCK_SIGN_OUT);
@@ -470,6 +469,7 @@ void SigninScreenHandler::DeclareLocalizedValues(
           IDS_DISABLED_ADD_USER_TOOLTIP);
   builder->Add("supervisedUserExpiredTokenWarning",
                IDS_SUPERVISED_USER_EXPIRED_TOKEN_WARNING);
+  builder->Add("multiple-signin-banner-text", IDS_LOGIN_USER_ADDING_BANNER);
 
   // Strings used by password changed dialog.
   builder->Add("passwordChangedTitle", IDS_LOGIN_PASSWORD_CHANGED_TITLE);
@@ -501,6 +501,18 @@ void SigninScreenHandler::DeclareLocalizedValues(
                UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL));
   builder->Add("removeUserWarningButtonTitle",
                IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON);
+
+  // Strings used by confirm password dialog.
+  builder->Add("confirmPasswordTitle", IDS_LOGIN_CONFIRM_PASSWORD_TITLE);
+  builder->Add("confirmPasswordHint", IDS_LOGIN_CONFIRM_PASSWORD_HINT);
+  builder->Add("confirmPasswordConfirmButton",
+               IDS_LOGIN_CONFIRM_PASSWORD_CONFIRM_BUTTON);
+
+  // Strings used by no password warning dialog.
+  builder->Add("noPasswordWarningTitle", IDS_LOGIN_NO_PASSWORD_WARNING_TITLE);
+  builder->Add("noPasswordWarningBody", IDS_LOGIN_NO_PASSWORD_WARNING);
+  builder->Add("noPasswordWarningOkButton",
+               IDS_LOGIN_NO_PASSWORD_WARNING_DISMISS_BUTTON);
 
   if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
@@ -1020,6 +1032,15 @@ void SigninScreenHandler::OnDnsCleared() {
 
 // Update keyboard layout to least recently used by the user.
 void SigninScreenHandler::SetUserInputMethod(const std::string& username) {
+  UserManager* user_manager = UserManager::Get();
+  if (user_manager->IsUserLoggedIn()) {
+    // We are on sign-in screen inside user session (adding new user to
+    // the session or on lock screen), don't switch input methods in this case.
+    // TODO(dpolukhin): adding user and sign-in should be consistent
+    // crbug.com/292774
+    return;
+  }
+
   chromeos::input_method::InputMethodManager* const manager =
       chromeos::input_method::InputMethodManager::Get();
 

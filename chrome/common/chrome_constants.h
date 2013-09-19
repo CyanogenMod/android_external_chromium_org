@@ -111,6 +111,9 @@ extern const bool kEnableTouchIcon;
 // installed.
 extern const float kMaxShareOfExtensionProcesses;
 
+// This is used by the PreRead experiment.
+extern const char kPreReadEnvironmentVariable[];
+
 #if defined(OS_LINUX)
 // The highest and lowest assigned OOM score adjustment
 // (oom_score_adj) used by the OomPriority Manager.
@@ -119,8 +122,6 @@ extern const int kHighestRendererOomScore;
 #endif
 
 #if defined(OS_WIN)
-// This is used by the PreRead experiment.
-extern const char kPreReadEnvironmentVariable[];
 // Used by Metro Chrome to create the profile under a custom subdirectory.
 extern const wchar_t kMetroChromeUserDataSubDir[];
 // Used by Metro Chrome to initiate navigation and search requests.
@@ -142,6 +143,12 @@ extern const wchar_t kBrowserCrashDumpAttemptsRegistryPath[];
 // Profile path format: [user_data_dir]/u-[$hash]
 // Ex.: /home/chronos/u-0123456789
 extern const char kProfileDirPrefix[];
+
+// Legacy profile dir that was used when only one cryptohome has been mounted.
+extern const char kLegacyProfileDir[];
+
+// This must be kept in sync with TestingProfile::kTestUserProfileDir.
+extern const char kTestUserProfileDir[];
 #endif
 
 // Used to identify the application to the system AV function in Windows.

@@ -78,11 +78,11 @@ int GetDefaultWidth(aura::Window* window) {
   return std::max(width, GetMinWidth(window));
 }
 
-// Create the list of possible widths for the current screen configuration:
-// Fill the |usable_width_| list with items from |kIdealWidth| which fit on
-// the screen and supplement it with the 'half of screen' size. Furthermore,
-// add an entry for 90% of the screen size if it is smaller than the biggest
-// value in the |kIdealWidth| list (to get a step between the values).
+// Creates the list of possible width for the current screen configuration:
+// Returns a list with items from |kIdealWidth| which fit on the screen and
+// supplement it with the 'half of screen' size. Furthermore, add an entry for
+// 90% of the screen size if it is smaller than the biggest value in the
+// |kIdealWidth| list (to get a step between the values).
 std::vector<int> BuildIdealWidthList(aura::Window* window) {
   if (ash::switches::UseAlternateFrameCaptionButtonStyle()) {
     // Only the 'half of screen' width is supported when using the alternate
@@ -123,6 +123,25 @@ std::vector<int> BuildIdealWidthList(aura::Window* window) {
   return ideal_width_list;
 }
 
+// Changes |window|'s bounds to |snap_bounds| while preserving the restore
+// bounds.
+void SnapWindowToBounds(aura::Window* window, const gfx::Rect& snap_bounds) {
+  if (wm::IsWindowMaximized(window) || wm::IsWindowFullscreen(window)) {
+    // Before we can set the bounds we need to restore the window.
+    // Restoring the window will set the window to its restored bounds.
+    // To avoid an unnecessary bounds changes (which may have side effects)
+    // we set the restore bounds to the bounds we want, restore the window,
+    // then reset the restore bounds. This way no unnecessary bounds
+    // changes occurs and the original restore bounds is remembered.
+    gfx::Rect restore_bounds_in_screen = *GetRestoreBoundsInScreen(window);
+    SetRestoreBoundsInParent(window, snap_bounds);
+    wm::RestoreWindow(window);
+    SetRestoreBoundsInScreen(window, restore_bounds_in_screen);
+  } else {
+    window->SetBounds(snap_bounds);
+  }
+}
+
 }  // namespace
 
 SnapSizer::SnapSizer(aura::Window* window,
@@ -133,6 +152,7 @@ SnapSizer::SnapSizer(aura::Window* window,
       edge_(edge),
       time_last_update_(base::TimeTicks::Now()),
       size_index_(0),
+      end_of_sequence_(false),
       resize_disabled_(false),
       num_moves_since_adjust_(0),
       last_adjust_x_(start.x()),
@@ -152,20 +172,11 @@ void SnapSizer::SnapWindow(aura::Window* window, SnapSizer::Edge edge) {
     return;
   internal::SnapSizer sizer(window, gfx::Point(), edge,
       internal::SnapSizer::OTHER_INPUT);
-  if (wm::IsWindowFullscreen(window) || wm::IsWindowMaximized(window)) {
-    // Before we can set the bounds we need to restore the window.
-    // Restoring the window will set the window to its restored bounds.
-    // To avoid an unnecessary bounds changes (which may have side effects)
-    // we set the restore bounds to the bounds we want, restore the window,
-    // then reset the restore bounds. This way no unnecessary bounds
-    // changes occurs and the original restore bounds is remembered.
-    gfx::Rect restore = *GetRestoreBoundsInScreen(window);
-    SetRestoreBoundsInParent(window, sizer.GetSnapBounds(window->bounds()));
-    wm::RestoreWindow(window);
-    SetRestoreBoundsInScreen(window, restore);
-  } else {
-    window->SetBounds(sizer.GetSnapBounds(window->bounds()));
-  }
+  SnapWindowToBounds(window, sizer.GetSnapBounds(window->bounds()));
+}
+
+void SnapSizer::SnapWindowToTargetBounds() {
+  SnapWindowToBounds(window_, target_bounds());
 }
 
 void SnapSizer::Update(const gfx::Point& location) {
@@ -218,6 +229,7 @@ gfx::Rect SnapSizer::GetSnapBounds(const gfx::Rect& bounds) {
 void SnapSizer::SelectDefaultSizeAndDisableResize() {
   resize_disabled_ = true;
   size_index_ = 0;
+  end_of_sequence_ = false;
   target_bounds_ = GetTargetBounds();
 }
 
@@ -260,6 +272,8 @@ int SnapSizer::CalculateIncrement(int x, int reference_x) const {
 }
 
 void SnapSizer::ChangeBounds(int x, int delta) {
+  end_of_sequence_ =
+      delta > 0 && size_index_ == static_cast<int>(usable_width_.size()) - 1;
   int index = std::min(static_cast<int>(usable_width_.size()) - 1,
                        std::max(size_index_ + delta, 0));
   if (index != size_index_) {
@@ -275,7 +289,7 @@ gfx::Rect SnapSizer::GetTargetBounds() const {
 }
 
 bool SnapSizer::AlongEdge(int x) const {
-  gfx::Rect area(ScreenAsh::GetDisplayBoundsInParent(window_));
+  gfx::Rect area(ScreenAsh::GetDisplayWorkAreaBoundsInParent(window_));
   return (x <= area.x()) || (x >= area.right() - 1);
 }
 

@@ -80,6 +80,7 @@ LOCAL_SRC_FILES := \
 	base/debug/trace_event_android.cc \
 	base/debug/trace_event_impl.cc \
 	base/debug/trace_event_impl_constants.cc \
+	base/debug/trace_event_system_stats_monitor.cc \
 	base/debug/trace_event_memory.cc \
 	base/deferred_sequenced_task_runner.cc \
 	base/environment.cc \
@@ -270,7 +271,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -354,7 +355,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

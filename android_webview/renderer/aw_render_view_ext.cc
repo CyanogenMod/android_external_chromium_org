@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/android_content_detection_prefixes.h"
 #include "content/public/renderer/document_state.h"
@@ -160,10 +161,11 @@ bool AwRenderViewExt::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(AwRenderViewExt, message)
     IPC_MESSAGE_HANDLER(AwViewMsg_DocumentHasImages, OnDocumentHasImagesRequest)
     IPC_MESSAGE_HANDLER(AwViewMsg_DoHitTest, OnDoHitTest)
-    IPC_MESSAGE_HANDLER(AwViewMsg_SetTextZoomLevel, OnSetTextZoomLevel)
+    IPC_MESSAGE_HANDLER(AwViewMsg_SetTextZoomFactor, OnSetTextZoomFactor)
     IPC_MESSAGE_HANDLER(AwViewMsg_ResetScrollAndScaleState,
                         OnResetScrollAndScaleState)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetInitialPageScale, OnSetInitialPageScale)
+    IPC_MESSAGE_HANDLER(AwViewMsg_SetFixedLayoutSize, OnSetFixedLayoutSize)
     IPC_MESSAGE_HANDLER(AwViewMsg_SetBackgroundColor, OnSetBackgroundColor)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -214,12 +216,44 @@ void AwRenderViewExt::DidCommitCompositorFrame() {
   UpdatePageScaleFactor();
 }
 
+void AwRenderViewExt::DidUpdateLayout() {
+  if (check_contents_size_timer_.IsRunning())
+    return;
+
+  check_contents_size_timer_.Start(FROM_HERE,
+                                   base::TimeDelta::FromMilliseconds(0), this,
+                                   &AwRenderViewExt::CheckContentsSize);
+}
+
 void AwRenderViewExt::UpdatePageScaleFactor() {
   if (page_scale_factor_ != render_view()->GetWebView()->pageScaleFactor()) {
     page_scale_factor_ = render_view()->GetWebView()->pageScaleFactor();
     Send(new AwViewHostMsg_PageScaleFactorChanged(routing_id(),
                                                   page_scale_factor_));
   }
+}
+
+void AwRenderViewExt::CheckContentsSize() {
+  if (!render_view()->GetWebView())
+    return;
+
+  gfx::Size contents_size;
+
+  WebKit::WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
+  if (main_frame)
+    contents_size = main_frame->contentsSize();
+
+  // Fall back to contentsPreferredMinimumSize if the mainFrame is reporting a
+  // 0x0 size (this happens during initial load).
+  if (contents_size.IsEmpty()) {
+    contents_size = render_view()->GetWebView()->contentsPreferredMinimumSize();
+  }
+
+  if (contents_size == last_sent_contents_size_)
+    return;
+
+  last_sent_contents_size_ = contents_size;
+  Send(new AwViewHostMsg_OnContentsSizeChanged(routing_id(), contents_size));
 }
 
 void AwRenderViewExt::Navigate(const GURL& url) {
@@ -283,12 +317,12 @@ void AwRenderViewExt::OnDoHitTest(int view_x, int view_y) {
   Send(new AwViewHostMsg_UpdateHitTestData(routing_id(), data));
 }
 
-void AwRenderViewExt::OnSetTextZoomLevel(double zoom_level) {
+void AwRenderViewExt::OnSetTextZoomFactor(float zoom_factor) {
   if (!render_view() || !render_view()->GetWebView())
     return;
   // Hide selection and autofill popups.
   render_view()->GetWebView()->hidePopups();
-  render_view()->GetWebView()->setZoomLevel(true, zoom_level);
+  render_view()->GetWebView()->setTextZoomFactor(zoom_factor);
 }
 
 void AwRenderViewExt::OnResetScrollAndScaleState() {
@@ -302,6 +336,13 @@ void AwRenderViewExt::OnSetInitialPageScale(double page_scale_factor) {
     return;
   render_view()->GetWebView()->setInitialPageScaleOverride(
       page_scale_factor);
+}
+
+void AwRenderViewExt::OnSetFixedLayoutSize(const gfx::Size& size) {
+  if (!render_view() || !render_view()->GetWebView())
+    return;
+  DCHECK(render_view()->GetWebView()->isFixedLayoutModeEnabled());
+  render_view()->GetWebView()->setFixedLayoutSize(size);
 }
 
 void AwRenderViewExt::OnSetBackgroundColor(SkColor c) {

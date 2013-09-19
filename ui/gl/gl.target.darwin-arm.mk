@@ -22,9 +22,9 @@ $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_local_path 
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: $(LOCAL_PATH)/ui/gl/generate_bindings.py $(LOCAL_PATH)/third_party/mesa/src/include/GL/glext.h $(LOCAL_PATH)/third_party/mesa/src/include/GLES2/gl2ext.h $(LOCAL_PATH)/ui/gl/GL/glextchromium.h $(LOCAL_PATH)/gpu/GLES2/gl2chromium.h $(LOCAL_PATH)/gpu/GLES2/gl2extchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/EGL/eglext.h $(LOCAL_PATH)/ui/gl/EGL/eglextchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/wglext.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glx.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glxext.h $(GYP_TARGET_DEPENDENCIES)
+$(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc: $(LOCAL_PATH)/ui/gl/generate_bindings.py $(LOCAL_PATH)/third_party/mesa/src/include/GL/glext.h $(LOCAL_PATH)/third_party/khronos/GLES2/gl2ext.h $(LOCAL_PATH)/ui/gl/GL/glextchromium.h $(LOCAL_PATH)/gpu/GLES2/gl2chromium.h $(LOCAL_PATH)/gpu/GLES2/gl2extchromium.h $(LOCAL_PATH)/third_party/khronos/EGL/eglext.h $(LOCAL_PATH)/ui/gl/EGL/eglextchromium.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/wglext.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glx.h $(LOCAL_PATH)/third_party/mesa/src/include/GL/glxext.h $(GYP_TARGET_DEPENDENCIES)
 	@echo "Gyp action: ui_gl_gl_gyp_gl_target_generate_gl_bindings ($@)"
-	$(hide)cd $(gyp_local_path)/ui/gl; mkdir -p $(gyp_shared_intermediate_dir)/ui/gl; python generate_bindings.py "--header-paths=../../third_party/mesa/src/include:../../third_party/khronos" "$(gyp_shared_intermediate_dir)/ui/gl"
+	$(hide)cd $(gyp_local_path)/ui/gl; mkdir -p $(gyp_shared_intermediate_dir)/ui/gl; python generate_bindings.py "--header-paths=../../third_party/khronos:../../third_party/mesa/src/include" "$(gyp_shared_intermediate_dir)/ui/gl"
 
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
 $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_api_autogen_egl.h: $(gyp_shared_intermediate_dir)/ui/gl/gl_bindings_autogen_egl.cc ;
@@ -174,7 +174,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -292,7 +292,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

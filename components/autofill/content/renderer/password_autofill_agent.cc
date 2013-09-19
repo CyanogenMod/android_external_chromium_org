@@ -28,7 +28,7 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace autofill {
 namespace {
@@ -354,6 +354,10 @@ bool PasswordAutofillAgent::ShowSuggestions(
 bool PasswordAutofillAgent::OriginCanAccessPasswordManager(
     const WebKit::WebSecurityOrigin& origin) {
   return origin.canAccessPasswordManager();
+}
+
+void PasswordAutofillAgent::OnDynamicFormsSeen(WebKit::WebFrame* frame) {
+  SendPasswordForms(frame, false /* only_visible */);
 }
 
 void PasswordAutofillAgent::SendPasswordForms(WebKit::WebFrame* frame,

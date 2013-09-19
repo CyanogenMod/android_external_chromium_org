@@ -63,8 +63,8 @@ import org.chromium.content.browser.accessibility.BrowserAccessibilityManager;
 import org.chromium.content.browser.input.AdapterInputConnection;
 import org.chromium.content.browser.input.HandleView;
 import org.chromium.content.browser.input.ImeAdapter;
-import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.ImeAdapter.AdapterInputConnectionFactory;
+import org.chromium.content.browser.input.InputMethodManagerWrapper;
 import org.chromium.content.browser.input.InsertionHandleController;
 import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.input.SelectionHandleController;
@@ -76,7 +76,6 @@ import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -1382,11 +1381,9 @@ import java.util.Map;
      *                 result will be json encoded and passed as the parameter, and the call
      *                 will be made on the main thread.
      *                 If no result is required, pass null.
-     * @throws IllegalStateException If the ContentView has been destroyed.
      */
-    public void evaluateJavaScript(
-            String script, JavaScriptCallback callback) throws IllegalStateException {
-        checkIsAlive();
+    public void evaluateJavaScript(String script, JavaScriptCallback callback) {
+        if (mNativeContentViewCore == 0) return;
         nativeEvaluateJavaScript(mNativeContentViewCore, script, callback, false);
     }
 
@@ -1395,11 +1392,9 @@ import java.util.Map;
      * If there is no page existing, a new one will be created.
      *
      * @param script The Javascript to execute.
-     * @throws IllegalStateException If the ContentView has been destroyed.
      */
-    public void evaluateJavaScriptEvenIfNotYetNavigated(String script)
-            throws IllegalStateException {
-        checkIsAlive();
+    public void evaluateJavaScriptEvenIfNotYetNavigated(String script) {
+        if (mNativeContentViewCore == 0) return;
         nativeEvaluateJavaScript(mNativeContentViewCore, script, null, true);
     }
 
@@ -1488,12 +1483,12 @@ import java.util.Map;
         mAttachedToWindow = true;
         if (mNativeContentViewCore != 0) {
             assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.bindAsHighPriority(mPid);
+            ChildProcessLauncher.getBindingManager().bindAsHighPriority(mPid);
             // Normally the initial binding is removed in onRenderProcessSwap(), but it is possible
             // to construct WebContents and spawn the renderer before passing it to ContentViewCore.
             // In this case there will be no onRenderProcessSwap() call and the initial binding will
             // be removed here.
-            ChildProcessLauncher.removeInitialBinding(mPid);
+            ChildProcessLauncher.getBindingManager().removeInitialBinding(mPid);
         }
         setAccessibilityState(mAccessibilityManager.isEnabled());
     }
@@ -1506,7 +1501,7 @@ import java.util.Map;
         mAttachedToWindow = false;
         if (mNativeContentViewCore != 0) {
             assert mPid == nativeGetCurrentRenderProcessId(mNativeContentViewCore);
-            ChildProcessLauncher.unbindAsHighPriority(mPid);
+            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(mPid);
         }
         setInjectedAccessibility(false);
         hidePopupDialog();
@@ -1680,6 +1675,15 @@ import java.util.Map;
             scrollTask.run();
         }
         mScrolledAndZoomedFocusedEditableNode = false;
+    }
+
+    /**
+     * @see View#onWindowFocusChanged(boolean)
+     */
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        if (!hasWindowFocus) {
+            mContentViewGestureHandler.onWindowFocusLost();
+        }
     }
 
     public void onFocusChanged(boolean gainFocus) {
@@ -1889,7 +1893,8 @@ import java.util.Map;
     @CalledByNative
     private void onTabCrash() {
         assert mPid != 0;
-        getContentViewClient().onRendererCrash(ChildProcessLauncher.isOomProtected(mPid));
+        getContentViewClient().onRendererCrash(
+                ChildProcessLauncher.getBindingManager().isOomProtected(mPid));
         mPid = 0;
     }
 
@@ -2499,7 +2504,7 @@ import java.util.Map;
                 mEndHandlePoint.setLocalDip(x1, y1);
             }
 
-            if (getSelectionHandleController().isShowing()) {
+            if (!getSelectionHandleController().isShowing()) {
                 // TODO(cjhopman): Remove this when there is a better signal that long press caused
                 // a selection. See http://crbug.com/150151.
                 mContainerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
@@ -2561,13 +2566,13 @@ import java.util.Map;
     private void onRenderProcessSwap(int oldPid, int newPid) {
         assert mPid == oldPid || mPid == newPid;
         if (mAttachedToWindow && oldPid != newPid) {
-            ChildProcessLauncher.unbindAsHighPriority(oldPid);
-            ChildProcessLauncher.bindAsHighPriority(newPid);
+            ChildProcessLauncher.getBindingManager().unbindAsHighPriority(oldPid);
+            ChildProcessLauncher.getBindingManager().bindAsHighPriority(newPid);
         }
 
         // We want to remove the initial binding even if the ContentView is not attached, so that
         // renderers for ContentViews loading in background do not retain the high priority.
-        ChildProcessLauncher.removeInitialBinding(newPid);
+        ChildProcessLauncher.getBindingManager().removeInitialBinding(newPid);
         mPid = newPid;
     }
 

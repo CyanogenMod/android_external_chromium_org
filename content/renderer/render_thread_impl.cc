@@ -179,7 +179,7 @@ class RenderViewZoomer : public RenderViewVisitor {
     // Empty scheme works as wildcard that matches any scheme,
     if ((net::GetHostOrSpecFromURL(url) == host_) &&
         (scheme_.empty() || scheme_ == url.scheme())) {
-      webview->setZoomLevel(false, zoom_level_);
+      webview->setZoomLevel(zoom_level_);
     }
     return true;
   }
@@ -238,21 +238,6 @@ void EnableWebCoreLogChannels(const std::string& channels) {
 }
 
 }  // namespace
-
-class RenderThreadImpl::GpuVDAContextLostCallback
-    : public WebKit::WebGraphicsContext3D::WebGraphicsContextLostCallback {
- public:
-  GpuVDAContextLostCallback()
-      : main_message_loop_(base::MessageLoopProxy::current()) {}
-  virtual ~GpuVDAContextLostCallback() {}
-  virtual void onContextLost() {
-    main_message_loop_->PostTask(FROM_HERE, base::Bind(
-        &RenderThreadImpl::OnGpuVDAContextLoss));
-  }
-
- private:
-  scoped_refptr<base::MessageLoopProxy> main_message_loop_;
-};
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -401,8 +386,6 @@ void RenderThreadImpl::Init() {
     LOG(WARNING) << "Enabling unsafe Skia benchmarking extension.";
     RegisterExtension(SkiaBenchmarkingExtension::Get());
   }
-
-  context_lost_cb_.reset(new GpuVDAContextLostCallback());
 
   // Note that under Linux, the media library will normally already have
   // been initialized by the Zygote before this instance became a Renderer.
@@ -669,7 +652,18 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 #endif
     if (!compositor_message_loop_proxy_.get()) {
       compositor_thread_.reset(new base::Thread("Compositor"));
+#if defined(OS_POSIX)
+      // Workaround for crbug.com/293736
+      // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+      // compositor scheduling) work incorrectly across system time changes
+      // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
+      // uses monotonic time (immune to these problems).
+      base::Thread::Options options;
+      options.message_loop_type = base::MessageLoop::TYPE_IO;
+      compositor_thread_->StartWithOptions(options);
+#else
       compositor_thread_->Start();
+#endif
 #if defined(OS_ANDROID)
       compositor_thread_->SetPriority(base::kThreadPriority_Display);
 #endif
@@ -890,42 +884,24 @@ RenderThreadImpl::GetGpuFactories(
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
-  WebGraphicsContext3DCommandBufferImpl* context3d = NULL;
-  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode))
-    context3d = GetGpuVDAContext3D();
+  if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
+    if (!gpu_va_context_provider_ ||
+        gpu_va_context_provider_->DestroyedOnMainThread()) {
+      gpu_va_context_provider_ = ContextProviderCommandBuffer::Create(
+          make_scoped_ptr(
+              WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
+                  this,
+                  WebKit::WebGraphicsContext3D::Attributes(),
+                  GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"))),
+          "GPU-VideoAccelerator-Offscreen");
+    }
+  }
   GpuChannelHost* gpu_channel_host = GetGpuChannel();
   if (gpu_channel_host) {
     gpu_factories = new RendererGpuVideoAcceleratorFactories(
-        gpu_channel_host, factories_loop, context3d);
+        gpu_channel_host, factories_loop, gpu_va_context_provider_);
   }
   return gpu_factories;
-}
-
-/* static */
-void RenderThreadImpl::OnGpuVDAContextLoss() {
-  RenderThreadImpl* self = RenderThreadImpl::current();
-  DCHECK(self);
-  if (!self->gpu_vda_context3d_)
-    return;
-  if (self->compositor_message_loop_proxy().get()) {
-    self->compositor_message_loop_proxy()
-        ->DeleteSoon(FROM_HERE, self->gpu_vda_context3d_.release());
-  } else {
-    self->gpu_vda_context3d_.reset();
-  }
-}
-
-WebGraphicsContext3DCommandBufferImpl*
-RenderThreadImpl::GetGpuVDAContext3D() {
-  if (!gpu_vda_context3d_) {
-    gpu_vda_context3d_.reset(
-        WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-            this, WebKit::WebGraphicsContext3D::Attributes(),
-            GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D")));
-    if (gpu_vda_context3d_)
-      gpu_vda_context3d_->setContextLostCallback(context_lost_cb_.get());
-  }
-  return gpu_vda_context3d_.get();
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
@@ -957,8 +933,9 @@ RenderThreadImpl::OffscreenContextProviderForMainThread() {
 
   if (!shared_contexts_main_thread_.get() ||
       shared_contexts_main_thread_->DestroyedOnMainThread()) {
-    shared_contexts_main_thread_ =
-        ContextProviderCommandBuffer::Create(CreateOffscreenContext3d());
+    shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(),
+        "Compositor-Offscreen-MainThread");
     if (shared_contexts_main_thread_.get() &&
         !shared_contexts_main_thread_->BindToCurrentThread())
       shared_contexts_main_thread_ = NULL;
@@ -979,8 +956,8 @@ RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
 
   if (!shared_contexts_compositor_thread_.get() ||
       shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    shared_contexts_compositor_thread_ =
-        ContextProviderCommandBuffer::Create(CreateOffscreenContext3d());
+    shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(), "Compositor-Offscreen");
   }
   return shared_contexts_compositor_thread_;
 }
@@ -1130,7 +1107,6 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
       params.opener_route_id,
       params.renderer_preferences,
       params.web_preferences,
-      new SharedRenderViewCounter(0),
       params.view_id,
       params.main_frame_routing_id,
       params.surface_id,
@@ -1294,7 +1270,18 @@ RenderThreadImpl::GetMediaThreadMessageLoopProxy() {
   DCHECK(message_loop() == base::MessageLoop::current());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
+#if defined(OS_POSIX)
+    // Workaround for crbug.com/293736
+    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
+    // compositor scheduling) work incorrectly across system time changes
+    // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
+    // uses monotonic time (immune to these problems).
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
+    media_thread_->StartWithOptions(options);
+#else
     media_thread_->Start();
+#endif
   }
   return media_thread_->message_loop_proxy();
 }

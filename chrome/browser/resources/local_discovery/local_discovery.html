@@ -14,12 +14,13 @@
   <script src="chrome://resources/js/util.js"></script>
   <script src="chrome://resources/js/load_time_data.js"></script>
   <script src="chrome://resources/js/cr/ui/overlay.js"></script>
+  <script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
   <script src="local_discovery.js"></script>
   <script src="strings.js"></script>
 </head>
 <body class="uber-frame"
       i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
-  <div class="page">
+  <div class="page" id="main-page">
     <div class="overlay" id="overlay" hidden>
       <div id="register-overlay" class="page">
         <div class="close-button"></div>
@@ -28,6 +29,11 @@
           <h1 i18n-content="confirmRegistration"></h1>
           <div id="register-message"
                i18n-content="noPrintersOnNetworkExplanation">
+          </div>
+          <div id="register-login-promo" class="login-promo" hidden>
+            <span i18n-content="registerNeedLogin"></span>
+            <button class="link-button" id="register-login-button"
+                    i18n-content="cloudDevicesLogin"></button>
           </div>
           <div id="register-device-picker">
             <div class="devices" id="register-device-list">
@@ -77,13 +83,22 @@
       </span>
     </div>
 
-    <div id="cloud-devices-loading">
+    <div id="cloud-devices-loading" hidden>
       <div class="inline-spinner"> </div> <span i18n-content="loading"></span>
+    </div>
+    <div id="cloud-devices-login-promo" class="login-promo" hidden>
+      <span i18n-content="cloudDevicesNeedLogin"></span>
+      <button class="link-button" id="cloud-devices-login-button"
+              i18n-content="cloudDevicesLogin"></button>
+    </div>
+    <div id="cloud-devices-unavailable" hidden>
+      <span i18n-content="cloudDevicesUnavailable"></span>
+      <button class="link-button" id="cloud-devices-retry-button"
+              i18n-content="retryLoadCloudDevices"></button>
     </div>
     <div id="cloud-devices">
 
     </div>
-
   </div>
 
   <script src="chrome://resources/js/i18n_template2.js"></script>

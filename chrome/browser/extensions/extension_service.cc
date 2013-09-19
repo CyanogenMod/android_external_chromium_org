@@ -72,7 +72,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/features/feature_channel.h"
@@ -97,6 +96,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/manifest_constants.h"
 #include "grit/generated_resources.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sync/api/sync_change.h"
@@ -127,7 +127,7 @@ using extensions::PermissionSet;
 using extensions::SharedModuleInfo;
 using extensions::UnloadedExtensionInfo;
 
-namespace errors = extension_manifest_errors;
+namespace errors = extensions::manifest_errors;
 
 namespace {
 
@@ -849,9 +849,6 @@ bool ExtensionService::UninstallExtension(
   // any of these resources.
   UnloadExtension(extension_id, extension_misc::UNLOAD_REASON_UNINSTALL);
 
-  extension_prefs_->OnExtensionUninstalled(extension_id, extension->location(),
-                                           external_uninstall);
-
   // Tell the backend to start deleting installed extensions on the file thread.
   if (!Manifest::IsUnpackedLocation(extension->location())) {
     if (!GetFileTaskRunner()->PostTask(
@@ -904,6 +901,9 @@ bool ExtensionService::UninstallExtension(
   delayed_installs_.Remove(extension_id);
 
   PruneSharedModulesOnUninstall(extension.get());
+
+  extension_prefs_->OnExtensionUninstalled(extension_id, extension->location(),
+                                           external_uninstall);
 
   // Track the uninstallation.
   UMA_HISTOGRAM_ENUMERATION("Extensions.ExtensionUninstalled", 1, 2);
@@ -1166,7 +1166,7 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
   // Same for chrome://thumb/ resources.
   if (extensions::PermissionsData::HasHostPermission(
           extension, GURL(chrome::kChromeUIThumbnailURL))) {
-    ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_);
+    ThumbnailSource* thumbnail_source = new ThumbnailSource(profile_, false);
     content::URLDataSource::Add(profile_, thumbnail_source);
   }
 }

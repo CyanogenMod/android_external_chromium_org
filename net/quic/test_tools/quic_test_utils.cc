@@ -243,8 +243,9 @@ bool PacketSavingConnection::SendOrQueuePacket(
     EncryptionLevel level,
     QuicPacketSequenceNumber sequence_number,
     QuicPacket* packet,
-    QuicPacketEntropyHash entropy_hash,
-    HasRetransmittableData retransmittable) {
+    QuicPacketEntropyHash /* entropy_hash */,
+    HasRetransmittableData /* retransmittable */,
+    Force /* forced */) {
   packets_.push_back(packet);
   QuicEncryptedPacket* encrypted =
       framer_.EncryptPacket(level, sequence_number, *packet);
@@ -254,7 +255,7 @@ bool PacketSavingConnection::SendOrQueuePacket(
 
 MockSession::MockSession(QuicConnection* connection, bool is_server)
     : QuicSession(connection, DefaultQuicConfig(), is_server) {
-  ON_CALL(*this, WriteData(_, _, _, _))
+  ON_CALL(*this, WritevData(_, _, _, _, _))
       .WillByDefault(testing::Return(QuicConsumedData(0, false)));
 }
 

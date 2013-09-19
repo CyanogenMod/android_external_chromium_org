@@ -42,8 +42,8 @@ class PaintTimeCounter;
 class Proxy;
 class ResourceProvider;
 class TileManager;
-class UIResourceRequest;
 struct RendererCapabilities;
+struct UIResourceRequest;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 
@@ -118,6 +118,10 @@ class CC_EXPORT LayerTreeImpl {
 
   void FindRootScrollLayer();
   void UpdateMaxScrollOffset();
+  void SetViewportLayersFromIds(int page_scale_layer_id,
+                                int inner_viewport_scroll_layer_id,
+                                int outer_viewport_scroll_layer_id);
+  void ClearViewportLayers();
   void ApplySentScrollAndScaleDeltasFromAbortedCommit();
   void ApplyScrollDeltasSinceBeginFrame();
 
@@ -201,7 +205,7 @@ class CC_EXPORT LayerTreeImpl {
   const ui::LatencyInfo& GetLatencyInfo();
   void ClearLatencyInfo();
 
-  void WillModifyTilePriorities();
+  void DidModifyTilePriorities();
 
   ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
   void ProcessUIResourceRequestQueue();
@@ -226,6 +230,10 @@ class CC_EXPORT LayerTreeImpl {
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   SkColor background_color_;
   bool has_transparent_background_;
+
+  LayerImpl* page_scale_layer_;
+  LayerImpl* inner_viewport_scroll_layer_;
+  LayerImpl* outer_viewport_scroll_layer_;
 
   float page_scale_factor_;
   float page_scale_delta_;

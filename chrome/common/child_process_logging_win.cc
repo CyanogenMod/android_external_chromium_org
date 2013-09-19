@@ -6,7 +6,6 @@
 
 #include <windows.h>
 
-#include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,18 +20,6 @@ namespace {
 
 // exported in breakpad_win.cc: void __declspec(dllexport) __cdecl SetClientId.
 typedef void (__cdecl *MainSetClientId)(const wchar_t*);
-
-// exported in breakpad_win.cc:
-//     void __declspec(dllexport) __cdecl SetPrinterInfo.
-typedef void (__cdecl *MainSetPrinterInfo)(const wchar_t*);
-
-// exported in breakpad_win.cc:
-//   void __declspec(dllexport) __cdecl SetNumberOfViews.
-typedef void (__cdecl *MainSetNumberOfViews)(int);
-
-// exported in breakpad_win.cc:
-//   void __declspec(dllexport) __cdecl SetCommandLine2
-typedef void (__cdecl *MainSetCommandLine)(const wchar_t**, size_t);
 
 // exported in breakpad_field_trial_win.cc:
 //   void __declspec(dllexport) __cdecl SetExperimentList3
@@ -94,42 +81,6 @@ std::string GetClientId() {
     return std::string();
 }
 
-void SetPrinterInfo(const char* printer_info) {
-  static MainSetPrinterInfo set_printer_info = NULL;
-  // note: benign race condition on set_printer_info.
-  if (!set_printer_info) {
-    HMODULE exe_module = GetModuleHandle(chrome::kBrowserProcessExecutableName);
-    if (!exe_module)
-      return;
-    set_printer_info = reinterpret_cast<MainSetPrinterInfo>(
-        GetProcAddress(exe_module, "SetPrinterInfo"));
-    if (!set_printer_info)
-      return;
-  }
-  (set_printer_info)(UTF8ToWide(printer_info).c_str());
-}
-
-void SetCommandLine(const CommandLine* command_line) {
-  static MainSetCommandLine set_command_line = NULL;
-  // note: benign race condition on set_command_line.
-  if (!set_command_line) {
-    HMODULE exe_module = GetModuleHandle(chrome::kBrowserProcessExecutableName);
-    if (!exe_module)
-      return;
-    set_command_line = reinterpret_cast<MainSetCommandLine>(
-        GetProcAddress(exe_module, "SetCommandLine2"));
-    if (!set_command_line)
-      return;
-  }
-
-  if (command_line->argv().empty())
-    return;
-
-  std::vector<const wchar_t*> cstrings;
-  StringVectorToCStringVector(command_line->argv(), &cstrings);
-  (set_command_line)(&cstrings[0], cstrings.size());
-}
-
 void SetExperimentList(const std::vector<string16>& experiments) {
   static MainSetExperimentList set_experiment_list = NULL;
   // note: benign race condition on set_experiment_list.
@@ -156,21 +107,6 @@ void SetExperimentList(const std::vector<string16>& experiments) {
   std::vector<const wchar_t*> cstrings;
   StringVectorToCStringVector(chunks, &cstrings);
   (set_experiment_list)(&cstrings[0], cstrings.size(), experiments.size());
-}
-
-void SetNumberOfViews(int number_of_views) {
-  static MainSetNumberOfViews set_number_of_views = NULL;
-  // note: benign race condition on set_number_of_views.
-  if (!set_number_of_views) {
-    HMODULE exe_module = GetModuleHandle(chrome::kBrowserProcessExecutableName);
-    if (!exe_module)
-      return;
-    set_number_of_views = reinterpret_cast<MainSetNumberOfViews>(
-        GetProcAddress(exe_module, "SetNumberOfViews"));
-    if (!set_number_of_views)
-      return;
-  }
-  (set_number_of_views)(number_of_views);
 }
 
 namespace {

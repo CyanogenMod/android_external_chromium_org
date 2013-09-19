@@ -73,6 +73,7 @@ include $(LOCAL_PATH)/gpu/gpu_ipc.target.linux-x86.mk
 include $(LOCAL_PATH)/ipc/ipc.target.linux-x86.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media.target.linux-x86.mk
+include $(LOCAL_PATH)/media/media_android_imageformat_list.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_asm.target.linux-x86.mk
 include $(LOCAL_PATH)/media/media_mmx.target.linux-x86.mk
@@ -105,9 +106,8 @@ include $(LOCAL_PATH)/skia/skia_opts_ssse3.target.linux-x86.mk
 include $(LOCAL_PATH)/sql/sql.target.linux-x86.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.linux-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/python_bindings_sources.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.linux-x86.mk

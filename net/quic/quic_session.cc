@@ -33,12 +33,8 @@ class VisitorShim : public QuicConnectionVisitorInterface {
  public:
   explicit VisitorShim(QuicSession* session) : session_(session) {}
 
-  virtual bool OnPacket(const IPEndPoint& self_address,
-                        const IPEndPoint& peer_address,
-                        const QuicPacketHeader& header,
-                        const vector<QuicStreamFrame>& frame) OVERRIDE {
-    bool accepted = session_->OnPacket(self_address, peer_address, header,
-                                       frame);
+  virtual bool OnStreamFrames(const vector<QuicStreamFrame>& frames) OVERRIDE {
+    bool accepted = session_->OnStreamFrames(frames);
     session_->PostProcessAfterData();
     return accepted;
   }
@@ -52,20 +48,24 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->PostProcessAfterData();
   }
 
-  virtual void OnAck(const SequenceNumberSet& acked_packets) OVERRIDE {
-    session_->OnAck(acked_packets);
-    session_->PostProcessAfterData();
-  }
-
   virtual bool OnCanWrite() OVERRIDE {
     bool rc = session_->OnCanWrite();
     session_->PostProcessAfterData();
     return rc;
   }
 
+  virtual void OnSuccessfulVersionNegotiation(
+      const QuicVersion& version) OVERRIDE {
+    session_->OnSuccessfulVersionNegotiation(version);
+  }
+
   virtual void ConnectionClose(QuicErrorCode error, bool from_peer) OVERRIDE {
     session_->ConnectionClose(error, from_peer);
     // The session will go away, so don't bother with cleanup.
+  }
+
+  virtual bool HasPendingHandshake() const OVERRIDE {
+    return session_->HasPendingHandshake();
   }
 
  private:
@@ -84,7 +84,8 @@ QuicSession::QuicSession(QuicConnection* connection,
       largest_peer_created_stream_id_(0),
       error_(QUIC_NO_ERROR),
       goaway_received_(false),
-      goaway_sent_(false) {
+      goaway_sent_(false),
+      has_pending_handshake_(false) {
 
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetIdleNetworkTimeout(config_.idle_connection_state_lifetime());
@@ -100,16 +101,7 @@ QuicSession::~QuicSession() {
   STLDeleteValues(&stream_map_);
 }
 
-bool QuicSession::OnPacket(const IPEndPoint& self_address,
-                           const IPEndPoint& peer_address,
-                           const QuicPacketHeader& header,
-                           const vector<QuicStreamFrame>& frames) {
-  if (header.public_header.guid != connection()->guid()) {
-    DLOG(INFO) << ENDPOINT << "Got packet header for invalid GUID: "
-               << header.public_header.guid;
-    return false;
-  }
-
+bool QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0
     if (IsClosedStream(frames[i].stream_id)) {
@@ -217,11 +209,17 @@ bool QuicSession::OnCanWrite() {
   while (!connection_->HasQueuedData() &&
          remaining_writes > 0) {
     DCHECK(write_blocked_streams_.HasWriteBlockedStreams());
-    ReliableQuicStream* stream = NULL;
     int index = write_blocked_streams_.GetHighestPriorityWriteBlockedList();
-    if (index != -1) {
-      stream = GetStream(write_blocked_streams_.PopFront(index));
+    if (index == -1) {
+      LOG(DFATAL) << "WriteBlockedStream is missing";
+      connection_->CloseConnection(QUIC_INTERNAL_ERROR, false);
+      return true;  // We have no write blocked streams.
     }
+    QuicStreamId stream_id = write_blocked_streams_.PopFront(index);
+    if (stream_id == kCryptoStreamId) {
+      has_pending_handshake_ = false;  // We just popped it.
+    }
+    ReliableQuicStream* stream = GetStream(stream_id);
     if (stream != NULL) {
       // If the stream can't write all bytes, it'll re-add itself to the blocked
       // list.
@@ -233,11 +231,16 @@ bool QuicSession::OnCanWrite() {
   return !write_blocked_streams_.HasWriteBlockedStreams();
 }
 
-QuicConsumedData QuicSession::WriteData(QuicStreamId id,
-                                        StringPiece data,
-                                        QuicStreamOffset offset,
-                                        bool fin) {
-  return connection_->SendStreamData(id, data, offset, fin);
+bool QuicSession::HasPendingHandshake() const {
+  return has_pending_handshake_;
+}
+
+QuicConsumedData QuicSession::WritevData(QuicStreamId id,
+                                         const struct iovec* iov,
+                                         int iov_count,
+                                         QuicStreamOffset offset,
+                                         bool fin) {
+  return connection_->SendvStreamData(id, iov, iov_count, offset, fin);
 }
 
 void QuicSession::SendRstStream(QuicStreamId id,
@@ -375,7 +378,7 @@ QuicConfig* QuicSession::config() {
 void QuicSession::ActivateStream(ReliableQuicStream* stream) {
   DLOG(INFO) << ENDPOINT << "num_streams: " << stream_map_.size()
              << ". activating " << stream->id();
-  DCHECK(stream_map_.count(stream->id()) == 0);
+  DCHECK_EQ(stream_map_.count(stream->id()), 0u);
   stream_map_[stream->id()] = stream;
 }
 
@@ -474,8 +477,16 @@ size_t QuicSession::GetNumOpenStreams() const {
       zombie_streams_.size();
 }
 
-void QuicSession::MarkWriteBlocked(QuicStreamId id) {
-  write_blocked_streams_.PushBack(id, 0);
+void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
+  if (id == kCryptoStreamId) {
+    DCHECK(!has_pending_handshake_);
+    has_pending_handshake_ = true;
+    // TODO(jar): Be sure to use the highest priority for the crypto stream,
+    // perhaps by adding a "special" priority for it that is higher than
+    // kHighestPriority.
+    priority = kHighestPriority;
+  }
+  write_blocked_streams_.PushBack(id, priority);
 }
 
 void QuicSession::MarkDecompressionBlocked(QuicHeaderId header_id,

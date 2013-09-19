@@ -47,6 +47,7 @@
 #include "ppapi/c/private/ppb_talk_private.h"
 #include "ppapi/c/private/ppp_flash_browser_operations.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
+#include "ppapi/proxy/network_list_resource.h"
 #include "ppapi/proxy/ppapi_param_traits.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/proxy/resource_message_params.h"
@@ -61,7 +62,6 @@
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
-#include "ppapi/shared_impl/ppb_network_list_private_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/ppp_flash_browser_operations_shared.h"
 #include "ppapi/shared_impl/private/ppb_x509_certificate_private_shared.h"
@@ -202,11 +202,12 @@ IPC_STRUCT_TRAITS_BEGIN(ppapi::DirEntry)
   IPC_STRUCT_TRAITS_MEMBER(is_dir)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(ppapi::FileRef_CreateInfo)
+IPC_STRUCT_TRAITS_BEGIN(ppapi::FileRefCreateInfo)
   IPC_STRUCT_TRAITS_MEMBER(file_system_type)
   IPC_STRUCT_TRAITS_MEMBER(internal_path)
   IPC_STRUCT_TRAITS_MEMBER(display_name)
-  IPC_STRUCT_TRAITS_MEMBER(pending_host_resource_id)
+  IPC_STRUCT_TRAITS_MEMBER(browser_pending_host_resource_id)
+  IPC_STRUCT_TRAITS_MEMBER(renderer_pending_host_resource_id)
   IPC_STRUCT_TRAITS_MEMBER(file_system_plugin_resource)
 IPC_STRUCT_TRAITS_END()
 
@@ -259,6 +260,7 @@ IPC_STRUCT_TRAITS_BEGIN(ppapi::InputEventData)
   IPC_STRUCT_TRAITS_MEMBER(wheel_scroll_by_page)
   IPC_STRUCT_TRAITS_MEMBER(key_code)
   IPC_STRUCT_TRAITS_MEMBER(usb_key_code)
+  IPC_STRUCT_TRAITS_MEMBER(code)
   IPC_STRUCT_TRAITS_MEMBER(character_text)
   IPC_STRUCT_TRAITS_MEMBER(composition_segment_offsets)
   IPC_STRUCT_TRAITS_MEMBER(composition_target_segment)
@@ -298,8 +300,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(ppapi::URLRequestInfoData::BodyItem)
   IPC_STRUCT_TRAITS_MEMBER(is_file)
   IPC_STRUCT_TRAITS_MEMBER(data)
-  // Note: we don't serialize file_ref.
-  IPC_STRUCT_TRAITS_MEMBER(file_ref_host_resource)
+  IPC_STRUCT_TRAITS_MEMBER(file_ref_pp_resource)
   IPC_STRUCT_TRAITS_MEMBER(start_offset)
   IPC_STRUCT_TRAITS_MEMBER(number_of_bytes)
   IPC_STRUCT_TRAITS_MEMBER(expected_last_modified_time)
@@ -314,7 +315,7 @@ IPC_STRUCT_TRAITS_BEGIN(ppapi::URLResponseInfoData)
   IPC_STRUCT_TRAITS_MEMBER(body_as_file_ref)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(ppapi::NetworkInfo)
+IPC_STRUCT_TRAITS_BEGIN(ppapi::proxy::SerializedNetworkInfo)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(state)
@@ -486,30 +487,6 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPBAudio_NotifyAudioStreamCreated,
                     ppapi::proxy::SerializedHandle /* socket_handle */,
                     ppapi::proxy::SerializedHandle /* handle */)
 
-// PPB_FileRef.
-// TODO(teravest): Remove these messages when we've switched over to the "new"
-// proxy.
-IPC_MESSAGE_ROUTED3(
-    PpapiMsg_PPBFileRef_CallbackComplete,
-    ppapi::HostResource /* resource */,
-    uint32_t /* callback_id */,
-    int32_t /* result */)
-
-IPC_MESSAGE_ROUTED4(
-    PpapiMsg_PPBFileRef_QueryCallbackComplete,
-    ppapi::HostResource /* resource */,
-    PP_FileInfo /* file_info */,
-    uint32_t /* callback_id */,
-    int32_t /* result */)
-
-IPC_MESSAGE_ROUTED5(
-    PpapiMsg_PPBFileRef_ReadDirectoryEntriesCallbackComplete,
-    ppapi::HostResource /* resource */,
-    std::vector<ppapi::PPB_FileRef_CreateInfo> /* files */,
-    std::vector<PP_FileType> /* file_types */,
-    uint32_t /* callback_id */,
-    int32_t /* result */)
-
 // PPB_FileSystem.
 IPC_MESSAGE_ROUTED2(
     PpapiMsg_PPBFileSystem_OpenComplete,
@@ -623,11 +600,6 @@ IPC_MESSAGE_ROUTED2(PpapiMsg_PPPMessaging_HandleMessage,
 // PPP_MouseLock.
 IPC_MESSAGE_ROUTED1(PpapiMsg_PPPMouseLock_MouseLockLost,
                     PP_Instance /* instance */)
-
-// PPB_NetworkMonitor_Private.
-IPC_MESSAGE_ROUTED2(PpapiMsg_PPBNetworkMonitor_NetworkList,
-                    uint32 /* plugin_dispatcher_id */,
-                    ppapi::NetworkList /* network_list */)
 
 // PPP_Printing
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiMsg_PPPPrinting_QuerySupportedFormats,
@@ -771,43 +743,6 @@ IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBCore_AddRefResource,
                     ppapi::HostResource)
 IPC_MESSAGE_ROUTED1(PpapiHostMsg_PPBCore_ReleaseResource,
                     ppapi::HostResource)
-
-// PPB_FileRef.
-// TODO(teravest): Remove these messages when we've switched over to the "new"
-// proxy.
-IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBFileRef_Create,
-                           PP_Instance /* instance */,
-                           PP_Resource /* file_system */,
-                           std::string /* path */,
-                           ppapi::PPB_FileRef_CreateInfo /* result */)
-IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBFileRef_GetParent,
-                           ppapi::HostResource /* file_ref */,
-                           ppapi::PPB_FileRef_CreateInfo /* result */)
-IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBFileRef_MakeDirectory,
-                    ppapi::HostResource /* file_ref */,
-                    PP_Bool /* make_ancestors */,
-                    uint32_t /* callback_id */)
-IPC_MESSAGE_ROUTED4(PpapiHostMsg_PPBFileRef_Touch,
-                    ppapi::HostResource /* file_ref */,
-                    PP_Time /* last_access */,
-                    PP_Time /* last_modified */,
-                    uint32_t /* callback_id */)
-IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBFileRef_Delete,
-                    ppapi::HostResource /* file_ref */,
-                    uint32_t /* callback_id */)
-IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBFileRef_Rename,
-                    ppapi::HostResource /* file_ref */,
-                    ppapi::HostResource /* new_file_ref */,
-                    uint32_t /* callback_id */)
-IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBFileRef_Query,
-                    ppapi::HostResource /* file_ref */,
-                    uint32_t /* callback_id */)
-IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBFileRef_GetAbsolutePath,
-                           ppapi::HostResource /* file_ref */,
-                           ppapi::proxy::SerializedVar /* result */)
-IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBFileRef_ReadDirectoryEntries,
-                    ppapi::HostResource /* file_ref */,
-                    uint32_t /* callback_id */)
 
 // PPB_Graphics3D.
 IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBGraphics3D_Create,
@@ -1081,12 +1016,6 @@ IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_DeliverSamples,
                     std::string /* serialized_block_info */)
 #endif  // !defined(OS_NACL) && !defined(NACL_WIN64)
 
-// PPB_NetworkMonitor_Private.
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_PPBNetworkMonitor_Start,
-                     uint32 /* plugin_dispatcher_id */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_PPBNetworkMonitor_Stop,
-                     uint32 /* plugin_dispatcher_id */)
-
 // PPB_Testing.
 IPC_SYNC_MESSAGE_ROUTED3_1(
     PpapiHostMsg_PPBTesting_ReadImageData,
@@ -1205,7 +1134,6 @@ IPC_MESSAGE_ROUTED2(
     ppapi::proxy::ResourceMessageReplyParams /* reply_params */,
     IPC::Message /* nested_msg */)
 
-
 IPC_SYNC_MESSAGE_CONTROL2_2(PpapiHostMsg_ResourceSyncCall,
     ppapi::proxy::ResourceMessageCallParams /* call_params */,
     IPC::Message /* nested_msg */,
@@ -1279,7 +1207,7 @@ IPC_MESSAGE_CONTROL4(PpapiHostMsg_FileChooser_Show,
                      std::string /* suggested_file_name */,
                      std::vector<std::string> /* accept_mime_types */)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileChooser_ShowReply,
-                     std::vector<ppapi::PPB_FileRef_CreateInfo> /* files */)
+                     std::vector<ppapi::FileRefCreateInfo> /* files */)
 
 // FileIO
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_Create)
@@ -1355,10 +1283,10 @@ IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileRef_QueryReply,
 // location indicated by the FileRef.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileRef_ReadDirectoryEntries)
 
-// FileRef_CreateInfo does not provide file type information, so two
+// FileRefCreateInfo does not provide file type information, so two
 // corresponding vectors are returned.
 IPC_MESSAGE_CONTROL2(PpapiPluginMsg_FileRef_ReadDirectoryEntriesReply,
-                     std::vector<ppapi::FileRef_CreateInfo> /* files */,
+                     std::vector<ppapi::FileRefCreateInfo> /* files */,
                      std::vector<PP_FileType> /* file_types */)
 
 // Requests that the browser reply with the absolute path to the indicated
@@ -1399,7 +1327,7 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_FlashDRM_GetVoucherFile)
 // Reply message for GetVoucherFile which contains the CreateInfo for a
 // PPB_FileRef which points to the voucher file.
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FlashDRM_GetVoucherFileReply,
-                     ppapi::PPB_FileRef_CreateInfo /* file_info */)
+                     ppapi::FileRefCreateInfo /* file_info */)
 
 // Gamepad.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Gamepad_Create)
@@ -1439,6 +1367,13 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_Graphics2D_ReadImageData,
                      PP_Resource /* image */,
                      PP_Point /* top_left */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Graphics2D_ReadImageDataAck)
+
+// NetworkMonitor.
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_NetworkMonitor_Create)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_NetworkMonitor_NetworkList,
+                     ppapi::proxy::SerializedNetworkList /* network_list */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_NetworkMonitor_Forbidden)
+
 
 // NetworkProxy ----------------------------------------------------------------
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_NetworkProxy_Create)
@@ -1494,6 +1429,20 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_HostResolver_Resolve,
 IPC_MESSAGE_CONTROL2(PpapiPluginMsg_HostResolver_ResolveReply,
                      std::string /* canonical_name */,
                      std::vector<PP_NetAddress_Private> /* net_address_list */)
+
+// Platform Verification -------------------------------------------------------
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_Create)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_PlatformVerification_CanChallengePlatform)
+IPC_MESSAGE_CONTROL1(
+    PpapiHostMsg_PlatformVerification_CanChallengePlatformReply,
+    bool /* can_challenge_platform */)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_PlatformVerification_ChallengePlatform,
+                     std::string /* service_id  */,
+                     std::vector<uint8_t> /* challenge */)
+IPC_MESSAGE_CONTROL3(PpapiHostMsg_PlatformVerification_ChallengePlatformReply,
+                     std::vector<uint8_t> /* signed_data */,
+                     std::vector<uint8_t> /* signed_data_signature */,
+                     std::string /* platform_key_certificate */)
 
 // Printing.
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_Printing_Create)
@@ -1777,30 +1726,6 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_BrowserFontSingleton_GetFontFamilies)
 // by a null character.
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_BrowserFontSingleton_GetFontFamiliesReply,
                      std::string /* families */)
-
-// FileRef.
-// Requests that the browser reply with file system and path information about
-// the resource indicated in |params| which exists in the given
-// |child_process_id|. |routing_id| is sent so that the reply can be routed
-// properly in the renderer.
-// Only sent from the renderer to the browser.
-IPC_MESSAGE_CONTROL4(PpapiHostMsg_FileRef_GetInfoForRenderer,
-                     int /* routing_id */,
-                     int /* child_process_id */,
-                     int32_t /* sequence */,
-                     std::vector<PP_Resource> /* resources */)
-
-// Reply to PpapiHostMsg_FileRef_GetInfoForRenderer with a sequence number for
-// invoking the right callback, |fs_type| which indicates the file system, and
-// path information in either |file_system_url_spec| (for internal file systems)
-// or |external_path| (for external file systems).
-// Only sent from the browser to the renderer.
-IPC_MESSAGE_ROUTED5(PpapiHostMsg_FileRef_GetInfoForRendererReply,
-                    int32_t /* sequence */,
-                    std::vector<PP_Resource> /* resources */,
-                    std::vector<PP_FileSystemType> /* fs_type */,
-                    std::vector<std::string> /* file_system_url_spec */,
-                    std::vector<base::FilePath> /* external_path */)
 
 // Flash -----------------------------------------------------------------------
 

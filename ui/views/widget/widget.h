@@ -296,6 +296,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   static void GetAllChildWidgets(gfx::NativeView native_view,
                                  Widgets* children);
 
+  // Returns all non-child Widgets owned by |native_view|.
+  static void GetAllOwnedWidgets(gfx::NativeView native_view,
+                                 Widgets* owned);
+
   // Re-parent a NativeView and notify all Widgets in |native_view|'s hierarchy
   // of the change.
   static void ReparentNativeView(gfx::NativeView native_view,
@@ -742,8 +746,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   void DestroyRootView();
 
  private:
+  friend class ComboboxTest;
   friend class NativeTextfieldViewsTest;
-  friend class NativeComboboxViewsTest;
 
   // Sets the value of |disable_inactive_rendering_|. If the value changes,
   // both the NonClientView and WidgetDelegate are notified.

@@ -4,6 +4,8 @@
 
 #include "android_webview/native/aw_contents.h"
 
+#include <limits>
+
 #include "android_webview/browser/aw_browser_context.h"
 #include "android_webview/browser/aw_browser_main_parts.h"
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
@@ -51,7 +53,9 @@
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #include "ui/gfx/android/java_bitmap.h"
+#include "ui/gfx/font_render_params_linux.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/size.h"
 
 struct AwDrawSWFunctionTable;
 struct AwDrawGLFunctionTable;
@@ -111,6 +115,46 @@ class AwContentsUserData : public base::SupportsUserData::Data {
 
 base::subtle::Atomic32 g_instance_count = 0;
 
+// TODO(boliu): Deduplicate with chrome/ code.
+content::RendererPreferencesHintingEnum GetRendererPreferencesHintingEnum(
+    gfx::FontRenderParams::Hinting hinting) {
+  switch (hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:
+      return content::RENDERER_PREFERENCES_HINTING_NONE;
+    case gfx::FontRenderParams::HINTING_SLIGHT:
+      return content::RENDERER_PREFERENCES_HINTING_SLIGHT;
+    case gfx::FontRenderParams::HINTING_MEDIUM:
+      return content::RENDERER_PREFERENCES_HINTING_MEDIUM;
+    case gfx::FontRenderParams::HINTING_FULL:
+      return content::RENDERER_PREFERENCES_HINTING_FULL;
+    default:
+      NOTREACHED() << "Unhandled hinting style " << hinting;
+      return content::RENDERER_PREFERENCES_HINTING_SYSTEM_DEFAULT;
+  }
+}
+
+// TODO(boliu): Deduplicate with chrome/ code.
+content::RendererPreferencesSubpixelRenderingEnum
+GetRendererPreferencesSubpixelRenderingEnum(
+    gfx::FontRenderParams::SubpixelRendering subpixel_rendering) {
+  switch (subpixel_rendering) {
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE:
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_NONE;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_RGB;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_BGR;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB:
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_VRGB;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR:
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_VBGR;
+    default:
+      NOTREACHED() << "Unhandled subpixel rendering style "
+                   << subpixel_rendering;
+      return content::RENDERER_PREFERENCES_SUBPIXEL_RENDERING_SYSTEM_DEFAULT;
+  }
+}
+
 }  // namespace
 
 // static
@@ -142,6 +186,7 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
                              new AwContentsUserData(this));
   render_view_host_ext_.reset(
       new AwRenderViewHostExt(this, web_contents_.get()));
+  AwContentsIoThreadClientImpl::RegisterPendingContents(web_contents_.get());
 
   AwAutofillManagerDelegate* autofill_manager_delegate =
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
@@ -217,10 +262,19 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
 void AwContents::SetAndroidWebViewRendererPrefs() {
   content::RendererPreferences* prefs =
       web_contents_->GetMutableRendererPrefs();
-  prefs->hinting = content::RENDERER_PREFERENCES_HINTING_SLIGHT;
   prefs->tap_multiple_targets_strategy =
       content::TAP_MULTIPLE_TARGETS_STRATEGY_NONE;
-  prefs->use_subpixel_positioning = true;
+
+  // TODO(boliu): Deduplicate with chrome/ code.
+  const gfx::FontRenderParams& params = gfx::GetDefaultWebKitFontRenderParams();
+  prefs->should_antialias_text = params.antialiasing;
+  prefs->use_subpixel_positioning = params.subpixel_positioning;
+  prefs->hinting = GetRendererPreferencesHintingEnum(params.hinting);
+  prefs->use_autohinter = params.autohinter;
+  prefs->use_bitmaps = params.use_bitmaps;
+  prefs->subpixel_rendering =
+      GetRendererPreferencesSubpixelRenderingEnum(params.subpixel_rendering);
+
   content::RenderViewHost* host = web_contents_->GetRenderViewHost();
   if (host)
     host->SyncRendererPrefs();
@@ -759,14 +813,21 @@ void AwContents::DidOverscroll(gfx::Vector2d overscroll_delta) {
       env, obj.obj(), overscroll_delta.x(), overscroll_delta.y());
 }
 
-void AwContents::SetDipScale(JNIEnv* env, jobject obj, jfloat dipScale) {
-  browser_view_renderer_->SetDipScale(dipScale);
+void AwContents::SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale) {
+  browser_view_renderer_->SetDipScale(dip_scale);
 }
 
 void AwContents::SetDisplayedPageScaleFactor(JNIEnv* env,
                                              jobject obj,
-                                             jfloat pageScaleFactor) {
-  browser_view_renderer_->SetPageScaleFactor(pageScaleFactor);
+                                             jfloat page_scale_factor) {
+  browser_view_renderer_->SetPageScaleFactor(page_scale_factor);
+}
+
+void AwContents::SetFixedLayoutSize(JNIEnv* env,
+                                    jobject obj,
+                                    jint width_dip,
+                                    jint height_dip) {
+  render_view_host_ext_->SetFixedLayoutSize(gfx::Size(width_dip, height_dip));
 }
 
 void AwContents::ScrollTo(JNIEnv* env, jobject obj, jint xPix, jint yPix) {
@@ -780,6 +841,16 @@ void AwContents::OnWebLayoutPageScaleFactorChanged(float page_scale_factor) {
     return;
   Java_AwContents_onWebLayoutPageScaleFactorChanged(env, obj.obj(),
                                                          page_scale_factor);
+}
+
+void AwContents::OnWebLayoutContentsSizeChanged(
+    const gfx::Size& contents_size) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_AwContents_onWebLayoutContentsSizeChanged(
+      env, obj.obj(), contents_size.width(), contents_size.height());
 }
 
 jint AwContents::CapturePicture(JNIEnv* env,

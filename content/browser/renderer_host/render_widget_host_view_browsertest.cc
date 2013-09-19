@@ -37,7 +37,8 @@
 #endif
 
 #if defined(OS_WIN)
-#include "ui/gfx/dpi_win.h"
+#include "base/win/windows_version.h"
+#include "ui/gfx/win/dpi.h"
 #endif
 
 namespace content {
@@ -342,6 +343,14 @@ class FakeFrameSubscriber : public RenderWidgetHostViewFrameSubscriber {
 // is enabled.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
                        CopyFromBackingStore) {
+  // Disable the test for WinXP.  See http://crbug/294116.
+#if defined(OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
+    return;
+  }
+#endif
+
   RunBasicCopyFromBackingStoreTest();
 }
 
@@ -421,6 +430,14 @@ IN_PROC_BROWSER_TEST_F(NonCompositingRenderWidgetHostViewBrowserTest,
 // until at least one DeliverFrameCallback has been invoked.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
                        FrameSubscriberTest) {
+  // Disable the test for WinXP.  See http://crbug/294116.
+#if defined(OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
+    return;
+  }
+#endif
+
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewPort* const view = GetRenderWidgetHostViewPort();
   if (!view->CanSubscribeFrame()) {
@@ -446,6 +463,14 @@ IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest,
 
 // Test that we can copy twice from an accelerated composited page.
 IN_PROC_BROWSER_TEST_F(CompositingRenderWidgetHostViewBrowserTest, CopyTwice) {
+  // Disable the test for WinXP.  See http://crbug/294116.
+#if defined(OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+    LOG(WARNING) << "Test disabled due to unknown bug on WinXP.";
+    return;
+  }
+#endif
+
   SET_UP_SURFACE_OR_PASS_TEST(NULL);
   RenderWidgetHostViewPort* const view = GetRenderWidgetHostViewPort();
   if (!view->CanCopyToVideoFrame()) {
@@ -835,7 +860,7 @@ class CompositingRenderWidgetHostViewTabCaptureHighDPI
     cmd->AppendSwitchASCII(switches::kForceDeviceScaleFactor,
                            base::StringPrintf("%f", scale()));
 #if defined(OS_WIN)
-    cmd->AppendSwitchASCII(gfx::switches::kHighDPISupport, "1");
+    cmd->AppendSwitchASCII(switches::kHighDPISupport, "1");
     gfx::EnableHighDPISupport();
 #endif
   }

@@ -4,15 +4,15 @@
 
 #include "ash/wm/panels/panel_frame_view.h"
 
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/wm/frame_painter.h"
-#include "ash/wm/workspace/frame_caption_button_container_view.h"
 #include "grit/ash_resources.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/animation/throb_animation.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
@@ -45,7 +45,7 @@ const char* PanelFrameView::GetClassName() const {
 void PanelFrameView::InitFramePainter() {
   frame_painter_.reset(new FramePainter);
 
-  caption_button_container_ = new FrameCaptionButtonContainerView(this, frame_,
+  caption_button_container_ = new FrameCaptionButtonContainerView(frame_,
       FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
   AddChildView(caption_button_container_);
 

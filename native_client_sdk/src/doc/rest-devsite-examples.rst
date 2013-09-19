@@ -78,6 +78,24 @@ To external locations
 Plain links can be placed like this: http://google.com and also `like this
 <http://google.com>`_.
 
+Definition lists
+================
+
+Can be used to define a group of related terms. Internal formatting is supported
+within the definition. No special formatting needs to be done for the definition
+name/title - it's handled by the devsite.
+
+Apple
+  The apple is the pomaceous fruit of the apple tree, species Malus domestica in
+  the rose family (**Rosaceae**).
+Fig
+  The common fig (**Ficus carica**) is a species of flowering plant in the genus
+  Ficus, from the family Moraceae, known as the common fig (or just the fig),
+  anjeer (Iran, Pakistan), and dumur (Bengali).
+Pear
+  The pear is any of several tree and shrub species of genus Pyrus /ˈpaɪrəs/, in
+  the family Rosaceae.
+
 Notes and Admonitions
 =====================
 
@@ -125,6 +143,9 @@ For some code (like shell samples), we want to disable pretty-printing:
   $ echo "hello world"
 
 By default ``:prettyprint:`` is ``1``.
+
+For short inline code, use fixed-formatting like ``int x = 2;``. Note that this
+won't get syntax-highlighted and may be line-wrapped, so keep it very short.
 
 .. _link_for_section_heading:
 

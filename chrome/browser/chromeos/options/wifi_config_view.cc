@@ -25,9 +25,9 @@
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "ui/base/events/event.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/combobox/combobox.h"
@@ -1249,6 +1249,9 @@ void WifiConfigView::InitFromProperties(
       if (cert_index >= 0) {
         // Skip item for "Default".
         server_ca_cert_combobox_->SetSelectedIndex(1 + cert_index);
+      } else {
+        // "Default"
+        server_ca_cert_combobox_->SetSelectedIndex(0);
       }
     }
   }
@@ -1292,6 +1295,7 @@ void WifiConfigView::InitFromProperties(
       flimflam::kSaveCredentialsProperty, &save_credentials);
   save_credentials_checkbox_->SetChecked(save_credentials);
 
+  UpdateDialogButtons();
   RefreshShareCheckbox();
   UpdateErrorLabel();
 }

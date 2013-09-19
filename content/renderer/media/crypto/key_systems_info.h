@@ -7,16 +7,11 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-
 namespace WebKit {
 class WebString;
 }
 
 namespace content {
-
-// TODO(ddorwin): Move registration to ContentClient.
-void RegisterKeySystems();
 
 // Returns true if canPlayType should return an empty string for |key_system|.
 bool IsCanPlayTypeSuppressed(const std::string& key_system);

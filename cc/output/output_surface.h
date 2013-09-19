@@ -163,14 +163,15 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   int max_frames_pending_;
   int pending_swap_buffers_;
   bool needs_begin_frame_;
-  bool begin_frame_pending_;
+  bool client_ready_for_begin_frame_;
 
   // Forwarded to OutputSurfaceClient but threaded through OutputSurface
   // first so OutputSurface has a chance to update the FrameRateController
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   void BeginFrame(const BeginFrameArgs& args);
   void DidSwapBuffers();
-  void OnSwapBuffersComplete(const CompositorFrameAck* ack);
+  void OnSwapBuffersComplete();
+  void ReclaimResources(const CompositorFrameAck* ack);
   void DidLoseOutputSurface();
   void SetExternalStencilTest(bool enabled);
   void SetExternalDrawConstraints(const gfx::Transform& transform,

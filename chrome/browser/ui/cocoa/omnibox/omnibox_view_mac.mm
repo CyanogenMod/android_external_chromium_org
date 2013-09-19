@@ -203,6 +203,10 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 
 void OmniboxViewMac::Update() {
   if (model()->UpdatePermanentText()) {
+    // Something visibly changed.  Re-enable search term replacement.
+    controller()->GetToolbarModel()->set_search_term_replacement_enabled(true);
+    model()->UpdatePermanentText();
+
     // Restore everything to the baseline look.
     RevertAll();
 
@@ -771,6 +775,11 @@ void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
     model()->SetCaretVisibility(true);
 }
 
+bool OmniboxViewMac::ShouldSelectAllOnMouseDown() {
+  return !controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
+      false);
+}
+
 bool OmniboxViewMac::CanCopy() {
   const NSRange selection = GetSelectedRange();
   return selection.length > 0;
@@ -787,7 +796,8 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
   // Extended Instant API.
   GURL url;
   bool write_url = false;
-  if (!ShouldEnableCopyURL()) {
+  if (!controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
+      false)) {
     model()->AdjustTextForCopy(selection.location, IsSelectAll(), &text, &url,
                                &write_url);
   }
@@ -802,19 +812,9 @@ void OmniboxViewMac::CopyToPasteboard(NSPasteboard* pb) {
   }
 }
 
-void OmniboxViewMac::CopyURLToPasteboard(NSPasteboard* pb) {
-  DCHECK(CanCopy());
-  DCHECK(ShouldEnableCopyURL());
-
-  string16 text = controller()->GetToolbarModel()->GetText(false);
-  GURL url = controller()->GetToolbarModel()->GetURL();
-
-  NSString* nstext = base::SysUTF16ToNSString(text);
-  [pb declareTypes:[NSArray arrayWithObject:NSStringPboardType] owner:nil];
-  [pb setString:nstext forType:NSStringPboardType];
-
-  [pb declareURLPasteboardWithAdditionalTypes:[NSArray array] owner:nil];
-  [pb setDataForURL:base::SysUTF8ToNSString(url.spec()) title:nstext];
+void OmniboxViewMac::ShowURL() {
+  DCHECK(ShouldEnableShowURL());
+  OmniboxView::ShowURL();
 }
 
 void OmniboxViewMac::OnPaste() {
@@ -853,8 +853,8 @@ void OmniboxViewMac::OnPaste() {
 // the AutocompleteTextFieldObserver but the logic is shared between all
 // platforms. Some refactor might be necessary to simplify this. Or at least
 // this method could call the OmniboxView version.
-bool OmniboxViewMac::ShouldEnableCopyURL() {
-  return controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+bool OmniboxViewMac::ShouldEnableShowURL() {
+  return controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
       false);
 }
 

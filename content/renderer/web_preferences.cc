@@ -331,12 +331,15 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);
   settings->setMediaPlaybackRequiresUserGesture(
       prefs.user_gesture_required_for_media_playback);
+  settings->setMediaFullscreenRequiresUserGesture(
+      prefs.user_gesture_required_for_media_fullscreen);
   settings->setDefaultVideoPosterURL(
         ASCIIToUTF16(prefs.default_video_poster_url.spec()));
   settings->setSupportDeprecatedTargetDensityDPI(
       prefs.support_deprecated_target_density_dpi);
   settings->setUseLegacyBackgroundSizeShorthandBehavior(
       prefs.use_legacy_background_size_shorthand_behavior);
+  settings->setWideViewportQuirkEnabled(prefs.wide_viewport_quirk);
   settings->setUseWideViewport(prefs.use_wide_viewport);
   settings->setViewportMetaLayoutSizeQuirk(
       prefs.viewport_meta_layout_size_quirk);

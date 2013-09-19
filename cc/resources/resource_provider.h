@@ -18,6 +18,9 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
+#include "cc/resources/release_callback.h"
+#include "cc/resources/resource_format.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/resources/transferable_resource.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -54,8 +57,8 @@ class CC_EXPORT ResourceProvider {
   };
 
   static scoped_ptr<ResourceProvider> Create(OutputSurface* output_surface,
-                                             int highp_threshold_min);
-
+                                             int highp_threshold_min,
+                                             bool use_rgba_4444_texture_format);
   virtual ~ResourceProvider();
 
   void InitializeSoftware();
@@ -64,7 +67,10 @@ class CC_EXPORT ResourceProvider {
   void DidLoseOutputSurface() { lost_output_surface_ = true; }
 
   int max_texture_size() const { return max_texture_size_; }
-  GLenum best_texture_format() const { return best_texture_format_; }
+  ResourceFormat memory_efficient_texture_format() const {
+    return use_rgba_4444_texture_format_ ? RGBA_4444 : best_texture_format_;
+  }
+  ResourceFormat best_texture_format() const { return best_texture_format_; }
   size_t num_resources() const { return resources_.size(); }
 
   // Checks whether a resource is in use by a consumer.
@@ -78,23 +84,23 @@ class CC_EXPORT ResourceProvider {
 
   // Creates a resource of the default resource type.
   ResourceId CreateResource(gfx::Size size,
-                            GLenum format,
                             GLint wrap_mode,
-                            TextureUsageHint hint);
+                            TextureUsageHint hint,
+                            ResourceFormat format);
 
   // Creates a resource which is tagged as being managed for GPU memory
   // accounting purposes.
   ResourceId CreateManagedResource(gfx::Size size,
-                                   GLenum format,
                                    GLint wrap_mode,
-                                   TextureUsageHint hint);
+                                   TextureUsageHint hint,
+                                   ResourceFormat format);
 
   // You can also explicitly create a specific resource type.
   ResourceId CreateGLTexture(gfx::Size size,
-                             GLenum format,
                              GLenum texture_pool,
                              GLint wrap_mode,
-                             TextureUsageHint hint);
+                             TextureUsageHint hint,
+                             ResourceFormat format);
 
   ResourceId CreateBitmap(gfx::Size size);
   // Wraps an external texture into a GL resource.
@@ -103,7 +109,9 @@ class CC_EXPORT ResourceProvider {
       unsigned texture_id);
 
   // Wraps an external texture mailbox into a GL resource.
-  ResourceId CreateResourceFromTextureMailbox(const TextureMailbox& mailbox);
+  ResourceId CreateResourceFromTextureMailbox(
+      const TextureMailbox& mailbox,
+      scoped_ptr<SingleReleaseCallback> release_callback);
 
   void DeleteResource(ResourceId id);
 
@@ -330,6 +338,10 @@ class CC_EXPORT ResourceProvider {
   bool CanLockForWrite(ResourceId id);
 
   static GLint GetActiveTextureUnit(WebKit::WebGraphicsContext3D* context);
+  static size_t BytesPerPixel(ResourceFormat format);
+  static GLenum GetGLDataType(ResourceFormat format);
+  static GLenum GetGLDataFormat(ResourceFormat format);
+  static GLenum GetGLInternalFormat(ResourceFormat format);
 
  private:
   struct Resource {
@@ -337,14 +349,13 @@ class CC_EXPORT ResourceProvider {
     ~Resource();
     Resource(unsigned texture_id,
              gfx::Size size,
-             GLenum format,
              GLenum filter,
              GLenum texture_pool,
              GLint wrap_mode,
-             TextureUsageHint hint);
+             TextureUsageHint hint,
+             ResourceFormat format);
     Resource(uint8_t* pixels,
              gfx::Size size,
-             GLenum format,
              GLenum filter,
              GLint wrap_mode);
 
@@ -354,6 +365,7 @@ class CC_EXPORT ResourceProvider {
     // Query used to determine when asynchronous set pixels complete.
     unsigned gl_upload_query_id;
     TextureMailbox mailbox;
+    ReleaseCallback release_callback;
     uint8_t* pixels;
     uint8_t* pixel_buffer;
     int lock_for_read_count;
@@ -368,14 +380,16 @@ class CC_EXPORT ResourceProvider {
     bool enable_read_lock_fences;
     scoped_refptr<Fence> read_lock_fence;
     gfx::Size size;
-    GLenum format;
     // TODO(skyostil): Use a separate sampler object for filter state.
+    GLenum original_filter;
     GLenum filter;
+    GLenum target;
     unsigned image_id;
     GLenum texture_pool;
     GLint wrap_mode;
     TextureUsageHint hint;
     ResourceType type;
+    ResourceFormat format;
   };
   typedef base::hash_map<ResourceId, Resource> ResourceMap;
   struct Child {
@@ -392,8 +406,9 @@ class CC_EXPORT ResourceProvider {
            resource->read_lock_fence->HasPassed();
   }
 
-  explicit ResourceProvider(OutputSurface* output_surface,
-                            int highp_threshold_min);
+  ResourceProvider(OutputSurface* output_surface,
+                   int highp_threshold_min,
+                   bool use_rgba_4444_texture_format);
 
   void CleanUpGLIfNeeded();
 
@@ -444,11 +459,12 @@ class CC_EXPORT ResourceProvider {
   bool use_shallow_flush_;
   scoped_ptr<TextureUploader> texture_uploader_;
   int max_texture_size_;
-  GLenum best_texture_format_;
+  ResourceFormat best_texture_format_;
 
   base::ThreadChecker thread_checker_;
 
   scoped_refptr<Fence> current_read_lock_fence_;
+  bool use_rgba_4444_texture_format_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceProvider);
 };

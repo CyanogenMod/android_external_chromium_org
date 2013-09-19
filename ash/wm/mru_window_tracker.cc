@@ -14,8 +14,8 @@
 #include "ash/wm/workspace_controller.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
 
 namespace ash {
 
@@ -41,7 +41,7 @@ MruWindowTracker::WindowList BuildWindowListInternal(
   MruWindowTracker::WindowList windows;
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
 
-  aura::RootWindow* active_root = Shell::GetActiveRootWindow();
+  aura::RootWindow* active_root = Shell::GetTargetRootWindow();
   for (Shell::RootWindowList::const_iterator iter = root_windows.begin();
        iter != root_windows.end(); ++iter) {
     if (*iter == active_root)
@@ -90,7 +90,8 @@ MruWindowTracker::WindowList BuildWindowListInternal(
 
 const int kSwitchableWindowContainerIds[] = {
   internal::kShellWindowId_DefaultContainer,
-  internal::kShellWindowId_AlwaysOnTopContainer
+  internal::kShellWindowId_AlwaysOnTopContainer,
+  internal::kShellWindowId_PanelContainer
 };
 
 const size_t kSwitchableWindowContainerIdsLength =

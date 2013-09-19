@@ -112,6 +112,9 @@ class UserManager {
   // in, the current user will be returned.
   virtual const UserList& GetLRULoggedInUsers() = 0;
 
+  // Returns a list of users who can unlock the device.
+  virtual UserList GetUnlockUsers() const = 0;
+
   // Returns the email of the owner user. Returns an empty string if there is
   // no owner for the device.
   virtual const std::string& GetOwnerEmail() = 0;
@@ -131,7 +134,9 @@ class UserManager {
   // Called when browser session is started i.e. after
   // browser_creator.LaunchBrowser(...) was called after user sign in.
   // When user is at the image screen IsUserLoggedIn() will return true
-  // but SessionStarted() will return false.
+  // but IsSessionStarted() will return false. During the kiosk splash screen,
+  // we perform additional initialization after the user is logged in but
+  // before the session has been started.
   // Fires NOTIFICATION_SESSION_STARTED.
   virtual void SessionStarted() = 0;
 
@@ -191,6 +196,10 @@ class UserManager {
   // we support only one of them being active.
   virtual const User* GetActiveUser() const = 0;
   virtual User* GetActiveUser() = 0;
+
+  // Returns the primary user of the current session. It is recorded for the
+  // first signed-in user and does not change thereafter.
+  virtual const User* GetPrimaryUser() const = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
@@ -328,11 +337,11 @@ class UserManager {
   // Returned value should not be cached.
   virtual UserFlow* GetUserFlow(const std::string& email) const = 0;
 
-  // Resets user flow fo user idenitified by |email|.
+  // Resets user flow for user identified by |email|.
   virtual void ResetUserFlow(const std::string& email) = 0;
 
   // Gets/sets chrome oauth client id and secret for kiosk app mode. The default
-  // values can be overriden with kiosk auth file.
+  // values can be overridden with kiosk auth file.
   virtual bool GetAppModeChromeClientOAuthInfo(
       std::string* chrome_client_id,
       std::string* chrome_client_secret) = 0;
@@ -350,6 +359,9 @@ class UserManager {
 
   // Returns true if locally managed users allowed.
   virtual bool AreLocallyManagedUsersAllowed() const = 0;
+
+  // Returns profile dir for the user identified by |email|.
+  virtual base::FilePath GetUserProfileDir(const std::string& email) const = 0;
 
  private:
   friend class ScopedUserManagerEnabler;

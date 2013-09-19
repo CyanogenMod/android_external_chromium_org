@@ -10,14 +10,15 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/launcher_test_api.h"
 #include "ash/wm/window_util.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_handler.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -44,7 +45,7 @@ class LauncherTooltipManagerTest : public AshTestBase {
         Shell::GetPrimaryRootWindowController();
     tooltip_manager_.reset(new internal::LauncherTooltipManager(
         controller->GetShelfLayoutManager(),
-        controller->shelf()->launcher()->GetLauncherViewForTest()));
+        LauncherTestAPI(controller->shelf()->launcher()).launcher_view()));
   }
 
   virtual void TearDown() OVERRIDE {

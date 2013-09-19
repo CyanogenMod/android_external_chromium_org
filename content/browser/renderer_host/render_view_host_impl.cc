@@ -73,7 +73,7 @@
 #if defined(OS_MACOSX)
 #include "content/browser/renderer_host/popup_menu_helper_mac.h"
 #elif defined(OS_ANDROID)
-#include "content/browser/android/browser_media_player_manager.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -1363,6 +1363,8 @@ void RenderViewHostImpl::OnContextMenu(const ContextMenuParams& params) {
 void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   delegate_->ToggleFullscreenMode(enter_fullscreen);
+  // We need to notify the contents that its fullscreen state has changed. This
+  // is done as part of the resize message.
   WasResized();
 }
 
@@ -1436,14 +1438,13 @@ void RenderViewHostImpl::OnRunJavaScriptMessage(
     const string16& default_prompt,
     const GURL& frame_url,
     JavaScriptMessageType type,
-    bool user_gesture,
     IPC::Message* reply_msg) {
   // While a JS message dialog is showing, tabs in the same process shouldn't
   // process input events.
   GetProcess()->SetIgnoreInputEvents(true);
   StopHangMonitorTimeout();
   delegate_->RunJavaScriptMessage(this, message, default_prompt, frame_url,
-                                  type, user_gesture, reply_msg,
+                                  type, reply_msg,
                                   &are_javascript_messages_suppressed_);
 }
 
@@ -1783,9 +1784,8 @@ void RenderViewHostImpl::SetAltErrorPageURL(const GURL& url) {
 
 void RenderViewHostImpl::ExitFullscreen() {
   RejectMouseLockOrUnlockIfNecessary();
-  // We need to notify the contents that its fullscreen state has changed. This
-  // is done as part of the resize message.
-  WasResized();
+  // Notify delegate_ and renderer of fullscreen state change.
+  OnToggleFullscreen(false);
 }
 
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
@@ -1880,10 +1880,6 @@ void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(
 void RenderViewHostImpl::ExecutePluginActionAtLocation(
   const gfx::Point& location, const WebKit::WebPluginAction& action) {
   Send(new ViewMsg_PluginActionAt(GetRoutingID(), location, action));
-}
-
-void RenderViewHostImpl::DisassociateFromPopupCount() {
-  Send(new ViewMsg_DisassociateFromPopupCount(GetRoutingID()));
 }
 
 void RenderViewHostImpl::NotifyMoveOrResizeStarted() {

@@ -53,8 +53,8 @@
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -2235,10 +2235,6 @@ bool RenderWidgetHostImpl::ShouldForwardGestureEvent(
   return input_router_->ShouldForwardGestureEvent(gesture_event);
 }
 
-bool RenderWidgetHostImpl::HasQueuedGestureEvents() const {
-  return input_router_->HasQueuedGestureEvents();
-}
-
 void RenderWidgetHostImpl::StartUserGesture() {
   OnUserGesture();
 }
@@ -2420,6 +2416,19 @@ void RenderWidgetHostImpl::SendSwapCompositorFrameAck(
     return;
   host->Send(new ViewMsg_SwapCompositorFrameAck(
       route_id, output_surface_id, ack));
+}
+
+// static
+void RenderWidgetHostImpl::SendReclaimCompositorResources(
+    int32 route_id,
+    uint32 output_surface_id,
+    int renderer_host_id,
+    const cc::CompositorFrameAck& ack) {
+  RenderProcessHost* host = RenderProcessHost::FromID(renderer_host_id);
+  if (!host)
+    return;
+  host->Send(
+      new ViewMsg_ReclaimCompositorResources(route_id, output_surface_id, ack));
 }
 
 void RenderWidgetHostImpl::AcknowledgeSwapBuffersToRenderer() {

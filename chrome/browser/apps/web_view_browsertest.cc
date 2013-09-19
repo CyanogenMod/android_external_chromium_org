@@ -613,8 +613,16 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAutosizeRemoveAttributes) {
              "web_view/shim");
 }
 
+// This test is disabled due to being flaky. http://crbug.com/282116
+#if defined(OS_WIN)
+#define MAYBE_Shim_TestAutosizeWithPartialAttributes \
+    DISABLED_Shim_TestAutosizeWithPartialAttributes
+#else
+#define MAYBE_Shim_TestAutosizeWithPartialAttributes \
+    Shim_TestAutosizeWithPartialAttributes
+#endif
 IN_PROC_BROWSER_TEST_F(WebViewTest,
-                       Shim_TestAutosizeWithPartialAttributes) {
+                       MAYBE_Shim_TestAutosizeWithPartialAttributes) {
   TestHelper("testAutosizeWithPartialAttributes",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
@@ -800,6 +808,14 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestWebRequestAPI) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestWebRequestAPIGoogleProperty) {
   TestHelper("testWebRequestAPIGoogleProperty",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       Shim_TestWebRequestListenerSurvivesReparenting) {
+  TestHelper("testWebRequestListenerSurvivesReparenting",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
@@ -993,7 +1009,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, NoPrerenderer) {
 // the main browser window to a page that sets a cookie and loads an app with
 // multiple webview tags. Each tag sets a cookie and the test checks the proper
 // storage isolation is enforced.
-IN_PROC_BROWSER_TEST_F(WebViewTest, CookieIsolation) {
+// This test is disabled due to being flaky. http://crbug.com/294196
+#if defined(OS_WIN)
+#define MAYBE_CookieIsolation DISABLED_CookieIsolation
+#else
+#define MAYBE_CookieIsolation CookieIsolation
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_CookieIsolation) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   const std::string kExpire =
       "var expire = new Date(Date.now() + 24 * 60 * 60 * 1000);";
@@ -1389,7 +1411,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_IndexedDBIsolation) {
 // This test ensures that closing app window on 'loadcommit' does not crash.
 // The test launches an app with guest and closes the window on loadcommit. It
 // then launches the app window again. The process is repeated 3 times.
-IN_PROC_BROWSER_TEST_F(WebViewTest, CloseOnLoadcommit) {
+// http://crbug.com/291278
+#if defined(OS_WIN)
+#define MAYBE_CloseOnLoadcommit DISABLED_CloseOnLoadcommit
+#else
+#define MAYBE_CloseOnLoadcommit CloseOnLoadcommit
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_CloseOnLoadcommit) {
   ExtensionTestMessageListener done_test_listener(
       "done-close-on-loadcommit", false);
   LoadAndLaunchPlatformApp("web_view/close_on_loadcommit");
@@ -1587,7 +1615,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ClearData) {
           << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, ConsoleMessage) {
+// This test is disabled on Win due to being flaky. http://crbug.com/294592
+#if defined(OS_WIN)
+#define MAYBE_ConsoleMessage DISABLED_ConsoleMessage
+#else
+#define MAYBE_ConsoleMessage ConsoleMessage
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_ConsoleMessage) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "console_messages"))

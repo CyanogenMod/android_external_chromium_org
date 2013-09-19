@@ -8,10 +8,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/timer/timer.h"
-#include "ui/base/events/event_constants.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/touch/touch_editing_controller.h"
+#include "ui/events/event_constants.h"
 #include "ui/gfx/font.h"
 #include "ui/views/border.h"
 #include "ui/views/context_menu_controller.h"
@@ -154,6 +154,7 @@ class VIEWS_EXPORT NativeTextfieldViews : public View,
   virtual int GetWidthNeededForText() const OVERRIDE;
   virtual void ExecuteTextCommand(int command_id) OVERRIDE;
   virtual bool HasTextBeingDragged() OVERRIDE;
+  virtual gfx::Point GetContextMenuLocation() OVERRIDE;
 
   // ui::SimpleMenuModel::Delegate overrides
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;

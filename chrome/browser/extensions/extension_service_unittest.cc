@@ -72,7 +72,6 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_builder.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/manifest_handlers/content_scripts_handler.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -95,6 +94,7 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_constants.h"
 #include "extensions/common/url_pattern.h"
 #include "gpu/config/gpu_info.h"
 #include "grit/browser_resources.h"
@@ -1344,22 +1344,22 @@ TEST_F(ExtensionServiceTest, LoadAllExtensionsFromDirectoryFail) {
 
   EXPECT_TRUE(MatchPattern(UTF16ToUTF8(GetErrors()[0]),
       std::string("Could not load extension from '*'. ") +
-      extension_manifest_errors::kManifestUnreadable)) <<
+      extensions::manifest_errors::kManifestUnreadable)) <<
       UTF16ToUTF8(GetErrors()[0]);
 
   EXPECT_TRUE(MatchPattern(UTF16ToUTF8(GetErrors()[1]),
       std::string("Could not load extension from '*'. ") +
-      extension_manifest_errors::kManifestUnreadable)) <<
+      extensions::manifest_errors::kManifestUnreadable)) <<
       UTF16ToUTF8(GetErrors()[1]);
 
   EXPECT_TRUE(MatchPattern(UTF16ToUTF8(GetErrors()[2]),
       std::string("Could not load extension from '*'. ") +
-      extension_manifest_errors::kMissingFile)) <<
+      extensions::manifest_errors::kMissingFile)) <<
       UTF16ToUTF8(GetErrors()[2]);
 
   EXPECT_TRUE(MatchPattern(UTF16ToUTF8(GetErrors()[3]),
       std::string("Could not load extension from '*'. ") +
-      extension_manifest_errors::kManifestUnreadable)) <<
+      extensions::manifest_errors::kManifestUnreadable)) <<
       UTF16ToUTF8(GetErrors()[3]);
 };
 
@@ -4384,6 +4384,23 @@ TEST_F(ExtensionServiceTest, GenerateID) {
   ASSERT_EQ(previous_id, loaded_[0]->id());
 }
 
+TEST_F(ExtensionServiceTest, UnpackedValidatesLocales) {
+  InitializeEmptyExtensionService();
+
+  base::FilePath bad_locale = data_dir_.AppendASCII("unpacked").
+      AppendASCII("bad_messages_file");
+  extensions::UnpackedInstaller::Create(service_)->Load(bad_locale);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(1u, GetErrors().size());
+  base::FilePath ms_messages_file = bad_locale.AppendASCII("_locales")
+                                              .AppendASCII("ms")
+                                              .AppendASCII("messages.json");
+  EXPECT_THAT(UTF16ToUTF8(GetErrors()[0]), testing::AllOf(
+       testing::HasSubstr(UTF16ToUTF8(ms_messages_file.LossyDisplayName())),
+       testing::HasSubstr("Dictionary keys must be quoted.")));
+  ASSERT_EQ(0u, loaded_.size());
+}
+
 void ExtensionServiceTest::TestExternalProvider(
     MockExtensionProvider* provider, Manifest::Location location) {
   // Verify that starting with no providers loads no extensions.
@@ -5076,19 +5093,21 @@ TEST_F(ExtensionServiceTest, ComponentExtensions) {
 }
 
 namespace {
-  class TestSyncProcessorStub : public syncer::SyncChangeProcessor {
-    virtual syncer::SyncError ProcessSyncChanges(
-        const tracked_objects::Location& from_here,
-        const syncer::SyncChangeList& change_list) OVERRIDE {
-      return syncer::SyncError();
-    }
 
-    virtual syncer::SyncDataList GetAllSyncData(
-        syncer::ModelType type) const OVERRIDE {
-      return syncer::SyncDataList();
-    }
-  };
-}
+class TestSyncProcessorStub : public syncer::SyncChangeProcessor {
+  virtual syncer::SyncError ProcessSyncChanges(
+      const tracked_objects::Location& from_here,
+      const syncer::SyncChangeList& change_list) OVERRIDE {
+    return syncer::SyncError();
+  }
+
+  virtual syncer::SyncDataList GetAllSyncData(
+      syncer::ModelType type) const OVERRIDE {
+    return syncer::SyncDataList();
+  }
+};
+
+}  // namespace
 
 TEST_F(ExtensionServiceTest, DeferredSyncStartupPreInstalledComponent) {
   InitializeEmptyExtensionService();

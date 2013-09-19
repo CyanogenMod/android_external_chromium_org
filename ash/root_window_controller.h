@@ -87,8 +87,8 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Returns a RootWindowController of the window's root window.
   static RootWindowController* ForWindow(const aura::Window* window);
 
-  // Returns the RootWindowController of the active root window.
-  static internal::RootWindowController* ForActiveRootWindow();
+  // Returns the RootWindowController of the target root window.
+  static internal::RootWindowController* ForTargetRootWindow();
 
   aura::RootWindow* root_window() { return root_window_.get(); }
 
@@ -100,6 +100,10 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   AlwaysOnTopController* always_on_top_controller() {
     return always_on_top_controller_.get();
+  }
+
+  keyboard::KeyboardController* keyboard_controller() {
+    return keyboard_controller_.get();
   }
 
   ScreenDimmer* screen_dimmer() { return screen_dimmer_.get(); }

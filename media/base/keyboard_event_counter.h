@@ -8,8 +8,9 @@
 #include <set>
 
 #include "base/synchronization/lock.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "media/base/media_export.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 
 namespace media {
 
@@ -17,7 +18,7 @@ namespace media {
 // calls it receives from the client.
 // Multiple key down events for the same key are counted as one keypress until
 // the same key is released.
-class KeyboardEventCounter {
+class MEDIA_EXPORT KeyboardEventCounter {
  public:
   KeyboardEventCounter();
   ~KeyboardEventCounter();

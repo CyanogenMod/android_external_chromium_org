@@ -368,9 +368,6 @@ static const int kDelaySecondsForContentStateSync = 1;
 
 static const size_t kExtraCharsBeforeAndAfterSelection = 100;
 
-// The maximum number of popups that can be spawned from one page.
-static const int kMaximumNumberOfUnacknowledgedPopups = 25;
-
 static const float kScalingIncrement = 0.1f;
 
 static const float kScalingIncrementForGesture = 0.01f;
@@ -521,7 +518,7 @@ static bool IsNonLocalTopLevelNavigation(const GURL& url,
   // 2. The origin of the url and the opener is the same in which case the
   //    opener relationship is maintained.
   // 3. Reloads/form submits/back forward navigations
-  if (!url.SchemeIs(chrome::kHttpScheme) && !url.SchemeIs(kHttpsScheme))
+  if (!url.SchemeIs(kHttpScheme) && !url.SchemeIs(kHttpsScheme))
     return false;
 
   if (type != WebKit::WebNavigationTypeReload &&
@@ -833,7 +830,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       enumeration_completion_id_(0),
       load_progress_tracker_(new LoadProgressTracker(this)),
       session_storage_namespace_id_(params->session_storage_namespace_id),
-      decrement_shared_popup_at_destruction_(false),
       handling_select_range_(false),
       next_snapshot_id_(0),
       allow_partial_swap_(params->allow_partial_swap),
@@ -880,17 +876,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   content_detectors_.push_back(linked_ptr<ContentDetector>(
       new EmailDetector()));
 #endif
-
-  if (params->counter) {
-    shared_popup_counter_ = params->counter;
-    // Only count this if it isn't swapped out upon creation.
-    if (!params->swapped_out)
-      shared_popup_counter_->data++;
-    decrement_shared_popup_at_destruction_ = true;
-  } else {
-    shared_popup_counter_ = new SharedRenderViewCounter(0);
-    decrement_shared_popup_at_destruction_ = false;
-  }
 
   RenderThread::Get()->AddRoute(routing_id_, this);
   // Take a reference on behalf of the RenderThread.  This will be balanced
@@ -990,9 +975,6 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 RenderViewImpl::~RenderViewImpl() {
   history_page_ids_.clear();
 
-  if (decrement_shared_popup_at_destruction_)
-    shared_popup_counter_->data--;
-
   base::debug::TraceLog::GetInstance()->RemoveProcessLabel(routing_id_);
 
   // If file chooser is still waiting for answer, dispatch empty answer.
@@ -1063,7 +1045,6 @@ RenderViewImpl* RenderViewImpl::Create(
     int32 opener_id,
     const RendererPreferences& renderer_prefs,
     const WebPreferences& webkit_prefs,
-    SharedRenderViewCounter* counter,
     int32 routing_id,
     int32 main_frame_routing_id,
     int32 surface_id,
@@ -1081,7 +1062,6 @@ RenderViewImpl* RenderViewImpl::Create(
       opener_id,
       renderer_prefs,
       webkit_prefs,
-      counter,
       routing_id,
       main_frame_routing_id,
       surface_id,
@@ -1391,8 +1371,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SwapOut, OnSwapOut)
     IPC_MESSAGE_HANDLER(ViewMsg_ClosePage, OnClosePage)
     IPC_MESSAGE_HANDLER(ViewMsg_ThemeChanged, OnThemeChanged)
-    IPC_MESSAGE_HANDLER(ViewMsg_DisassociateFromPopupCount,
-                        OnDisassociateFromPopupCount)
     IPC_MESSAGE_HANDLER(ViewMsg_MoveOrResizeStarted, OnMoveOrResizeStarted)
     IPC_MESSAGE_HANDLER(ViewMsg_ClearFocusedNode, OnClearFocusedNode)
     IPC_MESSAGE_HANDLER(ViewMsg_SetBackground, OnSetBackground)
@@ -2018,10 +1996,10 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
         host_zoom_levels_.find(GURL(request.url()));
     if (webview()->mainFrame()->document().isPluginDocument()) {
       // Reset the zoom levels for plugins.
-      webview()->setZoomLevel(false, 0);
+      webview()->setZoomLevel(0);
     } else {
       if (host_zoom != host_zoom_levels_.end())
-        webview()->setZoomLevel(false, host_zoom->second);
+        webview()->setZoomLevel(host_zoom->second);
     }
 
     if (host_zoom != host_zoom_levels_.end()) {
@@ -2227,16 +2205,13 @@ bool RenderViewImpl::RunJavaScriptMessage(JavaScriptMessageType type,
                                           const string16& default_value,
                                           const GURL& frame_url,
                                           string16* result) {
-  bool user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
   bool success = false;
   string16 result_temp;
   if (!result)
     result = &result_temp;
 
   SendAndRunNestedMessageLoop(new ViewHostMsg_RunJavaScriptMessage(
-      routing_id_, message, default_value, frame_url, type, user_gesture,
-      &success, result));
-  WebUserGestureIndicator::consumeUserGesture();
+      routing_id_, message, default_value, frame_url, type, &success, result));
   return success;
 }
 
@@ -2274,10 +2249,6 @@ WebView* RenderViewImpl::createView(
     const WebWindowFeatures& features,
     const WebString& frame_name,
     WebNavigationPolicy policy) {
-  // Check to make sure we aren't overloading on popups.
-  if (shared_popup_counter_->data > kMaximumNumberOfUnacknowledgedPopups)
-    return NULL;
-
   ViewHostMsg_CreateWindow_Params params;
   params.opener_id = routing_id_;
   params.user_gesture = WebUserGestureIndicator::isProcessingUserGesture();
@@ -2336,7 +2307,6 @@ WebView* RenderViewImpl::createView(
       routing_id_,
       renderer_preferences_,
       transferred_preferences,
-      shared_popup_counter_.get(),
       routing_id,
       main_frame_routing_id,
       surface_id,
@@ -2819,6 +2789,8 @@ void RenderViewImpl::numberOfWheelEventHandlersChanged(unsigned num_handlers) {
 }
 
 void RenderViewImpl::didUpdateLayout() {
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidUpdateLayout());
+
   // We don't always want to set up a timer, only if we've been put in that
   // mode by getting a |ViewMsg_EnablePreferredSizeChangedMode|
   // message.
@@ -3653,6 +3625,12 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
   // from being dumb, WebCore doesn't expect it and it will cause a crash.
   if (error.reason == net::ERR_ABORTED)
     return;
+
+  // Don't display "client blocked" error page if browser has asked us not to.
+  if (error.reason == net::ERR_BLOCKED_BY_CLIENT &&
+      renderer_preferences_.disable_client_blocked_error_page) {
+    return;
+  }
 
   if (RenderThreadImpl::current()->layout_test_mode())
     return;
@@ -4857,7 +4835,7 @@ void RenderViewImpl::OnZoom(PageZoom zoom) {
       zoom_level = static_cast<int>(old_zoom_level);
     }
   }
-  webview()->setZoomLevel(false, zoom_level);
+  webview()->setZoomLevel(zoom_level);
   zoomLevelChanged();
 }
 
@@ -4890,7 +4868,7 @@ void RenderViewImpl::ZoomFactorHelper(PageZoom zoom,
 
 void RenderViewImpl::OnSetZoomLevel(double zoom_level) {
   webview()->hidePopups();
-  webview()->setZoomLevel(false, zoom_level);
+  webview()->setZoomLevel(zoom_level);
   zoomLevelChanged();
 }
 
@@ -5218,7 +5196,7 @@ void RenderViewImpl::OnSetRendererPrefs(
       !ZoomValuesEqual(old_zoom_level,
                        renderer_preferences_.default_zoom_level) &&
       ZoomValuesEqual(webview()->zoomLevel(), old_zoom_level)) {
-    webview()->setZoomLevel(false, renderer_preferences_.default_zoom_level);
+    webview()->setZoomLevel(renderer_preferences_.default_zoom_level);
     zoomLevelChanged();
   }
 }
@@ -5381,13 +5359,6 @@ void RenderViewImpl::OnThemeChanged() {
   // TODO(port): we don't support theming on non-Windows platforms yet
   NOTIMPLEMENTED();
 #endif
-}
-
-void RenderViewImpl::OnDisassociateFromPopupCount() {
-  if (decrement_shared_popup_at_destruction_)
-    shared_popup_counter_->data--;
-  shared_popup_counter_ = new SharedRenderViewCounter(0);
-  decrement_shared_popup_at_destruction_ = false;
 }
 
 bool RenderViewImpl::MaybeLoadAlternateErrorPage(WebFrame* frame,

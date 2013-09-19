@@ -38,13 +38,13 @@
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
@@ -73,9 +73,6 @@ const int kNotificationBubbleGapHeight = 6;
 // the auto hidden shelf when the shelf is on the boundary between displays.
 const int kMaxAutoHideShowShelfRegionSize = 10;
 
-// Const inset from the edget of the shelf to the edget of the status area.
-const int kStatusAreaInset = 3;
-
 ui::Layer* GetLayer(views::Widget* widget) {
   return widget->GetNativeView()->layer();
 }
@@ -99,6 +96,9 @@ const int ShelfLayoutManager::kAutoHideSize = 3;
 
 // static
 const int ShelfLayoutManager::kShelfSize = 47;
+
+// static
+const int ShelfLayoutManager::kShelfItemInset = 3;
 
 int ShelfLayoutManager::GetPreferredShelfSize() {
   return ash::switches::UseAlternateShelfLayout() ?
@@ -663,12 +663,12 @@ void ShelfLayoutManager::UpdateBoundsAndOpacity(
   if (animate) {
     launcher_animation_setter.SetTransitionDuration(
         base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS));
-    launcher_animation_setter.SetTweenType(ui::Tween::EASE_OUT);
+    launcher_animation_setter.SetTweenType(gfx::Tween::EASE_OUT);
     launcher_animation_setter.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
     status_animation_setter.SetTransitionDuration(
         base::TimeDelta::FromMilliseconds(kCrossFadeDurationMS));
-    status_animation_setter.SetTweenType(ui::Tween::EASE_OUT);
+    status_animation_setter.SetTweenType(gfx::Tween::EASE_OUT);
     status_animation_setter.SetPreemptionStrategy(
         ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
   } else {
@@ -769,8 +769,13 @@ void ShelfLayoutManager::CalculateTargetBounds(
   int status_inset = std::max(0, GetPreferredShelfSize() -
       PrimaryAxisValue(status_size.height(), status_size.width()));
 
-  if (ash::switches::UseAlternateShelfLayout())
-    status_inset = kStatusAreaInset;
+  if (ash::switches::UseAlternateShelfLayout()) {
+    status_inset = 0;
+    if (IsHorizontalAlignment())
+      status_size.set_height(kShelfSize);
+    else
+      status_size.set_width(kShelfSize);
+  }
 
   target_bounds->status_bounds_in_shelf = SelectValueForShelfAlignment(
       gfx::Rect(base::i18n::IsRTL() ? 0 : shelf_width - status_size.width(),
@@ -882,7 +887,7 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
     }
 
     if (ash::switches::UseAlternateShelfLayout()) {
-      target_bounds->status_bounds_in_shelf.set_y(kStatusAreaInset);
+      target_bounds->status_bounds_in_shelf.set_y(0);
     } else {
       // The statusbar should be in the center of the shelf.
       gfx::Rect status_y = target_bounds->shelf_bounds_in_root;
@@ -907,12 +912,12 @@ void ShelfLayoutManager::UpdateTargetBoundsForGesture(
     }
 
     if (ash::switches::UseAlternateShelfLayout()) {
-      if (right_aligned) {
-        target_bounds->status_bounds_in_shelf.set_x(kStatusAreaInset);
-      } else {
+      if (right_aligned)
+        target_bounds->status_bounds_in_shelf.set_x(0);
+      else
         target_bounds->status_bounds_in_shelf.set_x(
-            available_bounds.right() - shelf_width + kStatusAreaInset);
-      }
+            target_bounds->shelf_bounds_in_root.width() -
+            kShelfSize);
     } else {
       // The statusbar should be in the center of the shelf.
       gfx::Rect status_x = target_bounds->shelf_bounds_in_root;

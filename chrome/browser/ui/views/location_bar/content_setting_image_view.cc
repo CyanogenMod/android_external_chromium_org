@@ -33,7 +33,7 @@ const int ContentSettingImageView::kAnimationDurationMS =
 ContentSettingImageView::ContentSettingImageView(
     ContentSettingsType content_type,
     LocationBarView* parent,
-    const gfx::Font& font,
+    const gfx::FontList& font_list,
     int font_y_offset,
     SkColor text_color,
     SkColor parent_background_color)
@@ -44,7 +44,7 @@ ContentSettingImageView::ContentSettingImageView(
       background_painter_(
           views::Painter::CreateImageGridPainter(kBackgroundImages)),
       icon_(new views::ImageView),
-      text_label_(new views::Label),
+      text_label_(new views::Label(string16(), font_list)),
       slide_animator_(this),
       pause_animation_(false),
       pause_animation_state_(0.0),
@@ -55,7 +55,6 @@ ContentSettingImageView::ContentSettingImageView(
   text_label_->SetVisible(false);
   text_label_->set_border(
       views::Border::CreateEmptyBorder(font_y_offset, 0, 0, 0));
-  text_label_->SetFont(font);
   text_label_->SetEnabledColor(text_color);
   // Calculate the actual background color for the label.  The background images
   // are painted atop |parent_background_color|.  We grab the color of the
@@ -86,7 +85,7 @@ ContentSettingImageView::ContentSettingImageView(
   LocationBarView::InitTouchableLocationBarChildView(this);
 
   slide_animator_.SetSlideDuration(kAnimationDurationMS);
-  slide_animator_.SetTweenType(ui::Tween::LINEAR);
+  slide_animator_.SetTweenType(gfx::Tween::LINEAR);
 }
 
 ContentSettingImageView::~ContentSettingImageView() {
@@ -159,7 +158,7 @@ int ContentSettingImageView::GetBubbleOuterPadding(bool by_icon) {
       (by_icon ? 0 : LocationBarView::kIconInternalPadding);
 }
 
-void ContentSettingImageView::AnimationEnded(const ui::Animation* animation) {
+void ContentSettingImageView::AnimationEnded(const gfx::Animation* animation) {
   slide_animator_.Reset();
   if (!pause_animation_) {
     text_label_->SetVisible(false);
@@ -169,7 +168,7 @@ void ContentSettingImageView::AnimationEnded(const ui::Animation* animation) {
 }
 
 void ContentSettingImageView::AnimationProgressed(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   if (!pause_animation_) {
     parent_->Layout();
     parent_->SchedulePaint();
@@ -177,7 +176,7 @@ void ContentSettingImageView::AnimationProgressed(
 }
 
 void ContentSettingImageView::AnimationCanceled(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   AnimationEnded(animation);
 }
 

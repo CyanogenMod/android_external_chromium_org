@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/ui/tabs/dock_info.h"
@@ -245,6 +246,10 @@ class TabDragController : public content::WebContentsDelegate,
   virtual bool ShouldSuppressDialogs() OVERRIDE;
   virtual content::JavaScriptDialogManager*
       GetJavaScriptDialogManager() OVERRIDE;
+  virtual void RequestMediaAccessPermission(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback) OVERRIDE;
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -612,11 +617,10 @@ class TabDragController : public content::WebContentsDelegate,
   // Non-null for the duration of RunMoveLoop.
   views::Widget* move_loop_widget_;
 
-  // If non-null set to true from destructor.
-  bool* destroyed_;
-
   // See description above getter.
   bool is_mutating_;
+
+  base::WeakPtrFactory<TabDragController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TabDragController);
 };

@@ -143,9 +143,11 @@ void ExtractIMEInfo(const input_method::InputMethodDescriptor& ime,
 }
 
 gfx::NativeWindow GetNativeWindowByStatus(
-    ash::user::LoginStatus login_status) {
+    ash::user::LoginStatus login_status,
+    bool session_started) {
   int container_id =
-      (login_status == ash::user::LOGGED_IN_NONE ||
+      (!session_started ||
+       login_status == ash::user::LOGGED_IN_NONE ||
        login_status == ash::user::LOGGED_IN_LOCKED) ?
            ash::internal::kShellWindowId_LockSystemModalContainer :
            ash::internal::kShellWindowId_SystemModalContainer;
@@ -268,7 +270,7 @@ void HandleUnconfiguredNetwork(const std::string& service_path,
   }
 
   if (network->type() == flimflam::kTypeCellular) {
-    if (network->activation_state() != flimflam::kActivationStateActivated) {
+    if (network->RequiresActivation()) {
       ash::network_connect::ActivateCellular(service_path);
       return;
     }
@@ -333,7 +335,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
       : ui_weak_ptr_factory_(
           new base::WeakPtrFactory<SystemTrayDelegate>(this)),
         user_profile_(NULL),
-        clock_type_(base::k24HourClock),
+        clock_type_(base::GetHourClockType()),
         search_key_mapped_to_(input_method::kSearchKey),
         screen_locked_(false),
         have_session_start_time_(false),
@@ -469,12 +471,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual ash::user::LoginStatus GetUserLoginStatus() const OVERRIDE {
-    // Map ChromeOS specific LOGGED_IN states to Ash LOGGED_IN states.
-    LoginState::LoggedInState state = LoginState::Get()->GetLoggedInState();
-    if (state == LoginState::LOGGED_IN_OOBE ||
-        state == LoginState::LOGGED_IN_NONE) {
+    // All non-logged in ChromeOS specific LOGGED_IN states map to the same
+    // Ash specific LOGGED_IN state.
+    if (!LoginState::Get()->IsUserLoggedIn())
       return ash::user::LOGGED_IN_NONE;
-    }
+
     if (screen_locked_)
       return ash::user::LOGGED_IN_LOCKED;
 
@@ -504,7 +505,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
 
   virtual bool IsOobeCompleted() const OVERRIDE {
     if (!base::chromeos::IsRunningOnChromeOS() &&
-        LoginState::Get()->GetLoggedInState() == LoginState::LOGGED_IN_ACTIVE)
+        LoginState::Get()->IsUserLoggedIn())
       return true;
     return StartupUtils::IsOobeCompleted();
   }
@@ -1020,12 +1021,16 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
         kSystemUse24HourClock, &system_use_24_hour_clock);
 
     if (status == ash::user::LOGGED_IN_NONE)
-      return (system_value_found ? system_use_24_hour_clock : true);
+      return (system_value_found
+                  ? system_use_24_hour_clock
+                  : (base::GetHourClockType() == base::k24HourClock));
 
     const PrefService::Preference* user_pref =
         user_pref_registrar_->prefs()->FindPreference(prefs::kUse24HourClock);
     if (status == ash::user::LOGGED_IN_GUEST && user_pref->IsDefaultValue())
-      return (system_value_found ? system_use_24_hour_clock : true);
+      return (system_value_found
+                  ? system_use_24_hour_clock
+                  : (base::GetHourClockType() == base::k24HourClock));
 
     bool use_24_hour_clock = true;
     user_pref->GetValue()->GetAsBoolean(&use_24_hour_clock);
@@ -1080,8 +1085,7 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   // LoginState::Observer overrides.
-  virtual void LoggedInStateChanged(
-      chromeos::LoginState::LoggedInState state) OVERRIDE {
+  virtual void LoggedInStateChanged() OVERRIDE {
     UpdateClockType();
   }
 
@@ -1112,7 +1116,9 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   // TODO(sad): Override more from PowerManagerClient::Observer here.
 
   gfx::NativeWindow GetNativeWindow() const {
-    return GetNativeWindowByStatus(GetUserLoginStatus());
+    bool session_started = ash::Shell::GetInstance()->session_state_delegate()
+        ->IsActiveUserSessionStarted();
+    return GetNativeWindowByStatus(GetUserLoginStatus(), session_started);
   }
 
   // content::NotificationObserver implementation.

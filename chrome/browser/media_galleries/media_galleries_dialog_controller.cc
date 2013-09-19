@@ -26,8 +26,6 @@
 using extensions::APIPermission;
 using extensions::Extension;
 
-namespace chrome {
-
 namespace {
 
 // Comparator for sorting GalleryPermissionsVector -- sorts
@@ -81,7 +79,7 @@ MediaGalleriesDialogController::MediaGalleriesDialogController(
       preferences_(NULL) {}
 
 MediaGalleriesDialogController::~MediaGalleriesDialogController() {
-  if (chrome::StorageMonitor::GetInstance())
+  if (StorageMonitor::GetInstance())
     StorageMonitor::GetInstance()->RemoveObserver(this);
 
   if (select_folder_dialog_.get())
@@ -282,12 +280,47 @@ void MediaGalleriesDialogController::OnRemovableStorageDetached(
   UpdateGalleriesOnDeviceEvent(info.device_id());
 }
 
-void MediaGalleriesDialogController::OnGalleryChanged(
-    MediaGalleriesPreferences* pref, const std::string& extension_id,
-    MediaGalleryPrefId /* pref_id */, bool /* has_permission */) {
-  DCHECK_EQ(preferences_, pref);
-  if (extension_id.empty() || extension_id == extension_->id())
-    UpdateGalleriesOnPreferencesEvent();
+void MediaGalleriesDialogController::OnPermissionAdded(
+    MediaGalleriesPreferences* /* prefs */,
+    const std::string& extension_id,
+    MediaGalleryPrefId /* pref_id */) {
+  if (extension_id != extension_->id())
+    return;
+  UpdateGalleriesOnPreferencesEvent();
+}
+
+void MediaGalleriesDialogController::OnPermissionRemoved(
+    MediaGalleriesPreferences* /* prefs */,
+    const std::string& extension_id,
+    MediaGalleryPrefId /* pref_id */) {
+  if (extension_id != extension_->id())
+    return;
+  UpdateGalleriesOnPreferencesEvent();
+}
+
+void MediaGalleriesDialogController::OnGalleryAdded(
+    MediaGalleriesPreferences* /* prefs */,
+    MediaGalleryPrefId /* pref_id */) {
+  UpdateGalleriesOnPreferencesEvent();
+}
+
+void MediaGalleriesDialogController::OnGalleryRemoved(
+    MediaGalleriesPreferences* /* prefs */,
+    MediaGalleryPrefId /* pref_id */) {
+  UpdateGalleriesOnPreferencesEvent();
+}
+
+void MediaGalleriesDialogController::OnGalleryInfoUpdated(
+    MediaGalleriesPreferences* prefs,
+    MediaGalleryPrefId pref_id) {
+  const MediaGalleriesPrefInfoMap& pref_galleries =
+      preferences_->known_galleries();
+  MediaGalleriesPrefInfoMap::const_iterator pref_it =
+      pref_galleries.find(pref_id);
+  if (pref_it == pref_galleries.end())
+    return;
+  const MediaGalleryPrefInfo& gallery_info = pref_it->second;
+  UpdateGalleriesOnDeviceEvent(gallery_info.device_id);
 }
 
 void MediaGalleriesDialogController::InitializePermissions() {
@@ -410,5 +443,3 @@ void MediaGalleriesDialogController::UpdateGalleriesOnDeviceEvent(
 // MediaGalleries dialog -------------------------------------------------------
 
 MediaGalleriesDialog::~MediaGalleriesDialog() {}
-
-}  // namespace chrome

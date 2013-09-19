@@ -73,6 +73,7 @@ include $(LOCAL_PATH)/gpu/gpu_ipc.target.darwin-mips.mk
 include $(LOCAL_PATH)/ipc/ipc.target.darwin-mips.mk
 include $(LOCAL_PATH)/jingle/jingle_glue.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/media.target.darwin-mips.mk
+include $(LOCAL_PATH)/media/media_android_imageformat_list.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/media_android_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/player_android.target.darwin-mips.mk
 include $(LOCAL_PATH)/media/shared_memory_support.target.darwin-mips.mk
@@ -97,9 +98,8 @@ include $(LOCAL_PATH)/skia/skia_opts.target.darwin-mips.mk
 include $(LOCAL_PATH)/sql/sql.target.darwin-mips.mk
 include $(LOCAL_PATH)/testing/gtest_prod.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_derived_sources.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/deprecated_perl_bindings_sources.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/bindings_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/interface_dependencies.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/bindings/python_bindings_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/config.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/debugger_script_source.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/generate_inspector_protocol_version.target.darwin-mips.mk

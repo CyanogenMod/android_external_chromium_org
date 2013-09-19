@@ -32,12 +32,12 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/selection_model.h"
@@ -49,6 +49,11 @@
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
+
+#if defined(OS_WIN)
+#include "base/win/metro.h"
+#include "chrome/browser/browser_process.h"
+#endif
 
 #if defined(USE_AURA)
 #include "ui/aura/focus_manager.h"
@@ -81,11 +86,27 @@ OmniboxState::OmniboxState(const OmniboxEditModel::State& model_state,
 
 OmniboxState::~OmniboxState() {}
 
-// This will write |url| and |text| to the clipboard as a well-formed URL.
-void DoCopyURL(const GURL& url, const string16& text) {
-  BookmarkNodeData data;
-  data.ReadFromTuple(url, text);
-  data.WriteToClipboard();
+// We'd like to set the text input type to TEXT_INPUT_TYPE_URL, because this
+// triggers URL-specific layout in software keyboards, e.g. adding top-level "/"
+// and ".com" keys for English.  However, this also causes IMEs to default to
+// Latin character mode, which makes entering search queries difficult for IME
+// users.  Therefore, we try to guess whether an IME will be used based on the
+// application language, and set the input type accordingly.
+ui::TextInputType DetermineTextInputType() {
+#if defined(OS_WIN)
+  if (base::win::IsTSFAwareRequired()) {
+    DCHECK(g_browser_process);
+    const std::string& locale = g_browser_process->GetApplicationLocale();
+    const std::string& language = locale.substr(0, 2);
+    // Assume CJK + Thai users are using an IME.
+    if (language == "ja" ||
+        language == "ko" ||
+        language == "th" ||
+        language == "zh")
+      return ui::TEXT_INPUT_TYPE_SEARCH;
+  }
+#endif
+  return ui::TEXT_INPUT_TYPE_URL;
 }
 
 bool IsOmniboxAutoCompletionForImeEnabled() {
@@ -137,7 +158,7 @@ OmniboxViewViews::~OmniboxViewViews() {
 
 void OmniboxViewViews::Init() {
   SetController(this);
-  SetTextInputType(ui::TEXT_INPUT_TYPE_URL);
+  SetTextInputType(DetermineTextInputType());
   SetBackgroundColor(location_bar_view_->GetColor(
       ToolbarModel::NONE, LocationBarView::BACKGROUND));
 
@@ -202,7 +223,7 @@ void OmniboxViewViews::OnMouseReleased(const ui::MouseEvent& event) {
   // query is common enough that we do click-to-place-cursor).
   if ((event.IsOnlyLeftMouseButton() || event.IsOnlyRightMouseButton()) &&
       select_all_on_mouse_release_ &&
-      !controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+      !controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
           false)) {
     // Select all in the reverse direction so as not to scroll the caret
     // into view and shift the contents jarringly.
@@ -381,6 +402,10 @@ void OmniboxViewViews::Update() {
   const ToolbarModel::SecurityLevel old_security_level = security_level_;
   security_level_ = controller()->GetToolbarModel()->GetSecurityLevel(false);
   if (model()->UpdatePermanentText()) {
+    // Something visibly changed.  Re-enable search term replacement.
+    controller()->GetToolbarModel()->set_search_term_replacement_enabled(true);
+    model()->UpdatePermanentText();
+
     // Tweak: if the user had all the text selected, select all the new text.
     // This makes one particular case better: the user clicks in the box to
     // change it right before the permanent URL is changed.  Since the new URL
@@ -677,7 +702,9 @@ void OmniboxViewViews::OnAfterCutOrCopy() {
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), IsSelectAll(),
                              &selected_text, &url, &write_url);
   if (write_url) {
-    DoCopyURL(url, selected_text);
+    BookmarkNodeData data;
+    data.ReadFromTuple(url, selected_text);
+    data.WriteToClipboard();
   } else {
     ui::ScopedClipboardWriter scoped_clipboard_writer(
         ui::Clipboard::GetForCurrentThread(), ui::Clipboard::BUFFER_STANDARD);
@@ -748,19 +775,20 @@ int OmniboxViewViews::OnDrop(const ui::OSExchangeData& data) {
 }
 
 void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
-  if (chrome::IsQueryExtractionEnabled()) {
-    int copy_position = menu_contents->GetIndexOfCommandId(IDS_APP_COPY);
-    DCHECK_GE(copy_position, 0);
-    menu_contents->InsertItemWithStringIdAt(
-        copy_position + 1, IDC_COPY_URL, IDS_COPY_URL);
-  }
-
   int paste_position = menu_contents->GetIndexOfCommandId(IDS_APP_PASTE);
   DCHECK_GE(paste_position, 0);
   menu_contents->InsertItemWithStringIdAt(
       paste_position + 1, IDS_PASTE_AND_GO, IDS_PASTE_AND_GO);
 
   menu_contents->AddSeparator(ui::NORMAL_SEPARATOR);
+
+  if (chrome::IsQueryExtractionEnabled()) {
+    int select_all_position = menu_contents->GetIndexOfCommandId(
+        IDS_APP_SELECT_ALL);
+    DCHECK_GE(select_all_position, 0);
+    menu_contents->InsertItemWithStringIdAt(
+        select_all_position + 1, IDS_SHOW_URL, IDS_SHOW_URL);
+  }
 
   // Minor note: We use IDC_ for command id here while the underlying textfield
   // is using IDS_ for all its command ids. This is because views cannot depend
@@ -772,9 +800,9 @@ void OmniboxViewViews::UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {
 bool OmniboxViewViews::IsCommandIdEnabled(int command_id) const {
   if (command_id == IDS_PASTE_AND_GO)
     return model()->CanPasteAndGo(GetClipboardText());
-  if (command_id != IDC_COPY_URL)
+  if (command_id != IDS_SHOW_URL)
     return command_updater()->IsCommandEnabled(command_id);
-  return controller()->GetToolbarModel()->WouldReplaceSearchURLWithSearchTerms(
+  return controller()->GetToolbarModel()->WouldPerformSearchTermReplacement(
       false);
 }
 
@@ -797,12 +825,11 @@ bool OmniboxViewViews::HandlesCommand(int command_id) const {
 void OmniboxViewViews::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     // These commands don't invoke the popup via OnBefore/AfterPossibleChange().
-    case IDC_COPY_URL:
-      DoCopyURL(controller()->GetToolbarModel()->GetURL(),
-                controller()->GetToolbarModel()->GetText(false));
-      break;
     case IDS_PASTE_AND_GO:
       model()->PasteAndGo(GetClipboardText());
+      break;
+    case IDS_SHOW_URL:
+      ShowURL();
       break;
     case IDC_EDIT_SEARCH_ENGINES:
       command_updater()->ExecuteCommand(command_id);

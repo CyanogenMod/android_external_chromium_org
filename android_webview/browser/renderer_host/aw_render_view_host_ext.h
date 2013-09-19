@@ -11,6 +11,7 @@
 #include "base/callback_forward.h"
 #include "base/threading/non_thread_safe.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/size.h"
 
 class GURL;
 
@@ -25,6 +26,8 @@ class AwRenderViewHostExtClient {
  public:
   // Called when the RenderView page scale changes.
   virtual void OnWebLayoutPageScaleFactorChanged(float page_scale_factor) = 0;
+  virtual void OnWebLayoutContentsSizeChanged(
+      const gfx::Size& contents_size) = 0;
 
  protected:
   virtual ~AwRenderViewHostExtClient() {}
@@ -62,9 +65,11 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   // the corresponding public WebView API is as well.
   const AwHitTestData& GetLastHitTestData() const;
 
-  // Sets the zoom level for text only. Used in layout modes other than
+  // Sets the zoom factor for text only. Used in layout modes other than
   // Text Autosizing.
-  void SetTextZoomLevel(double level);
+  void SetTextZoomFactor(float factor);
+
+  void SetFixedLayoutSize(const gfx::Size& size);
 
   void ResetScrollAndScaleState();
 
@@ -86,6 +91,7 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void OnDocumentHasImagesResponse(int msg_id, bool has_images);
   void OnUpdateHitTestData(const AwHitTestData& hit_test_data);
   void OnPageScaleFactorChanged(float page_scale_factor);
+  void OnContentsSizeChanged(const gfx::Size& contents_size);
 
   bool IsRenderViewReady() const;
 

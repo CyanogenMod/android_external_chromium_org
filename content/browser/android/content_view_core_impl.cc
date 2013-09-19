@@ -15,10 +15,10 @@
 #include "base/values.h"
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
-#include "content/browser/android/browser_media_player_manager.h"
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/load_url_params.h"
 #include "content/browser/android/touch_point.h"
+#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 #include "content/browser/renderer_host/java/java_bound_object.h"
@@ -260,6 +260,7 @@ void ContentViewCoreImpl::Observe(int type,
               env, obj.obj(), old_pid, new_pid);
         }
       }
+      SetFocusInternal(HasFocus());
       break;
     }
     case NOTIFICATION_RENDERER_PROCESS_CREATED: {
@@ -375,6 +376,10 @@ void ContentViewCoreImpl::UpdateFrameInfo(
     const gfx::Vector2dF& controls_offset,
     const gfx::Vector2dF& content_offset,
     float overdraw_bottom_height) {
+  if (window_android_)
+      window_android_->set_content_offset(
+          gfx::ScaleVector2d(content_offset, dpi_scale_));
+
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
@@ -813,11 +818,7 @@ jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
     JNIEnv* env, jobject) const {
-  // The current users of the Java API expect to use the active entry
-  // rather than the visible entry, which is exposed by WebContents::GetURL.
-  content::NavigationEntry* entry =
-      web_contents_->GetController().GetActiveEntry();
-  GURL url = entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
+  GURL url = web_contents_->GetVisibleURL();
   return ConvertUTF8ToJavaString(env, url.spec());
 }
 
@@ -835,6 +836,10 @@ WebContents* ContentViewCoreImpl::GetWebContents() const {
 }
 
 void ContentViewCoreImpl::SetFocus(JNIEnv* env, jobject obj, jboolean focused) {
+  SetFocusInternal(focused);
+}
+
+void ContentViewCoreImpl::SetFocusInternal(bool focused) {
   if (!GetRenderWidgetHostViewAndroid())
     return;
 
@@ -1422,7 +1427,7 @@ void ContentViewCoreImpl::GetDirectedNavigationHistory(JNIEnv* env,
 ScopedJavaLocalRef<jstring>
 ContentViewCoreImpl::GetOriginalUrlForActiveNavigationEntry(JNIEnv* env,
                                                             jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (entry == NULL)
     return ScopedJavaLocalRef<jstring>(env, NULL);
   return ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec());
@@ -1497,7 +1502,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
 
 bool ContentViewCoreImpl::GetUseDesktopUserAgent(
     JNIEnv* env, jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   return entry && entry->GetIsOverridingUserAgent();
 }
 
@@ -1546,7 +1551,7 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
     return;
 
   // Make sure the navigation entry actually exists.
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (!entry)
     return;
 

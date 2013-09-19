@@ -47,7 +47,7 @@ static int s_num_layer_tree_instances;
 namespace cc {
 
 RendererCapabilities::RendererCapabilities()
-    : best_texture_format(0),
+    : best_texture_format(RGBA_8888),
       using_partial_swap(false),
       using_set_visibility(false),
       using_egl_image(false),
@@ -61,31 +61,8 @@ RendererCapabilities::RendererCapabilities()
 
 RendererCapabilities::~RendererCapabilities() {}
 
-UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
-                                     UIResourceId id)
-    : type_(type), id_(id) {}
-
-UIResourceRequest::UIResourceRequest(UIResourceRequestType type,
-                                     UIResourceId id,
-                                     const UIResourceBitmap& bitmap)
-    : type_(type), id_(id), bitmap_(new UIResourceBitmap(bitmap)) {}
-
-UIResourceRequest::UIResourceRequest(const UIResourceRequest& request) {
-  (*this) = request;
-}
-
-UIResourceRequest& UIResourceRequest::operator=(
-    const UIResourceRequest& request) {
-  type_ = request.type_;
-  id_ = request.id_;
-  if (request.bitmap_) {
-    bitmap_ = make_scoped_ptr(new UIResourceBitmap(*request.bitmap_.get()));
-  } else {
-    bitmap_.reset();
-  }
-
-  return *this;
-}
+UIResourceRequest::UIResourceRequest()
+    : type(UIResourceInvalidRequest), id(0), bitmap(NULL) {}
 
 UIResourceRequest::~UIResourceRequest() {}
 
@@ -220,7 +197,7 @@ LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
       contents_texture_manager_ =
           PrioritizedResourceManager::Create(proxy_.get());
       surface_memory_placeholder_ =
-          contents_texture_manager_->CreateTexture(gfx::Size(), GL_RGBA);
+          contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
     }
 
     client_->DidInitializeOutputSurface(true);
@@ -353,6 +330,19 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->FindRootScrollLayer();
 
+  // TODO(wjmaclean) For now, not all LTH clients will register viewports, so
+  // only set them when available..
+  if (page_scale_layer_) {
+    DCHECK(inner_viewport_scroll_layer_);
+    sync_tree->SetViewportLayersFromIds(
+        page_scale_layer_->id(),
+        inner_viewport_scroll_layer_->id(),
+        outer_viewport_scroll_layer_ ? outer_viewport_scroll_layer_->id()
+                                     : Layer::INVALID_ID);
+  } else {
+    sync_tree->ClearViewportLayers();
+  }
+
   float page_scale_delta, sent_page_scale_delta;
   if (settings_.impl_side_painting) {
     // Update the delta from the active tree, which may have
@@ -399,7 +389,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   if (overhang_ui_resource_) {
     host_impl->SetOverhangUIResource(
         overhang_ui_resource_->id(),
-        GetUIResourceSize(overhang_ui_resource_->id()));
+        overhang_ui_resource_->GetSize());
   }
 
   DCHECK(!sync_tree->ViewportSizeInvalid());
@@ -657,16 +647,16 @@ void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
   DCHECK(bitmap.width() && bitmap.height());
   DCHECK_EQ(bitmap.bytesPerPixel(), 4);
 
-  SkBitmap bitmap_copy;
-  if (bitmap.isImmutable()) {
-    bitmap_copy = bitmap;
-  } else {
-    bitmap.copyTo(&bitmap_copy, bitmap.config());
-    bitmap_copy.setImmutable();
-  }
-
-  overhang_ui_resource_ = ScopedUIResource::Create(
-      this, UIResourceBitmap(bitmap_copy, UIResourceBitmap::REPEAT));
+  scoped_refptr<UIResourceBitmap> overhang_ui_bitmap(UIResourceBitmap::Create(
+      new uint8_t[bitmap.width() * bitmap.height() * bitmap.bytesPerPixel()],
+      UIResourceBitmap::RGBA8,
+      UIResourceBitmap::REPEAT,
+      gfx::Size(bitmap.width(), bitmap.height())));
+  bitmap.copyPixelsTo(
+      overhang_ui_bitmap->GetPixels(),
+      bitmap.width() * bitmap.height() * bitmap.bytesPerPixel(),
+      bitmap.width() * bitmap.bytesPerPixel());
+  overhang_ui_resource_ = ScopedUIResource::Create(this, overhang_ui_bitmap);
 }
 
 void LayerTreeHost::SetVisible(bool visible) {
@@ -781,6 +771,9 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     UpdateHudLayer();
 
     Layer* root_scroll = FindFirstScrollableLayer(root_layer);
+    Layer* page_scale_layer = page_scale_layer_;
+    if (!page_scale_layer && root_scroll)
+      page_scale_layer = root_scroll->parent();
 
     if (hud_layer_) {
       hud_layer_->PrepareForCalculateDrawProperties(
@@ -794,7 +787,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         gfx::Transform(),
         device_scale_factor_,
         page_scale_factor_,
-        root_scroll ? root_scroll->parent() : NULL,
+        page_scale_layer,
         GetRendererCapabilities().max_texture_size,
         settings_.can_use_lcd_text,
         settings_.layer_transforms_should_scale_layer_contents,
@@ -937,7 +930,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
 
     size_t bytes =
         Resource::MemorySizeBytes(render_surface->content_rect().size(),
-                                  GL_RGBA);
+                                  RGBA_8888);
     contents_texture_bytes += bytes;
 
     if (render_surface_layer->background_filters().IsEmpty())
@@ -947,7 +940,7 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
       max_background_texture_bytes = bytes;
     if (!readback_bytes) {
       readback_bytes = Resource::MemorySizeBytes(device_viewport_size_,
-                                                 GL_RGBA);
+                                                 RGBA_8888);
     }
   }
   return readback_bytes + max_background_texture_bytes + contents_texture_bytes;
@@ -1169,22 +1162,18 @@ void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
 UIResourceId LayerTreeHost::CreateUIResource(UIResourceClient* client) {
   DCHECK(client);
 
-  UIResourceId next_id = next_ui_resource_id_++;
-  DCHECK(ui_resource_client_map_.find(next_id) ==
+  UIResourceRequest request;
+  bool resource_lost = false;
+  request.type = UIResourceRequest::UIResourceCreate;
+  request.id = next_ui_resource_id_++;
+
+  DCHECK(ui_resource_client_map_.find(request.id) ==
          ui_resource_client_map_.end());
 
-  bool resource_lost = false;
-  UIResourceRequest request(UIResourceRequest::UIResourceCreate,
-                            next_id,
-                            client->GetBitmap(next_id, resource_lost));
+  request.bitmap = client->GetBitmap(request.id, resource_lost);
   ui_resource_request_queue_.push_back(request);
-
-  UIResourceClientData data;
-  data.client = client;
-  data.size = request.GetBitmap().GetSize();
-
-  ui_resource_client_map_[request.GetId()] = data;
-  return request.GetId();
+  ui_resource_client_map_[request.id] = client;
+  return request.id;
 }
 
 // Deletes a UI resource.  May safely be called more than once.
@@ -1193,9 +1182,11 @@ void LayerTreeHost::DeleteUIResource(UIResourceId uid) {
   if (iter == ui_resource_client_map_.end())
     return;
 
-  UIResourceRequest request(UIResourceRequest::UIResourceDelete, uid);
+  UIResourceRequest request;
+  request.type = UIResourceRequest::UIResourceDelete;
+  request.id = uid;
   ui_resource_request_queue_.push_back(request);
-  ui_resource_client_map_.erase(iter);
+  ui_resource_client_map_.erase(uid);
 }
 
 void LayerTreeHost::RecreateUIResources() {
@@ -1203,23 +1194,23 @@ void LayerTreeHost::RecreateUIResources() {
        iter != ui_resource_client_map_.end();
        ++iter) {
     UIResourceId uid = iter->first;
-    const UIResourceClientData& data = iter->second;
+    UIResourceRequest request;
+    request.type = UIResourceRequest::UIResourceCreate;
+    request.id = uid;
     bool resource_lost = true;
-    UIResourceRequest request(UIResourceRequest::UIResourceCreate,
-                              uid,
-                              data.client->GetBitmap(uid, resource_lost));
+    request.bitmap = iter->second->GetBitmap(uid, resource_lost);
+    DCHECK(request.bitmap.get());
     ui_resource_request_queue_.push_back(request);
   }
 }
 
-// Returns the size of a resource given its id.
-gfx::Size LayerTreeHost::GetUIResourceSize(UIResourceId uid) const {
-  UIResourceClientMap::const_iterator iter = ui_resource_client_map_.find(uid);
-  if (iter == ui_resource_client_map_.end())
-    return gfx::Size();
-
-  const UIResourceClientData& data = iter->second;
-  return data.size;
+void LayerTreeHost::RegisterViewportLayers(
+    scoped_refptr<Layer> page_scale_layer,
+    scoped_refptr<Layer> inner_viewport_scroll_layer,
+    scoped_refptr<Layer> outer_viewport_scroll_layer) {
+  page_scale_layer_ = page_scale_layer;
+  inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
+  outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
 }  // namespace cc

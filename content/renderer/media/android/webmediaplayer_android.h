@@ -95,6 +95,7 @@ class WebMediaPlayerAndroid
   // Playback controls.
   virtual void play();
   virtual void pause();
+  virtual void pause(bool is_media_related_action);
   virtual void seek(double seconds);
   virtual bool supportsFullscreen() const;
   virtual bool supportsSave() const;
@@ -156,20 +157,17 @@ class WebMediaPlayerAndroid
       OVERRIDE;
 
   // Media player callback handlers.
-  void OnMediaMetadataChanged(base::TimeDelta duration, int width,
+  void OnMediaMetadataChanged(const base::TimeDelta& duration, int width,
                               int height, bool success);
   void OnPlaybackComplete();
   void OnBufferingUpdate(int percentage);
-  void OnSeekComplete(base::TimeDelta current_time);
+  void OnSeekComplete(const base::TimeDelta& current_time);
   void OnMediaError(int error_type);
   void OnVideoSizeChanged(int width, int height);
-  void OnMediaSeekRequest(base::TimeDelta time_to_seek,
-                          unsigned seek_request_id);
-  void OnMediaConfigRequest();
-  void OnDurationChange(const base::TimeDelta& duration);
+  void OnDurationChanged(const base::TimeDelta& duration);
 
   // Called to update the current time.
-  void OnTimeUpdate(base::TimeDelta current_time);
+  void OnTimeUpdate(const base::TimeDelta& current_time);
 
   // Functions called when media player status changes.
   void OnMediaPlayerPlay();
@@ -232,9 +230,6 @@ class WebMediaPlayerAndroid
                          media::Demuxer* demuxer,
                          const base::Closure& destroy_demuxer_cb);
 #endif
-
-  // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
-  void OnReadFromDemuxer(media::DemuxerStream::Type type);
 
  protected:
   // Helper method to update the playing state.
@@ -314,7 +309,7 @@ class WebMediaPlayerAndroid
   base::TimeDelta duration_;
 
   // Flag to remember if we have a trusted duration_ value provided by
-  // MediaSourceDelegate notifying OnDurationChange(). In this case, ignore
+  // MediaSourceDelegate notifying OnDurationChanged(). In this case, ignore
   // any subsequent duration value passed to OnMediaMetadataChange().
   bool ignore_metadata_duration_change_;
 
@@ -398,6 +393,10 @@ class WebMediaPlayerAndroid
 
   scoped_ptr<MediaSourceDelegate,
              MediaSourceDelegate::Destroyer> media_source_delegate_;
+
+  // Internal pending playback state.
+  // Store a playback request that cannot be started immediately.
+  bool pending_playback_;
 
   MediaPlayerHostMsg_Initialize_Type player_type_;
 

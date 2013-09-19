@@ -20,9 +20,9 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/hit_test.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/corewm/compound_event_filter.h"
 #include "ui/views/corewm/corewm_switches.h"
@@ -570,7 +570,7 @@ TEST_F(WindowManagerTest, MouseEventCursors) {
   }
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_WIN)
 #define MAYBE_TransformActivate DISABLED_TransformActivate
 #else
 #define MAYBE_TransformActivate TransformActivate
@@ -596,7 +596,7 @@ TEST_F(WindowManagerTest, MAYBE_TransformActivate) {
   w1->Show();
 
   gfx::Point miss_point(5, 5);
-  transform.TransformPoint(miss_point);
+  transform.TransformPoint(&miss_point);
   ui::MouseEvent mouseev1(ui::ET_MOUSE_PRESSED,
                           miss_point,
                           miss_point,
@@ -610,7 +610,7 @@ TEST_F(WindowManagerTest, MAYBE_TransformActivate) {
   root_window->AsRootWindowHostDelegate()->OnHostMouseEvent(&mouseup);
 
   gfx::Point hit_point(5, 15);
-  transform.TransformPoint(hit_point);
+  transform.TransformPoint(&hit_point);
   ui::MouseEvent mouseev2(ui::ET_MOUSE_PRESSED,
                           hit_point,
                           hit_point,

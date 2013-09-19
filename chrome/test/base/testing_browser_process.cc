@@ -10,6 +10,7 @@
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_impl.h"
+#include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
@@ -244,7 +245,14 @@ bool TestingBrowserProcess::IsShuttingDown() {
 }
 
 printing::PrintJobManager* TestingBrowserProcess::print_job_manager() {
+#if defined(ENABLE_FULL_PRINTING)
+  if (!print_job_manager_.get())
+    print_job_manager_.reset(new printing::PrintJobManager());
+  return print_job_manager_.get();
+#else
+  NOTIMPLEMENTED();
   return NULL;
+#endif
 }
 
 printing::PrintPreviewDialogController*
@@ -327,7 +335,7 @@ BookmarkPromptController* TestingBrowserProcess::bookmark_prompt_controller() {
 #endif
 }
 
-chrome::StorageMonitor* TestingBrowserProcess::storage_monitor() {
+StorageMonitor* TestingBrowserProcess::storage_monitor() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return NULL;
@@ -336,14 +344,13 @@ chrome::StorageMonitor* TestingBrowserProcess::storage_monitor() {
 #endif
 }
 
-chrome::MediaFileSystemRegistry*
-TestingBrowserProcess::media_file_system_registry() {
+MediaFileSystemRegistry* TestingBrowserProcess::media_file_system_registry() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return NULL;
 #else
   if (!media_file_system_registry_)
-    media_file_system_registry_.reset(new chrome::MediaFileSystemRegistry());
+    media_file_system_registry_.reset(new MediaFileSystemRegistry());
   return media_file_system_registry_.get();
 #endif
 }
@@ -416,7 +423,7 @@ void TestingBrowserProcess::SetSafeBrowsingService(
 }
 
 void TestingBrowserProcess::SetStorageMonitor(
-    scoped_ptr<chrome::StorageMonitor> storage_monitor) {
+    scoped_ptr<StorageMonitor> storage_monitor) {
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   storage_monitor_ = storage_monitor.Pass();
 #endif

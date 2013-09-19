@@ -11,7 +11,7 @@ namespace cc {
 TransferableResource::TransferableResource()
     : id(0),
       sync_point(0),
-      format(0),
+      format(RGBA_8888),
       filter(0) {
 }
 
@@ -22,7 +22,6 @@ ReturnedResource TransferableResource::ToReturnedResource() const {
   ReturnedResource returned;
   returned.id = id;
   returned.sync_point = sync_point;
-  returned.filter = filter;
   returned.count = 1;
   return returned;
 }

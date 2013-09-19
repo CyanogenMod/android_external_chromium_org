@@ -73,7 +73,6 @@
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_P" file="common/autofill_dialog_menu_button_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_H" file="common/autofill_dialog_menu_button_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_D" file="common/autofill_dialog_menu_button_disabled.png" />
-      <structure type="chrome_scaled_image" name="IDR_AUTOFILL_GENERATED_CARD" file="common/autofill_generated_card.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_TOOLTIP_ICON" file="common/autofill_tooltip_icon.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_TOOLTIP_ICON_H" file="common/autofill_tooltip_icon_hover.png" />
       <if expr="not pp_ifdef('toolkit_views') and not is_macosx and not is_ios">
@@ -175,6 +174,7 @@
       <structure type="chrome_scaled_image" name="IDR_COOKIE_ICON" file="cookie.png" />
       <structure type="chrome_scaled_image" name="IDR_COOKIE_STORAGE_ICON" file="cookie_storage.png" />
       <structure type="chrome_scaled_image" name="IDR_CREDIT_CARD_CVC_HINT" file="common/credit_card_cvc_hint.png" />
+      <structure type="chrome_scaled_image" name="IDR_CREDIT_CARD_CVC_HINT_AMEX" file="common/credit_card_cvc_hint_amex.png" />
       <if expr="pp_ifdef('chromeos')">
         <structure type="chrome_scaled_image" name="IDR_CRITICAL_ERROR" file="cros/critical_error.png" />
         <structure type="chrome_scaled_image" name="IDR_CROS_DEFAULT_THROBBER" file="cros/default_throbber.png" />
@@ -767,6 +767,7 @@
         <structure type="chrome_scaled_image" name="IDR_SUPERVISED_ILLUSTRATION_START" file="cros/supervised_illustration_start.png" />
         <structure type="chrome_scaled_image" name="IDR_SUPERVISED_ILLUSTRATION_DONE" file="cros/supervised_illsutration_done.png" />
       </if>
+      <structure type="chrome_scaled_image" name="IDR_SUPERVISED_USER_PLACEHOLDER" file="common/supervised_user_placeholder.png" />
       <if expr="not pp_ifdef('toolkit_views') and not is_macosx and not is_ios">
         <structure type="chrome_scaled_image" name="IDR_TAB_ACTIVE_CENTER" file="tab_active_center.png" />
         <structure type="chrome_scaled_image" name="IDR_TAB_ACTIVE_LEFT" file="tab_active_left.png" />

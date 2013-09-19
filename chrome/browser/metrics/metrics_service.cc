@@ -177,7 +177,6 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/metrics/compression_utils.h"
-#include "chrome/browser/metrics/gzipped_protobufs_field_trial.h"
 #include "chrome/browser/metrics/metrics_log.h"
 #include "chrome/browser/metrics/metrics_log_serializer.h"
 #include "chrome/browser/metrics/metrics_reporting_scheduler.h"
@@ -797,29 +796,53 @@ void MetricsService::RecordBreakpadHasDebugger(bool has_debugger) {
 
 #if defined(OS_WIN)
 void MetricsService::CountBrowserCrashDumpAttempts() {
-  base::string16 key_str(chrome::kBrowserCrashDumpAttemptsRegistryPath);
-  key_str += L"\\";
-  key_str += UTF8ToWide(chrome::kChromeVersion);
-
+  // Open the registry key for iteration.
   base::win::RegKey regkey;
   if (regkey.Open(HKEY_CURRENT_USER,
-                  key_str.c_str(),
+                  chrome::kBrowserCrashDumpAttemptsRegistryPath,
                   KEY_ALL_ACCESS) != ERROR_SUCCESS) {
     return;
   }
 
-  base::string16 temp_name;
-  DWORD temp_value = 0;
-  int crash_dump_attempts = 0;
+  // The values we're interested in counting are all prefixed with the version.
+  base::string16 chrome_version(base::ASCIIToUTF16(chrome::kChromeVersion));
+
+  // Track a list of values to delete. We don't modify the registry key while
+  // we're iterating over its values.
+  typedef std::vector<base::string16> StringVector;
+  StringVector to_delete;
+
+  // Iterate over the values in the key counting dumps with and without crashes.
+  // We directly walk the values instead of using RegistryValueIterator in order
+  // to read all of the values as DWORDS instead of strings.
+  base::string16 name;
+  DWORD value = 0;
+  int dumps_with_crash = 0;
+  int dumps_with_no_crash = 0;
   for (int i = regkey.GetValueCount() - 1; i >= 0; --i) {
-    if (regkey.GetValueNameAt(i, &temp_name) == ERROR_SUCCESS &&
-        regkey.ReadValueDW(temp_name.c_str(), &temp_value) == ERROR_SUCCESS) {
-      regkey.DeleteValue(temp_name.c_str());
-      if (temp_value != 0)
-        ++crash_dump_attempts;
+    if (regkey.GetValueNameAt(i, &name) == ERROR_SUCCESS &&
+        StartsWith(name, chrome_version, false) &&
+        regkey.ReadValueDW(name.c_str(), &value) == ERROR_SUCCESS) {
+      to_delete.push_back(name);
+      if (value == 0)
+        ++dumps_with_no_crash;
+      else
+        ++dumps_with_crash;
     }
   }
-  UMA_HISTOGRAM_COUNTS("Chrome.BrowserCrashDumpAttempts", crash_dump_attempts);
+
+  // Delete the registry keys we've just counted.
+  for (StringVector::iterator i = to_delete.begin(); i != to_delete.end(); ++i)
+    regkey.DeleteValue(i->c_str());
+
+  // Capture the histogram samples.
+  if (dumps_with_crash != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserDumpsWithCrash", dumps_with_crash);
+  if (dumps_with_no_crash != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserDumpsWithNoCrash", dumps_with_no_crash);
+  int total_dumps = dumps_with_crash + dumps_with_no_crash;
+  if (total_dumps != 0)
+    UMA_HISTOGRAM_COUNTS("Chrome.BrowserCrashDumpAttempts", total_dumps);
 }
 #endif  // defined(OS_WIN)
 
@@ -1409,34 +1432,23 @@ void MetricsService::PrepareFetchWithStagedLog() {
     current_fetch_->SetRequestContext(
         g_browser_process->system_request_context());
 
-    // Compress the protobufs 50% of the time. This can be used to see if
-    // compressed protobufs are being mishandled by machines between the
-    // client/server or monitoring programs/firewalls on the client.
-    bool gzip_protobuf_before_uploading =
-        metrics::ShouldGzipProtobufsBeforeUploading();
-    if (gzip_protobuf_before_uploading) {
-      std::string log_text = log_manager_.staged_log_text();
-      std::string compressed_log_text;
-      bool compression_successful = chrome::GzipCompress(log_text,
-                                                         &compressed_log_text);
-      DCHECK(compression_successful);
-      if (compression_successful) {
-        current_fetch_->SetUploadData(kMimeType, compressed_log_text);
-        // Tell the server that we're uploading gzipped protobufs.
-        current_fetch_->SetExtraRequestHeaders("content-encoding: gzip");
-        UMA_HISTOGRAM_PERCENTAGE(
-            "UMA.ProtoCompressionRatio",
-            100 * compressed_log_text.size() / log_text.size());
-        UMA_HISTOGRAM_CUSTOM_COUNTS(
-            "UMA.ProtoGzippedKBSaved",
-            (log_text.size() - compressed_log_text.size()) / 1024,
-            1, 2000, 50);
-      }
-    } else {
-      current_fetch_->SetUploadData(kMimeType, log_manager_.staged_log_text());
+    std::string log_text = log_manager_.staged_log_text();
+    std::string compressed_log_text;
+    bool compression_successful = chrome::GzipCompress(log_text,
+                                                       &compressed_log_text);
+    DCHECK(compression_successful);
+    if (compression_successful) {
+      current_fetch_->SetUploadData(kMimeType, compressed_log_text);
+      // Tell the server that we're uploading gzipped protobufs.
+      current_fetch_->SetExtraRequestHeaders("content-encoding: gzip");
+      UMA_HISTOGRAM_PERCENTAGE(
+          "UMA.ProtoCompressionRatio",
+          100 * compressed_log_text.size() / log_text.size());
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
+          "UMA.ProtoGzippedKBSaved",
+          (log_text.size() - compressed_log_text.size()) / 1024,
+          1, 2000, 50);
     }
-    UMA_HISTOGRAM_BOOLEAN("UMA.ProtoGzipped",
-                          gzip_protobuf_before_uploading);
 
     // We already drop cookies server-side, but we might as well strip them out
     // client-side as well.

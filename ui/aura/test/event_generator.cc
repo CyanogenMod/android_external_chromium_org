@@ -9,8 +9,8 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/root_window.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/vector2d_conversions.h"
 
 #if defined(USE_X11)
@@ -19,7 +19,7 @@
 #endif
 
 #if defined(OS_WIN)
-#include "ui/base/keycodes/keyboard_code_conversion.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
 namespace aura {

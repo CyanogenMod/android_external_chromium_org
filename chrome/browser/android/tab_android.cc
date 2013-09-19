@@ -14,6 +14,7 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/history/history_tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
 #include "chrome/browser/prerender/prerender_tab_helper.h"
@@ -28,7 +29,6 @@
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
-#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
@@ -75,7 +75,6 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
       autofill::TabAutofillManagerDelegate::FromWebContents(contents),
       g_browser_process->GetApplicationLocale(),
       autofill::AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER);
-  BlockedContentTabHelper::CreateForWebContents(contents);
   BookmarkTabHelper::CreateForWebContents(contents);
   CoreTabHelper::CreateForWebContents(contents);
   extensions::TabHelper::CreateForWebContents(contents);
@@ -83,6 +82,7 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
   FindTabHelper::CreateForWebContents(contents);
   HistoryTabHelper::CreateForWebContents(contents);
   InfoBarService::CreateForWebContents(contents);
+  chrome_browser_net::NetErrorTabHelper::CreateForWebContents(contents);
   PasswordManagerDelegateImpl::CreateForWebContents(contents);
   PasswordManager::CreateForWebContentsAndDelegate(
       contents, PasswordManagerDelegateImpl::FromWebContents(contents));
@@ -151,9 +151,6 @@ Profile* TabAndroid::GetProfile() const {
 
 browser_sync::SyncedTabDelegate* TabAndroid::GetSyncedTabDelegate() const {
   return synced_tab_delegate_.get();
-}
-
-void TabAndroid::RunExternalProtocolDialog(const GURL& url) {
 }
 
 void TabAndroid::SwapTabContents(content::WebContents* old_contents,

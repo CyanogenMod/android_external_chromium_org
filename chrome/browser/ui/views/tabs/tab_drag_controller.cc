@@ -16,6 +16,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/media_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -35,12 +36,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "grit/theme_resources.h"
-#include "ui/base/animation/animation.h"
-#include "ui/base/animation/animation_delegate.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
+#include "ui/gfx/animation/animation.h"
+#include "ui/gfx/animation/animation_delegate.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
@@ -235,7 +236,7 @@ class WindowPositionManagedUpdater : public views::WidgetObserver {
 // possible dock position (as represented by DockInfo). DockDisplayer shows
 // a window with a DockView in it. Two animations are used that correspond to
 // the state of DockInfo::in_enable_area.
-class TabDragController::DockDisplayer : public ui::AnimationDelegate {
+class TabDragController::DockDisplayer : public gfx::AnimationDelegate {
  public:
   DockDisplayer(TabDragController* controller, const DockInfo& info)
       : controller_(controller),
@@ -295,11 +296,11 @@ class TabDragController::DockDisplayer : public ui::AnimationDelegate {
     animation_.Hide();
   }
 
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE {
     UpdateLayeredAlpha();
   }
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     if (!hidden_)
       return;
     popup_->Close();
@@ -324,7 +325,7 @@ class TabDragController::DockDisplayer : public ui::AnimationDelegate {
   gfx::NativeView popup_view_;
 
   // Animation for when first made visible.
-  ui::SlideAnimation animation_;
+  gfx::SlideAnimation animation_;
 
   // Have we been hidden?
   bool hidden_;
@@ -376,8 +377,8 @@ TabDragController::TabDragController()
       waiting_for_run_loop_to_exit_(false),
       tab_strip_to_attach_to_after_exit_(NULL),
       move_loop_widget_(NULL),
-      destroyed_(NULL),
-      is_mutating_(false) {
+      is_mutating_(false),
+      weak_factory_(this) {
   instance_ = this;
 }
 
@@ -386,9 +387,6 @@ TabDragController::~TabDragController() {
 
   if (instance_ == this)
     instance_ = NULL;
-
-  if (destroyed_)
-    *destroyed_ = true;
 
   if (move_loop_widget_) {
     move_loop_widget_->RemoveObserver(this);
@@ -504,12 +502,10 @@ void TabDragController::Drag(const gfx::Point& point_in_screen) {
 
     // On windows SaveFocus() may trigger a capture lost, which destroys us.
     {
-      bool destroyed = false;
-      destroyed_ = &destroyed;
+      base::WeakPtr<TabDragController> ref(weak_factory_.GetWeakPtr());
       SaveFocus();
-      if (destroyed)
+      if (!ref)
         return;
-      destroyed_ = NULL;
     }
     started_drag_ = true;
     Attach(source_tabstrip_, gfx::Point());
@@ -625,6 +621,17 @@ bool TabDragController::ShouldSuppressDialogs() {
 content::JavaScriptDialogManager*
 TabDragController::GetJavaScriptDialogManager() {
   return GetJavaScriptDialogManagerInstance();
+}
+
+void TabDragController::RequestMediaAccessPermission(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    const content::MediaResponseCallback& callback) {
+  ::RequestMediaAccessPermission(
+      web_contents,
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()),
+      request,
+      callback);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1349,8 +1356,8 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
   Detach(DONT_RELEASE_CAPTURE);
   BrowserView* dragged_browser_view =
       BrowserView::GetBrowserViewForBrowser(browser);
-  dragged_browser_view->GetWidget()->SetVisibilityChangedAnimationsEnabled(
-      false);
+  views::Widget* dragged_widget = dragged_browser_view->GetWidget();
+  dragged_widget->SetVisibilityChangedAnimationsEnabled(false);
   Attach(dragged_browser_view->tabstrip(), gfx::Point());
 
   // If the window size has changed, the tab positioning will be quite off.
@@ -1360,7 +1367,7 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
     // while maintaining the same relative positions. This scales the tabs
     // down so that they occupy the same relative width on the new tab strip,
     // clamping to minimum tab width.
-      int available_attached_width = attached_tabstrip_->tab_area_width();
+    int available_attached_width = attached_tabstrip_->tab_area_width();
     float x_scale =
         static_cast<float>(available_attached_width) / available_source_width;
     int x_offset = std::ceil((1.0 - x_scale) * drag_bounds[0].x());
@@ -1399,13 +1406,17 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
   attached_tabstrip_->SetTabBoundsForDrag(drag_bounds);
 
   WindowPositionManagedUpdater updater;
-  dragged_browser_view->GetWidget()->AddObserver(&updater);
+  dragged_widget->AddObserver(&updater);
   browser->window()->Show();
-  dragged_browser_view->GetWidget()->RemoveObserver(&updater);
-
-  browser->window()->Activate();
-  dragged_browser_view->GetWidget()->SetVisibilityChangedAnimationsEnabled(
-      true);
+  dragged_widget->RemoveObserver(&updater);
+  dragged_widget->SetVisibilityChangedAnimationsEnabled(true);
+  // Activate may trigger a focus loss, destroying us.
+  {
+    base::WeakPtr<TabDragController> ref(weak_factory_.GetWeakPtr());
+    browser->window()->Activate();
+    if (!ref)
+      return;
+  }
   RunMoveLoop(drag_offset);
 }
 
@@ -1419,8 +1430,7 @@ void TabDragController::RunMoveLoop(const gfx::Vector2d& drag_offset) {
   SetTrackedByWorkspace(move_loop_widget_->GetNativeView(), false);
   move_loop_widget_->AddObserver(this);
   is_dragging_window_ = true;
-  bool destroyed = false;
-  destroyed_ = &destroyed;
+  base::WeakPtr<TabDragController> ref(weak_factory_.GetWeakPtr());
   // Running the move loop releases mouse capture on non-ash, which triggers
   // destroying the drag loop. Release mouse capture ourself before this while
   // the DragController isn't owned by the TabStrip.
@@ -1440,9 +1450,8 @@ void TabDragController::RunMoveLoop(const gfx::Vector2d& drag_offset) {
       content::NotificationService::AllBrowserContextsAndSources(),
       content::NotificationService::NoDetails());
 
-  if (destroyed)
+  if (!ref)
     return;
-  destroyed_ = NULL;
   // Under chromeos we immediately set the |move_loop_widget_| to NULL.
   if (move_loop_widget_) {
     move_loop_widget_->RemoveObserver(this);
@@ -2041,29 +2050,36 @@ void TabDragController::BringWindowUnderPointToFront(
       return;
 
 #if defined(USE_ASH)
-    // TODO(varkha): A better strategy would be for DragWindowController to
-    // be able to observe stacking changes to the phantom drag widget's
-    // siblings in order to keep it on top.
-    // One way is to implement a notification that is sent to a window parent's
-    // observers when a stacking order is changed among the children of that
-    // same parent. Note that OnWindowStackingChanged is sent only to the
-    // child that is the argument of one of the Window::StackChildX calls and
-    // not to all its siblings affected by the stacking change.
-    aura::Window* browser_window = widget_window->GetNativeView();
-    // Find a topmost non-popup window and stack the recipient browser window
-    // above it in order to avoid stacking the browser window on top of the
-    // phantom drag widget created by DragWindowController in a second display.
-    for (aura::Window::Windows::const_reverse_iterator it =
-         browser_window->parent()->children().rbegin();
-         it != browser_window->parent()->children().rend(); ++it) {
-      // If the iteration reached the recipient browser window then it is
-      // already topmost and it is safe to return early with no stacking change.
-      if (*it == browser_window)
-        return;
-      if ((*it)->type() != aura::client::WINDOW_TYPE_POPUP) {
-        widget_window->StackAbove(*it);
-        break;
+    if (host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH) {
+      // TODO(varkha): The code below ensures that the phantom drag widget
+      // is shown on top of browser windows. The code should be moved to ash/
+      // and the phantom should be able to assert its top-most state on its own.
+      // One strategy would be for DragWindowController to
+      // be able to observe stacking changes to the phantom drag widget's
+      // siblings in order to keep it on top. One way is to implement a
+      // notification that is sent to a window parent's observers when a
+      // stacking order is changed among the children of that same parent.
+      // Note that OnWindowStackingChanged is sent only to the child that is the
+      // argument of one of the Window::StackChildX calls and not to all its
+      // siblings affected by the stacking change.
+      aura::Window* browser_window = widget_window->GetNativeView();
+      // Find a topmost non-popup window and stack the recipient browser above
+      // it in order to avoid stacking the browser window on top of the phantom
+      // drag widget created by DragWindowController in a second display.
+      for (aura::Window::Windows::const_reverse_iterator it =
+           browser_window->parent()->children().rbegin();
+           it != browser_window->parent()->children().rend(); ++it) {
+        // If the iteration reached the recipient browser window then it is
+        // already topmost and it is safe to return with no stacking change.
+        if (*it == browser_window)
+          return;
+        if ((*it)->type() != aura::client::WINDOW_TYPE_POPUP) {
+          widget_window->StackAbove(*it);
+          break;
+        }
       }
+    } else {
+      widget_window->StackAtTop();
     }
 #else
     widget_window->StackAtTop();

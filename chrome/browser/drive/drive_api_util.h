@@ -9,6 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/google_apis/drive_common_callbacks.h"
+#include "chrome/browser/google_apis/drive_entry_kinds.h"
 #include "chrome/browser/google_apis/gdata_errorcode.h"
 
 class GURL;
@@ -18,8 +19,18 @@ class Value;
 }  // namespace base
 
 namespace google_apis {
+class AccountMetadata;
+class AppIcon;
+class AppList;
+class AppResource;
+class ChangeList;
+class ChangeResource;
+class DriveAppIcon;
+class FileList;
 class FileResource;
+class InstalledApp;
 class ResourceEntry;
+class ResourceList;
 }  // namespace google_apis
 
 namespace drive {
@@ -67,9 +78,44 @@ void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
                          google_apis::GDataErrorCode error,
                          scoped_ptr<base::Value> value);
 
+// Converts AccountMetadata to AboutResource.
+// Here, |root_resource_id| is also needed, as it is contained by AboutResource
+// but not by AccountMetadata.
+scoped_ptr<google_apis::AboutResource>
+ConvertAccountMetadataToAboutResource(
+    const google_apis::AccountMetadata& account_metadata,
+    const std::string& root_resource_id);
+
+// Converts AccountMetadata to AppList.
+scoped_ptr<google_apis::AppList>
+ConvertAccountMetadataToAppList(
+    const google_apis::AccountMetadata& account_metadata);
+
 // Converts ResourceEntry to FileResource.
 scoped_ptr<google_apis::FileResource>
 ConvertResourceEntryToFileResource(const google_apis::ResourceEntry& entry);
+
+// Returns the GData WAPI's Kind of the FileResource.
+google_apis::DriveEntryKind GetKind(
+    const google_apis::FileResource& file_resource);
+
+// Converts FileResource to ResourceEntry.
+scoped_ptr<google_apis::ResourceEntry>
+ConvertFileResourceToResourceEntry(
+    const google_apis::FileResource& file_resource);
+
+// Converts ChangeResource to ResourceEntry.
+scoped_ptr<google_apis::ResourceEntry>
+ConvertChangeResourceToResourceEntry(
+    const google_apis::ChangeResource& change_resource);
+
+// Converts FileList to ResourceList.
+scoped_ptr<google_apis::ResourceList>
+ConvertFileListToResourceList(const google_apis::FileList& file_list);
+
+// Converts ChangeList to ResourceList.
+scoped_ptr<google_apis::ResourceList>
+ConvertChangeListToResourceList(const google_apis::ChangeList& change_list);
 
 // The resource ID for the root directory for WAPI is defined in the spec:
 // https://developers.google.com/google-apps/documents-list/

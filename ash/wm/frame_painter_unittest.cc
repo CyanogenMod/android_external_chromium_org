@@ -9,9 +9,9 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/wm/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/wm/window_settings.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/frame_caption_button_container_view.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "grit/ash_resources.h"
@@ -119,7 +119,6 @@ FramePainter* CreateTestPainter(Widget* widget) {
   NonClientFrameView* frame_view = widget->non_client_view()->frame_view();
   ash::FrameCaptionButtonContainerView* container =
       new ash::FrameCaptionButtonContainerView(
-          frame_view,
           widget,
           ash::FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
   // Add the container to the widget's non-client frame view so that it will be
@@ -208,7 +207,7 @@ class FramePainterTest : public ash::test::AshTestBase {
 TEST_F(FramePainterTest, CreateAndDeleteSingleWindow) {
   // Ensure that creating/deleting a window works well and doesn't cause
   // crashes.  See crbug.com/155634
-  aura::RootWindow* root = Shell::GetActiveRootWindow();
+  aura::RootWindow* root = Shell::GetTargetRootWindow();
 
   scoped_ptr<Widget> widget(CreateTestWidget());
   scoped_ptr<FramePainter> painter(CreateTestPainter(widget.get()));
@@ -576,7 +575,7 @@ TEST_F(FramePainterTest, MinimalHeaderStyle) {
 TEST_F(FramePainterTest, TitleIconAlignment) {
   scoped_ptr<Widget> w(CreateTestWidget());
   FramePainter p;
-  ash::FrameCaptionButtonContainerView container(NULL, w.get(),
+  ash::FrameCaptionButtonContainerView container(w.get(),
       ash::FrameCaptionButtonContainerView::MINIMIZE_ALLOWED);
   views::View window_icon;
   window_icon.SetBounds(0, 0, 16, 16);

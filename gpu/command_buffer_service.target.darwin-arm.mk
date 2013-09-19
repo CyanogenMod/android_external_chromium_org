@@ -50,6 +50,7 @@ LOCAL_SRC_FILES := \
 	gpu/command_buffer/service/gl_state_restorer_impl.cc \
 	gpu/command_buffer/service/gpu_control_service.cc \
 	gpu/command_buffer/service/gpu_scheduler.cc \
+	gpu/command_buffer/service/gpu_state_tracer.cc \
 	gpu/command_buffer/service/gpu_switches.cc \
 	gpu/command_buffer/service/gpu_tracer.cc \
 	gpu/command_buffer/service/id_manager.cc \
@@ -110,7 +111,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -211,7 +212,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

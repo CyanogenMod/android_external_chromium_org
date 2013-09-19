@@ -11,23 +11,23 @@
 #include "base/debug/trace_event.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_utils.h"
 #include "ui/base/gestures/gesture_sequence.h"
-#include "ui/base/keycodes/keyboard_code_conversion_win.h"
 #include "ui/base/touch/touch_enabled.h"
-#include "ui/base/win/hwnd_util.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/shell.h"
 #include "ui/base/win/touch_input.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
-#include "ui/gfx/dpi_win.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/native_theme/native_theme_win.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/monitor_win.h"
@@ -393,7 +393,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       can_update_layered_window_(true),
       is_first_nccalc_(true),
       autohide_factory_(this),
-      did_gdi_clear_(false) {
+      id_generator_(0) {
 }
 
 HWNDMessageHandler::~HWNDMessageHandler() {
@@ -543,7 +543,7 @@ void HWNDMessageHandler::CenterWindow(const gfx::Size& size) {
   HWND parent = GetParent(hwnd());
   if (!IsWindow(hwnd()))
     parent = ::GetWindow(hwnd(), GW_OWNER);
-  ui::CenterAndSizeWindow(parent, hwnd(), size);
+  gfx::CenterAndSizeWindow(parent, hwnd(), size);
 }
 
 void HWNDMessageHandler::SetRegion(HRGN region) {
@@ -844,7 +844,7 @@ void HWNDMessageHandler::DispatchKeyEventPostIME(const ui::KeyEvent& key) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HWNDMessageHandler, ui::WindowImpl overrides:
+// HWNDMessageHandler, gfx::WindowImpl overrides:
 
 HICON HWNDMessageHandler::GetDefaultWindowIcon() const {
   if (use_system_default_icon_)
@@ -1375,18 +1375,6 @@ void HWNDMessageHandler::OnEnterSizeMove() {
 }
 
 LRESULT HWNDMessageHandler::OnEraseBkgnd(HDC dc) {
-  if (!did_gdi_clear_) {
-    // This is necessary (at least on Win8) to avoid white flashing in the
-    // titlebar area around the minimize/maximize/close buttons.
-    HDC dc = GetDC(hwnd());
-    RECT client_rect;
-    GetClientRect(hwnd(), &client_rect);
-    HBRUSH brush = CreateSolidBrush(0);
-    FillRect(dc, &client_rect, brush);
-    DeleteObject(brush);
-    ReleaseDC(hwnd(), dc);
-    did_gdi_clear_ = true;
-  }
   // Needed to prevent resize flicker.
   return 1;
 }
@@ -1526,7 +1514,7 @@ LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
     w_param = SendMessage(hwnd(), WM_NCHITTEST, 0,
                           MAKELPARAM(screen_point.x, screen_point.y));
     if (w_param == HTCAPTION || w_param == HTSYSMENU) {
-      ui::ShowSystemMenuAtPoint(hwnd(), gfx::Point(screen_point));
+      gfx::ShowSystemMenuAtPoint(hwnd(), gfx::Point(screen_point));
       return 0;
     }
   } else if (message == WM_NCLBUTTONDOWN && delegate_->IsUsingCustomFrame()) {
@@ -1586,7 +1574,12 @@ LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
             delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
   }
 
+  // There are cases where the code handling the message destroys the window,
+  // so use the weak ptr to check if destruction occured or not.
+  base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr());
   bool handled = delegate_->HandleMouseEvent(event);
+  if (!ref.get())
+    return 0;
   if (!handled && message == WM_NCLBUTTONDOWN && w_param != HTSYSMENU &&
       delegate_->IsUsingCustomFrame()) {
     // TODO(msw): Eliminate undesired painting, or re-evaluate this workaround.
@@ -1597,7 +1590,8 @@ LRESULT HWNDMessageHandler::OnMouseRange(UINT message,
     handled = true;
   }
 
-  SetMsgHandled(handled);
+  if (ref.get())
+    SetMsgHandled(handled);
   return 0;
 }
 
@@ -2105,9 +2099,11 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         ui::TouchEvent event(
             touch_event_type,
             gfx::Point(point.x, point.y),
-            input[i].dwID % ui::GestureSequence::kMaxGesturePoints,
+            id_generator_.GetGeneratedID(input[i].dwID),
             base::TimeDelta::FromMilliseconds(input[i].dwTime));
         touch_events.push_back(event);
+        if (touch_event_type == ui::ET_TOUCH_RELEASED)
+          id_generator_.ReleaseNumber(input[i].dwID);
       }
     }
     // Handle the touch events asynchronously. We need this because touch

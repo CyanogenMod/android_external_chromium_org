@@ -745,7 +745,7 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // and happens to currently be invalid -- in which case we again want to run
   // our checks below.  Other QUERY cases are less likely to be URLs and thus we
   // assume we're OK.
-  if (!LowerCaseEqualsASCII(input_.scheme(), chrome::kHttpScheme) &&
+  if (!LowerCaseEqualsASCII(input_.scheme(), content::kHttpScheme) &&
       !LowerCaseEqualsASCII(input_.scheme(), content::kHttpsScheme) &&
       !LowerCaseEqualsASCII(input_.scheme(), chrome::kFtpScheme))
     return (input_.type() == AutocompleteInput::QUERY);
@@ -1022,7 +1022,8 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
   AddHistoryResultsToMap(default_history_results_, false,
                          did_not_accept_default_suggestion, &map);
 
-  AddSuggestResultsToMap(keyword_results_.suggest_results, std::string(), &map);
+  AddSuggestResultsToMap(keyword_results_.suggest_results,
+                         keyword_results_.metadata, &map);
   AddSuggestResultsToMap(default_results_.suggest_results,
                          default_results_.metadata, &map);
 

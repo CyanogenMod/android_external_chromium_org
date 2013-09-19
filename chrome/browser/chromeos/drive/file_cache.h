@@ -15,6 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
+#include "chrome/browser/drive/drive_service_interface.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -42,11 +43,6 @@ namespace internal {
 typedef base::Callback<void(FileError error,
                             const base::FilePath& cache_file_path)>
     GetFileFromCacheCallback;
-
-// Callback for ClearAllOnUIThread.
-// |success| indicates if the operation was successful.
-// TODO(satorux): Change this to FileError when it becomes necessary.
-typedef base::Callback<void(bool success)> ClearAllCallback;
 
 // Interface class used for getting the free disk space. Tests can inject an
 // implementation that reports fake free disk space.
@@ -206,12 +202,8 @@ class FileCache {
   // Synchronous version of RemoveOnUIThread().
   FileError Remove(const std::string& id);
 
-  // Does the following:
-  // - remove all the files in the cache directory.
-  // - re-create the |metadata_| instance.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void ClearAllOnUIThread(const ClearAllCallback& callback);
+  // Removes all the files in the cache directory and cache entries in DB.
+  bool ClearAll();
 
   // Initializes the cache. Returns true on success.
   bool Initialize();
@@ -220,6 +212,10 @@ class FileCache {
   // runner to safely delete the object.
   // Must be called on the UI thread.
   void Destroy();
+
+  // Converts entry IDs and cache file names to the desired format.
+  // TODO(hashimoto): Remove this method at some point.
+  bool CanonicalizeIDs(const ResourceIdCanonicalizer& id_canonicalizer);
 
  private:
   friend class FileCacheTest;
@@ -249,9 +245,6 @@ class FileCache {
 
   // Used to implement MarkAsUnmountedOnUIThread.
   FileError MarkAsUnmounted(const base::FilePath& file_path);
-
-  // Used to implement ClearAllOnUIThread.
-  bool ClearAll();
 
   // Returns true if we have sufficient space to store the given number of
   // bytes, while keeping kMinFreeSpace bytes on the disk.

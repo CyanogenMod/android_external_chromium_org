@@ -266,7 +266,6 @@ TEST(ScrollbarLayerTest, SolidColorDrawQuads) {
   const int kTrackLength = 100;
 
   LayerTreeSettings layer_tree_settings;
-  layer_tree_settings.solid_color_scrollbar_thickness_dip = kThumbThickness;
   scoped_ptr<FakeLayerTreeHost> host =
       FakeLayerTreeHost::Create(layer_tree_settings);
 
@@ -329,7 +328,6 @@ TEST(ScrollbarLayerTest, LayerDrivenSolidColorDrawQuads) {
   const int kTrackLength = 10;
 
   LayerTreeSettings layer_tree_settings;
-  layer_tree_settings.solid_color_scrollbar_thickness_dip = 3;
   scoped_ptr<FakeLayerTreeHost> host =
       FakeLayerTreeHost::Create(layer_tree_settings);
 
@@ -527,8 +525,7 @@ class MockLayerTreeHost : public LayerTreeHost {
   virtual UIResourceId CreateUIResource(UIResourceClient* content) OVERRIDE {
     total_ui_resource_created_++;
     UIResourceId nid = next_id_++;
-    ui_resource_bitmap_map_.insert(
-        std::make_pair(nid, content->GetBitmap(nid, false)));
+    ui_resource_bitmap_map_[nid] = content->GetBitmap(nid, false);
     return nid;
   }
 
@@ -547,13 +544,13 @@ class MockLayerTreeHost : public LayerTreeHost {
 
   gfx::Size ui_resource_size(UIResourceId id) {
     UIResourceBitmapMap::iterator iter = ui_resource_bitmap_map_.find(id);
-    if (iter != ui_resource_bitmap_map_.end())
-      return iter->second.GetSize();
+    if (iter != ui_resource_bitmap_map_.end() && iter->second.get())
+      return iter->second->GetSize();
     return gfx::Size();
   }
 
  private:
-  typedef base::hash_map<UIResourceId, UIResourceBitmap>
+  typedef base::hash_map<UIResourceId, scoped_refptr<UIResourceBitmap> >
       UIResourceBitmapMap;
   UIResourceBitmapMap ui_resource_bitmap_map_;
 

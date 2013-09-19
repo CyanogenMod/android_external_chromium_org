@@ -15,6 +15,10 @@
 
 namespace local_discovery {
 
+namespace {
+ServiceDiscoverySharedClient* g_service_discovery_client = NULL;
+}  // namespace
+
 using content::BrowserThread;
 using content::UtilityProcessHost;
 
@@ -44,8 +48,7 @@ class ServiceDiscoveryHostClient::ServiceWatcherProxy : public ServiceWatcher {
   }
 
   virtual void DiscoverNewServices(bool force_update) OVERRIDE {
-    DVLOG(1) << "ServiceWatcher::DiscoverNewServices with id "
-            << id_;
+    DVLOG(1) << "ServiceWatcher::DiscoverNewServices with id " << id_;
     DCHECK(started_);
     host_->Send(new LocalDiscoveryMsg_DiscoverServices(id_, force_update));
   }
@@ -81,9 +84,7 @@ class ServiceDiscoveryHostClient::ServiceResolverProxy
   }
 
   virtual void StartResolving() OVERRIDE {
-    DVLOG(1)
-        << "ServiceResolverProxy::StartResolving with id "
-        << id_;
+    DVLOG(1) << "ServiceResolverProxy::StartResolving with id " << id_;
     DCHECK(!started_);
     host_->Send(new LocalDiscoveryMsg_ResolveService(id_, service_name_));
     started_ = true;
@@ -115,16 +116,14 @@ class ServiceDiscoveryHostClient::LocalDomainResolverProxy
   }
 
   virtual ~LocalDomainResolverProxy() {
-    DVLOG(1) << "~LocalDomainResolverProxy with id "
-            << id_;
+    DVLOG(1) << "~LocalDomainResolverProxy with id " << id_;
     host_->UnregisterLocalDomainResolverCallback(id_);
     if (started_)
       host_->Send(new LocalDiscoveryMsg_DestroyLocalDomainResolver(id_));
   }
 
   virtual void Start() OVERRIDE {
-    DVLOG(1) << "LocalDomainResolverProxy::Start with id "
-            << id_;
+    DVLOG(1) << "LocalDomainResolverProxy::Start with id " << id_;
     DCHECK(!started_);
     host_->Send(new LocalDiscoveryMsg_ResolveLocalDomain(id_, domain_,
                                                          address_family_));
@@ -141,6 +140,7 @@ class ServiceDiscoveryHostClient::LocalDomainResolverProxy
 
 ServiceDiscoveryHostClient::ServiceDiscoveryHostClient() : current_id_(0) {
   callback_runner_ = base::MessageLoop::current()->message_loop_proxy();
+  io_runner_ = BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
 }
 
 ServiceDiscoveryHostClient::~ServiceDiscoveryHostClient() {
@@ -220,24 +220,21 @@ void ServiceDiscoveryHostClient::UnregisterLocalDomainResolverCallback(
 
 void ServiceDiscoveryHostClient::Start() {
   DCHECK(CalledOnValidThread());
-  net::NetworkChangeNotifier::AddIPAddressObserver(this);
-  BrowserThread::PostTask(
-      BrowserThread::IO,
+  io_runner_->PostTask(
       FROM_HERE,
       base::Bind(&ServiceDiscoveryHostClient::StartOnIOThread, this));
 }
 
 void ServiceDiscoveryHostClient::Shutdown() {
-  net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
   DCHECK(CalledOnValidThread());
-  BrowserThread::PostTask(
-      BrowserThread::IO,
+  io_runner_->PostTask(
       FROM_HERE,
       base::Bind(&ServiceDiscoveryHostClient::ShutdownOnIOThread, this));
 }
 
 void ServiceDiscoveryHostClient::StartOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(!utility_host_);
   utility_host_ = UtilityProcessHost::Create(
       this, base::MessageLoopProxy::current().get())->AsWeakPtr();
   if (utility_host_) {
@@ -270,17 +267,9 @@ void ServiceDiscoveryHostClient::ShutdownOnIOThread() {
   }
 }
 
-void ServiceDiscoveryHostClient::RestartOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  ShutdownOnIOThread();
-  StartOnIOThread();
-}
-
 void ServiceDiscoveryHostClient::Send(IPC::Message* msg) {
   DCHECK(CalledOnValidThread());
-  BrowserThread::PostTask(
-      BrowserThread::IO,
+  io_runner_->PostTask(
       FROM_HERE,
       base::Bind(&ServiceDiscoveryHostClient::SendOnIOThread, this, msg));
 }
@@ -289,23 +278,6 @@ void ServiceDiscoveryHostClient::SendOnIOThread(IPC::Message* msg) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (utility_host_)
     utility_host_->Send(msg);
-}
-
-void ServiceDiscoveryHostClient::OnIPAddressChanged() {
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&ServiceDiscoveryHostClient::RestartOnIOThread, this));
-
-  WatcherCallbacks service_watcher_callbacks;
-  service_watcher_callbacks_.swap(service_watcher_callbacks);
-
-  for (WatcherCallbacks::iterator i = service_watcher_callbacks.begin();
-       i != service_watcher_callbacks.end(); i++) {
-    if (!i->second.is_null()) {
-      i->second.Run(ServiceWatcher::UPDATE_INVALIDATED, "");
-    }
-  }
 }
 
 bool ServiceDiscoveryHostClient::OnMessageReceived(
@@ -321,6 +293,20 @@ bool ServiceDiscoveryHostClient::OnMessageReceived(
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void ServiceDiscoveryHostClient::InvalidateWatchers() {
+  WatcherCallbacks service_watcher_callbacks;
+  service_watcher_callbacks_.swap(service_watcher_callbacks);
+  service_resolver_callbacks_.clear();
+  domain_resolver_callbacks_.clear();
+
+  for (WatcherCallbacks::iterator i = service_watcher_callbacks.begin();
+       i != service_watcher_callbacks.end(); i++) {
+    if (!i->second.is_null()) {
+      i->second.Run(ServiceWatcher::UPDATE_INVALIDATED, "");
+    }
+  }
 }
 
 void ServiceDiscoveryHostClient::OnWatcherCallback(
@@ -388,48 +374,78 @@ void ServiceDiscoveryHostClient::RunLocalDomainResolverCallback(
     it->second.Run(success, ip_address_ipv4, ip_address_ipv6);
 }
 
-ServiceDiscoveryHostClientFactory::ServiceDiscoveryHostClientFactory()
-    : instance_(NULL), references_(0) {
-}
-
-ServiceDiscoveryHostClientFactory::~ServiceDiscoveryHostClientFactory() {
-}
-
-// static
-ServiceDiscoveryHostClient* ServiceDiscoveryHostClientFactory::GetClient() {
-  return GetInstance()->GetClientInternal();
-}
-
-// static
-void ServiceDiscoveryHostClientFactory::ReleaseClient() {
-  GetInstance()->ReleaseClientInternal();
-}
-
-// static
-ServiceDiscoveryHostClientFactory*
-ServiceDiscoveryHostClientFactory::GetInstance() {
-  return Singleton<ServiceDiscoveryHostClientFactory>::get();
-}
-
-ServiceDiscoveryHostClient*
-ServiceDiscoveryHostClientFactory::GetClientInternal() {
+scoped_ptr<ServiceWatcher> ServiceDiscoverySharedClient::CreateServiceWatcher(
+    const std::string& service_type,
+    const ServiceWatcher::UpdatedCallback& callback) {
   DCHECK(CalledOnValidThread());
-  if (references_ == 0) {
-    instance_ = new ServiceDiscoveryHostClient;
-    instance_->Start();
-  }
-
-  references_++;
-  return instance_.get();
+  return host_client_->CreateServiceWatcher(service_type, callback);
 }
 
-void ServiceDiscoveryHostClientFactory::ReleaseClientInternal() {
+scoped_ptr<ServiceResolver> ServiceDiscoverySharedClient::CreateServiceResolver(
+    const std::string& service_name,
+    const ServiceResolver::ResolveCompleteCallback& callback) {
   DCHECK(CalledOnValidThread());
-  references_--;
-  if (references_ == 0) {
-    instance_->Shutdown();
-    instance_ = NULL;
-  }
+  return host_client_->CreateServiceResolver(service_name, callback);
+}
+
+scoped_ptr<LocalDomainResolver>
+ServiceDiscoverySharedClient::CreateLocalDomainResolver(
+    const std::string& domain,
+    net::AddressFamily address_family,
+    const LocalDomainResolver::IPAddressCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  return host_client_->CreateLocalDomainResolver(domain, address_family,
+                                                 callback);
+}
+
+ServiceDiscoverySharedClient::ServiceDiscoverySharedClient() {
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
+  DCHECK(!g_service_discovery_client);
+  g_service_discovery_client = this;
+  host_client_ = new ServiceDiscoveryHostClient();
+  host_client_->Start();
+}
+
+ServiceDiscoverySharedClient::~ServiceDiscoverySharedClient() {
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
+  DCHECK_EQ(g_service_discovery_client, this);
+  g_service_discovery_client = NULL;
+  host_client_->Shutdown();
+}
+
+
+
+void ServiceDiscoverySharedClient::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType type) {
+  DCHECK(CalledOnValidThread());
+  host_client_->Shutdown();
+  network_change_callback_.Reset(
+      base::Bind(&ServiceDiscoverySharedClient::StartNewClient,
+                 base::Unretained(this)));  // Unretained to avoid ref cycle.
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      network_change_callback_.callback(),
+      base::TimeDelta::FromSeconds(3));
+}
+
+void ServiceDiscoverySharedClient::StartNewClient() {
+  DCHECK(CalledOnValidThread());
+  scoped_refptr<ServiceDiscoveryHostClient> old_client = host_client_;
+  host_client_ = new ServiceDiscoveryHostClient();
+  host_client_->Start();
+  // Run when host_client_ is created. Callbacks created by InvalidateWatchers
+  // may create new watchers.
+  old_client->InvalidateWatchers();
+}
+
+scoped_refptr<ServiceDiscoverySharedClient>
+    ServiceDiscoverySharedClient::GetInstance() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (g_service_discovery_client)
+    return g_service_discovery_client;
+
+  return new ServiceDiscoverySharedClient();
 }
 
 }  // namespace local_discovery

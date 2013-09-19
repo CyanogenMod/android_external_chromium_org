@@ -22,8 +22,6 @@
 #include "cc/output/compositor_frame.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
-#include "cc/resources/scoped_ui_resource.h"
-#include "cc/resources/ui_resource_bitmap.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
@@ -235,12 +233,9 @@ void CompositorImpl::SetSurface(jobject surface) {
 
 void CompositorImpl::SetVisible(bool visible) {
   if (!visible) {
-    ui_resource_map_.clear();
     host_.reset();
-    client_->UIResourcesAreInvalid();
   } else if (!host_) {
     cc::LayerTreeSettings settings;
-    settings.compositor_name = "BrowserCompositor";
     settings.refresh_rate = 60.0;
     settings.impl_side_painting = false;
     settings.allow_antialiasing = false;
@@ -265,9 +260,6 @@ void CompositorImpl::SetVisible(bool visible) {
     host_->SetLayerTreeHostClientReady();
     host_->SetViewportSize(size_);
     host_->set_has_transparent_background(has_transparent_background_);
-    // Need to recreate the UI resources because a new LayerTreeHost has been
-    // created.
-    client_->DidLoseUIResources();
   }
 }
 
@@ -297,23 +289,6 @@ bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
     return host_->CompositeAndReadback(pixels, rect);
   else
     return false;
-}
-
-cc::UIResourceId CompositorImpl::GenerateUIResource(
-    const cc::UIResourceBitmap& bitmap) {
-  if (!host_)
-    return 0;
-  scoped_ptr<cc::ScopedUIResource> ui_resource =
-      cc::ScopedUIResource::Create(host_.get(), bitmap);
-  cc::UIResourceId id = ui_resource->id();
-  ui_resource_map_.set(id, ui_resource.Pass());
-  return id;
-}
-
-void CompositorImpl::DeleteUIResource(cc::UIResourceId resource_id) {
-  UIResourceMap::iterator it = ui_resource_map_.find(resource_id);
-  if (it != ui_resource_map_.end())
-    ui_resource_map_.erase(it);
 }
 
 WebKit::WebGLId CompositorImpl::GenerateTexture(gfx::JavaBitmap& bitmap) {
@@ -435,7 +410,8 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface(
         WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
             attrs, window_);
     scoped_refptr<webkit::gpu::ContextProviderInProcess> context_provider =
-        webkit::gpu::ContextProviderInProcess::Create(context3d.Pass());
+        webkit::gpu::ContextProviderInProcess::Create(context3d.Pass(),
+                                                      "BrowserCompositor");
 
     scoped_ptr<cc::OutputSurface> output_surface;
     if (!window_)
@@ -450,11 +426,12 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface(
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider =
       ContextProviderCommandBuffer::Create(CreateGpuProcessViewContext(
-          attrs, surface_id_, weak_factory_.GetWeakPtr()));
+          attrs, surface_id_, weak_factory_.GetWeakPtr()), "BrowserCompositor");
   if (!context_provider.get()) {
     LOG(ERROR) << "Failed to create 3D context for compositor.";
     return scoped_ptr<cc::OutputSurface>();
   }
+
   return scoped_ptr<cc::OutputSurface>(
       new OutputSurfaceWithoutParent(context_provider));
 }

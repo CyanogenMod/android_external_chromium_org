@@ -323,6 +323,10 @@ const char kDisableDefaultApps[]            = "disable-default-apps";
 // Disables device discovery.
 const char kDisableDeviceDiscovery[]        = "disable-device-discovery";
 
+// Disables device discovery notifications.
+const char kDisableDeviceDiscoveryNotifications[] =
+    "disable-device-discovery-notifications";
+
 // Disables retrieval of PAC URLs from DHCP as per the WPAD standard.
 const char kDisableDhcpWpad[]               = "disable-dhcp-wpad";
 
@@ -510,6 +514,14 @@ const char kDnsLogDetails[]                 = "dns-log-details";
 // Disables prefetching of DNS information.
 const char kDnsPrefetchDisable[]            = "dns-prefetch-disable";
 
+// If set, Flash fullscreen widgets are embedded within the browser window and
+// with the same UX as HTML5 fullscreen.
+//
+// TODO(miu): This feature is a work in-progress.  It should not be enabled by
+// default until going through a formal UX review, and all comments/concerns on
+// the crbug are addressed.  http://crbug.com/290403
+const char kEmbedFlashFullscreen[] = "embed-flash-fullscreen";
+
 // Enables the <adview> tag in packaged apps.
 const char kEnableAdview[]                  = "enable-adview";
 
@@ -547,6 +559,9 @@ const char kEnableBatchedShutdown[]         = "enable-batched-shutdown";
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
+// Enables pushing cloud policy to Chrome using an invalidation service.
+const char kEnableCloudPolicyPush[]         = "enable-cloud-policy-push";
+
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
 const char kEnableCloudPrintProxy[]         = "enable-cloud-print-proxy";
@@ -565,6 +580,9 @@ const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 // Force-enables DNS probes on main frame DNS errors.  (The user must still
 // opt in to "Use web service to resolve navigation errors".)
 const char kEnableDnsProbes[]               = "enable-dns-probes";
+
+// Enables the DOM distiller.
+const char kEnableDomDistiller[]               = "enable-dom-distiller";
 
 // Enables extensions to be easily installed from sites other than the web
 // store. Without this flag, they can still be installed, but must be manually
@@ -1489,6 +1507,9 @@ const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)
+// Makes the "Add to Homescreen" shortcut invisible.
+const char kDisableAddToHomescreen[]         = "disable-add-to-homescreen";
+
 // Disables the new NTP.
 const char kDisableNewNTP[]                  = "disable-new-ntp";
 
@@ -1539,11 +1560,6 @@ const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
-
-// Enables the app list OSX .app shim, for showing the app list. If the flag is
-// not present, Chrome will check if the shim exists at startup, and delete it
-// if it does.
-const char kEnableAppListShim[]             = "enable-app-list-shim";
 
 // Enable to allow creation and launch of app shims for platform apps.
 const char kEnableAppShims[]                = "enable-app-shims";

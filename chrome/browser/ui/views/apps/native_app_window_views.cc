@@ -175,7 +175,7 @@ void NativeAppWindowViews::InitializeDefaultWindow(
   if (position_specified && !window_bounds.IsEmpty())
     init_params.bounds = window_bounds;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Set up a custom WM_CLASS for app windows. This allows task switchers in
   // X11 environments to distinguish them from main browser windows.
   init_params.wm_class_name = web_app::GetWMClassFromAppName(app_name);
@@ -262,11 +262,10 @@ void NativeAppWindowViews::InitializePanelWindow(
     preferred_size_.set_height(kMinPanelHeight);
 #if defined(USE_ASH)
   if (ash::Shell::HasInstance()) {
-    // Open a new panel on the active root window where
-    // a current active/focused window is on.
-    aura::RootWindow* active = ash::Shell::GetActiveRootWindow();
+    // Open a new panel on the target root.
+    aura::RootWindow* target = ash::Shell::GetTargetRootWindow();
     params.bounds = ash::ScreenAsh::ConvertRectToScreen(
-        active, gfx::Rect(preferred_size_));
+        target, gfx::Rect(preferred_size_));
   } else {
     params.bounds = gfx::Rect(preferred_size_);
   }

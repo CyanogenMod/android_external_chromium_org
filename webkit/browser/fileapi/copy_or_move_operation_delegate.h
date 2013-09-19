@@ -24,6 +24,7 @@ class CopyOrMoveOperationDelegate
     : public RecursiveOperationDelegate {
  public:
   class CopyOrMoveImpl;
+  typedef FileSystemOperation::CopyProgressCallback CopyProgressCallback;
 
   enum OperationType {
     OPERATION_COPY,
@@ -35,6 +36,7 @@ class CopyOrMoveOperationDelegate
       const FileSystemURL& src_root,
       const FileSystemURL& dest_root,
       OperationType operation_type,
+      const CopyProgressCallback& progress_callback,
       const StatusCallback& callback);
   virtual ~CopyOrMoveOperationDelegate();
 
@@ -45,32 +47,33 @@ class CopyOrMoveOperationDelegate
                            const StatusCallback& callback) OVERRIDE;
   virtual void ProcessDirectory(const FileSystemURL& url,
                                 const StatusCallback& callback) OVERRIDE;
+  virtual void PostProcessDirectory(const FileSystemURL& url,
+                                    const StatusCallback& callback) OVERRIDE;
 
  private:
-  void DidTryCopyOrMoveFile(base::PlatformFileError error);
-  void DidTryRemoveDestRoot(base::PlatformFileError error);
-  void DidFinishRecursiveCopyDir(const FileSystemURL& src,
-                                 const StatusCallback& callback,
-                                 base::PlatformFileError error);
+  void DidCopyOrMoveFile(const FileSystemURL& src_url,
+                         const StatusCallback& callback,
+                         CopyOrMoveImpl* impl,
+                         base::PlatformFileError error);
+  void DidTryRemoveDestRoot(const StatusCallback& callback,
+                            base::PlatformFileError error);
+  void ProcessDirectoryInternal(const FileSystemURL& src_url,
+                                const FileSystemURL& dest_url,
+                                const StatusCallback& callback);
+  void DidCreateDirectory(const FileSystemURL& src_url,
+                          const StatusCallback& callback,
+                          base::PlatformFileError error);
   void DidRemoveSourceForMove(const StatusCallback& callback,
                               base::PlatformFileError error);
 
-  // Starts Copy (or Move based on |operation_type_|) from |src_url| to
-  // |dest_url|. Upon completion |callback| is invoked.
-  // This can be run for multiple files in parallel.
-  void CopyOrMoveFile(const FileSystemURL& src_url,
-                      const FileSystemURL& dest_url,
-                      const StatusCallback& callback);
-  void DidCopyOrMoveFile(CopyOrMoveImpl* impl,
-                         const StatusCallback& callback,
-                         base::PlatformFileError error);
-
+  void OnCopyFileProgress(const FileSystemURL& src_url, int64 size);
   FileSystemURL CreateDestURL(const FileSystemURL& src_url) const;
 
   FileSystemURL src_root_;
   FileSystemURL dest_root_;
   bool same_file_system_;
   OperationType operation_type_;
+  CopyProgressCallback progress_callback_;
   StatusCallback callback_;
 
   std::set<CopyOrMoveImpl*> running_copy_set_;

@@ -30,14 +30,14 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/animation_container.h"
-#include "ui/base/animation/throb_animation.h"
 #include "ui/base/default_theme_provider.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/animation/animation_container.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -52,7 +52,7 @@
 #include "ui/views/window/non_client_view.h"
 
 #if defined(OS_WIN)
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 #include "ui/views/widget/monitor_win.h"
 #include "win8/util/win8_util.h"
 #endif
@@ -240,11 +240,11 @@ class ResetDraggingStateDelegate
   explicit ResetDraggingStateDelegate(Tab* tab) : tab_(tab) {
   }
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE {
     tab_->set_dragging(false);
   }
 
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE {
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE {
     tab_->set_dragging(false);
   }
 
@@ -380,7 +380,7 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
     views::View::ConvertPointToScreen(this, &point);
     bool destroyed = false;
     destroyed_ = &destroyed;
-    ui::ShowSystemMenuAtPoint(GetWidget()->GetNativeView(), point);
+    gfx::ShowSystemMenuAtPoint(GetWidget()->GetNativeView(), point);
     if (destroyed)
       return;
 
@@ -527,8 +527,8 @@ class TabStrip::RemoveTabDelegate
  public:
   RemoveTabDelegate(TabStrip* tab_strip, Tab* tab);
 
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
 
  private:
   void CompleteRemove();
@@ -551,12 +551,12 @@ TabStrip::RemoveTabDelegate::RemoveTabDelegate(TabStrip* tab_strip,
 }
 
 void TabStrip::RemoveTabDelegate::AnimationEnded(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   CompleteRemove();
 }
 
 void TabStrip::RemoveTabDelegate::AnimationCanceled(
-    const ui::Animation* animation) {
+    const gfx::Animation* animation) {
   CompleteRemove();
 }
 
@@ -598,7 +598,7 @@ TabStrip::TabStrip(TabStripController* controller)
       current_selected_width_(Tab::GetStandardSize().width()),
       available_width_for_tabs_(-1),
       in_tab_close_(false),
-      animation_container_(new ui::AnimationContainer()),
+      animation_container_(new gfx::AnimationContainer()),
       bounds_animator_(this),
       layout_type_(TAB_STRIP_LAYOUT_SHRINK),
       adjust_layout_(false),

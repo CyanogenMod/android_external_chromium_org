@@ -363,7 +363,6 @@ void ShellWindow::SetAppIconUrl(const GURL& url) {
   web_contents()->DownloadImage(
       url,
       true,  // is a favicon
-      delegate_->PreferredIconSize(),
       0,  // no maximum size
       base::Bind(&ShellWindow::DidDownloadFavicon,
                  image_loader_ptr_factory_.GetWeakPtr()));
@@ -387,6 +386,11 @@ void ShellWindow::UpdateAppIcon(const gfx::Image& image) {
 }
 
 void ShellWindow::Fullscreen() {
+#if !defined(OS_MACOSX)
+  // Do not enter fullscreen mode if disallowed by pref.
+  if (!profile()->GetPrefs()->GetBoolean(prefs::kAppFullscreenAllowed))
+    return;
+#endif
   fullscreen_for_window_api_ = true;
   GetBaseWindow()->SetFullscreen(true);
 }
@@ -412,11 +416,12 @@ void ShellWindow::Restore() {
 //------------------------------------------------------------------------------
 // Private methods
 
-void ShellWindow::DidDownloadFavicon(int id,
-                                     int http_status_code,
-                                     const GURL& image_url,
-                                     int requested_size,
-                                     const std::vector<SkBitmap>& bitmaps) {
+void ShellWindow::DidDownloadFavicon(
+    int id,
+    int http_status_code,
+    const GURL& image_url,
+    const std::vector<SkBitmap>& bitmaps,
+    const std::vector<gfx::Size>& original_bitmap_sizes) {
   if (image_url != app_icon_url_ || bitmaps.empty())
     return;
 

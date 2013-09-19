@@ -40,6 +40,7 @@ LOCAL_SRC_FILES := \
 	content/public/renderer/content_renderer_client.cc \
 	content/public/renderer/document_state.cc \
 	content/public/renderer/history_item_serialization.cc \
+	content/public/renderer/key_system_info.cc \
 	content/public/renderer/navigation_state.cc \
 	content/public/renderer/render_process_observer.cc \
 	content/public/renderer/render_thread.cc \
@@ -94,6 +95,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/android/media_info_loader.cc \
 	content/renderer/media/android/media_source_delegate.cc \
 	content/renderer/media/android/proxy_media_keys.cc \
+	content/renderer/media/android/renderer_demuxer_android.cc \
 	content/renderer/media/android/renderer_media_player_manager.cc \
 	content/renderer/media/android/stream_texture_factory_android_impl.cc \
 	content/renderer/media/android/stream_texture_factory_android_synchronous_impl.cc \
@@ -223,7 +225,7 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -367,7 +369,7 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

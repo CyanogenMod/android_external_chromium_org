@@ -7,6 +7,7 @@
 #include "ash/ash_switches.h"
 #include "ash/launcher/launcher.h"
 #include "ash/root_window_controller.h"
+#include "ash/screen_ash.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
@@ -18,9 +19,9 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
 #include "ui/gfx/transform_util.h"
 #include "ui/views/widget/widget.h"
 
@@ -149,17 +150,29 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
       UpdateAutoHideState();
 
   if (view_) {
+    // Our widget is currently active. When the animation completes we'll hide
+    // the widget, changing activation. If a menu is shown before the animation
+    // completes then the activation change triggers the menu to close. By
+    // deactivating now we ensure there is no activation change when the
+    // animation completes and any menus stay open.
+    if (!visible)
+      view_->GetWidget()->Deactivate();
     ScheduleAnimation();
   } else if (is_visible_) {
     // AppListModel and AppListViewDelegate are owned by AppListView. They
     // will be released with AppListView on close.
     app_list::AppListView* view = new app_list::AppListView(
         Shell::GetInstance()->delegate()->CreateAppListViewDelegate());
-    aura::Window* container = GetRootWindowController(window->GetRootWindow())->
+    aura::RootWindow* root_window = window->GetRootWindow();
+    aura::Window* container = GetRootWindowController(root_window)->
         GetContainer(kShellWindowId_AppListContainer);
     if (ash::switches::UseAlternateShelfLayout()) {
       gfx::Rect applist_button_bounds = Launcher::ForWindow(container)->
           GetAppListButtonView()->GetBoundsInScreen();
+      // We need the location of the button within the local screen.
+      applist_button_bounds = ash::ScreenAsh::ConvertRectFromScreen(
+          root_window,
+          applist_button_bounds);
       view->InitAsBubbleAttachedToAnchor(
           container,
           pagination_model_.get(),

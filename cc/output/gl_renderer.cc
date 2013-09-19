@@ -172,7 +172,6 @@ GLRenderer::GLRenderer(RendererClient* client,
       blend_shadow_(false),
       highp_threshold_min_(highp_threshold_min),
       highp_threshold_cache_(0),
-      offscreen_context_labelled_(false),
       on_demand_tile_raster_resource_id_(0) {
   DCHECK(context_);
 }
@@ -180,10 +179,6 @@ GLRenderer::GLRenderer(RendererClient* client,
 bool GLRenderer::Initialize() {
   if (!context_->makeContextCurrent())
     return false;
-
-  std::string unique_context_name =
-      base::StringPrintf("%s-%p", settings_->compositor_name.c_str(), context_);
-  context_->pushGroupMarkerEXT(unique_context_name.c_str());
 
   ContextProvider::Capabilities context_caps =
     output_surface_->context_provider()->ContextCapabilities();
@@ -500,9 +495,6 @@ static inline SkBitmap ApplyFilters(GLRenderer* renderer,
   // Make sure skia uses the correct GL context.
   offscreen_contexts->Context3d()->makeContextCurrent();
 
-  // Lazily label this context.
-  renderer->LazyLabelOffscreenContext(offscreen_contexts);
-
   SkBitmap source =
       RenderSurfaceFilters::Apply(filters,
                                   lock.texture_id(),
@@ -543,9 +535,6 @@ static SkBitmap ApplyImageFilter(GLRenderer* renderer,
 
   // Make sure skia uses the correct GL context.
   offscreen_contexts->Context3d()->makeContextCurrent();
-
-  // Lazily label this context.
-  renderer->LazyLabelOffscreenContext(offscreen_contexts);
 
   // Wrap the source texture in a Ganesh platform texture.
   GrBackendTextureDesc backend_texture_description;
@@ -664,8 +653,8 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
   scoped_ptr<ScopedResource> device_background_texture =
       ScopedResource::create(resource_provider_);
   if (!device_background_texture->Allocate(window_rect.size(),
-                                           GL_RGB,
-                                           ResourceProvider::TextureUsageAny)) {
+                                           ResourceProvider::TextureUsageAny,
+                                           RGBA_8888)) {
     return scoped_ptr<ScopedResource>();
   } else {
     ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
@@ -690,8 +679,8 @@ scoped_ptr<ScopedResource> GLRenderer::DrawBackgroundFilters(
   scoped_ptr<ScopedResource> background_texture =
       ScopedResource::create(resource_provider_);
   if (!background_texture->Allocate(quad->rect.size(),
-                                    GL_RGBA,
-                                    ResourceProvider::TextureUsageFramebuffer))
+                                    ResourceProvider::TextureUsageFramebuffer,
+                                    RGBA_8888))
     return scoped_ptr<ScopedResource>();
 
   const RenderPass* target_render_pass = frame->current_render_pass;
@@ -1713,10 +1702,10 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
 
     on_demand_tile_raster_resource_id_ = resource_provider_->CreateGLTexture(
         quad->texture_size,
-        GL_RGBA,
         GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
         GL_CLAMP_TO_EDGE,
-        ResourceProvider::TextureUsageAny);
+        ResourceProvider::TextureUsageAny,
+        quad->texture_format);
   }
 
   SkBitmapDevice device(on_demand_tile_raster_bitmap_);
@@ -1725,9 +1714,25 @@ void GLRenderer::DrawPictureQuad(const DrawingFrame* frame,
   quad->picture_pile->RasterToBitmap(&canvas, quad->content_rect,
                                      quad->contents_scale, NULL);
 
+  uint8_t* bitmap_pixels = NULL;
+  SkBitmap on_demand_tile_raster_bitmap_dest;
+  SkBitmap::Config config = SkBitmapConfigFromFormat(quad->texture_format);
+  if (on_demand_tile_raster_bitmap_.getConfig() != config) {
+    on_demand_tile_raster_bitmap_.copyTo(&on_demand_tile_raster_bitmap_dest,
+                                         config);
+    // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
+    // bitmap data. This check will be removed once crbug.com/293728 is fixed.
+    CHECK_EQ(0u, on_demand_tile_raster_bitmap_dest.rowBytes() % 4);
+    bitmap_pixels = reinterpret_cast<uint8_t*>(
+        on_demand_tile_raster_bitmap_dest.getPixels());
+  } else {
+    bitmap_pixels = reinterpret_cast<uint8_t*>(
+        on_demand_tile_raster_bitmap_.getPixels());
+  }
+
   resource_provider_->SetPixels(
       on_demand_tile_raster_resource_id_,
-      reinterpret_cast<uint8_t*>(on_demand_tile_raster_bitmap_.getPixels()),
+      bitmap_pixels,
       gfx::Rect(quad->texture_size),
       gfx::Rect(quad->texture_size),
       gfx::Vector2d());
@@ -1978,11 +1983,8 @@ void GLRenderer::CopyCurrentRenderPassToBitmap(
     DrawingFrame* frame,
     scoped_ptr<CopyOutputRequest> request) {
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
-  if (request->has_area()) {
-    // Intersect with the request's area, positioned with its origin at the
-    // origin of the full copy_rect.
-    copy_rect.Intersect(request->area() - copy_rect.OffsetFromOrigin());
-  }
+  if (request->has_area())
+    copy_rect.Intersect(request->area());
   GetFramebufferPixelsAsync(copy_rect, request.Pass());
 }
 
@@ -2199,10 +2201,6 @@ void GLRenderer::GetFramebufferPixelsAsync(
   if (rect.IsEmpty())
     return;
 
-  DCHECK(gfx::Rect(current_surface_size_).Contains(rect)) <<
-      "current_surface_size_: " << current_surface_size_.ToString() <<
-      " rect: " << rect.ToString();
-
   gfx::Rect window_rect = MoveFromDrawToWindowSpace(rect);
 
   if (!request->force_bitmap_result()) {
@@ -2216,7 +2214,7 @@ void GLRenderer::GetFramebufferPixelsAsync(
         GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     GLC(context_, context_->texParameteri(
         GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    GetFramebufferTexture(texture_id, GL_RGBA, window_rect);
+    GetFramebufferTexture(texture_id, RGBA_8888, window_rect);
 
     gpu::Mailbox mailbox;
     unsigned sync_point = 0;
@@ -2232,13 +2230,13 @@ void GLRenderer::GetFramebufferPixelsAsync(
         GL_TEXTURE_2D, mailbox.name));
     GLC(context_, context_->bindTexture(GL_TEXTURE_2D, 0));
     sync_point = context_->insertSyncPoint();
-    scoped_ptr<TextureMailbox> texture_mailbox = make_scoped_ptr(
-        new TextureMailbox(mailbox,
-                           texture_mailbox_deleter_->GetReleaseCallback(
-                               output_surface_->context_provider(), texture_id),
-                           GL_TEXTURE_2D,
-                           sync_point));
-    request->SendTextureResult(window_rect.size(), texture_mailbox.Pass());
+    TextureMailbox texture_mailbox(mailbox, GL_TEXTURE_2D, sync_point);
+    scoped_ptr<SingleReleaseCallback> release_callback =
+        texture_mailbox_deleter_->GetReleaseCallback(
+            output_surface_->context_provider(), texture_id);
+    request->SendTextureResult(window_rect.size(),
+                               texture_mailbox,
+                               release_callback.Pass());
     return;
   }
 
@@ -2308,7 +2306,7 @@ void GLRenderer::DoGetFramebufferPixels(
     // Copy the contents of the current (IOSurface-backed) framebuffer into a
     // temporary texture.
     GetFramebufferTexture(temporary_texture,
-                          GL_RGBA,
+                          RGBA_8888,
                           gfx::Rect(current_surface_size_));
     temporary_fbo = context_->createFramebuffer();
     // Attach this texture to an FBO, and perform the readback from that FBO.
@@ -2458,9 +2456,8 @@ void GLRenderer::PassOnSkBitmap(
     request->SendBitmapResult(bitmap.Pass());
 }
 
-void GLRenderer::GetFramebufferTexture(unsigned texture_id,
-                                       unsigned texture_format,
-                                       gfx::Rect window_rect) {
+void GLRenderer::GetFramebufferTexture(
+    unsigned texture_id, ResourceFormat texture_format, gfx::Rect window_rect) {
   DCHECK(texture_id);
   DCHECK_GE(window_rect.x(), 0);
   DCHECK_GE(window_rect.y(), 0);
@@ -2469,14 +2466,15 @@ void GLRenderer::GetFramebufferTexture(unsigned texture_id,
 
   GLC(context_, context_->bindTexture(GL_TEXTURE_2D, texture_id));
   GLC(context_,
-      context_->copyTexImage2D(GL_TEXTURE_2D,
-                               0,
-                               texture_format,
-                               window_rect.x(),
-                               window_rect.y(),
-                               window_rect.width(),
-                               window_rect.height(),
-                               0));
+      context_->copyTexImage2D(
+          GL_TEXTURE_2D,
+          0,
+          ResourceProvider::GetGLDataFormat(texture_format),
+          window_rect.x(),
+          window_rect.y(),
+          window_rect.width(),
+          window_rect.height(),
+          0));
   GLC(context_, context_->bindTexture(GL_TEXTURE_2D, 0));
 }
 
@@ -3135,17 +3133,5 @@ bool GLRenderer::CanUseSkiaGPUBackend() const {
 bool GLRenderer::IsContextLost() {
   return (context_->getGraphicsResetStatusARB() != GL_NO_ERROR);
 }
-
-void GLRenderer::LazyLabelOffscreenContext(
-    ContextProvider* offscreen_context_provider) {
-  if (offscreen_context_labelled_)
-    return;
-  offscreen_context_labelled_ = true;
-  std::string unique_context_name = base::StringPrintf(
-      "%s-Offscreen-%p", settings_->compositor_name.c_str(), context_);
-  offscreen_context_provider->Context3d()
-      ->pushGroupMarkerEXT(unique_context_name.c_str());
-}
-
 
 }  // namespace cc

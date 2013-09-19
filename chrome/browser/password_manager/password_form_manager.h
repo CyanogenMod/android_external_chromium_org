@@ -49,6 +49,12 @@ class PasswordFormManager : public PasswordStoreConsumer {
     IGNORE_OTHER_POSSIBLE_USERNAMES
   };
 
+  enum PasswordAction {
+    DO_NOTHING,
+    SAVE,
+    BLACKLIST
+  };
+
   // Compare basic data of observed_form_ with argument. Only check the action
   // URL when action match is required.
   bool DoesManage(const autofill::PasswordForm& form,
@@ -71,17 +77,13 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // the same thread!
   bool HasCompletedMatching();
 
-  // Sets current password to be saved when ApplyEdits() is called. Will
-  // override a previous call to BlacklistPassword().
-  void SavePassword();
-
-  // Sets current password to be blacklisted when ApplyEdits() is called. Will
-  // override a previous call to SavePassword().
-  void BlacklistPassword();
-
-  // Persist changes from the latest call to either SavePassword() or
-  // BlacklistPassword().
+  // Called when navigation occurs or the tab is closed. Takes the necessary
+  // action with the form's login based on the desired |password_action_|.
   void ApplyChange();
+
+  void set_password_action(PasswordAction password_action) {
+    password_action_ = password_action;
+  }
 
   // Determines if the user opted to 'never remember' passwords for this form.
   bool IsBlacklisted();
@@ -117,7 +119,6 @@ class PasswordFormManager : public PasswordStoreConsumer {
 
   // A user opted to 'never remember' passwords for this form.
   // Blacklist it so that from now on when it is seen we ignore it.
-
   // TODO: Make this private once we switch to the new UI.
   void PermanentlyBlacklist();
 
@@ -134,7 +135,6 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // Handles save-as-new or update of the form managed by this manager.
   // Note the basic data of updated_credentials must match that of
   // observed_form_ (e.g DoesManage(pending_credentials_) == true).
-
   // TODO: Make this private once we switch to the new UI.
   void Save();
 
@@ -216,6 +216,12 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // that now need to have preferred bit changed, since updated_credentials
   // is now implicitly 'preferred'.
   void UpdateLogin();
+
+  // Check to see if |pending| corresponds to an account creation form. If we
+  // think that it does, we label it as such and upload this state to the
+  // Autofill server, so that we will trigger password generation in the future.
+  void CheckForAccountCreationForm(const autofill::PasswordForm& pending,
+                                   const autofill::PasswordForm& observed);
 
   // Update all login matches to reflect new preferred state - preferred flag
   // will be reset on all matched logins that different than the current
@@ -307,8 +313,10 @@ class PasswordFormManager : public PasswordStoreConsumer {
   ManagerAction manager_action_;
   UserAction user_action_;
   SubmitResult submit_result_;
-  bool should_save_password_;
-  bool should_blacklist_password_;
+
+  // Whether we should save, blacklist, or do nothing with this form's login
+  // on the next navigation or when the tab is closed.
+  PasswordAction password_action_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordFormManager);
 };

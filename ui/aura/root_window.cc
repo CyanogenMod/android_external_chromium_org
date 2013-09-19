@@ -24,7 +24,6 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_tracker.h"
-#include "ui/base/events/event.h"
 #include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/gestures/gesture_types.h"
 #include "ui/base/hit_test.h"
@@ -33,6 +32,7 @@
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/events/event.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
@@ -426,9 +426,7 @@ void RootWindow::RemoveRootWindowObserver(RootWindowObserver* observer) {
 }
 
 void RootWindow::PostNativeEvent(const base::NativeEvent& native_event) {
-#if !defined(OS_MACOSX)
   host_->PostNativeEvent(native_event);
-#endif
 }
 
 void RootWindow::ConvertPointToNativeScreen(gfx::Point* point) const {
@@ -445,13 +443,13 @@ void RootWindow::ConvertPointFromNativeScreen(gfx::Point* point) const {
 
 void RootWindow::ConvertPointToHost(gfx::Point* point) const {
   gfx::Point3F point_3f(*point);
-  GetRootTransform().TransformPoint(point_3f);
+  GetRootTransform().TransformPoint(&point_3f);
   *point = gfx::ToFlooredPoint(point_3f.AsPointF());
 }
 
 void RootWindow::ConvertPointFromHost(gfx::Point* point) const {
   gfx::Point3F point_3f(*point);
-  GetInverseRootTransform().TransformPoint(point_3f);
+  GetInverseRootTransform().TransformPoint(&point_3f);
   *point = gfx::ToFlooredPoint(point_3f.AsPointF());
 }
 

@@ -427,17 +427,10 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, AdvanceFocus) {
   test_guest()->WaitForAdvanceFocus();
 }
 
-// Flaky on the win7_aura bot.  See http://crbug.com/289677
-#if defined(OS_WIN) && defined(USE_AURA)
-#define MAYBE_EmbedderChangedAfterSwap DISABLED_EmbedderChangedAfterSwap
-#else
-#define MAYBE_EmbedderChangedAfterSwap EmbedderChangedAfterSwap
-#endif
-
 // This test opens a page in http and then opens another page in https, forcing
 // a RenderViewHost swap in the web_contents. We verify that the embedder in the
 // web_contents gets cleared properly.
-IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, MAYBE_EmbedderChangedAfterSwap) {
+IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderChangedAfterSwap) {
   net::SpawnedTestServer https_server(
       net::SpawnedTestServer::TYPE_HTTPS,
       net::SpawnedTestServer::kLocalhost,
@@ -775,26 +768,9 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, FocusBeforeNavigation) {
 IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, FocusTracksEmbedder) {
   const char* kEmbedderURL = "/browser_plugin_embedder.html";
   StartBrowserPluginTest(kEmbedderURL, kHTMLForGuest, true, std::string());
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      test_embedder()->web_contents()->GetRenderViewHost());
-  RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
-      test_guest()->web_contents()->GetRenderViewHost());
-  {
-    // Focus the BrowserPlugin. This will have the effect of also focusing the
-    // current guest.
-    ExecuteSyncJSFunction(rvh, "document.getElementById('plugin').focus();");
-    // Verify that key presses go to the guest.
-    SimulateSpaceKeyPress(test_embedder()->web_contents());
-    test_guest()->WaitForInput();
-    // Verify that the guest is focused.
-    scoped_ptr<base::Value> value =
-        content::ExecuteScriptAndGetValue(guest_rvh, "document.hasFocus()");
-    bool result = false;
-    ASSERT_TRUE(value->GetAsBoolean(&result));
-    EXPECT_TRUE(result);
-  }
   // Blur the embedder.
   test_embedder()->web_contents()->GetRenderViewHost()->Blur();
+  // Ensure that the guest is also blurred.
   test_guest()->WaitForBlur();
 }
 

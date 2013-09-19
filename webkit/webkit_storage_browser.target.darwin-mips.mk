@@ -58,6 +58,7 @@ LOCAL_SRC_FILES := \
 	webkit/browser/database/vfs_backend.cc \
 	webkit/browser/fileapi/async_file_util_adapter.cc \
 	webkit/browser/fileapi/copy_or_move_operation_delegate.cc \
+	webkit/browser/fileapi/dragged_file_util.cc \
 	webkit/browser/fileapi/external_mount_points.cc \
 	webkit/browser/fileapi/file_permission_policy.cc \
 	webkit/browser/fileapi/file_system_context.cc \
@@ -76,7 +77,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/file_writer_delegate.cc \
 	webkit/browser/fileapi/isolated_context.cc \
 	webkit/browser/fileapi/isolated_file_system_backend.cc \
-	webkit/browser/fileapi/isolated_file_util.cc \
 	webkit/browser/fileapi/local_file_stream_writer.cc \
 	webkit/browser/fileapi/local_file_util.cc \
 	webkit/browser/fileapi/mount_points.cc \
@@ -142,7 +142,7 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -263,7 +263,7 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=16' \
+	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

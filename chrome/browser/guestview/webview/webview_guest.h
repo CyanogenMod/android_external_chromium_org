@@ -45,9 +45,11 @@ class WebViewGuest : public GuestView,
                                    const string16& source_id) OVERRIDE;
   virtual void LoadProgressed(double progress) OVERRIDE;
   virtual void Close() OVERRIDE;
+  virtual void EmbedderDestroyed() OVERRIDE;
   virtual void GuestProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual bool IsDragAndDropEnabled() OVERRIDE;
   virtual void LoadAbort(bool is_top_level,
                          const GURL& url,
                          const std::string& error_type) OVERRIDE;

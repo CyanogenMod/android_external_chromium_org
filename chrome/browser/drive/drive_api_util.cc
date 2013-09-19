@@ -23,6 +23,108 @@
 
 namespace drive {
 namespace util {
+namespace {
+
+// Google Apps MIME types:
+const char kGoogleDocumentMimeType[] = "application/vnd.google-apps.document";
+const char kGoogleDrawingMimeType[] = "application/vnd.google-apps.drawing";
+const char kGoogleFormMimeType[] = "application/vnd.google-apps.form";
+const char kGooglePresentationMimeType[] =
+    "application/vnd.google-apps.presentation";
+const char kGoogleScriptMimeType[] = "application/vnd.google-apps.script";
+const char kGoogleSiteMimeType[] = "application/vnd.google-apps.site";
+const char kGoogleSpreadsheetMimeType[] =
+    "application/vnd.google-apps.spreadsheet";
+const char kGoogleTableMimeType[] = "application/vnd.google-apps.table";
+
+ScopedVector<std::string> CopyScopedVectorString(
+    const ScopedVector<std::string>& source) {
+  ScopedVector<std::string> result;
+  result.reserve(source.size());
+  for (size_t i = 0; i < source.size(); ++i)
+    result.push_back(new std::string(*source[i]));
+
+  return result.Pass();
+}
+
+// Converts AppIcon (of GData WAPI) to DriveAppIcon.
+scoped_ptr<google_apis::DriveAppIcon>
+ConvertAppIconToDriveAppIcon(const google_apis::AppIcon& app_icon) {
+  scoped_ptr<google_apis::DriveAppIcon> resource(
+      new google_apis::DriveAppIcon);
+  switch (app_icon.category()) {
+    case google_apis::AppIcon::ICON_UNKNOWN:
+      resource->set_category(google_apis::DriveAppIcon::UNKNOWN);
+      break;
+    case google_apis::AppIcon::ICON_DOCUMENT:
+      resource->set_category(google_apis::DriveAppIcon::DOCUMENT);
+      break;
+    case google_apis::AppIcon::ICON_APPLICATION:
+      resource->set_category(google_apis::DriveAppIcon::APPLICATION);
+      break;
+    case google_apis::AppIcon::ICON_SHARED_DOCUMENT:
+      resource->set_category(google_apis::DriveAppIcon::SHARED_DOCUMENT);
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  resource->set_icon_side_length(app_icon.icon_side_length());
+  resource->set_icon_url(app_icon.GetIconURL());
+  return resource.Pass();
+}
+
+// Converts InstalledApp to AppResource.
+scoped_ptr<google_apis::AppResource>
+ConvertInstalledAppToAppResource(
+    const google_apis::InstalledApp& installed_app) {
+  scoped_ptr<google_apis::AppResource> resource(new google_apis::AppResource);
+  resource->set_application_id(installed_app.app_id());
+  resource->set_name(installed_app.app_name());
+  resource->set_object_type(installed_app.object_type());
+  resource->set_supports_create(installed_app.supports_create());
+  resource->set_product_url(installed_app.GetProductUrl());
+
+  {
+    ScopedVector<std::string> primary_mimetypes(
+        CopyScopedVectorString(installed_app.primary_mimetypes()));
+    resource->set_primary_mimetypes(primary_mimetypes.Pass());
+  }
+  {
+    ScopedVector<std::string> secondary_mimetypes(
+        CopyScopedVectorString(installed_app.secondary_mimetypes()));
+    resource->set_secondary_mimetypes(secondary_mimetypes.Pass());
+  }
+  {
+    ScopedVector<std::string> primary_file_extensions(
+        CopyScopedVectorString(installed_app.primary_extensions()));
+    resource->set_primary_file_extensions(primary_file_extensions.Pass());
+  }
+  {
+    ScopedVector<std::string> secondary_file_extensions(
+        CopyScopedVectorString(installed_app.secondary_extensions()));
+    resource->set_secondary_file_extensions(secondary_file_extensions.Pass());
+  }
+
+  {
+    const ScopedVector<google_apis::AppIcon>& app_icons =
+        installed_app.app_icons();
+    ScopedVector<google_apis::DriveAppIcon> icons;
+    icons.reserve(app_icons.size());
+    for (size_t i = 0; i < app_icons.size(); ++i) {
+      icons.push_back(ConvertAppIconToDriveAppIcon(*app_icons[i]).release());
+    }
+    resource->set_icons(icons.Pass());
+  }
+
+  // supports_import, installed and authorized are not supported in
+  // InstalledApp.
+
+  return resource.Pass();
+}
+
+}  // namespace
+
 
 bool IsDriveV2ApiEnabled() {
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -158,6 +260,40 @@ void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
   callback.Run(error, share_link ? share_link->href() : GURL());
 }
 
+scoped_ptr<google_apis::AboutResource>
+ConvertAccountMetadataToAboutResource(
+    const google_apis::AccountMetadata& account_metadata,
+    const std::string& root_resource_id) {
+  scoped_ptr<google_apis::AboutResource> resource(
+      new google_apis::AboutResource);
+  resource->set_largest_change_id(account_metadata.largest_changestamp());
+  resource->set_quota_bytes_total(account_metadata.quota_bytes_total());
+  resource->set_quota_bytes_used(account_metadata.quota_bytes_used());
+  resource->set_root_folder_id(root_resource_id);
+  return resource.Pass();
+}
+
+scoped_ptr<google_apis::AppList>
+ConvertAccountMetadataToAppList(
+    const google_apis::AccountMetadata& account_metadata) {
+  scoped_ptr<google_apis::AppList> resource(new google_apis::AppList);
+
+  const ScopedVector<google_apis::InstalledApp>& installed_apps =
+      account_metadata.installed_apps();
+  ScopedVector<google_apis::AppResource> app_resources;
+  app_resources.reserve(installed_apps.size());
+  for (size_t i = 0; i < installed_apps.size(); ++i) {
+    app_resources.push_back(
+        ConvertInstalledAppToAppResource(*installed_apps[i]).release());
+  }
+  resource->set_items(app_resources.Pass());
+
+  // etag is not supported in AccountMetadata.
+
+  return resource.Pass();
+}
+
+
 scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
     const google_apis::ResourceEntry& entry) {
   scoped_ptr<google_apis::FileResource> file(new google_apis::FileResource);
@@ -194,6 +330,7 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
 
         std::string file_id =
             drive::util::ExtractResourceIdFromUrl(link.href());
+        parent->set_file_id(file_id);
         parent->set_is_root(file_id == kWapiRootDirectoryResourceId);
         parents.push_back(parent.release());
         break;
@@ -220,6 +357,175 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   file->set_last_viewed_by_me_date(entry.last_viewed_time());
 
   return file.Pass();
+}
+
+google_apis::DriveEntryKind GetKind(
+    const google_apis::FileResource& file_resource) {
+  if (file_resource.IsDirectory())
+    return google_apis::ENTRY_KIND_FOLDER;
+
+  const std::string& mime_type = file_resource.mime_type();
+  if (mime_type == kGoogleDocumentMimeType)
+    return google_apis::ENTRY_KIND_DOCUMENT;
+  if (mime_type == kGoogleSpreadsheetMimeType)
+    return google_apis::ENTRY_KIND_SPREADSHEET;
+  if (mime_type == kGooglePresentationMimeType)
+    return google_apis::ENTRY_KIND_PRESENTATION;
+  if (mime_type == kGoogleDrawingMimeType)
+    return google_apis::ENTRY_KIND_DRAWING;
+  if (mime_type == kGoogleTableMimeType)
+    return google_apis::ENTRY_KIND_TABLE;
+  if (mime_type == "application/pdf")
+    return google_apis::ENTRY_KIND_PDF;
+  return google_apis::ENTRY_KIND_FILE;
+}
+
+scoped_ptr<google_apis::ResourceEntry>
+ConvertFileResourceToResourceEntry(
+    const google_apis::FileResource& file_resource) {
+  scoped_ptr<google_apis::ResourceEntry> entry(new google_apis::ResourceEntry);
+
+  // ResourceEntry
+  entry->set_resource_id(file_resource.file_id());
+  entry->set_id(file_resource.file_id());
+  entry->set_kind(GetKind(file_resource));
+  entry->set_title(file_resource.title());
+  entry->set_published_time(file_resource.created_date());
+  // TODO(kochi): entry->labels_
+  if (!file_resource.shared_with_me_date().is_null()) {
+    std::vector<std::string> labels;
+    labels.push_back("shared-with-me");
+    entry->set_labels(labels);
+  }
+
+  // This should be the url to download the file_resource.
+  {
+    google_apis::Content content;
+    content.set_url(file_resource.download_url());
+    content.set_mime_type(file_resource.mime_type());
+    entry->set_content(content);
+  }
+  // TODO(kochi): entry->resource_links_
+
+  // For file entries
+  entry->set_filename(file_resource.title());
+  entry->set_suggested_filename(file_resource.title());
+  entry->set_file_md5(file_resource.md5_checksum());
+  entry->set_file_size(file_resource.file_size());
+
+  // If file is removed completely, that information is only available in
+  // ChangeResource, and is reflected in |removed_|. If file is trashed, the
+  // file entry still exists but with its "trashed" label true.
+  entry->set_deleted(file_resource.labels().is_trashed());
+
+  // CommonMetadata
+  entry->set_etag(file_resource.etag());
+  // entry->authors_
+  // entry->links_.
+  ScopedVector<google_apis::Link> links;
+  if (!file_resource.parents().empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_PARENT);
+    link->set_href(file_resource.parents()[0]->parent_link());
+    links.push_back(link);
+  }
+  if (!file_resource.self_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_EDIT);
+    link->set_href(file_resource.self_link());
+    links.push_back(link);
+  }
+  if (!file_resource.thumbnail_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_THUMBNAIL);
+    link->set_href(file_resource.thumbnail_link());
+    links.push_back(link);
+  }
+  if (!file_resource.alternate_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_ALTERNATE);
+    link->set_href(file_resource.alternate_link());
+    links.push_back(link);
+  }
+  if (!file_resource.embed_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_EMBED);
+    link->set_href(file_resource.embed_link());
+    links.push_back(link);
+  }
+  entry->set_links(links.Pass());
+
+  // entry->categories_
+  entry->set_updated_time(file_resource.modified_date());
+  entry->set_last_viewed_time(file_resource.last_viewed_by_me_date());
+
+  entry->FillRemainingFields();
+  return entry.Pass();
+}
+
+scoped_ptr<google_apis::ResourceEntry>
+ConvertChangeResourceToResourceEntry(
+    const google_apis::ChangeResource& change_resource) {
+  scoped_ptr<google_apis::ResourceEntry> entry;
+  if (change_resource.file())
+    entry = ConvertFileResourceToResourceEntry(*change_resource.file()).Pass();
+  else
+    entry.reset(new google_apis::ResourceEntry);
+
+  entry->set_resource_id(change_resource.file_id());
+  // If |is_deleted()| returns true, the file is removed from Drive.
+  entry->set_removed(change_resource.is_deleted());
+  entry->set_changestamp(change_resource.change_id());
+
+  return entry.Pass();
+}
+
+scoped_ptr<google_apis::ResourceList>
+ConvertFileListToResourceList(const google_apis::FileList& file_list) {
+  scoped_ptr<google_apis::ResourceList> feed(new google_apis::ResourceList);
+
+  const ScopedVector<google_apis::FileResource>& items = file_list.items();
+  ScopedVector<google_apis::ResourceEntry> entries;
+  for (size_t i = 0; i < items.size(); ++i)
+    entries.push_back(ConvertFileResourceToResourceEntry(*items[i]).release());
+  feed->set_entries(entries.Pass());
+
+  ScopedVector<google_apis::Link> links;
+  if (!file_list.next_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_NEXT);
+    link->set_href(file_list.next_link());
+    links.push_back(link);
+  }
+  feed->set_links(links.Pass());
+
+  return feed.Pass();
+}
+
+scoped_ptr<google_apis::ResourceList>
+ConvertChangeListToResourceList(const google_apis::ChangeList& change_list) {
+  scoped_ptr<google_apis::ResourceList> feed(new google_apis::ResourceList);
+
+  const ScopedVector<google_apis::ChangeResource>& items = change_list.items();
+  ScopedVector<google_apis::ResourceEntry> entries;
+  for (size_t i = 0; i < items.size(); ++i) {
+    entries.push_back(
+        ConvertChangeResourceToResourceEntry(*items[i]).release());
+  }
+  feed->set_entries(entries.Pass());
+
+  feed->set_largest_changestamp(change_list.largest_change_id());
+
+  ScopedVector<google_apis::Link> links;
+  if (!change_list.next_link().is_empty()) {
+    google_apis::Link* link = new google_apis::Link;
+    link->set_type(google_apis::Link::LINK_NEXT);
+    link->set_href(change_list.next_link());
+    links.push_back(link);
+  }
+  feed->set_links(links.Pass());
+
+  return feed.Pass();
 }
 
 const char kWapiRootDirectoryResourceId[] = "folder:root";

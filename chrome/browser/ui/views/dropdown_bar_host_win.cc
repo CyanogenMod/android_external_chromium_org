@@ -9,8 +9,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_code_conversion_win.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
 
 using content::NativeWebKeyboardEvent;
