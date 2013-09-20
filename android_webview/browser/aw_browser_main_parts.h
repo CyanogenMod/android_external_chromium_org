@@ -16,6 +16,7 @@ class MessageLoop;
 namespace android_webview {
 
 class AwBrowserContext;
+class AwDevToolsDelegate;
 
 class AwBrowserMainParts : public content::BrowserMainParts {
  public:
@@ -27,12 +28,14 @@ class AwBrowserMainParts : public content::BrowserMainParts {
   virtual int PreCreateThreads() OVERRIDE;
   virtual void PreMainMessageLoopRun() OVERRIDE;
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
+  virtual void PostMainMessageLoopRun() OVERRIDE;
 
  private:
   // Android specific UI MessageLoop.
   scoped_ptr<base::MessageLoop> main_message_loop_;
 
   AwBrowserContext* browser_context_;  // weak
+  AwDevToolsDelegate* devtools_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserMainParts);
 };
