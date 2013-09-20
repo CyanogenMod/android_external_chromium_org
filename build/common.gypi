@@ -2871,7 +2871,9 @@
             'conditions' : [
               ['OS=="android"', {
                 'ldflags': [
-                  '-Wl,--fatal-warnings',
+                  # SWE : isspace and tolower conflict with stlport_shared and
+                  # sweskia
+                  #'-Wl,--fatal-warnings',
                   # Only link with needed input sections. This is to avoid
                   # getting undefined reference to __cxa_bad_typeid in the CDU
                   # library.
@@ -2948,7 +2950,9 @@
                   '-fomit-frame-pointer',
                 ],
                 'ldflags': [
-                  '-Wl,--fatal-warnings',
+                  # SWE : isspace and tolower conflict with stlport_shared and
+                  # sweskia
+                  #'-Wl,--fatal-warnings',
                   # Warn in case of text relocations.
                   '-Wl,--warn-shared-textrel',
                 ],
