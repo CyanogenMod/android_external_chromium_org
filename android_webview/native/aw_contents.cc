@@ -307,8 +307,11 @@ jint AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 }
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
-  delete this;
-
+  java_ref_.reset();
+  // We do not delete AwContents immediately. Some applications try to delete
+  // Webview in ShouldOverrideUrlLoading callback, which is a sync IPC from
+  // Webkit.
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
   // When the last WebView is destroyed free all discardable memory allocated by
   // Chromium, because the app process may continue to run for a long time
   // without ever using another WebView.
@@ -866,6 +869,16 @@ void AwContents::OnWebLayoutContentsSizeChanged(
     return;
   Java_AwContents_onWebLayoutContentsSizeChanged(
       env, obj.obj(), contents_size.width(), contents_size.height());
+}
+
+bool AwContents::OnShouldOverrideUrlLoading(const base::string16& url) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return false;
+  ScopedJavaLocalRef<jstring> jurl = ConvertUTF16ToJavaString(env, url);
+  return Java_AwContents_onShouldOverrideUrlLoading(env, obj.obj(),
+                                                    jurl.obj());
 }
 
 jint AwContents::CapturePicture(JNIEnv* env,

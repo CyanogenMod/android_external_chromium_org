@@ -5,6 +5,7 @@
 #include "android_webview/renderer/aw_content_renderer_client.h"
 
 #include "android_webview/common/aw_resource.h"
+#include "android_webview/common/render_view_messages.h"
 #include "android_webview/common/url_constants.h"
 #include "android_webview/renderer/aw_render_view_ext.h"
 // START: Printing fork b/10190508
@@ -15,12 +16,17 @@
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
+#include "content/public/renderer/document_state.h"
+#include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/render_view.h"
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "url/gurl.h"
 
@@ -44,6 +50,44 @@ void AwContentRendererClient::RenderThreadStarted() {
 
   visited_link_slave_.reset(new visitedlink::VisitedLinkSlave);
   thread->AddObserver(visited_link_slave_.get());
+}
+
+bool AwContentRendererClient::HandleNavigation(
+    content::RenderView* view,
+    content::DocumentState* document_state,
+    WebKit::WebFrame* frame,
+    const WebKit::WebURLRequest& request,
+    WebKit::WebNavigationType type,
+    WebKit::WebNavigationPolicy default_policy,
+    bool is_redirect) {
+
+  // Only GETs can be overridden.
+  if (!request.httpMethod().equals("GET"))
+    return false;
+
+  // Any navigation from loadUrl, and goBack/Forward are considered application-
+  // initiated and hence will not yield a shouldOverrideUrlLoading() callback.
+  // Webview classic does not consider reload application-initiated so we
+  // continue the same behavior.
+  bool application_initiated =
+      !document_state->navigation_state()->is_content_initiated()
+      || type == WebKit::WebNavigationTypeBackForward;
+
+  // Don't offer application-initiated navigations unless it's a redirect.
+  if (application_initiated && !is_redirect)
+    return false;
+
+  // We are only interested in top-level navigation.
+  if (frame->parent())
+    return false;
+
+  bool ignore_navigation = false;
+  int routing_id = view->GetRoutingID();
+  base::string16 url =  request.url().string();
+  view->Send (new AwViewHostMsg_ShouldOverrideUrlLoading(routing_id,
+                                                         url,
+                                                         &ignore_navigation));
+  return ignore_navigation;
 }
 
 void AwContentRendererClient::RenderViewCreated(

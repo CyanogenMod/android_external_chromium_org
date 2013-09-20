@@ -293,12 +293,14 @@ public class AwContents {
             final boolean isRedirect = navigationParams.isRedirect;
 
             boolean ignoreNavigation = false;
+            // TODO(sgurun) cleanup existing shouldIgnoreNavigation in next patch.
+            if (true) return false;
 
             // Any navigation from loadUrl, goBack/Forward, or reload, are considered application
             // initiated and hence will not yield a shouldOverrideUrlLoading() callback.
             // TODO(joth): Using PageTransitionTypes should be sufficient to determine all app
             // initiated navigations, and so mLastLoadUrlAddress should be removed.
-            if ((isLoadUrl && !isRedirect) || isBackForward || isReload ||
+            if ((isLoadUrl && !isRedirect) || isBackForward ||
                     mLastLoadUrlAddress != null && mLastLoadUrlAddress.equals(url)) {
                 // Support the case where the user clicks on a link that takes them back to the
                 // same page.
@@ -1804,6 +1806,11 @@ public class AwContents {
     private void onWebLayoutContentsSizeChanged(int widthCss, int heightCss) {
         // This change notification comes from the renderer thread, not from the cc/ impl thread.
         mLayoutSizer.onContentSizeChanged(widthCss, heightCss);
+    }
+
+    @CalledByNative
+    private boolean onShouldOverrideUrlLoading(String url) {
+        return mContentsClient.shouldOverrideUrlLoading(url);
     }
 
     @CalledByNative

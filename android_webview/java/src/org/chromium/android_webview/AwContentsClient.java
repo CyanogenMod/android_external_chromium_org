@@ -64,6 +64,11 @@ public abstract class AwContentsClient {
         }
 
         @Override
+        public void didStartLoading(String url) {
+            AwContentsClient.this.onPageStarted(url);
+        }
+
+        @Override
         public void didStopLoading(String url) {
             AwContentsClient.this.onPageFinished(url);
         }
