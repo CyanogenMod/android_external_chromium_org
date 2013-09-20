@@ -27,7 +27,8 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
 
   virtual bool CanReadPixels() const OVERRIDE;
 
-  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) OVERRIDE;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                         bool disable_picture_quad_image_filtering) OVERRIDE;
 
   virtual void Finish() OVERRIDE {}
 

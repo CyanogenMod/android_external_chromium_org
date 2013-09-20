@@ -875,6 +875,11 @@ void LayerImpl::SetScrollOffsetDelegate(
   }
 }
 
+bool LayerImpl::IsExternalFlingActive() const {
+  return scroll_offset_delegate_ &&
+         scroll_offset_delegate_->IsExternalFlingActive();
+}
+
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
   if (scroll_offset_ == scroll_offset)
     return;

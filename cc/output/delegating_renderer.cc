@@ -128,8 +128,8 @@ static ResourceProvider::ResourceId AppendToArray(
   return id;
 }
 
-void DelegatingRenderer::DrawFrame(
-    RenderPassList* render_passes_in_draw_order) {
+void DelegatingRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
+                                   bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DelegatingRenderer::DrawFrame");
 
   DCHECK(!frame_for_swap_buffers_.delegated_frame_data);

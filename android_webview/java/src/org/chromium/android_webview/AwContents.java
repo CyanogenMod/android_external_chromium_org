@@ -1799,6 +1799,11 @@ public class AwContents {
     }
 
     @CalledByNative
+    private boolean isFlingActive() {
+        return mScrollOffsetManager.isFlingActive();
+    }
+
+    @CalledByNative
     private void setContentsSize(int widthDip, int heightDip) {
         mContentWidthDip = widthDip;
         mContentHeightDip = heightDip;

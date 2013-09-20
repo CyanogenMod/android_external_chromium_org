@@ -30,7 +30,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
       const RenderPassList& render_passes_in_draw_order) OVERRIDE;
   virtual bool HaveCachedResourcesForRenderPassId(RenderPass::Id id) const
       OVERRIDE;
-  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) OVERRIDE;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                         bool disable_picture_quad_image_filtering) OVERRIDE;
 
   struct CC_EXPORT DrawingFrame {
     DrawingFrame();
@@ -44,6 +45,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
 
     gfx::Transform projection_matrix;
     gfx::Transform window_matrix;
+
+    bool disable_picture_quad_image_filtering;
   };
 
   void SetEnlargePassTextureAmountForTesting(gfx::Vector2d amount);
