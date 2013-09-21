@@ -33,7 +33,7 @@ bool NavigationConstraintsImpl::IsSchemeAllowed(const GURL& url) {
   // Additional checking for view-source. Allow only http and https
   // URLs in view source.
   if (url.SchemeIs(content::kViewSourceScheme)) {
-    GURL sub_url(url.path());
+    GURL sub_url(url.GetContent());
     if (sub_url.SchemeIs(chrome::kHttpScheme) ||
         sub_url.SchemeIs(chrome::kHttpsScheme))
       return true;
