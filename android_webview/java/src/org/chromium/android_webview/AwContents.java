@@ -179,6 +179,9 @@ public class AwContents {
 
     private boolean mContainerViewFocused;
 
+    private boolean mClearViewActive;
+    private boolean mPictureListenerEnabled;
+
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
     private static final class DestroyRunnable implements Runnable {
@@ -673,9 +676,11 @@ public class AwContents {
         }
 
         mScrollOffsetManager.syncScrollOffsetFromOnDraw();
-
         canvas.getClipBounds(mClipBoundsTemporary);
-        if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
+
+        if (mClearViewActive) {
+            canvas.drawColor(getEffectiveBackgroundColor());
+        } else if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
                     mContainerView.getScrollX(), mContainerView.getScrollY(),
                     mClipBoundsTemporary.left, mClipBoundsTemporary.top,
                     mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
@@ -709,6 +714,12 @@ public class AwContents {
                     mScrollOffsetManager.computeVerticalScrollRange()));
     }
 
+    public void clearView() {
+        mClearViewActive = true;
+        syncOnNewPictureStateToNative();
+        mContainerView.invalidate();
+    }
+
     /**
      * Enable the onNewPicture callback.
      * @param enabled Flag to enable the callback.
@@ -726,7 +737,12 @@ public class AwContents {
                 }
             };
         }
-        nativeEnableOnNewPicture(mNativeAwContents, enabled);
+        mPictureListenerEnabled = enabled;
+        syncOnNewPictureStateToNative();
+    }
+
+    private void syncOnNewPictureStateToNative() {
+        nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
     }
 
     public void findAllAsync(String searchString) {
@@ -1673,6 +1689,13 @@ public class AwContents {
 
     @CalledByNative
     public void onNewPicture() {
+        // Clear up any results from a previous clearView call
+        if (mClearViewActive) {
+            mClearViewActive = false;
+            mContainerView.invalidate();
+            syncOnNewPictureStateToNative();
+        }
+
         // Don't call capturePicture() here but instead defer it until the posted task runs within
         // the callback helper, to avoid doubling back into the renderer compositor in the middle
         // of the notification it is sending up to here.
