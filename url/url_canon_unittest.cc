@@ -1723,8 +1723,8 @@ TEST(URLCanonTest, CanonicalizePathURL) {
 
     // When we end with a colon at the end, there should be no path.
     if (path_cases[i].input[url_len - 1] == ':') {
-      EXPECT_EQ(0, out_parsed.path.begin);
-      EXPECT_EQ(-1, out_parsed.path.len);
+      EXPECT_EQ(0, out_parsed.GetContent().begin);
+      EXPECT_EQ(-1, out_parsed.GetContent().len);
     }
   }
 }

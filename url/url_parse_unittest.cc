@@ -359,15 +359,13 @@ TEST(URLParser, PathURL) {
     url_parse::ParsePathURL(url, static_cast<int>(strlen(url)), &parsed);
 
     EXPECT_TRUE(ComponentMatches(url, path_cases[i].scheme, parsed.scheme));
-    EXPECT_TRUE(ComponentMatches(url, path_cases[i].path, parsed.path));
+    EXPECT_TRUE(ComponentMatches(url, path_cases[i].path, parsed.GetContent()));
 
     // The remaining components are never used for path urls.
     ExpectInvalidComponent(parsed.username);
     ExpectInvalidComponent(parsed.password);
     ExpectInvalidComponent(parsed.host);
     ExpectInvalidComponent(parsed.port);
-    ExpectInvalidComponent(parsed.query);
-    ExpectInvalidComponent(parsed.ref);
   }
 }
 

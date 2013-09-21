@@ -137,8 +137,12 @@ void GURL::InitializeFromCanonicalSpec() {
 #ifndef NDEBUG
   // For testing purposes, check that the parsed canonical URL is identical to
   // what we would have produced. Skip checking for invalid URLs have no meaning
-  // and we can't always canonicalize then reproducabely.
-  if (is_valid_) {
+  // and we can't always canonicalize them reproducibly.
+  // Skip checking for non-standard URLs as they may have trailing white-space
+  // and we can't always canonicalize them exactly. TODO(joth): see if we
+  // can do a better job on this e.g. by not stripping trailing white-space
+  // for non-standard URLs in this validation path. http://crbug.com/291747.
+  if (is_valid_ && IsStandard()) {
     url_parse::Component scheme;
     if (!url_util::FindAndCompareScheme(spec_.data(), spec_.length(),
                                         "filesystem", &scheme) ||

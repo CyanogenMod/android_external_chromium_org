@@ -100,11 +100,20 @@ bool DoIsRelativeURL(const char* base,
   // BUT: Just because we have a scheme, doesn't make it absolute.
   // "http:foo.html" is a relative URL with path "foo.html". If the scheme is
   // empty, we treat it as relative (":foo") like IE does.
-  url_parse::Component scheme;
-  if (!url_parse::ExtractScheme(url, url_len, &scheme) || scheme.len == 0) {
-    // Don't allow relative URLs if the base scheme doesn't support it.
-    if (!is_base_hierarchical)
+  url_parse::Parsed url_parsed;
+  url_parse::ParsePathURL(url, url_len, &url_parsed);
+  const url_parse::Component& scheme = url_parsed.scheme;
+  const bool scheme_is_empty = !scheme.is_nonempty();
+  if (scheme_is_empty) {
+    // No scheme. See if is a bare fragment.
+    if (url_parsed.ref.is_valid() &&
+        url_parsed.CountCharactersBefore(url_parse::Parsed::REF, true) ==
+        url_parsed.CountCharactersBefore(url_parse::Parsed::SCHEME, false)) {
+      // |url| is a bare fragement. This can be resolved against any base.
+    } else if (!is_base_hierarchical) {
+      // Don't allow relative URLs if the base scheme doesn't support it.
       return false;
+    }
 
     *relative_component = url_parse::MakeRange(begin, url_len);
     *is_relative = true;
