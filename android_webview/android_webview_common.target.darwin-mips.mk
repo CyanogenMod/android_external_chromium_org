@@ -32,7 +32,6 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_contents_client_bridge_base.cc \
 	android_webview/browser/aw_content_browser_client.cc \
 	android_webview/browser/aw_cookie_access_policy.cc \
-	android_webview/browser/aw_devtools_delegate.cc \
 	android_webview/browser/aw_download_manager_delegate.cc \
 	android_webview/browser/aw_form_database_service.cc \
 	android_webview/browser/aw_gl_surface.cc \

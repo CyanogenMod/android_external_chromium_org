@@ -33,6 +33,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_contents.cc \
 	android_webview/native/aw_contents_client_bridge.cc \
 	android_webview/native/aw_contents_io_thread_client_impl.cc \
+	android_webview/native/aw_dev_tools_server.cc \
 	android_webview/native/aw_form_database.cc \
 	android_webview/native/aw_geolocation_permission_context.cc \
 	android_webview/native/aw_http_auth_handler.cc \
