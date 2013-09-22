@@ -11,6 +11,7 @@
 // START: Printing fork b/10190508
 #include "android_webview/renderer/print_web_view_helper.h"
 // END: Printing fork b/10190508
+#include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
@@ -24,6 +25,8 @@
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -113,6 +116,37 @@ bool AwContentRendererClient::HandleNavigation(
   RenderThread::Get()->Send(new AwViewHostMsg_ShouldOverrideUrlLoading(
       routing_id, url, &ignore_navigation));
 
+  return ignore_navigation;
+}
+
+bool AwContentRendererClient::ShouldAbortNavigationAfterUrlResolve(
+    content::RenderView* view,
+    const GURL& base,
+    const base::string16& fragment,
+    const GURL& result) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+        "enable-webview-classic-workarounds")) {
+    return false;
+  }
+  if (!base.is_valid())
+    return false;
+
+  if (result.is_valid()) {
+    // Workaround for http://b/11118423 -- some apps put "|" into an <a href>
+    // and expect it to resolve.
+    if (fragment.empty() || fragment[0] != '|')
+      return false;
+  }
+  int routing_id = view->GetRoutingID();
+  bool ignore_navigation = false;
+  RenderThread::Get()->Send(new AwViewHostMsg_ShouldOverrideUrlLoading(
+      routing_id, fragment, &ignore_navigation));
+  if (ignore_navigation) {
+    LOG(WARNING) << "Invalid URL resolve in navigation:\n"
+        "   relative link: " << fragment << "\n"
+        "   against base: " << base.spec() << "]\n"
+        "^^^ THIS WILL BREAK IN FUTURE ANDROID WEBVIEW VERSIONS.";
+  }
   return ignore_navigation;
 }
 

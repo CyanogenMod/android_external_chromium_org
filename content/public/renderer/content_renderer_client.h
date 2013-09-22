@@ -177,6 +177,11 @@ class CONTENT_EXPORT ContentRendererClient {
                                 WebKit::WebNavigationPolicy default_policy,
                                 bool is_redirect);
 
+  virtual bool ShouldAbortNavigationAfterUrlResolve(content::RenderView* view,
+                                   const GURL& base,
+                                   const base::string16& fragment,
+                                   const GURL& result);
+
   // Returns true if we should fork a new process for the given navigation.
   virtual bool ShouldFork(WebKit::WebFrame* frame,
                           const GURL& url,
