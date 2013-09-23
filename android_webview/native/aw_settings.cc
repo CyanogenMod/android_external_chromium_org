@@ -198,6 +198,12 @@ void AwSettings::UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj) {
   prefs.user_gesture_required_for_media_playback =
       Java_AwSettings_getMediaPlaybackRequiresUserGestureLocked(env, obj);
 
+  // Temporary setting, for K release only
+  // This is a fork from upstream chromium, and should go away once
+  // https://code.google.com/p/chromium/issues/detail?id=297216
+  // is implemented
+  prefs.allow_running_insecure_content = true;
+
   ScopedJavaLocalRef<jstring> url =
       Java_AwSettings_getDefaultVideoPosterURLLocked(env, obj);
   prefs.default_video_poster_url = url.obj() ?
