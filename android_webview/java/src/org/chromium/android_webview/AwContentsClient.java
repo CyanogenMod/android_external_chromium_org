@@ -23,6 +23,7 @@ import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentVideoView;
 import org.chromium.content.browser.ContentVideoViewClient;
 import org.chromium.content.browser.ContentVideoViewControls;
@@ -64,13 +65,23 @@ public abstract class AwContentsClient {
         }
 
         @Override
-        public void didStartLoading(String url) {
-            AwContentsClient.this.onPageStarted(url);
+        public void didStartLoading(final String url) {
+            ThreadUtils.postOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    AwContentsClient.this.onPageStarted(url);
+                }
+            });
         }
 
         @Override
-        public void didStopLoading(String url) {
-            AwContentsClient.this.onPageFinished(url);
+        public void didStopLoading(final String url) {
+            ThreadUtils.postOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    AwContentsClient.this.onPageFinished(url);
+                }
+            });
         }
 
         @Override
