@@ -260,6 +260,13 @@ TEST(URLUtilTest, TestResolveRelativeWithNonStandardBase) {
       // Resolving should fail if the base URL is authority-based but is
       // missing a path component (the '/' at the end).
     {"scheme://Authority", "path", false, ""},
+      // Test resolving a fragment (only) against any kind of base-URL.
+    {"about:blank", "#id42", true, "about:blank#id42" },
+    {"about:blank#oldfrag", "#newfrag", true, "about:blank#newfrag" },
+      // A surprising side effect of allowing fragments to resolve against
+      // any URL scheme is we might break javascript: URLs by doing so...
+    {"javascript:alert('foo#bar')", "#badfrag", true,
+      "javascript:alert('foo#badfrag" },
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resolve_non_standard_cases); i++) {

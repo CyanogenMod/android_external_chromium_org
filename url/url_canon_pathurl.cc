@@ -14,6 +14,36 @@ namespace url_canon {
 namespace {
 
 template<typename CHAR, typename UCHAR>
+bool DoCanonicalizePathComponent(const CHAR* source,
+                                 const url_parse::Component& component,
+                                 CHAR seperator,
+                                 CanonOutput* output,
+                                 url_parse::Component* new_parsed) {
+  bool success = true;
+  if (component.is_valid()) {
+    if (seperator)
+      output->push_back(seperator);
+    // Copy the path using path URL's more lax escaping rules (think for
+    // javascript:). We convert to UTF-8 and escape non-ASCII, but leave all
+    // ASCII characters alone. This helps readability of JavaStript.
+    new_parsed->begin = output->length();
+    int end = component.end();
+    for (int i = component.begin; i < end; i++) {
+      UCHAR uch = static_cast<UCHAR>(source[i]);
+      if (uch < 0x20 || uch >= 0x80)
+        success &= AppendUTF8EscapedChar(source, &i, end, output);
+      else
+        output->push_back(static_cast<char>(uch));
+    }
+    new_parsed->len = output->length() - new_parsed->begin;
+  } else {
+    // Empty part.
+    new_parsed->reset();
+  }
+  return success;
+}
+
+template<typename CHAR, typename UCHAR>
 bool DoCanonicalizePathURL(const URLComponentSource<CHAR>& source,
                            const url_parse::Parsed& parsed,
                            CanonOutput* output,
@@ -28,29 +58,12 @@ bool DoCanonicalizePathURL(const URLComponentSource<CHAR>& source,
   new_parsed->password.reset();
   new_parsed->host.reset();
   new_parsed->port.reset();
-
-  if (parsed.path.is_valid()) {
-    // Copy the path using path URL's more lax escaping rules (think for
-    // javascript:). We convert to UTF-8 and escape non-ASCII, but leave all
-    // ASCII characters alone. This helps readability of JavaStript.
-    new_parsed->path.begin = output->length();
-    int end = parsed.path.end();
-    for (int i = parsed.path.begin; i < end; i++) {
-      UCHAR uch = static_cast<UCHAR>(source.path[i]);
-      if (uch < 0x20 || uch >= 0x80)
-        success &= AppendUTF8EscapedChar(source.path, &i, end, output);
-      else
-        output->push_back(static_cast<char>(uch));
-    }
-    new_parsed->path.len = output->length() - new_parsed->path.begin;
-  } else {
-    // Empty path.
-    new_parsed->path.reset();
-  }
-
-  // Assume there's no query or ref.
-  new_parsed->query.reset();
-  new_parsed->ref.reset();
+  success &= DoCanonicalizePathComponent<CHAR, UCHAR>(
+      source.path, parsed.path, 0, output, &new_parsed->path);
+  success &= DoCanonicalizePathComponent<CHAR, UCHAR>(
+      source.query, parsed.query, '?', output, &new_parsed->query);
+  success &= DoCanonicalizePathComponent<CHAR, UCHAR>(
+      source.ref, parsed.ref, '#', output, &new_parsed->ref);
 
   return success;
 }

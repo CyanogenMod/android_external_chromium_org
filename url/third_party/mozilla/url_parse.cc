@@ -462,6 +462,7 @@ void DoParsePathURL(const CHAR* spec, int spec_len, Parsed* parsed) {
   parsed->password.reset();
   parsed->host.reset();
   parsed->port.reset();
+  parsed->path.reset();
   parsed->query.reset();
   parsed->ref.reset();
 
@@ -481,19 +482,20 @@ void DoParsePathURL(const CHAR* spec, int spec_len, Parsed* parsed) {
   if (ExtractScheme(&spec[begin], spec_len - begin, &parsed->scheme)) {
     // Offset the results since we gave ExtractScheme a substring.
     parsed->scheme.begin += begin;
-
-    // For compatability with the standard URL parser, we treat no path as
-    // -1, rather than having a length of 0 (we normally wouldn't care so
-    // much for these non-standard URLs).
-    if (parsed->scheme.end() == spec_len - 1)
-      parsed->path.reset();
-    else
-      parsed->path = MakeRange(parsed->scheme.end() + 1, spec_len);
+    begin = parsed->scheme.end() + 1;
   } else {
-    // No scheme found, just path.
     parsed->scheme.reset();
-    parsed->path = MakeRange(begin, spec_len);
   }
+
+  if (begin == spec_len)
+    return;
+  DCHECK_LT(begin, spec_len);
+
+  ParsePath(spec,
+            MakeRange(begin, spec_len),
+            &parsed->path,
+            &parsed->query,
+            &parsed->ref);
 }
 
 template<typename CHAR>
