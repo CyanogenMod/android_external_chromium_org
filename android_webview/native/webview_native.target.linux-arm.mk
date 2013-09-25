@@ -41,6 +41,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_quota_manager_bridge_impl.cc \
 	android_webview/native/aw_resource.cc \
 	android_webview/native/aw_settings.cc \
+	android_webview/native/aw_settings_poker_impl.cc \
 	android_webview/native/aw_web_contents_delegate.cc \
 	android_webview/native/aw_web_contents_view_delegate.cc \
 	android_webview/native/cookie_manager.cc \
