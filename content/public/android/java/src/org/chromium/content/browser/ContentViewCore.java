@@ -240,11 +240,9 @@ import java.util.Map;
         /**
          * Called each time any of the parameters are changed.
          *
-         * @param widthCss The content width in logical (CSS) pixels.
-         * @param heightCss The content height in logical (CSS) pixels.
          * @param pageScaleFactor The page scale.
          */
-        void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor);
+        void onFrameInfoUpdated(float pageScaleFactor);
     }
 
     private VSyncManager.Provider mVSyncProvider;
@@ -355,7 +353,6 @@ import java.util.Map;
 
     private ContentViewGestureHandler mContentViewGestureHandler;
     private GestureStateListener mGestureStateListener;
-    private UpdateFrameInfoListener mUpdateFrameInfoListener;
     private ZoomManager mZoomManager;
     private ZoomControlsDelegate mZoomControlsDelegate;
 
@@ -2275,10 +2272,6 @@ import java.util.Map;
         if (mNativeContentViewCore != 0) nativeShowImeIfNeeded(mNativeContentViewCore);
     }
 
-    public void setUpdateFrameInfoListener(UpdateFrameInfoListener updateFrameInfoListener) {
-        mUpdateFrameInfoListener = updateFrameInfoListener;
-    }
-
     @SuppressWarnings("unused")
     @CalledByNative
     private void updateFrameInfo(
@@ -2333,11 +2326,6 @@ import java.util.Map;
                 viewportWidth, viewportHeight,
                 pageScaleFactor, minPageScaleFactor, maxPageScaleFactor,
                 contentOffsetYPix);
-
-        if ((contentSizeChanged || pageScaleChanged) && mUpdateFrameInfoListener != null) {
-            mUpdateFrameInfoListener.onFrameInfoUpdated(
-                    contentWidth, contentHeight, pageScaleFactor);
-        }
 
         if (needTemporarilyHideHandles) temporarilyHideTextHandles();
         if (needUpdateZoomControls) mZoomControlsDelegate.updateZoomControls();
