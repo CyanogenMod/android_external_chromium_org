@@ -40,12 +40,20 @@ class MockCanvas : public SkCanvas {
 class PictureLayerImplTest : public testing::Test {
  public:
   PictureLayerImplTest()
-      : host_impl_(ImplSidePaintingSettings(), &proxy_),
-        id_(7) {
-    host_impl_.InitializeRenderer(CreateFakeOutputSurface());
-  }
+      : host_impl_(ImplSidePaintingSettings(), &proxy_), id_(7) {}
+
+  explicit PictureLayerImplTest(const LayerTreeSettings& settings)
+      : host_impl_(settings, &proxy_), id_(7) {}
 
   virtual ~PictureLayerImplTest() {
+  }
+
+  virtual void SetUp() OVERRIDE {
+    InitializeRenderer();
+  }
+
+  virtual void InitializeRenderer() {
+    host_impl_.InitializeRenderer(CreateFakeOutputSurface());
   }
 
   void SetupDefaultTrees(gfx::Size layer_bounds) {
