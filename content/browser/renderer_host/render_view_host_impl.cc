@@ -327,6 +327,7 @@ void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
     Send(new ViewMsg_Navigate(GetRoutingID(), params));
   }
 
+#if 0 // START workaround for b/10715395
   // Force the throbber to start. We do this because WebKit's "started
   // loading" message will be received asynchronously from the UI of the
   // browser. But we want to keep the throbber in sync with what's happening
@@ -340,7 +341,7 @@ void RenderViewHostImpl::Navigate(const ViewMsg_Navigate_Params& params) {
   // don't want to either.
   if (!params.url.SchemeIs(chrome::kJavaScriptScheme))
     delegate_->DidStartLoading(this);
-
+#endif // END workaround for b/10715395
   FOR_EACH_OBSERVER(RenderViewHostObserver, observers_, Navigate(params.url));
 }
 
