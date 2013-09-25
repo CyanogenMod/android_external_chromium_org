@@ -170,6 +170,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
         if (!getAccessibilityManager().isEnabled() ||
                 mContentViewCore.getContentSettings() == null ||
                 !mContentViewCore.getContentSettings().getJavaScriptEnabled()) {
+            Log.v("ben", "JS AX off! 1");
             return false;
         }
 
@@ -178,10 +179,12 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
             List<AccessibilityServiceInfo> services =
                     getAccessibilityManager().getEnabledAccessibilityServiceList(
                             FEEDBACK_BRAILLE | AccessibilityServiceInfo.FEEDBACK_SPOKEN);
+            Log.v("ben", "JS AX : " + (services.size() > 0));
             return services.size() > 0;
         } catch (NullPointerException e) {
             // getEnabledAccessibilityServiceList() can throw an NPE due to a bad
             // AccessibilityService.
+            Log.v("ben", "JS AX off! 2");
             return false;
         }
     }

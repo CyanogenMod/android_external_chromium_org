@@ -18,6 +18,8 @@ import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentViewCore;
 
+import android.util.Log;
+
 /**
  * Stores Android WebView specific settings that does not need to be synced to WebKit.
  * Use {@link org.chromium.content.browser.ContentSettings} for WebKit settings.
@@ -866,6 +868,7 @@ public class AwSettings {
      */
     public boolean getJavaScriptEnabled() {
         synchronized (mAwSettingsLock) {
+            Log.v("ben", "AWSettings, js enabled=" + mJavaScriptEnabled);
             return mJavaScriptEnabled;
         }
     }

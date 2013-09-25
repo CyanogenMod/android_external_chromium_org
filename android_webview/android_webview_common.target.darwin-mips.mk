@@ -38,10 +38,11 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_http_auth_handler_base.cc \
 	android_webview/browser/aw_javascript_dialog_manager.cc \
 	android_webview/browser/aw_login_delegate.cc \
+	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_quota_manager_bridge.cc \
 	android_webview/browser/aw_quota_permission_context.cc \
-	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_request_interceptor.cc \
+	android_webview/browser/aw_web_preferences_populater.cc \
 	android_webview/browser/find_helper.cc \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/gpu_memory_handle_impl.cc \
