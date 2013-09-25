@@ -16,7 +16,9 @@ namespace android_webview {
 
 std::string AwContentClient::GetProduct() const {
   // "Version/4.0" had been hardcoded in the legacy WebView.
-  return std::string("Version/4.0");
+  // "Chrome/30.0.0.0" identifies that this WebView is derived originally
+  // from Chromium M30.
+  return std::string("Version/4.0 Chrome/30.0.0.0");
 }
 
 std::string AwContentClient::GetUserAgent() const {
