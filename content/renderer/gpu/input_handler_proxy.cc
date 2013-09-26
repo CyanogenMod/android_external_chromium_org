@@ -10,12 +10,13 @@
 #include "content/renderer/gpu/input_handler_proxy_client.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 
 using WebKit::WebFloatPoint;
 using WebKit::WebFloatSize;
 using WebKit::WebGestureEvent;
 using WebKit::WebInputEvent;
+using WebKit::WebMouseEvent;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebPoint;
 using WebKit::WebTouchEvent;
@@ -223,6 +224,11 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
       return DROP_EVENT;
   } else if (WebInputEvent::isKeyboardEventType(event.type)) {
     CancelCurrentFling();
+  } else if (event.type == WebInputEvent::MouseMove) {
+    const WebMouseEvent& mouse_event =
+        *static_cast<const WebMouseEvent*>(&event);
+    // TODO(tony): Ignore when mouse buttons are down?
+    input_handler_->MouseMoveAt(gfx::Point(mouse_event.x, mouse_event.y));
   }
 
   return DID_NOT_HANDLE;

@@ -17,14 +17,14 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/native_window_notification_source.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -209,7 +209,7 @@ void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
   // Calculate thickness of bottom border as per current scale factor to
   // determine where to draw the 1-px thick border.
   float thickness = views::NonClientFrameView::kClientEdgeThickness /
-                    ui::GetScaleFactorScale(canvas->scale_factor());
+                    canvas->image_scale();
   SkScalar y = SkIntToScalar(view->height()) - SkFloatToScalar(thickness);
   canvas->sk_canvas()->drawLine(SkIntToScalar(0), y,
                                 SkIntToScalar(view->width()), y, paint);
@@ -591,7 +591,7 @@ bool BrowserView::ShouldShowAvatar() const {
     return false;
   }
 
-  return AvatarMenuModel::ShouldShowAvatarMenu();
+  return AvatarMenu::ShouldShowAvatarMenu();
 }
 
 bool BrowserView::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
@@ -773,6 +773,54 @@ void BrowserView::UpdateLoadingAnimations(bool should_animate) {
 
 void BrowserView::SetStarredState(bool is_starred) {
   GetLocationBarView()->SetStarToggled(is_starred);
+}
+
+void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
+                                     content::WebContents* new_contents,
+                                     int index,
+                                     int reason) {
+  DCHECK(new_contents);
+
+  // If |contents_container_| already has the correct WebContents, we can save
+  // some work.  This also prevents extra events from being reported by the
+  // Visibility API under Windows, as ChangeWebContents will briefly hide
+  // the WebContents window.
+  bool change_tab_contents =
+      contents_web_view_->web_contents() != new_contents;
+
+  // Update various elements that are interested in knowing the current
+  // WebContents.
+
+  // When we toggle the NTP floating bookmarks bar and/or the info bar,
+  // we don't want any WebContents to be attached, so that we
+  // avoid an unnecessary resize and re-layout of a WebContents.
+  if (change_tab_contents)
+    contents_web_view_->SetWebContents(NULL);
+  infobar_container_->ChangeInfoBarService(
+      InfoBarService::FromWebContents(new_contents));
+  if (bookmark_bar_view_.get()) {
+    bookmark_bar_view_->SetBookmarkBarState(
+        browser_->bookmark_bar_state(),
+        BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
+  }
+  UpdateUIForContents(new_contents);
+
+  // Layout for DevTools _before_ setting the main WebContents to avoid
+  // toggling the size of the main WebContents.
+  UpdateDevToolsForContents(new_contents);
+
+  if (change_tab_contents)
+    contents_web_view_->SetWebContents(new_contents);
+
+  if (!browser_->tab_strip_model()->closing_all() && GetWidget()->IsActive() &&
+      GetWidget()->IsVisible()) {
+    // We only restore focus if our window is visible, to avoid invoking blur
+    // handlers when we are eventually shown.
+    new_contents->GetView()->RestoreFocus();
+  }
+
+  // Update all the UI bits.
+  UpdateTitleBar();
 }
 
 void BrowserView::ZoomChangedForActiveTab(bool can_show_bubble) {
@@ -1395,57 +1443,6 @@ void BrowserView::TabDeactivated(WebContents* contents) {
   // be garbage at that point, it is not clear why.
   if (!contents->IsBeingDestroyed())
     contents->GetView()->StoreFocus();
-}
-
-void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
-                                   content::WebContents* new_contents,
-                                   int index,
-                                   int reason) {
-  DCHECK(new_contents);
-
-  // If |contents_container_| already has the correct WebContents, we can save
-  // some work.  This also prevents extra events from being reported by the
-  // Visibility API under Windows, as ChangeWebContents will briefly hide
-  // the WebContents window.
-  bool change_tab_contents =
-      contents_web_view_->web_contents() != new_contents;
-
-  // Update various elements that are interested in knowing the current
-  // WebContents.
-
-  // When we toggle the NTP floating bookmarks bar and/or the info bar,
-  // we don't want any WebContents to be attached, so that we
-  // avoid an unnecessary resize and re-layout of a WebContents.
-  if (change_tab_contents)
-    contents_web_view_->SetWebContents(NULL);
-  infobar_container_->ChangeInfoBarService(
-      InfoBarService::FromWebContents(new_contents));
-  if (bookmark_bar_view_.get()) {
-    bookmark_bar_view_->SetBookmarkBarState(
-        browser_->bookmark_bar_state(),
-        BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
-  }
-  UpdateUIForContents(new_contents);
-
-  // Layout for DevTools _before_ setting the main WebContents to avoid
-  // toggling the size of the main WebContents.
-  UpdateDevToolsForContents(new_contents);
-
-  if (change_tab_contents)
-    contents_web_view_->SetWebContents(new_contents);
-
-  if (!browser_->tab_strip_model()->closing_all() && GetWidget()->IsActive() &&
-      GetWidget()->IsVisible()) {
-    // We only restore focus if our window is visible, to avoid invoking blur
-    // handlers when we are eventually shown.
-    new_contents->GetView()->RestoreFocus();
-  }
-
-  // Update all the UI bits.
-  UpdateTitleBar();
-
-  // No need to update Toolbar because it's already updated in
-  // browser.cc.
 }
 
 void BrowserView::TabStripEmpty() {
@@ -2464,16 +2461,16 @@ void BrowserView::InitHangMonitor() {
 #endif
 }
 
-void BrowserView::UpdateAcceleratorMetrics(
-    const ui::Accelerator& accelerator, int command_id) {
+void BrowserView::UpdateAcceleratorMetrics(const ui::Accelerator& accelerator,
+                                           int command_id) {
   const ui::KeyboardCode key_code = accelerator.key_code();
   if (command_id == IDC_HELP_PAGE_VIA_KEYBOARD && key_code == ui::VKEY_F1)
     content::RecordAction(UserMetricsAction("ShowHelpTabViaF1"));
 
   if (command_id == IDC_BOOKMARK_PAGE)
     UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint",
-                              bookmark_utils::ENTRY_POINT_ACCELERATOR,
-                              bookmark_utils::ENTRY_POINT_LIMIT);
+                              BOOKMARK_ENTRY_POINT_ACCELERATOR,
+                              BOOKMARK_ENTRY_POINT_LIMIT);
 
 #if defined(OS_CHROMEOS)
   // Collect information about the relative popularity of various accelerators

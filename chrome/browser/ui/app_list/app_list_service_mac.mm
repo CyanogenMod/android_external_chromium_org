@@ -30,12 +30,15 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_mac.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/mac/app_mode_common.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/chrome_unscaled_resources.h"
 #include "grit/google_chrome_strings.h"
+#include "net/base/url_util.h"
 #import "ui/app_list/cocoa/app_list_view_controller.h"
 #import "ui/app_list/cocoa/app_list_window_controller.h"
+#include "ui/app_list/search_box_model.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/display.h"
@@ -92,10 +95,14 @@ class AppListControllerDelegateCocoa : public AppListControllerDelegate {
                                      const std::string& extension_id) OVERRIDE;
   virtual void ActivateApp(Profile* profile,
                            const extensions::Extension* extension,
+                           AppListSource source,
                            int event_flags) OVERRIDE;
   virtual void LaunchApp(Profile* profile,
                          const extensions::Extension* extension,
+                         AppListSource source,
                          int event_flags) OVERRIDE;
+  virtual void ShowForProfileByPath(
+      const base::FilePath& profile_path) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateCocoa);
 };
@@ -234,14 +241,41 @@ void AppListControllerDelegateCocoa::CreateNewWindow(
 }
 
 void AppListControllerDelegateCocoa::ActivateApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
-  LaunchApp(profile, extension, event_flags);
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
+  LaunchApp(profile, extension, source, event_flags);
 }
 
 void AppListControllerDelegateCocoa::LaunchApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
-  chrome::OpenApplication(chrome::AppLaunchParams(
-      profile, extension, NEW_FOREGROUND_TAB));
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
+  AppListServiceImpl::RecordAppListAppLaunch();
+
+  chrome::AppLaunchParams params(
+      profile, extension, NEW_FOREGROUND_TAB);
+
+  if (source != LAUNCH_FROM_UNKNOWN &&
+      extension->id() == extension_misc::kWebStoreAppId) {
+    // Set an override URL to include the source.
+    GURL extension_url = extensions::AppLaunchInfo::GetFullLaunchURL(extension);
+    params.override_url = net::AppendQueryParameter(
+        extension_url,
+        extension_urls::kWebstoreSourceField,
+        AppListSourceToString(source));
+  }
+
+  chrome::OpenApplication(params);
+}
+
+void AppListControllerDelegateCocoa::ShowForProfileByPath(
+    const base::FilePath& profile_path) {
+  AppListService* service = AppListServiceMac::GetInstance();
+  service->SetProfilePath(profile_path);
+  service->Show();
 }
 
 enum DockLocation {
@@ -409,15 +443,18 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
   if (profile() == requested_profile)
     return;
 
-  // The Objective C objects might be released at some unknown point in the
-  // future, so explicitly clear references to C++ objects.
-  [[window_controller_ appListViewController]
-      setDelegate:scoped_ptr<app_list::AppListViewDelegate>()];
-
   SetProfile(requested_profile);
+
+  if (window_controller_) {
+    // Clear the search box.
+    [[window_controller_ appListViewController] searchBoxModel]
+        ->SetText(base::string16());
+  } else {
+    window_controller_.reset([[AppListWindowController alloc] init]);
+  }
+
   scoped_ptr<app_list::AppListViewDelegate> delegate(
       new AppListViewDelegate(new AppListControllerDelegateCocoa(), profile()));
-  window_controller_.reset([[AppListWindowController alloc] init]);
   [[window_controller_ appListViewController] setDelegate:delegate.Pass()];
 }
 
@@ -427,14 +464,12 @@ void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
 
   InvalidatePendingProfileLoads();
 
-  if (IsAppListVisible() && (requested_profile == profile())) {
+  if (requested_profile == profile()) {
     ShowWindowNearDock();
     return;
   }
 
   SetProfilePath(requested_profile->GetPath());
-
-  DismissAppList();
   CreateForProfile(requested_profile);
   ShowWindowNearDock();
 }
@@ -506,6 +541,9 @@ void AppListServiceMac::OnShimSetHidden(apps::AppShimHandler::Host* host,
 void AppListServiceMac::OnShimQuit(apps::AppShimHandler::Host* host) {}
 
 void AppListServiceMac::ShowWindowNearDock() {
+  if (IsAppListVisible())
+    return;
+
   NSWindow* window = GetAppListWindow();
   DCHECK(window);
   NSPoint target_origin;
@@ -521,6 +559,7 @@ void AppListServiceMac::ShowWindowNearDock() {
                                closing:NO];
   [window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+  RecordAppListLaunch();
 }
 
 // static

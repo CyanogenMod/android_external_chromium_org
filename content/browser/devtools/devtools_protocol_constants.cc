@@ -82,6 +82,10 @@ namespace navigate {
   const char kParamUrl[] = "url";
 }  // navigate
 
+namespace reload {
+  const char kName[] = "Page.reload";
+}  // reload
+
 namespace getNavigationHistory {
   const char kName[] = "Page.getNavigationHistory";
   const char kResponseCurrentIndex[] = "currentIndex";
@@ -115,6 +119,11 @@ namespace stopScreencast {
 namespace screencastFrame {
   const char kName[] = "Page.screencastFrame";
 }  // screencastFrame
+
+namespace screencastVisibilityChanged {
+  const char kName[] = "Page.screencastVisibilityChanged";
+  const char kParamVisible[] = "visible";
+}  // screencastVisibilityChanged
 
 }  // Page
 

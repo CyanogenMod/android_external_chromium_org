@@ -99,6 +99,14 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
     TestResultCallback callback;
   };
 
+  virtual std::string GetTestNameForFiltering(
+      const testing::TestCase* test_case,
+      const testing::TestInfo* test_info) OVERRIDE {
+    DCHECK(thread_checker_.CalledOnValidThread());
+
+    return std::string(test_case->name()) + "." + test_info->name();
+  }
+
   virtual bool ShouldRunTest(const testing::TestCase* test_case,
                              const testing::TestInfo* test_info) OVERRIDE {
     DCHECK(thread_checker_.CalledOnValidThread());
@@ -151,7 +159,7 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
     // Note: do NOT parse child's stdout to do that, it's known to be
     // unreliable (e.g. buffering issues can mix up the output).
     base::TimeDelta timeout =
-        test_names.size() * TestTimeouts::action_timeout();
+        test_names.size() * TestTimeouts::test_launcher_timeout();
 
     parallel_launcher_.LaunchChildGTestProcess(
         cmd_line,
@@ -167,6 +175,7 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
   void GTestCallback(const std::vector<TestLaunchInfo>& tests,
                      const FilePath& output_file,
                      int exit_code,
+                     const TimeDelta& elapsed_time,
                      bool was_timeout,
                      const std::string& output) {
     DCHECK(thread_checker_.CalledOnValidThread());
@@ -188,35 +197,6 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
 
     // The temporary file's directory is also temporary.
     DeleteFile(output_file.DirName(), true);
-  }
-
-  static void MaybePrintTestOutputSnippet(const TestResult& result,
-                                          const std::string& full_output) {
-    if (result.status == TestResult::TEST_SUCCESS)
-      return;
-
-    size_t run_pos = full_output.find(std::string("[ RUN      ] ") +
-                                      result.GetFullName());
-    if (run_pos == std::string::npos)
-      return;
-
-    size_t end_pos = full_output.find(std::string("[  FAILED  ] ") +
-                                      result.GetFullName(),
-                                      run_pos);
-    if (end_pos != std::string::npos) {
-      size_t newline_pos = full_output.find("\n", end_pos);
-      if (newline_pos != std::string::npos)
-        end_pos = newline_pos + 1;
-    }
-
-    std::string snippet(full_output.substr(run_pos));
-    if (end_pos != std::string::npos)
-      snippet = full_output.substr(run_pos, end_pos - run_pos);
-
-    // TODO(phajdan.jr): Indent each line of the snippet so it's more
-    // noticeable.
-    fprintf(stdout, "%s", snippet.c_str());
-    fflush(stdout);
   }
 
   static bool ProcessTestResults(
@@ -254,8 +234,19 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
               // a crash.
               test_result.status = TestResult::TEST_TIMEOUT;
             }
+          } else if (test_result.status == TestResult::TEST_SUCCESS ||
+                     test_result.status == TestResult::TEST_FAILURE) {
+            // We run multiple tests in a batch with a timeout applied
+            // to the entire batch. It is possible that with other tests
+            // running quickly some tests take longer than the per-test timeout.
+            // For consistent handling of tests independent of order and other
+            // factors, mark them as timing out.
+            if (test_result.elapsed_time >
+                TestTimeouts::test_launcher_timeout()) {
+              test_result.status = TestResult::TEST_TIMEOUT;
+            }
           }
-          MaybePrintTestOutputSnippet(test_result, output);
+          PrintTestOutputSnippetOnFailure(test_result, output);
           tests[i].callback.Run(test_result);
           called_any_callback = true;
         } else if (had_interrupted_test) {
@@ -268,7 +259,7 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
           test_result.test_case_name = tests[i].test_case_name;
           test_result.test_name = tests[i].test_name;
           test_result.status = TestResult::TEST_UNKNOWN;
-          MaybePrintTestOutputSnippet(test_result, output);
+          PrintTestOutputSnippetOnFailure(test_result, output);
           tests[i].callback.Run(test_result);
           called_any_callback = true;
         }
@@ -305,14 +296,14 @@ class UnitTestLauncherDelegate : public TestLauncherDelegate {
     return called_any_callback;
   }
 
+  ThreadChecker thread_checker_;
+
   ParallelTestLauncher parallel_launcher_;
 
   // Maximum number of tests to run in a single batch.
   size_t batch_limit_;
 
   std::vector<TestLaunchInfo> tests_;
-
-  ThreadChecker thread_checker_;
 };
 
 bool GetSwitchValueAsInt(const std::string& switch_name, int* result) {

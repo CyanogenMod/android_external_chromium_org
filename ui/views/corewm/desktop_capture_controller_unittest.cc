@@ -133,8 +133,14 @@ TEST_F(DesktopCaptureControllerTest, CaptureWindowInputEventTest) {
   RunPendingMessages();
 }
 
+// crbug.com/295342
+#if defined(OS_WIN)
+#define MAYBE_TransferOnCapture DISABLED_TransferOnCapture
+#else
+#define MAYBE_TransferOnCapture TransferOnCapture
+#endif
 // Verifies aura::RootWindow is correctly notified on capture changes.
-TEST_F(DesktopCaptureControllerTest, TransferOnCapture) {
+TEST_F(DesktopCaptureControllerTest, MAYBE_TransferOnCapture) {
   Widget widget1;
   Widget::InitParams params1 =
       CreateParams(views::Widget::InitParams::TYPE_WINDOW);

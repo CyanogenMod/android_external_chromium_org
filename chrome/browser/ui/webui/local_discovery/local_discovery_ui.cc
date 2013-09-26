@@ -7,6 +7,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -71,6 +72,25 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
                              IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN);
   source->AddLocalizedString("registerNeedLogin",
                              IDS_LOCAL_DISCOVERY_REGISTER_NEED_LOGIN);
+  source->AddLocalizedString("availableDevicesTitle",
+                             IDS_LOCAL_DISCOVERY_AVAILABLE_DEVICES);
+  source->AddLocalizedString("myDevicesTitle",
+                             IDS_LOCAL_DISCOVERY_MY_DEVICES);
+
+
+  // Cloud print connector-related strings.
+#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
+  source->AddLocalizedString("cloudPrintConnectorEnablingButton",
+                             IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLING_BUTTON);
+  source->AddLocalizedString("cloudPrintConnectorDisabledButton",
+                             IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_BUTTON);
+  source->AddLocalizedString("cloudPrintConnectorEnabledButton",
+                             IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_BUTTON);
+  source->AddLocalizedString("cloudPrintName",
+                             IDS_GOOGLE_CLOUD_PRINT);
+  source->AddLocalizedString("titleConnector",
+                             IDS_LOCAL_DISCOVERY_CONNECTOR_SECTION);
+#endif
 
   source->SetJsonPath("strings.js");
 
@@ -91,4 +111,16 @@ LocalDiscoveryUI::LocalDiscoveryUI(content::WebUI* web_ui)
   // page. For example
   web_ui->AddMessageHandler(local_discovery::LocalDiscoveryUIHandler::Create());
   web_ui->AddMessageHandler(new MetricsHandler());
+}
+
+void LocalDiscoveryUI::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kLocalDiscoveryNotificationsEnabled,
+#if defined(OS_WIN)
+      false,
+#else
+      true,
+#endif
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 }

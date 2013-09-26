@@ -8,12 +8,8 @@
 #include <map>
 #include <string>
 
-#include "base/cancelable_callback.h"
-#include "base/memory/singleton.h"
-#include "base/threading/non_thread_safe.h"
 #include "chrome/common/local_discovery/service_discovery_client.h"
 #include "content/public/browser/utility_process_host_client.h"
-#include "net/base/network_change_notifier.h"
 
 namespace base {
 class TaskRunner;
@@ -28,14 +24,13 @@ namespace local_discovery {
 // Implementation of ServiceDiscoveryClient that delegates all functionality to
 // utility process.
 class ServiceDiscoveryHostClient
-    : public base::NonThreadSafe,
-      public ServiceDiscoveryClient,
+    : public ServiceDiscoveryClient,
       public content::UtilityProcessHostClient {
  public:
   ServiceDiscoveryHostClient();
 
   // Starts utility process with ServiceDiscoveryClient.
-  void Start();
+  void Start(const base::Closure& error_callback);
 
   // Shutdowns utility process.
   void Shutdown();
@@ -53,6 +48,7 @@ class ServiceDiscoveryHostClient
       const LocalDomainResolver::IPAddressCallback& callback) OVERRIDE;
 
   // UtilityProcessHostClient implementation.
+  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  protected:
@@ -62,7 +58,7 @@ class ServiceDiscoveryHostClient
   class ServiceWatcherProxy;
   class ServiceResolverProxy;
   class LocalDomainResolverProxy;
-  friend class ServiceDiscoverySharedClient;
+  friend class ServiceDiscoveryClientMdns;
 
   typedef std::map<uint64, ServiceWatcher::UpdatedCallback> WatcherCallbacks;
   typedef std::map<uint64, ServiceResolver::ResolveCompleteCallback>
@@ -90,6 +86,7 @@ class ServiceDiscoveryHostClient
   void UnregisterLocalDomainResolverCallback(uint64 id);
 
   // IPC Message handlers.
+  void OnError();
   void OnWatcherCallback(uint64 id,
                          ServiceWatcher::UpdateType update,
                          const std::string& service_name);
@@ -121,6 +118,7 @@ class ServiceDiscoveryHostClient
 
   // Incrementing counter to assign ID to watchers and resolvers.
   uint64 current_id_;
+  base::Closure error_callback_;
   WatcherCallbacks service_watcher_callbacks_;
   ResolverCallbacks service_resolver_callbacks_;
   DomainResolverCallbacks domain_resolver_callbacks_;
@@ -128,44 +126,6 @@ class ServiceDiscoveryHostClient
   scoped_refptr<base::TaskRunner> io_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceDiscoveryHostClient);
-};
-
-class ServiceDiscoverySharedClient
-    : public base::RefCounted<ServiceDiscoverySharedClient>,
-      public base::NonThreadSafe,
-      public ServiceDiscoveryClient,
-      public net::NetworkChangeNotifier::NetworkChangeObserver {
- public:
-  static scoped_refptr<ServiceDiscoverySharedClient> GetInstance();
-
-  // ServiceDiscoveryClient implementation.
-  virtual scoped_ptr<ServiceWatcher> CreateServiceWatcher(
-      const std::string& service_type,
-      const ServiceWatcher::UpdatedCallback& callback) OVERRIDE;
-  virtual scoped_ptr<ServiceResolver> CreateServiceResolver(
-      const std::string& service_name,
-      const ServiceResolver::ResolveCompleteCallback& callback) OVERRIDE;
-  virtual scoped_ptr<LocalDomainResolver> CreateLocalDomainResolver(
-      const std::string& domain,
-      net::AddressFamily address_family,
-      const LocalDomainResolver::IPAddressCallback& callback) OVERRIDE;
-
-  // net::NetworkChangeNotifier::NetworkChangeObserver implementation.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
-
- private:
-  friend class base::RefCounted<ServiceDiscoverySharedClient>;
-  ServiceDiscoverySharedClient();
-  virtual ~ServiceDiscoverySharedClient();
-
-  void StartNewClient();
-
-  base::CancelableClosure network_change_callback_;
-
-  scoped_refptr<ServiceDiscoveryHostClient> host_client_;
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceDiscoverySharedClient);
 };
 
 }  // namespace local_discovery

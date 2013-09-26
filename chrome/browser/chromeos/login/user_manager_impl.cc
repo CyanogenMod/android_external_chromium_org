@@ -28,17 +28,23 @@
 #include "chrome/browser/chromeos/login/auth_sync_observer.h"
 #include "chrome/browser/chromeos/login/auth_sync_observer_factory.h"
 #include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
+#include "chrome/browser/chromeos/login/language_switch_menu.h"
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/multi_profile_first_run_notification.h"
+#include "chrome/browser/chromeos/login/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/login/remove_user_delegate.h"
 #include "chrome/browser/chromeos/login/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
 #include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -228,18 +234,29 @@ UserManagerImpl::UserManagerImpl()
       is_current_user_ephemeral_regular_user_(false),
       ephemeral_users_enabled_(false),
       user_image_manager_(new UserImageManagerImpl),
-      manager_creation_time_(base::TimeTicks::Now()) {
+      manager_creation_time_(base::TimeTicks::Now()),
+      multi_profile_first_run_notification_(
+          new MultiProfileFirstRunNotification) {
   // UserManager instance should be used only on UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   registrar_.Add(this, chrome::NOTIFICATION_OWNERSHIP_STATUS_CHANGED,
       content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
       content::NotificationService::AllSources());
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_PROFILE_CREATED,
+                 content::NotificationService::AllSources());
   RetrieveTrustedDevicePolicies();
-  cros_settings_->AddSettingsObserver(kAccountsPrefDeviceLocalAccounts,
-                                      this);
-  cros_settings_->AddSettingsObserver(kAccountsPrefSupervisedUsersEnabled,
-                                      this);
+  local_accounts_subscription_ = cros_settings_->AddSettingsObserver(
+      kAccountsPrefDeviceLocalAccounts,
+      base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
+                 base::Unretained(this)));
+  supervised_users_subscription_ = cros_settings_->AddSettingsObserver(
+      kAccountsPrefSupervisedUsersEnabled,
+      base::Bind(&UserManagerImpl::RetrieveTrustedDevicePolicies,
+                 base::Unretained(this)));
+  multi_profile_user_controller_.reset(new MultiProfileUserController(
+      this, g_browser_process->local_state()));
   UpdateLoginState();
 }
 
@@ -260,11 +277,8 @@ UserManagerImpl::~UserManagerImpl() {
 
 void UserManagerImpl::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  cros_settings_->RemoveSettingsObserver(kAccountsPrefDeviceLocalAccounts,
-                                         this);
-  cros_settings_->RemoveSettingsObserver(
-      kAccountsPrefSupervisedUsersEnabled,
-      this);
+  local_accounts_subscription_.reset();
+  supervised_users_subscription_.reset();
   // Stop the session length limiter.
   session_length_limiter_.reset();
 
@@ -272,6 +286,7 @@ void UserManagerImpl::Shutdown() {
     device_local_account_policy_service_->RemoveObserver(this);
 
   user_image_manager_->Shutdown();
+  multi_profile_user_controller_.reset();
 }
 
 UserImageManager* UserManagerImpl::GetUserImageManager() {
@@ -284,11 +299,18 @@ const UserList& UserManagerImpl::GetUsers() const {
 }
 
 UserList UserManagerImpl::GetUsersAdmittedForMultiProfile() const {
+  if (!UserManager::IsMultipleProfilesAllowed())
+    return UserList();
+
   UserList result;
   const UserList& users = GetUsers();
   for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
-    if ((*it)->GetType() == User::USER_TYPE_REGULAR && !(*it)->is_logged_in())
+    if ((*it)->GetType() == User::USER_TYPE_REGULAR &&
+        !(*it)->is_logged_in() &&
+        multi_profile_user_controller_->IsUserAllowedInSession(
+            (*it)->email())) {
       result.push_back(*it);
+    }
   }
   return result;
 }
@@ -333,6 +355,8 @@ void UserManagerImpl::UserLoggedIn(const std::string& email,
     user->set_username_hash(username_hash);
     logged_in_users_.push_back(user);
     lru_logged_in_users_.push_back(user);
+    // Reset the new user flag if the user already exists.
+    is_current_user_new_ = false;
     // Set active user wallpaper back.
     WallpaperManager::Get()->SetUserWallpaper(active_user_->email());
     return;
@@ -691,11 +715,33 @@ User::OAuthTokenStatus UserManagerImpl::LoadUserOAuthStatus(
 
 void UserManagerImpl::SaveUserDisplayName(const std::string& username,
                                           const string16& display_name) {
+  UpdateUserAccountDataImpl(username, display_name, NULL);
+}
+
+void UserManagerImpl::UpdateUserAccountData(const std::string& username,
+                                            const string16& display_name,
+                                            const std::string& locale) {
+  UpdateUserAccountDataImpl(username, display_name, &locale);
+}
+
+void UserManagerImpl::UpdateUserAccountDataImpl(const std::string& username,
+                                                const string16& display_name,
+                                                const std::string* locale) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   User* user = FindUserAndModify(username);
   if (!user)
     return;  // Ignore if there is no such user.
+
+  // locale is not NULL if User Account has been downloaded
+  // (i.e. it is UpdateUserAccountData(), not SaveUserDisplayName() )
+  if (locale != NULL) {
+    user->SetAccountLocale(*locale);
+    RespectLocalePreference(GetProfileByUser(user), user);
+  }
+
+  if (display_name.empty())
+    return;
 
   user->set_display_name(display_name);
 
@@ -765,6 +811,97 @@ std::string UserManagerImpl::GetUserDisplayEmail(
   return user ? user->display_email() : username;
 }
 
+// TODO(alemate): http://crbug.com/288941 : Respect preferred language list in
+// the Google user profile.
+void UserManagerImpl::RespectLocalePreference(Profile* profile,
+                                              const User* user) const {
+  if (g_browser_process == NULL)
+    return;
+  if ((user == NULL) || (user != GetPrimaryUser()) ||
+      (!user->is_profile_created()))
+    return;
+
+  // In case of Multi Profile mode we don't apply profile locale because it is
+  // unsafe.
+  if (GetLoggedInUsers().size() != 1)
+    return;
+  const PrefService* prefs = profile->GetPrefs();
+  if (prefs == NULL)
+    return;
+
+  std::string pref_locale;
+  const std::string pref_app_locale =
+      prefs->GetString(prefs::kApplicationLocale);
+  const std::string pref_bkup_locale =
+      prefs->GetString(prefs::kApplicationLocaleBackup);
+
+  pref_locale = pref_app_locale;
+  if (pref_locale.empty())
+    pref_locale = pref_bkup_locale;
+
+  const std::string* account_locale = NULL;
+  if (pref_locale.empty() && user->has_gaia_account()) {
+    if (user->GetAccountLocale() == NULL)
+      return;  // wait until Account profile is loaded.
+    account_locale = user->GetAccountLocale();
+    pref_locale = *account_locale;
+  }
+  const std::string global_app_locale =
+      g_browser_process->GetApplicationLocale();
+  if (pref_locale.empty())
+    pref_locale = global_app_locale;
+  DCHECK(!pref_locale.empty());
+  LOG(WARNING) << "RespectLocalePreference: "
+               << "app_locale='" << pref_app_locale << "', "
+               << "bkup_locale='" << pref_bkup_locale << "', "
+               << (account_locale != NULL
+                       ? (std::string("account_locale='") + (*account_locale) +
+                          "'. ")
+                       : (std::string("account_locale - unused. ")))
+               << " Selected '" << pref_locale << "'";
+  profile->ChangeAppLocale(pref_locale, Profile::APP_LOCALE_CHANGED_VIA_LOGIN);
+  // Here we don't enable keyboard layouts. Input methods are set up when
+  // the user first logs in. Then the user may customize the input methods.
+  // Hence changing input methods here, just because the user's UI language
+  // is different from the login screen UI language, is not desirable. Note
+  // that input method preferences are synced, so users can use their
+  // farovite input methods as soon as the preferences are synced.
+  chromeos::LanguageSwitchMenu::SwitchLanguage(pref_locale);
+}
+
+class UserHashMatcher {
+ public:
+  explicit UserHashMatcher(const std::string& h) : username_hash(h) {}
+  bool operator()(const User* user) const {
+    return user->username_hash() == username_hash;
+  }
+
+ private:
+  const std::string& username_hash;
+};
+
+// Returns NULL if user is not created
+User* UserManagerImpl::GetUserByProfile(Profile* profile) const {
+  if (ProfileHelper::IsSigninProfile(profile))
+    return NULL;
+
+  if (IsMultipleProfilesAllowed()) {
+    const std::string username_hash =
+        ProfileHelper::GetUserIdHashFromProfile(profile);
+    const UserList& users = GetUsers();
+    const UserList::const_iterator pos = std::find_if(
+        users.begin(), users.end(), UserHashMatcher(username_hash));
+    return (pos != users.end()) ? *pos : NULL;
+  }
+  return active_user_;
+}
+
+Profile* UserManagerImpl::GetProfileByUser(const User* user) const {
+  if (IsMultipleProfilesAllowed())
+    return ProfileHelper::GetProfileByUserIdHash(user->username_hash());
+  return g_browser_process->profile_manager()->GetDefaultProfile();
+}
+
 void UserManagerImpl::Observe(int type,
                               const content::NotificationSource& source,
                               const content::NotificationDetails& details) {
@@ -789,15 +926,19 @@ void UserManagerImpl::Observe(int type,
           AuthSyncObserver* sync_observer =
               AuthSyncObserverFactory::GetInstance()->GetForProfile(profile);
           sync_observer->StartObserving();
+          multi_profile_user_controller_->StartObserving(profile);
+          multi_profile_first_run_notification_->UserProfilePrepared(profile);
         }
       }
       break;
-    case chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED: {
-      std::string changed_setting =
-          *content::Details<const std::string>(details).ptr();
-      DCHECK(changed_setting == kAccountsPrefDeviceLocalAccounts ||
-             changed_setting == kAccountsPrefSupervisedUsersEnabled);
-      RetrieveTrustedDevicePolicies();
+    case chrome::NOTIFICATION_PROFILE_CREATED: {
+      Profile* profile = content::Source<Profile>(source).ptr();
+      User* user = GetUserByProfile(profile);
+      if (user != NULL) {
+        user->set_profile_is_created();
+        if (user == active_user_)
+          RespectLocalePreference(profile, user);
+      }
       break;
     }
     default:
@@ -1349,6 +1490,8 @@ void UserManagerImpl::RemoveNonCryptohomeData(const std::string& email) {
   DictionaryPrefUpdate manager_emails_update(prefs,
                                              kManagedUserManagerDisplayEmails);
   manager_emails_update->RemoveWithoutPathExpansion(email, NULL);
+
+  multi_profile_user_controller_->RemoveCachedValue(email);
 }
 
 User* UserManagerImpl::RemoveRegularOrLocallyManagedUserFromList(
@@ -1830,6 +1973,12 @@ void UserManagerImpl::SendRegularUserLoginMetrics(const std::string& email) {
           time_to_login.InSeconds(), 0, kLogoutToLoginDelayMaxSec, 50);
     }
   }
+}
+
+void UserManagerImpl::OnUserNotAllowed() {
+  LOG(ERROR) << "Shutdown session because a user is not allowed to be in the "
+                "current session";
+  chrome::AttemptUserExit();
 }
 
 }  // namespace chromeos

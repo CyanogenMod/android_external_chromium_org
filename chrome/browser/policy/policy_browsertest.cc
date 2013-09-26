@@ -178,8 +178,6 @@ const char kGoodCrxId[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
 const char kAdBlockCrxId[] = "dojnnbeimaimaojcialkkgajdnefpgcn";
 const char kHostedAppCrxId[] = "kbmnembihfiondgfjekmnmcbddelicoi";
 
-const base::FilePath::CharType kGoodCrxManifestName[] =
-    FILE_PATH_LITERAL("good_update_manifest.xml");
 const base::FilePath::CharType kGood2CrxManifestName[] =
     FILE_PATH_LITERAL("good2_update_manifest.xml");
 const base::FilePath::CharType kGoodV1CrxManifestName[] =
@@ -188,8 +186,11 @@ const base::FilePath::CharType kGoodUnpackedExt[] =
     FILE_PATH_LITERAL("good_unpacked");
 const base::FilePath::CharType kAppUnpackedExt[] =
     FILE_PATH_LITERAL("app");
+
+#if !defined(OS_MACOSX)
 const base::FilePath::CharType kUnpackedFullscreenAppName[] =
     FILE_PATH_LITERAL("fullscreen_app");
+#endif  // !defined(OS_MACOSX)
 
 // Filters requests to the hosts in |urls| and redirects them to the test data
 // dir through URLRequestMockHTTPJobs.
@@ -1569,7 +1570,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
 
   // Test policy-installed extensions are reloaded when killed.
   BackgroundContentsService::
-      SetCrashDelaysForForceInstalledAppsAndExtensionsForTesting(0, 0);
+      SetRestartDelayForForceInstalledAppsAndExtensionsForTesting(0);
   content::WindowedNotificationObserver extension_crashed_observer(
       chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
       content::NotificationService::AllSources());
@@ -1616,7 +1617,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionAllowedTypes) {
 // Checks that a click on an extension CRX download triggers the extension
 // installation prompt without further user interaction when the source is
 // whitelisted by policy.
-IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallSources) {
+// Flaky on windows; http://crbug.com/295729 .
+#if defined(OS_WIN)
+#define MAYBE_ExtensionInstallSources DISABLED_ExtensionInstallSources
+#else
+#define MAYBE_ExtensionInstallSources ExtensionInstallSources
+#endif
+IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
 

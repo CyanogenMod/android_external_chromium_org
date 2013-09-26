@@ -62,7 +62,6 @@ namespace {
 const char kApprovalKey[] = "extensions.webstore_installer";
 
 const char kInvalidIdError[] = "Invalid id";
-const char kNoBrowserError[] = "No browser found";
 const char kDownloadDirectoryError[] = "Could not create download directory";
 const char kDownloadCanceledError[] = "Download canceled";
 const char kInstallCanceledError[] = "Install canceled";
@@ -71,6 +70,7 @@ const char kInvalidDownloadError[] =
     "Download was not a valid extension or user script";
 const char kInlineInstallSource[] = "inline";
 const char kDefaultInstallSource[] = "ondemand";
+const char kAppLauncherInstallSource[] = "applauncher";
 
 base::FilePath* g_download_directory_for_tests = NULL;
 
@@ -203,7 +203,7 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
                                      NavigationController* controller,
                                      const std::string& id,
                                      scoped_ptr<Approval> approval,
-                                     int flags)
+                                     InstallSource source)
     : profile_(profile),
       delegate_(delegate),
       controller_(controller),
@@ -212,8 +212,20 @@ WebstoreInstaller::WebstoreInstaller(Profile* profile,
       approval_(approval.release()) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(controller_);
-  download_url_ = GetWebstoreInstallURL(id, flags & FLAG_INLINE_INSTALL ?
-      kInlineInstallSource : kDefaultInstallSource);
+
+  const char* install_source = "";
+  switch (source) {
+    case INSTALL_SOURCE_INLINE:
+      install_source = kInlineInstallSource;
+      break;
+    case INSTALL_SOURCE_APP_LAUNCHER:
+      install_source = kAppLauncherInstallSource;
+      break;
+    case INSTALL_SOURCE_OTHER:
+      install_source = kDefaultInstallSource;
+  }
+
+  download_url_ = GetWebstoreInstallURL(id, install_source);
 
   registrar_.Add(this, chrome::NOTIFICATION_CRX_INSTALLER_DONE,
                  content::NotificationService::AllSources());

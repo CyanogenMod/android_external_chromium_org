@@ -26,7 +26,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/manifest_handlers/kiosk_enabled_info.h"
+#include "chrome/common/extensions/manifest_handlers/kiosk_mode_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -153,7 +153,8 @@ void StartupAppLauncher::InitializeTokenService() {
 
   ProfileOAuth2TokenService* profile_token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  if (profile_token_service->RefreshTokenIsAvailable()) {
+  if (profile_token_service->RefreshTokenIsAvailable(
+          profile_token_service->GetPrimaryAccountId())) {
     InitializeNetwork();
     return;
   }
@@ -221,7 +222,7 @@ void StartupAppLauncher::LaunchApp() {
       extension_service()->GetInstalledExtension(app_id_);
   CHECK(extension);
 
-  if (!extensions::KioskEnabledInfo::IsKioskEnabled(extension)) {
+  if (!extensions::KioskModeInfo::IsKioskEnabled(extension)) {
     OnLaunchFailure(KioskAppLaunchError::NOT_KIOSK_ENABLED);
     return;
   }

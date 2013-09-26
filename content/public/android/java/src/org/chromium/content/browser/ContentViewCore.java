@@ -244,11 +244,9 @@ import java.util.Map;
         /**
          * Called each time any of the parameters are changed.
          *
-         * @param widthCss The content width in logical (CSS) pixels.
-         * @param heightCss The content height in logical (CSS) pixels.
          * @param pageScaleFactor The page scale.
          */
-        void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor);
+        void onFrameInfoUpdated(float pageScaleFactor);
     }
 
     private VSyncManager.Provider mVSyncProvider;
@@ -293,7 +291,7 @@ import java.util.Map;
         };
 
         if (mVSyncSubscriberCount > 0) {
-            // setVSyncNotificationEnabled(true) is called before getVSyncListener.
+            // addVSyncSubscriber() is called before getVSyncListener.
             vsyncProvider.registerVSyncListener(mVSyncListener);
             mVSyncListenerRegistered = true;
         }
@@ -302,27 +300,31 @@ import java.util.Map;
     }
 
     @CalledByNative
-    void setVSyncNotificationEnabled(boolean enabled) {
-        if (!isVSyncNotificationEnabled() && enabled) {
+    void addVSyncSubscriber() {
+        if (!isVSyncNotificationEnabled()) {
             mDidSignalVSyncUsingInputEvent = false;
         }
-        if (mVSyncProvider != null) {
-            if (!mVSyncListenerRegistered && enabled) {
-                mVSyncProvider.registerVSyncListener(mVSyncListener);
-                mVSyncListenerRegistered = true;
-            } else if (mVSyncSubscriberCount == 1 && !enabled) {
-                assert mVSyncListenerRegistered;
-                mVSyncProvider.unregisterVSyncListener(mVSyncListener);
-                mVSyncListenerRegistered = false;
-            }
+        if (mVSyncProvider != null && !mVSyncListenerRegistered) {
+            mVSyncProvider.registerVSyncListener(mVSyncListener);
+            mVSyncListenerRegistered = true;
         }
-        mVSyncSubscriberCount += enabled ? 1 : -1;
+        mVSyncSubscriberCount++;
+    }
+
+    @CalledByNative
+    void removeVSyncSubscriber() {
+        if (mVSyncProvider != null && mVSyncSubscriberCount == 1) {
+            assert mVSyncListenerRegistered;
+            mVSyncProvider.unregisterVSyncListener(mVSyncListener);
+            mVSyncListenerRegistered = false;
+        }
+        mVSyncSubscriberCount--;
         assert mVSyncSubscriberCount >= 0;
     }
 
     @CalledByNative
     private void resetVSyncNotification() {
-        while (isVSyncNotificationEnabled()) setVSyncNotificationEnabled(false);
+        while (isVSyncNotificationEnabled()) removeVSyncSubscriber();
         mVSyncSubscriberCount = 0;
         mVSyncListenerRegistered = false;
         mNeedAnimate = false;
@@ -336,7 +338,7 @@ import java.util.Map;
     private void setNeedsAnimate() {
         if (!mNeedAnimate) {
             mNeedAnimate = true;
-            setVSyncNotificationEnabled(true);
+            addVSyncSubscriber();
         }
     }
 
@@ -359,7 +361,6 @@ import java.util.Map;
 
     private ContentViewGestureHandler mContentViewGestureHandler;
     private GestureStateListener mGestureStateListener;
-    private UpdateFrameInfoListener mUpdateFrameInfoListener;
     private ZoomManager mZoomManager;
     private ZoomControlsDelegate mZoomControlsDelegate;
 
@@ -619,6 +620,8 @@ import java.util.Map;
                                     // If OSK is newly shown, delay the form focus until
                                     // the onSizeChanged (in order to adjust relative to the
                                     // new size).
+                                    // TODO(jdduke): We should not assume that onSizeChanged will
+                                    // always be called, crbug.com/294908.
                                     getContainerView().getWindowVisibleDisplayFrame(
                                             mFocusPreOSKViewportRect);
                                 } else if (resultCode ==
@@ -1619,7 +1622,10 @@ import java.util.Map;
             Rect rect = new Rect();
             getContainerView().getWindowVisibleDisplayFrame(rect);
             if (!rect.equals(mFocusPreOSKViewportRect)) {
-                scrollFocusedEditableNodeIntoView();
+                // Only assume the OSK triggered the onSizeChanged if width was preserved.
+                if (rect.width() == mFocusPreOSKViewportRect.width()) {
+                    scrollFocusedEditableNodeIntoView();
+                }
                 mFocusPreOSKViewportRect.setEmpty();
             }
         } else if (mUnfocusOnNextSizeChanged) {
@@ -1889,12 +1895,24 @@ import java.util.Map;
         }
     }
 
+    /**
+     * Called by native side when the corresponding renderer crashes. Note that if a renderer is
+     * shared between tabs, this might be called multiple times while the tab is crashed. This is
+     * because the tabs sharing a renderer also share RenderProcessHost. When one of those tabs
+     * reloads and a new renderer is created for the shared RenderProcessHost, all tabs are notified
+     * in onRenderProcessSwap(), not only the one that reloads. If this renderer dies, all the other
+     * dead tabs are notified again.
+     * @param alreadyCrashed true iff this tab is already in crashed state but the shared renderer
+     *                       resurrected and died again since the last time this was called.
+     */
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onTabCrash() {
+    private void onTabCrash(boolean alreadyCrashed) {
         assert mPid != 0;
-        getContentViewClient().onRendererCrash(
-                ChildProcessLauncher.getBindingManager().isOomProtected(mPid));
+        if (!alreadyCrashed) {
+            getContentViewClient().onRendererCrash(
+                    ChildProcessLauncher.getBindingManager().isOomProtected(mPid));
+        }
         mPid = 0;
     }
 
@@ -2320,10 +2338,6 @@ import java.util.Map;
         if (mNativeContentViewCore != 0) nativeShowImeIfNeeded(mNativeContentViewCore);
     }
 
-    public void setUpdateFrameInfoListener(UpdateFrameInfoListener updateFrameInfoListener) {
-        mUpdateFrameInfoListener = updateFrameInfoListener;
-    }
-
     @SuppressWarnings("unused")
     @CalledByNative
     private void updateFrameInfo(
@@ -2378,11 +2392,6 @@ import java.util.Map;
                 viewportWidth, viewportHeight,
                 pageScaleFactor, minPageScaleFactor, maxPageScaleFactor,
                 contentOffsetYPix);
-
-        if ((contentSizeChanged || pageScaleChanged) && mUpdateFrameInfoListener != null) {
-            mUpdateFrameInfoListener.onFrameInfoUpdated(
-                    contentWidth, contentHeight, pageScaleFactor);
-        }
 
         if (needTemporarilyHideHandles) temporarilyHideTextHandles();
         if (needUpdateZoomControls) mZoomControlsDelegate.updateZoomControls();
@@ -3079,7 +3088,7 @@ import java.util.Map;
     private void animateIfNecessary(long frameTimeMicros) {
         if (mNeedAnimate) {
             mNeedAnimate = onAnimate(frameTimeMicros);
-            if (!mNeedAnimate) setVSyncNotificationEnabled(false);
+            if (!mNeedAnimate) removeVSyncSubscriber();
         }
     }
 

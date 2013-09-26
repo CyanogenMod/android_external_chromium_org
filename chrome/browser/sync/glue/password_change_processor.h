@@ -67,13 +67,16 @@ class PasswordChangeProcessor : public ChangeProcessor,
   void StartObserving();
   void StopObserving();
 
+  // Registers to observe password change for the first time.
+  void InitObserving();
+
   // The two models should be associated according to this ModelAssociator.
   PasswordModelAssociator* model_associator_;
 
   // The model we are processing changes from.  This is owned by the
   // WebDataService which is kept alive by our data type controller
   // holding a reference.
-  PasswordStore* password_store_;
+  scoped_refptr<PasswordStore> password_store_;
 
   // Buffers used between ApplyChangesFromSyncModel and
   // CommitChangesFromSyncModel.

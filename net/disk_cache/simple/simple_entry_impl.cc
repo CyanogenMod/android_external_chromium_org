@@ -50,7 +50,8 @@ enum WriteResult {
   WRITE_RESULT_OVER_MAX_SIZE = 2,
   WRITE_RESULT_BAD_STATE = 3,
   WRITE_RESULT_SYNC_WRITE_FAILURE = 4,
-  WRITE_RESULT_MAX = 5,
+  WRITE_RESULT_FAST_EMPTY_RETURN = 5,
+  WRITE_RESULT_MAX = 6,
 };
 
 // Used in histograms, please only add entries at the end.
@@ -70,7 +71,7 @@ void RecordReadResult(net::CacheType cache_type, ReadResult result) {
 
 void RecordWriteResult(net::CacheType cache_type, WriteResult result) {
   SIMPLE_CACHE_UMA(ENUMERATION,
-                   "WriteResult", cache_type, result, WRITE_RESULT_MAX);
+                   "WriteResult2", cache_type, result, WRITE_RESULT_MAX);
 }
 
 // TODO(ttuttle): Consider removing this once we have a good handle on header
@@ -887,6 +888,18 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
     return;
   }
 
+  // Ignore zero-length writes that do not change the file size.
+  if (buf_len == 0) {
+    int32 data_size = data_size_[stream_index];
+    if (truncate ? (offset == data_size) : (offset <= data_size)) {
+      RecordWriteResult(cache_type_, WRITE_RESULT_FAST_EMPTY_RETURN);
+      if (!callback.is_null()) {
+        MessageLoopProxy::current()->PostTask(FROM_HERE, base::Bind(
+            callback, 0));
+      }
+      return;
+    }
+  }
   state_ = STATE_IO_PENDING;
   if (!doomed_ && backend_.get())
     backend_->index()->UseIfExists(entry_hash_);
@@ -917,7 +930,8 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   Closure task = base::Bind(&SimpleSynchronousEntry::WriteData,
                             base::Unretained(synchronous_entry_),
                             SimpleSynchronousEntry::EntryOperationData(
-                                stream_index, offset, buf_len, truncate),
+                                stream_index, offset, buf_len, truncate,
+                                doomed_),
                             make_scoped_refptr(buf),
                             entry_stat.get(),
                             result.get());
@@ -933,7 +947,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
 void SimpleEntryImpl::DoomEntryInternal(const CompletionCallback& callback) {
   PostTaskAndReplyWithResult(
       worker_pool_, FROM_HERE,
-      base::Bind(&SimpleSynchronousEntry::DoomEntry, path_, key_, entry_hash_),
+      base::Bind(&SimpleSynchronousEntry::DoomEntry, path_, entry_hash_),
       base::Bind(&SimpleEntryImpl::DoomOperationComplete, this, callback,
                  state_));
   state_ = STATE_IO_PENDING;
@@ -1332,6 +1346,10 @@ void SimpleEntryImpl::AdvanceCrc(net::IOBuffer* buffer,
           initial_crc, reinterpret_cast<const Bytef*>(buffer->data()), length);
     }
     crc32s_end_offset_[stream_index] = offset + length;
+  } else if (offset < crc32s_end_offset_[stream_index]) {
+    // If a range for which the crc32 was already computed is rewritten, the
+    // computation of the crc32 need to start from 0 again.
+    crc32s_end_offset_[stream_index] = 0;
   }
 }
 

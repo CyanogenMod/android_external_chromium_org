@@ -598,7 +598,10 @@ class URLRequestTest : public PlatformTest {
     default_context_.set_job_factory(&job_factory_);
     default_context_.Init();
   }
-  virtual ~URLRequestTest() {}
+  virtual ~URLRequestTest() {
+    // URLRequestJobs may post clean-up tasks on destruction.
+    base::RunLoop().RunUntilIdle();
+  }
 
   // Adds the TestJobInterceptor to the default context.
   TestJobInterceptor* AddTestInterceptor() {
@@ -3802,7 +3805,8 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
         0,
         kuint64max,
         base::Time()));
-    r.set_upload(make_scoped_ptr(new UploadDataStream(&element_readers, 0)));
+    r.set_upload(make_scoped_ptr(
+        new UploadDataStream(element_readers.Pass(), 0)));
 
     r.Start();
     EXPECT_TRUE(r.is_pending());

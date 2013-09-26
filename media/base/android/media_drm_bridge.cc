@@ -141,6 +141,8 @@ static bool GetPsshData(const uint8* data, int data_size,
   return false;
 }
 
+bool MediaDrmBridge::can_use_media_drm_ = false;
+
 static MediaDrmBridge::SecurityLevel GetSecurityLevelFromString(
     const std::string& security_level_str) {
   if (0 == security_level_str.compare("L1"))
@@ -155,14 +157,15 @@ static MediaDrmBridge::SecurityLevel GetSecurityLevelFromString(
 scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
     int media_keys_id,
     const std::vector<uint8>& scheme_uuid,
+    const GURL& frame_url,
     const std::string& security_level,
     MediaPlayerManager* manager) {
   scoped_ptr<MediaDrmBridge> media_drm_bridge;
 
   if (IsAvailable() && !scheme_uuid.empty()) {
     // TODO(qinmin): check whether the uuid is valid.
-    media_drm_bridge.reset(
-      new MediaDrmBridge(media_keys_id, scheme_uuid, security_level, manager));
+    media_drm_bridge.reset(new MediaDrmBridge(
+        media_keys_id, scheme_uuid, frame_url, security_level, manager));
     if (media_drm_bridge->j_media_drm_.is_null())
       media_drm_bridge.reset();
   }
@@ -172,7 +175,8 @@ scoped_ptr<MediaDrmBridge> MediaDrmBridge::Create(
 
 // static
 bool MediaDrmBridge::IsAvailable() {
-  return base::android::BuildInfo::GetInstance()->sdk_int() >= 18;
+  return can_use_media_drm_ &&
+      base::android::BuildInfo::GetInstance()->sdk_int() >= 18;
 }
 
 // static
@@ -187,7 +191,8 @@ bool MediaDrmBridge::IsSecurityLevelSupported(
     const std::string& security_level) {
   // Pass 0 as |media_keys_id| and NULL as |manager| as they are not used in
   // creation time of MediaDrmBridge.
-  return MediaDrmBridge::Create(0, scheme_uuid, security_level, NULL) != NULL;
+  return MediaDrmBridge::Create(0, scheme_uuid, GURL(), security_level, NULL) !=
+      NULL;
 }
 
 bool MediaDrmBridge::IsCryptoSchemeSupported(
@@ -208,10 +213,12 @@ bool MediaDrmBridge::RegisterMediaDrmBridge(JNIEnv* env) {
 
 MediaDrmBridge::MediaDrmBridge(int media_keys_id,
                                const std::vector<uint8>& scheme_uuid,
+                               const GURL& frame_url,
                                const std::string& security_level,
                                MediaPlayerManager* manager)
     : media_keys_id_(media_keys_id),
       scheme_uuid_(scheme_uuid),
+      frame_url_(frame_url),
       manager_(manager) {
   JNIEnv* env = AttachCurrentThread();
   CHECK(env);
@@ -335,6 +342,19 @@ MediaDrmBridge::SecurityLevel MediaDrmBridge::GetSecurityLevel() {
 
 bool MediaDrmBridge::IsProtectedSurfaceRequired() {
   return IsSecureDecoderRequired(GetSecurityLevel());
+}
+
+void MediaDrmBridge::ResetDeviceCredentials(
+    const ResetCredentialsCB& callback) {
+  DCHECK(reset_credentials_cb_.is_null());
+  reset_credentials_cb_ = callback;
+  JNIEnv* env = AttachCurrentThread();
+  Java_MediaDrmBridge_resetDeviceCredentials(env, j_media_drm_.obj());
+}
+
+void MediaDrmBridge::OnResetDeviceCredentialsCompleted(
+    JNIEnv* env, jobject, bool success) {
+  base::ResetAndReturn(&reset_credentials_cb_).Run(success);
 }
 
 }  // namespace media

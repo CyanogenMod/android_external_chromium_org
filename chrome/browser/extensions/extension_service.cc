@@ -62,6 +62,7 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/browser/ui/webui/theme_source.h"
@@ -198,19 +199,6 @@ ExtensionService::ExtensionRuntimeData::~ExtensionRuntimeData() {
 }
 
 // ExtensionService.
-
-const char ExtensionService::kLocalAppSettingsDirectoryName[] =
-    "Local App Settings";
-const char ExtensionService::kLocalExtensionSettingsDirectoryName[] =
-    "Local Extension Settings";
-const char ExtensionService::kSyncAppSettingsDirectoryName[] =
-    "Sync App Settings";
-const char ExtensionService::kSyncExtensionSettingsDirectoryName[] =
-    "Sync Extension Settings";
-const char ExtensionService::kManagedSettingsDirectoryName[] =
-    "Managed Extension Settings";
-const char ExtensionService::kStateStoreName[] = "Extension State";
-const char ExtensionService::kRulesStoreName[] = "Extension Rules";
 
 void ExtensionService::CheckExternalUninstall(const std::string& id) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -370,7 +358,17 @@ ExtensionService::ExtensionService(Profile* profile,
       installs_delayed_for_gc_(false),
       is_first_run_(false),
       app_sync_bundle_(this),
-      extension_sync_bundle_(this) {
+      extension_sync_bundle_(this),
+      pending_app_enables_(
+          make_scoped_ptr(new browser_sync::SyncPrefs(
+              extension_prefs_->pref_service())),
+          &app_sync_bundle_,
+          syncer::APPS),
+      pending_extension_enables_(
+          make_scoped_ptr(new browser_sync::SyncPrefs(
+              extension_prefs_->pref_service())),
+          &extension_sync_bundle_,
+          syncer::EXTENSIONS) {
 #if defined(OS_CHROMEOS)
   disable_garbage_collection_ = false;
 #endif
@@ -404,7 +402,7 @@ ExtensionService::ExtensionService(Profile* profile,
 
   // Set up the ExtensionUpdater
   if (autoupdate_enabled) {
-    int update_frequency = kDefaultUpdateFrequencySeconds;
+    int update_frequency = extensions::kDefaultUpdateFrequencySeconds;
     if (command_line->HasSwitch(switches::kExtensionsUpdateFrequency)) {
       base::StringToInt(command_line->GetSwitchValueASCII(
           switches::kExtensionsUpdateFrequency),
@@ -414,7 +412,6 @@ ExtensionService::ExtensionService(Profile* profile,
                                                     extension_prefs,
                                                     profile->GetPrefs(),
                                                     profile,
-                                                    blacklist,
                                                     update_frequency));
   }
 
@@ -983,6 +980,13 @@ void ExtensionService::EnableExtension(const std::string& extension_id) {
       content::Source<Profile>(profile_),
       content::Details<const Extension>(extension));
 
+  // Syncing may not have started yet, so handle pending enables.
+  if (extensions::sync_helper::IsSyncableApp(extension))
+    pending_app_enables_.OnExtensionEnabled(extension->id());
+
+  if (extensions::sync_helper::IsSyncableExtension(extension))
+    pending_extension_enables_.OnExtensionEnabled(extension->id());
+
   SyncExtensionChangeIfNeeded(*extension);
 }
 
@@ -1025,6 +1029,13 @@ void ExtensionService::DisableExtension(
   } else {
     terminated_extensions_.Remove(extension->id());
   }
+
+  // Syncing may not have started yet, so handle pending enables.
+  if (extensions::sync_helper::IsSyncableApp(extension))
+    pending_app_enables_.OnExtensionDisabled(extension->id());
+
+  if (extensions::sync_helper::IsSyncableExtension(extension))
+    pending_extension_enables_.OnExtensionDisabled(extension->id());
 
   SyncExtensionChangeIfNeeded(*extension);
 }
@@ -1297,12 +1308,14 @@ syncer::SyncMergeResult ExtensionService::MergeDataAndStartSyncing(
       extension_sync_bundle_.SetupSync(sync_processor.release(),
                                        sync_error_factory.release(),
                                        initial_sync_data);
+      pending_extension_enables_.OnSyncStarted(this);
       break;
 
     case syncer::APPS:
       app_sync_bundle_.SetupSync(sync_processor.release(),
                                  sync_error_factory.release(),
                                  initial_sync_data);
+      pending_app_enables_.OnSyncStarted(this);
       break;
 
     default:
@@ -1488,6 +1501,11 @@ bool ExtensionService::IsCorrectSyncType(const Extension& extension,
   return false;
 }
 
+bool ExtensionService::IsPendingEnable(const std::string& extension_id) const {
+  return pending_app_enables_.Contains(extension_id) ||
+      pending_extension_enables_.Contains(extension_id);
+}
+
 bool ExtensionService::ProcessExtensionSyncDataHelper(
     const extensions::ExtensionSyncData& extension_sync_data,
     syncer::ModelType type) {
@@ -1524,7 +1542,7 @@ bool ExtensionService::ProcessExtensionSyncDataHelper(
   // is called for it.
   if (extension_sync_data.enabled())
     EnableExtension(id);
-  else
+  else if (!IsPendingEnable(id))
     DisableExtension(id, Extension::DISABLE_UNKNOWN_FROM_SYNC);
 
   // We need to cache some version information here because setting the
@@ -3095,32 +3113,29 @@ void ExtensionService::OnNeedsToGarbageCollectIsolatedStorage() {
 void ExtensionService::OnBlacklistUpdated() {
   blacklist_->GetBlacklistedIDs(
       GenerateInstalledExtensionsSet()->GetIDs(),
-      base::Bind(&ExtensionService::ManageBlacklist,
-                 AsWeakPtr(),
-                 blacklisted_extensions_.GetIDs()));
+      base::Bind(&ExtensionService::ManageBlacklist, AsWeakPtr()));
 }
 
-void ExtensionService::ManageBlacklist(
-    const std::set<std::string>& old_blacklisted_ids,
-    const std::set<std::string>& new_blacklisted_ids) {
+void ExtensionService::ManageBlacklist(const std::set<std::string>& updated) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  std::set<std::string> before = blacklisted_extensions_.GetIDs();
   std::set<std::string> no_longer_blacklisted =
-      base::STLSetDifference<std::set<std::string> >(old_blacklisted_ids,
-                                                     new_blacklisted_ids);
+      base::STLSetDifference<std::set<std::string> >(before, updated);
   std::set<std::string> not_yet_blacklisted =
-      base::STLSetDifference<std::set<std::string> >(new_blacklisted_ids,
-                                                     old_blacklisted_ids);
+      base::STLSetDifference<std::set<std::string> >(updated, before);
 
   for (std::set<std::string>::iterator it = no_longer_blacklisted.begin();
        it != no_longer_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension =
         blacklisted_extensions_.GetByID(*it);
-    DCHECK(extension.get()) << "Extension " << *it << " no longer blacklisted, "
-                            << "but it was never blacklisted.";
-    if (!extension.get())
+    if (!extension.get()) {
+      NOTREACHED() << "Extension " << *it << " no longer blacklisted, "
+                   << "but it was never blacklisted.";
       continue;
+    }
     blacklisted_extensions_.Remove(*it);
+    extension_prefs_->SetExtensionBlacklisted(extension->id(), false);
     AddExtension(extension.get());
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.UnblacklistInstalled",
                               extension->location(),
@@ -3130,11 +3145,13 @@ void ExtensionService::ManageBlacklist(
   for (std::set<std::string>::iterator it = not_yet_blacklisted.begin();
        it != not_yet_blacklisted.end(); ++it) {
     scoped_refptr<const Extension> extension = GetInstalledExtension(*it);
-    DCHECK(extension.get()) << "Extension " << *it << " needs to be "
-                            << "blacklisted, but it's not installed.";
-    if (!extension.get())
+    if (!extension.get()) {
+      NOTREACHED() << "Extension " << *it << " needs to be "
+                   << "blacklisted, but it's not installed.";
       continue;
+    }
     blacklisted_extensions_.Insert(extension);
+    extension_prefs_->SetExtensionBlacklisted(extension->id(), true);
     UnloadExtension(*it, extension_misc::UNLOAD_REASON_BLACKLIST);
     UMA_HISTOGRAM_ENUMERATION("ExtensionBlacklist.BlacklistInstalled",
                               extension->location(), Manifest::NUM_LOCATIONS);

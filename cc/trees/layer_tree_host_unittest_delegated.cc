@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/bind.h"
+#include "base/location.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
@@ -182,7 +183,6 @@ class LayerTreeHostDelegatedTest : public LayerTreeTest {
                  damage_rect,
                  gfx::Rect(0, 0, 1, 1),  // mask_uv_rect
                  filters,
-                 skia::RefPtr<SkImageFilter>(),
                  background_filters);
     frame->render_pass_list[0]->shared_quad_state_list.push_back(sqs.Pass());
     frame->render_pass_list[0]->quad_list.push_back(quad.PassAs<DrawQuad>());
@@ -247,6 +247,8 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
     : public LayerTreeHostDelegatedTest,
       public DelegatedRendererLayerClient {
  public:
+  LayerTreeHostDelegatedTestCaseSingleDelegatedLayer() : available_(false) {}
+
   virtual void SetupTree() OVERRIDE {
     root_ = Layer::Create();
     root_->SetAnchorPoint(gfx::PointF());
@@ -268,11 +270,20 @@ class LayerTreeHostDelegatedTestCaseSingleDelegatedLayer
 
   virtual void AfterTest() OVERRIDE {}
 
+  // DelegatedRendererLayerClient implementation.
   virtual void DidCommitFrameData() OVERRIDE {}
+  virtual void UnusedResourcesAreAvailable() OVERRIDE { available_ = true; }
+
+  bool TestAndResetAvailable() {
+    bool available = available_;
+    available_ = false;
+    return available;
+  }
 
  protected:
   scoped_refptr<Layer> root_;
   scoped_refptr<DelegatedRendererLayer> delegated_;
+  bool available_;
 };
 
 class LayerTreeHostDelegatedTestClientDidCommitCallback
@@ -745,6 +756,7 @@ class LayerTreeHostDelegatedTestMergeResources
     {
       unsigned expected[] = {999};
       EXPECT_RESOURCES(expected, returned_resources);
+      EXPECT_TRUE(TestAndResetAvailable());
     }
 
     PostSetNeedsCommitToMainThread();
@@ -765,8 +777,8 @@ class LayerTreeHostDelegatedTestMergeResources
     EXPECT_EQ(1u, map.count(555));
 
     EXPECT_EQ(2u, delegated_impl->Resources().size());
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(555));
 
     EndTest();
   }
@@ -850,59 +862,55 @@ class LayerTreeHostDelegatedTestReturnUnusedResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Keep using 999 but stop using 555.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 999);
+        AddTransferableResource(frame.get(), 999);
         AddTextureQuad(frame.get(), 444);
         AddTransferableResource(frame.get(), 444);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 4:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 5:
+      case 3:
         // 555 is no longer in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
           unsigned expected[] = {555};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         // Stop using any resources.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 6:
+      case 4:
         // Postpone collecting resources for a frame. They should still be there
         // the next frame.
         layer_tree_host()->SetNeedsCommit();
         return;
-      case 7:
-        // 444 and 999 are no longer in use.
+      case 5:
+        // 444 and 999 are no longer in use. We sent two refs to 999, so we
+        // should get two back.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
-          unsigned expected[] = {444, 999};
+          unsigned expected[] = {444, 999, 999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
         EndTest();
         break;
     }
 
-    // Resource are never immediately released.
+    // Resources are never immediately released.
     ReturnedResourceArray empty_resources;
     delegated_->TakeUnusedResourcesForChildCompositor(&empty_resources);
-    EXPECT_TRUE(empty_resources.empty());
+    EXPECT_EQ(0u, empty_resources.size());
+    EXPECT_FALSE(TestAndResetAvailable());
   }
 
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
@@ -941,41 +949,38 @@ class LayerTreeHostDelegatedTestReusedResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Keep using 999 but stop using 555 and 444.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 999);
+        AddTransferableResource(frame.get(), 999);
         delegated_->SetFrameData(frame.Pass());
 
         // Resource are not immediately released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Now using 555 and 444 again, but not 999.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 555);
+        AddTransferableResource(frame.get(), 555);
         AddTextureQuad(frame.get(), 444);
+        AddTransferableResource(frame.get(), 444);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 4:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 5:
-        // The 999 resource is the only unused one.
+      case 3:
+        // The 999 resource is the only unused one. Two references were sent, so
+        // two should be returned.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
-          unsigned expected[] = {999};
+          unsigned expected[] = {999, 999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
         EndTest();
         break;
@@ -1017,40 +1022,34 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Keep using 999 but stop using 555 and 444.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 999);
+        AddTransferableResource(frame.get(), 999);
         delegated_->SetFrameData(frame.Pass());
 
         // Resource are not immediately released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // The parent compositor (this one) does a commit.
         break;
-      case 4:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 5:
+      case 3:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
           unsigned expected[] = {444, 555};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
-        // The child compositor sends a frame before receiving an for the
-        // second frame. It uses 999, 444, and 555 again.
+        // The child compositor sends a frame referring to resources not in the
+        // frame.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 999);
         AddTextureQuad(frame.get(), 555);
@@ -1061,7 +1060,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    if (host_impl->active_tree()->source_frame_number() != 5)
+    if (host_impl->active_tree()->source_frame_number() != 3)
       return;
 
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
@@ -1079,7 +1078,7 @@ class LayerTreeHostDelegatedTestFrameBeforeAck
     EXPECT_EQ(1u, map.count(999));
 
     EXPECT_EQ(1u, delegated_impl->Resources().size());
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(999));
 
     const RenderPass* pass = delegated_impl->RenderPassesInDrawOrder()[0];
     EXPECT_EQ(1u, pass->quad_list.size());
@@ -1125,14 +1124,10 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Keep using 999 but stop using 555 and 444.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -1143,15 +1138,11 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
         // Resource are not immediately released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // The parent compositor (this one) does a commit.
         break;
-      case 4:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 5:
+      case 3:
         // The child compositor sends a frame before taking resources back
         // from the previous commit. This frame makes use of the resources 555
         // and 444, which were just released during commit.
@@ -1170,23 +1161,20 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
         {
           unsigned expected[] = {444, 555};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
         break;
-      case 6:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 7:
+      case 4:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
         EndTest();
         break;
     }
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    if (host_impl->active_tree()->source_frame_number() != 5)
+    if (host_impl->active_tree()->source_frame_number() != 3)
       return;
 
     LayerImpl* root_impl = host_impl->active_tree()->root_layer();
@@ -1205,9 +1193,9 @@ class LayerTreeHostDelegatedTestFrameBeforeTakeResources
     EXPECT_EQ(1u, map.count(444));
 
     EXPECT_EQ(3u, delegated_impl->Resources().size());
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(444)->second));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(555));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(444));
 
     const RenderPass* pass = delegated_impl->RenderPassesInDrawOrder()[0];
     EXPECT_EQ(3u, pass->quad_list.size());
@@ -1256,14 +1244,10 @@ class LayerTreeHostDelegatedTestBadFrame
         delegated_->SetFrameData(frame.Pass());
         break;
       case 2:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 3:
         // All of the resources are in use.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Generate a bad frame with a resource the layer doesn't have. The
         // 885 and 775 resources are unknown, while ownership of the legit 444
@@ -1279,17 +1263,13 @@ class LayerTreeHostDelegatedTestBadFrame
 
         // The parent compositor (this one) does a commit.
         break;
-      case 4:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 5:
+      case 3:
         // The bad frame's resource is given back to the child compositor.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
           unsigned expected[] = {444};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         // Now send a good frame with 999 again.
@@ -1297,17 +1277,13 @@ class LayerTreeHostDelegatedTestBadFrame
         AddTextureQuad(frame.get(), 999);
         delegated_->SetFrameData(frame.Pass());
         break;
-      case 6:
-        // Retrieve unused resources to the main thread.
-        // TODO(danakj): Shouldn't need to commit to get resources.
-        layer_tree_host()->SetNeedsCommit();
-        return;
-      case 7:
+      case 4:
         // The unused 555 from the last good frame is now released.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
           unsigned expected[] = {555};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         EndTest();
@@ -1339,8 +1315,8 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(1u, map.count(555));
 
         EXPECT_EQ(2u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
 
         const RenderPass* pass = delegated_impl->RenderPassesInDrawOrder()[0];
         EXPECT_EQ(2u, pass->quad_list.size());
@@ -1352,15 +1328,15 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(map.find(555)->second, quad2->resource_id);
         break;
       }
-      case 3: {
+      case 2: {
         // We only keep resources from the last valid frame.
         EXPECT_EQ(2u, map.size());
         EXPECT_EQ(1u, map.count(999));
         EXPECT_EQ(1u, map.count(555));
 
         EXPECT_EQ(2u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
 
         // The bad frame is dropped though, we still have the frame with 999 and
         // 555 in it.
@@ -1374,20 +1350,13 @@ class LayerTreeHostDelegatedTestBadFrame
         EXPECT_EQ(map.find(555)->second, quad2->resource_id);
         break;
       }
-      case 5:
-        // Resources given to our parent compositor will be returned now, but
-        // the DelegatedRendererLayerImpl doesn't know about it until the next
-        // commit.
-        // TODO(danakj): Shouldn't need a commit to return resources to the
-        // DelegatedRendererLayerImpl or to the main thread.
-        break;
-      case 6: {
+      case 3: {
         // We have the new good frame with just 999 in it.
         EXPECT_EQ(1u, map.size());
         EXPECT_EQ(1u, map.count(999));
 
         EXPECT_EQ(1u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
 
         const RenderPass* pass = delegated_impl->RenderPassesInDrawOrder()[0];
         EXPECT_EQ(1u, pass->quad_list.size());
@@ -1431,6 +1400,7 @@ class LayerTreeHostDelegatedTestUnnamedResource
         {
           unsigned expected[] = {999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         EndTest();
@@ -1455,7 +1425,7 @@ class LayerTreeHostDelegatedTestUnnamedResource
     EXPECT_EQ(1u, map.count(555));
 
     EXPECT_EQ(1u, delegated_impl->Resources().size());
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(555));
   }
 
   virtual void AfterTest() OVERRIDE {}
@@ -1470,7 +1440,7 @@ class LayerTreeHostDelegatedTestDontLeakResource
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
     scoped_ptr<DelegatedFrameData> frame;
     ReturnedResourceArray resources;
 
@@ -1498,23 +1468,20 @@ class LayerTreeHostDelegatedTestDontLeakResource
         {
           unsigned expected[] = {555, 999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
         // Send a frame with no resources in it.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         delegated_->SetFrameData(frame.Pass());
         break;
       case 3:
-        // The impl side will get back the resource at some point.
-        // TODO(piman): The test should work without this.
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 4:
         // The now unused resource 555 should be returned.
         resources.clear();
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         {
           unsigned expected[] = {555};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
         EndTest();
         break;
@@ -1538,7 +1505,7 @@ class LayerTreeHostDelegatedTestDontLeakResource
     EXPECT_EQ(1u, map.count(555));
 
     EXPECT_EQ(1u, delegated_impl->Resources().size());
-    EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+    EXPECT_EQ(1u, delegated_impl->Resources().count(555));
   }
 
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
@@ -1572,33 +1539,57 @@ class LayerTreeHostDelegatedTestResourceSentToParent
       case 2:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // 999 is in use in the grandparent compositor, generate a frame without
         // it present.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
         AddTextureQuad(frame.get(), 555);
+        AddTransferableResource(frame.get(), 555);
         delegated_->SetFrameData(frame.Pass());
         break;
       case 3:
         // Since 999 is in the grandparent it is not returned.
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // The impl side will get back the resource at some point.
-        // TODO(danakj): The test should work without this.
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 4:
-        // 999 was returned from the grandparent and could be released.
-        delegated_->TakeUnusedResourcesForChildCompositor(&resources);
-        {
-          unsigned expected[] = {999};
-          EXPECT_RESOURCES(expected, resources);
-        }
-
-        EndTest();
+        ImplThreadTaskRunner()->PostTask(FROM_HERE,
+                                         receive_resource_on_thread_);
         break;
     }
+  }
+
+  void ReceiveResourceOnThread(LayerTreeHostImpl* host_impl) {
+    LayerImpl* root_impl = host_impl->active_tree()->root_layer();
+    FakeDelegatedRendererLayerImpl* delegated_impl =
+        static_cast<FakeDelegatedRendererLayerImpl*>(root_impl->children()[0]);
+
+    const ResourceProvider::ResourceIdMap& map =
+        host_impl->resource_provider()->GetChildToParentMap(
+            delegated_impl->ChildId());
+
+    // Receive 999 back from the grandparent.
+    CompositorFrameAck ack;
+    output_surface()->ReturnResource(map.find(999)->second, &ack);
+    host_impl->ReclaimResources(&ack);
+    host_impl->OnSwapBuffersComplete();
+  }
+
+  virtual void UnusedResourcesAreAvailable() OVERRIDE {
+    EXPECT_EQ(3, layer_tree_host()->source_frame_number());
+
+    ReturnedResourceArray resources;
+
+    // 999 was returned from the grandparent and could be released.
+    delegated_->TakeUnusedResourcesForChildCompositor(&resources);
+    {
+      unsigned expected[] = {999};
+      EXPECT_RESOURCES(expected, resources);
+    }
+
+    EndTest();
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
@@ -1620,8 +1611,8 @@ class LayerTreeHostDelegatedTestResourceSentToParent
         EXPECT_EQ(1u, map.count(555));
 
         EXPECT_EQ(2u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
 
         // The 999 resource will be sent to a grandparent compositor.
         break;
@@ -1633,13 +1624,13 @@ class LayerTreeHostDelegatedTestResourceSentToParent
 
         // 999 is in the parent, so not held by delegated renderer layer.
         EXPECT_EQ(1u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
 
-        // Receive 999 back from the grandparent.
-        CompositorFrameAck ack;
-        output_surface()->ReturnResource(map.find(999)->second, &ack);
-        host_impl->ReclaimResources(&ack);
-        host_impl->OnSwapBuffersComplete();
+        receive_resource_on_thread_ =
+            base::Bind(&LayerTreeHostDelegatedTestResourceSentToParent::
+                            ReceiveResourceOnThread,
+                       base::Unretained(this),
+                       host_impl);
         break;
       }
       case 3:
@@ -1655,7 +1646,7 @@ class LayerTreeHostDelegatedTestResourceSentToParent
 
   virtual void AfterTest() OVERRIDE {}
 
-  TransferableResource resource_in_grandparent;
+  base::Closure receive_resource_on_thread_;
 };
 
 SINGLE_AND_MULTI_THREAD_DELEGATING_RENDERER_TEST_F(
@@ -1689,6 +1680,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
       case 2:
         delegated_->TakeUnusedResourcesForChildCompositor(&resources);
         EXPECT_EQ(0u, resources.size());
+        EXPECT_FALSE(TestAndResetAvailable());
 
         // Stop using 999 and 444 in this frame and commit.
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -1714,6 +1706,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
         {
           unsigned expected[] = {444, 999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         frame = CreateFrameData(gfx::Rect(0, 0, 1, 1), gfx::Rect(0, 0, 1, 1));
@@ -1726,6 +1719,7 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
         {
           unsigned expected[] = {555, 555, 555, 999};
           EXPECT_RESOURCES(expected, resources);
+          EXPECT_TRUE(TestAndResetAvailable());
         }
 
         EndTest();
@@ -1753,16 +1747,16 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
         EXPECT_EQ(1u, map.count(444));
 
         EXPECT_EQ(3u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(444)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(444));
         break;
       case 2:
         EXPECT_EQ(1u, map.size());
         EXPECT_EQ(1u, map.count(555));
 
         EXPECT_EQ(1u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
         break;
       case 3:
         EXPECT_EQ(2u, map.size());
@@ -1770,8 +1764,8 @@ class LayerTreeHostDelegatedTestCommitWithoutTake
         EXPECT_EQ(1u, map.count(555));
 
         EXPECT_EQ(2u, delegated_impl->Resources().size());
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(999)->second));
-        EXPECT_EQ(1u, delegated_impl->Resources().count(map.find(555)->second));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(999));
+        EXPECT_EQ(1u, delegated_impl->Resources().count(555));
     }
   }
 

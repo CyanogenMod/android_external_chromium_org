@@ -25,16 +25,18 @@
 
 using content::KeySystemInfo;
 
-static const char kAudioWebM[] = "audio/webm";
-static const char kVideoWebM[] = "video/webm";
-static const char kVorbis[] = "vorbis";
-static const char kVorbisVP8[] = "vorbis,vp8,vp8.0";
+const char kAudioWebM[] = "audio/webm";
+const char kVideoWebM[] = "video/webm";
+const char kVorbis[] = "vorbis";
+const char kVorbisVP8[] = "vorbis,vp8,vp8.0";
 
-static const char kAudioMp4[] = "audio/mp4";
-static const char kVideoMp4[] = "video/mp4";
-static const char kMp4a[] = "mp4a";
-static const char kAvc1[] = "avc1";
-static const char kMp4aAvc1[] = "mp4a,avc1";
+#if defined(USE_PROPRIETARY_CODECS)
+const char kAudioMp4[] = "audio/mp4";
+const char kVideoMp4[] = "video/mp4";
+const char kMp4a[] = "mp4a";
+const char kAvc1[] = "avc1";
+const char kMp4aAvc1[] = "mp4a,avc1";
+#endif  // defined(USE_PROPRIETARY_CODECS)
 
 #if defined(ENABLE_PEPPER_CDMS)
 static bool IsPepperCdmRegistered(const std::string& pepper_type) {
@@ -77,7 +79,9 @@ static void AddExternalClearKey(
 enum WidevineCdmType {
   WIDEVINE,
   WIDEVINE_HR,
-  WIDEVINE_HRSURFACE,
+#if defined(OS_ANDROID)
+  WIDEVINE_HR_NON_COMPOSITING,
+#endif
 };
 
 // Defines bitmask values used to specify supported codecs.
@@ -133,9 +137,11 @@ static void AddWidevineWithCodecs(
     case WIDEVINE_HR:
       info.key_system.append(".hr");
       break;
-    case WIDEVINE_HRSURFACE:
-      info.key_system.append(".hrsurface");
+#if defined(OS_ANDROID)
+    case WIDEVINE_HR_NON_COMPOSITING:
+      info.key_system.append(".hrnoncompositing");
       break;
+#endif
     default:
       NOTREACHED();
   }
@@ -199,8 +205,8 @@ static void AddPepperBasedWidevine(
 #elif defined(OS_ANDROID)
 static void AddAndroidWidevine(
     std::vector<KeySystemInfo>* concrete_key_systems) {
-  android::SupportedKeySystemRequest request;
-  android::SupportedKeySystemResponse response;
+  SupportedKeySystemRequest request;
+  SupportedKeySystemResponse response;
 
   request.uuid.insert(request.uuid.begin(), kWidevineUuid,
                       kWidevineUuid + arraysize(kWidevineUuid));
@@ -212,16 +218,16 @@ static void AddAndroidWidevine(
       new ChromeViewHostMsg_GetSupportedKeySystems(request, &response));
   DCHECK_EQ(response.compositing_codecs >> 3, 0) << "unrecognized codec";
   DCHECK_EQ(response.non_compositing_codecs >> 3, 0) << "unrecognized codec";
-  if (response.compositing_codecs > 0) {
+  if (response.compositing_codecs != android::NO_SUPPORTED_CODECS) {
     AddWidevineWithCodecs(
         WIDEVINE,
         static_cast<SupportedCodecs>(response.compositing_codecs),
         concrete_key_systems);
   }
 
-  if (response.non_compositing_codecs > 0) {
+  if (response.non_compositing_codecs != android::NO_SUPPORTED_CODECS) {
     AddWidevineWithCodecs(
-        WIDEVINE_HRSURFACE,
+        WIDEVINE_HR_NON_COMPOSITING,
         static_cast<SupportedCodecs>(response.non_compositing_codecs),
         concrete_key_systems);
   }

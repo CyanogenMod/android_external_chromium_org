@@ -636,8 +636,8 @@
           'conditions': [
             ['component=="shared_library"', {
               'dependencies': [
-                '../webkit/support/webkit_support.gyp:glue',
                 '../content/content.gyp:content_plugin',
+                '../webkit/glue/webkit_glue.gyp:glue',
               ],
               'xcode_settings': {
                 'LD_RUNPATH_SEARCH_PATHS': [
@@ -784,8 +784,6 @@
                 {
                   'action_name': 'strip_reliability_tests',
                   'inputs': [
-                    '<(PRODUCT_DIR)/automated_ui_tests',
-                    '<(PRODUCT_DIR)/reliability_tests',
                     '<(PRODUCT_DIR)/_pyautolib.so',
                   ],
                   'outputs': [
@@ -796,10 +794,6 @@
                              '<@(_inputs)'],
                   'message': 'Stripping reliability tests',
                 },
-              ],
-              'dependencies': [
-                'automated_ui_tests',
-                'reliability_tests',
               ],
             }],
           ],
@@ -938,17 +932,12 @@
           'sources': [
              'test/automation/automation_handle_tracker.cc',
              'test/automation/automation_handle_tracker.h',
-             'test/automation/automation_json_requests.cc',
-             'test/automation/automation_json_requests.h',
              'test/automation/automation_proxy.cc',
              'test/automation/automation_proxy.h',
              'test/automation/browser_proxy.cc',
              'test/automation/browser_proxy.h',
              'test/automation/tab_proxy.cc',
              'test/automation/tab_proxy.h',
-             'test/automation/value_conversion_traits.cc',
-             'test/automation/value_conversion_traits.h',
-             'test/automation/value_conversion_util.h',
              'test/automation/window_proxy.cc',
              'test/automation/window_proxy.h',
           ],

@@ -1,5 +1,4 @@
 include_rules = [
-  "+jingle/glue",
   "+net",
   "+remoting/codec",
   "+remoting/jingle_glue",

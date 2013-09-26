@@ -151,6 +151,12 @@ TEST_F(KernelWrapTest, fchown) {
   fchown(DUMMY_FD, uid, gid);
 }
 
+TEST_F(KernelWrapTest, fcntl) {
+  char buffer[] = "fcntl";
+  EXPECT_CALL(mock, fcntl(012, 345, StrEq("fcntl"))).Times(1);
+  fcntl(012, 345, buffer);
+}
+
 TEST_F(KernelWrapTest, fstat) {
   struct stat in_statbuf;
   MakeDummyStatbuf(&in_statbuf);
@@ -250,6 +256,13 @@ TEST_F(KernelWrapTest, mount) {
 TEST_F(KernelWrapTest, open) {
   EXPECT_CALL(mock, open(StrEq("open"), 3456)).Times(1);
   open("open", 3456);
+}
+
+TEST_F(KernelWrapTest, pipe) {
+  int fds[2] = { 1, 2 };
+
+  EXPECT_CALL(mock, pipe(fds)).Times(1);
+  pipe(fds);
 }
 
 TEST_F(KernelWrapTest, read) {

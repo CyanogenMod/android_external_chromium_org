@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "cc/base/ref_counted_managed.h"
 #include "cc/resources/managed_tile_state.h"
 #include "cc/resources/raster_mode.h"
 #include "cc/resources/tile_priority.h"
@@ -18,19 +19,9 @@ namespace cc {
 
 class PicturePileImpl;
 
-class CC_EXPORT Tile : public base::RefCounted<Tile> {
+class CC_EXPORT Tile : public RefCountedManaged<Tile> {
  public:
   typedef uint64 Id;
-
-  Tile(TileManager* tile_manager,
-       PicturePileImpl* picture_pile,
-       gfx::Size tile_size,
-       gfx::Rect content_rect,
-       gfx::Rect opaque_rect,
-       float contents_scale,
-       int layer_id,
-       int source_frame_number,
-       bool can_use_lcd_text);
 
   Id id() const {
     return id_;
@@ -113,22 +104,28 @@ class CC_EXPORT Tile : public base::RefCounted<Tile> {
     return managed_state_.tile_versions[mode];
   }
 
+  gfx::Size size() const { return tile_size_.size(); }
+
  private:
-  // Methods called by by tile manager.
   friend class TileManager;
   friend class PrioritizedTileSet;
   friend class FakeTileManager;
   friend class BinComparator;
+
+  // Methods called by by tile manager.
+  Tile(TileManager* tile_manager,
+       PicturePileImpl* picture_pile,
+       gfx::Size tile_size,
+       gfx::Rect content_rect,
+       gfx::Rect opaque_rect,
+       float contents_scale,
+       int layer_id,
+       int source_frame_number,
+       bool can_use_lcd_text);
+  ~Tile();
+
   ManagedTileState& managed_state() { return managed_state_; }
   const ManagedTileState& managed_state() const { return managed_state_; }
-
-  inline size_t bytes_consumed_if_allocated() const {
-    return 4 * tile_size_.width() * tile_size_.height();
-  }
-
-  // Normal private methods.
-  friend class base::RefCounted<Tile>;
-  ~Tile();
 
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;

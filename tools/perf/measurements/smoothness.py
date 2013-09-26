@@ -1,6 +1,8 @@
 # Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import logging
+
 from metrics import loading
 from metrics import smoothness
 from metrics.gpu_rendering_stats import GpuRenderingStats
@@ -19,8 +21,9 @@ class MissingDisplayFrameRate(page_measurement.MeasurementFailure):
 
 
 class MissingTimelineMarker(page_measurement.MeasurementFailure):
-  def __init__(self):
-    super(MissingTimelineMarker, self).__init__('Timeline marker not found')
+  def __init__(self, name):
+    super(MissingTimelineMarker, self).__init__(
+        'Timeline marker not found: ' + name)
 
 
 class Smoothness(page_measurement.PageMeasurement):
@@ -62,13 +65,12 @@ class Smoothness(page_measurement.PageMeasurement):
       self._metrics.Stop()
     self._trace_result = tab.browser.StopTracing()
 
-  def FindTimelineMarker(self, timeline):
+  def FindTimelineMarker(self, timeline, name):
     events = [s for
-              s in timeline.GetAllEventsOfName(
-                  smoothness.TIMELINE_MARKER)
+              s in timeline.GetAllEventsOfName(name)
               if s.parent_slice == None]
     if len(events) != 1:
-      raise MissingTimelineMarker()
+      raise MissingTimelineMarker(name)
     return events[0]
 
   def MeasurePage(self, page, tab, results):
@@ -81,9 +83,20 @@ class Smoothness(page_measurement.PageMeasurement):
 
     smoothness.CalcFirstPaintTimeResults(results, tab)
 
-    timeline_marker = self.FindTimelineMarker(
-        self._trace_result.AsTimelineModel())
-    benchmark_stats = GpuRenderingStats(timeline_marker,
+    timeline = self._trace_result.AsTimelineModel()
+    smoothness_marker = self.FindTimelineMarker(timeline,
+        smoothness.TIMELINE_MARKER)
+    # TODO(dominikg): remove try..except once CL 23532057 has been rolled to the
+    # reference builds?
+    try:
+      gesture_marker = self.FindTimelineMarker(timeline,
+          smoothness.SYNTHETIC_GESTURE_MARKER)
+    except MissingTimelineMarker:
+      logging.warning(
+        'No gesture marker found in timeline; using smoothness marker instead.')
+      gesture_marker = smoothness_marker
+    benchmark_stats = GpuRenderingStats(smoothness_marker,
+                                        gesture_marker,
                                         rendering_stats_deltas,
                                         self._metrics.is_using_gpu_benchmarking)
     smoothness.CalcResults(benchmark_stats, results)

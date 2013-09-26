@@ -59,20 +59,20 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // false otherwise. This is used by implementations such as tcp_cubic_sender
   // that do not count outgoing ACK packets against the congestion window.
   // Note: this function must be called for every packet sent to the wire.
-  virtual bool SentPacket(QuicTime sent_time,
-                          QuicPacketSequenceNumber sequence_number,
-                          QuicByteCount bytes,
-                          Retransmission is_retransmission,
-                          HasRetransmittableData is_retransmittable) = 0;
+  virtual bool OnPacketSent(QuicTime sent_time,
+                            QuicPacketSequenceNumber sequence_number,
+                            QuicByteCount bytes,
+                            TransmissionType transmission_type,
+                            HasRetransmittableData is_retransmittable) = 0;
 
   // Called when a packet is timed out.
-  virtual void AbandoningPacket(QuicPacketSequenceNumber sequence_number,
+  virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
                                 QuicByteCount abandoned_bytes) = 0;
 
   // Calculate the time until we can send the next packet.
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
-      Retransmission is_retransmission,
+      TransmissionType transmission_type,
       HasRetransmittableData has_retransmittable_data,
       IsHandshake handshake) = 0;
 

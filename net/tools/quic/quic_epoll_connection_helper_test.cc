@@ -71,8 +71,6 @@ class TestConnection : public QuicConnection {
   void SetSendAlgorithm(SendAlgorithmInterface* send_algorithm) {
     QuicConnectionPeer::SetSendAlgorithm(this, send_algorithm);
   }
-
-  using QuicConnection::SendOrQueuePacket;
 };
 
 class QuicEpollConnectionHelperTest : public ::testing::Test {
@@ -83,7 +81,7 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
         send_algorithm_(new testing::StrictMock<MockSendAlgorithm>),
         helper_(new TestConnectionHelper(0, &epoll_server_)),
         connection_(guid_, IPEndPoint(), helper_),
-        frame1_(1, false, 0, data1) {
+        frame1_(3, false, 0, data1) {
     connection_.set_visitor(&visitor_);
     connection_.SetSendAlgorithm(send_algorithm_);
     epoll_server_.set_timeout_in_us(-1);
@@ -93,7 +91,7 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
         QuicBandwidth::FromKBitsPerSecond(100)));
     EXPECT_CALL(*send_algorithm_, SmoothedRtt()).WillRepeatedly(Return(
         QuicTime::Delta::FromMilliseconds(100)));
-    ON_CALL(*send_algorithm_, SentPacket(_, _, _, _, _))
+    ON_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
         .WillByDefault(Return(true));
   }
 
@@ -126,7 +124,7 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
   QuicStreamFrame frame1_;
 };
 
-TEST_F(QuicEpollConnectionHelperTest, DISABLED_TestRetransmission) {
+TEST_F(QuicEpollConnectionHelperTest, DISABLED_TestRTORetransmission) {
   //FLAGS_fake_packet_loss_percentage = 100;
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
       Return(QuicTime::Delta::Zero()));
@@ -140,14 +138,16 @@ TEST_F(QuicEpollConnectionHelperTest, DISABLED_TestRetransmission) {
       arraysize(buffer) - 1;
 
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, 1, packet_size, NOT_RETRANSMISSION, _));
-  EXPECT_CALL(*send_algorithm_, AbandoningPacket(1, packet_size));
+              OnPacketSent(_, 1, packet_size, NOT_RETRANSMISSION, _));
+  EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, packet_size));
+  EXPECT_CALL(visitor_, OnCanWrite()).WillOnce(Return(true));
+  EXPECT_CALL(visitor_, HasPendingHandshake()).Times(AnyNumber());
   struct iovec iov = {const_cast<char*>(buffer),
                       static_cast<size_t>(3)};
   connection_.SendvStreamData(1, &iov, 1, 0, false);
   EXPECT_EQ(1u, helper_->header()->packet_sequence_number);
   EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, 2, packet_size, IS_RETRANSMISSION, _));
+              OnPacketSent(_, 2, packet_size, RTO_RETRANSMISSION, _));
   epoll_server_.AdvanceByAndCallCallbacks(kDefaultRetransmissionTimeMs * 1000);
 
   EXPECT_EQ(2u, helper_->header()->packet_sequence_number);
@@ -156,8 +156,8 @@ TEST_F(QuicEpollConnectionHelperTest, DISABLED_TestRetransmission) {
 TEST_F(QuicEpollConnectionHelperTest, InitialTimeout) {
   EXPECT_TRUE(connection_.connected());
 
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 1, _, NOT_RETRANSMISSION,
-                                           HAS_RETRANSMITTABLE_DATA));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, NOT_RETRANSMISSION,
+                                             HAS_RETRANSMITTABLE_DATA));
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillOnce(
       Return(QuicTime::Delta::FromMicroseconds(1)));
   EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, !kFromPeer));
@@ -176,8 +176,8 @@ TEST_F(QuicEpollConnectionHelperTest, TimeoutAfterSend) {
   EXPECT_EQ(5000, epoll_server_.NowInUsec());
 
   // Send an ack so we don't set the retransmission alarm.
-  EXPECT_CALL(*send_algorithm_,
-              SentPacket(_, 1, _, NOT_RETRANSMISSION, NO_RETRANSMITTABLE_DATA));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, NOT_RETRANSMISSION,
+                                             NO_RETRANSMITTABLE_DATA));
   connection_.SendAck();
 
   // The original alarm will fire.  We should not time out because we had a
@@ -187,8 +187,8 @@ TEST_F(QuicEpollConnectionHelperTest, TimeoutAfterSend) {
 
   // This time, we should time out.
   EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, !kFromPeer));
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 2, _, NOT_RETRANSMISSION,
-                                           HAS_RETRANSMITTABLE_DATA));
+  EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 2, _, NOT_RETRANSMISSION,
+                                             HAS_RETRANSMITTABLE_DATA));
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillOnce(
       Return(QuicTime::Delta::FromMicroseconds(1)));
   epoll_server_.WaitForEventsAndExecuteCallbacks();
@@ -201,15 +201,16 @@ TEST_F(QuicEpollConnectionHelperTest, SendSchedulerDelayThenSend) {
   // Test that if we send a packet with a delay, it ends up queued.
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
       Return(QuicTime::Delta::Zero()));
-  QuicPacket* packet = ConstructDataPacket(1, 0);
   EXPECT_CALL(
       *send_algorithm_, TimeUntilSend(_, NOT_RETRANSMISSION, _, _)).WillOnce(
           Return(QuicTime::Delta::FromMicroseconds(1)));
-  connection_.SendOrQueuePacket(ENCRYPTION_NONE, 1, packet, 0,
-                                HAS_RETRANSMITTABLE_DATA,
-                                QuicConnection::NO_FORCE);
-  EXPECT_CALL(*send_algorithm_, SentPacket(_, 1, _, NOT_RETRANSMISSION,
-                                           _));
+  connection_.OnSerializedPacket(
+      SerializedPacket(1, PACKET_6BYTE_SEQUENCE_NUMBER,
+                       ConstructDataPacket(1, 0), 0,
+                       new RetransmittableFrames));
+
+  EXPECT_CALL(*send_algorithm_,
+              OnPacketSent(_, 1, _, NOT_RETRANSMISSION, _));
   EXPECT_EQ(1u, connection_.NumQueuedPackets());
 
   // Advance the clock to fire the alarm, and configure the scheduler

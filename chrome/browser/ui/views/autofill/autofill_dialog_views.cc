@@ -69,6 +69,12 @@ namespace autofill {
 
 namespace {
 
+// The default height of the stack of messages in the overlay view.
+const int kDefaultMessageStackHeight = 90;
+
+// The width for the section container.
+const int kSectionContainerWidth = 440;
+
 // The minimum useful height of the contents area of the dialog.
 const int kMinimumContentsHeight = 100;
 
@@ -106,7 +112,7 @@ const int kMenuButtonBottomInset = 6;
 const int kOverlayTextInterlineSpacing = 10;
 
 // Spacing below image and above text messages in overlay view.
-const int kOverlayImageBottomMargin = 50;
+const int kOverlayImageBottomMargin = 100;
 
 // A dimmer text color used in various parts of the dialog. TODO(estade): should
 // this be part of NativeTheme? Currently the value is duplicated in several
@@ -639,8 +645,6 @@ AutofillDialogViews::OverlayView::OverlayView(
   message_stack_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0,
                            kOverlayTextInterlineSpacing));
-  message_stack_->set_border(views::Border::CreateEmptyBorder(
-      kDialogEdgePadding, kDialogEdgePadding, 0, kDialogEdgePadding));
 }
 
 AutofillDialogViews::OverlayView::~OverlayView() {}
@@ -666,18 +670,29 @@ void AutofillDialogViews::OverlayView::UpdateState() {
 
   image_view_->SetImage(state.image.ToImageSkia());
 
+  int label_height = 0;
   message_stack_->RemoveAllChildViews(true);
-  for (size_t i = 0; i < state.strings.size(); ++i) {
+  if (!state.strings.empty() && !state.strings[0].text.empty()) {
+    const DialogOverlayString& string = state.strings[0];
     views::Label* label = new views::Label();
     label->SetAutoColorReadabilityEnabled(false);
     label->SetMultiLine(true);
-    label->SetText(state.strings[i].text);
-    label->SetFont(state.strings[i].font);
-    label->SetEnabledColor(state.strings[i].text_color);
-    label->SetHorizontalAlignment(state.strings[i].alignment);
+    label->SetText(string.text);
+    label->SetFont(string.font);
+    label->SetEnabledColor(string.text_color);
+    label->SetHorizontalAlignment(string.alignment);
     message_stack_->AddChildView(label);
+    label_height = label->GetPreferredSize().height();
   }
   message_stack_->SetVisible(message_stack_->child_count() > 0);
+
+  const int kVerticalPadding = std::max(
+      (kDefaultMessageStackHeight - label_height) / 2, kDialogEdgePadding);
+  message_stack_->set_border(
+      views::Border::CreateEmptyBorder(kVerticalPadding,
+                                       kDialogEdgePadding,
+                                       kVerticalPadding,
+                                       kDialogEdgePadding));
 
   SetVisible(true);
   InvalidateLayout();
@@ -697,7 +712,7 @@ void AutofillDialogViews::OverlayView::Layout() {
   }
 
   int message_height = message_stack_->GetHeightForWidth(bounds.width());
-  int y = bounds.bottom() - views::kButtonVEdgeMarginNew - message_height;
+  int y = bounds.bottom() - message_height;
   message_stack_->SetBounds(bounds.x(), y, bounds.width(), message_height);
 
   gfx::Size image_size = image_view_->GetPreferredSize();
@@ -876,13 +891,13 @@ AutofillDialogViews::SectionContainer::SectionContainer(
   label_bar->SetLayoutManager(label_bar_layout);
   const int kColumnSetId = 0;
   views::ColumnSet* columns = label_bar_layout->AddColumnSet(kColumnSetId);
-  // TODO(estade): do something about this '480'.
-  columns->AddColumn(views::GridLayout::LEADING,
-                     views::GridLayout::LEADING,
-                     0,
-                     views::GridLayout::FIXED,
-                     480,
-                     0);
+  columns->AddColumn(
+      views::GridLayout::LEADING,
+      views::GridLayout::LEADING,
+      0,
+      views::GridLayout::FIXED,
+      kSectionContainerWidth - proxy_button->GetPreferredSize().width(),
+      0);
   columns->AddColumn(views::GridLayout::LEADING,
                      views::GridLayout::LEADING,
                      0,
@@ -920,15 +935,12 @@ void AutofillDialogViews::SectionContainer::SetForwardMouseEvents(
 
 void AutofillDialogViews::SectionContainer::OnMouseMoved(
     const ui::MouseEvent& event) {
-  if (!forward_mouse_events_)
-    return;
-
-  SetActive(true);
+  SetActive(ShouldForwardEvent(event));
 }
 
 void AutofillDialogViews::SectionContainer::OnMouseEntered(
     const ui::MouseEvent& event) {
-  if (!forward_mouse_events_)
+  if (!ShouldForwardEvent(event))
     return;
 
   SetActive(true);
@@ -938,17 +950,17 @@ void AutofillDialogViews::SectionContainer::OnMouseEntered(
 
 void AutofillDialogViews::SectionContainer::OnMouseExited(
     const ui::MouseEvent& event) {
-  if (!forward_mouse_events_)
+  SetActive(false);
+  if (!ShouldForwardEvent(event))
     return;
 
-  SetActive(false);
   proxy_button_->OnMouseExited(ProxyEvent(event));
   SchedulePaint();
 }
 
 bool AutofillDialogViews::SectionContainer::OnMousePressed(
     const ui::MouseEvent& event) {
-  if (!forward_mouse_events_)
+  if (!ShouldForwardEvent(event))
     return false;
 
   return proxy_button_->OnMousePressed(ProxyEvent(event));
@@ -956,10 +968,33 @@ bool AutofillDialogViews::SectionContainer::OnMousePressed(
 
 void AutofillDialogViews::SectionContainer::OnMouseReleased(
     const ui::MouseEvent& event) {
-  if (!forward_mouse_events_)
+  if (!ShouldForwardEvent(event))
     return;
 
   proxy_button_->OnMouseReleased(ProxyEvent(event));
+}
+
+views::View* AutofillDialogViews::SectionContainer::GetEventHandlerForPoint(
+    const gfx::Point& point) {
+  views::View* handler = views::View::GetEventHandlerForPoint(point);
+  // If the event is not in the label bar and there's no background to be
+  // cleared, let normal event handling take place.
+  if (!background() &&
+      point.y() > child_at(0)->bounds().bottom()) {
+    return handler;
+  }
+
+  // Special case for (CVC) inputs in the suggestion view.
+  if (forward_mouse_events_ &&
+      handler->GetAncestorWithClassName(DecoratedTextfield::kViewClassName)) {
+    return handler;
+  }
+
+  // Special case for the proxy button itself.
+  if (handler == proxy_button_)
+    return handler;
+
+  return this;
 }
 
 // static
@@ -968,6 +1003,12 @@ ui::MouseEvent AutofillDialogViews::SectionContainer::ProxyEvent(
   ui::MouseEvent event_copy = event;
   event_copy.set_location(gfx::Point());
   return event_copy;
+}
+
+bool AutofillDialogViews::SectionContainer::ShouldForwardEvent(
+    const ui::MouseEvent& event) {
+  // Always forward events on the label bar.
+  return forward_mouse_events_ || event.y() <= child_at(0)->bounds().bottom();
 }
 
 // AutofillDialogViews::SuggestedButton ----------------------------------------
@@ -1410,7 +1451,8 @@ const content::NavigationController* AutofillDialogViews::ShowSignIn() {
   sign_in_delegate_.reset(
       new AutofillDialogSignInDelegate(
           this, sign_in_webview_->GetWebContents(),
-          delegate_->GetWebContents()->GetDelegate()));
+          delegate_->GetWebContents()->GetDelegate(),
+          GetMinimumSignInViewSize(), GetMaximumSignInViewSize()));
   sign_in_webview_->LoadInitialURL(wallet::GetSignInUrl());
 
   sign_in_webview_->SetVisible(true);
@@ -1549,11 +1591,6 @@ void AutofillDialogViews::Layout() {
 
   if (error_bubble_)
     error_bubble_->UpdatePosition();
-}
-
-void AutofillDialogViews::OnBoundsChanged(const gfx::Rect& previous_bounds) {
-  if (sign_in_delegate_)
-    sign_in_delegate_->SetMinWidth(GetContentsBounds().width());
 }
 
 base::string16 AutofillDialogViews::GetWindowTitle() const {
@@ -1791,25 +1828,49 @@ gfx::Size AutofillDialogViews::CalculatePreferredSize() {
   if (scrollable_area_->visible()) {
     // Show as much of the scroll view as is possible without going past the
     // bottom of the browser window.
-    views::Widget* widget =
-        views::Widget::GetTopLevelWidgetForNativeView(
-            delegate_->GetWebContents()->GetView()->GetNativeView());
-    int browser_window_height =
-        widget ? widget->GetContentsView()->bounds().height() : INT_MAX;
-    const int kWindowDecorationHeight = 200;
-    int browser_constrained_height =
-        browser_window_height - height - kWindowDecorationHeight;
+    int footnote_height = 0;
     if (footnote_view_->visible())
-      browser_constrained_height -= footnote_view_->GetHeightForWidth(width);
+      footnote_height = footnote_view_->GetHeightForWidth(width);
 
+    // TODO(estade): Replace this magic constant with a semantic computation.
+    const int kWindowDecorationHeight = 120;
+    int browser_constrained_scroll_height =
+        GetBrowserViewHeight() - kWindowDecorationHeight - height -
+            footnote_height;
     int scroll_height = std::min(
         scroll_size.height(),
-        std::max(kMinimumContentsHeight, browser_constrained_height));
+        std::max(kMinimumContentsHeight, browser_constrained_scroll_height));
 
     height += scroll_height;
   }
 
   return gfx::Size(width + insets.width(), height + insets.height());
+}
+
+int AutofillDialogViews::GetBrowserViewHeight() const {
+  return delegate_->GetWebContents()->GetView()->GetContainerSize().height();
+}
+
+gfx::Size AutofillDialogViews::InsetSize(const gfx::Size& size) const {
+  gfx::Insets insets = GetInsets();
+  return gfx::Size(size.width() - insets.width(),
+                   size.height() - insets.height());
+}
+
+gfx::Size AutofillDialogViews::GetMinimumSignInViewSize() const {
+  return InsetSize(GetDialogClientView()->size());
+}
+
+gfx::Size AutofillDialogViews::GetMaximumSignInViewSize() const {
+  // The sign-in view should never grow beyond the browser window, unless the
+  // minimum dialog height has already exceeded this limit.
+  gfx::Size size = GetDialogClientView()->size();
+  // TODO(isherman): This computation seems to come out about 30 pixels too
+  // large, possibly due to an invisible bubble border.
+  const int non_client_view_height = GetSize().height() - size.height();
+  size.set_height(
+      std::max(size.height(), GetBrowserViewHeight() - non_client_view_height));
+  return InsetSize(size);
 }
 
 void AutofillDialogViews::InitChildViews() {

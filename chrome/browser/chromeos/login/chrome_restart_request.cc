@@ -36,6 +36,7 @@
 #include "media/base/media_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/compositor_switches.h"
+#include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/views/corewm/corewm_switches.h"
@@ -75,6 +76,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableAcceleratedPlugins,
       ::switches::kDisableAcceleratedVideoDecode,
       ::switches::kDisableBrowserPluginCompositing,
+      ::switches::kDisableDeadlineScheduling,
       ::switches::kDisableDelegatedRenderer,
       ::switches::kDisableForceCompositingMode,
       ::switches::kDisableGpuShaderDiskCache,
@@ -92,8 +94,9 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableAcceleratedFixedRootBackground,
       ::switches::kEnableAcceleratedOverflowScroll,
       ::switches::kEnableBeginFrameScheduling,
-      ::switches::kEnableBrowserInputController,
+      ::switches::kEnableBufferedInputRouter,
       ::switches::kEnableCompositingForFixedPosition,
+      ::switches::kEnableDeadlineScheduling,
       ::switches::kEnableDelegatedRenderer,
       ::switches::kEnableEncryptedMedia,
       ::switches::kEnableGestureTapHighlight,
@@ -125,7 +128,9 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kTouchDevices,
       ::switches::kTouchEvents,
       ::switches::kTouchOptimizedUI,
+      ::switches::kUIDisableDeadlineScheduling,
       ::switches::kUIDisableThreadedCompositing,
+      ::switches::kUIEnableDeadlineScheduling,
       ::switches::kUIMaxFramesPending,
       ::switches::kUIPrioritizeInGpuProcess,
 #if defined(USE_CRAS)
@@ -139,6 +144,7 @@ std::string DeriveCommandLine(const GURL& start_url,
 #if defined(ENABLE_WEBRTC)
       ::switches::kDisableWebRtcHWDecoding,
       ::switches::kDisableWebRtcHWEncoding,
+      ::switches::kEnableWebRtcHWVp8Encoding,
 #endif
       ash::switches::kAshDefaultGuestWallpaperLarge,
       ash::switches::kAshDefaultGuestWallpaperSmall,

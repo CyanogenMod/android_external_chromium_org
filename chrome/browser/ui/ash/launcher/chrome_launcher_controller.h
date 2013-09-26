@@ -29,6 +29,7 @@
 #include "chrome/browser/prefs/pref_service_syncable_observer.h"
 #include "chrome/browser/ui/ash/app_sync_ui_state_observer.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
+#include "chrome/browser/ui/ash/launcher/chrome_launcher_types.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "ui/aura/window_observer.h"
@@ -86,18 +87,17 @@ class ChromeLauncherControllerUserSwitchObserver {
 // * Shortcuts have no LauncherItemController.
 // TODO(simon.hong81): Move LauncherItemDelegate out from
 // ChromeLauncherController and makes separate subclass with it.
-class ChromeLauncherController
-    : public ash::LauncherDelegate,
-      public ash::LauncherItemDelegate,
-      public ash::LauncherModelObserver,
-      public ash::ShellObserver,
-      public ash::DisplayController::Observer,
-      public content::NotificationObserver,
-      public extensions::AppIconLoader::Delegate,
-      public PrefServiceSyncableObserver,
-      public AppSyncUIStateObserver,
-      public ExtensionEnableFlowDelegate,
-      public ash::ShelfLayoutManagerObserver {
+class ChromeLauncherController : public ash::LauncherDelegate,
+                                 public ash::LauncherItemDelegate,
+                                 public ash::LauncherModelObserver,
+                                 public ash::ShellObserver,
+                                 public ash::DisplayController::Observer,
+                                 public content::NotificationObserver,
+                                 public extensions::AppIconLoader::Delegate,
+                                 public PrefServiceSyncableObserver,
+                                 public AppSyncUIStateObserver,
+                                 public ExtensionEnableFlowDelegate,
+                                 public ash::ShelfLayoutManagerObserver {
  public:
   // Indicates if a launcher item is incognito or not.
   enum IncognitoState {
@@ -198,12 +198,16 @@ class ChromeLauncherController
 
   // Opens a new instance of the application identified by |app_id|.
   // Used by the app-list, and by pinned-app launcher items.
-  void LaunchApp(const std::string& app_id, int event_flags);
+  void LaunchApp(const std::string& app_id,
+                 ash::LaunchSource source,
+                 int event_flags);
 
   // If |app_id| is running, reactivates the app's most recently active window,
   // otherwise launches and activates the app.
   // Used by the app-list, and by pinned-app launcher items.
-  void ActivateApp(const std::string& app_id, int event_flags);
+  void ActivateApp(const std::string& app_id,
+                   ash::LaunchSource source,
+                   int event_flags);
 
   // Returns the launch type of app for the specified id.
   extensions::ExtensionPrefs::LaunchType GetLaunchType(ash::LauncherID id);
@@ -420,6 +424,15 @@ class ChromeLauncherController
   void DoPinAppWithID(const std::string& app_id);
   void DoUnpinAppWithID(const std::string& app_id);
 
+  // Pin a running app with |launcher_id| internally to |index|. It returns
+  // the index where the item was pinned.
+  int PinRunningAppInternal(int index, ash::LauncherID launcher_id);
+
+  // Unpin a locked application. This is an internal call which converts the
+  // model type of the given app index from a shortcut into an unpinned running
+  // app.
+  void UnpinRunningAppInternal(int index);
+
   // Re-syncs launcher model with prefs::kPinnedLauncherApps.
   void UpdateAppLaunchersFromPref();
 
@@ -459,7 +472,7 @@ class ChromeLauncherController
   ash::LauncherID CreateBrowserShortcutLauncherItem();
 
   // Check if the given |web_contents| is in incognito mode.
-  bool IsIncognito(content::WebContents* web_contents) const;
+  bool IsIncognito(const content::WebContents* web_contents) const;
 
   // Update browser shortcut's index.
   void PersistChromeItemIndex(int index);
@@ -467,14 +480,31 @@ class ChromeLauncherController
   // Get browser shortcut's index from pref.
   int GetChromeIconIndexFromPref() const;
 
+  // Depending on the provided flags, move either the chrome icon, the app icon
+  // or none to the given |target_index|. The provided |chrome_index| and
+  // |app_list_index| locations will get adjusted within this call to finalize
+  // the action and to make sure that the other item can still be moved
+  // afterwards (index adjustments).
+  void MoveChromeOrApplistToFinalPosition(
+      bool is_chrome,
+      bool is_app_list,
+      int target_index,
+      int* chrome_index,
+      int* app_list_index);
+
+  // Finds the index of where to insert the next item.
+  int FindInsertionPoint(bool is_app_list);
+
+  // Get the browser shortcut's index in the shelf using the current's systems
+  // configuration of pinned and known (but not running) apps.
+  int GetChromeIconIndexForCreation();
+
+  // Get the list of pinned programs from the preferences.
+  std::vector<std::string> GetListOfPinnedAppsAndBrowser();
+
   // Close all windowed V1 applications of a certain extension which was already
   // deleted.
   void CloseWindowedAppsFromRemovedExtension(const std::string& app_id);
-
-  // Move a launcher item ignoring the pinned state changes from |index| to
-  // |target_index|.
-  void MoveItemWithoutPinnedStateChangeNotification(int source_index,
-                                                    int target_index);
 
   // Register LauncherItemDelegate.
   void RegisterLauncherItemDelegate();

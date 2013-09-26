@@ -8,7 +8,7 @@
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/profiles/avatar_menu_model.h"
+#include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
@@ -47,14 +47,6 @@ const char kKeyIsOwner[] = "isOwner";
 const char kKeyIsDesktop[] = "isDesktopUser";
 const char kKeyAvatarUrl[] = "userImage";
 const char kKeyNeedsSignin[] = "needsSignin";
-const char kGAIAPictureFileNameKey[] = "gaia_picture_file_name";
-
-// Max number of users to show.
-const size_t kMaxUsers = 18;
-
-// Type of the login screen UI that is currently presented to user.
-const char kSourceGaiaSignin[] = "gaia-signin";
-const char kSourceAccountPicker[] = "account-picker";
 
 // JS API callback names.
 const char kJsApiUserManagerInitialize[] = "userManagerInitialize";
@@ -173,16 +165,10 @@ void UserManagerScreenHandler::HandleInitialize(const base::ListValue* args) {
 }
 
 void UserManagerScreenHandler::HandleAddUser(const base::ListValue* args) {
-  // TODO(noms): Should display the addUser page here, not do a redirect.
   Browser* browser = chrome::FindOrCreateTabbedBrowser(
       ProfileManager::GetLastUsedProfileAllowedByPolicy(), desktop_type_);
   DCHECK(browser);
-  chrome::NavigateParams params(browser,
-                                GURL("chrome://settings/createProfile"),
-                                content::PAGE_TRANSITION_LINK);
-  params.disposition = NEW_FOREGROUND_TAB;
-  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-  chrome::Navigate(&params);
+  profiles::CreateAndSwitchToNewProfile(desktop_type_);
 }
 
 void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
@@ -211,7 +197,7 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
 void UserManagerScreenHandler::HandleLaunchGuest(const base::ListValue* args) {
   Browser* browser = chrome::FindOrCreateTabbedBrowser(
       ProfileManager::GetLastUsedProfileAllowedByPolicy(), desktop_type_);
-  AvatarMenuModel::SwitchToGuestProfileWindow(browser);
+  AvatarMenu::SwitchToGuestProfileWindow(browser);
 }
 
 void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {

@@ -204,8 +204,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     const base::string16 icon_text = ASCIIToUTF16("ash");
     const gfx::Size icon_size(32, 32);
 
-    gfx::Canvas canvas(icon_size, ui::SCALE_FACTOR_100P,
-                       false /* is_opaque */);
+    gfx::Canvas canvas(icon_size, 1.0f, false /* is_opaque */);
     canvas.DrawStringInt(icon_text,
                          gfx::Font(),
                          SK_ColorBLACK,
@@ -222,7 +221,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   // Overridden from ash::AppListViewDelegate:
-  virtual void SetModel(app_list::AppListModel* model) OVERRIDE {
+  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void InitModel(app_list::AppListModel* model) OVERRIDE {
     model_ = model;
     PopulateApps(model_->apps());
     DecorateSearchBox(model_->search_box());
@@ -306,6 +309,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   }
 
   virtual void OpenFeedback() OVERRIDE {
+    // Nothing needs to be done.
+  }
+
+  virtual void ShowForProfileByPath(
+      const base::FilePath& profile_path) OVERRIDE {
     // Nothing needs to be done.
   }
 

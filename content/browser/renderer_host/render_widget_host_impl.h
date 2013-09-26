@@ -35,7 +35,7 @@
 #include "ipc/ipc_listener.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 
 class WebCursor;
@@ -522,6 +522,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // suppress_next_char_events_.
   void SuppressNextCharEvents();
 
+  // Called by RenderWidgetHostView in response to OnSetNeedsFlushInput.
+  void FlushInput();
+
   // Indicates whether the renderer drives the RenderWidgetHosts's size or the
   // other way around.
   bool should_auto_resize() { return should_auto_resize_; }
@@ -760,6 +763,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
   void DelayedAutoResized();
+
+  // Creates the proper InputRouter, either Buffered or Immediate.
+  scoped_ptr<InputRouter> CreateInputRouter();
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.

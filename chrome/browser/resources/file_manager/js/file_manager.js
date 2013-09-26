@@ -488,97 +488,80 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.__lookupSetter__('hidden').call(this, value);
     };
 
-    var commands = this.dialogDom_.querySelectorAll('command');
-    for (var i = 0; i < commands.length; i++)
-      cr.ui.Command.decorate(commands[i]);
-
     var doc = this.document_;
-
-    CommandUtil.registerCommand(this.dialogContainer_, 'newfolder',
-        Commands.newFolderCommand, this, this.directoryModel_);
+    var handler = new CommandHandler(doc);
 
     // Required to handle the command outside of the container, on the footer.
     // TODO(mtomasz): Remove after fixing crbug.com/275235.
-    CommandUtil.registerCommand(this.dialogDom_.querySelector('.dialog-footer'),
-        'newfolder', Commands.newFolderCommand, this, this.directoryModel_);
+    handler.registerCommand('newfolder', Commands.newFolderCommand, this,
+                            this.directoryModel_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'newwindow',
-        Commands.newWindowCommand, this, this.directoryModel_);
+    handler.registerCommand('newwindow', Commands.newWindowCommand, this,
+                            this.directoryModel_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'change-default-app',
-        Commands.changeDefaultAppCommand, this);
+    handler.registerCommand('change-default-app',
+                            Commands.changeDefaultAppCommand, this);
 
-    CommandUtil.registerCommand(this.navigationList_, 'unmount',
-        Commands.unmountCommand, this);
+    handler.registerCommand('unmount', Commands.unmountCommand, this);
 
-    CommandUtil.registerCommand(this.navigationList_, 'import-photos',
-        Commands.importCommand, this.navigationList_);
+    handler.registerCommand('import-photos', Commands.importCommand,
+                            this.navigationList_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'format',
-        Commands.formatCommand, this,
-        this.directoryModel_);
+    handler.registerCommand('format', Commands.formatCommand, this,
+                            this.directoryModel_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'delete',
-        Commands.deleteFileCommand, this);
+    handler.registerCommand('delete', Commands.deleteFileCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'rename',
-        Commands.renameFileCommand, this);
+    handler.registerCommand('rename', Commands.renameFileCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'volume-help',
-        Commands.volumeHelpCommand, this);
+    handler.registerCommand('volume-help', Commands.volumeHelpCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'drive-buy-more-space',
-        Commands.driveBuySpaceCommand, this);
+    handler.registerCommand('drive-buy-more-space',
+                            Commands.driveBuySpaceCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_,
-        'drive-clear-local-cache', Commands.driveClearCacheCommand, this);
+    handler.registerCommand('drive-clear-local-cache',
+                            Commands.driveClearCacheCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'drive-go-to-drive',
-        Commands.driveGoToDriveCommand, this);
+    handler.registerCommand('drive-go-to-drive',
+                            Commands.driveGoToDriveCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'paste',
-        Commands.pasteFileCommand, doc, this.fileTransferController_);
+    handler.registerCommand('paste', Commands.pasteFileCommand, doc,
+                            this.fileTransferController_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'open-with',
-        Commands.openWithCommand, this);
+    handler.registerCommand('open-with', Commands.openWithCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'toggle-pinned',
-        Commands.togglePinnedCommand, this);
+    handler.registerCommand('toggle-pinned', Commands.togglePinnedCommand,
+                            this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'zip-selection',
-        Commands.zipSelectionCommand, this, this.directoryModel_);
+    handler.registerCommand('zip-selection', Commands.zipSelectionCommand, this,
+                            this.directoryModel_);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'share',
-        Commands.shareCommand, this);
+    handler.registerCommand('share', Commands.shareCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_,
-        'create-folder-shortcut', Commands.createFolderShortcutCommand, this);
+    handler.registerCommand('create-folder-shortcut',
+                            Commands.createFolderShortcutCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_,
-        'remove-folder-shortcut', Commands.removeFolderShortcutCommand, this);
+    handler.registerCommand('remove-folder-shortcut',
+                            Commands.removeFolderShortcutCommand, this);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'search',
-        Commands.searchCommand, this,
-        this.dialogDom_.querySelector('#search-box'));
+    handler.registerCommand('search', Commands.searchCommand, this,
+                            this.dialogDom_.querySelector('#search-box'));
 
     // Register commands with CTRL-1..9 shortcuts for switching between
     // volumes.
     for (var i = 1; i <= 9; i++) {
-      CommandUtil.registerCommand(this.dialogContainer_,
-                                  'volume-switch-' + i,
-                                  Commands.volumeSwitchCommand,
-                                  this.navigationList_,
-                                  i);
+      handler.registerCommand('volume-switch-' + i,
+                              Commands.volumeSwitchCommand,
+                              this.navigationList_,
+                              i);
     }
 
-    CommandUtil.registerCommand(doc, 'zoom-in', Commands.zoomInCommand);
-    CommandUtil.registerCommand(doc, 'zoom-out', Commands.zoomOutCommand);
-    CommandUtil.registerCommand(doc, 'zoom-reset', Commands.zoomResetCommand);
+    handler.registerCommand('zoom-in', Commands.zoomInCommand);
+    handler.registerCommand('zoom-out', Commands.zoomOutCommand);
+    handler.registerCommand('zoom-reset', Commands.zoomResetCommand);
 
-    CommandUtil.registerCommand(this.dialogContainer_, 'cut',
-        Commands.defaultCommand, doc);
-    CommandUtil.registerCommand(this.dialogContainer_, 'copy',
-        Commands.defaultCommand, doc);
+    handler.registerCommand('cut', Commands.defaultCommand, doc);
+    handler.registerCommand('copy', Commands.defaultCommand, doc);
 
     var inputs = this.dialogDom_.querySelectorAll(
         'input[type=text], input[type=search], textarea');
@@ -616,11 +599,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     });
   };
 
+  /**
+   * Entry point of the initialization.
+   * This method is called from main.js.
+   */
   FileManager.prototype.initializeCore = function() {
     this.initializeQueue_.add(this.initGeneral_.bind(this), [], 'initGeneral');
     this.initializeQueue_.add(this.initStrings_.bind(this), [], 'initStrings');
     this.initializeQueue_.add(
-        this.initPreferences_.bind(this), [], 'initPreferences');
+        this.initPreferences_.bind(this), ['initGeneral'], 'initPreferences');
     this.initializeQueue_.add(
         this.initVolumeManager_.bind(this),
         ['initPreferences'], 'initVolumeManager');
@@ -769,6 +756,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.initDialogType_();
 
+    // Create the root view of FileManager.
+    this.ui_ = new FileManagerUI(this.dialogDom_);
+
     // Show the window as soon as the UI pre-initialization is done.
     if (this.dialogType == DialogType.FULL_PAGE &&
         !util.platform.runningInBrowser()) {
@@ -784,20 +774,19 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initDialogs_ = function() {
-    var d = cr.ui.dialogs;
-    d.BaseDialog.OK_LABEL = str('OK_LABEL');
-    d.BaseDialog.CANCEL_LABEL = str('CANCEL_LABEL');
-    this.error = new ErrorDialog(this.dialogDom_);
-    this.alert = new d.AlertDialog(this.dialogDom_);
-    this.confirm = new d.ConfirmDialog(this.dialogDom_);
-    this.prompt = new d.PromptDialog(this.dialogDom_);
-
+    // Initialize the dialog.
+    this.ui_.initDialogs();
     FileManagerDialogBase.setFileManager(this);
-    this.shareDialog_ = new ShareDialog(this.dialogDom_);
-    this.defaultTaskPicker =
-        new cr.filebrowser.DefaultActionDialog(this.dialogDom_);
-    this.suggestAppsDialog =
-        new SuggestAppsDialog(this.dialogDom_);
+
+    // Obtains the dialog instances from FileManagerUI.
+    // TODO(hirono): Remove the properties from the FileManager class.
+    this.error = this.ui_.errorDialog;
+    this.alert = this.ui_.alertDialog;
+    this.confirm = this.ui_.confirmDialog;
+    this.prompt = this.ui_.promptDialog;
+    this.shareDialog_ = this.ui_.shareDialog;
+    this.defaultTaskPicker = this.ui_.defaultTaskPicker;
+    this.suggestAppsDialog = this.ui_.suggestAppsDialog;
   };
 
   /**
@@ -850,7 +839,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.previewPanel_.breadcrumbs.addEventListener(
          'pathclick', this.onBreadcrumbClick_.bind(this));
-    this.previewPanel_.breadcrumbs.setHideLast(false);
 
     this.progressCenterPanel_ = new ProgressCenterPanel(
         dom.querySelector('#progress-center'));
@@ -1563,23 +1551,22 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.finishSetupCurrentDirectory_(path);
         return;
       }
-      if (this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE)) {
-        this.finishSetupCurrentDirectory_(path);
-        return;
-      }
 
       var tracker = this.directoryModel_.createDirectoryChangeTracker();
-      // Expected finish of setupPath to Drive.
-      tracker.exceptInitialChange = true;
-      tracker.start();
-      // Waits until the Drive is mounted.
-      this.volumeManager_.mountDrive(function() {
+      var onVolumeManagerReady = function() {
+        this.volumeManager_.removeEventListener('ready', onVolumeManagerReady);
         tracker.stop();
         if (!tracker.hasChanged)
           this.finishSetupCurrentDirectory_(path);
-      }.bind(this), function(error) {
-        tracker.stop();
-      });
+      }.bind(this);
+
+      tracker.start();
+      if (this.volumeManager_.isReady()) {
+        onVolumeManagerReady();
+      } else {
+        // Wait until the VolumeManager gets ready.
+        this.volumeManager_.addEventListener('ready', onVolumeManagerReady);
+      }
     } else {
       this.finishSetupCurrentDirectory_(path);
     }
@@ -1909,7 +1896,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
       var isDriveEnabled = self.isDriveEnabled();
       self.volumeManager_.setDriveEnabled(isDriveEnabled);
-      self.navigationList_.dataModel.showShortcuts(isDriveEnabled);
 
       if (prefs.cellularDisabled)
         self.syncButton.setAttribute('checked', '');
@@ -2442,11 +2428,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.updateSearchBoxOnDirChange_();
     util.updateAppState(this.getCurrentDirectory());
 
-    if (this.closeOnUnmount_ && !event.initial &&
+    // If the current directory is moved from the device's volume, do not
+    // automatically close the window on device removal.
+    if (event.previousDirEntry &&
         PathUtil.getRootPath(event.previousDirEntry.fullPath) !=
-            PathUtil.getRootPath(event.newDirEntry.fullPath)) {
+            PathUtil.getRootPath(event.newDirEntry.fullPath))
       this.closeOnUnmount_ = false;
-    }
 
     this.updateCommands();
     this.updateUnformattedDriveStatus_();

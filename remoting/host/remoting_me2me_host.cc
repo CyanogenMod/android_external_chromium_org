@@ -27,7 +27,6 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_listener.h"
-#include "jingle/glue/xmpp_client_socket_factory.h"
 #include "media/base/media.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
@@ -104,9 +103,11 @@ namespace {
 // This is used for tagging system event logs.
 const char kApplicationName[] = "chromoting";
 
+#if defined(OS_LINUX)
 // The command line switch used to pass name of the pipe to capture audio on
 // linux.
 const char kAudioPipeSwitchName[] = "audio-pipe-name";
+#endif  // defined(OS_LINUX)
 
 // The command line switch used by the parent to request the host to signal it
 // when it is successfully started.
@@ -966,12 +967,9 @@ void HostProcess::StartHost() {
          state_ == HOST_STOPPED) << state_;
   state_ = HOST_STARTED;
 
-  scoped_ptr<jingle_glue::ResolvingClientSocketFactory> socket_factory(
-      new jingle_glue::XmppClientSocketFactory(
-          net::ClientSocketFactory::GetDefaultFactory(), net::SSLConfig(),
-          context_->url_request_context_getter(), false));
   signal_strategy_.reset(
-      new XmppSignalStrategy(socket_factory.Pass(),
+      new XmppSignalStrategy(net::ClientSocketFactory::GetDefaultFactory(),
+                             context_->url_request_context_getter(),
                              xmpp_server_config_));
 
   scoped_ptr<DnsBlackholeChecker> dns_blackhole_checker(

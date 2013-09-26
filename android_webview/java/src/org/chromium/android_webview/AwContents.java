@@ -182,6 +182,15 @@ public class AwContents {
     private boolean mContainerViewFocused;
     private boolean mWindowFocused;
 
+    private boolean mClearViewActive;
+    private boolean mPictureListenerEnabled;
+
+    // These come from the compositor and are updated immediately (in contrast to the values in
+    // ContentViewCore, which are updated at end of every frame).
+    private float mPageScaleFactor = 1.0f;
+    private float mContentWidthDip;
+    private float mContentHeightDip;
+
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
     private static final class DestroyRunnable implements Runnable {
@@ -352,22 +361,6 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
-    // NOTE: This content size change notification comes from the compositor and reflects the size
-    // of the content on screen (but not neccessarily in the renderer main thread).
-    private class AwContentUpdateFrameInfoListener
-                implements ContentViewCore.UpdateFrameInfoListener {
-        @Override
-        public void onFrameInfoUpdated(float widthCss, float heightCss, float pageScaleFactor) {
-            if (mNativeAwContents == 0) return;
-            int widthPix = (int) Math.floor(widthCss * mDIPScale * pageScaleFactor);
-            int heightPix = (int) Math.floor(heightCss * mDIPScale * pageScaleFactor);
-            mScrollOffsetManager.setContentSize(widthPix, heightPix);
-
-            nativeSetDisplayedPageScaleFactor(mNativeAwContents, pageScaleFactor);
-        }
-    }
-
-    //--------------------------------------------------------------------------------------------
     private class AwScrollOffsetManagerDelegate implements AwScrollOffsetManager.Delegate {
         @Override
         public void overScrollContainerViewBy(int deltaX, int deltaY, int scrollX, int scrollY,
@@ -527,6 +520,9 @@ public class AwContents {
         setScrollBarStyle(mInternalAccessAdapter.super_getScrollBarStyle());
 
         setNewAwContents(nativeInit(browserContext));
+
+        onVisibilityChanged(mContainerView, mContainerView.getVisibility());
+        onWindowVisibilityChanged(mContainerView.getWindowVisibility());
     }
 
     /**
@@ -561,7 +557,6 @@ public class AwContents {
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
         mContentsClient.installWebContentsObserver(mContentViewCore);
-        mContentViewCore.setUpdateFrameInfoListener(new AwContentUpdateFrameInfoListener());
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
         updateGlobalVisibleRect();
@@ -726,12 +721,14 @@ public class AwContents {
         }
 
         mScrollOffsetManager.syncScrollOffsetFromOnDraw();
-
         canvas.getClipBounds(mClipBoundsTemporary);
-        if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
-                    mContainerView.getScrollX(), mContainerView.getScrollY(),
-                    mClipBoundsTemporary.left, mClipBoundsTemporary.top,
-                    mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
+
+        if (mClearViewActive) {
+            canvas.drawColor(getEffectiveBackgroundColor());
+        } else if (!nativeOnDraw(mNativeAwContents, canvas, canvas.isHardwareAccelerated(),
+                mContainerView.getScrollX(), mContainerView.getScrollY(),
+                mClipBoundsTemporary.left, mClipBoundsTemporary.top,
+                mClipBoundsTemporary.right, mClipBoundsTemporary.bottom)) {
             Log.w(TAG, "nativeOnDraw failed; clearing to background color.");
             canvas.drawColor(getEffectiveBackgroundColor());
         }
@@ -748,11 +745,11 @@ public class AwContents {
     }
 
     public int getContentHeightCss() {
-        return (int) Math.ceil(mContentViewCore.getContentHeightCss());
+        return (int) Math.ceil(mContentHeightDip);
     }
 
     public int getContentWidthCss() {
-        return (int) Math.ceil(mContentViewCore.getContentWidthCss());
+        return (int) Math.ceil(mContentWidthDip);
     }
 
     public Picture capturePicture() {
@@ -760,6 +757,12 @@ public class AwContents {
         return new AwPicture(nativeCapturePicture(mNativeAwContents,
                     mScrollOffsetManager.computeHorizontalScrollRange(),
                     mScrollOffsetManager.computeVerticalScrollRange()));
+    }
+
+    public void clearView() {
+        mClearViewActive = true;
+        syncOnNewPictureStateToNative();
+        mContainerView.invalidate();
     }
 
     /**
@@ -779,7 +782,12 @@ public class AwContents {
                 }
             };
         }
-        nativeEnableOnNewPicture(mNativeAwContents, enabled);
+        mPictureListenerEnabled = enabled;
+        syncOnNewPictureStateToNative();
+    }
+
+    private void syncOnNewPictureStateToNative() {
+        nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
     }
 
     public void findAllAsync(String searchString) {
@@ -1326,7 +1334,7 @@ public class AwContents {
      * the screen density factor. See CTS WebViewTest.testSetInitialScale.
      */
     public float getScale() {
-        return (float)(mContentViewCore.getScale() * mDIPScale);
+        return (float)(mPageScaleFactor * mDIPScale);
     }
 
     /**
@@ -1743,6 +1751,13 @@ public class AwContents {
 
     @CalledByNative
     public void onNewPicture() {
+        // Clear up any results from a previous clearView call
+        if (mClearViewActive) {
+            mClearViewActive = false;
+            mContainerView.invalidate();
+            syncOnNewPictureStateToNative();
+        }
+
         // Don't call capturePicture() here but instead defer it until the posted task runs within
         // the callback helper, to avoid doubling back into the renderer compositor in the middle
         // of the notification it is sending up to here.
@@ -1797,8 +1812,24 @@ public class AwContents {
     }
 
     @CalledByNative
+    private void setMaxContainerViewScrollOffset(int maxX, int maxY) {
+        mScrollOffsetManager.setMaxScrollOffset(maxX, maxY);
+    }
+
+    @CalledByNative
     private void scrollContainerViewTo(int x, int y) {
         mScrollOffsetManager.scrollContainerViewTo(x, y);
+    }
+
+    @CalledByNative
+    private void setContentsSize(int widthDip, int heightDip) {
+        mContentWidthDip = widthDip;
+        mContentHeightDip = heightDip;
+    }
+
+    @CalledByNative
+    private void setPageScaleFactor(float pageScaleFactor) {
+        mPageScaleFactor = pageScaleFactor;
     }
 
     @CalledByNative
@@ -1916,8 +1947,6 @@ public class AwContents {
     private native void nativeOnAttachedToWindow(int nativeAwContents, int w, int h);
     private static native void nativeOnDetachedFromWindow(int nativeAwContents);
     private native void nativeSetDipScale(int nativeAwContents, float dipScale);
-    private native void nativeSetDisplayedPageScaleFactor(int nativeAwContents,
-            float pageScaleFactor);
     private native void nativeSetFixedLayoutSize(int nativeAwContents, int widthDip, int heightDip);
 
     // Returns null if save state fails.

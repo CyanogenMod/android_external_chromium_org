@@ -113,6 +113,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "chrome/browser/profiles/file_path_verifier_win.h"
 #include "chrome/installer/util/install_util.h"
 #endif
 
@@ -241,6 +242,17 @@ std::string ExitTypeToSessionTypePrefValue(Profile::ExitType type) {
   }
   NOTREACHED();
   return std::string();
+}
+
+void SchedulePrefsFileVerification(const base::FilePath& prefs_file) {
+#if defined(OS_WIN)
+  // Only do prefs file verification on Windows.
+  const int kVerifyPrefsFileDelaySeconds = 60;
+  BrowserThread::GetBlockingPool()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&VerifyFileAtPath, prefs_file, "Preferences"),
+        base::TimeDelta::FromSeconds(kVerifyPrefsFileDelaySeconds));
+#endif
 }
 
 }  // namespace
@@ -780,6 +792,8 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
         predictor_));
   }
 
+  SchedulePrefsFileVerification(GetPrefFilePath());
+
   ChromeVersionService::OnProfileLoaded(prefs_.get(), IsNewProfile());
   DoFinalInit();
 }
@@ -1054,7 +1068,9 @@ void ProfileImpl::ChangeAppLocale(
         // (2) on next login we assume that synchronization is already completed
         //     and we may finalize initialization.
         GetPrefs()->SetString(prefs::kApplicationLocaleBackup, cur_locale);
-        if (!backup_locale.empty())
+        if (!new_locale.empty())
+          GetPrefs()->SetString(prefs::kApplicationLocale, new_locale);
+        else if (!backup_locale.empty())
           GetPrefs()->SetString(prefs::kApplicationLocale, backup_locale);
         do_update_pref = false;
       }

@@ -62,7 +62,7 @@ class DriveAPIService : public DriveServiceInterface,
   virtual ~DriveAPIService();
 
   // DriveServiceInterface Overrides
-  virtual void Initialize() OVERRIDE;
+  virtual void Initialize(const std::string& account_id) OVERRIDE;
   virtual void AddObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual void RemoveObserver(DriveServiceObserver* observer) OVERRIDE;
   virtual bool CanSendRequest() const OVERRIDE;
@@ -120,6 +120,7 @@ class DriveAPIService : public DriveServiceInterface,
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback CopyHostedDocument(
       const std::string& resource_id,
@@ -129,6 +130,7 @@ class DriveAPIService : public DriveServiceInterface,
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
+      const base::Time& last_modified,
       const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback RenameResource(
       const std::string& resource_id,

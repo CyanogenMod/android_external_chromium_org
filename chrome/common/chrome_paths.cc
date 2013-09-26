@@ -66,6 +66,9 @@ const base::FilePath::CharType kInternalNaClPluginFileName[] =
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 
+const base::FilePath::CharType kEffectsPluginFileName[] =
+    FILE_PATH_LITERAL("pepper/libppeffects.so");
+
 const base::FilePath::CharType kO3DPluginFileName[] =
     FILE_PATH_LITERAL("pepper/libppo3dautoplugin.so");
 
@@ -329,6 +332,11 @@ bool PathProvider(int key, base::FilePath* result) {
       if (!PathService::Get(base::DIR_MODULE, &cur))
         return false;
       cur = cur.Append(kO1DPluginFileName);
+      break;
+    case chrome::FILE_EFFECTS_PLUGIN:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(kEffectsPluginFileName);
       break;
     case chrome::FILE_GTALK_PLUGIN:
       if (!PathService::Get(base::DIR_MODULE, &cur))

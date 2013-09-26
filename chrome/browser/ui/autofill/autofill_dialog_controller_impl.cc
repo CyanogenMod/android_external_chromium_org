@@ -113,7 +113,7 @@ const char kAutofillDialogOrigin[] = "Chrome Autofill dialog";
 const color_utils::HSL kGrayImageShift = {-1, 0, 0.8};
 
 // Limit Wallet items refresh rate to at most once per minute.
-const int kWalletItemsRefreshRateSeconds = 60;
+const int64 kWalletItemsRefreshRateSeconds = 60;
 
 // The number of milliseconds to delay enabling the submit button after showing
 // the dialog. This delay prevents users from accidentally clicking the submit
@@ -141,10 +141,13 @@ class ScopedViewUpdates {
 };
 
 // Returns true if |card_type| is supported by Wallet.
-bool IsWalletSupportedCard(const std::string& card_type) {
+bool IsWalletSupportedCard(const std::string& card_type,
+                           const wallet::WalletItems& wallet_items) {
   return card_type == autofill::kVisaCard ||
          card_type == autofill::kMasterCard ||
-         card_type == autofill::kDiscoverCard;
+         card_type == autofill::kDiscoverCard ||
+         (card_type == autofill::kAmericanExpressCard &&
+             wallet_items.is_amex_allowed());
 }
 
 // Returns true if |input| should be used to fill a site-requested |field| which
@@ -469,7 +472,7 @@ gfx::Image GetGeneratedCardImage(const base::string16& card_number,
   const int kCardWidthPx = 300;
   const int kCardHeightPx = 190;
   const gfx::Size size(kCardWidthPx, kCardHeightPx);
-  gfx::Canvas canvas(size, ui::SCALE_FACTOR_100P, false);
+  gfx::Canvas canvas(size, 1.0f, false);
 
   gfx::Rect display_rect(size);
 
@@ -641,6 +644,13 @@ void AutofillDialogControllerImpl::Show() {
   GetMetricLogger().LogDialogSecurityMetric(
       AutofillMetrics::SECURITY_METRIC_DIALOG_SHOWN);
 
+  // Determine what field types should be included in the dialog.
+  // Note that RequestingCreditCardInfo() below relies on parsed field types.
+  bool has_types = false;
+  bool has_sections = false;
+  form_structure_.ParseFieldTypesFromAutocompleteAttributes(
+      &has_types, &has_sections);
+
   if (RequestingCreditCardInfo() && !TransmissionWillBeSecure()) {
     GetMetricLogger().LogDialogSecurityMetric(
         AutofillMetrics::SECURITY_METRIC_CREDIT_CARD_OVER_HTTP);
@@ -650,12 +660,6 @@ void AutofillDialogControllerImpl::Show() {
     GetMetricLogger().LogDialogSecurityMetric(
         AutofillMetrics::SECURITY_METRIC_CROSS_ORIGIN_FRAME);
   }
-
-  // Determine what field types should be included in the dialog.
-  bool has_types = false;
-  bool has_sections = false;
-  form_structure_.ParseFieldTypesFromAutocompleteAttributes(
-      &has_types, &has_sections);
 
   // Fail if the author didn't specify autocomplete types.
   if (!has_types) {
@@ -716,7 +720,7 @@ void AutofillDialogControllerImpl::Hide() {
 void AutofillDialogControllerImpl::TabActivated() {
   // If the user switched away from this tab and then switched back, reload the
   // Wallet items, in case they've changed.
-  int seconds_elapsed_since_last_refresh =
+  int64 seconds_elapsed_since_last_refresh =
       (base::TimeTicks::Now() - last_wallet_items_fetch_timestamp_).InSeconds();
   if (IsPayingWithWallet() && wallet_items_ &&
       seconds_elapsed_since_last_refresh >= kWalletItemsRefreshRateSeconds) {
@@ -880,7 +884,6 @@ DialogOverlayState AutofillDialogControllerImpl::GetDialogOverlay() {
 
     string.text = l10n_util::GetStringUTF16(
         IDS_AUTOFILL_DIALOG_CARD_GENERATION_DONE);
-    state.strings.push_back(DialogOverlayString());
   } else {
     // Start the refresher if it isn't running. Wait one second before pumping
     // updates to the view.
@@ -2874,7 +2877,8 @@ base::string16 AutofillDialogControllerImpl::CreditCardNumberValidityMessage(
 
   // Wallet only accepts MasterCard, Visa and Discover. No AMEX.
   if (IsPayingWithWallet() &&
-      !IsWalletSupportedCard(CreditCard::GetCreditCardType(number))) {
+      !IsWalletSupportedCard(CreditCard::GetCreditCardType(number),
+                             *wallet_items_)) {
     return l10n_util::GetStringUTF16(
         IDS_AUTOFILL_DIALOG_VALIDATION_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET);
   }

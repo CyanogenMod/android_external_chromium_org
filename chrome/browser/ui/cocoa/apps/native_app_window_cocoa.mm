@@ -468,6 +468,8 @@ gfx::Rect NativeAppWindowCocoa::GetRestoredBounds() const {
 ui::WindowShowState NativeAppWindowCocoa::GetRestoredState() const {
   if (IsMaximized())
     return ui::SHOW_STATE_MAXIMIZED;
+  if (IsFullscreen())
+    return ui::SHOW_STATE_FULLSCREEN;
   return ui::SHOW_STATE_NORMAL;
 }
 
@@ -849,10 +851,12 @@ void NativeAppWindowCocoa::WindowDidResize() {
   else if (NSEqualPoints(frame.origin, screen.origin))
     is_maximized_ = true;
 
+  UpdateRestoredBounds();
   shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowCocoa::WindowDidMove() {
+  UpdateRestoredBounds();
   shell_window_->OnNativeWindowChanged();
 }
 

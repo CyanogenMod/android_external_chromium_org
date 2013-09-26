@@ -157,7 +157,8 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void SetInactiveRenderingDisabled(bool value) OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) OVERRIDE;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
@@ -241,6 +242,11 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // The content of |root_window_|. WARNING: this may be NULL if deleted out
   // from under us.
   aura::Window* window_;
+
+  // Contains the content window defined above. Ensures that ZOrder changes
+  // occurring in the content window hierarchy don't affect the other children
+  // of the root window.
+  aura::Window* content_window_container_;
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 

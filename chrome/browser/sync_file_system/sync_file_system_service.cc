@@ -32,6 +32,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/storage_partition.h"
+#include "extensions/common/manifest_constants.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
@@ -45,9 +46,20 @@ namespace sync_file_system {
 
 namespace {
 
-const int64 kSyncDelayInSeconds = 1;
-const int64 kSyncDelaySlowInSeconds = 30;  // Start with 30 sec + exp backoff.
-const int64 kSyncDelayMaxInSeconds = 30 * 60;  // 30 min.
+// Default delay when more changes are available.
+const int64 kSyncDelayInMilliseconds = 1 * base::Time::kMillisecondsPerSecond;
+
+// Default delay when there're more than 10 pending changes.
+const int64 kSyncDelayFastInMilliseconds = 100;
+const int kPendingChangeThresholdForFastSync = 10;
+
+// Default delay when remote service is temporarily unavailable.
+const int64 kSyncDelaySlowInMilliseconds =
+    30 * base::Time::kMillisecondsPerSecond;  // Start with 30 sec + exp backoff
+
+// Default delay when there're no changes.
+const int64 kSyncDelayMaxInMilliseconds =
+    30 * 60 * base::Time::kMillisecondsPerSecond;  // 30 min
 
 SyncServiceState RemoteStateToSyncServiceState(
     RemoteServiceState state) {
@@ -150,26 +162,29 @@ class SyncFileSystemService::SyncRunner {
   ~SyncRunner() {}
 
   void Schedule() {
-    int64 delay = kSyncDelayInSeconds;
+    int64 delay = kSyncDelayInMilliseconds;
     if (pending_changes_ == 0) {
-      ScheduleInternal(kSyncDelayMaxInSeconds);
+      ScheduleInternal(kSyncDelayMaxInMilliseconds);
       return;
     }
     switch (remote_service_->GetCurrentState()) {
       case REMOTE_SERVICE_OK:
-        delay = kSyncDelayInSeconds;
+        if (pending_changes_ > kPendingChangeThresholdForFastSync)
+          delay = kSyncDelayFastInMilliseconds;
+        else
+          delay = kSyncDelayInMilliseconds;
         break;
 
       case REMOTE_SERVICE_TEMPORARY_UNAVAILABLE:
-        delay = kSyncDelaySlowInSeconds;
-        if (last_delay_ >= kSyncDelaySlowInSeconds &&
-            last_delay_ < kSyncDelayMaxInSeconds)
+        delay = kSyncDelaySlowInMilliseconds;
+        if (last_delay_ >= kSyncDelaySlowInMilliseconds &&
+            last_delay_ < kSyncDelayMaxInMilliseconds)
           delay = last_delay_ * 2;
         break;
 
       case REMOTE_SERVICE_AUTHENTICATION_REQUIRED:
       case REMOTE_SERVICE_DISABLED:
-        delay = kSyncDelayMaxInSeconds;
+        delay = kSyncDelayMaxInMilliseconds;
         break;
     }
     ScheduleInternal(delay);
@@ -203,7 +218,7 @@ class SyncFileSystemService::SyncRunner {
               (base::Time::Now() - last_scheduled_).InSeconds());
     if (status == SYNC_STATUS_NO_CHANGE_TO_SYNC ||
         status == SYNC_STATUS_FILE_BUSY)
-      ScheduleInternal(kSyncDelayMaxInSeconds);
+      ScheduleInternal(kSyncDelayMaxInMilliseconds);
     else
       Schedule();
   }
@@ -222,17 +237,19 @@ class SyncFileSystemService::SyncRunner {
   }
 
   void ScheduleInternal(int64 delay) {
-    base::TimeDelta time_to_next = base::TimeDelta::FromSeconds(delay);
+    base::TimeDelta time_to_next = base::TimeDelta::FromMilliseconds(delay);
 
     if (timer_.IsRunning()) {
       if (current_delay_ == delay)
         return;
 
       base::TimeDelta elapsed = base::Time::Now() - last_scheduled_;
-      if (elapsed < time_to_next)
+      if (elapsed < time_to_next) {
         time_to_next = time_to_next - elapsed;
-      else
-        time_to_next = base::TimeDelta::FromSeconds(kSyncDelayInSeconds);
+      } else {
+        time_to_next = base::TimeDelta::FromMilliseconds(
+            kSyncDelayFastInMilliseconds);
+      }
       timer_.Stop();
     }
 
@@ -678,12 +695,24 @@ void SyncFileSystemService::HandleExtensionUnloaded(
 void SyncFileSystemService::HandleExtensionUninstalled(
     int type,
     const content::NotificationDetails& details) {
-  std::string extension_id = content::Details<const Extension>(details)->id();
-  GURL app_origin = Extension::GetBaseURLFromExtensionId(extension_id);
+  const Extension* extension = content::Details<const Extension>(details).ptr();
+  DCHECK(extension);
+
+  RemoteFileSyncService::UninstallFlag flag =
+      RemoteFileSyncService::UNINSTALL_AND_PURGE_REMOTE;
+  // If it's loaded from an unpacked package and with key: field,
+  // the uninstall will not be sync'ed and the user might be using the
+  // same app key in other installs, so avoid purging the remote folder.
+  if (extensions::Manifest::IsUnpackedLocation(extension->location()) &&
+      extension->manifest()->HasKey(extensions::manifest_keys::kKey)) {
+    flag = RemoteFileSyncService::UNINSTALL_AND_KEEP_REMOTE;
+  }
+
+  GURL app_origin = Extension::GetBaseURLFromExtensionId(extension->id());
   DVLOG(1) << "Handle extension notification for UNINSTALLED: "
            << app_origin;
   remote_file_service_->UninstallOrigin(
-      app_origin,
+      app_origin, flag,
       base::Bind(&DidHandleOriginForExtensionUnloadedEvent,
                  type, app_origin));
   local_file_service_->SetOriginEnabled(app_origin, false);

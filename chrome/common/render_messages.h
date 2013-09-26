@@ -442,6 +442,11 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_NetErrorInfo,
 // Misc messages
 // These are messages sent from the renderer to the browser process.
 
+// Provides the contents for the given page that was loaded recently.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_PageContents,
+                    GURL         /* URL of the page */,
+                    string16     /* page contents */)
+
 // Notification that the language for the tab has been determined.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_TranslateLanguageDetermined,
                     LanguageDetectionDetails /* details about lang detection */,
@@ -622,11 +627,6 @@ IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_PageTranslated,
                     std::string           /* the original language */,
                     std::string           /* the translated language */,
                     TranslateErrors::Type /* the error type if available */)
-
-// Message sent from the renderer to the browser to notify it of events which
-// may lead to the cancellation of a prerender. The message is sent only when
-// the renderer is prerendering.
-IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_MaybeCancelPrerenderForHTML5Media)
 
 // Message sent from the renderer to the browser to notify it of a
 // window.print() call which should cancel the prerender. The message is sent

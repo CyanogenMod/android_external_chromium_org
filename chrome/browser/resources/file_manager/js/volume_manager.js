@@ -328,6 +328,8 @@ function VolumeManager() {
 
   /**
    * True, if mount points have been initialized.
+   * TODO(hidehiko): Remove this by returning the VolumeManager instance
+   * after the initialization is done.
    * @type {boolean}
    * @private
    */
@@ -472,10 +474,6 @@ VolumeManager.prototype.setDriveEnabled = function(enabled) {
   if (this.driveEnabled == enabled)
     return;
   this.driveEnabled = enabled;
-
-  // When drive is enabled, start to mount.
-  if (enabled)
-    this.mountDrive(function() {}, function() {});
 };
 
 /**
@@ -640,26 +638,6 @@ VolumeManager.prototype.makeRequestKey_ = function(requestType,
   return requestType + ':' + volumeType + ':' + mountOrSourcePath;
 };
 
-
-/**
- * @param {function(string)} successCallback Success callback.
- * @param {function(VolumeManager.Error)} errorCallback Error callback.
- */
-VolumeManager.prototype.mountDrive = function(successCallback, errorCallback) {
-  if (this.driveStatus_ == VolumeManager.DriveStatus.ERROR) {
-    this.setDriveStatus_(VolumeManager.DriveStatus.UNMOUNTED);
-  }
-  var self = this;
-  this.mount_(
-      '', 'drive',
-      successCallback,
-      function(error) {
-        if (self.driveStatus_ != VolumeManager.DriveStatus.MOUNTED)
-          self.setDriveStatus_(VolumeManager.DriveStatus.ERROR);
-        errorCallback(error);
-      });
-};
-
 /**
  * @param {string} fileUrl File url to the archive file.
  * @param {function(string)} successCallback Success callback.
@@ -695,6 +673,28 @@ VolumeManager.prototype.unmount = function(mountPath,
   chrome.fileBrowserPrivate.removeMount(util.makeFilesystemUrl(mountPath));
   var requestKey = this.makeRequestKey_('unmount', '', volumeInfo.mountPath);
   this.startRequest_(requestKey, successCallback, errorCallback);
+};
+
+/**
+ * Resolve the path to its entry.
+ * @param {string} path The path to be resolved.
+ * @param {function(Entry)} successCallback Called with the resolved entry on
+ *     success.
+ * @param {function(FileError)} errorCallback Called on error.
+ */
+VolumeManager.prototype.resolvePath = function(
+    path, successCallback, errorCallback) {
+  // Make sure the path is in the mounted volume.
+  var mountPath = PathUtil.isDriveBasedPath(path) ?
+      RootDirectory.DRIVE : PathUtil.getRootPath(path);
+  var volumeInfo = this.getVolumeInfo(mountPath);
+  if (!volumeInfo || !volumeInfo.root) {
+    errorCallback(util.createFileError(FileError.NOT_FOUND_ERR));
+    return;
+  }
+
+  webkitResolveLocalFileSystemURL(
+      util.makeFilesystemUrl(path), successCallback, errorCallback);
 };
 
 /**

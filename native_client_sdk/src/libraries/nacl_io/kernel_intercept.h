@@ -44,6 +44,7 @@ int ki_mount(const char* source, const char* target, const char* filesystemtype,
              unsigned long mountflags, const void *data);
 int ki_umount(const char* path);
 int ki_open(const char* path, int oflag);
+int ki_pipe(int pipefds[2]);
 ssize_t ki_read(int fd, void* buf, size_t nbyte);
 ssize_t ki_write(int fd, const void* buf, size_t nbyte);
 int ki_fstat(int fd, struct stat *buf);
@@ -62,6 +63,7 @@ void* ki_mmap(void* addr, size_t length, int prot, int flags, int fd,
               off_t offset);
 int ki_munmap(void* addr, size_t length);
 int ki_open_resource(const char* file);
+int ki_fcntl(int d, int request, char* argp);
 int ki_ioctl(int d, int request, char* argp);
 int ki_chown(const char* path, uid_t owner, gid_t group);
 int ki_fchown(int fd, uid_t owner, gid_t group);

@@ -6,8 +6,7 @@
 
 #include "chrome/browser/extensions/api/socket/udp_socket.h"
 #include "chrome/browser/extensions/api/sockets_udp/udp_socket_event_dispatcher.h"
-#include "chrome/common/extensions/permissions/permissions_data.h"
-#include "chrome/common/extensions/permissions/socket_permission.h"
+#include "chrome/common/extensions/api/sockets/sockets_handler.h"
 #include "content/public/common/socket_permission_request.h"
 #include "net/base/net_errors.h"
 
@@ -131,14 +130,22 @@ void SocketsUdpUpdateFunction::Work() {
   results_ = sockets_udp::Update::Results::Create();
 }
 
-SocketsUdpBindFunction::SocketsUdpBindFunction() {}
+SocketsUdpBindFunction::SocketsUdpBindFunction()
+    : socket_event_dispatcher_(NULL) {
+}
 
 SocketsUdpBindFunction::~SocketsUdpBindFunction() {}
 
 bool SocketsUdpBindFunction::Prepare() {
   params_ = sockets_udp::Bind::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
-  return true;
+
+  socket_event_dispatcher_ = UDPSocketEventDispatcher::Get(profile());
+  DCHECK(socket_event_dispatcher_) << "There is no socket event dispatcher. "
+    "If this assertion is failing during a test, then it is likely that "
+    "TestExtensionSystem is failing to provide an instance of "
+    "UDPSocketEventDispatcher.";
+  return socket_event_dispatcher_ != NULL;
 }
 
 void SocketsUdpBindFunction::Work() {
@@ -148,20 +155,19 @@ void SocketsUdpBindFunction::Work() {
     return;
   }
 
-  SocketPermission::CheckParam param(
-      SocketPermissionRequest::UDP_BIND, params_->address, params_->port);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(),
-          APIPermission::kSocket,
-          &param)) {
+  content::SocketPermissionRequest param(
+      SocketPermissionRequest::UDP_BIND,
+      params_->address,
+      params_->port);
+  if (!SocketsManifestData::CheckRequest(GetExtension(), param)) {
     error_ = kPermissionError;
     return;
   }
 
   int net_result = socket->Bind(params_->address, params_->port);
   if (net_result == net::OK) {
-    UDPSocketEventDispatcher::Get(profile())->OnSocketBind(extension_->id(),
-                                                           params_->socket_id);
+    socket_event_dispatcher_->OnSocketBind(extension_->id(),
+                                           params_->socket_id);
   }
 
   if (net_result != net::OK)
@@ -190,14 +196,11 @@ void SocketsUdpSendFunction::AsyncWorkStart() {
     return;
   }
 
-  SocketPermission::CheckParam param(
+  content::SocketPermissionRequest param(
       SocketPermissionRequest::UDP_SEND_TO,
       params_->address,
       params_->port);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(),
-          APIPermission::kSocket,
-          &param)) {
+  if (!SocketsManifestData::CheckRequest(GetExtension(), param)) {
     error_ = kPermissionError;
     AsyncWorkCompleted();
     return;
@@ -333,13 +336,11 @@ void SocketsUdpJoinGroupFunction::Work() {
     return;
   }
 
-  SocketPermission::CheckParam param(
+  content::SocketPermissionRequest param(
       SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP,
       kWildcardAddress,
       kWildcardPort);
-
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kSocket, &param)) {
+  if (!SocketsManifestData::CheckRequest(GetExtension(), param)) {
     error_ = kPermissionError;
     return;
   }
@@ -367,13 +368,11 @@ void SocketsUdpLeaveGroupFunction::Work() {
     return;
   }
 
-  SocketPermission::CheckParam param(
+  content::SocketPermissionRequest param(
       SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP,
       kWildcardAddress,
       kWildcardPort);
-  if (!PermissionsData::CheckAPIPermissionWithParam(GetExtension(),
-                                                    APIPermission::kSocket,
-                                                    &param)) {
+  if (!SocketsManifestData::CheckRequest(GetExtension(), param)) {
     error_ = kPermissionError;
     return;
   }
@@ -451,14 +450,11 @@ void SocketsUdpGetJoinedGroupsFunction::Work() {
     return;
   }
 
-  SocketPermission::CheckParam param(
+  content::SocketPermissionRequest param(
       SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP,
       kWildcardAddress,
       kWildcardPort);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(),
-          APIPermission::kSocket,
-          &param)) {
+  if (!SocketsManifestData::CheckRequest(GetExtension(), param)) {
     error_ = kPermissionError;
     return;
   }

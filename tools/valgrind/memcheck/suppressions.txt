@@ -6902,14 +6902,6 @@
    fun:_ZN4base11MessageLoop8PostTaskERKN15tracked_objects8LocationERKNS_8CallbackIFvvEEE
 }
 {
-   bug_270312
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN14message_center22MessageCenterButtonBarC1EPNS_17MessageCenterViewEPNS_13MessageCenterEPNS_24NotifierSettingsProviderEb
-   fun:_ZN14message_center17MessageCenterViewC1EPNS_13MessageCenterEPNS_17MessageCenterTrayEibb
-   fun:_ZN14message_center21MessageCenterViewTest5SetUpEv
-}
-{
    bug_272179_a
    Memcheck:Uninitialized
    ...
@@ -7218,4 +7210,10 @@
    fun:_ZN7WebCore14ResourceLoader16didFinishLoadingEPN6WebKit12WebURLLoaderEd
    fun:_ZN11webkit_glue16WebURLLoaderImpl7Context18OnCompletedRequestEibRKSsRKN4base9TimeTicksE
    fun:_ZN7content18ResourceDispatcher17OnRequestCompleteEiibRKSsRKN4base9TimeTicksE
+}
+{
+   bug_298143
+   Memcheck:Uninitialized
+   ...
+   fun:_ZN7WebCore25TypeConversionsV8Internal*AttributeGetterE*
 }

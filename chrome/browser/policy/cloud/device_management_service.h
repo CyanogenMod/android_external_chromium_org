@@ -99,7 +99,9 @@ class DeviceManagementRequestJob {
 // requests.
 class DeviceManagementService : public net::URLFetcherDelegate {
  public:
-  explicit DeviceManagementService(const std::string& server_url);
+  DeviceManagementService(
+      scoped_refptr<net::URLRequestContextGetter> request_context,
+      const std::string& server_url);
   virtual ~DeviceManagementService();
 
   // The ID of URLFetchers created by the DeviceManagementService. This can be
@@ -144,10 +146,13 @@ class DeviceManagementService : public net::URLFetcherDelegate {
   // callback.
   void RemoveJob(DeviceManagementRequestJobImpl* job);
 
+  // The request context is wrapped by the |request_context_getter_|.
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
+
   // Server at which to contact the service.
   const std::string server_url_;
 
-  // The request context we use.
+  // The request context we use. This is a wrapper of |request_context_|.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   // The jobs we currently have in flight.

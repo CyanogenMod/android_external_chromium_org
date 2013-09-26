@@ -31,6 +31,7 @@
 #include "cc/layers/layer_iterator.h"
 #include "cc/layers/painted_scrollbar_layer_impl.h"
 #include "cc/layers/render_surface_impl.h"
+#include "cc/layers/scrollbar_layer_impl_base.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/delegating_renderer.h"
@@ -208,6 +209,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
           ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING,
           ManagedMemoryPolicy::kDefaultNumResourcesLimit),
       pinch_gesture_active_(false),
+      pinch_gesture_end_should_clear_scrolling_layer_(false),
       fps_counter_(FrameRateCounter::Create(proxy_->HasImplThread())),
       paint_time_counter_(PaintTimeCounter::Create()),
       memory_history_(MemoryHistory::Create()),
@@ -363,7 +365,7 @@ void LayerTreeHostImpl::ManageTiles() {
     return;
 
   tile_priorities_dirty_ = false;
-  tile_manager_->ManageTiles();
+  tile_manager_->ManageTiles(global_tile_state_);
 
   size_t memory_required_bytes;
   size_t memory_nice_to_have_bytes;
@@ -475,8 +477,7 @@ void LayerTreeHostImpl::TrackDamageForAllSurfaces(
         render_surface->SurfacePropertyChangedOnlyFromDescendant(),
         render_surface->content_rect(),
         render_surface_layer->mask_layer(),
-        render_surface_layer->filters(),
-        render_surface_layer->filter().get());
+        render_surface_layer->filters());
   }
 }
 
@@ -1054,11 +1055,11 @@ bool LayerTreeHostImpl::PrepareToDraw(FrameData* frame,
                "SourceFrameNumber",
                active_tree_->source_frame_number());
 
-  if (need_to_update_visible_tiles_before_draw_) {
-    DCHECK(tile_manager_);
-    if (tile_manager_->UpdateVisibleTiles())
-      DidInitializeVisibleTile();
+  if (need_to_update_visible_tiles_before_draw_ &&
+      tile_manager_ && tile_manager_->UpdateVisibleTiles()) {
+    DidInitializeVisibleTile();
   }
+  need_to_update_visible_tiles_before_draw_ = true;
 
   active_tree_->UpdateDrawProperties();
 
@@ -1096,6 +1097,10 @@ void LayerTreeHostImpl::BlockNotifyReadyToActivateForTesting(bool block) {
   NOTREACHED();
 }
 
+void LayerTreeHostImpl::DidInitializeVisibleTileForTesting() {
+  DidInitializeVisibleTile();
+}
+
 void LayerTreeHostImpl::EnforceManagedMemoryPolicy(
     const ManagedMemoryPolicy& policy) {
 
@@ -1123,23 +1128,22 @@ void LayerTreeHostImpl::UpdateTileManagerMemoryPolicy(
   if (!tile_manager_)
     return;
 
-  GlobalStateThatImpactsTilePriority new_state(tile_manager_->GlobalState());
-  new_state.memory_limit_in_bytes = visible_ ?
-                                    policy.bytes_limit_when_visible :
-                                    policy.bytes_limit_when_not_visible;
   // TODO(reveman): We should avoid keeping around unused resources if
   // possible. crbug.com/224475
-  new_state.unused_memory_limit_in_bytes = static_cast<size_t>(
-      (static_cast<int64>(new_state.memory_limit_in_bytes) *
+  global_tile_state_.memory_limit_in_bytes =
+      visible_ ?
+      policy.bytes_limit_when_visible :
+      policy.bytes_limit_when_not_visible;
+  global_tile_state_.unused_memory_limit_in_bytes = static_cast<size_t>(
+      (static_cast<int64>(global_tile_state_.memory_limit_in_bytes) *
        settings_.max_unused_resource_memory_percentage) / 100);
-  new_state.memory_limit_policy =
+  global_tile_state_.memory_limit_policy =
       ManagedMemoryPolicy::PriorityCutoffToTileMemoryLimitPolicy(
           visible_ ?
           policy.priority_cutoff_when_visible :
           policy.priority_cutoff_when_not_visible);
-  new_state.num_resources_limit = policy.num_resources_limit;
+  global_tile_state_.num_resources_limit = policy.num_resources_limit;
 
-  tile_manager_->SetGlobalState(new_state);
   DidModifyTilePriorities();
 }
 
@@ -1154,7 +1158,7 @@ void LayerTreeHostImpl::DidInitializeVisibleTile() {
   // TODO(reveman): Determine tiles that changed and only damage
   // what's necessary.
   SetFullRootLayerDamage();
-  if (client_)
+  if (client_ && !client_->IsInsideDraw())
     client_->DidInitializeVisibleTileOnImplThread();
 }
 
@@ -1476,7 +1480,7 @@ LayerImpl* LayerTreeHostImpl::CurrentlyScrollingLayer() const {
 // this function returns the associated scroll layer if any.
 static LayerImpl* FindScrollLayerForContentLayer(LayerImpl* layer_impl) {
   if (!layer_impl)
-    return 0;
+    return NULL;
 
   if (layer_impl->scrollable())
     return layer_impl;
@@ -1486,7 +1490,7 @@ static LayerImpl* FindScrollLayerForContentLayer(LayerImpl* layer_impl) {
       layer_impl->parent()->scrollable())
     return layer_impl->parent();
 
-  return 0;
+  return NULL;
 }
 
 void LayerTreeHostImpl::CreatePendingTree() {
@@ -1502,12 +1506,8 @@ void LayerTreeHostImpl::CreatePendingTree() {
 }
 
 void LayerTreeHostImpl::UpdateVisibleTiles() {
-  DCHECK(!client_->IsInsideDraw()) <<
-      "Updating visible tiles within a draw may trigger "
-      "spurious redraws.";
   if (tile_manager_ && tile_manager_->UpdateVisibleTiles())
     DidInitializeVisibleTile();
-
   need_to_update_visible_tiles_before_draw_ = false;
 }
 
@@ -1611,6 +1611,11 @@ ManagedMemoryPolicy LayerTreeHostImpl::ActualManagedMemoryPolicy() const {
 
 size_t LayerTreeHostImpl::memory_allocation_limit_bytes() const {
   return ActualManagedMemoryPolicy().bytes_limit_when_visible;
+}
+
+int LayerTreeHostImpl::memory_allocation_priority_cutoff() const {
+  return ManagedMemoryPolicy::PriorityCutoffToValue(
+      ActualManagedMemoryPolicy().priority_cutoff_when_visible);
 }
 
 void LayerTreeHostImpl::ReleaseTreeResources() {
@@ -1927,18 +1932,10 @@ static LayerImpl* NextScrollLayer(LayerImpl* layer) {
   return layer->parent();
 }
 
-InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
-    gfx::Point viewport_point, InputHandler::ScrollInputType type) {
-  TRACE_EVENT0("cc", "LayerTreeHostImpl::ScrollBegin");
-
-  if (top_controls_manager_)
-    top_controls_manager_->ScrollBegin();
-
-  DCHECK(!CurrentlyScrollingLayer());
-  ClearCurrentlyScrollingLayer();
-
-  if (!EnsureRenderSurfaceLayerList())
-    return ScrollIgnored;
+LayerImpl* LayerTreeHostImpl::FindScrollLayerForViewportPoint(
+    gfx::Point viewport_point, InputHandler::ScrollInputType type,
+    bool* scroll_on_main_thread) {
+  DCHECK(scroll_on_main_thread);
 
   gfx::PointF device_viewport_point = gfx::ScalePoint(viewport_point,
                                                       device_scale_factor_);
@@ -1955,9 +1952,8 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
     // thread.
     ScrollStatus status = layer_impl->TryScroll(device_viewport_point, type);
     if (status == ScrollOnMainThread) {
-      rendering_stats_instrumentation_->IncrementMainThreadScrolls();
-      UMA_HISTOGRAM_BOOLEAN("TryScroll.SlowScroll", true);
-      return ScrollOnMainThread;
+      *scroll_on_main_thread = true;
+      return NULL;
     }
 
     LayerImpl* scroll_layer_impl = FindScrollLayerForContentLayer(layer_impl);
@@ -1965,12 +1961,10 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
       continue;
 
     status = scroll_layer_impl->TryScroll(device_viewport_point, type);
-
     // If any layer wants to divert the scroll event to the main thread, abort.
     if (status == ScrollOnMainThread) {
-      rendering_stats_instrumentation_->IncrementMainThreadScrolls();
-      UMA_HISTOGRAM_BOOLEAN("TryScroll.SlowScroll", true);
-      return ScrollOnMainThread;
+      *scroll_on_main_thread = true;
+      return NULL;
     }
 
     if (status == ScrollStarted && !potentially_scrolling_layer_impl)
@@ -1984,6 +1978,32 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
       top_controls_manager_->content_top_offset() !=
       settings_.top_controls_height) {
     potentially_scrolling_layer_impl = RootScrollLayer();
+  }
+
+  return potentially_scrolling_layer_impl;
+}
+
+InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBegin(
+    gfx::Point viewport_point, InputHandler::ScrollInputType type) {
+  TRACE_EVENT0("cc", "LayerTreeHostImpl::ScrollBegin");
+
+  if (top_controls_manager_)
+    top_controls_manager_->ScrollBegin();
+
+  DCHECK(!CurrentlyScrollingLayer());
+  ClearCurrentlyScrollingLayer();
+
+  if (!EnsureRenderSurfaceLayerList())
+    return ScrollIgnored;
+
+  bool scroll_on_main_thread = false;
+  LayerImpl* potentially_scrolling_layer_impl = FindScrollLayerForViewportPoint(
+      viewport_point, type, &scroll_on_main_thread);
+
+  if (scroll_on_main_thread) {
+    rendering_stats_instrumentation_->IncrementMainThreadScrolls();
+    UMA_HISTOGRAM_BOOLEAN("TryScroll.SlowScroll", true);
+    return ScrollOnMainThread;
   }
 
   if (potentially_scrolling_layer_impl) {
@@ -2279,10 +2299,61 @@ void LayerTreeHostImpl::NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) {
   current_fling_velocity_ = velocity;
 }
 
+float LayerTreeHostImpl::DeviceSpaceDistanceToLayer(
+    gfx::PointF device_viewport_point,
+    LayerImpl* layer_impl) {
+  if (!layer_impl)
+    return std::numeric_limits<float>::max();
+
+  gfx::Rect layer_impl_bounds(
+      layer_impl->content_bounds());
+
+  gfx::RectF device_viewport_layer_impl_bounds = MathUtil::MapClippedRect(
+      layer_impl->screen_space_transform(),
+      layer_impl_bounds);
+
+  return device_viewport_layer_impl_bounds.ManhattanDistanceToPoint(
+      device_viewport_point);
+}
+
+void LayerTreeHostImpl::MouseMoveAt(gfx::Point viewport_point) {
+  if (!EnsureRenderSurfaceLayerList())
+    return;
+
+  // TODO(tony): What should happen if the mouse cursor is over the scrollbar?
+  bool scroll_on_main_thread = false;
+  LayerImpl* scroll_layer_impl = FindScrollLayerForViewportPoint(
+      viewport_point, InputHandler::Gesture,
+      &scroll_on_main_thread);
+  if (scroll_on_main_thread || !scroll_layer_impl)
+    return;
+
+  ScrollbarAnimationController* animation_controller =
+      scroll_layer_impl->scrollbar_animation_controller();
+  if (!animation_controller)
+    return;
+
+  gfx::PointF device_viewport_point = gfx::ScalePoint(viewport_point,
+                                                      device_scale_factor_);
+  float distance_to_scrollbar = std::min(
+      DeviceSpaceDistanceToLayer(device_viewport_point,
+          scroll_layer_impl->horizontal_scrollbar_layer()),
+      DeviceSpaceDistanceToLayer(device_viewport_point,
+          scroll_layer_impl->vertical_scrollbar_layer()));
+
+  bool should_animate = animation_controller->DidMouseMoveNear(
+      CurrentPhysicalTimeTicks(), distance_to_scrollbar / device_scale_factor_);
+  if (should_animate) {
+    client_->SetNeedsRedrawOnImplThread();
+    StartScrollbarAnimation();
+  }
+}
+
 void LayerTreeHostImpl::PinchGestureBegin() {
   pinch_gesture_active_ = true;
   previous_pinch_anchor_ = gfx::Point();
   client_->RenewTreePriority();
+  pinch_gesture_end_should_clear_scrolling_layer_ = !CurrentlyScrollingLayer();
   active_tree_->SetCurrentlyScrollingLayer(RootScrollLayer());
 }
 
@@ -2317,6 +2388,10 @@ void LayerTreeHostImpl::PinchGestureUpdate(float magnify_delta,
 
 void LayerTreeHostImpl::PinchGestureEnd() {
   pinch_gesture_active_ = false;
+  if (pinch_gesture_end_should_clear_scrolling_layer_) {
+    pinch_gesture_end_should_clear_scrolling_layer_ = false;
+    ClearCurrentlyScrollingLayer();
+  }
   client_->SetNeedsCommitOnImplThread();
 }
 
@@ -2556,12 +2631,9 @@ void LayerTreeHostImpl::SetTreePriority(TreePriority priority) {
   if (!tile_manager_)
     return;
 
-  GlobalStateThatImpactsTilePriority new_state(tile_manager_->GlobalState());
-  if (new_state.tree_priority == priority)
+  if (global_tile_state_.tree_priority == priority)
     return;
-
-  new_state.tree_priority = priority;
-  tile_manager_->SetGlobalState(new_state);
+  global_tile_state_.tree_priority = priority;
   DidModifyTilePriorities();
 }
 
@@ -2629,14 +2701,13 @@ void LayerTreeHostImpl::SetDebugState(
   SetFullRootLayerDamage();
 }
 
-void LayerTreeHostImpl::CreateUIResource(
-    UIResourceId uid,
-    scoped_refptr<UIResourceBitmap> bitmap) {
+void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
+                                         const UIResourceBitmap& bitmap) {
   DCHECK_GT(uid, 0);
-  DCHECK_EQ(bitmap->GetFormat(), UIResourceBitmap::RGBA8);
+  DCHECK_EQ(bitmap.GetFormat(), UIResourceBitmap::RGBA8);
 
   GLint wrap_mode = 0;
-  switch (bitmap->GetWrapMode()) {
+  switch (bitmap.GetWrapMode()) {
     case UIResourceBitmap::CLAMP_TO_EDGE:
       wrap_mode = GL_CLAMP_TO_EDGE;
       break;
@@ -2651,16 +2722,16 @@ void LayerTreeHostImpl::CreateUIResource(
   if (id)
     DeleteUIResource(uid);
   id = resource_provider_->CreateResource(
-      bitmap->GetSize(),
+      bitmap.GetSize(),
       wrap_mode,
       ResourceProvider::TextureUsageAny,
       resource_provider_->best_texture_format());
 
   ui_resource_map_[uid] = id;
   resource_provider_->SetPixels(id,
-                                reinterpret_cast<uint8_t*>(bitmap->GetPixels()),
-                                gfx::Rect(bitmap->GetSize()),
-                                gfx::Rect(bitmap->GetSize()),
+                                bitmap.GetPixels(),
+                                gfx::Rect(bitmap.GetSize()),
+                                gfx::Rect(bitmap.GetSize()),
                                 gfx::Vector2d(0, 0));
   MarkUIResourceNotEvicted(uid);
 }

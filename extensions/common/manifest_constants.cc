@@ -11,7 +11,6 @@ namespace manifest_keys {
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
-const char kAudio[] = "audio";
 const char kBackgroundAllowJsAccess[] = "background.allow_js_access";
 const char kBackgroundPage[] = "background.page";
 const char kBackgroundPageLegacy[] = "background_page";
@@ -58,6 +57,8 @@ const char kJs[] = "js";
 const char kKey[] = "key";
 const char kKeycode[] = "keyCode";
 const char kKioskEnabled[] = "kiosk_enabled";
+const char kKioskOnly[] = "kiosk_only";
+const char kKioskMode[] = "kiosk_mode";
 const char kLanguage[] = "language";
 const char kLaunch[] = "app.launch";
 const char kLaunchContainer[] = "app.launch.container";
@@ -113,6 +114,7 @@ const char kShiftKey[] = "shiftKey";
 const char kShortcutKey[] = "shortcutKey";
 const char kShortName[] = "short_name";
 const char kSignature[] = "signature";
+const char kSockets[] = "sockets";
 const char kSpellcheck[] = "spellcheck";
 const char kSpellcheckDictionaryFormat[] = "dictionary_format";
 const char kSpellcheckDictionaryLanguage[] = "dictionary_language";
@@ -121,7 +123,6 @@ const char kSpellcheckDictionaryPath[] = "dictionary_path";
 const char kStorageManagedSchema[] = "storage.managed_schema";
 const char kSuggestedKey[] = "suggested_key";
 const char kSystemIndicator[] = "system_indicator";
-const char kSystemInfoDisplay[] = "systemInfo.display";
 const char kTheme[] = "theme";
 const char kThemeColors[] = "colors";
 const char kThemeDisplayProperties[] = "properties";
@@ -417,6 +418,10 @@ const char kInvalidKeyBindingUnknownPlatform[] =
     " 'chromeos', 'linux' and 'default'.";
 const char kInvalidKioskEnabled[] =
     "Invalid value for 'kiosk_enabled'.";
+const char kInvalidKioskOnly[] =
+    "Invalid value for 'kiosk_only'.";
+const char kInvalidKioskOnlyButNotEnabled[] =
+    "The 'kiosk_only' key is set, but 'kiosk_enabled' is not set.";
 const char kInvalidLaunchContainer[] =
     "Invalid value for 'app.launch.container'.";
 const char kInvalidLaunchValue[] =
@@ -469,8 +474,6 @@ const char kInvalidOptionsPageExpectUrlInPackage[] =
 const char kInvalidOptionsPageInHostedApp[] =
     "Invalid value for 'options_page'. Hosted apps must specify an "
     "absolute URL.";
-const char kInvalidOptionalPermissions[] =
-    "Invalid value for 'optional_permissions'.";
 const char kInvalidPageAction[] =
     "Invalid value for 'page_action'.";
 const char kInvalidPageActionDefaultTitle[] =

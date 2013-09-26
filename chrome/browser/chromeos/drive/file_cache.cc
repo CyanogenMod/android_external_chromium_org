@@ -16,7 +16,6 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
-#include "chrome/browser/google_apis/task_util.h"
 #include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -80,15 +79,6 @@ void RunGetCacheEntryCallback(const GetCacheEntryCallback& callback,
   callback.Run(success, *cache_entry);
 }
 
-// Calls |iteration_callback| with each entry in |cache|.
-void IterateCache(FileCache* cache,
-                  const CacheIterateCallback& iteration_callback) {
-  scoped_ptr<FileCache::Iterator> it = cache->GetIterator();
-  for (; !it->IsAtEnd(); it->Advance())
-    iteration_callback.Run(it->GetID(), it->GetValue());
-  DCHECK(!it->HasError());
-}
-
 }  // namespace
 
 FileCache::FileCache(ResourceMetadataStorage* storage,
@@ -147,21 +137,6 @@ bool FileCache::GetCacheEntry(const std::string& id, FileCacheEntry* entry) {
   return storage_->GetCacheEntry(id, entry);
 }
 
-void FileCache::IterateOnUIThread(
-    const CacheIterateCallback& iteration_callback,
-    const base::Closure& completion_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!iteration_callback.is_null());
-  DCHECK(!completion_callback.is_null());
-
-  blocking_task_runner_->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&IterateCache,
-                 base::Unretained(this),
-                 google_apis::CreateRelayCallback(iteration_callback)),
-      completion_callback);
-}
-
 scoped_ptr<FileCache::Iterator> FileCache::GetIterator() {
   AssertOnSequencedWorkerPool();
   return storage_->GetCacheEntryIterator();
@@ -203,23 +178,6 @@ bool FileCache::FreeDiskSpaceIfNeededFor(int64 num_bytes) {
 
   // Check the disk space again.
   return HasEnoughSpaceFor(num_bytes, cache_file_directory_);
-}
-
-void FileCache::GetFileOnUIThread(const std::string& id,
-                                  const GetFileFromCacheCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::FilePath* cache_file_path = new base::FilePath;
-  base::PostTaskAndReplyWithResult(blocking_task_runner_.get(),
-                                   FROM_HERE,
-                                   base::Bind(&FileCache::GetFile,
-                                              base::Unretained(this),
-                                              id,
-                                              cache_file_path),
-                                   base::Bind(&RunGetFileFromCacheCallback,
-                                              callback,
-                                              base::Owned(cache_file_path)));
 }
 
 FileError FileCache::GetFile(const std::string& id,

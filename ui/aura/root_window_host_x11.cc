@@ -32,16 +32,17 @@
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/x/device_list_cache_x.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_list_cache_x.h"
+#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/screen.h"
 
 #if defined(OS_CHROMEOS)
@@ -87,7 +88,7 @@ bool IsSideBezelsEnabled() {
 #endif
 
 void SelectEventsForRootWindow() {
-  Display* display = ui::GetXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   ::Window root_window = ui::GetX11RootWindow();
 
   // Receive resize events for the root-window so |x_root_bounds_| can be
@@ -363,7 +364,7 @@ class RootWindowHostX11::MouseMoveFilter {
 
 RootWindowHostX11::RootWindowHostX11(const gfx::Rect& bounds)
     : delegate_(NULL),
-      xdisplay_(ui::GetXDisplay()),
+      xdisplay_(gfx::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       current_cursor_(ui::kCursorNull),
@@ -566,7 +567,7 @@ bool RootWindowHostX11::Dispatch(const base::NativeEvent& event) {
           delegate_->AsRootWindow()->OnKeyboardMappingChanged();
           break;
         case MappingPointer:
-          ui::UpdateButtonMap();
+          ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
           break;
         default:
           NOTIMPLEMENTED() << " Unknown request: " << xev->xmapping.request;
@@ -1090,7 +1091,7 @@ RootWindowHost* RootWindowHost::Create(const gfx::Rect& bounds) {
 
 // static
 gfx::Size RootWindowHost::GetNativeScreenSize() {
-  ::Display* xdisplay = ui::GetXDisplay();
+  ::XDisplay* xdisplay = gfx::GetXDisplay();
   return gfx::Size(DisplayWidth(xdisplay, 0), DisplayHeight(xdisplay, 0));
 }
 

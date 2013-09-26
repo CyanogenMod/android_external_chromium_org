@@ -8,43 +8,44 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "158008",
+  "webkit_revision": "158327",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
   "swig_revision": "69281",
-  "nacl_revision": "12177",
+  "nacl_revision": "12194",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
   "nacl_tools_revision": "11437",  # native_client/DEPS: tools_rev
   "gtm_revision": "616",
 
   "libphonenumber_revision": "584",
-  "libvpx_revision": "212364",
+  "libvpx_revision": "225010",
   "lss_revision": "24",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "219831",
-  "ffmpeg_hash": "feb5bc7d3d1fc66d9c52dc316479231b02cbdac1",
+  "ffmpeg_revision": "224426",
+  "ffmpeg_hash": "5879ccd47e649bf2dfaec45f02ec5517bd3621d2",
 
   "sfntly_revision": "134",
-  "skia_revision": "11364",
-  "skia_hash": "8249a2fc66738fd4aeb2500aae50c20744f1a744",
+  "lighttpd_revision": "33737",
+  "skia_revision": "11429",
+  "skia_hash": "6ae638c32047ce3ad550b06b0bc9b1e84a413c2a",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "16802",
+  "v8_revision": "16931",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4758",
+  "webrtc_revision": "4831",
   "jsoncpp_revision": "248",
   "nss_revision": "223139",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "221184",
+  "swarm_revision": "224429",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -66,16 +67,16 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@fc75e21762459c9306fd0c0a060010254d5ad248",
+    "/external/angle.git@300b1eb5018651d2e68289a9dd234bbf906b3cc0",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@1003",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@1006",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@223384",
+    "/trunk/deps/third_party/icu46@224814",
 
   "src/third_party/libexif/sources":
     "/trunk/deps/third_party/libexif/sources@146817",
@@ -94,7 +95,7 @@ deps = {
     "/trunk/src@313",
 
   "src/third_party/leveldatabase/src":
-    (Var("googlecode_url") % "leveldb") + "/trunk@76",
+    (Var("googlecode_url") % "leveldb") + "/trunk@77",
 
   "src/third_party/snappy/src":
     (Var("googlecode_url") % "snappy") + "/trunk@80",
@@ -279,7 +280,7 @@ deps_os = {
       "/trunk/deps/third_party/perl@147900",
 
     "src/third_party/lighttpd":
-      "/trunk/deps/third_party/lighttpd@33727",
+      "/trunk/deps/third_party/lighttpd@" + Var("lighttpd_revision"),
 
     # Chrome Frame related deps
     "src/third_party/xulrunner-sdk":
@@ -384,7 +385,7 @@ deps_os = {
     "src/third_party/pdfsqueeze":
       (Var("googlecode_url") % "pdfsqueeze") + "/trunk@5",
     "src/third_party/lighttpd":
-      "/trunk/deps/third_party/lighttpd@33737",
+      "/trunk/deps/third_party/lighttpd@" + Var("lighttpd_revision"),
 
     "src/third_party/swig/mac":
       "/trunk/deps/third_party/swig/mac@" + Var("swig_revision"),
@@ -433,7 +434,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@4cd01f48698570bb2df3cd031f4265cbdc279991",
+      "@aad5ce47ca8ae17ccaa42e31c10c8d9a5c16d202",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -456,7 +457,7 @@ deps_os = {
   "android": {
     "src/third_party/android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@53862978424412e190e9bc40c7637a71fdd7d298",
+      "@e504b737693e96816b40e6ae80d177352c079c18",
 
     "src/third_party/aosp":
       "/trunk/deps/third_party/aosp@148330",

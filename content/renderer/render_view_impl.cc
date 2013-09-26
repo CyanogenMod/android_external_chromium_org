@@ -363,19 +363,17 @@ static base::LazyInstance<RoutingIDViewMap> g_routing_id_view_map =
 // foreground renderer. This means there is a small window of time from which
 // content state is modified and not sent to session restore, but this is
 // better than having to wake up all renderers during shutdown.
-static const int kDelaySecondsForContentStateSyncHidden = 5;
-static const int kDelaySecondsForContentStateSync = 1;
+const int kDelaySecondsForContentStateSyncHidden = 5;
+const int kDelaySecondsForContentStateSync = 1;
 
-static const size_t kExtraCharsBeforeAndAfterSelection = 100;
+const size_t kExtraCharsBeforeAndAfterSelection = 100;
 
-static const float kScalingIncrement = 0.1f;
-
-static const float kScalingIncrementForGesture = 0.01f;
+const float kScalingIncrementForGesture = 0.01f;
 
 #if defined(OS_ANDROID)
 // Delay between tapping in content and launching the associated android intent.
 // Used to allow users see what has been recognized as content.
-static const size_t kContentIntentDelayMilliseconds = 700;
+const size_t kContentIntentDelayMilliseconds = 700;
 #endif
 
 static RenderViewImpl* (*g_create_render_view_impl)(RenderViewImplParams*) =
@@ -1413,6 +1411,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnUndoScrollFocusedEditableNodeIntoRect)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateTopControlsState,
                         OnUpdateTopControlsState)
+    IPC_MESSAGE_HANDLER(ViewMsg_PauseVideo, OnPauseVideo)
 #elif defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(InputMsg_CopyToFindPboard, OnCopyToFindPboard)
     IPC_MESSAGE_HANDLER(ViewMsg_PluginImeCompositionCompleted,
@@ -1921,6 +1920,14 @@ void RenderViewImpl::OnUndoScrollFocusedEditableNodeIntoRect() {
   const WebNode node = GetFocusedNode();
   if (!node.isNull() && IsEditableNode(node))
     webview()->restoreScrollAndScaleState();
+}
+
+void RenderViewImpl::OnPauseVideo() {
+  // Inform RendererMediaPlayerManager to release all video player resources.
+  // If something is in progress the resource will not be freed, it will
+  // only be freed once the tab is destroyed or if the user navigates away
+  // via WebMediaPlayerAndroid::Destroy.
+  media_player_manager_->ReleaseVideoResources();
 }
 #endif
 
@@ -5699,18 +5706,9 @@ bool RenderViewImpl::HasTouchEventHandlersAt(const gfx::Point& point) const {
 void RenderViewImpl::OnWasHidden() {
   RenderWidget::OnWasHidden();
 
-#if defined(OS_ANDROID)
-  // Inform RendererMediaPlayerManager to release all media player resources.
-  // unless some audio is playing.
-  // If something is in progress the resource will not be freed, it will
-  // only be freed once the tab is destroyed or if the user navigates away
-  // via WebMediaPlayerAndroid::Destroy
-  media_player_manager_->ReleaseMediaResources();
-
-#if defined(ENABLE_WEBRTC)
+#if defined(OS_ANDROID) && defined(ENABLE_WEBRTC)
   RenderThreadImpl::current()->video_capture_impl_manager()->
       SuspendDevices(true);
-#endif
 #endif
 
   if (webview())
@@ -6472,6 +6470,10 @@ void RenderViewImpl::SetMediaStreamClientForTesting(
   DCHECK(!media_stream_client_);
   DCHECK(!web_user_media_client_);
   media_stream_client_ = media_stream_client;
+}
+
+bool RenderViewImpl::IsPluginFullscreenAllowed() {
+  return renderer_preferences_.plugin_fullscreen_allowed;
 }
 
 void RenderViewImpl::OnReleaseDisambiguationPopupDIB(

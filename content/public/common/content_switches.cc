@@ -134,6 +134,9 @@ const char kDisableCompositingForTransition[] =
 // Disables HTML5 DB support.
 const char kDisableDatabases[]              = "disable-databases";
 
+// Disables the deadline scheduler.
+const char kDisableDeadlineScheduling[]     = "disable-deadline-scheduling";
+
 // Disables delegated renderer.
 const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
 
@@ -327,9 +330,6 @@ const char kEnableAudibleNotifications[]    = "enable-audible-notifications";
 // Use a begin frame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
 
-// Synchronize delivery and response of input events to and from the renderer.
-const char kEnableBrowserInputController[]  = "enable-browser-input-controller";
-
 // Enables browser plugin for all types of pages.
 const char kEnableBrowserPluginForAllViewTypes[] =
     "enable-browser-plugin-for-all-view-types";
@@ -337,6 +337,9 @@ const char kEnableBrowserPluginForAllViewTypes[] =
 // Enables Drag and Drop into and out of Browser Plugin.
 // kEnableBrowserPluginGuestViews must also be set at this time.
 const char kEnableBrowserPluginDragDrop[]   = "enable-browser-plugin-drag-drop";
+
+// Batch and synchronize input event delivery to the renderer.
+const char kEnableBufferedInputRouter[]  = "enable-buffered-input-router";
 
 // Enables accelerated scrolling by the compositor for frames. Requires
 // kForceCompositingMode and kEnableAcceleratedScrollableFrames.
@@ -371,6 +374,9 @@ const char kEnableCssShaders[]              = "enable-css-shaders";
 
 // Defer image decoding in WebKit until painting.
 const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
+
+// Enables the deadline scheduler.
+const char kEnableDeadlineScheduling[]      = "enable-deadline-scheduling";
 
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
@@ -726,6 +732,9 @@ const char kRendererProcessLimit[]          = "renderer-process-limit";
 // Causes the renderer process to display a dialog on launch.
 const char kRendererStartupDialog[]         = "renderer-startup-dialog";
 
+// Causes the process to run as a sandbox IPC subprocess.
+const char kSandboxIPCProcess[]             = "sandbox-ipc";
+
 // Enables or disables scroll end effect in response to vertical overscroll.
 // Set the value to '1' to enable the feature, and set to '0' to disable.
 // Defaults to disabled.
@@ -901,6 +910,9 @@ const char kEnableWebRtcAecRecordings[]     = "enable-webrtc-aec-recordings";
 
 // Enable WebRTC to open TCP server sockets.
 const char kEnableWebRtcTcpServerSocket[]   = "enable-webrtc-tcp-server-socket";
+
+// Enables VP8 HW encode acceleration for WebRTC.
+const char kEnableWebRtcHWVp8Encoding[]     = "enable-webrtc-hw-vp8-encoding";
 #endif
 
 #if defined(OS_ANDROID)

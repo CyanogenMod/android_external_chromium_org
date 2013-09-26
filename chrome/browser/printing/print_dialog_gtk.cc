@@ -4,10 +4,7 @@
 
 #include "chrome/browser/printing/print_dialog_gtk.h"
 
-#include <fcntl.h>
 #include <gtk/gtkunixprint.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 #include <string>
 #include <vector>
@@ -15,6 +12,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_util_proxy.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
@@ -35,6 +33,33 @@ const char kCUPSDuplex[] = "cups-Duplex";
 const char kDuplexNone[] = "None";
 const char kDuplexTumble[] = "DuplexTumble";
 const char kDuplexNoTumble[] = "DuplexNoTumble";
+
+class StickyPrintSettingGtk {
+ public:
+  StickyPrintSettingGtk() : last_used_settings_(gtk_print_settings_new()) {
+  }
+  ~StickyPrintSettingGtk() {
+    NOTREACHED();  // Intended to be used with a Leaky LazyInstance.
+  }
+
+  GtkPrintSettings* settings() {
+    return last_used_settings_;
+  }
+
+  void SetLastUsedSettings(GtkPrintSettings* settings) {
+    DCHECK(last_used_settings_);
+    g_object_unref(last_used_settings_);
+    last_used_settings_ = gtk_print_settings_copy(settings);
+  }
+
+ private:
+  GtkPrintSettings* last_used_settings_;
+
+  DISALLOW_COPY_AND_ASSIGN(StickyPrintSettingGtk);
+};
+
+base::LazyInstance<StickyPrintSettingGtk>::Leaky g_last_used_settings =
+    LAZY_INSTANCE_INITIALIZER;
 
 // Helper class to track GTK printers.
 class GtkPrinterList {
@@ -59,13 +84,13 @@ class GtkPrinterList {
   // Can return NULL if the printer cannot be found due to:
   // - Printer list out of sync with printer dialog UI.
   // - Querying for non-existant printers like 'Print to PDF'.
-  GtkPrinter* GetPrinterWithName(const char* name) {
-    if (!name || !*name)
+  GtkPrinter* GetPrinterWithName(const std::string& name) {
+    if (name.empty())
       return NULL;
 
     for (std::vector<GtkPrinter*>::iterator it = printers_.begin();
          it < printers_.end(); ++it) {
-      if (strcmp(name, gtk_printer_get_name(*it)) == 0) {
+      if (gtk_printer_get_name(*it) == name) {
         return *it;
       }
     }
@@ -132,8 +157,9 @@ void PrintDialogGtk::UseDefaultSettings() {
   DCHECK(!page_setup_);
   DCHECK(!printer_);
 
-  // |gtk_settings_| is a new object.
-  gtk_settings_ = gtk_print_settings_new();
+  // |gtk_settings_| is a new copy.
+  gtk_settings_ =
+      gtk_print_settings_copy(g_last_used_settings.Get().settings());
   page_setup_ = gtk_page_setup_new();
 
   // No page range to initialize for default settings.
@@ -165,12 +191,14 @@ bool PrintDialogGtk::UpdateSettings(const base::DictionaryValue& job_settings,
 
   bool is_cloud_print = job_settings.HasKey(printing::kSettingCloudPrintId);
 
-  if (!gtk_settings_)
-    gtk_settings_ = gtk_print_settings_new();
+  if (!gtk_settings_) {
+    gtk_settings_ =
+        gtk_print_settings_copy(g_last_used_settings.Get().settings());
+  }
 
   if (!print_to_pdf && !is_cloud_print) {
     scoped_ptr<GtkPrinterList> printer_list(new GtkPrinterList);
-    printer_ = printer_list->GetPrinterWithName(device_name.c_str());
+    printer_ = printer_list->GetPrinterWithName(device_name);
     if (printer_) {
       g_object_ref(printer_);
       gtk_print_settings_set_printer(gtk_settings_,
@@ -254,6 +282,8 @@ void PrintDialogGtk::ShowDialog(
                                               TRUE);
   gtk_print_unix_dialog_set_has_selection(GTK_PRINT_UNIX_DIALOG(dialog_),
                                           has_selection);
+  gtk_print_unix_dialog_set_settings(GTK_PRINT_UNIX_DIALOG(dialog_),
+                                     gtk_settings_);
   g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
   gtk_widget_show(dialog_);
 }
@@ -388,6 +418,9 @@ void PrintDialogGtk::SendDocumentToPrinter(const string16& document_name) {
     Release();
     return;
   }
+
+  // Save the settings for next time.
+  g_last_used_settings.Get().SetLastUsedSettings(gtk_settings_);
 
   GtkPrintJob* print_job = gtk_print_job_new(
       UTF16ToUTF8(document_name).c_str(),

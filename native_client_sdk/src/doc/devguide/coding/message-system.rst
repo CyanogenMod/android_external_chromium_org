@@ -1,4 +1,4 @@
-.. _messaging_system:
+.. _message-system:
 
 ################
 Messaging System
@@ -33,27 +33,6 @@ following documentation:
 * `pp::Instance class <https://developers.google.com/native-client/peppercpp/classpp_1_1_instance>`_ HandleMessage(), PostMessage())
 * `pp::Module class <https://developers.google.com/native-client/peppercpp/classpp_1_1_module>`_
 * `pp::Var class <https://developers.google.com/native-client/peppercpp/classpp_1_1_var>`_
-
-
-Glossary
-========
-
-asynchronous programming
-  In the asynchronous programming model, function calls are executed and
-  return immediately without waiting for a response. Using this model,
-  functions are nonblocking; the web browser continues processing JavaScript
-  and C/C++ functions.
-Var
-  An object in a Native Client module that corresponds to a JavaScript
-  variable.
-web workers
-  `Web workers <http://en.wikipedia.org/wiki/Web_Workers>`_ provide a
-  mechanism for running heavy-weight JavaScript code on background threads
-  so that the main web page can continue to respond to user interaction.
-  Web pages interact with web workers by using ``postMessage()`` to send
-  messages. The way a web page interacts with a Native Client module
-  is analogous to the way it interacts with web workers.
-
 
 Introduction to the messaging system
 ====================================
@@ -379,3 +358,58 @@ end of the Native Client module's ``HandleMessage()`` function:
 .. naclcode::
 
   PostMessage(var_reply);
+
+
+Sending and receiving other ``pp::Var`` types
+---------------------------------------------
+
+Besides strings, ``pp::Var`` can represent other types of JavaScript
+objects. For example, messages can be JavaScript objects. These
+richer types can make it easier to implement an application's
+messaging protocol.
+
+To send a dictionary from the NaCl module to JavaScript simply create
+a ``pp::VarDictionary`` and then call ``PostMessage`` with the
+dictionary.
+
+.. naclcode::
+
+  pp::VarDictionary dictionary;
+  dictionary.Set(pp::Var("command"), pp::Var(next_command));
+  dictionary.Set(pp::Var("param_int"), pp::Var(123));
+  pp::VarArray an_array;
+  an_array.Set(0, pp::Var("string0"));
+  an_array.Set(1, pp::Var("string1"))
+  dictionary.Set(pp::Var("param_array"), an_array);
+  PostMessage(dictionary);
+
+
+Here is how to create a similar object in JavaScript and send it to
+the NaCl module:
+
+.. naclcode::
+
+  var dictionary = {
+    command: next_command,
+    param_int: 123,
+    param_array: ['string0', 'string1']
+  }
+  nacl_module.postMessage(dictionary);
+
+
+To receive a dictionary-typed message in the NaCl module, test that
+the message is truly a dictionary type, then convert the message
+with the ``pp::VarDictionary`` class.
+
+.. naclcode::
+
+  virtual void HandleMessage(const pp::Var& var) {
+    if (var.is_dictionary()) {
+      pp::VarDictionary dictionary(var);
+      // Use the dictionary
+      pp::VarArray keys = dictionary.GetKeys();
+      // ...
+    } else {
+      // ...
+    }
+  }

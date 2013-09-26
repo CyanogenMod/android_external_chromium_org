@@ -222,6 +222,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       pending_window_rect_count_(0),
       suppress_next_char_events_(false),
       is_accelerated_compositing_active_(false),
+      was_accelerated_compositing_ever_active_(false),
       animation_update_pending_(false),
       invalidation_task_posted_(false),
       screen_info_(screen_info),
@@ -712,12 +713,18 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   }
   if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
     DCHECK(is_threaded_compositing_enabled_);
+    cc::ResourceFormat format = cc::RGBA_8888;
+#if defined(OS_ANDROID)
+    if (base::android::SysUtils::IsLowEndDevice())
+      format = cc::RGB_565;
+#endif
     return scoped_ptr<cc::OutputSurface>(
         new MailboxOutputSurface(
             routing_id(),
             output_surface_id,
             context_provider,
-            scoped_ptr<cc::SoftwareOutputDevice>()));
+            scoped_ptr<cc::SoftwareOutputDevice>(),
+            format));
   }
   bool use_swap_compositor_frame_message = false;
   return scoped_ptr<cc::OutputSurface>(
@@ -1235,7 +1242,8 @@ void RenderWidget::DoDeferredUpdate() {
 
   if (!is_accelerated_compositing_active_ &&
       !is_threaded_compositing_enabled_ &&
-      ForceCompositingModeEnabled()) {
+      (ForceCompositingModeEnabled() ||
+          was_accelerated_compositing_ever_active_)) {
     webwidget_->enterForceCompositingMode(true);
   }
 
@@ -1554,6 +1562,11 @@ void RenderWidget::didActivateCompositor(int input_handler_identifier) {
   is_accelerated_compositing_active_ = true;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
       routing_id_, is_accelerated_compositing_active_));
+
+  if (!was_accelerated_compositing_ever_active_) {
+    was_accelerated_compositing_ever_active_ = true;
+    webwidget_->enterForceCompositingMode(true);
+  }
 }
 
 void RenderWidget::didDeactivateCompositor() {
@@ -2169,8 +2182,16 @@ void RenderWidget::FinishHandlingImeEvent() {
 }
 
 void RenderWidget::UpdateTextInputType() {
+  // On Windows, not only an IME but also an on-screen keyboard relies on the
+  // latest TextInputType to optimize its layout and functionality. Thus
+  // |input_method_is_active_| is no longer an appropriate condition to suppress
+  // TextInputTypeChanged IPC on Windows.
+  // TODO(yukawa, yoichio): Consider to stop checking |input_method_is_active_|
+  // on other platforms as well as Windows if the overhead is acceptable.
+#if !defined(OS_WIN)
   if (!input_method_is_active_)
     return;
+#endif
 
   ui::TextInputType new_type = GetTextInputType();
   if (IsDateTimeInput(new_type))
@@ -2552,18 +2573,19 @@ RenderWidget::CreateGraphicsContext3D(
   // know our upload throughput yet, this just caps our memory usage.
   size_t divider = 1;
   if (base::android::SysUtils::IsLowEndDevice())
-    divider = 3;
-
+    divider = 6;
   // For reference Nexus10 can upload 1MB in about 2.5ms.
-  const size_t max_bytes_uploaded_per_ms = (2 * 1024 * 1024) / (5 * divider);
+  const double max_mb_uploaded_per_ms = 2.0 / (5 * divider);
   // Deadline to draw a frame to achieve 60 frames per second.
   const size_t kMillisecondsPerFrame = 16;
   // Assuming a two frame deep pipeline between the CPU and the GPU.
-  const size_t max_transfer_buffer_usage_bytes =
-      2 * kMillisecondsPerFrame * max_bytes_uploaded_per_ms;
+  size_t max_transfer_buffer_usage_mb =
+      static_cast<size_t>(2 * kMillisecondsPerFrame * max_mb_uploaded_per_ms);
+  static const size_t kBytesPerMegabyte = 1024 * 1024;
   // We keep the MappedMemoryReclaimLimit the same as the upload limit
   // to avoid unnecessarily stalling the compositor thread.
-  const size_t mapped_memory_reclaim_limit = max_transfer_buffer_usage_bytes;
+  const size_t mapped_memory_reclaim_limit =
+      max_transfer_buffer_usage_mb * kBytesPerMegabyte;
 #else
   const size_t mapped_memory_reclaim_limit =
       WebGraphicsContext3DCommandBufferImpl::kNoLimit;

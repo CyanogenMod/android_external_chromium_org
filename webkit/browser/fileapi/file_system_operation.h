@@ -131,8 +131,8 @@ class FileSystemOperation {
   //
   // END_COPY_ENTRY is fired for each copy creation finishing (for both
   // file and directory).
-  // The |source_url| is the URL of the source entry. |size| should not be
-  // used.
+  // The |source_url| is the URL of the source entry. The |destination_url| is
+  // the URL of the destination entry. |size| should not be used.
   //
   // PROGRESS is fired periodically during file copying (not fired for
   // directory copy).
@@ -147,10 +147,10 @@ class FileSystemOperation {
   // copy a to x recursively, then the progress update sequence will be:
   //
   // BEGIN_COPY_ENTRY a  (starting create "a" directory in x/).
-  // END_COPY_ENTRY a (creating "a" directory in x/ is finished).
+  // END_COPY_ENTRY a x/a (creating "a" directory in x/ is finished).
   //
   // BEGIN_COPY_ENTRY a/b (starting create "b" directory in x/a).
-  // END_COPY_ENTRY a/b (creating "b" directory in x/a/ is finished).
+  // END_COPY_ENTRY a/b x/a/b (creating "b" directory in x/a/ is finished).
   //
   // BEGIN_COPY_ENTRY a/b/c.txt (starting to copy "c.txt" in x/a/b/).
   // PROGRESS a/b/c.txt 0 (The first PROGRESS's |size| should be 0).
@@ -159,7 +159,7 @@ class FileSystemOperation {
   // PROGRESS a/b/c.txt 90
   // PROGRESS a/b/c.txt 100 (The last PROGRESS's |size| should be the size of
   //                         the file).
-  // END_COPY_ENTRY a/b/c.txt (copying "c.txt" is finished).
+  // END_COPY_ENTRY a/b/c.txt x/a/b/c.txt (copying "c.txt" is finished).
   //
   // BEGIN_COPY_ENTRY a/b/d.txt (starting to copy "d.txt" in x/a/b).
   // PROGRESS a/b/d.txt 0 (The first PROGRESS's |size| should be 0).
@@ -168,7 +168,7 @@ class FileSystemOperation {
   // PROGRESS a/b/d.txt 190
   // PROGRESS a/b/d.txt 200 (The last PROGRESS's |size| should be the size of
   //                         the file).
-  // END_COPY_ENTRY a/b/d.txt (copy "d.txt" is finished).
+  // END_COPY_ENTRY a/b/d.txt x/a/b/d.txt (copy "d.txt" is finished).
   //
   // Note that event sequence of a/b/c.txt and a/b/d.txt can be interlaced,
   // because they can be done in parallel. Also PROGRESS events are optional,
@@ -196,8 +196,10 @@ class FileSystemOperation {
     END_COPY_ENTRY,
     PROGRESS,
   };
-  typedef base::Callback<void(
-      CopyProgressType type, const FileSystemURL& source_url, int64 size)>
+  typedef base::Callback<void(CopyProgressType type,
+                              const FileSystemURL& source_url,
+                              const FileSystemURL& destination_url,
+                              int64 size)>
       CopyProgressCallback;
 
   // Used for CopyFileLocal() to report progress update.
@@ -206,6 +208,18 @@ class FileSystemOperation {
   // and also at the ending the progress callback should be called with |size|
   // set to the copied file size.
   typedef base::Callback<void(int64 size)> CopyFileProgressCallback;
+
+  // The option for copy or move operation.
+  enum CopyOrMoveOption {
+    // No additional operation.
+    OPTION_NONE,
+
+    // Preserves last modified time if possible. If the operation to update
+    // last modified time is not supported on the file system for the
+    // destination file, this option would be simply ignored (i.e. Copy would
+    // be successfully done without preserving last modified time).
+    OPTION_PRESERVE_LAST_MODIFIED,
+  };
 
   // Used for Write().
   typedef base::Callback<void(base::PlatformFileError result,
@@ -231,6 +245,8 @@ class FileSystemOperation {
   // |src_path| is a directory, the contents of |src_path| are copied to
   // |dest_path| recursively. A new file or directory is created at
   // |dest_path| as needed.
+  // |option| specifies the minor behavior of Copy(). See CopyOrMoveOption's
+  // comment for details.
   // |progress_callback| is periodically called to report the progress
   // update. See also the comment of CopyProgressCallback. This callback is
   // optional.
@@ -245,11 +261,14 @@ class FileSystemOperation {
   //
   virtual void Copy(const FileSystemURL& src_path,
                     const FileSystemURL& dest_path,
+                    CopyOrMoveOption option,
                     const CopyProgressCallback& progress_callback,
                     const StatusCallback& callback) = 0;
 
   // Moves a file or directory from |src_path| to |dest_path|. A new file
   // or directory is created at |dest_path| as needed.
+  // |option| specifies the minor behavior of Copy(). See CopyOrMoveOption's
+  // comment for details.
   //
   // For recursive case this internally creates new FileSystemOperations and
   // calls:
@@ -261,6 +280,7 @@ class FileSystemOperation {
   //
   virtual void Move(const FileSystemURL& src_path,
                     const FileSystemURL& dest_path,
+                    CopyOrMoveOption option,
                     const StatusCallback& callback) = 0;
 
   // Checks if a directory is present at |path|.
@@ -391,6 +411,8 @@ class FileSystemOperation {
   // Copies a file from |src_url| to |dest_url|.
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
+  // |option| specifies the minor behavior of Copy(). See CopyOrMoveOption's
+  // comment for details.
   // |progress_callback| is periodically called to report the progress
   // update. See also the comment of CopyFileProgressCallback. This callback is
   // optional.
@@ -406,12 +428,15 @@ class FileSystemOperation {
   //
   virtual void CopyFileLocal(const FileSystemURL& src_url,
                              const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
                              const CopyFileProgressCallback& progress_callback,
                              const StatusCallback& callback) = 0;
 
   // Moves a local file from |src_url| to |dest_url|.
   // This must be called for files that belong to the same filesystem
   // (i.e. type() and origin() of the |src_url| and |dest_url| must match).
+  // |option| specifies the minor behavior of Copy(). See CopyOrMoveOption's
+  // comment for details.
   //
   // This returns:
   // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
@@ -424,6 +449,7 @@ class FileSystemOperation {
   //
   virtual void MoveFileLocal(const FileSystemURL& src_url,
                              const FileSystemURL& dest_url,
+                             CopyOrMoveOption option,
                              const StatusCallback& callback) = 0;
 
   // Synchronously gets the platform path for the given |url|.

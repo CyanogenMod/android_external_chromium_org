@@ -235,7 +235,7 @@ const char kChromeUIThemePath[] = "theme";
 const char kChromeUIWelcomeHost[] = "welcome";
 #endif
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 const char kChromeUILinuxProxyConfigHost[] = "linux-proxy-config";
 const char kChromeUISandboxHost[] = "sandbox";
 #endif
@@ -519,8 +519,10 @@ const char* const kChromeHostURLs[] = {
   kChromeUIChromeURLsHost,
   kChromeUICrashesHost,
   kChromeUICreditsHost,
+  kChromeUIDevicesHost,
   kChromeUIDNSHost,
   kChromeUIFlagsHost,
+  kChromeUIHelpHost,
   kChromeUIHistoryHost,
   kChromeUIIPCHost,
   kChromeUIMemoryHost,
@@ -539,6 +541,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUISyncInternalsHost,
   kChromeUITermsHost,
   kChromeUITranslateInternalsHost,
+  kChromeUIUberHost,
   kChromeUIUserActionsHost,
   kChromeUIVersionHost,
 #if defined(OS_ANDROID)
@@ -555,7 +558,7 @@ const char* const kChromeHostURLs[] = {
 #if defined(OS_WIN)
   kChromeUIConflictsHost,
 #endif
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   kChromeUILinuxProxyConfigHost,
   kChromeUISandboxHost,
 #endif

@@ -4,7 +4,8 @@
   -- found in the LICENSE file.
   -->
 
-<polymer-element name="kb-shift-key" attributes="unlockedCase lockedCase state"
+<polymer-element name="kb-shift-key"
+    attributes="lowerCaseKeysetId upperCaseKeysetId"
     class="shift dark" char="Shift" extends="kb-key">
   <script>
     (function () {
@@ -20,7 +21,8 @@
         PRESSED: "pressed", // Key-down on shift key.
         LOCKED: "locked", // Key is capslocked.
         UNLOCKED: "unlocked", // Default state.
-        TAPPED: "tapped" // Key-down followed by key-up.
+        TAPPED: "tapped", // Key-down followed by key-up.
+        CHORDING: "chording" // Key-down followed by other keys.
       };
 
       /**
@@ -39,16 +41,20 @@
       Polymer('kb-shift-key', {
         /**
          * Defines how capslock effects keyset transition. We always transition
-         * from the unlockedCase to the lockedCase if capslock is on.
+         * from the lowerCaseKeysetId to the upperCaseKeysetId if capslock is on.
          * @type {string}
          */
-        unlockedCase: 'lower',
-        lockedCase: 'upper',
+        lowerCaseKeysetId: 'lower',
+        upperCaseKeysetId: 'upper',
 
         up: function(event) {
           if (state == KEY_STATES.PRESSED) {
             state = KEY_STATES.TAPPED;
-            // TODO(rsadam@): Add chording logic here.
+          } else if (state == KEY_STATES.CHORDING) {
+            // Resets shift state.
+            state = KEY_STATES.UNLOCKED;
+            // TODO(rsadam@): Only end chording if the key-up is on the same
+            // shift key that started the chording.
           }
           this.super();
         },
@@ -65,11 +71,12 @@
               state = KEY_STATES.UNLOCKED;
               break;
             case KEY_STATES.PRESSED:
+            case KEY_STATES.CHORDING:
               // We pressed another shift key at the same time,
               // so ignore second press.
-              break;
+              return;
             default:
-              console.error("Undefined shift key state: " + this.state);
+              console.error("Undefined shift key state: " + state);
               break;
           }
           // Trigger parent behaviour.
@@ -78,7 +85,7 @@
           // Populate double click transition details.
           var detail = {};
           detail.char = this.char || this.textContent;
-          detail.toKeyset = this.lockedCase;
+          detail.toKeyset = this.upperCaseKeysetId;
           detail.nextKeyset = undefined;
           detail.callback = this.onDoubleClick;
           this.fire('enable-dbl', detail);
@@ -87,14 +94,14 @@
         generateLongPressTimer: function() {
           return this.asyncMethod(function() {
             var detail = this.populateDetails();
-            if (this.state == KEY_STATES.LOCKED) {
+            if (state == KEY_STATES.LOCKED) {
               // We don't care about the longpress if we are already
               // capitalized.
               return;
             } else {
-              this.state = KEY_STATES.LOCKED;
-              detail.shiftState = KEY_STATES.LOCKED;
-              detail.toKeyset = this.lockedCase;
+              state = KEY_STATES.LOCKED;
+              detail.toKeyset = this.upperCaseKeysetId;
+              detail.nextKeyset = undefined;
             }
             this.fire('key-longpress', detail);
           }, null, LONGPRESS_DELAY_MSEC);
@@ -107,23 +114,57 @@
           state = KEY_STATES.LOCKED;
         },
 
+        /**
+         * Notifies shift key that a non-control key was pressed down.
+         * A control key is defined as one of shift, control or alt.
+         */
+        onNonControlKeyDown: function() {
+           switch (state) {
+             case (KEY_STATES.TAPPED):
+               state = KEY_STATES.UNLOCKED;
+               break;
+             case (KEY_STATES.PRESSED):
+               state = KEY_STATES.CHORDING;
+               // Disable longpress timer.
+               clearTimeout(this.shiftLongPressTimer);
+               break;
+             default:
+               break;
+           }
+         },
+
+        /**
+         * Callback function for when a space is pressed after punctuation.
+         * @return {Object} The keyset transitions the keyboard should make.
+         */
+        onSpaceAfterPunctuation: function() {
+           var detail = {};
+           detail.toKeyset = this.upperCaseKeysetId;
+           detail.nextKeyset = this.lowerCaseKeysetId;
+           state = KEY_STATES.TAPPED;
+           return detail;
+        },
+
         populateDetails: function() {
           var detail = this.super();
-          detail.shiftState = this.state;
-          switch(this.state) {
+          switch(state) {
             case(KEY_STATES.LOCKED):
-              detail.toKeyset = this.lockedCase;
+              detail.toKeyset = this.upperCaseKeysetId;
               break;
             case(KEY_STATES.UNLOCKED):
-              detail.toKeyset = this.unlockedCase;
+              detail.toKeyset = this.lowerCaseKeysetId;
               break;
             case(KEY_STATES.PRESSED):
-              detail.toKeyset = this.lockedCase;
-             // detail.nextKeyset = this.unlockedCase;
+              detail.toKeyset = this.upperCaseKeysetId;
               break;
             case(KEY_STATES.TAPPED):
-              detail.toKeyset = this.lockedCase;
-              detail.nextKeyset = this.unlockedCase;
+              detail.toKeyset = this.upperCaseKeysetId;
+              detail.nextKeyset = this.lowerCaseKeysetId;
+              break;
+            case(KEY_STATES.CHORDING):
+              detail.toKeyset = this.lowerCaseKeysetId;
+              break;
+            default:
               break;
           }
           return detail;

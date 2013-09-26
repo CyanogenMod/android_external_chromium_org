@@ -42,9 +42,9 @@ LOCAL_SRC_FILES := \
 	ui/base/clipboard/clipboard_constants.cc \
 	ui/base/clipboard/custom_data_helper.cc \
 	ui/base/clipboard/scoped_clipboard_writer.cc \
-	ui/base/latency_info.cc \
 	ui/base/l10n/l10n_util.cc \
 	ui/base/l10n/l10n_util_android.cc \
+	ui/base/l10n/l10n_util_plurals.cc \
 	ui/base/l10n/l10n_util_posix.cc \
 	ui/base/l10n/time_format.cc \
 	ui/base/layout.cc \
@@ -57,7 +57,6 @@ LOCAL_SRC_FILES := \
 	ui/base/resource/data_pack.cc \
 	ui/base/resource/resource_bundle.cc \
 	ui/base/resource/resource_bundle_android.cc \
-	ui/base/sequential_id_generator.cc \
 	ui/base/text/bytes_formatting.cc \
 	ui/base/touch/touch_device_android.cc \
 	ui/base/touch/touch_enabled.cc \
@@ -66,7 +65,9 @@ LOCAL_SRC_FILES := \
 	ui/base/ui_base_switches.cc \
 	ui/base/ui_base_switches_util.cc \
 	ui/base/window_open_disposition.cc \
+	ui/events/event_switches.cc \
 	ui/events/keycodes/keyboard_code_conversion_android.cc \
+	ui/events/latency_info.cc \
 	ui/gfx/android/device_display_info.cc \
 	ui/gfx/android/java_bitmap.cc \
 	ui/gfx/animation/animation.cc \
@@ -116,6 +117,7 @@ LOCAL_SRC_FILES := \
 	ui/gfx/screen.cc \
 	ui/gfx/screen_android.cc \
 	ui/gfx/scrollbar_size.cc \
+	ui/gfx/sequential_id_generator.cc \
 	ui/gfx/shadow_value.cc \
 	ui/gfx/size.cc \
 	ui/gfx/size_conversions.cc \
@@ -176,7 +178,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -196,8 +197,8 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -296,7 +297,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -316,8 +316,8 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \

@@ -35,7 +35,7 @@
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(USE_X11)
-#include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_types.h"
 #endif
 
 namespace ash {
@@ -47,7 +47,7 @@ namespace {
 void DisableInput(XID window) {
   long event_mask = ExposureMask | VisibilityChangeMask |
       StructureNotifyMask | PropertyChangeMask;
-  XSelectInput(ui::GetXDisplay(), window, event_mask);
+  XSelectInput(gfx::GetXDisplay(), window, event_mask);
 }
 #endif
 
@@ -127,10 +127,8 @@ class CursorWindowDelegate : public aura::WindowDelegate {
   // take 2x's image and paint as if it's 1x image.
   void SetCursorImage(const gfx::ImageSkia& image,
                       const gfx::Display& display) {
-    device_scale_factor_ =
-        ui::GetScaleFactorFromScale(display.device_scale_factor());
     const gfx::ImageSkiaRep& image_rep =
-        image.GetRepresentation(device_scale_factor_);
+        image.GetRepresentation(display.device_scale_factor());
     size_ = image_rep.pixel_size();
     cursor_image_ = gfx::ImageSkia::CreateFrom1xBitmap(image_rep.sk_bitmap());
   }
@@ -139,7 +137,6 @@ class CursorWindowDelegate : public aura::WindowDelegate {
 
  private:
   gfx::ImageSkia cursor_image_;
-  ui::ScaleFactor device_scale_factor_;
   gfx::Size size_;
 
   DISALLOW_COPY_AND_ASSIGN(CursorWindowDelegate);
@@ -161,10 +158,10 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
   static int mirror_root_window_count = 0;
 
   if (!root_window_.get()) {
-    const gfx::Rect& bounds_in_pixel = display_info.bounds_in_pixel();
-    aura::RootWindow::CreateParams params(bounds_in_pixel);
+    const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
+    aura::RootWindow::CreateParams params(bounds_in_native);
     params.host = Shell::GetInstance()->root_window_host_factory()->
-        CreateRootWindowHost(bounds_in_pixel);
+        CreateRootWindowHost(bounds_in_native);
     root_window_.reset(new aura::RootWindow(params));
     root_window_->SetName(
         base::StringPrintf("MirrorRootWindow-%d", mirror_root_window_count++));
@@ -201,7 +198,7 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
     cursor_window_->Show();
   } else {
     GetRootWindowSettings(root_window_.get())->display_id = display_info.id();
-    root_window_->SetHostBounds(display_info.bounds_in_pixel());
+    root_window_->SetHostBounds(display_info.bounds_in_native());
   }
 
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();

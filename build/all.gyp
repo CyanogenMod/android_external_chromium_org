@@ -64,8 +64,8 @@
             '../third_party/WebKit/public/all.gyp:*',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
+            '../webkit/glue/webkit_glue.gyp:*',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:*',
-            '../webkit/support/webkit_support.gyp:*',
             '<(libjpeg_gyp_path):*',
           ],
         }, { #  'OS=="ios"'
@@ -217,6 +217,9 @@
           'dependencies': [
             '../cc/cc_tests.gyp:cc_unittests',
             '../chrome/chrome.gyp:browser_tests',
+            '../chrome/chrome.gyp:chromedriver_tests',
+            '../chrome/chrome.gyp:chromedriver_unittests',
+            # TODO(kkania): Remove these after infra no longer depends on them.
             '../chrome/chrome.gyp:chromedriver2_tests',
             '../chrome/chrome.gyp:chromedriver2_unittests',
             '../chrome/chrome.gyp:interactive_ui_tests',
@@ -227,8 +230,9 @@
             '../content/content.gyp:content_shell',
             '../content/content.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
-            '../gpu/gpu.gyp:gpu_unittests',
+            '../google_apis/google_apis.gyp:google_apis_unittests',
             '../gpu/gles2_conform_support/gles2_conform_support.gyp:gles2_conform_support',
+            '../gpu/gpu.gyp:gpu_unittests',
             '../ipc/ipc.gyp:ipc_tests',
             '../jingle/jingle.gyp:jingle_unittests',
             '../media/media.gyp:media_unittests',
@@ -236,10 +240,10 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sync/sync.gyp:sync_unit_tests',
+            '../third_party/WebKit/public/all.gyp:all_blink',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
-            '../third_party/WebKit/public/all.gyp:all_blink',
           ],
         }],
         ['OS=="win"', {
@@ -466,9 +470,9 @@
           'target_name': 'chromium_builder_chromedriver',
           'type': 'none',
           'dependencies': [
-            '../chrome/chrome.gyp:chromedriver2_server',
-            '../chrome/chrome.gyp:chromedriver2_tests',
-            '../chrome/chrome.gyp:chromedriver2_unittests',
+            '../chrome/chrome.gyp:chromedriver',
+            '../chrome/chrome.gyp:chromedriver_tests',
+            '../chrome/chrome.gyp:chromedriver_unittests',
           ],
         },  # target_name: chromium_builder_chromedriver
         {
@@ -787,9 +791,7 @@
                     '../chrome/chrome.gyp:crash_service_win64',
                     '../chrome_frame/chrome_frame.gyp:npchrome_frame',
                     # Omitting tests from Win64 to speed up cycle times.
-                    '../chrome/chrome.gyp:automated_ui_tests',
                     '../chrome/chrome.gyp:interactive_ui_tests',
-                    '../chrome/chrome.gyp:reliability_tests',
                   ],
                 }],
                 ['component != "shared_library" and wix_exists == "True" and \

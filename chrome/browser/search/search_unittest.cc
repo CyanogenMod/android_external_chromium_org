@@ -711,6 +711,14 @@ TEST_F(SearchTest, InstantCacheableNTPNavigationEntry) {
                                    controller.GetLastCommittedEntry()));
 }
 
+TEST_F(SearchTest, UseLocalNTPInIncognito) {
+  EnableInstantExtendedAPIForTesting();
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+      "Group1 use_cacheable_ntp:1"));
+  EXPECT_EQ(GURL(), chrome::GetNewTabPageURL(
+      profile()->GetOffTheRecordProfile()));
+}
+
 TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
   // Instant is disabled, so no Instant URL.
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
@@ -829,6 +837,15 @@ TEST_F(SearchTest, ShouldUseCacheableNTP_EnabledViaFinch) {
   EnableInstantExtendedAPIForTesting();
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
       "Group1 use_cacheable_ntp:1"));
+  EXPECT_TRUE(ShouldUseCacheableNTP());
+}
+
+TEST_F(SearchTest, ShouldUseCacheableNTP_EnabledViaCommandLine) {
+  EnableInstantExtendedAPIForTesting();
+  CommandLine::ForCurrentProcess()->
+      AppendSwitch(switches::kUseCacheableNewTabPage);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+      "Group1 use_cacheable_ntp:0"));
   EXPECT_TRUE(ShouldUseCacheableNTP());
 }
 

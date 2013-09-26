@@ -73,8 +73,6 @@ const uint32 kNaClPluginPermissions = ppapi::PERMISSION_PRIVATE |
 const char kPnaclPluginMimeType[] = "application/x-pnacl";
 const char kPnaclPluginExtension[] = "";
 const char kPnaclPluginDescription[] = "Portable Native Client Executable";
-const uint32 kPnaclPluginPermissions = ppapi::PERMISSION_PRIVATE |
-                                       ppapi::PERMISSION_DEV;
 
 const char kO3DPluginName[] = "Google Talk Plugin Video Accelerator";
 const char kO3DPluginMimeType[] ="application/vnd.o3d.auto";
@@ -89,6 +87,13 @@ const char kO1DPluginExtension[] = "";
 const char kO1DPluginDescription[] = "Google Talk Plugin Video Renderer";
 const uint32 kO1DPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                      ppapi::PERMISSION_DEV;
+
+const char kEffectsPluginName[] = "Google Talk Effects Plugin";
+const char kEffectsPluginMimeType[] ="application/x-ppapi-hangouts-effects";
+const char kEffectsPluginExtension[] = "";
+const char kEffectsPluginDescription[] = "Google Talk Effects Plugin";
+const uint32 kEffectsPluginPermissions = ppapi::PERMISSION_PRIVATE |
+                                         ppapi::PERMISSION_DEV;
 
 const char kGTalkPluginName[] = "Google Talk Plugin";
 const char kGTalkPluginMimeType[] ="application/googletalk";
@@ -108,8 +113,6 @@ const char kRemotingViewerPluginDescription[] =
     "shared with you. To use this plugin you must first install the "
     "<a href=\"https://chrome.google.com/remotedesktop\">"
     "Chrome Remote Desktop</a> webapp.";
-const base::FilePath::CharType kRemotingViewerPluginPath[] =
-    FILE_PATH_LITERAL("internal-remoting-viewer");
 // Use a consistent MIME-type regardless of branding.
 const char kRemotingViewerPluginMimeType[] =
     "application/vnd.chromium.remoting-viewer";
@@ -227,6 +230,27 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
     }
   }
 
+  // TODO(vrk): Remove this when NaCl effects plugin replaces the ppapi effects
+  // plugin.
+  static bool skip_effects_file_check = false;
+  if (PathService::Get(chrome::FILE_EFFECTS_PLUGIN, &path)) {
+    if (skip_effects_file_check || base::PathExists(path)) {
+      content::PepperPluginInfo effects;
+      effects.path = path;
+      effects.name = kEffectsPluginName;
+      effects.is_out_of_process = true;
+      effects.is_sandboxed = true;
+      effects.permissions = kEffectsPluginPermissions;
+      content::WebPluginMimeType effects_mime_type(kEffectsPluginMimeType,
+                                                   kEffectsPluginExtension,
+                                                   kEffectsPluginDescription);
+      effects.mime_types.push_back(effects_mime_type);
+      plugins->push_back(effects);
+
+      skip_effects_file_check = true;
+    }
+  }
+
   static bool skip_gtalk_file_check = false;
   if (PathService::Get(chrome::FILE_GTALK_PLUGIN, &path)) {
     if (skip_gtalk_file_check || base::PathExists(path)) {
@@ -278,7 +302,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
   info.is_out_of_process = true;
   info.name = kRemotingViewerPluginName;
   info.description = kRemotingViewerPluginDescription;
-  info.path = base::FilePath(kRemotingViewerPluginPath);
+  info.path = base::FilePath(
+      chrome::ChromeContentClient::kRemotingViewerPluginPath);
   content::WebPluginMimeType remoting_mime_type(
       kRemotingViewerPluginMimeType,
       kRemotingViewerPluginMimeExtension,

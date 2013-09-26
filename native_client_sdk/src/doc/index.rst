@@ -10,6 +10,7 @@ Contents:
    overview.rst
    quick-start.rst
    nacl-and-pnacl.rst
+   glossary.rst
    sdk/download.rst
    sdk/examples.rst
    sdk/index.rst
@@ -24,10 +25,16 @@ Contents:
    devguide/coding/3D-graphics.rst
    devguide/coding/audio.rst
    devguide/coding/application-structure.rst
+   devguide/coding/native-client-modules.rst
    devguide/coding/FileIO.rst
    devguide/coding/message-system.rst
    devguide/coding/progress-events.rst
+   devguide/coding/url-loading.rst
+   devguide/coding/view-focus-input-events.rst
    devguide/distributing.rst
    community/application-gallery.rst
    community/middleware.rst
    peppercpp/index.rst
+   faq.rst
+   help.rst
+   version.rst

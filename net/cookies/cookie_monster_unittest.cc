@@ -89,7 +89,6 @@ struct CookieMonsterTestTraits {
 
   static const bool is_cookie_monster              = true;
   static const bool supports_http_only             = true;
-  static const bool supports_cookies_with_info     = true;
   static const bool supports_non_dotted_domains    = true;
   static const bool supports_trailing_dots         = true;
   static const bool filters_schemes                = true;
@@ -2683,6 +2682,47 @@ TEST_F(CookieMonsterTest, PersisentCookieStorageTest) {
   EXPECT_TRUE(SetCookie(cm.get(), url_google_, "B=Bar"));
   this->MatchCookieLines("A=Foo; B=Bar", GetCookies(cm.get(), url_google_));
   EXPECT_EQ(5u, store->commands().size());
+}
+
+// Test to assure that cookies with control characters are purged appropriately.
+// See http://crbug.com/238041 for background.
+TEST_F(CookieMonsterTest, ControlCharacterPurge) {
+  const Time now1(Time::Now());
+  const Time now2(Time::Now() + TimeDelta::FromSeconds(1));
+  const Time now3(Time::Now() + TimeDelta::FromSeconds(2));
+  const Time later(now1 + TimeDelta::FromDays(1));
+  const GURL url("http://host/path");
+  const std::string domain("host");
+  const std::string path("/path");
+
+  scoped_refptr<MockPersistentCookieStore> store(
+      new MockPersistentCookieStore);
+
+  std::vector<CanonicalCookie*> initial_cookies;
+
+  AddCookieToList(domain,
+                  "foo=bar; path=" + path,
+                  now1,
+                  &initial_cookies);
+
+  // We have to manually build this cookie because it contains a control
+  // character, and our cookie line parser rejects control characters.
+  CanonicalCookie *cc = new CanonicalCookie(url, "baz", "\x05" "boo", domain,
+                                            path, now2, later, now2, false,
+                                            false, COOKIE_PRIORITY_DEFAULT);
+  initial_cookies.push_back(cc);
+
+  AddCookieToList(domain,
+                  "hello=world; path=" + path,
+                  now3,
+                  &initial_cookies);
+
+  // Inject our initial cookies into the mock PersistentCookieStore.
+  store->SetLoadExpectation(true, initial_cookies);
+
+  scoped_refptr<CookieMonster> cm(new CookieMonster(store.get(), NULL));
+
+  EXPECT_EQ("foo=bar; hello=world", GetCookies(cm.get(), url));
 }
 
 }  // namespace net

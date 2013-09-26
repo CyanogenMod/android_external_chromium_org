@@ -148,6 +148,13 @@ base::FilePath AppListServiceImpl::GetProfilePath(
 }
 
 void AppListServiceImpl::SetProfilePath(const base::FilePath& profile_path) {
+  // Ensure we don't set the pref to a managed user's profile path.
+  ProfileInfoCache& profile_info =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  size_t profile_index = profile_info.GetIndexOfProfileWithPath(profile_path);
+  if (profile_info.ProfileIsManagedAtIndex(profile_index))
+    return;
+
   g_browser_process->local_state()->SetString(
       prefs::kAppListProfile,
       profile_path.BaseName().MaybeAsASCII());
@@ -203,4 +210,11 @@ void AppListServiceImpl::HandleCommandLineFlags(Profile* initial_profile) {
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppList))
     SetAppListEnabledPreference(false);
+
+  // Send app list usage stats after a delay.
+  const int kSendUsageStatsDelay = 5;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&AppListServiceImpl::SendAppListStats),
+      base::TimeDelta::FromSeconds(kSendUsageStatsDelay));
 }

@@ -36,7 +36,6 @@ namespace notifications = api::notifications;
 
 namespace {
 
-const char kResultKey[] = "result";
 const char kMissingRequiredPropertiesForCreateNotification[] =
     "Some of the required properties are missing: type, iconUrl, title and "
     "message.";
@@ -102,8 +101,7 @@ bool NotificationBitmapToGfxImage(
   }
 
   // TODO(dewittj): Handle HiDPI images.
-  ui::ScaleFactor scale_factor(ui::SCALE_FACTOR_100P);
-  gfx::ImageSkia skia(gfx::ImageSkiaRep(bitmap, scale_factor));
+  gfx::ImageSkia skia(gfx::ImageSkiaRep(bitmap, 1.0f));
   *return_image = gfx::Image(skia);
   return true;
 }

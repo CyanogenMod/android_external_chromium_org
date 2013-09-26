@@ -47,11 +47,12 @@ class PaintTimeCounter;
 class MemoryHistory;
 class RenderingStatsInstrumentation;
 class RenderPassDrawQuad;
+class ScrollbarLayerImplBase;
 class TextureMailboxDeleter;
 class TopControlsManager;
 class UIResourceBitmap;
+class UIResourceRequest;
 struct RendererCapabilities;
-struct UIResourceRequest;
 
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
@@ -116,6 +117,7 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void ScrollEnd() OVERRIDE;
   virtual InputHandler::ScrollStatus FlingScrollBegin() OVERRIDE;
   virtual void NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) OVERRIDE;
+  virtual void MouseMoveAt(gfx::Point viewport_point) OVERRIDE;
   virtual void PinchGestureBegin() OVERRIDE;
   virtual void PinchGestureUpdate(float magnify_delta,
                                   gfx::Point anchor) OVERRIDE;
@@ -184,6 +186,9 @@ class CC_EXPORT LayerTreeHostImpl
   // called. When disabled, it calls client_->NotifyReadyToActivate()
   // immediately if any notifications had been blocked while blocking.
   virtual void BlockNotifyReadyToActivateForTesting(bool block);
+
+  // This allows us to inject DidInitializeVisibleTile events for testing.
+  void DidInitializeVisibleTileForTesting();
 
   bool device_viewport_valid_for_tile_management() const {
     return device_viewport_valid_for_tile_management_;
@@ -283,6 +288,7 @@ class CC_EXPORT LayerTreeHostImpl
   ManagedMemoryPolicy ActualManagedMemoryPolicy() const;
 
   size_t memory_allocation_limit_bytes() const;
+  int memory_allocation_priority_cutoff() const;
 
   void SetViewportSize(gfx::Size device_viewport_size);
 
@@ -400,16 +406,15 @@ class CC_EXPORT LayerTreeHostImpl
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
 
-  void CreateUIResource(UIResourceId uid,
-                        scoped_refptr<UIResourceBitmap> bitmap);
+  virtual void CreateUIResource(UIResourceId uid,
+                                const UIResourceBitmap& bitmap);
   // Deletes a UI resource.  May safely be called more than once.
-  void DeleteUIResource(UIResourceId uid);
+  virtual void DeleteUIResource(UIResourceId uid);
   void EvictAllUIResources();
   bool EvictedUIResourcesExist() const;
 
-  ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
-
-  void DidInitializeVisibleTileForTesting() { DidInitializeVisibleTile(); }
+  virtual ResourceProvider::ResourceId ResourceIdForUIResource(
+      UIResourceId uid) const;
 
  protected:
   LayerTreeHostImpl(
@@ -477,6 +482,12 @@ class CC_EXPORT LayerTreeHostImpl
 
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
+  LayerImpl* FindScrollLayerForViewportPoint(
+      gfx::Point viewport_point,
+      InputHandler::ScrollInputType type,
+      bool* scroll_on_main_thread);
+  float DeviceSpaceDistanceToLayer(gfx::PointF device_viewport_point,
+                                   LayerImpl* layer_impl);
   void StartScrollbarAnimationRecursive(LayerImpl* layer, base::TimeTicks time);
   void SetManagedMemoryPolicy(const ManagedMemoryPolicy& policy,
                               bool zero_budget);
@@ -503,6 +514,8 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<TileManager> tile_manager_;
   scoped_ptr<Renderer> renderer_;
+
+  GlobalStateThatImpactsTilePriority global_tile_state_;
 
   // Tree currently being drawn.
   scoped_ptr<LayerTreeImpl> active_tree_;
@@ -533,6 +546,7 @@ class CC_EXPORT LayerTreeHostImpl
   gfx::Vector2dF current_fling_velocity_;
 
   bool pinch_gesture_active_;
+  bool pinch_gesture_end_should_clear_scrolling_layer_;
   gfx::Point previous_pinch_anchor_;
 
   // This is set by AnimateLayers() and used by UpdateAnimationState()

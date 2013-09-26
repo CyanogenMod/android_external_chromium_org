@@ -479,8 +479,7 @@ void Dispatcher::WebKitInitialized() {
     InitOriginPermissions(extension);
   }
 
-  if (IsWithinPlatformApp())
-    EnableCustomElementWhiteList();
+  EnableCustomElementWhiteList();
 
   is_webkit_initialized_ = true;
 }
@@ -1114,18 +1113,17 @@ void Dispatcher::DidCreateScriptContext(
     module_system->Require("windowControls");
   }
 
-  // Only platform apps support the <webview> tag, because the "webView" and
-  // "denyWebView" modules will affect the performance of DOM modifications
-  // (http://crbug.com/196453).
-  if (context_type == Feature::BLESSED_EXTENSION_CONTEXT &&
-      is_within_platform_app) {
+  if (context_type == Feature::BLESSED_EXTENSION_CONTEXT) {
     // Note: setting up the WebView class here, not the chrome.webview API.
     // The API will be automatically set up when first used.
     if (extension->HasAPIPermission(APIPermission::kWebView)) {
       module_system->Require("webView");
+      // TODO(mtomasz): Remove the Files app from the whitelist in M-31.
+      // crbug.com/297936
       bool includeExperimental =
           GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV ||
-          extension->id() == extension_misc::kIdentityApiUiAppId;
+          extension->id() == extension_misc::kIdentityApiUiAppId ||
+          extension->id() == "hhaomjibdihmijegdhdafkllkbggdgoj";  // Files App.
       if (!includeExperimental) {
         // TODO(asargent) We need a whitelist for webview experimental.
         // crbug.com/264852
@@ -1244,16 +1242,8 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
 
   if (is_webkit_initialized_) {
     InitOriginPermissions(extension);
-    // DOMActivity logger for a main world controlled by an extension (as in
-    // the case of an extension background page, options page, popup etc.)
-    // gets an empty title.
     DOMActivityLogger::AttachToWorld(DOMActivityLogger::kMainWorldId,
-                                     extension_id,
-                                     extension->url(),
-                                     string16());
-
-    if (IsWithinPlatformApp())
-      EnableCustomElementWhiteList();
+                                     extension_id);
   }
 }
 

@@ -130,8 +130,7 @@ WallpaperManager* WallpaperManager::Get() {
 }
 
 WallpaperManager::WallpaperManager()
-    : no_observers_(true),
-      loaded_wallpapers_(0),
+    : loaded_wallpapers_(0),
       wallpaper_loader_(new UserImageLoader(ImageDecoder::ROBUST_JPEG_CODEC)),
       command_line_for_testing_(NULL),
       should_cache_wallpaper_(false),
@@ -156,15 +155,13 @@ WallpaperManager::WallpaperManager()
 WallpaperManager::~WallpaperManager() {
   // TODO(bshe): Lifetime of WallpaperManager needs more consideration.
   // http://crbug.com/171694
-  DCHECK(no_observers_);
+  DCHECK(!show_user_name_on_signin_subscription_);
   ClearObsoleteWallpaperPrefs();
   weak_factory_.InvalidateWeakPtrs();
 }
 
 void WallpaperManager::Shutdown() {
-  CrosSettings::Get()->RemoveSettingsObserver(
-      kAccountsPrefShowUserNamesOnSignIn, this);
-  no_observers_ = true;
+  show_user_name_on_signin_subscription_.reset();
 }
 
 // static
@@ -175,9 +172,11 @@ void WallpaperManager::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 void WallpaperManager::AddObservers() {
-  CrosSettings::Get()->AddSettingsObserver(kAccountsPrefShowUserNamesOnSignIn,
-                                           this);
-  no_observers_ = false;
+  show_user_name_on_signin_subscription_ =
+      CrosSettings::Get()->AddSettingsObserver(
+          kAccountsPrefShowUserNamesOnSignIn,
+          base::Bind(&WallpaperManager::InitializeRegisteredDeviceWallpaper,
+                     base::Unretained(this)));
 }
 
 void WallpaperManager::EnsureLoggedInUserWallpaperLoaded() {
@@ -310,13 +309,6 @@ void WallpaperManager::Observe(int type,
       }
       break;
     }
-    case chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED: {
-      if (*content::Details<const std::string>(details).ptr() ==
-          kAccountsPrefShowUserNamesOnSignIn) {
-        InitializeRegisteredDeviceWallpaper();
-      }
-      break;
-    }
     default:
       NOTREACHED() << "Unexpected notification " << type;
   }
@@ -428,7 +420,7 @@ void WallpaperManager::SetCustomWallpaper(const std::string& username,
   bool is_persistent =
       !UserManager::Get()->IsUserNonCryptohomeDataEphemeral(username);
 
-  wallpaper.image().EnsureRepsForSupportedScaleFactors();
+  wallpaper.image().EnsureRepsForSupportedScales();
   scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper.image().DeepCopy());
 
   WallpaperInfo wallpaper_info = {

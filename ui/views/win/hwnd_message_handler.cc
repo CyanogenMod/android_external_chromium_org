@@ -11,13 +11,13 @@
 #include "base/debug/trace_event.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
-#include "ui/base/gestures/gesture_sequence.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/win/mouse_wheel_util.h"
 #include "ui/base/win/shell.h"
 #include "ui/base/win/touch_input.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/gestures/gesture_sequence.h"
 #include "ui/events/keycodes/keyboard_code_conversion_win.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
@@ -52,7 +52,7 @@ namespace {
 // completed.
 class MoveLoopMouseWatcher {
  public:
-  explicit MoveLoopMouseWatcher(HWNDMessageHandler* host);
+  MoveLoopMouseWatcher(HWNDMessageHandler* host, bool hide_on_escape);
   ~MoveLoopMouseWatcher();
 
   // Returns true if the mouse is up, or if we couldn't install the hook.
@@ -72,6 +72,9 @@ class MoveLoopMouseWatcher {
   // HWNDMessageHandler that created us.
   HWNDMessageHandler* host_;
 
+  // Should the window be hidden when escape is pressed?
+  const bool hide_on_escape_;
+
   // Did we get a mouse up?
   bool got_mouse_up_;
 
@@ -85,8 +88,10 @@ class MoveLoopMouseWatcher {
 // static
 MoveLoopMouseWatcher* MoveLoopMouseWatcher::instance_ = NULL;
 
-MoveLoopMouseWatcher::MoveLoopMouseWatcher(HWNDMessageHandler* host)
+MoveLoopMouseWatcher::MoveLoopMouseWatcher(HWNDMessageHandler* host,
+                                           bool hide_on_escape)
     : host_(host),
+      hide_on_escape_(hide_on_escape),
       got_mouse_up_(false),
       mouse_hook_(NULL),
       key_hook_(NULL) {
@@ -149,11 +154,8 @@ LRESULT CALLBACK MoveLoopMouseWatcher::KeyHook(int n_code,
           &value,
           sizeof(value));
     }
-    // Hide the window on escape, otherwise the window is visibly going to snap
-    // back to the original location before we close it.
-    // This behavior is specific to tab dragging, in that we generally wouldn't
-    // want this functionality if we have other consumers using this API.
-    instance_->host_->Hide();
+    if (instance_->hide_on_escape_)
+      instance_->host_->Hide();
   }
   return CallNextHookEx(instance_->key_hook_, n_code, w_param, l_param);
 }
@@ -684,9 +686,16 @@ bool HWNDMessageHandler::IsMaximized() const {
   return !!::IsZoomed(hwnd());
 }
 
-bool HWNDMessageHandler::RunMoveLoop(const gfx::Vector2d& drag_offset) {
+bool HWNDMessageHandler::RunMoveLoop(const gfx::Vector2d& drag_offset,
+                                     bool hide_on_escape) {
   ReleaseCapture();
-  MoveLoopMouseWatcher watcher(this);
+  MoveLoopMouseWatcher watcher(this, hide_on_escape);
+#if defined(USE_AURA)
+  // In Aura, we handle touch events asynchronously. So we need to allow nested
+  // tasks while in windows move loop.
+  base::MessageLoop::ScopedNestableTaskAllower allow_nested(
+      base::MessageLoop::current());
+#endif
   SendMessage(hwnd(), WM_SYSCOMMAND, SC_MOVE | 0x0002, GetMessagePos());
   // Windows doesn't appear to offer a way to determine whether the user
   // canceled the move or not. We assume if the user released the mouse it was
@@ -900,7 +909,8 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
 
   // Only top level widget should store/restore focus.
   if (message == WM_ACTIVATE && delegate_->CanSaveFocus())
-    PostProcessActivateMessage(LOWORD(w_param));
+    PostProcessActivateMessage(LOWORD(w_param), !!HIWORD(w_param));
+
   if (message == WM_ENABLE && restore_focus_when_enabled_) {
     // This path should be executed only for top level as
     // restore_focus_when_enabled_ is set in PostProcessActivateMessage.
@@ -951,9 +961,10 @@ void HWNDMessageHandler::SetInitialFocus() {
   }
 }
 
-void HWNDMessageHandler::PostProcessActivateMessage(int activation_state) {
+void HWNDMessageHandler::PostProcessActivateMessage(int activation_state,
+                                                    bool minimized) {
   DCHECK(delegate_->CanSaveFocus());
-  if (WA_INACTIVE == activation_state) {
+  if (WA_INACTIVE == activation_state || minimized) {
     // We might get activated/inactivated without being enabled, so we need to
     // clear restore_focus_when_enabled_.
     restore_focus_when_enabled_ = false;
@@ -1025,11 +1036,17 @@ void HWNDMessageHandler::ClientAreaSizeChanged() {
   if (!IsMinimized()) {
     if (delegate_->WidgetSizeIsClientSize()) {
       GetClientRect(hwnd(), &r);
-      // This is needed due to a hack that works around a "feature" in
-      // Windows's handling of WM_NCCALCSIZE. See the comment near the end of
-      // GetClientAreaInsets for more details.
-      if (remove_standard_frame_ && !IsMaximized())
-        r.bottom += kClientAreaBottomInsetHack;
+      gfx::Insets insets;
+      bool got_insets = GetClientAreaInsets(&insets);
+      if (got_insets) {
+        // This is needed due to a hack that works around a "feature" in
+        // Windows's handling of WM_NCCALCSIZE. See the comment near the end of
+        // GetClientAreaInsets for more details.
+        if ((remove_standard_frame_ && !IsMaximized()) ||
+            !fullscreen_handler_->fullscreen()) {
+          r.bottom += kClientAreaBottomInsetHack;
+        }
+      }
     } else {
       GetWindowRect(hwnd(), &r);
     }
@@ -1037,10 +1054,8 @@ void HWNDMessageHandler::ClientAreaSizeChanged() {
   gfx::Size s(std::max(0, static_cast<int>(r.right - r.left)),
               std::max(0, static_cast<int>(r.bottom - r.top)));
   delegate_->HandleClientSizeChanged(s);
-  if (use_layered_buffer_) {
-    layered_window_contents_.reset(
-        new gfx::Canvas(s, ui::SCALE_FACTOR_100P, false));
-  }
+  if (use_layered_buffer_)
+    layered_window_contents_.reset(new gfx::Canvas(s, 1.0f, false));
 }
 
 bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
@@ -1086,11 +1101,6 @@ bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
     return true;
   }
 
-#if defined(USE_AURA)
-  // The -1 hack below breaks rendering in Aura.
-  // See http://crbug.com/172099 http://crbug.com/267131
-  *insets = gfx::Insets();
-#else
   // This is weird, but highly essential. If we don't offset the bottom edge
   // of the client rect, the window client area and window area will match,
   // and when returning to glass rendering mode from non-glass, the client
@@ -1102,8 +1112,11 @@ bool HWNDMessageHandler::GetClientAreaInsets(gfx::Insets* insets) const {
   // rect when using the opaque frame.
   // Note: this is only required for non-fullscreen windows. Note that
   // fullscreen windows are in restored state, not maximized.
-  *insets = gfx::Insets(0, 0, fullscreen_handler_->fullscreen() ? 0 : 1, 0);
-#endif
+  // Note that previously we used to inset by 1 instead of outset, but that
+  // doesn't work with Aura: http://crbug.com/172099 http://crbug.com/277228
+  *insets = gfx::Insets(
+      0, 0,
+      fullscreen_handler_->fullscreen() ? 0 : kClientAreaBottomInsetHack, 0);
   return true;
 }
 

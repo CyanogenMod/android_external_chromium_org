@@ -27,7 +27,7 @@
 #include "media/base/video_frame.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gpu_preference.h"
@@ -659,10 +659,9 @@ IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderMsg_Decode,
 
 // Sent from Renderer process to the GPU process to give the texture IDs for
 // the textures the decoder will use for output.
-IPC_MESSAGE_ROUTED3(AcceleratedVideoDecoderMsg_AssignPictureBuffers,
-                    std::vector<int32>, /* Picture buffer ID */
-                    std::vector<uint32>, /* Texture ID */
-                    std::vector<gfx::Size>) /* Size */
+IPC_MESSAGE_ROUTED2(AcceleratedVideoDecoderMsg_AssignPictureBuffers,
+                    std::vector<int32>,  /* Picture buffer ID */
+                    std::vector<uint32>) /* Texture ID */
 
 // Send from Renderer process to the GPU process to recycle the given picture
 // buffer for further decoding.

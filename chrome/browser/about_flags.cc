@@ -29,6 +29,8 @@
 #include "media/base/media_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/compositor/compositor_switches.h"
+#include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -205,6 +207,22 @@ const Experiment::Choice kImplSidePaintingChoices[] = {
     cc::switches::kDisableImplSidePainting, ""}
 };
 
+const Experiment::Choice kDeadlineSchedulingChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kEnableDeadlineScheduling, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kDisableDeadlineScheduling, ""}
+};
+
+const Experiment::Choice kUIDeadlineSchedulingChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED,
+    switches::kUIEnableDeadlineScheduling, ""},
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DISABLED,
+    switches::kUIDisableDeadlineScheduling, ""}
+};
+
 const Experiment::Choice kLCDTextChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_GENERIC_EXPERIMENT_CHOICE_ENABLED, cc::switches::kEnableLCDText, ""},
@@ -263,6 +281,7 @@ const Experiment::Choice kSimpleCacheBackendChoices[] = {
     switches::kUseSimpleCacheBackend, "on"}
 };
 
+#if defined(USE_AURA)
 const Experiment::Choice kTabCaptureUpscaleQualityChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_FAST,
@@ -282,6 +301,7 @@ const Experiment::Choice kTabCaptureDownscaleQualityChoices[] = {
   { IDS_FLAGS_TAB_CAPTURE_SCALE_QUALITY_BEST,
     switches::kTabCaptureDownscaleQuality, "best" },
 };
+#endif
 
 const Experiment::Choice kMapImageChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
@@ -642,6 +662,13 @@ const Experiment kExperiments[] = {
                               switches::kDisableInstantExtendedAPI)
   },
   {
+    "use-cacheable-new-tab-page",
+    IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP,
+    IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP_DESCRIPTION,
+    kOsMac | kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kUseCacheableNewTabPage)
+  },
+  {
     "enable-local-first-load-ntp",
     IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP,
     IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP_DESCRIPTION,
@@ -701,7 +728,7 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_OVERLAY_SCROLLBARS_DESCRIPTION,
     // Uses the system preference on Mac (a different implementation).
     // On Android, this is always enabled.
-    kOsWin | kOsLinux | kOsCrOS,
+    kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableOverlayScrollbars)
   },
   {
@@ -765,7 +792,7 @@ const Experiment kExperiments[] = {
                               switches::kDisableAsyncDns)
   },
   {
-    "disable-media-source",
+    "disable-webkit-media-source",
     IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_NAME,
     IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION,
     kOsAll,
@@ -793,6 +820,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kOverrideEncryptedMediaCanPlayType)
   },
 #if defined(OS_ANDROID)
+  {
+    "disable-infobar-for-protected-media-identifier",
+    IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_NAME,
+    IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_DESCRIPTION,
+    kOsAndroid,
+    SINGLE_VALUE_TYPE(switches::kDisableInfobarForProtectedMediaIdentifier)
+  },
   {
     "mediadrm-enable-non-compositing",
     IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_NAME,
@@ -1054,11 +1088,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableMinimizeOnSecondLauncherItemClick)
   },
   {
-    "disable-overview-mode",
-    IDS_FLAGS_DISABLE_OVERVIEW_MODE_NAME,
-    IDS_FLAGS_DISABLE_OVERVIEW_MODE_DESCRIPTION,
+    "enable-overview-mode",
+    IDS_FLAGS_OVERVIEW_MODE_NAME,
+    IDS_FLAGS_OVERVIEW_MODE_DESCRIPTION,
     kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshDisableOverviewMode)
+    SINGLE_VALUE_TYPE(ash::switches::kAshEnableOverviewMode)
   },
   {
     "show-touch-hud",
@@ -1139,6 +1173,13 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(chromeos::switches::kEnableSamlSignin),
   },
+  {
+    "enable-multi-profiles",
+    IDS_FLAGS_ENABLE_MULTI_PROFILES_NAME,
+    IDS_FLAGS_ENABLE_MULTI_PROFILES_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kMultiProfiles),
+  },
 #endif  // defined(OS_CHROMEOS)
   {
     "views-textfield",
@@ -1215,6 +1256,14 @@ const Experiment kExperiments[] = {
       IDS_FLAGS_ENABLE_MEMORY_MONITOR_DESCRIPTION,
       kOsCrOS,
       SINGLE_VALUE_TYPE(ash::switches::kAshEnableMemoryMonitor),
+  },
+#endif
+#if defined(OS_CHROMEOS)
+  { "ash-enable-multi-profile-shelf",
+      IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_NAME,
+      IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_DESCRIPTION,
+      kOsCrOS,
+      SINGLE_VALUE_TYPE(ash::switches::kAshEnableMultiProfileShelfMenu),
   },
 #endif
 #endif
@@ -1409,6 +1458,23 @@ const Experiment kExperiments[] = {
     MULTI_VALUE_TYPE(kImplSidePaintingChoices)
   },
   {
+    "deadline-scheduling",
+    IDS_FLAGS_DEADLINE_SCHEDULING_NAME,
+    IDS_FLAGS_DEADLINE_SCHEDULING_DESCRIPTION,
+    kOsMac | kOsWin | kOsLinux | kOsCrOS | kOsAndroid,
+    MULTI_VALUE_TYPE(kDeadlineSchedulingChoices)
+  },
+  {
+    "ui-deadline-scheduling",
+    IDS_FLAGS_UI_DEADLINE_SCHEDULING_NAME,
+    IDS_FLAGS_UI_DEADLINE_SCHEDULING_DESCRIPTION,
+#ifdef USE_AURA
+    kOsWin | kOsLinux |
+#endif
+    kOsCrOS,
+    MULTI_VALUE_TYPE(kUIDeadlineSchedulingChoices)
+  },
+  {
     "lcd-text-aa",
     IDS_FLAGS_LCD_TEXT_NAME,
     IDS_FLAGS_LCD_TEXT_DESCRIPTION,
@@ -1534,11 +1600,12 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kDisableDeviceDiscovery)
   },
   {
-    "disable-device-discovery-notifications",
-    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_NAME,
-    IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION,
+    "device-discovery-notifications",
+    IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_NAME,
+    IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION,
     kOsWin | kOsLinux | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kDisableDeviceDiscoveryNotifications)
+    ENABLE_DISABLE_VALUE_TYPE(switches::kEnableDeviceDiscoveryNotifications,
+                              switches::kDisableDeviceDiscoveryNotifications)
   },
 #endif  // ENABLE_MDNS
 #if defined(OS_MACOSX)

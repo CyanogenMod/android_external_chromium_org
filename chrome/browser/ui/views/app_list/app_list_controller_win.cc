@@ -11,6 +11,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
@@ -40,6 +41,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -50,6 +52,8 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
+#include "net/base/url_util.h"
+#include "ui/app_list/app_list_model.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -61,10 +65,6 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/widget/widget.h"
 #include "win8/util/win8_util.h"
-
-#if defined(GOOGLE_CHROME_BUILD)
-#include "chrome/installer/util/install_util.h"
-#endif
 
 #if defined(USE_AURA)
 #include "ui/aura/root_window.h"
@@ -368,10 +368,14 @@ class AppListControllerDelegateWin : public AppListControllerDelegate {
   virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE;
   virtual void ActivateApp(Profile* profile,
                            const extensions::Extension* extension,
+                           AppListSource source,
                            int event_flags) OVERRIDE;
   virtual void LaunchApp(Profile* profile,
                          const extensions::Extension* extension,
+                         AppListSource source,
                          int event_flags) OVERRIDE;
+  virtual void ShowForProfileByPath(
+      const base::FilePath& profile_path) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateWin);
 };
@@ -609,6 +613,10 @@ class AppListViewWin {
     view_->OnSigninStatusChanged();
   }
 
+  void SetProfileByPath(const base::FilePath profile_path) {
+    view_->SetProfileByPath(profile_path);
+  }
+
  private:
   void UpdateArrowPositionAndAnchorPoint(const gfx::Point& cursor) {
     gfx::Screen* screen =
@@ -685,13 +693,26 @@ class AppListShower {
       return;
     }
 
-    DismissAppList();
-    CreateViewForProfile(requested_profile);
+    // If the current view exists, switch the delegate's profile and rebuild the
+    // model.
+    if (!view_) {
+      CreateViewForProfile(requested_profile);
+    } else if (requested_profile != profile_) {
+      profile_ = requested_profile;
+      view_->SetProfileByPath(requested_profile->GetPath());
+    }
 
     DCHECK(view_);
     EnsureHaveKeepAliveForView();
-    gfx::Point cursor = gfx::Screen::GetNativeScreen()->GetCursorScreenPoint();
-    view_->ShowNearCursor(cursor);
+    // If the app list isn't visible, move the app list to the cursor position
+    // before showing it.
+    if (!IsAppListVisible()) {
+      gfx::Point cursor =
+          gfx::Screen::GetNativeScreen()->GetCursorScreenPoint();
+      view_->ShowNearCursor(cursor);
+    } else {
+      view_->Show();
+    }
   }
 
   gfx::NativeWindow GetWindow() {
@@ -881,6 +902,13 @@ bool AppListControllerDelegateWin::CanPin() {
   return false;
 }
 
+void AppListControllerDelegateWin::ShowForProfileByPath(
+    const base::FilePath& profile_path) {
+  AppListService* service = AppListController::GetInstance();
+  service->SetProfilePath(profile_path);
+  service->Show();
+}
+
 void AppListControllerDelegateWin::OnShowExtensionPrompt() {
   AppListController::GetInstance()->set_can_close(false);
 }
@@ -922,15 +950,34 @@ void AppListControllerDelegateWin::CreateNewWindow(Profile* profile,
 }
 
 void AppListControllerDelegateWin::ActivateApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
-  LaunchApp(profile, extension, event_flags);
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
+  LaunchApp(profile, extension, source, event_flags);
 }
 
 void AppListControllerDelegateWin::LaunchApp(
-    Profile* profile, const extensions::Extension* extension, int event_flags) {
+    Profile* profile,
+    const extensions::Extension* extension,
+    AppListSource source,
+    int event_flags) {
   AppListServiceImpl::RecordAppListAppLaunch();
-  chrome::OpenApplication(chrome::AppLaunchParams(
-      profile, extension, NEW_FOREGROUND_TAB));
+
+  chrome::AppLaunchParams params(
+      profile, extension, NEW_FOREGROUND_TAB);
+
+  if (source != LAUNCH_FROM_UNKNOWN &&
+      extension->id() == extension_misc::kWebStoreAppId) {
+    // Set an override URL to include the source.
+    GURL extension_url = extensions::AppLaunchInfo::GetFullLaunchURL(extension);
+    params.override_url = net::AppendQueryParameter(
+        extension_url,
+        extension_urls::kWebstoreSourceField,
+        AppListSourceToString(source));
+  }
+
+  chrome::OpenApplication(params);
 }
 
 AppListController::AppListController()
@@ -980,7 +1027,6 @@ void AppListController::ShowForProfile(Profile* requested_profile) {
   RecordAppListLaunch();
 }
 
-
 void AppListController::DismissAppList() {
   shower_->DismissAppList();
 }
@@ -994,7 +1040,10 @@ void AppListController::OnLoadProfileForWarmup(Profile* initial_profile) {
   if (!IsWarmupNeeded())
     return;
 
+  base::Time before_warmup(base::Time::Now());
   shower_->WarmupForProfile(initial_profile);
+  UMA_HISTOGRAM_TIMES("Apps.AppListWarmupDuration",
+                      base::Time::Now() - before_warmup);
 }
 
 void AppListController::SetAppListNextPaintCallback(
@@ -1100,19 +1149,12 @@ void AppListController::CreateShortcut() {
 void AppListController::ScheduleWarmup() {
   // Post a task to create the app list. This is posted to not impact startup
   // time.
-  const int kInitWindowDelay = 5;
+  const int kInitWindowDelay = 30;
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&AppListController::LoadProfileForWarmup,
                  weak_factory_.GetWeakPtr()),
       base::TimeDelta::FromSeconds(kInitWindowDelay));
-
-  // Send app list usage stats after a delay.
-  const int kSendUsageStatsDelay = 5;
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&AppListController::SendAppListStats),
-      base::TimeDelta::FromSeconds(kSendUsageStatsDelay));
 }
 
 bool AppListController::IsWarmupNeeded() {

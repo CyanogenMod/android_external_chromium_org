@@ -9,7 +9,6 @@
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shell_observer.h"
 #include "ash/wm/dock/dock_types.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/workspace/snap_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -133,6 +132,8 @@ class ASH_EXPORT DockedWindowLayoutManager
   virtual void OnWindowBoundsChanged(aura::Window* window,
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) OVERRIDE;
+  virtual void OnWindowVisibilityChanging(aura::Window* window,
+                                          bool visible) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // aura::client::ActivationChangeObserver:
@@ -144,15 +145,23 @@ class ASH_EXPORT DockedWindowLayoutManager
       ShelfVisibilityState new_state) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachTryDetach);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachTwoWindowsDetachOne);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachWindowMaximizeOther);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachOneTestSticky);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, ResizeTwoWindows);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, DragToShelf);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, AddOneWindow);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, AutoPlacingLeft);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, AutoPlacingRight);
   FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest,
                            AutoPlacingRightSecondScreen);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, TwoWindowsWidthNew);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest,
+                           TwoWindowsWidthNonResizableSecond);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest, ThreeWindowsDragging);
+  FRIEND_TEST_ALL_PREFIXES(DockedWindowLayoutManagerTest,
+                           ThreeWindowsDraggingSecondScreen);
   friend class DockedWindowLayoutManagerTest;
   friend class DockedWindowResizerTest;
 
@@ -162,9 +171,16 @@ class ASH_EXPORT DockedWindowLayoutManager
   // Width of the gap between the docked windows and a workspace.
   static const int kMinDockGap;
 
+  // Ideal (starting) width of the dock.
+  static const int kIdealWidth;
+
+  // Keep at most kMaxVisibleWindows visible in the dock and minimize the rest
+  // (except for |child|).
+  void MaybeMinimizeChildrenExcept(aura::Window* child);
+
   // Minimize / restore window and relayout.
-  void MinimizeWindow(aura::Window* window);
-  void RestoreWindow(aura::Window* window);
+  void MinimizeDockedWindow(aura::Window* window);
+  void RestoreDockedWindow(aura::Window* window);
 
   // Updates docked layout state when a window gets inside the dock.
   void OnWindowDocked(aura::Window* window);
@@ -174,6 +190,11 @@ class ASH_EXPORT DockedWindowLayoutManager
 
   // Returns true if there are any windows currently docked.
   bool IsAnyWindowDocked();
+
+  // Returns width that is as close as possible to |target_width| while being
+  // consistent with docked min and max restrictions and respects the |window|'s
+  // minimum and maximum size.
+  static int GetWindowWidthCloseTo(aura::Window* window, int target_width);
 
   // Called whenever the window layout might change.
   void Relayout();
@@ -218,6 +239,10 @@ class ASH_EXPORT DockedWindowLayoutManager
   bool shelf_hidden_;
   // Current width of the dock.
   int docked_width_;
+
+  // How many docked windows are allowed to be shown.
+  // TODO(varkha): Make this dynamic based on windows heights.
+  int max_visible_windows_;
 
   // Last bounds that were sent to observers.
   gfx::Rect docked_bounds_;

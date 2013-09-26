@@ -558,6 +558,9 @@ WebViewInternal.prototype.setupWebviewNodeEvents_ = function() {
       'api': 'webview',
       'instanceId': self.viewInstanceId_
     };
+    if (self.userAgentOverride_) {
+      params['userAgentOverride'] = self.userAgentOverride_;
+    }
     self.browserPluginNode_['-internal-attach'](params);
 
     var events = self.getEvents_();
@@ -568,6 +571,12 @@ WebViewInternal.prototype.setupWebviewNodeEvents_ = function() {
   this.browserPluginNode_.addEventListener('-internal-instanceid-allocated',
                                            onInstanceIdAllocated);
   this.setupWebRequestEvents_();
+
+  this.on_ = {};
+  var events = self.getEvents_();
+  for (var eventName in events) {
+    this.setupEventProperty_(eventName);
+  }
 };
 
 /**
@@ -592,6 +601,30 @@ WebViewInternal.prototype.setupEvent_ = function(eventName, eventInfo) {
     }
     webviewNode.dispatchEvent(webViewEvent);
   }, {instanceId: self.instanceId_});
+};
+
+/**
+ * Adds an 'on<event>' property on the webview, which can be used to set/unset
+ * an event handler.
+ * @private
+ */
+WebViewInternal.prototype.setupEventProperty_ = function(eventName) {
+  var propertyName = 'on' + eventName.toLowerCase();
+  var self = this;
+  var webviewNode = this.webviewNode_;
+  Object.defineProperty(webviewNode, propertyName, {
+    get: function() {
+      return self.on_[propertyName];
+    },
+    set: function(value) {
+      if (self.on_[propertyName])
+        webviewNode.removeEventListener(eventName, self.on_[propertyName]);
+      self.on_[propertyName] = value;
+      if (value)
+        webviewNode.addEventListener(eventName, value);
+    },
+    enumerable: true
+  });
 };
 
 /**
@@ -838,8 +871,8 @@ function registerBrowserPluginElement() {
                                                          prototype: proto});
 
   delete proto.createdCallback;
-  delete proto.enteredDocumentCallback;
-  delete proto.leftDocumentCallback;
+  delete proto.enteredViewCallback;
+  delete proto.leftViewCallback;
   delete proto.attributeChangedCallback;
 }
 
@@ -909,8 +942,8 @@ function registerWebViewElement() {
   // Delete the callbacks so developers cannot call them and produce unexpected
   // behavior.
   delete proto.createdCallback;
-  delete proto.enteredDocumentCallback;
-  delete proto.leftDocumentCallback;
+  delete proto.enteredViewCallback;
+  delete proto.leftViewCallback;
   delete proto.attributeChangedCallback;
 }
 

@@ -10,10 +10,13 @@
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/proxy/plugin_array_buffer_var.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
+#include "ppapi/proxy/plugin_resource_var.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/proxy_object_var.h"
 #include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/proxy_lock.h"
+#include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var.h"
 
 namespace ppapi {
@@ -151,6 +154,14 @@ void PluginVarTracker::ReleaseHostObject(PluginDispatcher* dispatcher,
   ReleaseVar(found->second);
 }
 
+ResourceVar* PluginVarTracker::MakeResourceVar(PP_Resource pp_resource) {
+  ResourceTracker* resource_tracker = PpapiGlobals::Get()->GetResourceTracker();
+  ppapi::Resource* resource = resource_tracker->GetResource(pp_resource);
+  if (!resource)
+    return NULL;
+  return new PluginResourceVar(resource);
+}
+
 void PluginVarTracker::DidDeleteInstance(PP_Instance instance) {
   // Calling the destructors on plugin objects may in turn release other
   // objects which will mutate the map out from under us. So do a two-step
@@ -259,9 +270,11 @@ int32 PluginVarTracker::AddVarInternal(Var* var, AddVarRefMode mode) {
   ProxyObjectVar* proxy_object = var->AsProxyObjectVar();
   if (proxy_object) {
     HostVar host_var(proxy_object->dispatcher(), proxy_object->host_var_id());
-    DCHECK(host_var_to_plugin_var_.find(host_var) ==
-           host_var_to_plugin_var_.end());  // Adding an object twice, use
-                                            // FindOrMakePluginVarFromHostVar.
+    // TODO(teravest): Change to DCHECK when http://crbug.com/276347 is
+    // resolved.
+    CHECK(host_var_to_plugin_var_.find(host_var) ==
+          host_var_to_plugin_var_.end());  // Adding an object twice, use
+                                           // FindOrMakePluginVarFromHostVar.
     host_var_to_plugin_var_[host_var] = new_id;
   }
   return new_id;
@@ -383,7 +396,10 @@ scoped_refptr<ProxyObjectVar> PluginVarTracker::FindOrMakePluginVarFromHostVar(
 
   // Have this host var, look up the object.
   VarMap::iterator ret = live_vars_.find(found->second);
-  DCHECK(ret != live_vars_.end());
+
+  // We CHECK here because we currently don't fall back sanely.
+  // This may be involved in a NULL dereference. http://crbug.com/276347
+  CHECK(ret != live_vars_.end());
 
   // All objects should be proxy objects.
   DCHECK(ret->second.var->AsProxyObjectVar());

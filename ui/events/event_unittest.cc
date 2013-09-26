@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
-#include "ui/base/x/x11_util.h"
+#include "ui/events/x/events_x_utils.h"
+#include "ui/gfx/x/x11_types.h"
 #endif
 
 namespace ui {

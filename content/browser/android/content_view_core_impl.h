@@ -60,6 +60,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual float GetDpiScale() const OVERRIDE;
   virtual void RequestContentClipping(const gfx::Rect& clipping,
                                       const gfx::Size& content_size) OVERRIDE;
+  virtual void PauseVideo() OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -299,7 +300,8 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
-  void SetNeedsBeginFrame(bool enabled);
+  void AddBeginFrameSubscriber();
+  void RemoveBeginFrameSubscriber();
   void SetNeedsAnimate();
 
  private:

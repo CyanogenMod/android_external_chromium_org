@@ -51,6 +51,10 @@
 #include "webkit/common/user_agent/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/sys_utils.h"
+#endif
+
 using WebKit::WebAudioBus;
 using WebKit::WebCookie;
 using WebKit::WebData;
@@ -307,8 +311,12 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_VALIDATION_PATTERN_MISMATCH;
     case WebLocalizedString::ValidationRangeOverflow:
       return IDS_FORM_VALIDATION_RANGE_OVERFLOW;
+    case WebLocalizedString::ValidationRangeOverflowDateTime:
+      return IDS_FORM_VALIDATION_RANGE_OVERFLOW_DATETIME;
     case WebLocalizedString::ValidationRangeUnderflow:
       return IDS_FORM_VALIDATION_RANGE_UNDERFLOW;
+    case WebLocalizedString::ValidationRangeUnderflowDateTime:
+      return IDS_FORM_VALIDATION_RANGE_UNDERFLOW_DATETIME;
     case WebLocalizedString::ValidationStepMismatch:
       return IDS_FORM_VALIDATION_STEP_MISMATCH;
     case WebLocalizedString::ValidationStepMismatchCloseToLimit:
@@ -877,6 +885,15 @@ bool WebKitPlatformSupportImpl::processMemorySizesInBytes(
 
 bool WebKitPlatformSupportImpl::memoryAllocatorWasteInBytes(size_t* size) {
   return base::allocator::GetAllocatorWasteSize(size);
+}
+
+size_t WebKitPlatformSupportImpl::maxDecodedImageBytes() {
+#if defined(OS_ANDROID)
+  // Limit image decoded size to 3M pixels on low end devices.
+  if (base::android::SysUtils::IsLowEndDevice())
+    return 3 * 1024 * 1024 * 4;  // 4 is maximum number of bytes per pixel.
+#endif
+  return noDecodedImageByteLimit;
 }
 
 void WebKitPlatformSupportImpl::SuspendSharedTimer() {

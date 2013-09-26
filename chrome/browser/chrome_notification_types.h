@@ -47,13 +47,13 @@ enum NotificationType {
   // that was closed, no details are expected.
   NOTIFICATION_WINDOW_CLOSED,
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   // On Linux maximize can be an asynchronous operation. This notification
   // indicates that the window has been maximized. The source is
   // a Source<BrowserWindow> containing the BrowserWindow that was maximized.
   // No details are expected.
   NOTIFICATION_BROWSER_WINDOW_MAXIMIZED,
-#endif  // defined(OS_LINUX)
+#endif
 
   // Sent when the language (English, French...) for a page has been detected.
   // The details Details<std::string> contain the ISO 639-1 language code and
@@ -880,11 +880,6 @@ enum NotificationType {
   // Other singleton-based services can't use that because Observer
   // unregistration is impossible due to unpredictable deletion order.
   NOTIFICATION_OWNERSHIP_STATUS_CHANGED,
-
-  // This is sent to a ChromeOS settings observer when a system setting is
-  // changed. The source is the CrosSettings and the details a std::string of
-  // the changed setting.
-  NOTIFICATION_SYSTEM_SETTING_CHANGED,
 
   // Sent by SIM unlock dialog when it has finished with the process of
   // updating RequirePin setting. RequirePin setting might have been changed

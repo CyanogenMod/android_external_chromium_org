@@ -135,7 +135,6 @@
       'webapp/main.html',
       'webapp/manifest.json',
       'webapp/menu_button.css',
-      'webapp/oauth2_callback.html',
       'webapp/open_sans.css',
       'webapp/open_sans.woff',
       'webapp/scale-to-fit.webp',
@@ -173,7 +172,6 @@
       'webapp/menu_button.js',
       'webapp/oauth2.js',
       'webapp/oauth2_api.js',
-      'webapp/oauth2_callback.js',
       'webapp/paired_client_manager.js',
       'webapp/plugin_settings.js',
       'webapp/remoting.js',
@@ -277,6 +275,7 @@
             '../google_apis/google_apis.gyp:google_apis',
             '../ipc/ipc.gyp:ipc',
             '../third_party/webrtc/modules/modules.gyp:desktop_capture',
+            '../ui/ui.gyp:keycode_converter',
           ],
           'defines': [
             'VERSION=<(version_full)',

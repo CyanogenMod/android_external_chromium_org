@@ -4,8 +4,8 @@
 
 #include "chrome/browser/local_discovery/privet_traffic_detector.h"
 
+#include "base/metrics/histogram.h"
 #include "base/sys_byteorder.h"
-#include "chrome/browser/local_discovery/privet_constants.h"
 #include "net/base/dns_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
@@ -16,8 +16,36 @@
 #include "net/udp/udp_server_socket.h"
 
 namespace {
-const char kPrivetDefaultDev2iceType[] = "\x07_privet\x04_tcp\x05local";
+
+const int kMaxRestartAttempts = 10;
+const char kPrivetDeviceTypeDnsString[] = "\x07_privet\x04_tcp\x05local";
+
+void GetNetworkListOnFileThread(
+    const base::Callback<void(const net::NetworkInterfaceList&)> callback) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  net::NetworkInterfaceList networks;
+  if (!GetNetworkList(&networks))
+    return;
+
+  net::NetworkInterfaceList ip4_networks;
+  for (size_t i = 0; i < networks.size(); ++i) {
+    net::AddressFamily address_family =
+        net::GetAddressFamily(networks[i].address);
+    if (address_family == net::ADDRESS_FAMILY_IPV4)
+      ip4_networks.push_back(networks[i]);
+  }
+
+  content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
+                                   base::Bind(callback, ip4_networks));
 }
+
+bool IsIpPrefixEqual(const net::IPAddressNumber& ip1,
+                     const net::IPAddressNumber& ip2) {
+  return !ip1.empty() && ip1.size() == ip2.size() &&
+         std::equal(ip1.begin(), ip1.end() - 1, ip2.begin());
+}
+
+}  // namespace
 
 namespace local_discovery {
 
@@ -27,12 +55,18 @@ PrivetTrafficDetector::PrivetTrafficDetector(
     : on_traffic_detected_(on_traffic_detected),
       callback_runner_(base::MessageLoop::current()->message_loop_proxy()),
       address_family_(address_family),
-      recv_addr_(new net::IPEndPoint),
       io_buffer_(
-          new net::IOBufferWithSize(net::dns_protocol::kMaxMulticastSize)) {
-  content::BrowserThread::PostTask(content::BrowserThread::IO, FROM_HERE,
-                                   base::Bind(&PrivetTrafficDetector::Start,
-                                              this));
+          new net::IOBufferWithSize(net::dns_protocol::kMaxMulticastSize)),
+      restart_attempts_(kMaxRestartAttempts),
+      weak_ptr_factory_(this) {
+}
+
+void PrivetTrafficDetector::Start() {
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&PrivetTrafficDetector::StartOnIOThread,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 PrivetTrafficDetector::~PrivetTrafficDetector() {
@@ -40,7 +74,7 @@ PrivetTrafficDetector::~PrivetTrafficDetector() {
   net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
 }
 
-void PrivetTrafficDetector::Start() {
+void PrivetTrafficDetector::StartOnIOThread() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   ScheduleRestart();
@@ -49,6 +83,7 @@ void PrivetTrafficDetector::Start() {
 void PrivetTrafficDetector::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  restart_attempts_ = kMaxRestartAttempts;
   if (type != net::NetworkChangeNotifier::CONNECTION_NONE)
     ScheduleRestart();
 }
@@ -56,22 +91,34 @@ void PrivetTrafficDetector::OnNetworkChanged(
 void PrivetTrafficDetector::ScheduleRestart() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   socket_.reset();
-  restart_callback_.Reset(
-      base::Bind(&PrivetTrafficDetector::Restart, base::Unretained(this)));
-  base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        restart_callback_.callback(),
-        base::TimeDelta::FromSeconds(1));
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  content::BrowserThread::PostDelayedTask(
+      content::BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&GetNetworkListOnFileThread,
+                 base::Bind(&PrivetTrafficDetector::Restart,
+                            weak_ptr_factory_.GetWeakPtr())),
+      base::TimeDelta::FromSeconds(3));
 }
 
-void PrivetTrafficDetector::Restart() {
+void PrivetTrafficDetector::Restart(const net::NetworkInterfaceList& networks) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  networks_ = networks;
   if (Bind() < net::OK || DoLoop(0) < net::OK) {
-    ScheduleRestart();
+    if ((restart_attempts_--) > 0)
+      ScheduleRestart();
+  } else {
+    // Reset on success.
+    restart_attempts_ = kMaxRestartAttempts;
   }
 }
 
 int PrivetTrafficDetector::Bind() {
+  if (!start_time_.is_null()) {
+    base::TimeDelta time_delta = base::Time::Now() - start_time_;
+    UMA_HISTOGRAM_LONG_TIMES("LocaDiscovery.DetectorRestartTime", time_delta);
+  }
+  start_time_ = base::Time::Now();
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   socket_.reset(new net::UDPServerSocket(NULL, net::NetLog::Source()));
   net::IPEndPoint multicast_addr = net::GetMDnsIPEndPoint(address_family_);
@@ -85,33 +132,50 @@ int PrivetTrafficDetector::Bind() {
   return socket_->JoinGroup(multicast_addr.address());
 }
 
+bool PrivetTrafficDetector::IsSourceAcceptable() const {
+  for (size_t i = 0; i < networks_.size(); ++i) {
+    if (IsIpPrefixEqual(recv_addr_.address(), networks_[i].address))
+      return true;
+  }
+  return false;
+}
+
+bool PrivetTrafficDetector::IsPrivetPacket(int rv) const {
+  if (rv <= static_cast<int>(sizeof(net::dns_protocol::Header)) ||
+      !IsSourceAcceptable()) {
+    return false;
+  }
+
+  const char* buffer_begin = io_buffer_->data();
+  const char* buffer_end = buffer_begin + rv;
+  const net::dns_protocol::Header* header =
+      reinterpret_cast<const net::dns_protocol::Header*>(buffer_begin);
+  // Check if response packet.
+  if (!(header->flags & base::HostToNet16(net::dns_protocol::kFlagResponse)))
+    return false;
+  const char* substring_begin = kPrivetDeviceTypeDnsString;
+  const char* substring_end = substring_begin +
+                              arraysize(kPrivetDeviceTypeDnsString);
+  // Check for expected substring, any Privet device must include this.
+  return std::search(buffer_begin, buffer_end, substring_begin,
+                     substring_end) != buffer_end;
+}
+
 int PrivetTrafficDetector::DoLoop(int rv) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   do {
-    if (rv > static_cast<int>(sizeof(net::dns_protocol::Header))) {
-      const char* buffer_begin = io_buffer_->data();
-      const char* buffer_end = buffer_begin + rv;
-      const net::dns_protocol::Header* header =
-          reinterpret_cast<const net::dns_protocol::Header*>(buffer_begin);
-      // Check if it's response packet.
-      if (header->flags & base::HostToNet16(net::dns_protocol::kFlagResponse)) {
-        const char* substring_begin = kPrivetDefaultDev2iceType;
-        const char* substring_end = substring_begin +
-                                    arraysize(kPrivetDefaultDev2iceType);
-        // Check for expected substring, any Privet device must include this.
-        if (std::search(buffer_begin, buffer_end,
-                        substring_begin, substring_end) != buffer_end) {
-          socket_.reset();
-          callback_runner_->PostTask(FROM_HERE, on_traffic_detected_);
-          return net::OK;
-        }
-      }
+    if (IsPrivetPacket(rv)) {
+      socket_.reset();
+      callback_runner_->PostTask(FROM_HERE, on_traffic_detected_);
+      base::TimeDelta time_delta = base::Time::Now() - start_time_;
+      UMA_HISTOGRAM_LONG_TIMES("LocaDiscovery.DetectorTriggerTime", time_delta);
+      return net::OK;
     }
 
     rv = socket_->RecvFrom(
         io_buffer_,
         io_buffer_->size(),
-        recv_addr_.get(),
+        &recv_addr_,
         base::Bind(base::IgnoreResult(&PrivetTrafficDetector::DoLoop),
                    base::Unretained(this)));
   } while (rv > 0);

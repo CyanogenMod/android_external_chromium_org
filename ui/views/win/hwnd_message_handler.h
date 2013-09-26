@@ -5,10 +5,10 @@
 #ifndef UI_VIEWS_WIN_HWND_MESSAGE_HANDLER_H_
 #define UI_VIEWS_WIN_HWND_MESSAGE_HANDLER_H_
 
+#include <windows.h>
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlmisc.h>
-#include <windows.h>
 
 #include <set>
 #include <vector>
@@ -21,10 +21,10 @@
 #include "base/strings/string16.h"
 #include "base/win/win_util.h"
 #include "ui/base/accessibility/accessibility_types.h"
-#include "ui/events/event.h"
-#include "ui/base/sequential_id_generator.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/events/event.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/sequential_id_generator.h"
 #include "ui/gfx/win/window_impl.h"
 #include "ui/views/ime/input_method_delegate.h"
 #include "ui/views/views_export.h"
@@ -108,7 +108,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
   bool IsMinimized() const;
   bool IsMaximized() const;
 
-  bool RunMoveLoop(const gfx::Vector2d& drag_offset);
+  bool RunMoveLoop(const gfx::Vector2d& drag_offset, bool hide_on_escape);
   void EndMoveLoop();
 
   // Tells the HWND its client area has changed.
@@ -180,7 +180,7 @@ class VIEWS_EXPORT HWNDMessageHandler :
 
   // Called after the WM_ACTIVATE message has been processed by the default
   // windows procedure.
-  void PostProcessActivateMessage(int activation_state);
+  void PostProcessActivateMessage(int activation_state, bool minimized);
 
   // Enables disabled owner windows that may have been disabled due to this
   // window's modality.

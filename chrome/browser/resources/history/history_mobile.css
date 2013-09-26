@@ -12,16 +12,17 @@ body {
   color: rgb(76, 76, 76);
   height: 100%;
   margin: 0;
-  margin-bottom: 46px;
 }
 
 .page {
+  -webkit-flex-flow: column;
+  display: -webkit-flex;
   height: 100%;
 }
 
 #scrolling-container {
+  -webkit-flex: auto;  /* Container should take up extra vertical space. */
   -webkit-overflow-scrolling: touch;
-  height: -webkit-calc(100% - 46px);
   overflow-y: auto;
 }
 
@@ -163,13 +164,12 @@ input {
   border: 0;
   border-radius: 0;
   border-top: 1px solid rgb(198, 198, 198);
-  bottom: 0;
   box-shadow: none;
   font-size: 75%;
   font-weight: bold;
   height: 46px;
   margin: 0;
-  position: fixed;
+  min-height: 46px;
   text-shadow: none;
   text-transform: uppercase;
   width: 100%;
@@ -238,6 +238,19 @@ input {
   -webkit-box-orient: vertical;
   -webkit-box-pack: center;
   display: -webkit-box;
+}
+
+#scrolling-container {
+  bottom: 46px;
+  left: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+}
+
+#clear-browsing-data {
+  bottom: 0;
+  position: fixed;
 }
 </if>
 

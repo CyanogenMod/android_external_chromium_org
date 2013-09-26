@@ -114,7 +114,8 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       texture_id_in_layer_(0),
       current_mailbox_output_surface_id_(kUndefinedOutputSurfaceId),
       weak_ptr_factory_(this),
-      overscroll_effect_enabled_(true) {
+      overscroll_effect_enabled_(true),
+      flush_input_requested_(false) {
   if (CompositorImpl::UsesDirectGL()) {
     surface_texture_transport_.reset(new SurfaceTextureTransportClient());
     layer_ = surface_texture_transport_->Initialize();
@@ -199,7 +200,7 @@ RenderWidgetHostViewAndroid::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewAndroid::WasShown() {
-  if (!host_->is_hidden())
+  if (!host_ || !host_->is_hidden())
     return;
 
   host_->WasShown();
@@ -208,7 +209,7 @@ void RenderWidgetHostViewAndroid::WasShown() {
 void RenderWidgetHostViewAndroid::WasHidden() {
   RunAckCallbacks();
 
-  if (host_->is_hidden())
+  if (!host_ || host_->is_hidden())
     return;
 
   // Inform the renderer that we are being hidden so it can reduce its resource
@@ -356,6 +357,8 @@ void RenderWidgetHostViewAndroid::Show() {
 
   are_layers_attached_ = true;
   AttachLayers();
+
+  WasShown();
 }
 
 void RenderWidgetHostViewAndroid::Hide() {
@@ -364,6 +367,8 @@ void RenderWidgetHostViewAndroid::Hide() {
 
   are_layers_attached_ = false;
   RemoveLayers();
+
+  WasHidden();
 }
 
 bool RenderWidgetHostViewAndroid::IsShowing() {
@@ -456,8 +461,16 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
 void RenderWidgetHostViewAndroid::SendBeginFrame(
     const cc::BeginFrameArgs& args) {
   TRACE_EVENT0("cc", "RenderWidgetHostViewAndroid::SendBeginFrame");
-  if (host_)
-    host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(), args));
+  if (!host_)
+    return;
+
+  if (flush_input_requested_) {
+    flush_input_requested_ = false;
+    host_->FlushInput();
+    content_view_core_->RemoveBeginFrameSubscriber();
+  }
+
+  host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(), args));
 }
 
 void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(
@@ -465,10 +478,14 @@ void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(
   TRACE_EVENT1("cc", "RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame",
                "enabled", enabled);
   // ContentViewCoreImpl handles multiple subscribers to the BeginFrame, so
-  // we have to make sure calls to ContentViewCoreImpl's SetNeedsBeginFrame
-  // are balanced, even if RenderWidgetHostViewAndroid's may not be.
+  // we have to make sure calls to ContentViewCoreImpl's
+  // {Add,Remove}BeginFrameSubscriber are balanced, even if
+  // RenderWidgetHostViewAndroid's may not be.
   if (content_view_core_ && needs_begin_frame_ != enabled) {
-    content_view_core_->SetNeedsBeginFrame(enabled);
+    if (enabled)
+      content_view_core_->AddBeginFrameSubscriber();
+    else
+      content_view_core_->RemoveBeginFrameSubscriber();
     needs_begin_frame_ = enabled;
   }
 }
@@ -567,7 +584,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
   float device_scale_factor = display.device_scale_factor();
 
   DCHECK_EQ(device_scale_factor,
-            ui::GetScaleFactorScale(GetScaleFactorForView(this)));
+            ui::GetImageScale(GetScaleFactorForView(this)));
 
   const gfx::Size& dst_size_in_pixel = ConvertViewSizeToPixel(this, dst_size);
   gfx::Rect src_subrect_in_pixel =
@@ -965,6 +982,13 @@ InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(
       return compositor->HandleInputEvent(input_event);
   }
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+}
+
+void RenderWidgetHostViewAndroid::OnSetNeedsFlushInput() {
+  if (flush_input_requested_ || !content_view_core_)
+    return;
+  flush_input_requested_ = true;
+  content_view_core_->AddBeginFrameSubscriber();
 }
 
 void RenderWidgetHostViewAndroid::OnAccessibilityEvents(

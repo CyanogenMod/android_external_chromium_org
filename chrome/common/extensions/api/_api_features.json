@@ -233,7 +233,6 @@
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
   "feedbackPrivate": {
-    "platform": "chromeos",
     "dependencies": ["permission:feedbackPrivate"],
     "contexts": ["blessed_extension"]
   },
@@ -482,7 +481,7 @@
     "contexts": ["blessed_extension"]
   },
   "sockets.udp": {
-    "dependencies": ["permission:sockets.udp"],
+    "dependencies": ["manifest:sockets"],
     "channel": "dev",
     "contexts": ["blessed_extension"]
   },
@@ -594,6 +593,10 @@
     "internal": true,
     "channel": "stable",
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+  },
+  "webrtcLoggingPrivate": {
+    "dependencies": ["permission:webrtcLoggingPrivate"],
+    "contexts": ["blessed_extension"]
   },
   "webstore": {
     // Hosted apps can use the webstore API from within a blessed context.

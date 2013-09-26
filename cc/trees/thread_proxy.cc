@@ -22,11 +22,6 @@
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
 
-namespace {
-
-// Measured in seconds.
-const double kContextRecreationTickRate = 0.03;
-
 // Measured in seconds.
 const double kSmoothnessTakesPriorityExpirationDelay = 0.25;
 
@@ -34,8 +29,6 @@ const size_t kDurationHistorySize = 60;
 const double kCommitAndActivationDurationEstimationPercentile = 50.0;
 const double kDrawDurationEstimationPercentile = 100.0;
 const int kDrawDurationEstimatePaddingInMicroseconds = 0;
-
-}  // namespace
 
 namespace cc {
 
@@ -367,10 +360,7 @@ void ThreadProxy::SetNeedsCommit() {
 void ThreadProxy::DidLoseOutputSurfaceOnImplThread() {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc", "ThreadProxy::DidLoseOutputSurfaceOnImplThread");
-  Proxy::ImplThreadTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&ThreadProxy::CheckOutputSurfaceStatusOnImplThread,
-                 impl_thread_weak_ptr_));
+  CheckOutputSurfaceStatusOnImplThread();
 }
 
 void ThreadProxy::CheckOutputSurfaceStatusOnImplThread() {
@@ -397,12 +387,22 @@ void ThreadProxy::SetNeedsBeginFrameOnImplThread(bool enable) {
   TRACE_EVENT1("cc", "ThreadProxy::SetNeedsBeginFrameOnImplThread",
                "enable", enable);
   layer_tree_host_impl_->SetNeedsBeginFrame(enable);
+  UpdateBackgroundAnimateTicking();
 }
 
 void ThreadProxy::BeginFrameOnImplThread(const BeginFrameArgs& args) {
   DCHECK(IsImplThread());
   TRACE_EVENT0("cc", "ThreadProxy::BeginFrameOnImplThread");
+
+  // Sample the frame time now. This time will be used for updating animations
+  // when we draw.
+  layer_tree_host_impl_->CurrentFrameTimeTicks();
+
   scheduler_on_impl_thread_->BeginFrame(args);
+}
+
+void ThreadProxy::DidBeginFrameDeadlineOnImplThread() {
+  layer_tree_host_impl_->ResetCurrentFrameTimeForNextFrame();
 }
 
 void ThreadProxy::OnCanDrawStateChanged(bool can_draw) {
@@ -699,6 +699,8 @@ void ThreadProxy::ScheduledActionSendBeginFrameToMainThread() {
   }
   begin_frame_state->memory_allocation_limit_bytes =
       layer_tree_host_impl_->memory_allocation_limit_bytes();
+  begin_frame_state->memory_allocation_priority_cutoff =
+      layer_tree_host_impl_->memory_allocation_priority_cutoff();
   begin_frame_state->evicted_ui_resources =
       layer_tree_host_impl_->EvictedUIResourcesExist();
   Proxy::MainThreadTaskRunner()->PostTask(
@@ -773,6 +775,13 @@ void ThreadProxy::BeginFrameOnMainThread(
   if (layer_tree_host_->contents_texture_manager()) {
     layer_tree_host_->contents_texture_manager()->
         UnlinkAndClearEvictedBackings();
+
+    if (begin_frame_state) {
+      layer_tree_host_->contents_texture_manager()->SetMaxMemoryLimitBytes(
+          begin_frame_state->memory_allocation_limit_bytes);
+      layer_tree_host_->contents_texture_manager()->SetExternalPriorityCutoff(
+          begin_frame_state->memory_allocation_priority_cutoff);
+    }
   }
 
   // Recreate all UI resources if there were evicted UI resources when the impl
@@ -797,10 +806,8 @@ void ThreadProxy::BeginFrameOnMainThread(
 
   scoped_ptr<ResourceUpdateQueue> queue =
       make_scoped_ptr(new ResourceUpdateQueue);
-  bool updated = layer_tree_host_->UpdateLayers(
-      queue.get(),
-      begin_frame_state ? begin_frame_state->memory_allocation_limit_bytes
-                        : 0u);
+
+  bool updated = layer_tree_host_->UpdateLayers(queue.get());
 
   // Once single buffered layers are committed, they cannot be modified until
   // they are drawn by the impl thread.
@@ -1035,19 +1042,15 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
   if (!layer_tree_host_impl_->renderer())
     return result;
 
-  base::TimeTicks monotonic_time =
-      layer_tree_host_impl_->CurrentFrameTimeTicks();
-  base::Time wall_clock_time = layer_tree_host_impl_->CurrentFrameTime();
-
-  // TODO(enne): This should probably happen post-animate.
-  if (layer_tree_host_impl_->pending_tree())
-    layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
-  layer_tree_host_impl_->Animate(monotonic_time, wall_clock_time);
-  UpdateBackgroundAnimateTicking();
-
   base::TimeTicks start_time = base::TimeTicks::HighResNow();
   base::TimeDelta draw_duration_estimate = DrawDurationEstimate();
   base::AutoReset<bool> mark_inside(&inside_draw_, true);
+
+  // Advance our animations.
+  base::TimeTicks monotonic_time =
+      layer_tree_host_impl_->CurrentFrameTimeTicks();
+  base::Time wall_clock_time = layer_tree_host_impl_->CurrentFrameTime();
+  layer_tree_host_impl_->Animate(monotonic_time, wall_clock_time);
 
   // This method is called on a forced draw, regardless of whether we are able
   // to produce a frame, as the calling site on main thread is blocked until its
@@ -1060,15 +1063,12 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
   // DrawLayers() depends on the result of PrepareToDraw(), it is guarded on
   // CanDraw() as well.
 
-  // readback_request_on_impl_thread_ may be for the pending tree, do
-  // not perform the readback unless explicitly requested.
   bool drawing_for_readback =
       readback_requested && !!readback_request_on_impl_thread_;
   bool can_do_readback = layer_tree_host_impl_->renderer()->CanReadPixels();
 
   LayerTreeHostImpl::FrameData frame;
   bool draw_frame = false;
-  bool start_ready_animations = true;
 
   if (layer_tree_host_impl_->CanDraw() &&
       (!drawing_for_readback || can_do_readback)) {
@@ -1077,13 +1077,9 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
     if (drawing_for_readback)
       readback_rect = readback_request_on_impl_thread_->rect;
 
-    // Do not start animations if we skip drawing the frame to avoid
-    // checkerboarding.
     if (layer_tree_host_impl_->PrepareToDraw(&frame, readback_rect) ||
         forced_draw)
       draw_frame = true;
-    else
-      start_ready_animations = false;
   }
 
   if (draw_frame) {
@@ -1093,6 +1089,8 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
     result.did_draw = true;
   }
   layer_tree_host_impl_->DidDrawAllLayers(frame);
+
+  bool start_ready_animations = draw_frame;
   layer_tree_host_impl_->UpdateAnimationState(start_ready_animations);
 
   // Check for a pending CompositeAndReadback.
@@ -1233,9 +1231,8 @@ DrawSwapReadbackResult ThreadProxy::ScheduledActionDrawAndReadback() {
 
 void ThreadProxy::DidAnticipatedDrawTimeChange(base::TimeTicks time) {
   if (current_resource_update_controller_on_impl_thread_)
-    current_resource_update_controller_on_impl_thread_
-        ->PerformMoreUpdates(time);
-  layer_tree_host_impl_->ResetCurrentFrameTimeForNextFrame();
+    current_resource_update_controller_on_impl_thread_->PerformMoreUpdates(
+        time);
 }
 
 base::TimeDelta ThreadProxy::DrawDurationEstimate() {
@@ -1254,6 +1251,14 @@ base::TimeDelta ThreadProxy::BeginFrameToCommitDurationEstimate() {
 base::TimeDelta ThreadProxy::CommitToActivateDurationEstimate() {
   return commit_to_activate_duration_history_.Percentile(
       kCommitAndActivationDurationEstimationPercentile);
+}
+
+void ThreadProxy::PostBeginFrameDeadline(const base::Closure& closure,
+                                         base::TimeTicks deadline) {
+  base::TimeDelta delta = deadline - base::TimeTicks::Now();
+  if (delta <= base::TimeDelta())
+    delta = base::TimeDelta();
+  Proxy::ImplThreadTaskRunner()->PostDelayedTask(FROM_HERE, closure, delta);
 }
 
 void ThreadProxy::ReadyToFinalizeTextureUpdates() {
@@ -1326,6 +1331,8 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
   layer_tree_host_impl_ = layer_tree_host_->CreateLayerTreeHostImpl(this);
   const LayerTreeSettings& settings = layer_tree_host_->settings();
   SchedulerSettings scheduler_settings;
+  scheduler_settings.deadline_scheduling_enabled =
+      settings.deadline_scheduling_enabled;
   scheduler_settings.impl_side_painting = settings.impl_side_painting;
   scheduler_settings.timeout_and_draw_when_animation_checkerboards =
       settings.timeout_and_draw_when_animation_checkerboards;
@@ -1399,7 +1406,9 @@ size_t ThreadProxy::MaxPartialTextureUpdates() const {
 }
 
 ThreadProxy::BeginFrameAndCommitState::BeginFrameAndCommitState()
-    : memory_allocation_limit_bytes(0), evicted_ui_resources(false) {}
+    : memory_allocation_limit_bytes(0),
+      memory_allocation_priority_cutoff(0),
+      evicted_ui_resources(false) {}
 
 ThreadProxy::BeginFrameAndCommitState::~BeginFrameAndCommitState() {}
 

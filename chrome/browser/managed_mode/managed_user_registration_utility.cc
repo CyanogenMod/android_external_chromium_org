@@ -29,10 +29,6 @@ using base::DictionaryValue;
 
 namespace {
 
-const char kAcknowledged[] = "acknowledged";
-const char kName[] = "name";
-const char kMasterKey[] = "masterKey";
-
 ManagedUserRegistrationUtility* g_instance_for_tests = NULL;
 
 // Actual implementation of ManagedUserRegistrationUtility.
@@ -135,9 +131,13 @@ ManagedUserRegistrationUtility::Create(Profile* profile) {
     g_instance_for_tests = NULL;
     return make_scoped_ptr(result);
   }
+
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
   scoped_ptr<ManagedUserRefreshTokenFetcher> token_fetcher =
       ManagedUserRefreshTokenFetcher::Create(
-          ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+          token_service,
+          token_service->GetPrimaryAccountId(),
           profile->GetRequestContext());
   ManagedUserSyncService* managed_user_sync_service =
       ManagedUserSyncServiceFactory::GetForProfile(profile);

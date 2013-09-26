@@ -21,10 +21,8 @@ class VideoDecoderVp8 : public VideoDecoder {
   virtual ~VideoDecoderVp8();
 
   // VideoDecoder implementations.
-  virtual bool IsReadyForData() OVERRIDE;
   virtual void Initialize(const webrtc::DesktopSize& screen_size) OVERRIDE;
-  virtual DecodeResult DecodePacket(const VideoPacket* packet) OVERRIDE;
-  virtual VideoPacketFormat::Encoding Encoding() OVERRIDE;
+  virtual bool DecodePacket(const VideoPacket& packet) OVERRIDE;
   virtual void Invalidate(const webrtc::DesktopSize& view_size,
                           const webrtc::DesktopRegion& region) OVERRIDE;
   virtual void RenderFrame(const webrtc::DesktopSize& view_size,

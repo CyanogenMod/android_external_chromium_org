@@ -1941,8 +1941,8 @@ bool BackRenderbuffer::AllocateStorage(const gfx::Size& size, GLenum format,
   ScopedRenderBufferBinder binder(decoder_, id_);
 
   uint32 estimated_size = 0;
-  if (!RenderbufferManager::ComputeEstimatedRenderbufferSize(
-      size.width(), size.height(), samples, format, &estimated_size)) {
+  if (!decoder_->renderbuffer_manager()->ComputeEstimatedRenderbufferSize(
+           size.width(), size.height(), samples, format, &estimated_size)) {
     return false;
   }
 
@@ -5022,8 +5022,8 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
   }
 
   uint32 estimated_size = 0;
-  if (!RenderbufferManager::ComputeEstimatedRenderbufferSize(
-      width, height, samples, internalformat, &estimated_size)) {
+  if (!renderbuffer_manager()->ComputeEstimatedRenderbufferSize(
+           width, height, samples, internalformat, &estimated_size)) {
     LOCAL_SET_GL_ERROR(
         GL_OUT_OF_MEMORY,
         "glRenderbufferStorageMultsample", "dimensions too large");
@@ -5037,8 +5037,9 @@ void GLES2DecoderImpl::DoRenderbufferStorageMultisample(
     return;
   }
 
-  GLenum impl_format = RenderbufferManager::
-      InternalRenderbufferFormatToImplFormat(internalformat);
+  GLenum impl_format =
+      renderbuffer_manager()->InternalRenderbufferFormatToImplFormat(
+          internalformat);
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glRenderbufferStorageMultisample");
   if (IsAngle()) {
     glRenderbufferStorageMultisampleANGLE(
@@ -5190,8 +5191,8 @@ void GLES2DecoderImpl::DoRenderbufferStorage(
   }
 
   uint32 estimated_size = 0;
-  if (!RenderbufferManager::ComputeEstimatedRenderbufferSize(
-      width, height, 1, internalformat, &estimated_size)) {
+  if (!renderbuffer_manager()->ComputeEstimatedRenderbufferSize(
+           width, height, 1, internalformat, &estimated_size)) {
     LOCAL_SET_GL_ERROR(
         GL_OUT_OF_MEMORY, "glRenderbufferStorage", "dimensions too large");
     return;
@@ -5205,9 +5206,11 @@ void GLES2DecoderImpl::DoRenderbufferStorage(
 
   LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glRenderbufferStorage");
   glRenderbufferStorageEXT(
-      target, RenderbufferManager::
-          InternalRenderbufferFormatToImplFormat(internalformat),
-      width, height);
+      target,
+      renderbuffer_manager()->InternalRenderbufferFormatToImplFormat(
+          internalformat),
+      width,
+      height);
   GLenum error = LOCAL_PEEK_GL_ERROR("glRenderbufferStorage");
   if (error == GL_NO_ERROR) {
     // TODO(gman): If tetxures tracked which framebuffers they were attached to
@@ -7313,8 +7316,7 @@ error::Error GLES2DecoderImpl::HandleGetString(
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetString", name, "name");
     return error::kNoError;
   }
-  const char* gl_str = reinterpret_cast<const char*>(glGetString(name));
-  const char* str = NULL;
+  const char* str = reinterpret_cast<const char*>(glGetString(name));
   std::string extensions;
   switch (name) {
     case GL_VERSION:
@@ -7324,10 +7326,11 @@ error::Error GLES2DecoderImpl::HandleGetString(
       str = "OpenGL ES GLSL ES 1.0 Chromium";
       break;
     case GL_RENDERER:
-      str = "Chromium";
-      break;
     case GL_VENDOR:
-      str = "Chromium";
+      // Return the unmasked VENDOR/RENDERER string for WebGL contexts.
+      // They are used by WEBGL_debug_renderer_info.
+      if (!force_webgl_glsl_validation_)
+        str = "Chromium";
       break;
     case GL_EXTENSIONS:
       {
@@ -7366,7 +7369,6 @@ error::Error GLES2DecoderImpl::HandleGetString(
       }
       break;
     default:
-      str = gl_str;
       break;
   }
   Bucket* bucket = CreateBucket(c.bucket_id);
@@ -9644,34 +9646,17 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
   if (dest_texture->target() != GL_TEXTURE_2D ||
       (source_texture->target() != GL_TEXTURE_2D &&
       source_texture->target() != GL_TEXTURE_EXTERNAL_OES)) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE,
-        "glCopyTextureCHROMIUM", "invalid texture target binding");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
+                       "glCopyTextureCHROMIUM",
+                       "invalid texture target binding");
     return;
   }
 
   int source_width, source_height, dest_width, dest_height;
 
-  if (source_texture->target() == GL_TEXTURE_2D) {
-    if (!source_texture->GetLevelSize(GL_TEXTURE_2D, 0, &source_width,
-                                      &source_height)) {
-      LOCAL_SET_GL_ERROR(
-          GL_INVALID_VALUE,
-          "glCopyTextureChromium", "source texture has no level 0");
-      return;
-    }
-
-    // Check that this type of texture is allowed.
-    if (!texture_manager()->ValidForTarget(GL_TEXTURE_2D, level, source_width,
-                                           source_height, 1)) {
-      LOCAL_SET_GL_ERROR(
-          GL_INVALID_VALUE,
-          "glCopyTextureCHROMIUM", "Bad dimensions");
-      return;
-    }
-  }
-
-  if (source_texture->target() == GL_TEXTURE_EXTERNAL_OES) {
+  if (source_texture->IsStreamTexture()) {
+    DCHECK_EQ(source_texture->target(),
+              static_cast<GLenum>(GL_TEXTURE_EXTERNAL_OES));
     DCHECK(stream_texture_manager());
     StreamTexture* stream_tex =
         stream_texture_manager()->LookupStreamTexture(
@@ -9689,6 +9674,22 @@ void GLES2DecoderImpl::DoCopyTextureCHROMIUM(
       LOCAL_SET_GL_ERROR(
           GL_INVALID_VALUE,
           "glCopyTextureChromium", "invalid streamtexture size");
+      return;
+    }
+  } else {
+    if (!source_texture->GetLevelSize(
+             source_texture->target(), 0, &source_width, &source_height)) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
+                         "glCopyTextureChromium",
+                         "source texture has no level 0");
+      return;
+    }
+
+    // Check that this type of texture is allowed.
+    if (!texture_manager()->ValidForTarget(
+             source_texture->target(), level, source_width, source_height, 1)) {
+      LOCAL_SET_GL_ERROR(
+          GL_INVALID_VALUE, "glCopyTextureCHROMIUM", "Bad dimensions");
       return;
     }
   }
@@ -9826,7 +9827,7 @@ void GLES2DecoderImpl::DoTexStorage2DEXT(
     GLsizei height) {
   TRACE_EVENT0("gpu", "GLES2DecoderImpl::DoTexStorage2DEXT");
   if (!texture_manager()->ValidForTarget(target, 0, width, height, 1) ||
-      TextureManager::ComputeMipMapCount(width, height, 1) < levels) {
+      TextureManager::ComputeMipMapCount(target, width, height, 1) < levels) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_VALUE, "glTexStorage2DEXT", "dimensions out of range");
     return;

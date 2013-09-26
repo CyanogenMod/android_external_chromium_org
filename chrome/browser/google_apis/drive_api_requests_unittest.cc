@@ -345,6 +345,48 @@ class DriveApiRequestsTest : public testing::Test {
   int64 content_length_;
 };
 
+TEST_F(DriveApiRequestsTest, DriveApiDataRequest_Fields) {
+  // Make sure that "fields" query param is supported by using its subclass,
+  // AboutGetRequest.
+
+  // Set an expected data file containing valid result.
+  expected_data_file_path_ = test_util::GetTestFilePath(
+      "drive/about.json");
+
+  GDataErrorCode error = GDATA_OTHER_ERROR;
+  scoped_ptr<AboutResource> about_resource;
+
+  {
+    base::RunLoop run_loop;
+    drive::AboutGetRequest* request = new drive::AboutGetRequest(
+        request_sender_.get(),
+        *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop,
+            test_util::CreateCopyResultCallback(&error, &about_resource)));
+    request->set_fields(
+        "kind,quotaBytesTotal,quotaBytesUsed,largestChangeId,rootFolderId");
+    request_sender_->StartRequestWithRetry(request);
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ("/drive/v2/about?"
+            "fields=kind%2CquotaBytesTotal%2CquotaBytesUsed%2C"
+            "largestChangeId%2CrootFolderId",
+            http_request_.relative_url);
+
+  scoped_ptr<AboutResource> expected(
+      AboutResource::CreateFrom(
+          *test_util::LoadJSONFile("drive/about.json")));
+  ASSERT_TRUE(about_resource.get());
+  EXPECT_EQ(expected->largest_change_id(), about_resource->largest_change_id());
+  EXPECT_EQ(expected->quota_bytes_total(), about_resource->quota_bytes_total());
+  EXPECT_EQ(expected->quota_bytes_used(), about_resource->quota_bytes_used());
+  EXPECT_EQ(expected->root_folder_id(), about_resource->root_folder_id());
+}
+
 TEST_F(DriveApiRequestsTest, FilesInsertRequest) {
   // Set an expected data file containing the directory's entry data.
   expected_data_file_path_ =
@@ -583,6 +625,8 @@ TEST_F(DriveApiRequestsTest, ChangesListNextPageRequest) {
 }
 
 TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
+  const base::Time::Exploded kModifiedDate = {2012, 7, 0, 19, 15, 59, 13, 123};
+
   // Set an expected data file containing the dummy file entry data.
   // It'd be returned if we copy a file.
   expected_data_file_path_ =
@@ -601,6 +645,7 @@ TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
             &run_loop,
             test_util::CreateCopyResultCallback(&error, &file_resource)));
     request->set_file_id("resource_id");
+    request->set_modified_date(base::Time::FromUTCExploded(kModifiedDate));
     request->add_parent("parent_resource_id");
     request->set_title("new title");
     request_sender_->StartRequestWithRetry(request);
@@ -614,7 +659,8 @@ TEST_F(DriveApiRequestsTest, FilesCopyRequest) {
 
   EXPECT_TRUE(http_request_.has_content);
   EXPECT_EQ(
-      "{\"parents\":[{\"id\":\"parent_resource_id\"}],\"title\":\"new title\"}",
+      "{\"modifiedDate\":\"2012-07-19T15:59:13.123Z\","
+      "\"parents\":[{\"id\":\"parent_resource_id\"}],\"title\":\"new title\"}",
       http_request_.content);
   EXPECT_TRUE(file_resource);
 }

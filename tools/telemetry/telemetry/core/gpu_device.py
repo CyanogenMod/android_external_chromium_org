@@ -10,11 +10,29 @@ class GPUDevice(object):
      are platform-dependent strings.
   """
 
+  _VENDOR_ID_MAP = {
+    0x1002: 'ATI',
+    0x8086: 'Intel',
+    0x10de: 'Nvidia',
+    }
+
   def __init__(self, vendor_id, device_id, vendor_string, device_string):
     self._vendor_id = vendor_id
     self._device_id = device_id
     self._vendor_string = vendor_string
     self._device_string = device_string
+
+  def __str__(self):
+    vendor = 'VENDOR = 0x%x' % self._vendor_id
+    vendor_string = self._vendor_string
+    if not vendor_string and self._vendor_id in self._VENDOR_ID_MAP:
+      vendor_string = self._VENDOR_ID_MAP[self._vendor_id]
+    if vendor_string:
+      vendor += ' (%s)' % vendor_string
+    device = 'DEVICE = 0x%x' % self._device_id
+    if self._device_string:
+      device += ' (%s)' % self._device_string
+    return '%s, %s' % (vendor, device)
 
   @classmethod
   def FromDict(cls, attrs):

@@ -9,18 +9,9 @@
 
 namespace remoting {
 
-namespace {
-// Both input and output data are assumed to be RGBA32.
-const int kBytesPerPixel = 4;
-}  // namespace
-
 VideoDecoderVerbatim::VideoDecoderVerbatim() {}
 
 VideoDecoderVerbatim::~VideoDecoderVerbatim() {}
-
-bool VideoDecoderVerbatim::IsReadyForData() {
-  return true;
-}
 
 void VideoDecoderVerbatim::Initialize(const webrtc::DesktopSize& screen_size) {
   updated_region_.Clear();
@@ -30,36 +21,37 @@ void VideoDecoderVerbatim::Initialize(const webrtc::DesktopSize& screen_size) {
   // Allocate the screen buffer, if necessary.
   if (!screen_size_.is_empty()) {
     screen_buffer_.reset(
-        new uint8
-            [screen_size_.width() * screen_size_.height() * kBytesPerPixel]);
+        new uint8[screen_size_.width() * screen_size_.height() *
+                  kBytesPerPixel]);
   }
 }
 
-VideoDecoder::DecodeResult VideoDecoderVerbatim::DecodePacket(
-    const VideoPacket* packet) {
+bool VideoDecoderVerbatim::DecodePacket(const VideoPacket& packet) {
   webrtc::DesktopRegion region;
 
-  const char* in = packet->data().data();
+  const char* in = packet.data().data();
   int stride = kBytesPerPixel * screen_size_.width();
-  for (int i = 0; i < packet->dirty_rects_size(); ++i) {
-    Rect proto_rect = packet->dirty_rects(i);
+  for (int i = 0; i < packet.dirty_rects_size(); ++i) {
+    Rect proto_rect = packet.dirty_rects(i);
     webrtc::DesktopRect rect =
-        webrtc::DesktopRect::MakeXYWH(proto_rect.x(), proto_rect.y(),
-                                      proto_rect.width(), proto_rect.height());
+        webrtc::DesktopRect::MakeXYWH(proto_rect.x(),
+                                      proto_rect.y(),
+                                      proto_rect.width(),
+                                      proto_rect.height());
     region.AddRect(rect);
 
     if (!DoesRectContain(webrtc::DesktopRect::MakeSize(screen_size_), rect)) {
       LOG(ERROR) << "Invalid packet received";
-      return DECODE_ERROR;
+      return false;
     }
 
     int rect_row_size = kBytesPerPixel * rect.width();
     uint8_t* out = screen_buffer_.get() + rect.top() * stride +
                    rect.left() * kBytesPerPixel;
     for (int y = rect.top(); y < rect.top() + rect.height(); ++y) {
-      if (in + rect_row_size > packet->data().data() + packet->data().size()) {
+      if (in + rect_row_size > packet.data().data() + packet.data().size()) {
         LOG(ERROR) << "Invalid packet received";
-        return DECODE_ERROR;
+        return false;
       }
       memcpy(out, in, rect_row_size);
       in += rect_row_size;
@@ -67,18 +59,14 @@ VideoDecoder::DecodeResult VideoDecoderVerbatim::DecodePacket(
     }
   }
 
-  if (in != packet->data().data() + packet->data().size()) {
+  if (in != packet.data().data() + packet.data().size()) {
     LOG(ERROR) << "Invalid packet received";
-    return DECODE_ERROR;
+    return false;
   }
 
   updated_region_.AddRegion(region);
 
-  return DECODE_DONE;
-}
-
-VideoPacketFormat::Encoding VideoDecoderVerbatim::Encoding() {
-  return VideoPacketFormat::ENCODING_VERBATIM;
+  return true;
 }
 
 void VideoDecoderVerbatim::Invalidate(const webrtc::DesktopSize& view_size,

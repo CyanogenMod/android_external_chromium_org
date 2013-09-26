@@ -163,7 +163,7 @@ static BOOL SupportsBackingPropertiesChangedNotification() {
 }
 
 static float ScaleFactor(NSView* view) {
-  return ui::GetScaleFactorScale(ui::GetScaleFactorForNativeView(view));
+  return ui::GetImageScale(ui::GetScaleFactorForNativeView(view));
 }
 
 // Private methods:
@@ -188,9 +188,6 @@ static float ScaleFactor(NSView* view) {
 - (void)checkForPluginImeCancellation;
 - (void)updateTabBackingStoreScaleFactor;
 @end
-
-// NSEvent subtype for scroll gestures events.
-static const short kIOHIDEventTypeScroll = 6;
 
 // A window subclass that allows the fullscreen window to become main and gain
 // keyboard focus. This is only used for pepper flash. Normal fullscreen is

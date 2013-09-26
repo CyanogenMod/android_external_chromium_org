@@ -32,7 +32,6 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_contents_client_bridge_base.cc \
 	android_webview/browser/aw_content_browser_client.cc \
 	android_webview/browser/aw_cookie_access_policy.cc \
-	android_webview/browser/aw_devtools_delegate.cc \
 	android_webview/browser/aw_download_manager_delegate.cc \
 	android_webview/browser/aw_form_database_service.cc \
 	android_webview/browser/aw_gl_surface.cc \
@@ -106,7 +105,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -123,8 +121,8 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
@@ -217,7 +215,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -234,8 +231,8 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \

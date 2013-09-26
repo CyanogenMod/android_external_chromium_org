@@ -131,6 +131,11 @@ int ki_open(const char *path, int oflag) {
   return s_kp->open(path, oflag);
 }
 
+int ki_pipe(int pipefds[2]) {
+  ON_NOSYS_RETURN(-1);
+  return s_kp->pipe(pipefds);
+}
+
 ssize_t ki_read(int fd, void *buf, size_t nbyte) {
   ON_NOSYS_RETURN(-1);
   return s_kp->read(fd, buf, nbyte);
@@ -214,6 +219,11 @@ int ki_munmap(void* addr, size_t length) {
 
 int ki_open_resource(const char* file) {
   ON_NOSYS_RETURN(-1);  return s_kp->open_resource(file);
+}
+
+int ki_fcntl(int d, int request, char* argp) {
+  ON_NOSYS_RETURN(-1);
+  return s_kp->fcntl(d, request, argp);
 }
 
 int ki_ioctl(int d, int request, char* argp) {

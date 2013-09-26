@@ -21,8 +21,8 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,GYP,third_party_widevine_cdm_widevine_cdm_version_h_gyp)/widevine_cdm_version_h.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_child_gyp)/webkit_support_glue_child_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_gyp)/webkit_glue_glue_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_child_gyp)/webkit_glue_glue_child_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libphonenumber_libphonenumber_without_metadata_gyp)/third_party_libphonenumber_libphonenumber_without_metadata_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
@@ -227,7 +227,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -245,8 +244,8 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -373,7 +372,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -391,8 +389,8 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
@@ -524,8 +522,8 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 LOCAL_STATIC_LIBRARIES := \
 	cpufeatures \
 	skia_skia_library_gyp \
-	webkit_support_glue_gyp \
-	webkit_support_glue_child_gyp \
+	webkit_glue_glue_gyp \
+	webkit_glue_glue_child_gyp \
 	third_party_libphonenumber_libphonenumber_without_metadata_gyp
 
 # Enable grouping to fix circular references

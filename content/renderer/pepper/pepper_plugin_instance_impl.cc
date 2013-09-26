@@ -1639,6 +1639,9 @@ bool PepperPluginInstanceImpl::SetFullscreen(bool fullscreen) {
   if (fullscreen == IsFullscreenOrPending())
     return false;
 
+  if (fullscreen && !render_view_->IsPluginFullscreenAllowed())
+    return false;
+
   // Check whether we are trying to switch while the state is in transition.
   // The 2nd request gets dropped while messing up the internal state, so
   // disallow this.
@@ -1738,7 +1741,7 @@ bool PepperPluginInstanceImpl::PrintPDFOutput(PP_Resource print_output,
 #endif  // defined(OS_WIN)
 
   bool ret = false;
-#if defined(OS_LINUX) || defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
   // On Linux we just set the final bits in the native metafile
   // (NativeMetafile and PreviewMetafile must have compatible formats,
   // i.e. both PDF for this to work).
@@ -2179,14 +2182,6 @@ PP_Var PepperPluginInstanceImpl::GetDefaultCharSet(PP_Instance instance) {
 // PPP_ContentDecryptor_Private calls made on |content_decryptor_delegate_|.
 // Therefore, |content_decryptor_delegate_| must have been initialized when
 // the following methods are called.
-void PepperPluginInstanceImpl::NeedKey(PP_Instance instance,
-                                       PP_Var key_system_var,
-                                       PP_Var session_id_var,
-                                       PP_Var init_data_var) {
-  content_decryptor_delegate_->NeedKey(
-      key_system_var, session_id_var, init_data_var);
-}
-
 void PepperPluginInstanceImpl::KeyAdded(PP_Instance instance,
                                         PP_Var key_system_var,
                                         PP_Var session_id_var) {
@@ -2677,11 +2672,9 @@ base::FilePath PepperPluginInstanceImpl::GetModulePath() {
 
 PP_Resource PepperPluginInstanceImpl::CreateImage(gfx::ImageSkia* source_image,
                                                   float scale) {
-  ui::ScaleFactor scale_factor = ui::GetScaleFactorFromScale(scale);
-  gfx::ImageSkiaRep image_skia_rep = source_image->GetRepresentation(
-      scale_factor);
+  gfx::ImageSkiaRep image_skia_rep = source_image->GetRepresentation(scale);
 
-  if (image_skia_rep.is_null() || image_skia_rep.scale_factor() != scale_factor)
+  if (image_skia_rep.is_null() || image_skia_rep.scale() != scale)
     return 0;
 
   scoped_refptr<PPB_ImageData_Impl> image_data(new PPB_ImageData_Impl(
@@ -2756,7 +2749,7 @@ bool PepperPluginInstanceImpl::IsFullPagePlugin() {
   return frame->view()->mainFrame()->document().isPluginDocument();
 }
 
-void PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
+bool PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
                                                   bool delay_report) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::FlashSetFullscreen");
   // Keep a reference on the stack. See NOTE above.
@@ -2766,7 +2759,10 @@ void PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
   // to (i.e. if we're already switching to fullscreen but the fullscreen
   // container isn't ready yet, don't do anything more).
   if (fullscreen == FlashIsFullscreenOrPending())
-    return;
+    return true;
+
+  if (fullscreen && !render_view_->IsPluginFullscreenAllowed())
+    return false;
 
   // Unbind current 2D or 3D graphics context.
   VLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
@@ -2787,6 +2783,8 @@ void PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
           base::Bind(&PepperPluginInstanceImpl::ReportGeometry, this));
     }
   }
+
+  return true;
 }
 
 bool PepperPluginInstanceImpl::IsRectTopmost(const gfx::Rect& rect) {

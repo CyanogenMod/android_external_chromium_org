@@ -12,13 +12,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
-#include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
@@ -29,8 +29,6 @@
 class AutocompleteController;
 class CloudPrintSetupHandler;
 class CustomHomePagesTableModel;
-class GoogleServiceAuthError;
-class ManagedUserRegistrationUtility;
 class TemplateURLService;
 
 namespace options {
@@ -68,22 +66,6 @@ class BrowserOptionsHandler
   virtual void OnTemplateURLServiceChanged() OVERRIDE;
 
  private:
-  // Represents the final profile creation status. It is used to map
-  // the status to the javascript method to be called.
-  enum ProfileCreationStatus {
-    PROFILE_CREATION_SUCCESS,
-    PROFILE_CREATION_ERROR,
-  };
-
-  // Represents errors that could occur during a profile creation.
-  // It is used to map error types to messages that will be displayed
-  // to the user.
-  enum ProfileCreationErrorType {
-    REMOTE_ERROR,
-    LOCAL_ERROR,
-    SIGNIN_ERROR
-  };
-
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -157,70 +139,9 @@ class BrowserOptionsHandler
   // Sends an array of Profile objects to javascript.
   void SendProfilesInfo();
 
-  // Returns the current desktop type.
-  chrome::HostDesktopType GetDesktopType();
-
-  // Asynchronously creates and initializes a new profile.
-  // The arguments are as follows:
-  //   0: name (string)
-  //   1: icon (string)
-  //   2: a flag stating whether we should create a profile desktop shortcut
-  //      (optional, boolean)
-  //   3: a flag stating whether the user should be managed (optional, boolean)
-  void CreateProfile(const base::ListValue* args);
-
-  // After a new managed-user profile has been created, registers the user with
-  // the management server.
-  void RegisterManagedUser(chrome::HostDesktopType desktop_type,
-                           const std::string& managed_user_id,
-                           Profile* new_profile,
-                           Profile::CreateStatus status);
-
-  // Called back with the result of the managed user registration.
-  void OnManagedUserRegistered(chrome::HostDesktopType desktop_type,
-                               Profile* profile,
-                               const GoogleServiceAuthError& error);
-
-  // Records UMA histograms relevant to profile creation.
-  void RecordProfileCreationMetrics(Profile::CreateStatus status);
-
-  // Updates the UI as the final task after a new profile has been created.
-  void ShowProfileCreationFeedback(
-      chrome::HostDesktopType desktop_type,
-      Profile* profile,
-      Profile::CreateStatus status);
-
-  // Updates the UI to show an error when creating a profile.
-  void ShowProfileCreationError(Profile* profile, const string16& error);
-
-  // Updates the UI to show a non-fatal warning when creating a profile.
-  void ShowProfileCreationWarning(const string16& warning);
-
-  // Updates the UI to indicate success when creating a profile.
-  void ShowProfileCreationSuccess(Profile* profile,
-                                  chrome::HostDesktopType desktop_type,
-                                  bool is_managed);
-
   // Deletes the given profile. Expects one argument:
   //   0: profile file path (string)
   void DeleteProfile(const base::ListValue* args);
-
-  // Deletes the profile at the given |file_path|.
-  void DeleteProfileAtPath(base::FilePath file_path);
-
-  // Cancels creation of a managed-user profile currently in progress, as
-  // indicated by profile_path_being_created_, removing the object and files
-  // and canceling managed-user registration. This is the handler for the
-  // "cancelCreateProfile" message. |args| is not used.
-  // TODO(pamg): Move all the profile-handling methods into a more appropriate
-  // class.
-  void HandleCancelProfileCreation(const base::ListValue* args);
-
-  // Internal implementation. This may safely be called whether profile creation
-  // or registration is in progress or not. |user_initiated| should be true if
-  // the cancellation was deliberately requested by the user, and false if it
-  // was caused implicitly, e.g. by shutting down the browser.
-  void CancelProfileRegistration(bool user_initiated);
 
   void ObserveThemeChanged();
   void ThemesReset(const base::ListValue* args);
@@ -274,6 +195,10 @@ class BrowserOptionsHandler
   // Callback for the "showManageSSLCertificates" message. This will invoke
   // an appropriate certificate management action based on the platform.
   void ShowManageSSLCertificates(const ListValue* args);
+#endif
+
+#if defined(ENABLE_MDNS)
+  void ShowCloudPrintDevicesPage(const ListValue* args);
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -343,13 +268,6 @@ class BrowserOptionsHandler
   void SetupAccessibilityFeatures();
 #endif
 
-  string16 GetProfileCreationErrorMessage(
-      ProfileCreationErrorType error) const;
-  std::string GetJavascriptMethodName(ProfileCreationStatus status) const;
-
-  bool IsValidExistingManagedUserId(
-      const std::string& existing_managed_user_id) const;
-
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
   scoped_ptr<DictionaryValue> GetSyncStateDictionary();
@@ -362,14 +280,6 @@ class BrowserOptionsHandler
   BooleanPrefMember default_browser_policy_;
 
   TemplateURLService* template_url_service_;  // Weak.
-
-  // Used to allow cancelling a profile creation (particularly a managed-user
-  // registration) in progress. Set when profile creation is begun, and
-  // cleared when all the callbacks have been run and creation is complete.
-  base::FilePath profile_path_being_created_;
-
-  // Used to track how long profile creation takes.
-  base::TimeTicks profile_creation_start_time_;
 
   // Used to get WeakPtr to self for use on the UI thread.
   base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;
@@ -386,14 +296,6 @@ class BrowserOptionsHandler
   DoublePrefMember default_zoom_level_;
 
   PrefChangeRegistrar profile_pref_registrar_;
-
-  scoped_ptr<ManagedUserRegistrationUtility> managed_user_registration_utility_;
-
-  // Indicates if the in progress user creation operation is an import operation
-  // for an existing managed user or a new user (either a new managed user or
-  // a new normal user) creation one.
-  // The value is only relevant while we are creating/importing a user.
-  bool importing_existing_managed_user_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserOptionsHandler);
 };

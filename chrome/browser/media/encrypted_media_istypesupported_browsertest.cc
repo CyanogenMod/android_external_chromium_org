@@ -81,15 +81,16 @@
 
 namespace chrome {
 
-static const char kPrefixedClearKey[] = "webkit-org.w3.clearkey";
-static const char kPrefixedClearKeyParent[] = "webkit-org.w3";
+const char kPrefixedClearKey[] = "webkit-org.w3.clearkey";
+const char kPrefixedClearKeyParent[] = "webkit-org.w3";
 // TODO(ddorwin): Duplicate prefixed tests for unprefixed.
-static const char kUnprefixedClearKey[] = "org.w3.clearkey";
-static const char kUnprefixedClearKeyParent[] = "org.w3";
-static const char kExternalClearKey[] = "org.chromium.externalclearkey";
-static const char kWidevineAlpha[] = "com.widevine.alpha";
-static const char kWidevine[] = "com.widevine";
-static const char kWidevineAlphaHr[] = "com.widevine.alpha.hr";
+const char kUnprefixedClearKey[] = "org.w3.clearkey";
+const char kExternalClearKey[] = "org.chromium.externalclearkey";
+const char kWidevineAlpha[] = "com.widevine.alpha";
+const char kWidevine[] = "com.widevine";
+const char kWidevineAlphaHr[] = "com.widevine.alpha.hr";
+const char kWidevineAlphaHrNonCompositing[] =
+    "com.widevine.alpha.hrnoncompositing";
 
 class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
  protected:
@@ -852,6 +853,15 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_FALSE(IsConcreteSupportedKeySystem(kWidevineAlphaHr));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", no_codecs(), kWidevineAlphaHr));
+}
+
+IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
+                       Widevine_HR_NonCompositing_Basic) {
+  // HR non-compositing support cannot be detected in tests, so this is expected
+  // to fail everywhere.
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kWidevineAlphaHrNonCompositing));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", no_codecs(), kWidevineAlphaHrNonCompositing));
 }
 
 #if defined(ENABLE_PEPPER_CDMS)

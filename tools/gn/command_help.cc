@@ -20,19 +20,6 @@ namespace commands {
 
 namespace {
 
-// Prints a line for a command, assuming there is a colon. Everything before
-// the colon is the command (and is highlighted) and everything after it is
-// normal.
-void PrintShortHelp(const std::string& line) {
-  size_t colon_offset = line.find(':');
-  size_t first_normal = 0;
-  if (colon_offset != std::string::npos) {
-    OutputString("  " + line.substr(0, colon_offset), DECORATION_YELLOW);
-    first_normal = colon_offset;
-  }
-  OutputString(line.substr(first_normal) + "\n");
-}
-
 void PrintToplevelHelp() {
   OutputString("Commands (type \"gn help <command>\" for more details):\n");
 
@@ -45,13 +32,25 @@ void PrintToplevelHelp() {
       "\n"
       "  When run with no arguments \"gn gen\" is assumed.\n"
       "\n"
-      "Common switches:\n"
-      "  --args: Specifies build args overrides. See \"gn help buildargs\".\n"
-      "  -q: Quiet mode, don't print anything on success.\n"
-      "  --output: Directory for build output (relative to source root).\n"
-      "  --root: Specifies source root (overrides .gn file).\n"
-      "  --secondary: Specifies secondary source root (overrides .gn file).\n"
-      "  -v: Verbose mode, print lots of logging.\n");
+      "Common switches:\n");
+  PrintShortHelp(
+      "--args: Specifies build args overrides. See \"gn help buildargs\".");
+  PrintShortHelp(
+      "--no-exec: Skips exec_script calls (for performance testing).");
+  PrintShortHelp(
+      "-q: Quiet mode, don't print anything on success.");
+  PrintShortHelp(
+      "--output: Directory for build output (relative to source root).");
+  PrintShortHelp(
+      "--root: Specifies source root (overrides .gn file).");
+  PrintShortHelp(
+      "--secondary: Specifies secondary source root (overrides .gn file).");
+  PrintShortHelp(
+      "--time: Outputs a summary of how long everything took.");
+  PrintShortHelp(
+      "--tracelog: Writes a Chrome-compatible trace log to the given file.");
+  PrintShortHelp(
+      "-v: Verbose mode, print lots of logging.");
 
   // Functions.
   OutputString("\nBuildfile functions (type \"gn help <function>\" for more "
@@ -113,7 +112,7 @@ int RunHelp(const std::vector<std::string>& args) {
   commands::CommandInfoMap::const_iterator found_command =
       command_map.find(args[0]);
   if (found_command != command_map.end()) {
-    OutputString(found_command->second.help);
+    PrintLongHelp(found_command->second.help);
     return 0;
   }
 
@@ -122,7 +121,7 @@ int RunHelp(const std::vector<std::string>& args) {
   functions::FunctionInfoMap::const_iterator found_function =
       function_map.find(args[0]);
   if (found_function != function_map.end()) {
-    OutputString(found_function->second.help);
+    PrintLongHelp(found_function->second.help);
     return 0;
   }
 
@@ -132,7 +131,7 @@ int RunHelp(const std::vector<std::string>& args) {
   variables::VariableInfoMap::const_iterator found_builtin_var =
       builtin_vars.find(args[0]);
   if (found_builtin_var != builtin_vars.end()) {
-    OutputString(found_builtin_var->second.help);
+    PrintLongHelp(found_builtin_var->second.help);
     return 0;
   }
 
@@ -142,29 +141,29 @@ int RunHelp(const std::vector<std::string>& args) {
   variables::VariableInfoMap::const_iterator found_target_var =
       target_vars.find(args[0]);
   if (found_target_var != target_vars.end()) {
-    OutputString(found_target_var->second.help);
+    PrintLongHelp(found_target_var->second.help);
     return 0;
   }
 
   // Random other topics.
   if (args[0] == "buildargs") {
-    OutputString(kBuildArgs_Help);
+    PrintLongHelp(kBuildArgs_Help);
     return 0;
   }
   if (args[0] == "dotfile") {
-    OutputString(kDotfile_Help);
+    PrintLongHelp(kDotfile_Help);
     return 0;
   }
   if (args[0] == "input_conversion") {
-    OutputString(kInputConversion_Help);
+    PrintLongHelp(kInputConversion_Help);
     return 0;
   }
   if (args[0] == "patterns") {
-    OutputString(kPattern_Help);
+    PrintLongHelp(kPattern_Help);
     return 0;
   }
   if (args[0] == "source_expansion") {
-    OutputString(kSourceExpansion_Help);
+    PrintLongHelp(kSourceExpansion_Help);
     return 0;
   }
 

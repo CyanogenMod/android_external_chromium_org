@@ -500,7 +500,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetDrawsContent(DrawsContent());
   layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
   layer->SetFilters(filters());
-  layer->SetFilter(filter());
   layer->SetBackgroundFilters(background_filters());
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
@@ -818,7 +817,6 @@ void LayerImpl::SetFilters(const FilterOperations& filters) {
   if (filters_ == filters)
     return;
 
-  DCHECK(!filter_);
   filters_ = filters;
   NoteLayerPropertyChangedForSubtree();
 }
@@ -830,15 +828,6 @@ void LayerImpl::SetBackgroundFilters(
 
   background_filters_ = filters;
   NoteLayerPropertyChanged();
-}
-
-void LayerImpl::SetFilter(const skia::RefPtr<SkImageFilter>& filter) {
-  if (filter_.get() == filter.get())
-    return;
-
-  DCHECK(filters_.IsEmpty());
-  filter_ = filter;
-  NoteLayerPropertyChangedForSubtree();
 }
 
 void LayerImpl::SetMasksToBounds(bool masks_to_bounds) {
@@ -1001,8 +990,10 @@ void LayerImpl::SetScrollOffsetDelegate(
   }
   gfx::Vector2dF total_offset = TotalScrollOffset();
   scroll_offset_delegate_ = scroll_offset_delegate;
-  if (scroll_offset_delegate_)
+  if (scroll_offset_delegate_) {
+    scroll_offset_delegate_->SetMaxScrollOffset(max_scroll_offset_);
     scroll_offset_delegate_->SetTotalScrollOffset(total_offset);
+  }
 }
 
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
@@ -1087,6 +1078,9 @@ void LayerImpl::SetMaxScrollOffset(gfx::Vector2d max_scroll_offset) {
   if (max_scroll_offset_ == max_scroll_offset)
     return;
   max_scroll_offset_ = max_scroll_offset;
+
+  if (scroll_offset_delegate_)
+    scroll_offset_delegate_->SetMaxScrollOffset(max_scroll_offset_);
 
   layer_tree_impl()->set_needs_update_draw_properties();
   UpdateScrollbarPositions();

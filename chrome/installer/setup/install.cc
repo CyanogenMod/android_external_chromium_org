@@ -17,6 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/safe_numerics.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -340,9 +341,10 @@ bool CreateVisualElementsManifest(const base::FilePath& src_path,
 
     // Write the manifest to |src_path|.
     const std::string manifest(UTF16ToUTF8(manifest16));
+    int size = base::checked_numeric_cast<int>(manifest.size());
     if (file_util::WriteFile(
-            src_path.Append(installer::kVisualElementsManifest),
-            manifest.c_str(), manifest.size())) {
+        src_path.Append(installer::kVisualElementsManifest),
+            manifest.c_str(), size) == size) {
       VLOG(1) << "Successfully wrote " << installer::kVisualElementsManifest
               << " to " << src_path.value();
       return true;
@@ -504,10 +506,8 @@ InstallStatus InstallOrUpdateProduct(
   DCHECK(products.size());
   if (installer_state.FindProduct(BrowserDistribution::CHROME_FRAME)) {
     // Make sure that we don't end up deleting installed files on next reboot.
-    if (!RemoveFromMovesPendingReboot(
-            installer_state.target_path().value().c_str())) {
+    if (!RemoveFromMovesPendingReboot(installer_state.target_path()))
       LOG(ERROR) << "Error accessing pending moves value.";
-    }
   }
 
   // Create VisualElementManifest.xml in |src_path| (if required) so that it

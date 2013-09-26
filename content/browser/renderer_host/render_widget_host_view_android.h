@@ -151,6 +151,7 @@ class RenderWidgetHostViewAndroid
       const WebKit::WebMouseWheelEvent& event) OVERRIDE;
   virtual InputEventAckState FilterInputEvent(
       const WebKit::WebInputEvent& input_event) OVERRIDE;
+  virtual void OnSetNeedsFlushInput() OVERRIDE;
   virtual void GestureEventAck(int gesture_event_type,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void OnAccessibilityEvents(
@@ -195,6 +196,7 @@ class RenderWidgetHostViewAndroid
 
   // cc::DelegatedRendererLayerClient implementation.
   virtual void DidCommitFrameData() OVERRIDE;
+  virtual void UnusedResourcesAreAvailable() OVERRIDE {}
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -327,6 +329,8 @@ class RenderWidgetHostViewAndroid
   // Used to render overscroll overlays.
   bool overscroll_effect_enabled_;
   scoped_ptr<OverscrollGlow> overscroll_effect_;
+
+  bool flush_input_requested_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAndroid);
 };

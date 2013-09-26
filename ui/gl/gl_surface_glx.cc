@@ -21,7 +21,7 @@ extern "C" {
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "third_party/mesa/src/include/GL/osmesa.h"
-#include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/vsync_provider.h"
@@ -389,10 +389,6 @@ bool GLSurfaceGLX::InitializeOneOff() {
   g_create_child_windows =
       base::MessageLoop::current() &&
       base::MessageLoop::current()->type() == base::MessageLoop::TYPE_GPU;
-
-  // Disable this path because it is causing window contents to disappear.
-  // http://crbug.com/292655
-  g_create_child_windows = false;
 
   if (g_create_child_windows)
     g_display = base::MessagePumpX11::GetDefaultXDisplay();

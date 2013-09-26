@@ -102,8 +102,7 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
       PP_InputEvent_Type type,
       PP_TimeTicks time_stamp,
       uint32_t modifiers) OVERRIDE;
-  virtual PP_Resource CreateNetworkMonitorPrivate(
-      PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateNetworkMonitor(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreatePlatformVerificationPrivate(
       PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateResourceArray(PP_Instance instance,
@@ -114,6 +113,7 @@ class ResourceCreationImpl : public ppapi::thunk::ResourceCreationAPI {
   virtual PP_Resource CreateTalk(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket1_0(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;

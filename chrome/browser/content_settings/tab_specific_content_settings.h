@@ -200,6 +200,14 @@ class TabSpecificContentSettings
     return media_stream_access_origin_;
   }
 
+  const std::string& media_stream_requested_audio_device() const {
+    return media_stream_requested_audio_device_;
+  }
+
+  const std::string& media_stream_requested_video_device() const {
+    return media_stream_requested_video_device_;
+  }
+
   // Returns the state of the camera and microphone usage.
   MicrophoneCameraState GetMicrophoneCameraState() const;
 
@@ -337,13 +345,17 @@ class TabSpecificContentSettings
                              bool blocked_by_policy);
   void OnGeolocationPermissionSet(const GURL& requesting_frame,
                                   bool allowed);
+#if defined(OS_ANDROID)
+  void OnProtectedMediaIdentifierPermissionSet(const GURL& requesting_frame,
+                                               bool allowed);
+#endif
 
   // This method is called to update the status about the microphone and
   // camera stream access. |request_permissions| contains a list of requested
   // media stream types and the permission for each type.
   void OnMediaStreamPermissionSet(
       const GURL& request_origin,
-      const MediaStreamDevicesController::MediaStreamTypePermissionMap&
+      const MediaStreamDevicesController::MediaStreamTypeSettingsMap&
           request_permissions);
 
   // Called when the user submits a form containing login information, so we
@@ -432,6 +444,11 @@ class TabSpecificContentSettings
   // settings for one request per tab. The latest request's origin will be
   // stored here. http://crbug.com/259794
   GURL media_stream_access_origin_;
+
+  // The devices to be displayed in the media bubble when the media stream
+  // request is requesting certain specific devices.
+  std::string media_stream_requested_audio_device_;
+  std::string media_stream_requested_video_device_;
 
   // Set by OnPasswordSubmitted() when the user submits a form containing login
   // information.  If the user responds to a subsequent "Do you want to save

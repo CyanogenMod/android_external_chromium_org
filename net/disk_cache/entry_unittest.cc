@@ -64,6 +64,8 @@ class DiskCacheEntryTest : public DiskCacheTestWithCache {
   void DoomSparseEntry();
   void PartialSparseEntry();
   bool SimpleCacheMakeBadChecksumEntry(const std::string& key, int* data_size);
+  bool SimpleCacheThirdStreamFileExists(const char* key);
+  void SyncDoomEntry(const char* key);
 };
 
 // This part of the test runs on the background thread.
@@ -3555,6 +3557,209 @@ TEST_F(DiskCacheEntryTest, SimpleCacheStream1SizeChanges) {
   EXPECT_EQ(0, memcmp(buffer->data(), buffer_read->data(), kSize));
   entry->Close();
   entry = NULL;
+}
+
+// Test that writing within the range for which the crc has already been
+// computed will properly invalidate the computed crc.
+TEST_F(DiskCacheEntryTest, SimpleCacheCRCRewrite) {
+  // Test sequence:
+  // Create, Write (big data), Write (small data in the middle), Close.
+  // Open, Read (all), Close.
+  SetSimpleCacheMode();
+  InitCache();
+  disk_cache::Entry* null = NULL;
+  const char key[] = "the first key";
+
+  const int kHalfSize = 200;
+  const int kSize = 2 * kHalfSize;
+  scoped_refptr<net::IOBuffer> buffer1(new net::IOBuffer(kSize));
+  scoped_refptr<net::IOBuffer> buffer2(new net::IOBuffer(kHalfSize));
+  CacheTestFillBuffer(buffer1->data(), kSize, false);
+  CacheTestFillBuffer(buffer2->data(), kHalfSize, false);
+
+  disk_cache::Entry* entry = NULL;
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  EXPECT_NE(null, entry);
+  entry->Close();
+
+  for (int i = 0; i < disk_cache::kSimpleEntryStreamCount; ++i) {
+    ASSERT_EQ(net::OK, OpenEntry(key, &entry));
+    int offset = 0;
+    int buf_len = kSize;
+
+    EXPECT_EQ(buf_len,
+              WriteData(entry, i, offset, buffer1.get(), buf_len, false));
+    offset = kHalfSize;
+    buf_len = kHalfSize;
+    EXPECT_EQ(buf_len,
+              WriteData(entry, i, offset, buffer2.get(), buf_len, false));
+    entry->Close();
+
+    ASSERT_EQ(net::OK, OpenEntry(key, &entry));
+
+    scoped_refptr<net::IOBuffer> buffer1_read1(new net::IOBuffer(kSize));
+    EXPECT_EQ(kSize, ReadData(entry, i, 0, buffer1_read1.get(), kSize));
+    EXPECT_EQ(0, memcmp(buffer1->data(), buffer1_read1->data(), kHalfSize));
+    EXPECT_EQ(
+        0,
+        memcmp(buffer2->data(), buffer1_read1->data() + kHalfSize, kHalfSize));
+
+    entry->Close();
+  }
+}
+
+bool DiskCacheEntryTest::SimpleCacheThirdStreamFileExists(const char* key) {
+  int third_stream_file_index =
+      disk_cache::simple_util::GetFileIndexFromStreamIndex(2);
+  base::FilePath third_stream_file_path = cache_path_.AppendASCII(
+      disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(
+          key, third_stream_file_index));
+  return PathExists(third_stream_file_path);
+}
+
+void DiskCacheEntryTest::SyncDoomEntry(const char* key) {
+  net::TestCompletionCallback callback;
+  cache_->DoomEntry(key, callback.callback());
+  callback.WaitForResult();
+}
+
+// Check that a newly-created entry with no third-stream writes omits the
+// third stream file.
+TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream1) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  const char key[] = "key";
+
+  disk_cache::Entry* entry;
+
+  // Create entry and close without writing: third stream file should be
+  // omitted, since the stream is empty.
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  entry->Close();
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+
+  SyncDoomEntry(key);
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+}
+
+// Check that a newly-created entry with only a single zero-offset, zero-length
+// write omits the third stream file.
+TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream2) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  const int kHalfSize = 8;
+  const int kSize = kHalfSize * 2;
+  const char key[] = "key";
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer->data(), kHalfSize, false);
+
+  disk_cache::Entry* entry;
+
+  // Create entry, write empty buffer to third stream, and close: third stream
+  // should still be omitted, since the entry ignores writes that don't modify
+  // data or change the length.
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer, 0, true));
+  entry->Close();
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+
+  SyncDoomEntry(key);
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+}
+
+// Check that we can read back data written to the third stream.
+TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream3) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  const int kHalfSize = 8;
+  const int kSize = kHalfSize * 2;
+  const char key[] = "key";
+  scoped_refptr<net::IOBuffer> buffer1(new net::IOBuffer(kSize));
+  scoped_refptr<net::IOBuffer> buffer2(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer1->data(), kHalfSize, false);
+
+  disk_cache::Entry* entry;
+
+  // Create entry, write data to third stream, and close: third stream should
+  // not be omitted, since it contains data.  Re-open entry and ensure there
+  // are that many bytes in the third stream.
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1, kHalfSize, true));
+  entry->Close();
+  EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
+
+  ASSERT_EQ(net::OK, OpenEntry(key, &entry));
+  EXPECT_EQ(kHalfSize, ReadData(entry, 2, 0, buffer2, kSize));
+  EXPECT_EQ(0, memcmp(buffer1->data(), buffer2->data(), kHalfSize));
+  entry->Close();
+  EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
+
+  SyncDoomEntry(key);
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+}
+
+// Check that we remove the third stream file upon opening an entry and finding
+// the third stream empty.  (This is the upgrade path for entries written
+// before the third stream was optional.)
+TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream4) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  const int kHalfSize = 8;
+  const int kSize = kHalfSize * 2;
+  const char key[] = "key";
+  scoped_refptr<net::IOBuffer> buffer1(new net::IOBuffer(kSize));
+  scoped_refptr<net::IOBuffer> buffer2(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer1->data(), kHalfSize, false);
+
+  disk_cache::Entry* entry;
+
+  // Create entry, write data to third stream, truncate third stream back to
+  // empty, and close: third stream will not initially be omitted, since entry
+  // creates the file when the first significant write comes in, and only
+  // removes it on open if it is empty.  Reopen, ensure that the file is
+  // deleted, and that there's no data in the third stream.
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1, kHalfSize, true));
+  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer1, 0, true));
+  entry->Close();
+  EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
+
+  ASSERT_EQ(net::OK, OpenEntry(key, &entry));
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+  EXPECT_EQ(0, ReadData(entry, 2, 0, buffer2, kSize));
+  entry->Close();
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+
+  SyncDoomEntry(key);
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
+}
+
+// Check that we don't accidentally create the third stream file once the entry
+// has been doomed.
+TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream5) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  const int kHalfSize = 8;
+  const int kSize = kHalfSize * 2;
+  const char key[] = "key";
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer->data(), kHalfSize, false);
+
+  disk_cache::Entry* entry;
+
+  // Create entry, doom entry, write data to third stream, and close: third
+  // stream should not exist.  (Note: We don't care if the write fails, just
+  // that it doesn't cause the file to be created on disk.)
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry));
+  entry->Doom();
+  WriteData(entry, 2, 0, buffer, kHalfSize, true);
+  entry->Close();
+  EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
 }
 
 #endif  // defined(OS_POSIX)

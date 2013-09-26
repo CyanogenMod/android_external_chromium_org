@@ -290,23 +290,27 @@ void GLRenderer::ViewportChanged() {
   ReinitializeGrCanvas();
 }
 
-void GLRenderer::ClearFramebuffer(DrawingFrame* frame) {
+void GLRenderer::DiscardPixels(bool has_external_stencil_test,
+                               bool draw_rect_covers_full_surface) {
+  if (has_external_stencil_test || !draw_rect_covers_full_surface ||
+      !capabilities_.using_discard_framebuffer)
+    return;
+  bool using_default_framebuffer =
+      !current_framebuffer_lock_ &&
+      output_surface_->capabilities().uses_default_gl_framebuffer;
+  GLenum attachments[] = {static_cast<GLenum>(
+      using_default_framebuffer ? GL_COLOR_EXT : GL_COLOR_ATTACHMENT0_EXT)};
+  context_->discardFramebufferEXT(
+      GL_FRAMEBUFFER, arraysize(attachments), attachments);
+}
+
+void GLRenderer::ClearFramebuffer(DrawingFrame* frame,
+                                  bool has_external_stencil_test) {
   // It's unsafe to clear when we have a stencil test because glClear ignores
   // stencil.
-  if (output_surface_->HasExternalStencilTest() &&
-      frame->current_render_pass == frame->root_render_pass) {
+  if (has_external_stencil_test) {
     DCHECK(!frame->current_render_pass->has_transparent_background);
     return;
-  }
-
-  if (capabilities_.using_discard_framebuffer) {
-    bool using_default_framebuffer =
-        !current_framebuffer_lock_ &&
-        output_surface_->capabilities().uses_default_gl_framebuffer;
-    GLenum attachments[] = {static_cast<GLenum>(
-        using_default_framebuffer ? GL_COLOR_EXT : GL_COLOR_ATTACHMENT0_EXT)};
-    context_->discardFramebufferEXT(
-        GL_FRAMEBUFFER, arraysize(attachments), attachments);
   }
 
   // On DEBUG builds, opaque render passes are cleared to blue to easily see
@@ -768,25 +772,31 @@ void GLRenderer::DrawRenderPassQuad(DrawingFrame* frame,
   SkBitmap filter_bitmap;
   SkScalar color_matrix[20];
   bool use_color_matrix = false;
-  if (quad->filter) {
-    skia::RefPtr<SkColorFilter> cf;
+  // TODO(ajuma): Always use RenderSurfaceFilters::BuildImageFilter, not just
+  // when we have a reference filter.
+  if (quad->filters.HasReferenceFilter()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, contents_texture->size());
+    if (filter) {
+      skia::RefPtr<SkColorFilter> cf;
 
-    {
-      SkColorFilter* colorfilter_rawptr = NULL;
-      quad->filter->asColorFilter(&colorfilter_rawptr);
-      cf = skia::AdoptRef(colorfilter_rawptr);
-    }
+      {
+        SkColorFilter* colorfilter_rawptr = NULL;
+        filter->asColorFilter(&colorfilter_rawptr);
+        cf = skia::AdoptRef(colorfilter_rawptr);
+      }
 
-    if (cf && cf->asColorMatrix(color_matrix) && !quad->filter->getInput(0)) {
-      // We have a single color matrix as a filter; apply it locally
-      // in the compositor.
-      use_color_matrix = true;
-    } else {
-      filter_bitmap = ApplyImageFilter(this,
-                                       frame->offscreen_context_provider,
-                                       quad->rect.origin(),
-                                       quad->filter.get(),
-                                       contents_texture);
+      if (cf && cf->asColorMatrix(color_matrix) && !filter->getInput(0)) {
+        // We have a single color matrix as a filter; apply it locally
+        // in the compositor.
+        use_color_matrix = true;
+      } else {
+        filter_bitmap = ApplyImageFilter(this,
+                                         frame->offscreen_context_provider,
+                                         quad->rect.origin(),
+                                         filter.get(),
+                                         contents_texture);
+      }
     }
   } else if (!quad->filters.IsEmpty()) {
     FilterOperations optimized_filters =

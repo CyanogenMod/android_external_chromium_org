@@ -118,12 +118,18 @@ const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 // Enable memory monitoring.
 const char kAshEnableMemoryMonitor[] = "ash-enable-memory-monitor";
 #endif
-
+#if defined(OS_CHROMEOS)
+// Enable the shelf menu for multi profile usage.
+const char kAshEnableMultiProfileShelfMenu[] = "ash-enable-multi-profile-shelf";
+#endif
 // Enables the Oak tree viewer.
 const char kAshEnableOak[] = "ash-enable-oak";
 
-// Disables overview mode for window switching.
-const char kAshDisableOverviewMode[] = "ash-disable-overview-mode";
+// Enables overview mode for window switching.
+const char kAshEnableOverviewMode[] = "ash-enable-overview-mode";
+
+// Enables software based mirroring.
+const char kAshEnableSoftwareMirroring[] = "ash-enable-software-mirroring";
 
 // Enables "sticky" edges instead of "snap-to-edge"
 const char kAshEnableStickyEdges[] = "ash-enable-sticky-edges";
@@ -215,6 +221,16 @@ bool UseDragOffShelf() {
 bool ShowShelfAlignmentMenu() {
   return !CommandLine::ForCurrentProcess()->
       HasSwitch(kHideShelfAlignmentMenu);
+}
+
+// Returns true if the MultiProfile shelf menu should be shown.
+bool ShowMultiProfileShelfMenu() {
+#if defined(OS_CHROMEOS)
+  return CommandLine::ForCurrentProcess()->
+      HasSwitch(kAshEnableMultiProfileShelfMenu);
+#else
+  return false;
+#endif
 }
 
 #if defined(OS_CHROMEOS)

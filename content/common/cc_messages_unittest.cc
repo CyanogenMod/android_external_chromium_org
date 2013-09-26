@@ -11,6 +11,7 @@
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
 
 using cc::CheckerboardDrawQuad;
@@ -136,11 +137,16 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a->contents_changed_since_last_frame,
               b->contents_changed_since_last_frame);
     EXPECT_EQ(a->mask_uv_rect.ToString(), b->mask_uv_rect.ToString());
-    EXPECT_EQ(a->filters, b->filters);
-    if (!a->filter || !b->filter)
-        EXPECT_EQ(a->filter, b->filter);
-    else
-        EXPECT_EQ(a->filter->countInputs(), b->filter->countInputs());
+    EXPECT_EQ(a->filters.size(), b->filters.size());
+    for (size_t i = 0; i < a->filters.size(); ++i) {
+      if (a->filters.at(i).type() != cc::FilterOperation::REFERENCE) {
+        EXPECT_EQ(a->filters.at(i), b->filters.at(i));
+      } else {
+        EXPECT_EQ(b->filters.at(i).type(), cc::FilterOperation::REFERENCE);
+        EXPECT_EQ(a->filters.at(i).image_filter()->countInputs(),
+                  b->filters.at(i).image_filter()->countInputs());
+      }
+    }
     EXPECT_EQ(a->background_filters, b->background_filters);
   }
 
@@ -186,6 +192,7 @@ class CCMessagesTest : public testing::Test {
     EXPECT_EQ(a.id, b.id);
     EXPECT_EQ(a.sync_point, b.sync_point);
     EXPECT_EQ(a.format, b.format);
+    EXPECT_EQ(a.target, b.target);
     EXPECT_EQ(a.filter, b.filter);
     EXPECT_EQ(a.size.ToString(), b.size.ToString());
     for (size_t i = 0; i < arraysize(a.mailbox.name); ++i)
@@ -235,13 +242,14 @@ TEST_F(CCMessagesTest, AllQuads) {
   FilterOperations arbitrary_filters1;
   arbitrary_filters1.Append(FilterOperation::CreateGrayscaleFilter(
       arbitrary_float1));
+  skia::RefPtr<SkImageFilter> arbitrary_filter = skia::AdoptRef(
+    new SkBlurImageFilter(arbitrary_sigma, arbitrary_sigma));
+  arbitrary_filters1.Append(
+      cc::FilterOperation::CreateReferenceFilter(arbitrary_filter));
 
   FilterOperations arbitrary_filters2;
   arbitrary_filters2.Append(FilterOperation::CreateBrightnessFilter(
       arbitrary_float2));
-
-  skia::RefPtr<SkImageFilter> arbitrary_filter = skia::AdoptRef(
-    new SkBlurImageFilter(arbitrary_sigma, arbitrary_sigma));
 
   scoped_ptr<SharedQuadState> shared_state1_in = SharedQuadState::Create();
   shared_state1_in->SetAll(arbitrary_matrix,
@@ -301,7 +309,6 @@ TEST_F(CCMessagesTest, AllQuads) {
                         arbitrary_rect1,
                         arbitrary_rectf1,
                         arbitrary_filters1,
-                        arbitrary_filter,
                         arbitrary_filters2);
   scoped_ptr<RenderPassDrawQuad> renderpass_cmp = renderpass_in->Copy(
       renderpass_in->shared_quad_state, renderpass_in->render_pass_id);
@@ -511,15 +518,17 @@ TEST_F(CCMessagesTest, Resources) {
   arbitrary_resource1.id = 2178312;
   arbitrary_resource1.sync_point = arbitrary_uint1;
   arbitrary_resource1.format = cc::RGBA_8888;
+  arbitrary_resource1.target = GL_TEXTURE_2D;
   arbitrary_resource1.filter = 53;
   arbitrary_resource1.size = gfx::Size(37189, 123123);
   arbitrary_resource1.mailbox.SetName(arbitrary_mailbox1);
 
   TransferableResource arbitrary_resource2;
   arbitrary_resource2.id = 789132;
-  arbitrary_resource1.sync_point = arbitrary_uint2;
+  arbitrary_resource2.sync_point = arbitrary_uint2;
   arbitrary_resource2.format = cc::RGBA_4444;
-  arbitrary_resource1.filter = 47;
+  arbitrary_resource2.target = GL_TEXTURE_EXTERNAL_OES;
+  arbitrary_resource2.filter = 47;
   arbitrary_resource2.size = gfx::Size(89123, 23789);
   arbitrary_resource2.mailbox.SetName(arbitrary_mailbox2);
 

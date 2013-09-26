@@ -411,15 +411,12 @@ std::string ChromeContentRendererClient::GetDefaultEncoding() {
   return l10n_util::GetStringUTF8(IDS_DEFAULT_ENCODING);
 }
 
-const Extension* ChromeContentRendererClient::GetExtension(
+const Extension* ChromeContentRendererClient::GetExtensionByOrigin(
     const WebSecurityOrigin& origin) const {
   if (!EqualsASCII(origin.protocol(), extensions::kExtensionScheme))
     return NULL;
 
   const std::string extension_id = origin.host().utf8().data();
-  if (!extension_dispatcher_->IsExtensionActive(extension_id))
-    return NULL;
-
   return extension_dispatcher_->extensions()->GetByID(extension_id);
 }
 
@@ -435,7 +432,7 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
       return false;
     WebDocument document = frame->document();
     const Extension* extension =
-        GetExtension(document.securityOrigin());
+        GetExtensionByOrigin(document.securityOrigin());
     if (extension) {
       const extensions::APIPermission::ID perms[] = {
         extensions::APIPermission::kWebView,
@@ -886,8 +883,7 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
     int resource_id;
     base::DictionaryValue error_strings;
     if (extension && !extension->from_bookmark()) {
-      LocalizedError::GetAppErrorStrings(error, failed_url, extension,
-                                         &error_strings);
+      LocalizedError::GetAppErrorStrings(failed_url, extension, &error_strings);
 
       // TODO(erikkay): Should we use a different template for different
       // error messages?
@@ -898,7 +894,9 @@ void ChromeContentRendererClient::GetNavigationErrorStrings(
               frame, error, is_post, locale, &error_strings)) {
         // In most cases, the NetErrorHelper won't provide DNS-probe-specific
         // error pages, so fall back to LocalizedError.
-        LocalizedError::GetStrings(error, is_post, locale, &error_strings);
+        LocalizedError::GetStrings(error.reason, error.domain.utf8(),
+                                   error.unreachableURL, is_post, locale,
+                                   &error_strings);
       }
       resource_id = IDR_NET_ERROR_HTML;
     }
@@ -945,8 +943,10 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
   // If this is the Instant process, fork all navigations originating from the
   // renderer.  The destination page will then be bucketed back to this Instant
   // process if it is an Instant url, or to another process if not.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess))
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kInstantProcess)) {
+    *send_referrer = true;
     return true;
+  }
 
   // For now, we skip the rest for POST submissions.  This is because
   // http://crbug.com/101395 is more likely to cause compatibility issues
@@ -970,8 +970,11 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
   // to swap in the prerendered page on the browser process. If the prerendered
   // page no longer exists by the time the OpenURL IPC is handled, a normal
   // navigation is attempted.
-  if (prerender_dispatcher_.get() && prerender_dispatcher_->IsPrerenderURL(url))
+  if (prerender_dispatcher_.get() &&
+      prerender_dispatcher_->IsPrerenderURL(url)) {
+    *send_referrer = true;
     return true;
+  }
 
   const ExtensionSet* extensions = extension_dispatcher_->extensions();
 

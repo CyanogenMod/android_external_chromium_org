@@ -11,6 +11,7 @@
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/render_surface_filters.h"
 #include "cc/output/software_output_device.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
@@ -182,7 +183,11 @@ void SoftwareRenderer::ClearCanvas(SkColor color) {
     current_canvas_->clear(color);
 }
 
-void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame) {
+void SoftwareRenderer::DiscardPixels(bool has_external_stencil_test,
+                                     bool draw_rect_covers_full_surface) {}
+
+void SoftwareRenderer::ClearFramebuffer(DrawingFrame* frame,
+                                        bool has_external_stencil_test) {
   if (frame->current_render_pass->has_transparent_background) {
     ClearCanvas(SkColorSetARGB(0, 0, 0, 0));
   } else {
@@ -436,9 +441,14 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   shader->setLocalMatrix(content_mat);
   current_paint_.setShader(shader.get());
 
-  SkImageFilter* filter = quad->filter.get();
-  if (filter)
-    current_paint_.setImageFilter(filter);
+  // TODO(ajuma): Remove this condition once general CSS filters are working
+  // correctly (http://crbug.com/160302), and add corresponding pixel tests.
+  if (quad->filters.HasReferenceFilter()) {
+    skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
+        quad->filters, content_texture->size());
+    if (filter)
+      current_paint_.setImageFilter(filter.get());
+  }
 
   if (quad->mask_resource_id) {
     ResourceProvider::ScopedReadLockSoftware mask_lock(resource_provider_,

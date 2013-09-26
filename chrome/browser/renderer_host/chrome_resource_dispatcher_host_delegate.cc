@@ -228,15 +228,15 @@ bool ChromeResourceDispatcherHostDelegate::ShouldBeginRequest(
   // Abort any prerenders that spawn requests that use invalid HTTP methods
   // or invalid schemes.
   if (prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id)) {
-    if (!prerender::PrerenderManager::IsValidHttpMethod(method)) {
-      prerender_tracker_->TryCancelOnIOThread(
-          child_id, route_id, prerender::FINAL_STATUS_INVALID_HTTP_METHOD);
+    if (!prerender::PrerenderManager::IsValidHttpMethod(method) &&
+        prerender_tracker_->TryCancelOnIOThread(
+            child_id, route_id, prerender::FINAL_STATUS_INVALID_HTTP_METHOD)) {
       return false;
     }
-    if (!prerender::PrerenderManager::DoesSubresourceURLHaveValidScheme(url)) {
+    if (!prerender::PrerenderManager::DoesSubresourceURLHaveValidScheme(url) &&
+        prerender_tracker_->TryCancelOnIOThread(
+            child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME)) {
       ReportUnsupportedPrerenderScheme(url);
-      prerender_tracker_->TryCancelOnIOThread(
-          child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME);
       return false;
     }
   }
@@ -251,11 +251,7 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
-    bool is_continuation_of_transferred_request,
     ScopedVector<content::ResourceThrottle>* throttles) {
-  if (is_continuation_of_transferred_request)
-    ChromeURLRequestUserData::Delete(request);
-
   ChromeURLRequestUserData* user_data =
       ChromeURLRequestUserData::Create(request);
   bool is_prerendering = prerender_tracker_->IsPrerenderingOnIOThread(
@@ -325,6 +321,20 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
   if (io_data->resource_prefetch_predictor_observer()) {
     io_data->resource_prefetch_predictor_observer()->OnRequestStarted(
         request, resource_type, child_id, route_id);
+  }
+}
+
+void ChromeResourceDispatcherHostDelegate::WillTransferRequestToNewProcess(
+    int old_child_id,
+    int old_route_id,
+    int old_request_id,
+    int new_child_id,
+    int new_route_id,
+    int new_request_id) {
+  if (prerender_tracker_->IsPrerenderingOnIOThread(old_child_id,
+                                                   old_route_id)) {
+    prerender_tracker_->UpdatePrerenderStateForTransfer(
+        old_child_id, old_route_id, new_child_id, new_route_id);
   }
 }
 
@@ -423,11 +433,11 @@ bool ChromeResourceDispatcherHostDelegate::HandleExternalProtocol(
   return false;
 #else
 
-  if (prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id)) {
+  if (prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id) &&
+      prerender_tracker_->TryCancel(
+          child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME)) {
     ReportPrerenderSchemeCancelReason(
         PRERENDER_SCHEME_CANCEL_REASON_EXTERNAL_PROTOCOL);
-    prerender_tracker_->TryCancel(
-        child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME);
     return false;
   }
 
@@ -645,10 +655,10 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
   if (!prerender::PrerenderManager::DoesURLHaveValidScheme(redirect_url) &&
       ResourceRequestInfo::ForRequest(request)->GetAssociatedRenderView(
           &child_id, &route_id) &&
-      prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id)) {
+      prerender_tracker_->IsPrerenderingOnIOThread(child_id, route_id) &&
+      prerender_tracker_->TryCancel(
+          child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME)) {
     ReportUnsupportedPrerenderScheme(redirect_url);
-    prerender_tracker_->TryCancel(
-        child_id, route_id, prerender::FINAL_STATUS_UNSUPPORTED_SCHEME);
     request->Cancel();
   }
 }

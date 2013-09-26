@@ -30,11 +30,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
@@ -43,6 +38,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_util.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
@@ -64,6 +60,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
+#include "chrome/browser/ui/webui/options/options_handlers_helper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -136,46 +133,12 @@ bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 #endif
 }
 
-void CreateDesktopShortcutForProfile(Profile* profile,
-                                     Profile::CreateStatus status) {
-  ProfileShortcutManager* shortcut_manager =
-      g_browser_process->profile_manager()->profile_shortcut_manager();
-  if (shortcut_manager)
-    shortcut_manager->CreateProfileShortcut(profile->GetPath());
-}
-
-void RunProfileCreationCallbacks(
-    const std::vector<ProfileManager::CreateCallback>& callbacks,
-    Profile* profile,
-    Profile::CreateStatus status) {
-  std::vector<ProfileManager::CreateCallback>::const_iterator it;
-  for (it = callbacks.begin(); it != callbacks.end(); ++it) {
-    it->Run(profile, status);
-  }
-}
-
-void OpenNewWindowForProfile(
-    chrome::HostDesktopType desktop_type,
-    Profile* profile,
-    Profile::CreateStatus status) {
-  if (status != Profile::CREATE_STATUS_INITIALIZED)
-    return;
-
-  profiles::FindOrCreateNewWindowForProfile(
-    profile,
-    chrome::startup::IS_PROCESS_STARTUP,
-    chrome::startup::IS_FIRST_RUN,
-    desktop_type,
-    false);
-}
-
 }  // namespace
 
 BrowserOptionsHandler::BrowserOptionsHandler()
     : page_initialized_(false),
       template_url_service_(NULL),
-      weak_ptr_factory_(this),
-      importing_existing_managed_user_(false) {
+      weak_ptr_factory_(this) {
 #if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
 #endif
@@ -197,7 +160,6 @@ BrowserOptionsHandler::BrowserOptionsHandler()
 }
 
 BrowserOptionsHandler::~BrowserOptionsHandler() {
-  CancelProfileRegistration(false);
   ProfileSyncService* sync_service(ProfileSyncServiceFactory::
       GetInstance()->GetForProfile(Profile::FromWebUI(web_ui())));
   if (sync_service)
@@ -398,7 +360,7 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
     { "timezone", IDS_OPTIONS_SETTINGS_TIMEZONE_DESCRIPTION },
     { "use24HourClock", IDS_OPTIONS_SETTINGS_USE_24HOUR_CLOCK_DESCRIPTION },
 #else
-    { "cloudPrintConnectorEnabledManageButton",
+    { "cloudPrintManageButton",
       IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_MANAGE_BUTTON},
     { "cloudPrintConnectorEnablingButton",
       IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLING_BUTTON },
@@ -436,6 +398,11 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 #endif
     { "languageSectionLabel", IDS_OPTIONS_ADVANCED_LANGUAGE_LABEL,
       IDS_SHORT_PRODUCT_NAME },
+#if defined(ENABLE_MDNS)
+    { "cloudPrintDevicesPageButton", IDS_LOCAL_DISCOVERY_DEVICES_PAGE_BUTTON },
+    { "cloudPrintEnableNotificationsLabel",
+      IDS_LOCAL_DISCOVERY_NOTIFICATIONS_ENABLE_CHECKBOX_LABEL },
+#endif
   };
 
 #if defined(ENABLE_SETTINGS_APP)
@@ -482,8 +449,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   values->SetString("doNotTrackLearnMoreURL", chrome::kDoNotTrackLearnMoreURL);
 
 #if defined(OS_CHROMEOS)
-  values->SetString("cloudPrintLearnMoreURL", chrome::kCloudPrintLearnMoreURL);
-
   // TODO(pastarmovj): replace this with a call to the CrosSettings list
   // handling functionality to come.
   values->Set("timezoneList", GetTimezoneList().release());
@@ -520,7 +485,7 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
 #endif
 
-  if (ShouldShowMultiProfilesUserList(GetDesktopType()))
+  if (ShouldShowMultiProfilesUserList(helper::GetDesktopType(web_ui())))
     values->Set("profilesInfo", GetProfilesInfoList().release());
 
   values->SetBoolean("profileIsManaged",
@@ -531,20 +496,37 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       "gpuEnabledAtStart",
       g_browser_process->gpu_mode_manager()->initial_gpu_mode_pref());
 #endif
+
+#if defined(ENABLE_MDNS)
+bool cloud_print_mdns_options_shown =
+    !CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisableDeviceDiscovery);
+#else
+bool cloud_print_mdns_options_shown = false;
+#endif
+
+values->SetBoolean("cloudPrintShowMDnsOptions",
+                   cloud_print_mdns_options_shown);
+
+values->SetString("cloudPrintLearnMoreURL", chrome::kCloudPrintLearnMoreURL);
+
 }
 
 #if defined(ENABLE_FULL_PRINTING)
 void BrowserOptionsHandler::RegisterCloudPrintValues(DictionaryValue* values) {
+  values->SetString("cloudPrintOptionLabel",
+                    l10n_util::GetStringFUTF16(
+                        IDS_CLOUD_PRINT_CHROMEOS_OPTION_LABEL,
+                        l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+
 #if defined(OS_CHROMEOS)
-  values->SetString("cloudPrintChromeosOptionLabel",
-      l10n_util::GetStringFUTF16(
-      IDS_CLOUD_PRINT_CHROMEOS_OPTION_LABEL,
-      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
-  values->SetString("cloudPrintChromeosOptionButton",
+  values->SetString("cloudPrintManageButton",
       l10n_util::GetStringFUTF16(
       IDS_CLOUD_PRINT_CHROMEOS_OPTION_BUTTON,
       l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
 #else
+  // TODO(noamsml): Remove all cloud print connector related code from the
+  // settings page as soon as the devices page is supported on all platforms.
   values->SetString("cloudPrintConnectorDisabledLabel",
       l10n_util::GetStringFUTF16(
       IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL,
@@ -569,16 +551,8 @@ void BrowserOptionsHandler::RegisterMessages() {
       base::Bind(&BrowserOptionsHandler::SetDefaultSearchEngine,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "createProfile",
-      base::Bind(&BrowserOptionsHandler::CreateProfile,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       "deleteProfile",
       base::Bind(&BrowserOptionsHandler::DeleteProfile,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "cancelCreateProfile",
-      base::Bind(&BrowserOptionsHandler::HandleCancelProfileCreation,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "themesReset",
@@ -657,6 +631,16 @@ void BrowserOptionsHandler::RegisterMessages() {
       base::Bind(&BrowserOptionsHandler::ShowNetworkProxySettings,
                  base::Unretained(this)));
 #endif  // defined(OS_CHROMEOS)
+
+#if defined(ENABLE_MDNS)
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDeviceDiscovery)) {
+    web_ui()->RegisterMessageCallback(
+        "showCloudPrintDevicesPage",
+        base::Bind(&BrowserOptionsHandler::ShowCloudPrintDevicesPage,
+                   base::Unretained(this)));
+  }
+#endif
 }
 
 void BrowserOptionsHandler::OnStateChanged() {
@@ -1080,242 +1064,10 @@ scoped_ptr<ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
 }
 
 void BrowserOptionsHandler::SendProfilesInfo() {
-  if (!ShouldShowMultiProfilesUserList(GetDesktopType()))
+  if (!ShouldShowMultiProfilesUserList(helper::GetDesktopType(web_ui())))
     return;
   web_ui()->CallJavascriptFunction("BrowserOptions.setProfilesInfo",
                                    *GetProfilesInfoList());
-}
-
-chrome::HostDesktopType BrowserOptionsHandler::GetDesktopType() {
-  content::WebContents* web_contents = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
-  if (browser)
-    return browser->host_desktop_type();
-
-  apps::ShellWindow* shell_window =
-      apps::ShellWindowRegistry::Get(Profile::FromWebUI(web_ui()))->
-          GetShellWindowForRenderViewHost(web_contents->GetRenderViewHost());
-  if (shell_window) {
-    return chrome::GetHostDesktopTypeForNativeWindow(
-        shell_window->GetNativeWindow());
-  }
-
-  return chrome::GetActiveDesktop();
-}
-
-void BrowserOptionsHandler::CreateProfile(const ListValue* args) {
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  Profile* current_profile = Profile::FromWebUI(web_ui());
-  if (current_profile->IsManaged())
-    return;
-
-  if (!profiles::IsMultipleProfilesEnabled())
-    return;
-
-  DCHECK(profile_path_being_created_.empty());
-  profile_creation_start_time_ = base::TimeTicks::Now();
-  importing_existing_managed_user_ = false;
-
-  string16 name;
-  string16 icon;
-  std::string managed_user_id;
-  bool create_shortcut = false;
-  bool managed_user = false;
-  if (args->GetString(0, &name) && args->GetString(1, &icon)) {
-    if (args->GetBoolean(2, &create_shortcut)) {
-      bool success = args->GetBoolean(3, &managed_user);
-      DCHECK(success);
-      success = args->GetString(4, &managed_user_id);
-      DCHECK(success);
-    }
-  }
-
-  std::vector<ProfileManager::CreateCallback> callbacks;
-  if (create_shortcut)
-    callbacks.push_back(base::Bind(&CreateDesktopShortcutForProfile));
-
-  if (managed_user && ManagedUserService::AreManagedUsersEnabled()) {
-    if (!IsValidExistingManagedUserId(managed_user_id))
-      return;
-
-    if (managed_user_id.empty()) {
-      managed_user_id =
-          ManagedUserRegistrationUtility::GenerateNewManagedUserId();
-
-      // If sync is not yet fully initialized, the creation may take extra time,
-      // so show a message. Import doesn't wait for an acknowledgement, so it
-      // won't have the same potential delay.
-      ProfileSyncService* sync_service =
-          ProfileSyncServiceFactory::GetInstance()->GetForProfile(
-              current_profile);
-      ProfileSyncService::SyncStatusSummary status =
-          sync_service->QuerySyncStatusSummary();
-      if (status == ProfileSyncService::DATATYPES_NOT_INITIALIZED) {
-        ShowProfileCreationWarning(l10n_util::GetStringUTF16(
-            IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN));
-      }
-    } else {
-      importing_existing_managed_user_ = true;
-    }
-
-    callbacks.push_back(
-        base::Bind(&BrowserOptionsHandler::RegisterManagedUser,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   GetDesktopType(),
-                   managed_user_id));
-  } else {
-    callbacks.push_back(
-        base::Bind(&BrowserOptionsHandler::ShowProfileCreationFeedback,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   GetDesktopType()));
-  }
-
-  ProfileMetrics::LogProfileAddNewUser(ProfileMetrics::ADD_NEW_USER_DIALOG);
-
-  profile_path_being_created_ = ProfileManager::CreateMultiProfileAsync(
-      name, icon, base::Bind(&RunProfileCreationCallbacks, callbacks),
-      managed_user_id);
-}
-
-void BrowserOptionsHandler::RegisterManagedUser(
-    chrome::HostDesktopType desktop_type,
-    const std::string& managed_user_id,
-    Profile* new_profile,
-    Profile::CreateStatus status) {
-  DCHECK_EQ(profile_path_being_created_.value(),
-            new_profile->GetPath().value());
-  if (status != Profile::CREATE_STATUS_INITIALIZED) {
-    ShowProfileCreationFeedback(desktop_type, new_profile, status);
-    return;
-  }
-
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(new_profile);
-
-  // Register the managed user using the profile of the custodian.
-  managed_user_registration_utility_ =
-      ManagedUserRegistrationUtility::Create(Profile::FromWebUI(web_ui()));
-  managed_user_service->RegisterAndInitSync(
-      managed_user_registration_utility_.get(),
-      Profile::FromWebUI(web_ui()),
-      managed_user_id,
-      base::Bind(&BrowserOptionsHandler::OnManagedUserRegistered,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 desktop_type,
-                 new_profile));
-}
-
-void BrowserOptionsHandler::RecordProfileCreationMetrics(
-    Profile::CreateStatus status) {
-  UMA_HISTOGRAM_ENUMERATION("Profile.CreateResult",
-                            status,
-                            Profile::MAX_CREATE_STATUS);
-  UMA_HISTOGRAM_MEDIUM_TIMES(
-      "Profile.CreateTimeNoTimeout",
-      base::TimeTicks::Now() - profile_creation_start_time_);
-}
-
-void BrowserOptionsHandler::OnManagedUserRegistered(
-    chrome::HostDesktopType desktop_type,
-    Profile* profile,
-    const GoogleServiceAuthError& error) {
-  GoogleServiceAuthError::State state = error.state();
-  if (state == GoogleServiceAuthError::NONE) {
-    ShowProfileCreationSuccess(profile, desktop_type, true);
-    return;
-  }
-
-  string16 error_msg;
-  if (state == GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS ||
-      state == GoogleServiceAuthError::USER_NOT_SIGNED_UP ||
-      state == GoogleServiceAuthError::ACCOUNT_DELETED ||
-      state == GoogleServiceAuthError::ACCOUNT_DISABLED) {
-    error_msg = GetProfileCreationErrorMessage(SIGNIN_ERROR);
-  } else {
-    error_msg = GetProfileCreationErrorMessage(REMOTE_ERROR);
-  }
-  ShowProfileCreationError(profile, error_msg);
-}
-
-void BrowserOptionsHandler::ShowProfileCreationFeedback(
-    chrome::HostDesktopType desktop_type,
-    Profile* profile,
-    Profile::CreateStatus status) {
-  if (status != Profile::CREATE_STATUS_CREATED)
-    RecordProfileCreationMetrics(status);
-
-  switch (status) {
-    case Profile::CREATE_STATUS_LOCAL_FAIL: {
-      ShowProfileCreationError(profile,
-                               GetProfileCreationErrorMessage(LOCAL_ERROR));
-      break;
-    }
-    case Profile::CREATE_STATUS_CREATED: {
-      // Do nothing for an intermediate status.
-      break;
-    }
-    case Profile::CREATE_STATUS_INITIALIZED: {
-      // Managed user registration success is handled in
-      // OnManagedUserRegistered().
-      ShowProfileCreationSuccess(profile, desktop_type, false);
-      break;
-    }
-    // User-initiated cancellation is handled in CancelProfileRegistration and
-    // does not call this callback.
-    case Profile::CREATE_STATUS_CANCELED:
-    // Managed user registration errors are handled in
-    // OnManagedUserRegistered().
-    case Profile::CREATE_STATUS_REMOTE_FAIL:
-    case Profile::MAX_CREATE_STATUS: {
-      NOTREACHED();
-      break;
-    }
-  }
-}
-
-void BrowserOptionsHandler::ShowProfileCreationError(Profile* profile,
-                                                     const string16& error) {
-  profile_path_being_created_.clear();
-  web_ui()->CallJavascriptFunction(
-      GetJavascriptMethodName(PROFILE_CREATION_ERROR),
-      base::StringValue(error));
-  DeleteProfileAtPath(profile->GetPath());
-}
-
-void BrowserOptionsHandler::ShowProfileCreationWarning(
-    const string16& warning) {
-  DCHECK(!importing_existing_managed_user_);
-  web_ui()->CallJavascriptFunction("BrowserOptions.showCreateProfileWarning",
-                                   base::StringValue(warning));
-}
-
-void BrowserOptionsHandler::ShowProfileCreationSuccess(
-    Profile* profile,
-    chrome::HostDesktopType desktop_type,
-    bool is_managed) {
-  DCHECK_EQ(profile_path_being_created_.value(), profile->GetPath().value());
-  profile_path_being_created_.clear();
-  DictionaryValue dict;
-  dict.SetString("name",
-                 profile->GetPrefs()->GetString(prefs::kProfileName));
-  dict.Set("filePath", base::CreateFilePathValue(profile->GetPath()));
-  dict.SetBoolean("isManaged", is_managed);
-  web_ui()->CallJavascriptFunction(
-      GetJavascriptMethodName(PROFILE_CREATION_SUCCESS), dict);
-
-  // If the new profile is a managed user, instead of opening a new window
-  // right away, a confirmation overlay will be shown from the creation
-  // dialog. However, if we are importing an existing managed user we
-  // open the new window directly.
-  if (is_managed && !importing_existing_managed_user_)
-    return;
-
-  // Opening the new window must be the last action, after all callbacks
-  // have been run, to give them a chance to initialize the profile.
-  OpenNewWindowForProfile(desktop_type,
-                          profile,
-                          Profile::CREATE_STATUS_INITIALIZED);
 }
 
 void BrowserOptionsHandler::DeleteProfile(const ListValue* args) {
@@ -1327,58 +1079,7 @@ void BrowserOptionsHandler::DeleteProfile(const ListValue* args) {
   base::FilePath file_path;
   if (!base::GetValueAsFilePath(*file_path_value, &file_path))
     return;
-  DeleteProfileAtPath(file_path);
-}
-
-void BrowserOptionsHandler::DeleteProfileAtPath(base::FilePath file_path) {
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  if (Profile::FromWebUI(web_ui())->IsManaged())
-    return;
-
-  if (!profiles::IsMultipleProfilesEnabled())
-    return;
-
-  ProfileMetrics::LogProfileDeleteUser(ProfileMetrics::PROFILE_DELETED);
-
-  g_browser_process->profile_manager()->ScheduleProfileForDeletion(
-      file_path,
-      base::Bind(&OpenNewWindowForProfile, GetDesktopType()));
-}
-
-void BrowserOptionsHandler::HandleCancelProfileCreation(const ListValue* args) {
-  CancelProfileRegistration(true);
-}
-
-void BrowserOptionsHandler::CancelProfileRegistration(bool user_initiated) {
-  if (profile_path_being_created_.empty())
-    return;
-
-  ProfileManager* manager = g_browser_process->profile_manager();
-  Profile* new_profile = manager->GetProfileByPath(profile_path_being_created_);
-  if (!new_profile)
-    return;
-
-  // Non-managed user creation cannot be canceled. (Creating a non-managed
-  // profile shouldn't take significant time, and it can easily be deleted
-  // afterward.)
-  if (!new_profile->IsManaged())
-    return;
-
-  if (user_initiated) {
-    UMA_HISTOGRAM_MEDIUM_TIMES(
-        "Profile.CreateTimeCanceledNoTimeout",
-        base::TimeTicks::Now() - profile_creation_start_time_);
-    RecordProfileCreationMetrics(Profile::CREATE_STATUS_CANCELED);
-  }
-
-  DCHECK(managed_user_registration_utility_.get());
-  managed_user_registration_utility_.reset();
-
-  // Cancelling registration means the callback passed into
-  // RegisterAndInitSync() won't be called, so the cleanup must be done here.
-  profile_path_being_created_.clear();
-  DeleteProfileAtPath(new_profile->GetPath());
+  helper::DeleteProfileAtPath(file_path, web_ui());
 }
 
 void BrowserOptionsHandler::ObserveThemeChanged() {
@@ -1581,6 +1282,19 @@ void BrowserOptionsHandler::ShowManageSSLCertificates(const ListValue* args) {
   AdvancedOptionsUtilities::ShowManageSSLCertificates(
       web_ui()->GetWebContents());
 }
+#endif
+
+#if defined(ENABLE_MDNS)
+
+void BrowserOptionsHandler::ShowCloudPrintDevicesPage(const ListValue* args) {
+  content::RecordAction(UserMetricsAction("Options_CloudPrintDevicesPage"));
+  // Navigate in current tab to devices page.
+  OpenURLParams params(
+      GURL(chrome::kChromeUIDevicesURL), Referrer(),
+      CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
+  web_ui()->GetWebContents()->OpenURL(params);
+}
+
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -1822,76 +1536,6 @@ void BrowserOptionsHandler::SetupProxySettingsSection() {
                                    disabled, extension_controlled);
 
 #endif  // !defined(OS_CHROMEOS)
-}
-
-string16 BrowserOptionsHandler::GetProfileCreationErrorMessage(
-    ProfileCreationErrorType error) const {
-  int message_id = -1;
-  switch (error) {
-    case SIGNIN_ERROR:
-      message_id =
-          importing_existing_managed_user_ ?
-              IDS_MANAGED_USER_IMPORT_SIGN_IN_ERROR :
-              IDS_PROFILES_CREATE_SIGN_IN_ERROR;
-      break;
-    case REMOTE_ERROR:
-      message_id =
-          importing_existing_managed_user_ ?
-              IDS_MANAGED_USER_IMPORT_REMOTE_ERROR :
-              IDS_PROFILES_CREATE_REMOTE_ERROR;
-      break;
-    case LOCAL_ERROR:
-      message_id =
-          importing_existing_managed_user_ ?
-              IDS_MANAGED_USER_IMPORT_LOCAL_ERROR :
-              IDS_PROFILES_CREATE_LOCAL_ERROR;
-      break;
-  }
-
-  return l10n_util::GetStringUTF16(message_id);
-}
-
-std::string BrowserOptionsHandler::GetJavascriptMethodName(
-    ProfileCreationStatus status) const {
-  switch (status) {
-    case PROFILE_CREATION_SUCCESS:
-      return importing_existing_managed_user_ ?
-          "BrowserOptions.showManagedUserImportSuccess" :
-          "BrowserOptions.showCreateProfileSuccess";
-    case PROFILE_CREATION_ERROR:
-      return importing_existing_managed_user_ ?
-          "BrowserOptions.showManagedUserImportError" :
-          "BrowserOptions.showCreateProfileError";
-  }
-
-  NOTREACHED();
-  return std::string();
-}
-
-bool BrowserOptionsHandler::IsValidExistingManagedUserId(
-    const std::string& existing_managed_user_id) const {
-  if (existing_managed_user_id.empty())
-    return true;
-
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAllowCreateExistingManagedUsers)) {
-    return false;
-  }
-
-  Profile* profile = Profile::FromWebUI(web_ui());
-  const DictionaryValue* dict =
-      ManagedUserSyncServiceFactory::GetForProfile(profile)->GetManagedUsers();
-  if (!dict->HasKey(existing_managed_user_id))
-    return false;
-
-  // Check if this managed user already exists on this machine.
-  const ProfileInfoCache& cache =
-      g_browser_process->profile_manager()->GetProfileInfoCache();
-  for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
-    if (existing_managed_user_id == cache.GetManagedUserIdOfProfileAtIndex(i))
-      return false;
-  }
-  return true;
 }
 
 }  // namespace options

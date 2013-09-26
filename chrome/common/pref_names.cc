@@ -844,6 +844,16 @@ const char kRAConsentDomains[] = "settings.privacy.ra_consent_domains";
 // A boolean pref that tracks whether the user indicated they wish to be asked
 // for consent for every site that uses remote attestation.
 const char kRAConsentAlways[] = "settings.privacy.ra_consent_always";
+
+// A boolean pref recording whether user has dismissed the multiprofile
+// notification.
+const char kMultiProfileNotificationDismissed[] =
+    "settings.multi_profile_notification_dismissed";
+
+// A string pref that holds string enum values of how the user should behave
+// in a multiprofile session. See ChromeOsMultiProfileUserBehavior policy
+// for more details of the valid values.
+const char kMultiProfileUserBehavior[] = "settings.multiprofile_user_behavior";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -1232,6 +1242,11 @@ const char kExtensionsLastChromeVersion[] = "extensions.last_chrome_version";
 // Disabling fullscreen mode also makes kiosk mode unavailable on desktop
 // platforms.
 extern const char kFullscreenAllowed[] = "fullscreen.allowed";
+
+// Enable notifications for new devices on the local network that can be
+// registered to the user's account, e.g. Google Cloud Print printers.
+const char kLocalDiscoveryNotificationsEnabled[] =
+    "local_discovery.notifications_enabled";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1688,33 +1703,6 @@ const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
 // Boolean indicating whether the web store is active for the current locale.
 const char kNtpWebStoreEnabled[] = "ntp.webstore_enabled";
 
-// The id of the last web store promo actually displayed on the NTP.
-const char kNtpWebStorePromoLastId[] = "ntp.webstore_last_promo_id";
-
-// The id of the current web store promo.
-const char kNtpWebStorePromoId[] = "ntp.webstorepromo.id";
-
-// The header line for the NTP web store promo.
-const char kNtpWebStorePromoHeader[] = "ntp.webstorepromo.header";
-
-// The button text for the NTP web store promo.
-const char kNtpWebStorePromoButton[] = "ntp.webstorepromo.button";
-
-// The button link for the NTP web store promo.
-const char kNtpWebStorePromoLink[] = "ntp.webstorepromo.link";
-
-// The image URL for the NTP web store promo logo.
-const char kNtpWebStorePromoLogo[] = "ntp.webstorepromo.logo";
-
-// The original URL for the NTP web store promo logo.
-const char kNtpWebStorePromoLogoSource[] = "ntp.webstorepromo.logo_source";
-
-// The "hide this" link text for the NTP web store promo.
-const char kNtpWebStorePromoExpire[] = "ntp.webstorepromo.expire";
-
-// Specifies what users should maximize the NTP web store promo.
-const char kNtpWebStorePromoUserGroup[] = "ntp.webstorepromo.usergroup";
-
 // Customized app page names that appear on the New Tab Page.
 const char kNtpAppPageNames[] = "ntp.app_page_names";
 
@@ -1999,29 +1987,35 @@ const char kHttpReceivedContentLength[] = "http_received_content_length";
 const char kHttpOriginalContentLength[] = "http_original_content_length";
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
-// A List pref that contains daily totals of the original size of all HTTP
-// that was received over the network.
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received from the network.
 const char kDailyHttpOriginalContentLength[] =
     "data_reduction.daily_original_length";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received from the network.
+// A List pref that contains daily totals of the size of all HTTP/HTTPS content
+// that was received from the network.
 const char kDailyHttpReceivedContentLength[] =
     "data_reduction.daily_received_length";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received via the data reduction proxy.
-const char kDailyHttpReceivedContentLengthViaDataReductionProxy[] =
-    "data_reduction.daily_received_length_via_data_reduction_proxy";
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received while the data reduction proxy is enabled.
+const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[] =
+    "data_reduction.daily_original_length_with_data_reduction_proxy_enabled";
 
-// A List pref that contains daily totals of the size of all HTTP content that
-// has been received when the data reduction proxy is enabled.
-// Note: this is different from
-// kDailyHttpReceivedContentLengthViaDataReductionProxy because content
-// doesn't necessarily go through the data reduction proxy when it is enabled.
-// E.g., the proxy doesn't handle HTTPS traffic.
-const char kDailyHttpReceivedContentLengthWithDataReductionProxyEnabled[] =
+// A List pref that contains daily totals of the size of all HTTP/HTTPS
+// that was received while the data reduction proxy is enabled.
+const char kDailyContentLengthWithDataReductionProxyEnabled[] =
     "data_reduction.daily_received_length_with_data_reduction_proxy_enabled";
+
+// A List pref that contains daily totals of the original size of all HTTP/HTTPS
+// that was received via the data reduction proxy.
+const char kDailyOriginalContentLengthViaDataReductionProxy[] =
+    "data_reduction.daily_original_length_via_data_reduction_proxy";
+
+// A List pref that contains daily totals of the size of all HTTP/HTTPS
+// that was received via the data reduction proxy.
+const char kDailyContentLengthViaDataReductionProxy[] =
+    "data_reduction.daily_received_length_via_data_reduction_proxy";
 
 // An int64 pref that contains an internal representation of midnight on the
 // date of the last update to |kDailyHttp{Original,Received}ContentLength|.
@@ -2051,6 +2045,12 @@ const char kVideoCaptureAllowed[] = "hardware.video_capture_enabled";
 // supported when running in kiosk mode.
 // TODO(tommi): Update comment when this is supported for all modes.
 const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
+
+#if defined(OS_ANDROID)
+// Boolean that controls the global enabled-state of protected media identifier.
+const char kProtectedMediaIdentifierEnabled[] =
+    "protected_media_identifier.enabled";
+#endif
 
 #if defined(OS_CHROMEOS)
 // Dictionary for transient storage of settings that should go into device
@@ -2138,6 +2138,10 @@ extern const char kUsersLRUInputMethod[] = "UsersLRUInputMethod";
 // A dictionary pref of the echo offer check flag. It sets offer info when
 // an offer is checked.
 extern const char kEchoCheckedOffers[] = "EchoCheckedOffers";
+
+// Key name of a dictionary in local state to store cached multiprofle user
+// behavior policy value.
+const char kCachedMultiProfileUserBehavior[] = "CachedMultiProfileUserBehavior";
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.

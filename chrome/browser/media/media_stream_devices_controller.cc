@@ -55,6 +55,16 @@ bool IsInKioskMode() {
 
 }  // namespace
 
+MediaStreamDevicesController::MediaStreamTypeSettings::MediaStreamTypeSettings(
+    Permission permission, const std::string& requested_device_id):
+    permission(permission), requested_device_id(requested_device_id) {}
+
+MediaStreamDevicesController::MediaStreamTypeSettings::
+    MediaStreamTypeSettings(): permission(MEDIA_NONE) {}
+
+MediaStreamDevicesController::MediaStreamTypeSettings::
+    ~MediaStreamTypeSettings() {}
+
 MediaStreamDevicesController::MediaStreamDevicesController(
     content::WebContents* web_contents,
     const content::MediaStreamRequest& request,
@@ -77,20 +87,30 @@ MediaStreamDevicesController::MediaStreamDevicesController(
       request.request_type == content::MEDIA_OPEN_DEVICE) {
     if (GetDevicePolicy(prefs::kAudioCaptureAllowed,
                         prefs::kAudioCaptureAllowedUrls) == ALWAYS_DENY) {
-      request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE] =
-          MEDIA_BLOCKED_BY_POLICY;
+      request_permissions_.insert(std::make_pair(
+          content::MEDIA_DEVICE_AUDIO_CAPTURE,
+          MediaStreamTypeSettings(MEDIA_BLOCKED_BY_POLICY,
+                                  request.requested_audio_device_id)));
     } else {
-      request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE] = MEDIA_ALLOWED;
+      request_permissions_.insert(std::make_pair(
+          content::MEDIA_DEVICE_AUDIO_CAPTURE,
+          MediaStreamTypeSettings(MEDIA_ALLOWED,
+                                  request.requested_audio_device_id)));
     }
   }
   if (request.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE ||
       request.request_type == content::MEDIA_OPEN_DEVICE) {
     if (GetDevicePolicy(prefs::kVideoCaptureAllowed,
                         prefs::kVideoCaptureAllowedUrls) == ALWAYS_DENY) {
-      request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE] =
-          MEDIA_BLOCKED_BY_POLICY;
+      request_permissions_.insert(std::make_pair(
+          content::MEDIA_DEVICE_VIDEO_CAPTURE,
+          MediaStreamTypeSettings(MEDIA_BLOCKED_BY_POLICY,
+                                  request.requested_video_device_id)));
     } else {
-      request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE] = MEDIA_ALLOWED;
+      request_permissions_.insert(std::make_pair(
+          content::MEDIA_DEVICE_VIDEO_CAPTURE,
+          MediaStreamTypeSettings(MEDIA_ALLOWED,
+                                  request.requested_video_device_id)));
     }
   }
 }
@@ -159,6 +179,23 @@ bool MediaStreamDevicesController::DismissInfoBarAndTakeActionOnSettings() {
     return true;
   }
 
+  if (request_.request_type == content::MEDIA_OPEN_DEVICE) {
+    bool no_matched_audio_device =
+        (request_.audio_type == content::MEDIA_DEVICE_AUDIO_CAPTURE &&
+         !request_.requested_audio_device_id.empty() &&
+         MediaCaptureDevicesDispatcher::GetInstance()->GetRequestedAudioDevice(
+             request_.requested_audio_device_id) == NULL);
+    bool no_matched_video_device =
+        (request_.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE &&
+         !request_.requested_video_device_id.empty() &&
+         MediaCaptureDevicesDispatcher::GetInstance()->GetRequestedVideoDevice(
+             request_.requested_video_device_id) == NULL);
+    if (no_matched_audio_device || no_matched_video_device) {
+      Deny(false);
+      return true;
+    }
+  }
+
   // Show the infobar.
   return false;
 }
@@ -186,24 +223,26 @@ void MediaStreamDevicesController::Accept(bool update_content_setting) {
     switch (request_.request_type) {
       case content::MEDIA_OPEN_DEVICE: {
         const content::MediaStreamDevice* device = NULL;
-        // For open device request pick the desired device or fall back to the
-        // first available of the given type.
+        // For open device request, when requested device_id is empty, pick
+        // the first available of the given type. If requested device_id is
+        // not empty, return the desired device if it's available. Otherwise,
+        // return no device.
         if (audio_allowed &&
             request_.audio_type == content::MEDIA_DEVICE_AUDIO_CAPTURE) {
-          device = MediaCaptureDevicesDispatcher::GetInstance()->
-              GetRequestedAudioDevice(request_.requested_audio_device_id);
-          // TODO(wjia): Confirm this is the intended behavior.
-          if (!device) {
+          if (!request_.requested_audio_device_id.empty()) {
+            device = MediaCaptureDevicesDispatcher::GetInstance()->
+                GetRequestedAudioDevice(request_.requested_audio_device_id);
+          } else {
             device = MediaCaptureDevicesDispatcher::GetInstance()->
                 GetFirstAvailableAudioDevice();
           }
         } else if (video_allowed &&
             request_.video_type == content::MEDIA_DEVICE_VIDEO_CAPTURE) {
           // Pepper API opens only one device at a time.
-          device = MediaCaptureDevicesDispatcher::GetInstance()->
-              GetRequestedVideoDevice(request_.requested_video_device_id);
-          // TODO(wjia): Confirm this is the intended behavior.
-          if (!device) {
+          if (!request_.requested_video_device_id.empty()) {
+            device = MediaCaptureDevicesDispatcher::GetInstance()->
+                GetRequestedVideoDevice(request_.requested_video_device_id);
+          } else {
             device = MediaCaptureDevicesDispatcher::GetInstance()->
                 GetFirstAvailableVideoDevice();
           }
@@ -396,7 +435,7 @@ int MediaStreamDevicesController::FilterBlockedByDefaultDevices() {
         request_.security_origin,
         CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
         NO_RESOURCE_IDENTIFIER) == CONTENT_SETTING_BLOCK) {
-      request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE] =
+      request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE].permission =
           MEDIA_BLOCKED_BY_USER_SETTING;
     } else {
       ++requested_devices;
@@ -409,7 +448,7 @@ int MediaStreamDevicesController::FilterBlockedByDefaultDevices() {
         request_.security_origin,
         CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
         NO_RESOURCE_IDENTIFIER) == CONTENT_SETTING_BLOCK) {
-      request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE] =
+      request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE].permission =
           MEDIA_BLOCKED_BY_USER_SETTING;
     } else {
       ++requested_devices;
@@ -494,11 +533,11 @@ void MediaStreamDevicesController::NotifyUIRequestDenied() {
     return;
 
   if (IsDeviceAudioCaptureRequestedAndAllowed()) {
-    request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE] =
+    request_permissions_[content::MEDIA_DEVICE_AUDIO_CAPTURE].permission =
         MEDIA_BLOCKED_BY_USER;
   }
   if (IsDeviceVideoCaptureRequestedAndAllowed()) {
-    request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE] =
+    request_permissions_[content::MEDIA_DEVICE_VIDEO_CAPTURE].permission =
         MEDIA_BLOCKED_BY_USER;
   }
 
@@ -508,14 +547,16 @@ void MediaStreamDevicesController::NotifyUIRequestDenied() {
 
 bool MediaStreamDevicesController::IsDeviceAudioCaptureRequestedAndAllowed()
     const {
-  MediaStreamTypePermissionMap::const_iterator it =
+  MediaStreamTypeSettingsMap::const_iterator it =
       request_permissions_.find(content::MEDIA_DEVICE_AUDIO_CAPTURE);
-  return it != request_permissions_.end() && it->second == MEDIA_ALLOWED;
+  return (it != request_permissions_.end() &&
+          it->second.permission == MEDIA_ALLOWED);
 }
 
 bool MediaStreamDevicesController::IsDeviceVideoCaptureRequestedAndAllowed()
     const {
-  MediaStreamTypePermissionMap::const_iterator it =
+  MediaStreamTypeSettingsMap::const_iterator it =
       request_permissions_.find(content::MEDIA_DEVICE_VIDEO_CAPTURE);
-  return it != request_permissions_.end() && it->second == MEDIA_ALLOWED;
+  return (it != request_permissions_.end() &&
+          it->second.permission == MEDIA_ALLOWED);
 }

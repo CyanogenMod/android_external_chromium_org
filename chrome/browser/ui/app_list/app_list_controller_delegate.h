@@ -11,6 +11,10 @@
 
 class Profile;
 
+namespace base {
+class FilePath;
+}
+
 namespace extensions {
 class Extension;
 }
@@ -24,6 +28,13 @@ class ImageSkia;
 // platforms.
 class AppListControllerDelegate {
  public:
+  // Indicates the source of an app list activation, for tracking purposes.
+  enum AppListSource {
+    LAUNCH_FROM_UNKNOWN,
+    LAUNCH_FROM_APP_LIST,
+    LAUNCH_FROM_APP_LIST_SEARCH
+  };
+
   virtual ~AppListControllerDelegate();
 
   // Dismisses the view.
@@ -60,16 +71,23 @@ class AppListControllerDelegate {
   // Show the app's most recent window, or launch it if it is not running.
   virtual void ActivateApp(Profile* profile,
                            const extensions::Extension* extension,
+                           AppListSource source,
                            int event_flags) = 0;
 
   // Launch the app.
   virtual void LaunchApp(Profile* profile,
                          const extensions::Extension* extension,
+                         AppListSource source,
                          int event_flags) = 0;
+
+  // Show the app list for the profile specified by |profile_path|.
+  virtual void ShowForProfileByPath(const base::FilePath& profile_path) = 0;
 
   // Whether or not the icon indicating which user is logged in should be
   // visible.
   virtual bool ShouldShowUserIcon();
+
+  static std::string AppListSourceToString(AppListSource source);
 };
 
 #endif  // CHROME_BROWSER_UI_APP_LIST_APP_LIST_CONTROLLER_DELEGATE_H_

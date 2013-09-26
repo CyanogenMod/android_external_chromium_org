@@ -133,11 +133,11 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateNetAddressFromNetAddressPrivate(
       PP_Instance instance,
       const PP_NetAddress_Private& private_addr) OVERRIDE;
-  virtual PP_Resource CreateNetworkMonitorPrivate(
-      PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateNetworkMonitor(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreatePrinting(PP_Instance) OVERRIDE;
   virtual PP_Resource CreateTCPServerSocketPrivate(
       PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTCPSocket1_0(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;

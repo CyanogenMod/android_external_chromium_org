@@ -170,12 +170,12 @@ class CallbackAndContext : public base::RefCounted<CallbackAndContext> {
 class GpuBenchmarkingContext {
  public:
   GpuBenchmarkingContext()
-    : web_frame_(NULL),
-      web_view_(NULL),
-      render_view_impl_(NULL),
-      compositor_(NULL) {}
+      : web_frame_(NULL),
+        web_view_(NULL),
+        render_view_impl_(NULL),
+        compositor_(NULL) {}
 
-  bool Init() {
+  bool Init(bool init_compositor) {
     web_frame_ = WebFrame::frameForCurrentContext();
     if (!web_frame_)
       return false;
@@ -192,6 +192,9 @@ class GpuBenchmarkingContext {
       web_view_ = NULL;
       return false;
     }
+
+    if (!init_compositor)
+      return true;
 
     compositor_ = render_view_impl_->compositor();
     if (!compositor_) {
@@ -226,6 +229,7 @@ class GpuBenchmarkingContext {
   WebView* web_view_;
   RenderViewImpl* render_view_impl_;
   RenderWidgetCompositor* compositor_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuBenchmarkingContext);
 };
 
@@ -321,7 +325,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void SetNeedsDisplayOnAllLayers(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(true))
       return;
 
     context.compositor()->SetNeedsDisplayOnAllLayers();
@@ -330,7 +334,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void SetRasterizeOnlyVisibleContent(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(true))
       return;
 
     context.compositor()->SetRasterizeOnlyVisibleContent();
@@ -340,7 +344,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       const v8::FunctionCallbackInfo<v8::Value>& args) {
 
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(false))
       return;
 
     WebRenderingStatsImpl stats;
@@ -370,7 +374,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return;
 
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(true))
       return;
 
     const cc::Layer* root_layer = context.compositor()->GetRootLayer();
@@ -417,7 +421,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void BeginSmoothScroll(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(false))
       return;
 
     // Account for the 2 optional arguments, mouse_event_x and mouse_event_y.
@@ -479,7 +483,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void BeginPinch(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(false))
       return;
 
     int arglen = args.Length();
@@ -564,7 +568,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
   static void BeginWindowSnapshotPNG(
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
-    if (!context.Init())
+    if (!context.Init(false))
       return;
 
     if (!args[0]->IsFunction())

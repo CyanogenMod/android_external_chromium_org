@@ -4,8 +4,10 @@
 
 #include "chrome/browser/policy/cloud/mock_device_management_service.h"
 
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_util.h"
 #include "net/base/net_errors.h"
+#include "net/url_request/url_request_test_util.h"
 
 using testing::Action;
 
@@ -117,7 +119,9 @@ ACTION_P2(CreateAsyncMockDeviceManagementJob, service, mock_job) {
 MockDeviceManagementJob::~MockDeviceManagementJob() {}
 
 MockDeviceManagementService::MockDeviceManagementService()
-    : DeviceManagementService(std::string()) {}
+    : DeviceManagementService(new net::TestURLRequestContextGetter(
+                                  base::MessageLoopProxy::current()),
+                              std::string()) {}
 
 MockDeviceManagementService::~MockDeviceManagementService() {}
 

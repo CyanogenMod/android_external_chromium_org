@@ -7,7 +7,8 @@
 <polymer-element name="kb-keyboard" on-key-over="keyOver" on-key-up="keyUp"
     on-key-down="keyDown" on-key-longpress="keyLongpress" on-pointerup="up"
     on-pointerdown="down" on-enable-sel="enableSel"
-    on-enable-dbl="enableDbl" attributes="keyset layout rows capsLocked">
+    on-enable-dbl="enableDbl"
+    attributes="keyset layout rows inputType inputTypeToLayoutMap">
   <template>
     <style>
       @host {
@@ -132,6 +133,14 @@
     var swipeInProgress = false;
 
     /**
+     * A boolean used to track if the keyboard is ready for user input. As
+     * alternate layouts are dynamically loaded, the keyboard may be in a state
+     * where it is not fully initialized until all links, key-sequences, and
+     * imports are fully resolved.
+     */
+    var isReady = false;
+
+    /**
      * The enumeration of swipe directions.
      * @const
      * @type {Enum}
@@ -182,8 +191,8 @@
         this.offset_y = 0;
         this.pre_x = 0;
         this.pre_y = 0;
-	this.swipeFlags = 0;
-	this.swipeDirection = 0;
+        this.swipeFlags = 0;
+        this.swipeDirection = 0;
       }
     };
 
@@ -193,23 +202,36 @@
       dblDetail_: null,
       dblTimer_: null,
       swipeHandler: null,
-      capsLock: null,
+      shift: null,
+      inputType: null,
 
       /**
-      * Handles the state of the shift key.
-      */
-      keysetChanged: function() {
-        // If capslock is enabled and the current keyset should be redirected,
-        // changes to the keyset specified by capsLockTo.
-        if (this.classList.contains('caps-locked') &&
-            (this.keyset == this.capsLock.unlockedCase)) {
-             this.keyset = this.capsLock.lockedCase;
-        }
+       * The default input type to keyboard layout map. The key must be one of
+       * the input box type values.
+       * @type {object}
+       */
+      inputTypeToLayoutMap: {
+        number: "numeric",
+        text: "qwerty"
       },
 
       ready: function() {
         this.voiceInput_ = new VoiceInput(this);
         this.swipeHandler = this.onSwipeUpdate.bind(this);
+      },
+
+      /**
+       * Called when the type of focused input box changes. If a keyboard layout
+       * is defined for the current input type, that layout will be loaded.
+       * Otherwise, the keyboard layout for 'text' type will be loaded.
+       */
+      inputTypeChanged: function() {
+        // TODO(bshe): Toggle visibility of some keys in a keyboard layout
+        // according to the input type.
+        var layout = this.inputTypeToLayoutMap[this.inputType];
+        if (!layout)
+          layout = this.inputTypeToLayoutMap.text;
+        this.layout = layout;
       },
 
       /**
@@ -238,40 +260,40 @@
        * @para {PointerEvent} event.
        */
       onSwipeUpdate: function(event) {
-	swipeStatus.offset_x += event.screenX - swipeStatus.pre_x;
-	swipeStatus.offset_y += event.screenY - swipeStatus.pre_y;
+        if (!event.isPrimary)
+          return;
+        swipeStatus.offset_x += event.screenX - swipeStatus.pre_x;
+        swipeStatus.offset_y += event.screenY - swipeStatus.pre_y;
         if (Math.abs(swipeStatus.offset_x) > MIN_SWIPE_DIST ||
             Math.abs(swipeStatus.offset_y) > MIN_SWIPE_DIST) {
           swipeInProgress = true;
           this.lastPressedKey.classList.remove('active');
         }
         if (swipeStatus.offset_x > MIN_SWIPE_DIST) {
-	  swipeStatus.swipeDirection |= SWIPE_DIRECTION.RIGHT;
+          swipeStatus.swipeDirection |= SWIPE_DIRECTION.RIGHT;
+          swipeStatus.offset_x = 0;
+        } else if (swipeStatus.offset_x < -MIN_SWIPE_DIST) {
+          swipeStatus.swipeDirection |= SWIPE_DIRECTION.LEFT;
           swipeStatus.offset_x = 0;
         }
-        else if (swipeStatus.offset_x < -MIN_SWIPE_DIST) {
-	  swipeStatus.swipeDirection |= SWIPE_DIRECTION.LEFT;
-	  swipeStatus.offset_x = 0;
-	}
         // Swipe vertically only when the swipe reaches the gradient of 45
         // degree. This can also be larger.
-	if (Math.abs(event.screenY - swipeStatus.pre_y) >
+        if (Math.abs(event.screenY - swipeStatus.pre_y) >
             Math.abs(event.screenX - swipeStatus.pre_x)) {
           if (swipeStatus.offset_y > MIN_SWIPE_DIST) {
             swipeStatus.swipeDirection |= SWIPE_DIRECTION.DOWN;
-	    swipeStatus.offset_y = 0;
-	  }
-          else if (swipeStatus.offset_y < -MIN_SWIPE_DIST) {
-	    swipeStatus.swipeDirection |= SWIPE_DIRECTION.UP;
             swipeStatus.offset_y = 0;
-	  }
+          } else if (swipeStatus.offset_y < -MIN_SWIPE_DIST) {
+            swipeStatus.swipeDirection |= SWIPE_DIRECTION.UP;
+            swipeStatus.offset_y = 0;
+          }
         }
-       if (swipeStatus.swipeDirection) {
-	  MoveCursor(swipeStatus.swipeDirection, swipeStatus.swipeFlags);
+        if (swipeStatus.swipeDirection) {
+          MoveCursor(swipeStatus.swipeDirection, swipeStatus.swipeFlags);
           swipeStatus.swipeDirection = 0;
         }
-	swipeStatus.pre_x = event.screenX;
-	swipeStatus.pre_y = event.screenY;
+        swipeStatus.pre_x = event.screenX;
+        swipeStatus.pre_y = event.screenY;
       },
 
       /**
@@ -299,6 +321,10 @@
             }
             break;
           default:
+            // Non-control key pressed, notify control keys.
+            // Control keys are shift, control and alt.
+            if(this.shift)
+              this.shift.onNonControlKeyDown();
             break;
         }
 
@@ -359,9 +385,11 @@
        *     kb-keyboard.
        */
       down: function(event) {
-        swipeStatus.pre_x = event.screenX;
-        swipeStatus.pre_y = event.screenY;
-        this.addEventListener("pointermove", this.swipeHandler, false);
+        if (event.isPrimary) {
+          swipeStatus.pre_x = event.screenX;
+          swipeStatus.pre_y = event.screenY;
+          this.addEventListener("pointermove", this.swipeHandler, false);
+        }
       },
 
       /**
@@ -379,7 +407,7 @@
             var keyset = this.querySelector(keysetId);
             keyset.nextKeyset = this.dblTimer_.nextKeyset;
             clearTimeout(this.dblTimer_);
-            
+
             this.classList.add('caps-locked');
 
             this.dblDetail_ = null;
@@ -388,10 +416,10 @@
 
         // TODO(zyaozhujun): There are some edge cases to deal with later.
         // (for instance, what if a second finger trigger a down and up
-	// event sequence while swiping).
+        // event sequence while swiping).
         // When pointer up from the screen, a swipe selection session finished,
         // all the data should be reset to prepare for the next session.
-        if (swipeInProgress) {
+        if (event.isPrimary && swipeInProgress) {
           swipeInProgress = false;
           swipeStatus.resetAll();
         }
@@ -409,19 +437,21 @@
         if (swipeInProgress)
           return;
         this.lastPressedKey.classList.remove('active');
-        if (this.lastPressedKey != event.target)
-          return;
-        if (repeatKey.key == event.target) {
-          repeatKey.cancel();
-          return;
-        }
+        // Changes keyset if necessary.
         var toKeysetId = detail.toKeyset;
         // Keyset transition key. This is needed to transition from upper
-        // to lower case when we are not in caps mode.
+        // to lower case when we are not in caps mode, as well as when
+        // we're ending chording.
         if (toKeysetId) {
           this.keyset = toKeysetId;
           this.querySelector('#' + this.layout + '-' + this.keyset).nextKeyset =
               detail.nextKeyset;
+        }
+        if (this.lastPressedKey.charValue != event.target.charValue)
+          return;
+        if (repeatKey.key == event.target) {
+          repeatKey.cancel();
+          return;
         }
         var toLayoutId = detail.toLayout;
         // Layout transition key.
@@ -430,8 +460,22 @@
         var char = detail.char;
         if (enterUpperOnSpace) {
           enterUpperOnSpace = false;
-          if (char == ' ')
-            this.keyset = 'upper';
+          if (char == ' ') {
+            // If shift key defined in layout.
+            if(this.shift) {
+              var shiftDetail = this.shift.onSpaceAfterPunctuation();
+              var toKeyset = shiftDetail.toKeyset;
+              // Check if transition defined.
+              if(toKeyset) {
+                this.keyset = toKeyset;
+                this.querySelector('#' + this.layout + '-' +
+                    this.keyset).nextKeyset = shiftDetail.nextKeyset;
+              }
+            } else {
+              console.error('Capitalization on space after punctuation \
+                            enabled, but cannot find target keyset.');
+            }
+          }
         }
         switch(char) {
           case 'Invalid':
@@ -487,6 +531,9 @@
        */
       layoutChanged: function() {
         if (!this.selectDefaultKeyset()) {
+          this.isReady = false;
+          this.fire('stateChange', {state: 'loadingKeyset'});
+
           // Keyset selection fails if the keysets have not been loaded yet.
           var keysets = document.querySelector('#' + this.layout);
           if (keysets) {
@@ -514,22 +561,17 @@
           }
         }
         this.classList.remove('caps-locked');
-        this.cacheCapsLock();
+        this.shift = this.querySelector('kb-shift-key');
+        if(this.shift)
+          this.shift.reset();
       },
 
       /**
-       * Caches the keyset transitions required when caps lock is enabled.
+       * Indicate if the keyboard is ready for user input.
+       * @type {boolean}
        */
-      cacheCapsLock: function() {
-        var shift = this.querySelector('kb-shift-key');
-        if (shift) {
-          shift.reset();
-          // TODO(rsadam@): Change this such that the keyboard knows
-          // only about the shift state. Move this logic into the shift key.
-          this.capsLock = { 'lockedCase' : shift.lockedCase,
-                            'unlockedCase' : shift.unlockedCase
-                          };
-        }
+      get initialized() {
+        return this.isReady;
       },
 
       /**
@@ -559,6 +601,11 @@
              keysetsLoaded = true;
              if (keysets[i].isDefault) {
                this.keyset = matches[REGEX_KEYSET_INDEX];
+               this.isReady = true;
+               this.fire('stateChange', {
+                 state: 'keysetLoaded',
+                 keyset: this.keyset,
+               });
                return true;
              }
           }
@@ -570,4 +617,3 @@
     });
   </script>
 </polymer-element>
-

@@ -118,6 +118,10 @@
 #include "chrome/browser/ui/cocoa/extensions/browser_actions_controller_prefs.h"
 #endif
 
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/ui/webui/local_discovery/local_discovery_ui.h"
+#endif
+
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/browser_view_prefs.h"
 #include "chrome/browser/ui/tabs/tab_strip_layout_type_prefs.h"
@@ -136,6 +140,8 @@
 #include "chrome/browser/chromeos/extensions/echo_private_api.h"
 #include "chrome/browser/chromeos/login/default_pinned_apps_field_trial.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/multi_profile_first_run_notification.h"
+#include "chrome/browser/chromeos/login/multi_profile_user_controller.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/user_image_manager.h"
 #include "chrome/browser/chromeos/login/user_image_sync_observer.h"
@@ -276,6 +282,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
   chromeos::language_prefs::RegisterPrefs(registry);
   chromeos::KioskAppManager::RegisterPrefs(registry);
   chromeos::LoginUtils::RegisterPrefs(registry);
+  chromeos::MultiProfileUserController::RegisterPrefs(registry);
   chromeos::Preferences::RegisterPrefs(registry);
   chromeos::proxy_config::RegisterPrefs(registry);
   chromeos::RegisterDisplayLocalStatePrefs(registry);
@@ -340,7 +347,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   SessionStartupPref::RegisterProfilePrefs(registry);
   TemplateURLPrepopulateData::RegisterProfilePrefs(registry);
   TranslatePrefs::RegisterProfilePrefs(registry);
-  extensions::ActivityLog::RegisterProfilePrefs(registry);
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
   autofill::AutofillDialogController::RegisterProfilePrefs(registry);
@@ -348,6 +354,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
   policy::URLBlacklistManager::RegisterProfilePrefs(registry);
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+  extensions::ActivityLog::RegisterProfilePrefs(registry);
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
@@ -400,6 +410,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 #if defined(OS_CHROMEOS)
   chromeos::attestation::PlatformVerificationFlow::RegisterProfilePrefs(
       registry);
+  chromeos::MultiProfileFirstRunNotification::RegisterProfilePrefs(registry);
+  chromeos::MultiProfileUserController::RegisterProfilePrefs(registry);
   chromeos::Preferences::RegisterProfilePrefs(registry);
   chromeos::proxy_config::RegisterProfilePrefs(registry);
   chromeos::UserImageSyncObserver::RegisterProfilePrefs(registry);
@@ -430,6 +442,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       kSyncPromoErrorMessage,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif
+
+#if defined(ENABLE_MDNS)
+ LocalDiscoveryUI::RegisterProfilePrefs(registry);
 #endif
 }
 

@@ -31,7 +31,6 @@
 #include "chrome/browser/signin/about_signin_internals.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service.h"
@@ -109,9 +108,7 @@ const char* ProfileSyncService::kSyncServerUrl =
 const char* ProfileSyncService::kDevServerUrl =
     "https://clients4.google.com/chrome-sync/dev";
 
-static const int kSyncClearDataTimeoutInSeconds = 60;  // 1 minute.
-
-static const char* kSyncUnrecoverableErrorHistogram =
+const char kSyncUnrecoverableErrorHistogram[] =
     "Sync.UnrecoverableErrors";
 
 const net::BackoffEntry::Policy kRequestAccessTokenBackoffPolicy = {
@@ -149,10 +146,12 @@ bool ShouldShowActionOnUI(
           error.action != syncer::STOP_SYNC_FOR_DISABLED_ACCOUNT);
 }
 
-ProfileSyncService::ProfileSyncService(ProfileSyncComponentsFactory* factory,
-                                       Profile* profile,
-                                       SigninManagerBase* signin_manager,
-                                       StartBehavior start_behavior)
+ProfileSyncService::ProfileSyncService(
+    ProfileSyncComponentsFactory* factory,
+    Profile* profile,
+    SigninManagerBase* signin_manager,
+    ProfileOAuth2TokenService* oauth2_token_service,
+    StartBehavior start_behavior)
     : last_auth_error_(AuthError::AuthErrorNone()),
       passphrase_required_reason_(syncer::REASON_PASSPHRASE_NOT_REQUIRED),
       factory_(factory),
@@ -175,6 +174,8 @@ ProfileSyncService::ProfileSyncService(ProfileSyncComponentsFactory* factory,
       auto_start_enabled_(start_behavior == AUTO_START),
       configure_status_(DataTypeManager::UNKNOWN),
       setup_in_progress_(false),
+      use_oauth2_token_(false),
+      oauth2_token_service_(oauth2_token_service),
       request_access_token_backoff_(&kRequestAccessTokenBackoffPolicy) {
   // By default, dev, canary, and unbranded Chromium users will go to the
   // development servers. Development servers have more features than standard
@@ -211,15 +212,15 @@ bool ProfileSyncService::IsOAuthRefreshTokenAvailable() {
   // and sync token otherwise (for android).
   // TODO(pavely): Remove "else" part once use_oauth2_token_ is gone.
   if (use_oauth2_token_) {
-    ProfileOAuth2TokenService* token_service =
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-    if (!token_service)
+    if (!oauth2_token_service_)
       return false;
-    return token_service->RefreshTokenIsAvailable();
+    return oauth2_token_service_->RefreshTokenIsAvailable(
+        oauth2_token_service_->GetPrimaryAccountId());
   } else {
     TokenService* token_service = TokenServiceFactory::GetForProfile(profile_);
     if (!token_service)
       return false;
+
     return token_service->HasTokenForService(GaiaConstants::kSyncService);
   }
 }
@@ -347,9 +348,7 @@ void ProfileSyncService::StartSyncingWithServer() {
 }
 
 void ProfileSyncService::RegisterAuthNotifications() {
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  token_service->AddObserver(this);
+  oauth2_token_service_->AddObserver(this);
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
@@ -360,9 +359,7 @@ void ProfileSyncService::RegisterAuthNotifications() {
 }
 
 void ProfileSyncService::UnregisterAuthNotifications() {
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  token_service->RemoveObserver(this);
+  oauth2_token_service_->RemoveObserver(this);
   registrar_.RemoveAll();
 }
 
@@ -573,14 +570,14 @@ void ProfileSyncService::StartUp(StartUpDeferredOption deferred_option) {
     }
 #endif
 
-    if (!sync_global_error_) {
 #if !defined(OS_ANDROID)
+    if (!sync_global_error_) {
       sync_global_error_.reset(new SyncGlobalError(this, signin()));
-#endif
       GlobalErrorServiceFactory::GetForProfile(profile_)->AddGlobalError(
           sync_global_error_.get());
       AddObserver(sync_global_error_.get());
     }
+#endif
   } else {
     // We don't care to prevent multiple calls to StartUp in deferred mode
     // because it's fast and has no side effects.
@@ -715,12 +712,14 @@ void ProfileSyncService::OnGetTokenFailure(
 
 void ProfileSyncService::OnRefreshTokenAvailable(
     const std::string& account_id) {
-  OnRefreshTokensLoaded();
+  if (oauth2_token_service_->GetPrimaryAccountId() == account_id)
+    OnRefreshTokensLoaded();
 }
 
 void ProfileSyncService::OnRefreshTokenRevoked(
     const std::string& account_id) {
   if (!IsOAuthRefreshTokenAvailable()) {
+    access_token_.clear();
     // The additional check around IsOAuthRefreshTokenAvailable() above
     // prevents us sounding the alarm if we actually have a valid token but
     // a refresh attempt by TokenService failed for any variety of reasons
@@ -743,10 +742,6 @@ void ProfileSyncService::OnRefreshTokensLoaded() {
   } else {
     TryStart();
   }
-}
-
-void ProfileSyncService::OnRefreshTokensCleared() {
-  access_token_.clear();
 }
 
 void ProfileSyncService::Shutdown() {
@@ -1904,14 +1899,17 @@ void ProfileSyncService::RequestAccessToken() {
     oauth2_scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
   }
 
-  OAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   // Invalidate previous token, otherwise token service will return the same
   // token again.
-  if (!access_token_.empty())
-    token_service->InvalidateToken(oauth2_scopes, access_token_);
+  const std::string& account_id = oauth2_token_service_->GetPrimaryAccountId();
+  if (!access_token_.empty()) {
+    oauth2_token_service_->InvalidateToken(
+        account_id, oauth2_scopes, access_token_);
+  }
+
   access_token_.clear();
-  access_token_request_ = token_service->StartRequest(oauth2_scopes, this);
+  access_token_request_ =
+      oauth2_token_service_->StartRequest(account_id, oauth2_scopes, this);
 }
 
 void ProfileSyncService::SetEncryptionPassphrase(const std::string& passphrase,

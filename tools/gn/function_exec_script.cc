@@ -18,6 +18,7 @@
 #include "tools/gn/input_file.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scheduler.h"
+#include "tools/gn/trace.h"
 #include "tools/gn/value.h"
 
 #if defined(OS_WIN)
@@ -37,6 +38,8 @@
 namespace functions {
 
 namespace {
+
+const char kNoExecSwitch[] = "no-exec";
 
 #if defined(OS_WIN)
 bool ExecProcess(const CommandLine& cmdline,
@@ -300,6 +303,9 @@ Value RunExecScript(Scope* scope,
     script_path = build_settings->GetFullPathSecondary(script_source);
   }
 
+  ScopedTrace trace(TraceItem::TRACE_SCRIPT_EXECUTE, script_source.value());
+  trace.SetToolchain(settings->toolchain()->label());
+
   // Add all dependencies of this script, including the script itself, to the
   // build deps.
   g_scheduler->AddGenDependency(script_path);
@@ -332,6 +338,7 @@ Value RunExecScript(Scope* scope,
   }
 
   // Log command line for debugging help.
+  trace.SetCommandLine(cmdline);
   base::TimeTicks begin_exec;
   if (g_scheduler->verbose_logging()) {
 #if defined(OS_WIN)
@@ -350,11 +357,13 @@ Value RunExecScript(Scope* scope,
   std::string output;
   std::string stderr_output;  // TODO(brettw) not hooked up, see above.
   int exit_code = 0;
-  if (!ExecProcess(cmdline, startup_dir,
-                   &output, &stderr_output, &exit_code)) {
-    *err = Err(function->function(), "Could not execute python.",
-        "I was trying to execute \"" + FilePathToUTF8(python_path) + "\".");
-    return Value();
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(kNoExecSwitch)) {
+    if (!ExecProcess(cmdline, startup_dir,
+                     &output, &stderr_output, &exit_code)) {
+      *err = Err(function->function(), "Could not execute python.",
+          "I was trying to execute \"" + FilePathToUTF8(python_path) + "\".");
+      return Value();
+    }
   }
   if (g_scheduler->verbose_logging()) {
     g_scheduler->Log("Pythoning", script_source.value() + " took " +
@@ -366,7 +375,7 @@ Value RunExecScript(Scope* scope,
   // TODO(brettw) maybe we need stderr also for reasonable stack dumps.
   if (exit_code != 0) {
     std::string msg = "Current dir: " + FilePathToUTF8(startup_dir) +
-        "\nCommand: " + cmdline.GetCommandLineString() +
+        "\nCommand: " + FilePathToUTF8(cmdline.GetCommandLineString()) +
         "\nReturned " + base::IntToString(exit_code);
     if (!output.empty())
       msg += " and printed out:\n\n" + output;

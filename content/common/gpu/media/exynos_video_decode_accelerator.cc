@@ -241,8 +241,7 @@ ExynosVideoDecodeAccelerator::ExynosVideoDecodeAccelerator(
       make_context_current_(make_context_current),
       egl_display_(egl_display),
       egl_context_(egl_context),
-      video_profile_(media::VIDEO_CODEC_PROFILE_UNKNOWN) {
-}
+      video_profile_(media::VIDEO_CODEC_PROFILE_UNKNOWN) {}
 
 ExynosVideoDecodeAccelerator::~ExynosVideoDecodeAccelerator() {
   DCHECK(!decoder_thread_.IsRunning());
@@ -440,14 +439,6 @@ void ExynosVideoDecodeAccelerator::AssignPictureBuffers(
     return;
   }
 
-  for (size_t i = 0; i < buffers.size(); ++i) {
-    if (buffers[i].size() != frame_buffer_size_) {
-      DLOG(ERROR) << "AssignPictureBuffers(): invalid buffer size";
-      NOTIFY_ERROR(INVALID_ARGUMENT);
-      return;
-    }
-  }
-
   if (!make_context_current_.Run()) {
     DLOG(ERROR) << "AssignPictureBuffers(): could not make context current";
     NOTIFY_ERROR(PLATFORM_FAILURE);
@@ -464,12 +455,16 @@ void ExynosVideoDecodeAccelerator::AssignPictureBuffers(
   Display* x_display = base::MessagePumpForUI::GetDefaultXDisplay();
   gfx::ScopedTextureBinder bind_restore(GL_TEXTURE_2D, 0);
   for (size_t i = 0; i < pic_buffers_ref->picture_buffers.size(); ++i) {
+    DCHECK(buffers[i].size() == frame_buffer_size_);
     PictureBufferArrayRef::PictureBufferRef& buffer =
         pic_buffers_ref->picture_buffers[i];
     // Create the X pixmap and then create an EGLImageKHR from it, so we can
     // get dma_buf backing.
-    Pixmap pixmap = XCreatePixmap(x_display, RootWindow(x_display, 0),
-        buffers[i].size().width(), buffers[i].size().height(), 32);
+    Pixmap pixmap = XCreatePixmap(x_display,
+                                  RootWindow(x_display, 0),
+                                  frame_buffer_size_.width(),
+                                  frame_buffer_size_.height(),
+                                  32);
     if (!pixmap) {
       DLOG(ERROR) << "AssignPictureBuffers(): could not create X pixmap";
       NOTIFY_ERROR(PLATFORM_FAILURE);
@@ -1618,8 +1613,8 @@ void ExynosVideoDecodeAccelerator::FlushTask() {
   if (decoder_state_ == kInitialized || decoder_state_ == kAfterReset) {
     // There's nothing in the pipe, so return done immediately.
     DVLOG(3) << "FlushTask(): returning flush";
-    child_message_loop_proxy_->PostTask(FROM_HERE, base::Bind(
-      &Client::NotifyFlushDone, client_));
+    child_message_loop_proxy_->PostTask(
+        FROM_HERE, base::Bind(&Client::NotifyFlushDone, client_));
     return;
   } else if (decoder_state_ == kError) {
     DVLOG(2) << "FlushTask(): early out: kError state";
@@ -1679,8 +1674,8 @@ void ExynosVideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
   decoder_delay_bitstream_buffer_id_ = -1;
   decoder_flushing_ = false;
   DVLOG(3) << "NotifyFlushDoneIfNeeded(): returning flush";
-  child_message_loop_proxy_->PostTask(FROM_HERE, base::Bind(
-    &Client::NotifyFlushDone, client_));
+  child_message_loop_proxy_->PostTask(
+      FROM_HERE, base::Bind(&Client::NotifyFlushDone, client_));
 
   // While we were flushing, we early-outed DecodeBufferTask()s.
   ScheduleDecodeBufferTaskIfNeeded();

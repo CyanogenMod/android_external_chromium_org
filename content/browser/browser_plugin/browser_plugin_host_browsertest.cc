@@ -49,20 +49,6 @@ namespace {
 
 const char kHTMLForGuest[] =
     "data:text/html,<html><body>hello world</body></html>";
-const char kHTMLForGuestBusyLoop[] =
-    "data:text/html,<html><head><script type=\"text/javascript\">"
-    "function PauseMs(timems) {"
-    "  document.title = \"start\";"
-    "  var date = new Date();"
-    "  var currDate = null;"
-    "  do {"
-    "    currDate = new Date();"
-    "  } while (currDate - date < timems)"
-    "}"
-    "function StartPauseMs(timems) {"
-    "  setTimeout(function() { PauseMs(timems); }, 0);"
-    "}"
-    "</script></head><body></body></html>";
 const char kHTMLForGuestTouchHandler[] =
     "data:text/html,<html><body><div id=\"touch\">With touch</div></body>"
     "<script type=\"text/javascript\">"
@@ -596,8 +582,10 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, ReloadEmbedder) {
   }
 }
 
-// Always failing in the win7_aura try bot.  See http://crbug.com/181107.
-#if defined(OS_WIN) && defined(USE_AURA)
+// Always failing in the win7_aura try bot. See http://crbug.com/181107.
+// Times out under AddressSanitizer on Mac. See http://crbug.com/297576.
+#if (defined(OS_WIN) && defined(USE_AURA)) || \
+    (defined(OS_MACOSX) && defined(ADDRESS_SANITIZER))
 #define MAYBE_AcceptDragEvents DISABLED_AcceptDragEvents
 #else
 #define MAYBE_AcceptDragEvents AcceptDragEvents

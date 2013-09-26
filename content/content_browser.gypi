@@ -652,8 +652,6 @@
     'browser/loader/certificate_resource_handler.h',
     'browser/loader/cross_site_resource_handler.cc',
     'browser/loader/cross_site_resource_handler.h',
-    'browser/loader/doomed_resource_handler.cc',
-    'browser/loader/doomed_resource_handler.h',
     'browser/loader/global_routing_id.h',
     'browser/loader/layered_resource_handler.cc',
     'browser/loader/layered_resource_handler.h',
@@ -700,6 +698,8 @@
     'browser/media/android/browser_demuxer_android.h',
     'browser/media/android/browser_media_player_manager.cc',
     'browser/media/android/browser_media_player_manager.h',
+    'browser/media/android/media_drm_credential_manager.cc',
+    'browser/media/android/media_drm_credential_manager.h',
     'browser/media/android/media_resource_getter_impl.cc',
     'browser/media/android/media_resource_getter_impl.h',
     'browser/media/media_internals.cc',
@@ -724,6 +724,10 @@
     'browser/media_devices_monitor.cc',
     'browser/mime_registry_message_filter.cc',
     'browser/mime_registry_message_filter.h',
+    'browser/service_worker/service_worker_dispatcher_host.h',
+    'browser/service_worker/service_worker_dispatcher_host.cc',
+    'browser/service_worker/service_worker_context.h',
+    'browser/service_worker/service_worker_context.cc',
     'browser/net/browser_online_state_observer.cc',
     'browser/net/browser_online_state_observer.h',
     'browser/net/sqlite_persistent_cookie_store.cc',
@@ -1306,6 +1310,8 @@
         'browser/renderer_host/p2p/socket_host_tcp.h',
         'browser/renderer_host/p2p/socket_host_tcp_server.cc',
         'browser/renderer_host/p2p/socket_host_tcp_server.h',
+        'browser/renderer_host/p2p/socket_host_throttler.cc',
+        'browser/renderer_host/p2p/socket_host_throttler.h',
         'browser/renderer_host/p2p/socket_host_udp.cc',
         'browser/renderer_host/p2p/socket_host_udp.h',
         'browser/renderer_host/p2p/socket_dispatcher_host.cc',
@@ -1519,6 +1525,7 @@
     ['enable_plugins==1', {
       'dependencies': [
         '../ppapi/ppapi_internal.gyp:ppapi_ipc',
+        '../ppapi/ppapi_internal.gyp:ppapi_shared',
       ],
     }, {  # enable_plugins==0
       'sources!': [

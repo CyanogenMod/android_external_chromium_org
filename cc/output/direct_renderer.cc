@@ -28,14 +28,14 @@ static gfx::Transform OrthoProjectionMatrix(float left,
   gfx::Transform proj;
   if (!delta_x || !delta_y)
     return proj;
-  proj.matrix().setDouble(0, 0, 2.0f / delta_x);
-  proj.matrix().setDouble(0, 3, -(right + left) / delta_x);
-  proj.matrix().setDouble(1, 1, 2.0f / delta_y);
-  proj.matrix().setDouble(1, 3, -(top + bottom) / delta_y);
+  proj.matrix().set(0, 0, 2.0f / delta_x);
+  proj.matrix().set(0, 3, -(right + left) / delta_x);
+  proj.matrix().set(1, 1, 2.0f / delta_y);
+  proj.matrix().set(1, 3, -(top + bottom) / delta_y);
 
   // Z component of vertices is always set to zero as we don't use the depth
   // buffer while drawing.
-  proj.matrix().setDouble(2, 2, 0);
+  proj.matrix().set(2, 2, 0);
 
   return proj;
 }
@@ -333,19 +333,34 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
   bool using_scissor_as_optimization =
       Capabilities().using_partial_swap && allow_partial_swap;
   gfx::RectF render_pass_scissor;
+  bool draw_rect_covers_full_surface = true;
+  if (frame->current_render_pass == frame->root_render_pass &&
+      !client_->DeviceViewport().Contains(
+           gfx::Rect(output_surface_->SurfaceSize())))
+    draw_rect_covers_full_surface = false;
 
   if (using_scissor_as_optimization) {
     render_pass_scissor = ComputeScissorRectForRenderPass(frame);
     SetScissorTestRectInDrawSpace(frame, render_pass_scissor);
+    if (!render_pass_scissor.Contains(frame->current_render_pass->output_rect))
+      draw_rect_covers_full_surface = false;
   }
 
   if (frame->current_render_pass != frame->root_render_pass ||
       settings_->should_clear_root_render_pass) {
-    if (NeedDeviceClip(frame))
+    if (NeedDeviceClip(frame)) {
       SetScissorTestRect(DeviceClipRect(frame));
-    else if (!using_scissor_as_optimization)
+      draw_rect_covers_full_surface = false;
+    } else if (!using_scissor_as_optimization) {
       EnsureScissorTestDisabled();
-    ClearFramebuffer(frame);
+    }
+
+    bool has_external_stencil_test =
+        output_surface_->HasExternalStencilTest() &&
+        frame->current_render_pass == frame->root_render_pass;
+
+    DiscardPixels(has_external_stencil_test, draw_rect_covers_full_surface);
+    ClearFramebuffer(frame, has_external_stencil_test);
   }
 
   const QuadList& quad_list = render_pass->quad_list;

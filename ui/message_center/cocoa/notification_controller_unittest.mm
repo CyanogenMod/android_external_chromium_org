@@ -76,20 +76,20 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
   return icon_.get();
 }
 
-- (NSTextField*)titleView {
+- (NSTextView*)titleView {
   return title_.get();
 }
 
-- (NSTextField*)messageView {
+- (NSTextView*)messageView {
   return message_.get();
 }
 
-- (NSTextField*)contextMessageView {
+- (NSTextView*)contextMessageView {
   return contextMessage_.get();
 }
 
-- (NSView*)listItemView {
-  return listItemView_.get();
+- (NSView*)listView {
+  return listView_.get();
 }
 @end
 
@@ -120,9 +120,9 @@ TEST_F(NotificationControllerTest, BasicLayout) {
   [controller view];
 
   EXPECT_EQ(TestIcon(), [[controller iconView] image]);
-  EXPECT_EQ(base::SysNSStringToUTF16([[controller titleView] stringValue]),
+  EXPECT_EQ(base::SysNSStringToUTF16([[controller titleView] string]),
             notification->title());
-  EXPECT_EQ(base::SysNSStringToUTF16([[controller messageView] stringValue]),
+  EXPECT_EQ(base::SysNSStringToUTF16([[controller messageView] string]),
             notification->message());
   EXPECT_EQ(controller.get(), [[controller closeButton] target]);
 }
@@ -276,6 +276,10 @@ TEST_F(NotificationControllerTest, List) {
       UTF8ToUTF16("Second title"),
       UTF8ToUTF16("second slightly longer message"));
   optional.items.push_back(item2);
+  message_center::NotificationItem item3(
+      UTF8ToUTF16(""),    // Test for empty string.
+      UTF8ToUTF16(" "));  // Test for string containing only spaces.
+  optional.items.push_back(item3);
   optional.context_message = UTF8ToUTF16("Context Message");
 
   scoped_ptr<message_center::Notification> notification(
@@ -300,7 +304,7 @@ TEST_F(NotificationControllerTest, List) {
   EXPECT_TRUE([[controller messageView] isHidden]);
   EXPECT_FALSE([[controller contextMessageView] isHidden]);
 
-  EXPECT_EQ(2u, [[[controller listItemView] subviews] count]);
-  EXPECT_LT(NSMaxY([[controller listItemView] frame]),
+  EXPECT_EQ(3u, [[[controller listView] subviews] count]);
+  EXPECT_LT(NSMaxY([[controller listView] frame]),
             NSMinY([[controller titleView] frame]));
 }

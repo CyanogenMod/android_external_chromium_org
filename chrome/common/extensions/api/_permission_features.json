@@ -125,6 +125,8 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
     "whitelist": [
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/293683
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/293683
       "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578",  // http://crbug.com/234235
       "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB"   // http://crbug.com/234235
     ]
@@ -184,7 +186,7 @@
     "extension_types": ["extension", "legacy_packaged_app"]
   },
   "developerPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["platform_app"],
     "whitelist": [
         "ohmmkhmmmpcnpikjeljgnaoabkaalbgc", // Published Apps developer tool.
@@ -242,15 +244,15 @@
     }
   ],
   "downloads": {
-    "channel": "beta",
+    "channel": "stable",
     "extension_types": ["extension"]
   },
   "downloads.open": {
-    "channel": "beta",
+    "channel": "stable",
     "extension_types": ["extension"]
   },
   "downloads.shelf": {
-    "channel": "beta",
+    "channel": "stable",
     "extension_types": ["extension"]
   },
   "dial": {
@@ -283,6 +285,8 @@
     "extension_types": ["extension", "platform_app"],
     "whitelist": [
       "7910EAFDAF64B947E1CB31B333A9BD14CA556B6C",  // Feedback UI.
+      "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/293683
+      "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/293683
       "8C3741E3AF0B93B6E8E0DDD499BB0B74839EA578",  // http://crbug.com/234235
       "E703483CEF33DEC18B4B6DD84B5C776FB9182BDB"   // http://crbug.com/234235
     ]
@@ -305,11 +309,11 @@
     "whitelist": [ "2FC374607C2DF285634B67C64A2E356C607091C3" ]
   }],
   "fileSystem.directory": [{
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["platform_app"]
   }],
   "fileSystem.retainEntries": [{
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["platform_app"]
   }],
   "fileSystem.write": [{
@@ -415,7 +419,8 @@
           "lphgohfeebnhcpiohjndkgbhhkoapkjc",  // Apps Developer tool.
           "gonnpeheodhmhdjiimoiheniambmdcco",  // Apps Editor old.
           "cbelnpbjogfbjamhpbofhlnklecjpido",  // Apps Editor published.
-          "abjoigjokfeibfhiahiijggogladbmfm"   // Activity Log (Watchdog).
+          "abjoigjokfeibfhiahiijggogladbmfm",  // Watchdog (Activity Log)
+          "hhcnncjlpehbepkbgccanfpkneoejnpb"  // Watchdog Test Version
       ]
     }
   ],
@@ -573,12 +578,11 @@
     "extension_types": ["extension", "platform_app"]
   },
   "imageWriterPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["platform_app"],
     "whitelist": [
-      "nmedaodmkamdcnmfceajookiaicfnkhd", // ImageWriter API Dev App
-      "jdnamgpmgjhphalijaakigbpccepfllk", // Chrome OS Recovery Tool local
-      "jobolcahaebjkjhdedcfcnfkgpjcmkcg" // Chrome OS Recovery Tool CWS
+      "jobolcahaebjkjhdedcfcnfkgpjcmkcg", // Dev version
+      "D7986543275120831B39EF28D1327552FC343960"  // Release version
     ]
   },
   "rtcPrivate": {
@@ -750,12 +754,18 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
+  "webrtcLoggingPrivate": {
+    "channel": "dev",
+    "extension_types": ["extension"],
+    "whitelist": ["80B9DC58E5210749F052F5B4DB239C50CF72AEB6"]
+  },
   "webstorePrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"],
     "whitelist": [
       "ahfgeienlihckogmohjhadlkjgocpleb",  // Web Store
-      "afchcafgojfnemjkcbhfekplkmjaldaa"   // Enterprise Web Store
+      "afchcafgojfnemjkcbhfekplkmjaldaa",  // Enterprise Web Store
+      "dofmkfphhdaddeofjngcjphcegkbbooh"   // Chrome Login Proxy (prototype)
     ]
   },
   "webRequest": {
@@ -766,8 +776,18 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
-  "webview": {
+  "webview": [{
     "channel": "stable",
     "extension_types": ["platform_app"]
-  }
+  }, {
+    // General support for webview in component extensions still in progress.
+    // Only allowed for whitelisted extensions until all the caveats are
+    // addressed. Tracked in crbug/285151.
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "location": "component",
+    "whitelist": [
+      "mfffpogegjflfpflabcdkioaeobkgjik"  // GAIA Component Extension
+    ]
+  }]
 }

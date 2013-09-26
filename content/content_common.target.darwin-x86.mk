@@ -17,7 +17,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_resources_gyp)/content_resources.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_support_glue_gyp)/webkit_support_glue_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,webkit_glue_glue_gyp)/webkit_glue_glue_gyp.a \
 	$(call intermediates-dir-for,GYP,content_content_jni_headers_gyp)/content_jni_headers.stamp \
 	$(call intermediates-dir-for,GYP,content_common_aidl_gyp)/common_aidl.stamp
 
@@ -183,7 +183,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -200,13 +199,14 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -302,7 +302,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -319,13 +318,14 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -426,7 +426,7 @@ LOCAL_STATIC_LIBRARIES := \
 	skia_skia_library_gyp \
 	ui_ui_gyp \
 	ui_gl_gl_gyp \
-	webkit_support_glue_gyp
+	webkit_glue_glue_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

@@ -23,13 +23,14 @@
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/panels/panel_layout_manager.h"
 #include "ash/wm/window_resizer.h"
-#include "ash/wm/window_settings.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/root_window.h"
+#include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/screen.h"
@@ -68,10 +69,24 @@ class DockedWindowLayoutManagerTest
 
   aura::Window* CreateTestWindow(const gfx::Rect& bounds) {
     aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
-        NULL,
-        window_type_,
-        0,
-        bounds);
+        NULL, window_type_, 0, bounds);
+    if (window_type_ == aura::client::WINDOW_TYPE_PANEL) {
+      test::TestLauncherDelegate* launcher_delegate =
+          test::TestLauncherDelegate::instance();
+      launcher_delegate->AddLauncherItem(window);
+      PanelLayoutManager* manager =
+          static_cast<PanelLayoutManager*>(GetPanelContainer(window)->
+              layout_manager());
+      manager->Relayout();
+    }
+    return window;
+  }
+
+  aura::Window* CreateTestWindowWithDelegate(
+      const gfx::Rect& bounds,
+      aura::test::TestWindowDelegate* delegate) {
+    aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
+        delegate, window_type_, 0, bounds);
     if (window_type_ == aura::client::WINDOW_TYPE_PANEL) {
       test::TestLauncherDelegate* launcher_delegate =
           test::TestLauncherDelegate::instance();
@@ -190,7 +205,7 @@ class DockedWindowLayoutManagerTest
     // x-coordinate can get adjusted by snapping or sticking.
     // y-coordinate could be changed by possible automatic layout if docked.
     if (window->parent()->id() != internal::kShellWindowId_DockedContainer &&
-        GetRestoreBoundsInScreen(window) == NULL) {
+        !wm::GetWindowState(window)->HasRestoreBounds()) {
       EXPECT_EQ(initial_bounds.y() + dy, window->GetBoundsInScreen().y());
     }
   }
@@ -216,9 +231,11 @@ TEST_P(DockedWindowLayoutManagerTest, AddOneWindow) {
   scoped_ptr<aura::Window> window(CreateTestWindow(bounds));
   DragRelativeToEdge(DOCKED_EDGE_RIGHT, window.get(), 0);
 
-  // The window should be attached and snapped to the right side of the screen.
+  // The window should be attached and docked at the right edge.
+  // Its width should shrink or grow to ideal width.
   EXPECT_EQ(window->GetRootWindow()->bounds().right(),
             window->GetBoundsInScreen().right());
+  EXPECT_EQ(DockedWindowLayoutManager::kIdealWidth, window->bounds().width());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
 }
 
@@ -243,7 +260,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingLeft) {
   // Create two additional windows and test their auto-placement
   scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(1));
   gfx::Rect desktop_area = window1->parent()->bounds();
-  wm::GetWindowSettings(window1.get())->set_window_position_managed(true);
+  wm::GetWindowState(window1.get())->set_window_position_managed(true);
   window1->Hide();
   window1->SetBounds(gfx::Rect(250, 32, 231, 320));
   window1->Show();
@@ -255,7 +272,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingLeft) {
       ",32 231x320", window1->bounds().ToString());
 
   scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(2));
-  wm::GetWindowSettings(window2.get())->set_window_position_managed(true);
+  wm::GetWindowState(window2.get())->set_window_position_managed(true);
   // To avoid any auto window manager changes due to SetBounds, the window
   // gets first hidden and then shown again.
   window2->Hide();
@@ -294,7 +311,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingRight) {
   // Create two additional windows and test their auto-placement
   scoped_ptr<aura::Window> window1(CreateTestWindowInShellWithId(1));
   gfx::Rect desktop_area = window1->parent()->bounds();
-  wm::GetWindowSettings(window1.get())->set_window_position_managed(true);
+  wm::GetWindowState(window1.get())->set_window_position_managed(true);
   window1->Hide();
   window1->SetBounds(gfx::Rect(16, 32, 231, 320));
   window1->Show();
@@ -306,7 +323,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingRight) {
       ",32 231x320", window1->bounds().ToString());
 
   scoped_ptr<aura::Window> window2(CreateTestWindowInShellWithId(2));
-  wm::GetWindowSettings(window2.get())->set_window_position_managed(true);
+  wm::GetWindowState(window2.get())->set_window_position_managed(true);
   // To avoid any auto window manager changes due to SetBounds, the window
   // gets first hidden and then shown again.
   window2->Hide();
@@ -350,7 +367,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingRightSecondScreen) {
   scoped_ptr<aura::Window> window1(
       CreateTestWindowInShellWithDelegate(NULL, 1, bounds));
   gfx::Rect desktop_area = window1->parent()->bounds();
-  wm::GetWindowSettings(window1.get())->set_window_position_managed(true);
+  wm::GetWindowState(window1.get())->set_window_position_managed(true);
   window1->Hide();
   window1->Show();
 
@@ -363,7 +380,7 @@ TEST_P(DockedWindowLayoutManagerTest, AutoPlacingRightSecondScreen) {
   bounds = gfx::Rect(632, 48, 256, 512);
   scoped_ptr<aura::Window> window2(
       CreateTestWindowInShellWithDelegate(NULL, 2, bounds));
-  wm::GetWindowSettings(window2.get())->set_window_position_managed(true);
+  wm::GetWindowState(window2.get())->set_window_position_managed(true);
   // To avoid any auto window manager changes due to SetBounds, the window
   // gets first hidden and then shown again.
   window2->Hide();
@@ -446,6 +463,9 @@ TEST_P(DockedWindowLayoutManagerTest, ThreeWindowsDragging) {
 
   scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  DockedWindowLayoutManager* manager = static_cast<DockedWindowLayoutManager*>(
+      w1->parent()->layout_manager());
+  manager->max_visible_windows_ = 3;
   scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 210, 202)));
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 200);
   scoped_ptr<aura::Window> w3(CreateTestWindow(gfx::Rect(0, 0, 220, 204)));
@@ -513,6 +533,9 @@ TEST_P(DockedWindowLayoutManagerTest, ThreeWindowsDraggingSecondScreen) {
 
   scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 600, 201, 201)));
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 600 + 20);
+  DockedWindowLayoutManager* manager = static_cast<DockedWindowLayoutManager*>(
+      w1->parent()->layout_manager());
+  manager->max_visible_windows_ = 3;
   scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 600, 210, 202)));
   DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 600 + 200);
   scoped_ptr<aura::Window> w3(CreateTestWindow(gfx::Rect(0, 600, 220, 204)));
@@ -561,6 +584,133 @@ TEST_P(DockedWindowLayoutManagerTest, ThreeWindowsDraggingSecondScreen) {
   EXPECT_EQ(0, overlap1);
   EXPECT_LE(abs(overlap2 - overlap3), 1);
   EXPECT_EQ(0, overlap4);
+}
+
+// Tests that a second window added to the dock is resized to match.
+TEST_P(DockedWindowLayoutManagerTest, TwoWindowsWidthNew) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 280, 202)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  // The first window should get resized to ideal width.
+  EXPECT_EQ(DockedWindowLayoutManager::kIdealWidth, w1->bounds().width());
+
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 300);
+  // The second window should get resized to the existing dock.
+  EXPECT_EQ(DockedWindowLayoutManager::kIdealWidth, w2->bounds().width());
+}
+
+// Tests that a first non-resizable window added to the dock is not resized.
+TEST_P(DockedWindowLayoutManagerTest, TwoWindowsWidthNonResizableFirst) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  w1->SetProperty(aura::client::kCanResizeKey, false);
+  scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 280, 202)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  // The first window should not get resized.
+  EXPECT_EQ(201, w1->bounds().width());
+
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 300);
+  // The second window should get resized to the first window's width.
+  EXPECT_EQ(w1->bounds().width(), w2->bounds().width());
+}
+
+// Tests that a second non-resizable window added to the dock is not resized.
+TEST_P(DockedWindowLayoutManagerTest, TwoWindowsWidthNonResizableSecond) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 280, 202)));
+  w2->SetProperty(aura::client::kCanResizeKey, false);
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  // The first window should get resized to ideal width.
+  EXPECT_EQ(DockedWindowLayoutManager::kIdealWidth, w1->bounds().width());
+
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 300);
+  // The second window should not get resized.
+  EXPECT_EQ(280, w2->bounds().width());
+
+  // The first window should get resized again - to match the second window.
+  EXPECT_EQ(w1->bounds().width(), w2->bounds().width());
+}
+
+// Test that restrictions on minimum and maximum width of windows are honored.
+TEST_P(DockedWindowLayoutManagerTest, TwoWindowsWidthRestrictions) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  aura::test::TestWindowDelegate delegate1;
+  delegate1.set_maximum_size(gfx::Size(240, 0));
+  scoped_ptr<aura::Window> w1(CreateTestWindowWithDelegate(
+      gfx::Rect(0, 0, 201, 201), &delegate1));
+  aura::test::TestWindowDelegate delegate2;
+  delegate2.set_minimum_size(gfx::Size(260, 0));
+  scoped_ptr<aura::Window> w2(CreateTestWindowWithDelegate(
+      gfx::Rect(0, 0, 280, 202), &delegate2));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  // The first window should get resized to its maximum width.
+  EXPECT_EQ(240, w1->bounds().width());
+
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 300);
+  // The second window should get resized to its minimum width.
+  EXPECT_EQ(260, w2->bounds().width());
+
+  // The first window should be centered relative to the second.
+  EXPECT_EQ(w1->bounds().CenterPoint().x(), w2->bounds().CenterPoint().x());
+}
+
+// Test that restrictions on minimum and maximum width of windows are honored.
+TEST_P(DockedWindowLayoutManagerTest, WidthMoreThanMax) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  aura::test::TestWindowDelegate delegate;
+  delegate.set_minimum_size(gfx::Size(400, 0));
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      gfx::Rect(0, 0, 400, 201), &delegate));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, window.get(), 20);
+
+  // Secondary drag ensures that we are testing the minimum size restriction
+  // and not just failure to get past the tiling step in SnapSizer.
+  ASSERT_NO_FATAL_FAILURE(DragStartAtOffsetFromwindowOrigin(window.get(),
+                                                            25, 5));
+  DragMove(150,0);
+  DragEnd();
+
+  // The window should not get docked even though it is dragged past the edge.
+  EXPECT_NE(window->GetRootWindow()->bounds().right(),
+            window->GetBoundsInScreen().right());
+  EXPECT_NE(internal::kShellWindowId_DockedContainer, window->parent()->id());
+}
+
+// Docks three windows and tests that the very first window gets minimized.
+TEST_P(DockedWindowLayoutManagerTest, ThreeWindowsMinimize) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+  scoped_ptr<aura::Window> w2(CreateTestWindow(gfx::Rect(0, 0, 210, 202)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w2.get(), 200);
+  scoped_ptr<aura::Window> w3(CreateTestWindow(gfx::Rect(0, 0, 220, 204)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w3.get(), 300);
+
+  // The last two windows should be attached and snapped to the right edge.
+  EXPECT_EQ(w2->GetRootWindow()->bounds().right(),
+            w2->GetBoundsInScreen().right());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, w2->parent()->id());
+  EXPECT_EQ(w3->GetRootWindow()->bounds().right(),
+            w3->GetBoundsInScreen().right());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, w3->parent()->id());
+
+  // The first window should get minimized but parented by the dock container.
+  EXPECT_TRUE(wm::GetWindowState(w1.get())->IsMinimized());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, w1->parent()->id());
 }
 
 // Tests run twice - on both panels and normal windows

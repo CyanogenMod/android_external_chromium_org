@@ -7,8 +7,8 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/keyboard_driven_event_rewriter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
+#include "ui/events/x/events_x_utils.h"
 
 #include <X11/keysym.h>
 #include <X11/XF86keysym.h>
@@ -35,7 +35,7 @@ void InitXKeyEvent(ui::KeyboardCode ui_keycode,
 class KeyboardDrivenEventRewriterTest : public testing::Test {
  public:
   KeyboardDrivenEventRewriterTest()
-      : display_(ui::GetXDisplay()),
+      : display_(gfx::GetXDisplay()),
         keycode_a_(XKeysymToKeycode(display_, XK_a)),
         keycode_up_(XKeysymToKeycode(display_, XK_Up)),
         keycode_down_(XKeysymToKeycode(display_, XK_Down)),
@@ -64,7 +64,7 @@ class KeyboardDrivenEventRewriterTest : public testing::Test {
     return base::StringPrintf("ui_flags=%d x_state=%u", ui_flags, x_state);
   }
 
-  Display* display_;
+  XDisplay* display_;
   const KeyCode keycode_a_;
   const KeyCode keycode_up_;
   const KeyCode keycode_down_;

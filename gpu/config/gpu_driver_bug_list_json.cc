@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.16",
+  "version": "2.19",
   "entries": [
     {
       "id": 1,
@@ -407,8 +407,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 31,
-      "cr_bugs": [154715, 10068, 269829],
-      "description": "The Nexus 10 Mali driver does not guarantee flush ordering.",
+      "cr_bugs": [154715, 10068, 269829, 294779],
+      "description": "The Mali T-6xx driver does not guarantee flush ordering.",
       "os": {
         "type": "android"
       },
@@ -417,8 +417,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "value": "ARM"
       },
       "gl_renderer": {
-        "op": "contains",
-        "value": "Mali-T604"
+        "op": "beginwith",
+        "value": "Mali-T6"
       },
       "features": [
         "use_virtualized_gl_contexts"
@@ -547,9 +547,13 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     {
       "id": 40,
       "cr_bugs": [290876],
-      "description": "Framebuffer discarding causes flickering on ARM",
+      "description": "Framebuffer discarding causes flickering on old ARM drivers",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
       "gl_vendor": {
         "op": "beginwith",
@@ -573,6 +577,25 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "disable_d3d11"
+      ]
+    },
+    {
+      "id": 42,
+      "cr_bugs": [290876],
+      "description": "Framebuffer discarding causes flickering on older IMG drivers.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": {
+        "op": "beginwith",
+        "value": "Imagination"
+      },
+      "gl_renderer": {
+        "op": "=",
+        "value": "PowerVR SGX 540"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
       ]
     }
   ]

@@ -197,6 +197,7 @@ PlatformFileError LocalFileUtil::CopyOrMoveFile(
     FileSystemOperationContext* context,
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
+    CopyOrMoveOption option,
     bool copy) {
   base::FilePath src_file_path;
   PlatformFileError error = GetLocalFilePath(context, src_url, &src_file_path);
@@ -208,7 +209,8 @@ PlatformFileError LocalFileUtil::CopyOrMoveFile(
   if (error != base::PLATFORM_FILE_OK)
     return error;
 
-  return NativeFileUtil::CopyOrMoveFile(src_file_path, dest_file_path, copy);
+  return NativeFileUtil::CopyOrMoveFile(
+      src_file_path, dest_file_path, option, copy);
 }
 
 PlatformFileError LocalFileUtil::CopyInForeignFile(
@@ -223,7 +225,8 @@ PlatformFileError LocalFileUtil::CopyInForeignFile(
       GetLocalFilePath(context, dest_url, &dest_file_path);
   if (error != base::PLATFORM_FILE_OK)
     return error;
-  return NativeFileUtil::CopyOrMoveFile(src_file_path, dest_file_path, true);
+  return NativeFileUtil::CopyOrMoveFile(
+      src_file_path, dest_file_path, FileSystemOperation::OPTION_NONE, true);
 }
 
 PlatformFileError LocalFileUtil::DeleteFile(

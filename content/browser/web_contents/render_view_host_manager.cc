@@ -698,9 +698,9 @@ int RenderViewHostManager::CreateRenderView(
 
 bool RenderViewHostManager::InitRenderView(RenderViewHost* render_view_host,
                                            int opener_route_id) {
-  // If the pending navigation is to a WebUI, tell the RenderView about any
-  // bindings it will need enabled.
-  if (pending_web_ui())
+  // If the pending navigation is to a WebUI and the RenderView is not in a
+  // guest process, tell the RenderView about any bindings it will need enabled.
+  if (pending_web_ui() && !render_view_host->GetProcess()->IsGuest())
     render_view_host->AllowBindings(pending_web_ui()->GetBindings());
 
   return delegate_->CreateRenderViewForRenderManager(render_view_host,
@@ -745,19 +745,21 @@ void RenderViewHostManager::CommitPending() {
   // The process will no longer try to exit, so we can decrement the count.
   render_view_host_->GetProcess()->RemovePendingView();
 
-  // If the view is gone, then this RenderViewHost died while it was hidden.
-  // We ignored the RenderProcessGone call at the time, so we should send it now
-  // to make sure the sad tab shows up, etc.
-  if (render_view_host_->GetView())
-    render_view_host_->GetView()->Show();
-  else
-    delegate_->RenderProcessGoneFromRenderManager(render_view_host_);
-
-  // Hide the old view now that the new one is visible.
+  // Hide the old view before showing the new view.  This has the potential to
+  // reduce peak memory usage, by freeing up a large resource before allocating
+  // a new large resource.
   if (old_render_view_host->GetView()) {
     old_render_view_host->GetView()->Hide();
     old_render_view_host->WasSwappedOut();
   }
+
+  // If the view is gone, then this RenderViewHost died while it was hidden.
+  // We ignored the RenderProcessGone call at the time, so we should send it now
+  // to make sure the sad tab shows up, etc.
+  if (!render_view_host_->GetView())
+    delegate_->RenderProcessGoneFromRenderManager(render_view_host_);
+  else if (!delegate_->IsHidden())
+    render_view_host_->GetView()->Show();
 
   // Make sure the size is up to date.  (Fix for bug 1079768.)
   delegate_->UpdateRenderViewSizeForRenderManager();

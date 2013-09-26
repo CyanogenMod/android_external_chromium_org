@@ -480,7 +480,7 @@ class DelegatedRendererLayerImplTestTransform
     gfx::Size child_pass_content_bounds(7, 7);
     gfx::Rect child_pass_rect(20, 20, 7, 7);
     gfx::Transform child_pass_transform;
-    child_pass_transform.Scale(0.8, 0.8);
+    child_pass_transform.Scale(0.8f, 0.8f);
     child_pass_transform.Translate(9.0, 9.0);
     gfx::Rect child_pass_clip_rect(21, 21, 3, 3);
     bool child_pass_clipped = false;
@@ -549,7 +549,6 @@ class DelegatedRendererLayerImplTestTransform
         child_pass_rect,  // contents_changed_since_last_frame
         gfx::RectF(),  // mask_uv_rect
         FilterOperations(),  // filters
-        skia::RefPtr<SkImageFilter>(),  // filter
         FilterOperations());  // background_filters
     quad_sink.Append(render_pass_quad.PassAs<DrawQuad>(), &data);
 
@@ -677,7 +676,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_NoSurface) {
             contrib_delegated_shared_quad_state->clip_rect.ToString());
   EXPECT_FALSE(contrib_delegated_shared_quad_state->is_clipped);
   expected.MakeIdentity();
-  expected.Scale(0.8, 0.8);
+  expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
       expected,
@@ -740,7 +739,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_NoSurface) {
             contrib_delegated_shared_quad_state->clip_rect.ToString());
   EXPECT_FALSE(contrib_delegated_shared_quad_state->is_clipped);
   expected.MakeIdentity();
-  expected.Scale(0.8, 0.8);
+  expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
       expected,
@@ -796,7 +795,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_Surface) {
             contrib_delegated_shared_quad_state->clip_rect.ToString());
   EXPECT_FALSE(contrib_delegated_shared_quad_state->is_clipped);
   expected.MakeIdentity();
-  expected.Scale(0.8, 0.8);
+  expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
       expected,
@@ -851,7 +850,7 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_Surface) {
             contrib_delegated_shared_quad_state->clip_rect.ToString());
   EXPECT_FALSE(contrib_delegated_shared_quad_state->is_clipped);
   expected.MakeIdentity();
-  expected.Scale(0.8, 0.8);
+  expected.Scale(0.8f, 0.8f);
   expected.Translate(9.0, 9.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(
       expected,
@@ -951,7 +950,6 @@ class DelegatedRendererLayerImplTestClip
         child_pass_rect,  // contents_changed_since_last_frame
         gfx::RectF(),  // mask_uv_rect
         FilterOperations(),  // filters
-        skia::RefPtr<SkImageFilter>(),  // filter
         FilterOperations());  // background_filters
     quad_sink.Append(render_pass_quad.PassAs<DrawQuad>(), &data);
 

@@ -36,9 +36,6 @@ void PassDictionary(
 
 }  // namespace
 
-// static
-const char ShillProfileClientStub::kSharedProfilePath[] = "/profile/default";
-
 ShillProfileClientStub::ShillProfileClientStub() {
 }
 
@@ -47,7 +44,6 @@ ShillProfileClientStub::~ShillProfileClientStub() {
 }
 
 void ShillProfileClientStub::Init(dbus::Bus* bus) {
-  AddProfile(kSharedProfilePath, std::string());
 }
 
 void ShillProfileClientStub::AddPropertyChangedObserver(
@@ -70,7 +66,7 @@ void ShillProfileClientStub::GetProperties(
 
   scoped_ptr<base::DictionaryValue> properties(profile->properties.DeepCopy());
   base::ListValue* entry_paths = new base::ListValue;
-  properties->SetWithoutPathExpansion(flimflam::kEntriesProperty, entry_paths);
+  properties->SetWithoutPathExpansion(shill::kEntriesProperty, entry_paths);
   for (base::DictionaryValue::Iterator it(profile->entries); !it.IsAtEnd();
        it.Advance()) {
     entry_paths->AppendString(it.key());
@@ -118,7 +114,7 @@ void ShillProfileClientStub::DeleteEntry(const dbus::ObjectPath& profile_path,
   base::StringValue profile_path_value("");
   DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface()->
       SetServiceProperty(entry_path,
-                         flimflam::kProfileProperty,
+                         shill::kProfileProperty,
                          profile_path_value);
 
   base::MessageLoop::current()->PostTask(FROM_HERE, callback);
@@ -171,7 +167,7 @@ bool ShillProfileClientStub::AddService(const std::string& profile_path,
     return false;
   }
   std::string service_profile_path;
-  service_properties->GetStringWithoutPathExpansion(flimflam::kProfileProperty,
+  service_properties->GetStringWithoutPathExpansion(shill::kProfileProperty,
                                                     &service_profile_path);
   if (!service_profile_path.empty() && service_profile_path != profile_path) {
     LOG(ERROR) << "Service has non matching profile path: "
@@ -181,7 +177,7 @@ bool ShillProfileClientStub::AddService(const std::string& profile_path,
 
   base::StringValue profile_path_value(profile_path);
   service_test->SetServiceProperty(service_path,
-                                   flimflam::kProfileProperty,
+                                   shill::kProfileProperty,
                                    profile_path_value);
   profile->entries.SetWithoutPathExpansion(service_path,
                                            service_properties->DeepCopy());

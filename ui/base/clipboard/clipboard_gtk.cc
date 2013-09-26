@@ -62,9 +62,9 @@ SelectionChangeObserver::SelectionChangeObserver()
       clipboard_sequence_number_(0),
       primary_sequence_number_(0) {
   int ignored;
-  if (XFixesQueryExtension(GetXDisplay(), &event_base_, &ignored)) {
-    clipboard_atom_ = XInternAtom(GetXDisplay(), "CLIPBOARD", false);
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+  if (XFixesQueryExtension(gfx::GetXDisplay(), &event_base_, &ignored)) {
+    clipboard_atom_ = XInternAtom(gfx::GetXDisplay(), "CLIPBOARD", false);
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                clipboard_atom_,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -72,7 +72,7 @@ SelectionChangeObserver::SelectionChangeObserver()
     // This seems to be semi-optional. For some reason, registering for any
     // selection notify events seems to subscribe us to events for both the
     // primary and the clipboard buffers. Register anyway just to be safe.
-    XFixesSelectSelectionInput(GetXDisplay(), GetX11RootWindow(),
+    XFixesSelectSelectionInput(gfx::GetXDisplay(), GetX11RootWindow(),
                                XA_PRIMARY,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -541,8 +541,7 @@ SkBitmap Clipboard::ReadImage(Buffer buffer) const {
 
   gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf.get()),
                                gdk_pixbuf_get_height(pixbuf.get())),
-                     ui::SCALE_FACTOR_100P,
-                     false);
+                     1.0f, false);
   {
     skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
     cairo_t* context = scoped_platform_paint.GetPlatformSurface();

@@ -22,12 +22,6 @@ namespace chromeos {
 
 namespace {
 
-// Runs the given task.  This function is used to implement the mock bus.
-void RunTask(const tracked_objects::Location& from_here,
-             const base::Closure& task) {
-  task.Run();
-}
-
 // Pops a string-to-string dictionary from the reader.
 base::DictionaryValue* PopStringToStringDictionary(
     dbus::MessageReader* reader) {
@@ -43,8 +37,7 @@ base::DictionaryValue* PopStringToStringDictionary(
         !entry_reader.PopString(&key) ||
         !entry_reader.PopString(&value))
       return NULL;
-    result->SetWithoutPathExpansion(key,
-                                    base::Value::CreateStringValue(value));
+    result->SetWithoutPathExpansion(key, base::Value::CreateStringValue(value));
   }
   return result.release();
 }
@@ -131,7 +124,7 @@ void ShillClientUnittestBase::SetUp() {
   // Create a mock proxy.
   mock_proxy_ = new dbus::MockObjectProxy(
       mock_bus_.get(),
-      flimflam::kFlimflamServiceName,
+      shill::kFlimflamServiceName,
       object_path_);
 
   // Set an expectation so mock_proxy's CallMethod() will use OnCallMethod()
@@ -149,20 +142,20 @@ void ShillClientUnittestBase::SetUp() {
   // OnConnectToSignal() to run the callback.
   EXPECT_CALL(
       *mock_proxy_.get(),
-      ConnectToSignal(interface_name_, flimflam::kMonitorPropertyChanged, _, _))
+      ConnectToSignal(interface_name_, shill::kMonitorPropertyChanged, _, _))
       .WillRepeatedly(
            Invoke(this, &ShillClientUnittestBase::OnConnectToSignal));
 
   // Set an expectation so mock_bus's GetObjectProxy() for the given
   // service name and the object path will return mock_proxy_.
   EXPECT_CALL(*mock_bus_.get(),
-              GetObjectProxy(flimflam::kFlimflamServiceName, object_path_))
+              GetObjectProxy(shill::kFlimflamServiceName, object_path_))
       .WillOnce(Return(mock_proxy_.get()));
 
-  // Set an expectation so mock_bus's PostTaskToDBusThread() will run the
-  // given task.
-  EXPECT_CALL(*mock_bus_.get(), PostTaskToDBusThread(_, _))
-      .WillRepeatedly(Invoke(&RunTask));
+  // Set an expectation so mock_bus's GetDBusTaskRunner will return the current
+  // task runner.
+  EXPECT_CALL(*mock_bus_.get(), GetDBusTaskRunner())
+      .WillRepeatedly(Return(message_loop_.message_loop_proxy()));
 
   // ShutdownAndBlock() will be called in TearDown().
   EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
@@ -287,20 +280,20 @@ base::DictionaryValue*
 ShillClientUnittestBase::CreateExampleServiceProperties() {
   base::DictionaryValue* properties = new base::DictionaryValue;
   properties->SetWithoutPathExpansion(
-      flimflam::kGuidProperty,
+      shill::kGuidProperty,
       base::Value::CreateStringValue("00000000-0000-0000-0000-000000000000"));
   properties->SetWithoutPathExpansion(
-      flimflam::kModeProperty,
-      base::Value::CreateStringValue(flimflam::kModeManaged));
+      shill::kModeProperty,
+      base::Value::CreateStringValue(shill::kModeManaged));
   properties->SetWithoutPathExpansion(
-      flimflam::kTypeProperty,
-      base::Value::CreateStringValue(flimflam::kTypeWifi));
+      shill::kTypeProperty,
+      base::Value::CreateStringValue(shill::kTypeWifi));
   properties->SetWithoutPathExpansion(
-      flimflam::kSSIDProperty,
+      shill::kSSIDProperty,
       base::Value::CreateStringValue("testssid"));
   properties->SetWithoutPathExpansion(
-      flimflam::kSecurityProperty,
-      base::Value::CreateStringValue(flimflam::kSecurityPsk));
+      shill::kSecurityProperty,
+      base::Value::CreateStringValue(shill::kSecurityPsk));
   return properties;
 }
 

@@ -8,6 +8,7 @@
 
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
@@ -118,17 +119,16 @@ class WindowStateManager : public aura::WindowObserver {
     std::vector<aura::Window*>::iterator last =
         std::remove(windows_.begin(), windows_.end(), active_window);
     // Removes unfocusable windows.
-    last =
-        std::remove_if(
-            windows_.begin(),
-            last,
-            std::ptr_fun(ash::wm::IsWindowMinimized));
+    last = std::remove_if(
+        windows_.begin(),
+        last,
+        std::ptr_fun(ash::wm::IsWindowMinimized));
     windows_.erase(last, windows_.end());
 
     for (std::vector<aura::Window*>::iterator iter = windows_.begin();
          iter != windows_.end(); ++iter) {
       (*iter)->AddObserver(this);
-      ash::wm::MinimizeWindow(*iter);
+      ash::wm::GetWindowState(*iter)->Minimize();
     }
   }
 
@@ -370,7 +370,7 @@ void WallpaperPrivateSetWallpaperFunction::SaveToFile() {
       sequence_token_));
   std::string file_name = GURL(url_).ExtractFileName();
   if (SaveData(chrome::DIR_CHROMEOS_WALLPAPERS, file_name, image_data_)) {
-    wallpaper_.EnsureRepsForSupportedScaleFactors();
+    wallpaper_.EnsureRepsForSupportedScales();
     scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper_.DeepCopy());
     // ImageSkia is not RefCountedThreadSafe. Use a deep copied ImageSkia if
     // post to another thread.
@@ -502,7 +502,7 @@ void WallpaperPrivateSetCustomWallpaperFunction::OnWallpaperDecoded(
   unsafe_wallpaper_decoder_ = NULL;
 
   if (generate_thumbnail_) {
-    wallpaper.EnsureRepsForSupportedScaleFactors();
+    wallpaper.EnsureRepsForSupportedScales();
     scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper.DeepCopy());
     // Generates thumbnail before call api function callback. We can then
     // request thumbnail in the javascript callback.

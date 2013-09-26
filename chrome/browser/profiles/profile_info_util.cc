@@ -15,15 +15,15 @@ const int kAvatarIconHeight = 31;
 const int kAvatarIconBorder = 2;
 
 gfx::Image GetSizedAvatarIconWithBorder(const gfx::Image& image,
-                                        bool is_gaia_picture,
+                                        bool is_rectangle,
                                         int width, int height) {
-  if (!is_gaia_picture)
+  if (!is_rectangle)
     return image;
 
   int length = std::min(width, height) - kAvatarIconBorder;
   SkBitmap bmp = skia::ImageOperations::Resize(
       *image.ToSkBitmap(), skia::ImageOperations::RESIZE_BEST, length, length);
-  gfx::Canvas canvas(gfx::Size(width, height), ui::SCALE_FACTOR_100P, false);
+  gfx::Canvas canvas(gfx::Size(width, height), 1.0f, false);
 
   // Draw the icon centered on the canvas.
   int x = (width - length) / 2;
@@ -38,22 +38,22 @@ gfx::Image GetSizedAvatarIconWithBorder(const gfx::Image& image,
 }
 
 gfx::Image GetAvatarIconForMenu(const gfx::Image& image,
-                                bool is_gaia_picture) {
+                                bool is_rectangle) {
   return GetSizedAvatarIconWithBorder(
-      image, is_gaia_picture, kAvatarIconWidth, kAvatarIconHeight);
+      image, is_rectangle, kAvatarIconWidth, kAvatarIconHeight);
 }
 
 gfx::Image GetAvatarIconForWebUI(const gfx::Image& image,
-                                 bool is_gaia_picture) {
-  if (!is_gaia_picture)
+                                 bool is_rectangle) {
+  if (!is_rectangle)
     return image;
 
   int length =
       std::min(kAvatarIconWidth, kAvatarIconHeight) - kAvatarIconBorder;
   SkBitmap bmp = skia::ImageOperations::Resize(
       *image.ToSkBitmap(), skia::ImageOperations::RESIZE_BEST, length, length);
-  gfx::Canvas canvas(gfx::Size(kAvatarIconWidth, kAvatarIconHeight),
-                     ui::SCALE_FACTOR_100P, false);
+  gfx::Canvas canvas(
+      gfx::Size(kAvatarIconWidth, kAvatarIconHeight), 1.0f, false);
 
   // Draw the icon centered on the canvas.
   int x = (kAvatarIconWidth - length) / 2;
@@ -64,18 +64,17 @@ gfx::Image GetAvatarIconForWebUI(const gfx::Image& image,
 }
 
 gfx::Image GetAvatarIconForTitleBar(const gfx::Image& image,
-                                    bool is_gaia_picture,
+                                    bool is_rectangle,
                                     int dst_width,
                                     int dst_height) {
-  if (!is_gaia_picture)
+  if (!is_rectangle)
     return image;
 
   int length = std::min(std::min(kAvatarIconWidth, kAvatarIconHeight),
       std::min(dst_width, dst_height)) - kAvatarIconBorder;
   SkBitmap bmp = skia::ImageOperations::Resize(
       *image.ToSkBitmap(), skia::ImageOperations::RESIZE_BEST, length, length);
-  gfx::Canvas canvas(gfx::Size(dst_width, dst_height), ui::SCALE_FACTOR_100P,
-                     false);
+  gfx::Canvas canvas(gfx::Size(dst_width, dst_height), 1.0f, false);
 
   // Draw the icon on the bottom center of the canvas.
   int x1 = (dst_width - length) / 2;
@@ -102,4 +101,4 @@ gfx::Image GetAvatarIconForTitleBar(const gfx::Image& image,
   return gfx::Image(gfx::ImageSkia(canvas.ExtractImageRep()));
 }
 
-} // namespace
+}  // namespace profiles

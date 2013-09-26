@@ -15,15 +15,13 @@
 
 namespace base {
 class FilePath;
+class RefCountedString;
 }
 class Profile;
 
 class FeedbackData : public base::RefCountedThreadSafe<FeedbackData> {
  public:
   typedef std::map<std::string, std::string> SystemLogsMap;
-
-  static const char kScreensizeHeightKey[];
-  static const char kScreensizeWidthKey[];
 
   // Determine if the given feedback value is small enough to not need to
   // be compressed.
@@ -57,9 +55,10 @@ class FeedbackData : public base::RefCountedThreadSafe<FeedbackData> {
   const std::string& user_email() const { return user_email_; }
   std::string* image() const { return image_.get(); }
   const std::string attached_filename() const { return attached_filename_; }
-  const GURL attached_file_url() const { return attached_file_url_; }
+  const std::string attached_file_uuid() const { return attached_file_uuid_; }
   std::string* attached_filedata() const { return attached_filedata_.get(); }
-  const GURL screenshot_url() const { return screenshot_url_; }
+  const std::string screenshot_uuid() const { return screenshot_uuid_; }
+  int trace_id() const { return trace_id_; }
   SystemLogsMap* sys_info() const { return sys_info_.get(); }
   std::string* compressed_logs() const { return compressed_logs_.get(); }
 
@@ -82,13 +81,20 @@ class FeedbackData : public base::RefCountedThreadSafe<FeedbackData> {
   void set_attached_filedata(scoped_ptr<std::string> attached_filedata) {
     attached_filedata_ = attached_filedata.Pass();
   }
-  void set_attached_file_url(const GURL& url) { attached_file_url_ = url; }
-  void set_screenshot_url(const GURL& url) { screenshot_url_ = url; }
+  void set_attached_file_uuid(const std::string& uuid) {
+    attached_file_uuid_ = uuid;
+  }
+  void set_screenshot_uuid(const std::string& uuid) {
+    screenshot_uuid_ = uuid;
+  }
+  void set_trace_id(int trace_id) { trace_id_ = trace_id; }
 
  private:
   friend class base::RefCountedThreadSafe<FeedbackData>;
 
   virtual ~FeedbackData();
+
+  void OnGetTraceData(scoped_refptr<base::RefCountedString> trace_data);
 
   Profile* profile_;
 
@@ -100,8 +106,10 @@ class FeedbackData : public base::RefCountedThreadSafe<FeedbackData> {
   std::string attached_filename_;
   scoped_ptr<std::string> attached_filedata_;
 
-  GURL attached_file_url_;
-  GURL screenshot_url_;
+  std::string attached_file_uuid_;
+  std::string screenshot_uuid_;
+
+  int trace_id_;
 
   scoped_ptr<SystemLogsMap> sys_info_;
   scoped_ptr<std::string> compressed_logs_;

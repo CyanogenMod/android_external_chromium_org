@@ -555,8 +555,7 @@ static bool SubtreeShouldRenderToSeparateSurface(
   }
 
   // If the layer uses a CSS filter.
-  if (!layer->filters().IsEmpty() || !layer->background_filters().IsEmpty() ||
-      layer->filter()) {
+  if (!layer->filters().IsEmpty() || !layer->background_filters().IsEmpty()) {
     DCHECK(!is_root);
     return true;
   }
@@ -1077,10 +1076,8 @@ static void PreCalculateMetaInformation(
 }
 
 static void RoundTranslationComponents(gfx::Transform* transform) {
-  transform->matrix().
-      setDouble(0, 3, MathUtil::Round(transform->matrix().getDouble(0, 3)));
-  transform->matrix().
-      setDouble(1, 3, MathUtil::Round(transform->matrix().getDouble(1, 3)));
+  transform->matrix().set(0, 3, MathUtil::Round(transform->matrix().get(0, 3)));
+  transform->matrix().set(1, 3, MathUtil::Round(transform->matrix().get(1, 3)));
 }
 
 template <typename LayerType>
@@ -1548,7 +1545,8 @@ static void CalculateDrawPropertiesInternal(
 
     // TODO(senorblanco): make this smarter for the SkImageFilter case (check
     // for pixel-moving filters)
-    if (layer->filters().HasFilterThatMovesPixels() || layer->filter())
+    if (layer->filters().HasReferenceFilter() ||
+        layer->filters().HasFilterThatMovesPixels())
       nearest_ancestor_surface_that_moves_pixels = render_surface;
 
     render_surface->SetNearestAncestorThatMovesPixels(

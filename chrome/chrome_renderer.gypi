@@ -29,9 +29,9 @@
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
         '../ui/surface/surface.gyp:surface',
         '../webkit/common/webkit_common.gyp:webkit_common',
-        '../webkit/support/webkit_support.gyp:glue_child',
+        '../webkit/glue/webkit_glue.gyp:glue',
+        '../webkit/glue/webkit_glue.gyp:glue_child',
         '../webkit/renderer/webkit_renderer.gyp:webkit_renderer',
-        '../webkit/support/webkit_support.gyp:glue',
         '../webkit/webkit_resources.gyp:webkit_resources',
       ],
       'include_dirs': [
@@ -431,6 +431,13 @@
           ],
           'defines': [
             'ENABLE_MOBILE_YOUTUBE_PLUGIN',
+          ],
+          'conditions' : [
+            ['google_tv==1', {
+              'sources!' : [
+                'renderer/media/chrome_key_systems.cc',
+              ]
+            }],
           ],
         }],
         ['OS=="win"', {

@@ -130,9 +130,6 @@ BrowserPolicyConnector::BrowserPolicyConnector()
 
   platform_provider_.reset(CreatePlatformProvider());
 
-  device_management_service_.reset(
-      new DeviceManagementService(GetDeviceManagementUrl()));
-
 #if defined(OS_CHROMEOS)
   // CryptohomeLibrary or DBusThreadManager may be uninitialized on unit tests.
   if (chromeos::CryptohomeLibrary::IsInitialized() &&
@@ -182,6 +179,8 @@ void BrowserPolicyConnector::Init(
   local_state_ = local_state;
   request_context_ = request_context;
 
+  device_management_service_.reset(
+      new DeviceManagementService(request_context, GetDeviceManagementUrl()));
   device_management_service_->ScheduleInitialization(
       kServiceInitializationStartupDelay);
 

@@ -20,6 +20,10 @@
 #endif  // OS_MACOSX
 
 namespace l10n_util {
+// This method translates a generic locale name to one of the locally defined
+// ones. This method returns true if it succeeds.
+UI_EXPORT bool CheckAndResolveLocale(const std::string& locale,
+                                     std::string* resolved_locale);
 
 // This method is responsible for determining the locale as defined below. In
 // nearly all cases you shouldn't call this, rather use GetApplicationLocale
@@ -138,6 +142,14 @@ UI_EXPORT string16 GetStringFUTF16(int message_id,
 // Convenience functions to get a string with a single number as a parameter.
 UI_EXPORT string16 GetStringFUTF16Int(int message_id, int a);
 string16 GetStringFUTF16Int(int message_id, int64 a);
+
+// Get a resource string using |number| to decide which of |message_ids| should
+// be used. |message_ids| must be size 6 and in order: default, singular, zero,
+// two, few, many.
+UI_EXPORT string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
+                                         int number);
+UI_EXPORT std::string GetPluralStringFUTF8(const std::vector<int>& message_ids,
+                                           int number);
 
 // In place sorting of string16 strings using collation rules for |locale|.
 UI_EXPORT void SortStrings16(const std::string& locale,

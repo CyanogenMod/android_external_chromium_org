@@ -342,6 +342,13 @@ void ContentViewCoreImpl::Show() {
 
 void ContentViewCoreImpl::Hide() {
   GetWebContents()->WasHidden();
+  PauseVideo();
+}
+
+void ContentViewCoreImpl::PauseVideo() {
+  RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (host)
+    host->Send(new ViewMsg_PauseVideo(host->GetRoutingID()));
 }
 
 void ContentViewCoreImpl::OnTabCrashed() {
@@ -351,17 +358,17 @@ void ContentViewCoreImpl::OnTabCrashed() {
     return;
   Java_ContentViewCore_resetVSyncNotification(env, obj.obj());
 
-  // If |tab_crashed_| is already true, just return. e.g. if two tabs share the
-  // render process, this will be called for each tab when the render process
-  // crashed. If user reload one tab, a new render process is created. It can be
-  // shared by the other tab. But if user closes the tab before reload the other
+  // Note that we might reach this place multiple times while the
+  // ContentViewCore remains crashed. E.g. if two tabs share the render process
+  // and the process crashes, this will be called for each tab. If the user
+  // reload one tab, a new render process is created and it can be shared by the
+  // other tab. But if user closes the reloaded tab before reloading the other
   // tab, the new render process will be shut down. This will trigger the other
   // tab's OnTabCrashed() called again as two tabs share the same
-  // BrowserRenderProcessHost.
-  if (tab_crashed_)
-    return;
+  // BrowserRenderProcessHost. The Java side will distinguish this case using
+  // tab_crashed_ passed below.
+  Java_ContentViewCore_onTabCrash(env, obj.obj(), tab_crashed_);
   tab_crashed_ = true;
-  Java_ContentViewCore_onTabCrash(env, obj.obj());
 }
 
 // All positions and sizes are in CSS pixels.
@@ -708,13 +715,20 @@ void ContentViewCoreImpl::LoadUrl(
   UpdateTabCrashedFlag();
 }
 
-void ContentViewCoreImpl::SetNeedsBeginFrame(bool enabled) {
+void ContentViewCoreImpl::AddBeginFrameSubscriber() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_ContentViewCore_setVSyncNotificationEnabled(
-      env, obj.obj(), static_cast<jboolean>(enabled));
+  Java_ContentViewCore_addVSyncSubscriber(env, obj.obj());
+}
+
+void ContentViewCoreImpl::RemoveBeginFrameSubscriber() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+  Java_ContentViewCore_removeVSyncSubscriber(env, obj.obj());
 }
 
 void ContentViewCoreImpl::SetNeedsAnimate() {
@@ -818,7 +832,11 @@ jint ContentViewCoreImpl::GetCurrentRenderProcessId(JNIEnv* env, jobject obj) {
 
 ScopedJavaLocalRef<jstring> ContentViewCoreImpl::GetURL(
     JNIEnv* env, jobject) const {
-  GURL url = web_contents_->GetVisibleURL();
+  // The current users of the Java API expect to use the active entry
+  // rather than the visible entry, which is exposed by WebContents::GetURL.
+  content::NavigationEntry* entry =
+      web_contents_->GetController().GetActiveEntry();
+  GURL url = entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
   return ConvertUTF8ToJavaString(env, url.spec());
 }
 
@@ -1427,7 +1445,7 @@ void ContentViewCoreImpl::GetDirectedNavigationHistory(JNIEnv* env,
 ScopedJavaLocalRef<jstring>
 ContentViewCoreImpl::GetOriginalUrlForActiveNavigationEntry(JNIEnv* env,
                                                             jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
   if (entry == NULL)
     return ScopedJavaLocalRef<jstring>(env, NULL);
   return ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec());
@@ -1502,7 +1520,7 @@ void ContentViewCoreImpl::EvaluateJavaScript(JNIEnv* env,
 
 bool ContentViewCoreImpl::GetUseDesktopUserAgent(
     JNIEnv* env, jobject obj) {
-  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
   return entry && entry->GetIsOverridingUserAgent();
 }
 
@@ -1551,7 +1569,7 @@ void ContentViewCoreImpl::SetUseDesktopUserAgent(
     return;
 
   // Make sure the navigation entry actually exists.
-  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
   if (!entry)
     return;
 

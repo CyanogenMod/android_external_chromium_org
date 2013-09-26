@@ -97,6 +97,11 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
           &RendererOverridesHandler::PageNavigate,
           base::Unretained(this)));
   RegisterCommandHandler(
+      devtools::Page::reload::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageReload,
+          base::Unretained(this)));
+  RegisterCommandHandler(
       devtools::Page::getNavigationHistory::kName,
       base::Bind(
           &RendererOverridesHandler::PageGetNavigationHistory,
@@ -148,6 +153,12 @@ void RendererOverridesHandler::OnSwapCompositorFrame(
 
   if (screencast_command_)
     InnerSwapCompositorFrame();
+}
+
+void RendererOverridesHandler::OnVisibilityChanged(bool visible) {
+  if (!screencast_command_)
+    return;
+  NotifyScreencastVisibility(visible);
 }
 
 void RendererOverridesHandler::InnerSwapCompositorFrame() {
@@ -311,6 +322,24 @@ RendererOverridesHandler::PageNavigate(
 }
 
 scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageReload(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (host) {
+    WebContents* web_contents = host->GetDelegate()->GetAsWebContents();
+    if (web_contents) {
+      // Override only if it is crashed.
+      if (!web_contents->IsCrashed())
+        return NULL;
+
+      web_contents->GetController().Reload(false);
+      return command->SuccessResponse(NULL);
+    }
+  }
+  return command->InternalErrorResponse("No WebContents to reload");
+}
+
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageGetNavigationHistory(
     scoped_refptr<DevToolsProtocol::Command> command) {
   RenderViewHost* host = agent_->GetRenderViewHost();
@@ -422,7 +451,12 @@ scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageStartScreencast(
     scoped_refptr<DevToolsProtocol::Command> command) {
   screencast_command_ = command;
-  InnerSwapCompositorFrame();
+  RenderViewHostImpl* host = static_cast<RenderViewHostImpl*>(
+      agent_->GetRenderViewHost());
+  bool visible = !host->is_hidden();
+  NotifyScreencastVisibility(visible);
+  if (visible)
+    InnerSwapCompositorFrame();
   return command->SuccessResponse(NULL);
 }
 
@@ -525,6 +559,13 @@ void RendererOverridesHandler::ScreenshotCaptured(
   }
 }
 
+void RendererOverridesHandler::NotifyScreencastVisibility(bool visible) {
+  base::DictionaryValue* params = new base::DictionaryValue();
+  params->SetBoolean(
+      devtools::Page::screencastVisibilityChanged::kParamVisible, visible);
+  SendNotification(
+      devtools::Page::screencastVisibilityChanged::kName, params);
+}
 
 // Input agent handlers  ------------------------------------------------------
 

@@ -30,16 +30,24 @@ namespace {
 // File name extension for CRX files (not case sensitive).
 const char kCRXFileExtension[] = ".crx";
 
+// Name of flag file that indicates that cache is ready (import finished).
+const char kCacheReadyFlagFileName[] = ".initialized";
+
+// Delay between checking cache ready flag file.
+const int64_t kCacheReadyDelayMs = 1000;
+
 }  // namespace
 
 ExternalCache::ExternalCache(const std::string& cache_dir,
                              net::URLRequestContextGetter* request_context,
                              Delegate* delegate,
-                             bool always_check_updates)
+                             bool always_check_updates,
+                             bool wait_cache_initialization)
     : cache_dir_(cache_dir),
       request_context_(request_context),
       delegate_(delegate),
       always_check_updates_(always_check_updates),
+      wait_cache_initialization_(wait_cache_initialization),
       cached_extensions_(new base::DictionaryValue()),
       weak_ptr_factory_(this),
       worker_pool_token_(
@@ -155,15 +163,6 @@ void ExternalCache::OnExtensionDownloadFinished(
                               std::string(version)));
 }
 
-void ExternalCache::OnBlacklistDownloadFinished(
-    const std::string& data,
-    const std::string& package_hash,
-    const std::string& version,
-    const extensions::ExtensionDownloaderDelegate::PingResult& ping_result,
-    const std::set<int>& request_ids) {
-  NOTREACHED();
-}
-
 bool ExternalCache::IsExtensionPending(const std::string& id) {
   // Pending means that there is no installed version yet.
   return extensions_->HasKey(id) && !cached_extensions_->HasKey(id);
@@ -185,8 +184,10 @@ void ExternalCache::CheckCacheNow() {
   PostBlockingTask(FROM_HERE,
                    base::Bind(&ExternalCache::BlockingCheckCache,
                               weak_ptr_factory_.GetWeakPtr(),
+                              worker_pool_token_,
                               std::string(cache_dir_),
-                              base::Passed(&prefs)));
+                              base::Passed(&prefs),
+                              wait_cache_initialization_));
 }
 
 void ExternalCache::UpdateExtensionLoader() {
@@ -198,8 +199,27 @@ void ExternalCache::UpdateExtensionLoader() {
 // static
 void ExternalCache::BlockingCheckCache(
     base::WeakPtr<ExternalCache> external_cache,
+    base::SequencedWorkerPool::SequenceToken sequence_token,
     const std::string& cache_dir,
-    scoped_ptr<base::DictionaryValue> prefs) {
+    scoped_ptr<base::DictionaryValue> prefs,
+    bool wait_cache_initialization) {
+
+  base::FilePath dir(cache_dir);
+  if (wait_cache_initialization &&
+      !base::PathExists(dir.AppendASCII(kCacheReadyFlagFileName))) {
+    content::BrowserThread::GetBlockingPool()->PostDelayedSequencedWorkerTask(
+        sequence_token,
+        FROM_HERE,
+        base::Bind(&ExternalCache::BlockingCheckCache,
+                   external_cache,
+                   sequence_token,
+                   std::string(cache_dir),
+                   base::Passed(&prefs),
+                   wait_cache_initialization),
+        base::TimeDelta::FromMilliseconds(kCacheReadyDelayMs));
+    return;
+  }
+
   BlockingCheckCacheInternal(cache_dir, prefs.get());
   content::BrowserThread::PostTask(content::BrowserThread::UI, FROM_HERE,
                           base::Bind(&ExternalCache::OnCacheUpdated,
@@ -238,6 +258,10 @@ void ExternalCache::BlockingCheckCacheInternal(const std::string& cache_dir,
       base::DeleteFile(path, true /* recursive */);
       continue;
     }
+
+    // Skip flag file that indicates that cache is ready.
+    if (basename == kCacheReadyFlagFileName)
+      continue;
 
     // crx files in the cache are named <extension-id>-<version>.crx.
     std::string id;

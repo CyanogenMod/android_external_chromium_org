@@ -23,3 +23,9 @@ function sendKeyEvent(event) {
 function hideKeyboard() {
   chrome.virtualKeyboardPrivate.hideKeyboard(logIfError);
 }
+
+chrome.virtualKeyboardPrivate.onTextInputBoxFocused.addListener(
+  function (inputContext) {
+    keyboard.inputType = inputContext.type;
+  }
+);

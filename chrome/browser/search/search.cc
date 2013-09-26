@@ -56,7 +56,6 @@ const uint64 kEmbeddedPageVersionDefault = 2;
 // The staleness timeout can be set (in seconds) via this config.
 const char kStalePageTimeoutFlagName[] = "stale";
 const int kStalePageTimeoutDefault = 3 * 3600;  // 3 hours.
-const int kStalePageTimeoutDisabled = 0;
 
 const char kHideVerbatimFlagName[] = "hide_verbatim";
 const char kUseRemoteNTPOnStartupFlagName[] = "use_remote_ntp_on_startup";
@@ -465,6 +464,10 @@ bool ShouldHideTopVerbatimMatch() {
 }
 
 bool ShouldUseCacheableNTP() {
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kUseCacheableNewTabPage))
+    return true;
+
   FieldTrialFlags flags;
   if (GetFieldTrialInfo(&flags, NULL)) {
     return GetBoolValueForFlagWithDefault(kUseCacheableNTP, false, flags);
@@ -740,7 +743,7 @@ GURL GetNewTabPageURL(Profile* profile) {
   if (!ShouldUseCacheableNTP())
     return GURL();
 
-  if (!profile)
+  if (!profile || !IsSuggestPrefEnabled(profile))
     return GURL();
 
   TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);

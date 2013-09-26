@@ -697,8 +697,7 @@ bool ElevateAndRegisterChrome(BrowserDistribution* dist,
   DCHECK(InstallUtil::IsPerUserInstall(chrome_exe.c_str()));
   DCHECK_LT(base::win::GetVersion(), base::win::VERSION_WIN8);
   base::FilePath exe_path =
-      base::FilePath::FromWStringHack(chrome_exe).DirName()
-          .Append(installer::kSetupExe);
+      base::FilePath(chrome_exe).DirName().Append(installer::kSetupExe);
   if (!base::PathExists(exe_path)) {
     HKEY reg_root = InstallUtil::IsPerUserInstall(chrome_exe.c_str()) ?
         HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
@@ -1696,6 +1695,8 @@ string16 ShellUtil::BuildAppModelId(
 }
 
 ShellUtil::DefaultState ShellUtil::GetChromeDefaultState() {
+  if (!BrowserDistribution::GetDistribution()->CanSetAsDefault())
+    return NOT_DEFAULT;
   // When we check for default browser we don't necessarily want to count file
   // type handlers and icons as having changed the default browser status,
   // since the user may have changed their shell settings to cause HTML files
@@ -1711,6 +1712,8 @@ ShellUtil::DefaultState ShellUtil::GetChromeDefaultState() {
 
 ShellUtil::DefaultState ShellUtil::GetChromeDefaultProtocolClientState(
     const string16& protocol) {
+  if (!BrowserDistribution::GetDistribution()->CanSetAsDefault())
+    return NOT_DEFAULT;
   if (protocol.empty())
     return UNKNOWN_DEFAULT;
 

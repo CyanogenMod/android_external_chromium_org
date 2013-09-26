@@ -64,9 +64,13 @@ class ContentSettingBubbleModel : public content::NotificationObserver {
   };
 
   struct MediaMenu {
+    MediaMenu();
+    ~MediaMenu();
+
     std::string label;
     content::MediaStreamDevice default_device;
     content::MediaStreamDevice selected_device;
+    bool disabled;
   };
   typedef std::map<content::MediaStreamType, MediaMenu> MediaMenuMap;
 
@@ -198,6 +202,7 @@ class SavePasswordBubbleModel : public ContentSettingTitleAndLinkModel {
                           Profile* profile);
   virtual ~SavePasswordBubbleModel();
   virtual void OnCancelClicked() OVERRIDE;
+  virtual void OnDoneClicked() OVERRIDE;
   virtual void OnSaveClicked() OVERRIDE;
 
  private:

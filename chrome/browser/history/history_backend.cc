@@ -32,6 +32,7 @@
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_publisher.h"
 #include "chrome/browser/history/in_memory_history_backend.h"
+#include "chrome/browser/history/page_collector.h"
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/select_favicon_frames.h"
 #include "chrome/browser/history/top_sites.h"
@@ -79,29 +80,25 @@ namespace history {
 // This value needs to be greater or equal to
 // MostVisitedModel::kMostVisitedScope but we don't want to introduce a direct
 // dependency between MostVisitedModel and the history backend.
-static const int kSegmentDataRetention = 90;
+const int kSegmentDataRetention = 90;
 
 // How long we'll wait to do a commit, so that things are batched together.
-static const int kCommitIntervalSeconds = 10;
+const int kCommitIntervalSeconds = 10;
 
 // The amount of time before we re-fetch the favicon.
-static const int kFaviconRefetchDays = 7;
-
-// GetSessionTabs returns all open tabs, or tabs closed kSessionCloseTimeWindow
-// seconds ago.
-static const int kSessionCloseTimeWindowSecs = 10;
+const int kFaviconRefetchDays = 7;
 
 // The maximum number of items we'll allow in the redirect list before
 // deleting some.
-static const int kMaxRedirectCount = 32;
+const int kMaxRedirectCount = 32;
 
 // The number of days old a history entry can be before it is considered "old"
 // and is archived.
-static const int kArchiveDaysThreshold = 90;
+const int kArchiveDaysThreshold = 90;
 
 #if defined(OS_ANDROID)
 // The maximum number of top sites to track when recording top page visit stats.
-static const size_t kPageVisitStatsMaxTopSites = 50;
+const size_t kPageVisitStatsMaxTopSites = 50;
 #endif
 
 // Converts from PageUsageData to MostVisitedURL. |redirects| is a
@@ -550,6 +547,9 @@ void HistoryBackend::AddPage(const HistoryAddPageArgs& request) {
                       last_ids.second);
   }
 
+  if (page_collector_)
+    page_collector_->AddPageURL(request.url, request.time);
+
   ScheduleCommit();
 }
 
@@ -611,11 +611,20 @@ void HistoryBackend::InitImpl(const std::string& languages) {
 
   // Create the history publisher which needs to be passed on to the thumbnail
   // database for publishing history.
+  // TODO(shess): HistoryPublisher is being deprecated.  I am still
+  // trying to track down who depends on it, meanwhile talk to me
+  // before removing interactions with it.  http://crbug.com/294306
   history_publisher_.reset(new HistoryPublisher());
   if (!history_publisher_->Init()) {
     // The init may fail when there are no indexers wanting our history.
     // Hence no need to log the failure.
     history_publisher_.reset();
+  }
+
+  // Collects page data for history_publisher_.
+  if (history_publisher_.get()) {
+    page_collector_.reset(new PageCollector());
+    page_collector_->Init(history_publisher_.get());
   }
 
   // Thumbnail database.
@@ -625,7 +634,6 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   // sort.
   thumbnail_db_.reset(new ThumbnailDatabase());
   if (thumbnail_db_->Init(thumbnail_name,
-                          history_publisher_.get(),
                           db_.get()) != sql::INIT_OK) {
     // Unlike the main database, we don't error out when the database is too
     // new because this error is much less severe. Generally, this shouldn't
@@ -665,8 +673,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   // *sigh*, this can all be cleaned up when that migration code is removed.
   // The main DB initialization should intuitively be first (not that it
   // actually matters) and the expirer should be set last.
-  expirer_.SetDatabases(db_.get(), archived_db_.get(),
-                        thumbnail_db_.get());
+  expirer_.SetDatabases(db_.get(), archived_db_.get(), thumbnail_db_.get());
 
   // Open the long-running transaction.
   db_->BeginTransaction();
@@ -853,6 +860,12 @@ void HistoryBackend::AddPagesWithDetails(const URLRows& urls,
       }
     }
 
+    // TODO(shess): I'm not sure this case needs to exist anymore.
+    if (page_collector_) {
+      page_collector_->AddPageData(i->url(), i->last_visit(),
+                                   i->title(), string16());
+    }
+
     // Sync code manages the visits itself.
     if (visit_source != SOURCE_SYNCED) {
       // Make up a visit to correspond to the last visit to the page.
@@ -890,10 +903,12 @@ bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) {
   return time < expirer_.GetCurrentArchiveTime();
 }
 
-void HistoryBackend::SetPageTitle(const GURL& url,
-                                  const string16& title) {
+void HistoryBackend::SetPageTitle(const GURL& url, const string16& title) {
   if (!db_)
     return;
+
+  if (page_collector_)
+    page_collector_->AddPageTitle(url, title);
 
   // Search for recent redirects which should get the same title. We make a
   // dummy list containing the exact URL visited if there are no redirects so
@@ -1663,6 +1678,12 @@ void HistoryBackend::DeleteFTSIndexDatabases() {
   }
   UMA_HISTOGRAM_COUNTS("History.DeleteFTSIndexDatabases",
                        num_databases_deleted);
+}
+
+void HistoryBackend::SetPageContents(const GURL& url,
+                                     const string16& contents) {
+  if (page_collector_)
+    page_collector_->AddPageContents(url, contents);
 }
 
 void HistoryBackend::GetFavicons(

@@ -16,8 +16,6 @@ namespace extensions {
 
 namespace {
 
-const char kNotImplementedError[] =
-    "Desktop Capture API is not yet implemented for this platform.";
 const char kInvalidSourceNameError[] = "Invalid source type specified.";
 const char kEmptySourcesListError[] =
     "At least one source type must be specified.";
@@ -94,12 +92,15 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
         screen_capturer.Pass(), window_capturer.Pass());
     picker_ = g_picker_factory->CreatePicker();
   } else {
-    // DesktopMediaPicker is not implented for all platforms yet.
-#if defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
+    // DesktopMediaPicker is implemented only for Windows, OSX and
+    // Aura Linux builds.
+#if (defined(TOOLKIT_VIEWS) && !defined(OS_CHROMEOS)) || defined(OS_MACOSX)
     model.reset(new DesktopMediaPickerModelImpl(
         screen_capturer.Pass(), window_capturer.Pass()));
     picker_ = DesktopMediaPicker::Create();
 #else
+    const char kNotImplementedError[] =
+        "Desktop Capture API is not yet implemented for this platform.";
     error_ = kNotImplementedError;
     return false;
 #endif

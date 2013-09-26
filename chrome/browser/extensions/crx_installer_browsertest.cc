@@ -9,6 +9,7 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/fake_safe_browsing_database_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -23,6 +24,11 @@
 #include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
+#endif
 
 class SkBitmap;
 
@@ -447,13 +453,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, Blacklist) {
-  extensions::Blacklist* blacklist =
-      ExtensionSystem::Get(profile())->blacklist();
+  scoped_refptr<FakeSafeBrowsingDatabaseManager> blacklist_db(
+      new FakeSafeBrowsingDatabaseManager(true));
+  Blacklist::ScopedDatabaseManagerForTest scoped_blacklist_db(blacklist_db);
 
-  // Fake the blacklisting of the extension we're about to install by
-  // pretending that we get a blacklist update which includes it.
-  const std::string kId = "gllekhaobjnhgeagipipnkpmmmpchacm";
-  blacklist->SetFromUpdater(std::vector<std::string>(1, kId), "some-version");
+  blacklist_db->SetUnsafe("gllekhaobjnhgeagipipnkpmmmpchacm");
 
   base::FilePath crx_path = test_data_dir_.AppendASCII("theme_hidpi_crx")
                                           .AppendASCII("theme_hidpi.crx");
@@ -476,6 +480,22 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, NonStrictManifestCheck) {
                   test_data_dir_.AppendASCII("crx_installer/v1.crx"));
 
   EXPECT_TRUE(mock_prompt->did_succeed());
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, KioskOnlyTest) {
+  base::FilePath crx_path =
+      test_data_dir_.AppendASCII("kiosk/kiosk_only.crx");
+  EXPECT_FALSE(InstallExtension(crx_path, 0));
+#if defined(OS_CHROMEOS)
+  // Simulate ChromeOS kiosk mode. |scoped_user_manager| will take over
+  // lifetime of |user_manager|.
+  chromeos::FakeUserManager* fake_user_manager =
+      new chromeos::FakeUserManager();
+  fake_user_manager->AddKioskAppUser("example@example.com");
+  fake_user_manager->LoginUser("example@example.com");
+  chromeos::ScopedUserManagerEnabler scoped_user_manager(fake_user_manager);
+  EXPECT_TRUE(InstallExtension(crx_path, 1));
+#endif
 }
 
 }  // namespace extensions

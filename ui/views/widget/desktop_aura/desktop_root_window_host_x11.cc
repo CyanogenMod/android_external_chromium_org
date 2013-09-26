@@ -20,9 +20,10 @@
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
-#include "ui/base/touch/touch_factory_x11.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path_x11.h"
 #include "ui/native_theme/native_theme.h"
@@ -114,7 +115,7 @@ DesktopRootWindowHostX11::DesktopRootWindowHostX11(
     DesktopNativeWidgetAura* desktop_native_widget_aura,
     const gfx::Rect& initial_bounds)
     : close_widget_factory_(this),
-      xdisplay_(ui::GetXDisplay()),
+      xdisplay_(gfx::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
@@ -302,9 +303,17 @@ void DesktopRootWindowHostX11::GetWindowPlacement(
     ui::WindowShowState* show_state) const {
   *bounds = bounds_;
 
-  // TODO(erg): This needs a better implementation. For now, we're just pass
-  // back the normal state until we keep track of this.
-  *show_state = ui::SHOW_STATE_NORMAL;
+  if (IsFullscreen()) {
+    *show_state = ui::SHOW_STATE_FULLSCREEN;
+  } else if (IsMinimized()) {
+    *show_state = ui::SHOW_STATE_MINIMIZED;
+  } else if (IsMaximized()) {
+    *show_state = ui::SHOW_STATE_MAXIMIZED;
+  } else if (!IsActive()) {
+    *show_state = ui::SHOW_STATE_INACTIVE;
+  } else {
+    *show_state = ui::SHOW_STATE_NORMAL;
+  }
 }
 
 gfx::Rect DesktopRootWindowHostX11::GetWindowBoundsInScreen() const {
@@ -434,7 +443,8 @@ void DesktopRootWindowHostX11::ClearNativeFocus() {
 
 Widget::MoveLoopResult DesktopRootWindowHostX11::RunMoveLoop(
     const gfx::Vector2d& drag_offset,
-    Widget::MoveLoopSource source) {
+    Widget::MoveLoopSource source,
+    Widget::MoveLoopEscapeBehavior escape_behavior) {
   SetCapture();
 
   aura::client::WindowMoveSource window_move_source =
@@ -925,7 +935,7 @@ aura::RootWindow* DesktopRootWindowHostX11::InitRootWindow(
   X11DesktopHandler::get();
 
   corewm::FocusController* focus_controller =
-      new corewm::FocusController(new DesktopFocusRules);
+      new corewm::FocusController(new DesktopFocusRules(content_window_));
   focus_client_.reset(focus_controller);
   aura::client::SetFocusClient(root_window_, focus_controller);
   aura::client::SetActivationClient(root_window_, focus_controller);
@@ -1256,7 +1266,7 @@ bool DesktopRootWindowHostX11::Dispatch(const base::NativeEvent& event) {
           root_window_->OnKeyboardMappingChanged();
           break;
         case MappingPointer:
-          ui::UpdateButtonMap();
+          ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
           break;
         default:
           NOTIMPLEMENTED() << " Unknown request: " << xev->xmapping.request;

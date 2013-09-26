@@ -56,7 +56,7 @@ void OAuth2LoginVerifier::VerifyProfileTokens(Profile* profile) {
   const NetworkState* default_network =
       NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
   if (!default_network ||
-      default_network->connection_state() == flimflam::kStatePortal) {
+      default_network->connection_state() == shill::kStatePortal) {
     // If network is offline, defer the token fetching until online.
     VLOG(1) << "Network is offline.  Deferring OAuth2 access token fetch.";
     BrowserThread::PostDelayedTask(
@@ -76,9 +76,13 @@ void OAuth2LoginVerifier::VerifyProfileTokens(Profile* profile) {
 void OAuth2LoginVerifier::StartFetchingOAuthLoginAccessToken(Profile* profile) {
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaUrls::GetInstance()->oauth1_login_scope());
-  login_token_request_ = ProfileOAuth2TokenServiceFactory::
-      GetForProfile(profile)->StartRequestWithContext(
-          system_request_context_.get(), scopes, this);
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  login_token_request_ = token_service->StartRequestWithContext(
+      token_service->GetPrimaryAccountId(),
+      system_request_context_.get(),
+      scopes,
+      this);
 }
 
 void OAuth2LoginVerifier::StartOAuthLoginForUberToken() {

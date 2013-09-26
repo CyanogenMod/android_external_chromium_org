@@ -114,7 +114,6 @@ class AutofillDialogViews : public AutofillDialogView,
   // views::View implementation.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
   // views::DialogDelegate implementation:
   virtual base::string16 GetWindowTitle() const OVERRIDE;
@@ -336,15 +335,20 @@ class AutofillDialogViews : public AutofillDialogView,
     virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
     virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
     virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
+    // This is needed because not all events percolate up the views hierarchy.
+    virtual View* GetEventHandlerForPoint(const gfx::Point& point) OVERRIDE;
 
    private:
     // Converts |event| to one suitable for |proxy_button_|.
     static ui::MouseEvent ProxyEvent(const ui::MouseEvent& event);
 
+    // Returns true if the given event should be forwarded to |proxy_button_|.
+    bool ShouldForwardEvent(const ui::MouseEvent& event);
+
     // Mouse events on |this| are sent to this button.
     views::Button* proxy_button_;  // Weak reference.
 
-    // When true, mouse events will be forwarded to |proxy_button_|.
+    // When true, all mouse events will be forwarded to |proxy_button_|.
     bool forward_mouse_events_;
 
     DISALLOW_COPY_AND_ASSIGN(SectionContainer);
@@ -476,6 +480,18 @@ class AutofillDialogViews : public AutofillDialogView,
   typedef std::map<DialogSection, DetailsGroup> DetailGroupMap;
 
   gfx::Size CalculatePreferredSize();
+
+  // Returns the height of the initiating WebContents' view.
+  int GetBrowserViewHeight() const;
+
+  // Returns the |size| inset by |GetInsets()|.
+  gfx::Size InsetSize(const gfx::Size& size) const;
+
+  // Returns the minimum size of the sign in view for this dialog.
+  gfx::Size GetMinimumSignInViewSize() const;
+
+  // Returns the maximum size of the sign in view for this dialog.
+  gfx::Size GetMaximumSignInViewSize() const;
 
   void InitChildViews();
 

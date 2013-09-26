@@ -19,6 +19,7 @@
 #include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/platform/WebHTTPHeaderVisitor.h"
 #include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -423,17 +424,21 @@ void WebURLLoaderImpl::Context::Start(
           }
           break;
         case WebHTTPBody::Element::TypeFileSystemURL: {
-          GURL url = GURL(element.url);
-          DCHECK(url.SchemeIsFileSystem());
+          GURL file_system_url = element.fileSystemURL;
+          DCHECK(file_system_url.SchemeIsFileSystem());
           request_body->AppendFileSystemFileRange(
-              url,
+              file_system_url,
               static_cast<uint64>(element.fileStart),
               static_cast<uint64>(element.fileLength),
               base::Time::FromDoubleT(element.modificationTime));
           break;
         }
         case WebHTTPBody::Element::TypeBlob:
+#ifdef USE_BLOB_UUIDS
+          request_body->AppendBlob(element.blobUUID.utf8());
+#else
           request_body->AppendBlobDeprecated(GURL(element.blobURL));
+#endif
           break;
         default:
           NOTREACHED();
@@ -486,8 +491,9 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   if (!referrer.isEmpty())
     new_request.setHTTPHeaderField(referrer_string, referrer);
 
-  if (response.httpStatusCode() == 307)
-    new_request.setHTTPMethod(request_.httpMethod());
+  std::string new_method = net::URLRequest::ComputeMethodForRedirect(
+             request_.httpMethod().utf8(), response.httpStatusCode());
+  new_request.setHTTPMethod(WebString::fromUTF8(new_method));
 
   client_->willSendRequest(loader_, new_request, response);
   request_ = new_request;

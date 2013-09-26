@@ -188,7 +188,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
     receive_algorithm_ = new TestReceiveAlgorithm(NULL);
     EXPECT_CALL(*receive_algorithm_, RecordIncomingPacket(_, _, _, _)).
         Times(AnyNumber());
-    EXPECT_CALL(*send_algorithm_, SentPacket(_, _, _, _, _)).Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_,
+                OnPacketSent(_, _, _, _, _)).Times(AnyNumber());
     EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillRepeatedly(
         Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, _, _, _)).
@@ -242,7 +243,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<bool> {
                                    bool write_priority,
                                    RequestPriority priority) {
     QuicSpdyCompressor compressor;
-    if (framer_.version() >= QUIC_VERSION_9 && write_priority) {
+    if (write_priority) {
       return compressor.CompressHeadersWithPriority(
           ConvertRequestPriorityToQuicPriority(priority), headers);
     }
@@ -510,7 +511,7 @@ TEST_F(QuicHttpStreamTest, SendPostRequest) {
   ScopedVector<UploadElementReader> element_readers;
   element_readers.push_back(
       new UploadBytesElementReader(kUploadData, strlen(kUploadData)));
-  UploadDataStream upload_data_stream(&element_readers, 0);
+  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
   request_.method = "POST";
   request_.url = GURL("http://www.google.com/");
   request_.upload_data_stream = &upload_data_stream;
@@ -692,6 +693,35 @@ TEST_F(QuicHttpStreamTest, Priority) {
   ProcessPacket(*resp);
 
   EXPECT_TRUE(AtEof());
+}
+
+// Regression test for http://crbug.com/294870
+TEST_F(QuicHttpStreamTest, CheckPriorityWithNoDelegate) {
+  SetRequestString("GET", "/", MEDIUM);
+  use_closing_stream_ = true;
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, MEDIUM,
+                                          net_log_, callback_.callback()));
+
+  // Check that priority is highest.
+  QuicReliableClientStream* reliable_stream =
+      QuicHttpStreamPeer::GetQuicReliableClientStream(stream_.get());
+  DCHECK(reliable_stream);
+  QuicReliableClientStream::Delegate* delegate = reliable_stream->GetDelegate();
+  DCHECK(delegate);
+  DCHECK_EQ(static_cast<QuicPriority>(kHighestPriority),
+            reliable_stream->EffectivePriority());
+
+  // Set Delegate to NULL and make sure EffectivePriority returns highest
+  // priority.
+  reliable_stream->SetDelegate(NULL);
+  DCHECK_EQ(static_cast<QuicPriority>(kHighestPriority),
+            reliable_stream->EffectivePriority());
+  reliable_stream->SetDelegate(delegate);
 }
 
 }  // namespace test

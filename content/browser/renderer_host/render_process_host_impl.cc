@@ -61,6 +61,7 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_scheduler_filter.h"
+#include "content/browser/media/android/browser_demuxer_android.h"
 #include "content/browser/media/media_internals.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/plugin_service_impl.h"
@@ -92,6 +93,8 @@
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
+#include "content/browser/service_worker/service_worker_context.h"
+#include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/speech/input_tag_speech_dispatcher_host.h"
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
@@ -129,6 +132,7 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
@@ -602,6 +606,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new IndexedDBDispatcherHost(
       GetID(),
       storage_partition_impl_->GetIndexedDBContext()));
+  channel_->AddFilter(new ServiceWorkerDispatcherHost(
+      storage_partition_impl_->GetServiceWorkerContext()));
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
@@ -649,6 +655,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new TextInputClientMessageFilter(GetID()));
 #elif defined(OS_WIN)
   channel_->AddFilter(new FontCacheDispatcher());
+#elif defined(OS_ANDROID)
+  browser_demuxer_android_ = new BrowserDemuxerAndroid();
+  channel_->AddFilter(browser_demuxer_android_);
 #endif
 
   SocketStreamDispatcherHost::GetRequestContextCallback
@@ -830,6 +839,9 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
   if (content::IsDelegatedRendererEnabled())
     command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
+  if (content::IsDeadlineSchedulingEnabled())
+    command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
+
   GetContentClient()->browser()->AppendExtraCommandLineSwitches(
       command_line, GetID());
 
@@ -858,6 +870,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableAudio,
     switches::kDisableBreakpad,
     switches::kDisableDatabases,
+    switches::kDisableDeadlineScheduling,
     switches::kDisableDelegatedRenderer,
     switches::kDisableDesktopNotifications,
     switches::kDisableDeviceOrientation,
@@ -886,6 +899,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableSCTPDataChannels,
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
+    switches::kEnableWebRtcHWVp8Encoding,
 #endif
     switches::kEnableWebAnimationsCSS,
     switches::kEnableWebAnimationsSVG,
@@ -895,9 +909,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDomAutomationController,
     switches::kEnableAccessibilityLogging,
     switches::kEnableBeginFrameScheduling,
-    switches::kEnableBrowserInputController,
     switches::kEnableBrowserPluginForAllViewTypes,
+    switches::kEnableBufferedInputRouter,
     switches::kEnableDCHECK,
+    switches::kEnableDeadlineScheduling,
     switches::kEnableDelegatedRenderer,
     switches::kEnableEncryptedMedia,
     switches::kDisableLegacyEncryptedMedia,
@@ -1412,15 +1427,6 @@ bool RenderProcessHostImpl::IsSuitableHost(
   if (host->GetBrowserContext() != browser_context)
     return false;
 
-  // Check whether the given host and the intended site_url will be using the
-  // same StoragePartition, since a RenderProcessHost can only support a single
-  // StoragePartition.  This is relevant for packaged apps, browser tags, and
-  // isolated sites.
-  StoragePartition* dest_partition =
-      BrowserContext::GetStoragePartitionForSite(browser_context, site_url);
-  if (!host->InSameStoragePartition(dest_partition))
-    return false;
-
   // All URLs are suitable if this is associated with a guest renderer process.
   // TODO(fsamuel, creis): Further validation is needed to ensure that only
   // normal web URLs are permitted in guest processes. We need to investigate
@@ -1429,6 +1435,14 @@ bool RenderProcessHostImpl::IsSuitableHost(
     return true;
 
   if (!host->IsGuest() && site_url.SchemeIs(chrome::kGuestScheme))
+    return false;
+
+  // Check whether the given host and the intended site_url will be using the
+  // same StoragePartition, since a RenderProcessHost can only support a single
+  // StoragePartition.  This is relevant for packaged apps and isolated sites.
+  StoragePartition* dest_partition =
+      BrowserContext::GetStoragePartitionForSite(browser_context, site_url);
+  if (!host->InSameStoragePartition(dest_partition))
     return false;
 
   if (ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(

@@ -28,6 +28,7 @@
         '../content/content.gyp:content_browser',
         '../crypto/crypto.gyp:crypto',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
+        '../extensions/extensions.gyp:extensions_browser',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
         '../sync/sync.gyp:sync',
@@ -54,17 +55,6 @@
       'sources': [
         # All .cc, .h, .m, and .mm files under browser/extensions except for
         # tests and mocks.
-        '../extensions/browser/extension_prefs_scope.h',
-        '../extensions/browser/extension_error.cc',
-        '../extensions/browser/extension_error.h',
-        '../extensions/browser/file_highlighter.cc',
-        '../extensions/browser/file_highlighter.h',
-        '../extensions/browser/file_reader.cc',
-        '../extensions/browser/file_reader.h',
-        '../extensions/browser/pref_names.cc',
-        '../extensions/browser/pref_names.h',
-        '../extensions/browser/view_type_utils.cc',
-        '../extensions/browser/view_type_utils.h',
         'browser/apps/app_url_redirector.cc',
         'browser/apps/app_url_redirector.h',
         'browser/apps/chrome_apps_client.cc',
@@ -91,6 +81,8 @@
         'browser/extensions/activity_log/database_string_table.h',
         'browser/extensions/activity_log/fullstream_ui_policy.cc',
         'browser/extensions/activity_log/fullstream_ui_policy.h',
+        'browser/extensions/activity_log/uma_policy.cc',
+        'browser/extensions/activity_log/uma_policy.h',
         'browser/extensions/activity_log/web_request_constants.cc',
         'browser/extensions/activity_log/web_request_constants.h',
         'browser/extensions/admin_policy.cc',
@@ -592,6 +584,8 @@
         'browser/extensions/api/web_request/web_request_permissions.h',
         'browser/extensions/api/web_request/web_request_time_tracker.cc',
         'browser/extensions/api/web_request/web_request_time_tracker.h',
+        'browser/extensions/api/webrtc_logging_private/webrtc_logging_private_api.cc',
+        'browser/extensions/api/webrtc_logging_private/webrtc_logging_private_api.h',
         'browser/extensions/api/webstore_private/webstore_private_api.cc',
         'browser/extensions/api/webstore_private/webstore_private_api.h',
         'browser/extensions/api/webview/webview_api.cc',
@@ -781,6 +775,8 @@
         'browser/extensions/pack_extension_job.h',
         'browser/extensions/page_action_controller.cc',
         'browser/extensions/page_action_controller.h',
+        'browser/extensions/pending_enables.cc',
+        'browser/extensions/pending_enables.h',
         'browser/extensions/pending_extension_info.cc',
         'browser/extensions/pending_extension_info.h',
         'browser/extensions/pending_extension_manager.cc',
@@ -809,6 +805,7 @@
         'browser/extensions/state_store.h',
         'browser/extensions/suggest_permission_util.h',
         'browser/extensions/suggest_permission_util.cc',
+        'browser/extensions/sync_bundle.h',
         'browser/extensions/tab_helper.cc',
         'browser/extensions/tab_helper.h',
         'browser/extensions/theme_installed_infobar_delegate.cc',
@@ -876,8 +873,6 @@
             'browser/extensions/api/input_ime/input_ime_api.cc',
             'browser/extensions/api/input_ime/input_ime_api.h',
             'browser/extensions/api/log_private/log_private_api_chromeos.cc',
-            'browser/extensions/api/rtc_private/rtc_private_api.cc',
-            'browser/extensions/api/rtc_private/rtc_private_api.h',
             'browser/extensions/api/terminal/terminal_extension_helper.cc',
             'browser/extensions/api/terminal/terminal_extension_helper.h',
             'browser/extensions/api/terminal/terminal_private_api.cc',
@@ -1046,6 +1041,7 @@
           'sources!': [
             'browser/apps/shortcut_manager.cc',
             'browser/apps/shortcut_manager_factory.cc',
+            'browser/extensions/activity_log/uma_policy.cc',
             'browser/extensions/api/declarative/rules_registry_with_cache.cc',
             'browser/extensions/api/processes/processes_api_constants.cc',
             'browser/extensions/api/web_navigation/frame_navigation_state.cc',
@@ -1070,7 +1066,7 @@
         }],
         ['chrome_multiple_dll!=1', {
           'dependencies': [
-            '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/glue/webkit_glue.gyp:glue',
           ],
         }],
         ['use_brlapi==1', {
@@ -1087,6 +1083,14 @@
           'sources!': [
             'browser/extensions/api/braille_display_private/braille_controller_brlapi.cc',
             'browser/extensions/api/braille_display_private/brlapi_connection.cc',
+          ],
+        }],
+        ['enable_webrtc==0', {
+          'sources!': [
+            'browser/extensions/api/webrtc_logging_private/webrtc_logging_private_api.cc',
+          ],
+          'sources': [
+            'browser/extensions/api/webrtc_logging_private/webrtc_logging_private_api_stub.cc',
           ],
         }],
       ],

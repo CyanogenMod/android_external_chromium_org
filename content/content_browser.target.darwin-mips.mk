@@ -246,7 +246,6 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/buffered_resource_handler.cc \
 	content/browser/loader/certificate_resource_handler.cc \
 	content/browser/loader/cross_site_resource_handler.cc \
-	content/browser/loader/doomed_resource_handler.cc \
 	content/browser/loader/layered_resource_handler.cc \
 	content/browser/loader/offline_policy.cc \
 	content/browser/loader/power_save_block_resource_throttle.cc \
@@ -268,6 +267,7 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/upload_data_stream_builder.cc \
 	content/browser/media/android/browser_demuxer_android.cc \
 	content/browser/media/android/browser_media_player_manager.cc \
+	content/browser/media/android/media_drm_credential_manager.cc \
 	content/browser/media/android/media_resource_getter_impl.cc \
 	content/browser/media/media_internals.cc \
 	content/browser/media/media_internals_handler.cc \
@@ -280,6 +280,8 @@ LOCAL_SRC_FILES := \
 	content/browser/media/webrtc_internals_ui.cc \
 	content/browser/media_devices_monitor.cc \
 	content/browser/mime_registry_message_filter.cc \
+	content/browser/service_worker/service_worker_dispatcher_host.cc \
+	content/browser/service_worker/service_worker_context.cc \
 	content/browser/net/browser_online_state_observer.cc \
 	content/browser/net/sqlite_persistent_cookie_store.cc \
 	content/browser/net/view_blob_internals_job_factory.cc \
@@ -458,7 +460,6 @@ MY_CFLAGS_Debug := \
 MY_DEFS_Debug := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -479,11 +480,12 @@ MY_DEFS_Debug := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
@@ -588,7 +590,6 @@ MY_CFLAGS_Release := \
 MY_DEFS_Release := \
 	'-DCONTENT_IMPLEMENTATION' \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -609,11 +610,12 @@ MY_DEFS_Release := \
 	'-DSK_ENABLE_INST_COUNT=0' \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
+	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
-	'-DUSE_CHROMIUM_SKIA' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
+	'-DAPPCACHE_USE_SIMPLE_CACHE' \
 	'-DMEDIA_DISABLE_LIBVPX' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \

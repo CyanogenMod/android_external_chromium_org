@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
+#include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/input/top_controls_manager.h"
@@ -342,6 +343,8 @@ class LayerTreeHostImplTest : public testing::Test,
     EXPECT_TRUE(on_can_draw_state_changed_called_);
     on_can_draw_state_changed_called_ = false;
   }
+
+  void SetupMouseMoveAtWithDeviceScale(float device_scale_factor);
 
  protected:
   virtual scoped_ptr<OutputSurface> CreateOutputSurface() {
@@ -1204,6 +1207,88 @@ TEST_F(LayerTreeHostImplTest, ScrollbarLinearFadeScheduling) {
   fake_now += base::TimeDelta::FromMilliseconds(10);
   host_impl_override_time->SetCurrentPhysicalTimeTicksForTest(fake_now);
   EXPECT_EQ(fake_now, host_impl_->CurrentFrameTimeTicks());
+}
+
+void LayerTreeHostImplTest::SetupMouseMoveAtWithDeviceScale(
+    float device_scale_factor) {
+  LayerTreeSettings settings;
+  settings.scrollbar_animator = LayerTreeSettings::Thinning;
+
+  gfx::Size viewport_size(300, 200);
+  gfx::Size device_viewport_size = gfx::ToFlooredSize(
+      gfx::ScaleSize(viewport_size, device_scale_factor));
+  gfx::Size content_size(1000, 1000);
+
+  host_impl_ = LayerTreeHostImpl::Create(
+      settings, this, &proxy_, &stats_instrumentation_);
+  host_impl_->InitializeRenderer(CreateOutputSurface());
+  host_impl_->SetDeviceScaleFactor(device_scale_factor);
+  host_impl_->SetViewportSize(device_viewport_size);
+
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl_->active_tree(), 1);
+  root->SetBounds(viewport_size);
+
+  scoped_ptr<LayerImpl> scroll =
+      LayerImpl::Create(host_impl_->active_tree(), 2);
+  scroll->SetScrollable(true);
+  scroll->SetScrollOffset(gfx::Vector2d());
+  scroll->SetMaxScrollOffset(gfx::Vector2d(content_size.width(),
+                                           content_size.height()));
+  scroll->SetBounds(content_size);
+  scroll->SetContentBounds(content_size);
+
+  scoped_ptr<LayerImpl> contents =
+      LayerImpl::Create(host_impl_->active_tree(), 3);
+  contents->SetDrawsContent(true);
+  contents->SetBounds(content_size);
+  contents->SetContentBounds(content_size);
+
+  // The scrollbar is on the right side.
+  scoped_ptr<PaintedScrollbarLayerImpl> scrollbar =
+      PaintedScrollbarLayerImpl::Create(host_impl_->active_tree(), 5, VERTICAL);
+  scrollbar->SetContentBounds(gfx::Size(15, viewport_size.height()));
+  scrollbar->SetPosition(gfx::Point(285, 0));
+  scroll->SetVerticalScrollbarLayer(scrollbar.get());
+
+  scroll->AddChild(contents.Pass());
+  root->AddChild(scroll.Pass());
+  root->AddChild(scrollbar.PassAs<LayerImpl>());
+
+  host_impl_->active_tree()->SetRootLayer(root.Pass());
+  host_impl_->active_tree()->DidBecomeActive();
+  InitializeRendererAndDrawFrame();
+
+  LayerImpl* root_scroll = host_impl_->active_tree()->RootScrollLayer();
+  ASSERT_TRUE(root_scroll->scrollbar_animation_controller());
+  ScrollbarAnimationControllerThinning* scrollbar_animation_controller =
+      static_cast<ScrollbarAnimationControllerThinning*>(
+          root_scroll->scrollbar_animation_controller());
+  scrollbar_animation_controller->set_mouse_move_distance_for_test(100.f);
+
+  host_impl_->MouseMoveAt(gfx::Point(1, 1));
+  EXPECT_FALSE(did_request_redraw_);
+
+  did_request_redraw_ = false;
+  host_impl_->MouseMoveAt(gfx::Point(200, 50));
+  EXPECT_TRUE(did_request_redraw_);
+
+  did_request_redraw_ = false;
+  host_impl_->MouseMoveAt(gfx::Point(184, 100));
+  EXPECT_FALSE(did_request_redraw_);
+
+  scrollbar_animation_controller->set_mouse_move_distance_for_test(102.f);
+  did_request_redraw_ = false;
+  host_impl_->MouseMoveAt(gfx::Point(184, 100));
+  EXPECT_TRUE(did_request_redraw_);
+}
+
+TEST_F(LayerTreeHostImplTest, MouseMoveAtWithDeviceScaleOf1) {
+  SetupMouseMoveAtWithDeviceScale(1.f);
+}
+
+TEST_F(LayerTreeHostImplTest, MouseMoveAtWithDeviceScaleOf2) {
+  SetupMouseMoveAtWithDeviceScale(2.f);
 }
 
 TEST_F(LayerTreeHostImplTest, CompositorFrameMetadata) {
@@ -2325,8 +2410,13 @@ TEST_F(LayerTreeHostImplTest, ScrollScaledLayer) {
 
 class TestScrollOffsetDelegate : public LayerScrollOffsetDelegate {
  public:
-  TestScrollOffsetDelegate() {}
+  TestScrollOffsetDelegate() : page_scale_factor_(0.f) {}
+
   virtual ~TestScrollOffsetDelegate() {}
+
+  virtual void SetMaxScrollOffset(gfx::Vector2dF max_scroll_offset) OVERRIDE {
+    max_scroll_offset_ = max_scroll_offset;
+  }
 
   virtual void SetTotalScrollOffset(gfx::Vector2dF new_value) OVERRIDE {
     last_set_scroll_offset_ = new_value;
@@ -2334,6 +2424,14 @@ class TestScrollOffsetDelegate : public LayerScrollOffsetDelegate {
 
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE {
     return getter_return_value_;
+  }
+
+  virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE {
+    page_scale_factor_ = page_scale_factor;
+  }
+
+  virtual void SetScrollableSize(gfx::SizeF scrollable_size) OVERRIDE {
+    scrollable_size_ = scrollable_size;
   }
 
   gfx::Vector2dF last_set_scroll_offset() {
@@ -2344,13 +2442,29 @@ class TestScrollOffsetDelegate : public LayerScrollOffsetDelegate {
     getter_return_value_ = value;
   }
 
+  gfx::Vector2dF max_scroll_offset() const {
+    return max_scroll_offset_;
+  }
+
+  gfx::SizeF scrollable_size() const {
+    return scrollable_size_;
+  }
+
+  float page_scale_factor() const {
+    return page_scale_factor_;
+  }
+
  private:
   gfx::Vector2dF last_set_scroll_offset_;
   gfx::Vector2dF getter_return_value_;
+  gfx::Vector2dF max_scroll_offset_;
+  gfx::SizeF scrollable_size_;
+  float page_scale_factor_;
 };
 
 TEST_F(LayerTreeHostImplTest, RootLayerScrollOffsetDelegation) {
   TestScrollOffsetDelegate scroll_delegate;
+  host_impl_->SetViewportSize(gfx::Size(10, 20));
   LayerImpl* scroll_layer = SetupScrollAndContentsLayers(gfx::Size(100, 100));
 
   // Setting the delegate results in the current scroll offset being set.
@@ -2360,6 +2474,18 @@ TEST_F(LayerTreeHostImplTest, RootLayerScrollOffsetDelegation) {
   host_impl_->SetRootLayerScrollOffsetDelegate(&scroll_delegate);
   EXPECT_EQ(initial_scroll_delta.ToString(),
             scroll_delegate.last_set_scroll_offset().ToString());
+
+  // Setting the delegate results in the scrollable_size, max_scroll_offset and
+  // page_scale being set.
+  EXPECT_EQ(gfx::SizeF(100, 100), scroll_delegate.scrollable_size());
+  EXPECT_EQ(gfx::Vector2dF(90, 80), scroll_delegate.max_scroll_offset());
+  EXPECT_EQ(1.f, scroll_delegate.page_scale_factor());
+
+  // Updating page scale immediately updates the delegate.
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(2.f, 0.5f, 4.f);
+  EXPECT_EQ(2.f, scroll_delegate.page_scale_factor());
+  host_impl_->active_tree()->SetPageScaleFactorAndLimits(1.f, 0.5f, 4.f);
+  EXPECT_EQ(1.f, scroll_delegate.page_scale_factor());
 
   // Scrolling should be relative to the offset as returned by the delegate.
   gfx::Vector2dF scroll_delta(0.f, 10.f);
@@ -3075,12 +3201,13 @@ TEST_F(LayerTreeHostImplViewportCoveredTest, ViewportCoveredOverhangBitmap) {
   host_impl_->SetViewportSize(DipSizeToPixelSize(viewport_size_));
   SetupActiveTreeLayers();
 
+  SkBitmap skbitmap;
+  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
+  skbitmap.allocPixels();
+  skbitmap.setImmutable();
+
   // Specify an overhang bitmap to use.
-  scoped_refptr<UIResourceBitmap> ui_resource_bitmap(UIResourceBitmap::Create(
-      new uint8_t[4],
-      UIResourceBitmap::RGBA8,
-      UIResourceBitmap::REPEAT,
-      gfx::Size(1, 1)));
+  UIResourceBitmap ui_resource_bitmap(skbitmap, UIResourceBitmap::REPEAT);
   UIResourceId ui_resource_id = 12345;
   host_impl_->CreateUIResource(ui_resource_id, ui_resource_bitmap);
   host_impl_->SetOverhangUIResource(ui_resource_id, gfx::Size(32, 32));
@@ -4747,7 +4874,7 @@ TEST_F(LayerTreeHostImplTest, SurfaceTextureCaching) {
 
   // Change location of the intermediate layer
   gfx::Transform transform = intermediate_layer_ptr->transform();
-  transform.matrix().setDouble(0, 3, 1.0001);
+  transform.matrix().set(0, 3, 1.0001f);
   intermediate_layer_ptr->SetTransform(transform);
   {
     LayerTreeHostImpl::FrameData frame;
@@ -4933,7 +5060,7 @@ TEST_F(LayerTreeHostImplTest, SurfaceTextureCachingNoPartialSwap) {
 
   // Change location of the intermediate layer
   gfx::Transform transform = intermediate_layer_ptr->transform();
-  transform.matrix().setDouble(0, 3, 1.0001);
+  transform.matrix().set(0, 3, 1.0001f);
   intermediate_layer_ptr->SetTransform(transform);
   {
     LayerTreeHostImpl::FrameData frame;
@@ -5156,7 +5283,6 @@ static void ConfigureRenderPassTestData(const char* test_script,
                      contents_changed_rect,
                      gfx::RectF(0.f, 0.f, 1.f, 1.f),
                      FilterOperations(),
-                     skia::RefPtr<SkImageFilter>(),
                      FilterOperations());
         render_pass->AppendQuad(quad.PassAs<DrawQuad>());
       }
@@ -6547,12 +6673,13 @@ TEST_F(LayerTreeHostImplTest, UIResourceManagement) {
 
   EXPECT_EQ(0u, context3d->NumTextures());
 
+  SkBitmap skbitmap;
+  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
+  skbitmap.allocPixels();
+  skbitmap.setImmutable();
+
   UIResourceId ui_resource_id = 1;
-  scoped_refptr<UIResourceBitmap> bitmap = UIResourceBitmap::Create(
-      new uint8_t[1],
-      UIResourceBitmap::RGBA8,
-      UIResourceBitmap::CLAMP_TO_EDGE,
-      gfx::Size(1, 1));
+  UIResourceBitmap bitmap(skbitmap);
   host_impl_->CreateUIResource(ui_resource_id, bitmap);
   EXPECT_EQ(1u, context3d->NumTextures());
   ResourceProvider::ResourceId id1 =

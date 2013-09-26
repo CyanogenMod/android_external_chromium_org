@@ -1053,24 +1053,6 @@
    fun:base::debug::TraceSamplingThread::ThreadMain
 }
 {
-   bug_222684a
-   ThreadSanitizer:Race
-   ...
-   fun:WebCore::shouldTreatAsUniqueOrigin
-   fun:WebCore::SecurityOrigin::create
-   fun:WebCore::SecurityOrigin::createFromString
-   fun:WebKit::WebSecurityOrigin::createFromString
-}
-{
-   bug_222684b
-   ThreadSanitizer:Race
-   ...
-   fun:WebCore::SecurityOrigin::SecurityOrigin
-   fun:WebCore::SecurityOrigin::create
-   fun:WebCore::SecurityOrigin::createFromString
-   fun:WebKit::WebSecurityOrigin::createFromString
-}
-{
   bug_225123
   ThreadSanitizer:Race
   fun:setlocale
@@ -1126,4 +1108,19 @@
   fun:content::ChildThread::ChildThread
   fun:content::UtilityThreadImpl::UtilityThreadImpl
 }
-
+{
+  bug_295418
+  ThreadSanitizer:Race
+  ...
+  fun:testing::internal::UntypedFunctionMockerBase::UntypedInvokeWith
+  fun:testing::internal::FunctionMockerBase::InvokeWith
+  fun:testing::internal::FunctionMocker::Invoke
+  fun:content::::MockWebRtcAudioCapturerSink::CaptureData
+  fun:content::::MockWebRtcAudioCapturerSink::CaptureData
+  fun:content::WebRtcAudioCapturerSinkOwner::CaptureData
+  fun:content::WebRtcLocalAudioTrack::Capture
+  fun:content::WebRtcAudioCapturer::TrackOwner::Capture
+  fun:content::WebRtcAudioCapturer::Capture
+  fun:content::::FakeAudioThread::ThreadMain
+  fun:base::::ThreadFunc
+}

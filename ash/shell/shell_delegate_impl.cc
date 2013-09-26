@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "ash/caps_lock_delegate_stub.h"
+#include "ash/default_user_wallpaper_delegate.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/keyboard_controller_proxy_stub.h"
 #include "ash/session_state_delegate.h"
@@ -17,7 +18,7 @@
 #include "ash/shell/toplevel_window.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/tray/default_system_tray_delegate.h"
-#include "ash/wm/window_util.h"
+#include "ash/wm/window_state.h"
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/window.h"
 #include "ui/views/corewm/input_method_event_filter.h"
@@ -81,9 +82,9 @@ void ShellDelegateImpl::ToggleFullscreen() {
 }
 
 void ShellDelegateImpl::ToggleMaximized() {
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (window)
-    ash::wm::ToggleMaximizedWindow(window);
+  wm::WindowState* window_state = wm::GetActiveWindowState();
+  if (window_state)
+    window_state->ToggleMaximized();
 }
 
 void ShellDelegateImpl::OpenFileManager(bool as_dialog) {
@@ -173,7 +174,7 @@ ash::SystemTrayDelegate* ShellDelegateImpl::CreateSystemTrayDelegate() {
 }
 
 ash::UserWallpaperDelegate* ShellDelegateImpl::CreateUserWallpaperDelegate() {
-  return NULL;
+  return new DefaultUserWallpaperDelegate();
 }
 
 ash::CapsLockDelegate* ShellDelegateImpl::CreateCapsLockDelegate() {

@@ -39,9 +39,7 @@ ShillDeviceClientStub::~ShillDeviceClientStub() {
 
 // ShillDeviceClient overrides.
 
-void ShillDeviceClientStub::Init(dbus::Bus* bus) {
-  SetDefaultProperties();
-}
+void ShillDeviceClientStub::Init(dbus::Bus* bus) {}
 
 void ShillDeviceClientStub::AddPropertyChangedObserver(
     const dbus::ObjectPath& device_path,
@@ -183,13 +181,13 @@ void ShillDeviceClientStub::AddDevice(const std::string& device_path,
 
   base::DictionaryValue* properties = GetDeviceProperties(device_path);
   properties->SetWithoutPathExpansion(
-      flimflam::kTypeProperty,
+      shill::kTypeProperty,
       base::Value::CreateStringValue(type));
   properties->SetWithoutPathExpansion(
-      flimflam::kDBusObjectProperty,
+      shill::kDBusObjectProperty,
       base::Value::CreateStringValue(object_path));
   properties->SetWithoutPathExpansion(
-      flimflam::kDBusConnectionProperty,
+      shill::kDBusConnectionProperty,
       base::Value::CreateStringValue("/stub"));
 }
 
@@ -226,29 +224,12 @@ std::string ShillDeviceClientStub::GetDevicePathForType(
       continue;
     std::string prop_type;
     if (!properties->GetStringWithoutPathExpansion(
-            flimflam::kTypeProperty, &prop_type) ||
+            shill::kTypeProperty, &prop_type) ||
         prop_type != type)
       continue;
     return iter.key();
   }
   return std::string();
-}
-
-void ShillDeviceClientStub::SetDefaultProperties() {
-  // Add a wifi device.
-  AddDevice("stub_wifi_device1", flimflam::kTypeWifi, "/device/wifi1");
-
-  // Add a cellular device. Used in SMS stub.
-  AddDevice("stub_cellular_device1", flimflam::kTypeCellular,
-            "/device/cellular1");
-  base::DictionaryValue* properties =
-      GetDeviceProperties("stub_cellular_device1");
-  properties->SetStringWithoutPathExpansion(flimflam::kCarrierProperty,
-                                            shill::kCarrierSprint);
-
-  // Add a wimax device.
-  AddDevice("stub_wimax_device1", flimflam::kTypeWimax,
-            "/device/wimax1");
 }
 
 void ShillDeviceClientStub::PassStubDeviceProperties(

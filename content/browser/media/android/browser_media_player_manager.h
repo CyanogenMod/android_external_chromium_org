@@ -29,7 +29,6 @@ class MediaDrmBridge;
 
 namespace content {
 
-class BrowserDemuxerAndroid;
 class WebContents;
 
 // This class manages all the MediaPlayerAndroid objects. It receives
@@ -60,6 +59,10 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void ExitFullscreen(bool release_media_player);
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface);
 
+  // Called when browser player wants the renderer media element to seek.
+  // Any actual seek started by renderer will be handled by browser in OnSeek().
+  void OnSeekRequest(int player_id, const base::TimeDelta& time_to_seek);
+
   // media::MediaPlayerManager overrides.
   virtual void OnTimeUpdate(
       int player_id, base::TimeDelta current_time) OVERRIDE;
@@ -73,7 +76,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnMediaInterrupted(int player_id) OVERRIDE;
   virtual void OnBufferingUpdate(int player_id, int percentage) OVERRIDE;
   virtual void OnSeekComplete(
-      int player_id, base::TimeDelta current_time) OVERRIDE;
+      int player_id,
+      const base::TimeDelta& current_time) OVERRIDE;
   virtual void OnError(int player_id, int error) OVERRIDE;
   virtual void OnVideoSizeChanged(
       int player_id, int width, int height) OVERRIDE;
@@ -109,17 +113,20 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnEnterFullscreen(int player_id);
   virtual void OnExitFullscreen(int player_id);
   virtual void OnInitialize(
+      MediaPlayerHostMsg_Initialize_Type type,
       int player_id,
       const GURL& url,
-      MediaPlayerHostMsg_Initialize_Type type,
-      const GURL& first_party_for_cookies);
+      const GURL& first_party_for_cookies,
+      int demuxer_client_id);
   virtual void OnStart(int player_id);
-  virtual void OnSeek(int player_id, base::TimeDelta time);
+  virtual void OnSeek(int player_id, const base::TimeDelta& time);
   virtual void OnPause(int player_id, bool is_media_related_action);
   virtual void OnSetVolume(int player_id, double volume);
   virtual void OnReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
-  void OnInitializeCDM(int media_keys_id, const std::vector<uint8>& uuid);
+  void OnInitializeCDM(int media_keys_id,
+                       const std::vector<uint8>& uuid,
+                       const GURL& frame_url);
   void OnGenerateKeyRequest(int media_keys_id,
                             const std::string& type,
                             const std::vector<uint8>& init_data);
@@ -148,13 +155,21 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
       int player_id,
       media::MediaPlayerAndroid* player);
 
-  // Add a new MediaDrmBridge for the given |uuid| and |media_keys_id|.
-  void AddDrmBridge(int media_keys_id, const std::vector<uint8>& uuid);
+  // Add a new MediaDrmBridge for the given |uuid|, |media_keys_id|, and
+  // |frame_url|.
+  void AddDrmBridge(int media_keys_id,
+                    const std::vector<uint8>& uuid,
+                    const GURL& frame_url);
 
   // Removes the DRM bridge with the specified id.
   void RemoveDrmBridge(int media_keys_id);
 
  private:
+  void GenerateKeyIfAllowed(int media_keys_id,
+                            const std::string& type,
+                            const std::vector<uint8>& init_data,
+                            bool allowed);
+
   // Constructs a MediaPlayerAndroid object. Declared static to permit embedders
   // to override functionality.
   //
@@ -163,16 +178,14 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // manager to track decoding resources across the process and free them as
   // needed.
   static media::MediaPlayerAndroid* CreateMediaPlayer(
+      MediaPlayerHostMsg_Initialize_Type type,
       int player_id,
       const GURL& url,
-      MediaPlayerHostMsg_Initialize_Type type,
       const GURL& first_party_for_cookies,
+      int demuxer_client_id,
       bool hide_url_log,
       media::MediaPlayerManager* manager,
       media::DemuxerAndroid* demuxer);
-
-  // Owned by RenderViewHost.
-  BrowserDemuxerAndroid* browser_demuxer_;
 
   // An array of managed players.
   ScopedVector<media::MediaPlayerAndroid> players_;
@@ -191,6 +204,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
 
   // Object for retrieving resources media players.
   scoped_ptr<media::MediaResourceGetter> media_resource_getter_;
+
+  base::WeakPtrFactory<BrowserMediaPlayerManager> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserMediaPlayerManager);
 };

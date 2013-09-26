@@ -138,6 +138,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.linux-mips.mk
@@ -201,6 +202,7 @@ include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-mips.mk
+include $(LOCAL_PATH)/ui/keycode_converter.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/shell_dialogs.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.linux-mips.mk
@@ -221,12 +223,12 @@ include $(LOCAL_PATH)/webkit/common/gpu/webkit_gpu.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/user_agent.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/user_agent/webkit_version.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/common/webkit_common.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/glue/glue.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/glue/glue_child.target.linux-mips.mk
+include $(LOCAL_PATH)/webkit/glue/overscroller_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_bindings.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/compositor_bindings/webkit_compositor_support.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/renderer/webkit_renderer.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/glue_child.target.linux-mips.mk
-include $(LOCAL_PATH)/webkit/support/overscroller_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_resources.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_browser.target.linux-mips.mk
 include $(LOCAL_PATH)/webkit/webkit_storage_common.target.linux-mips.mk

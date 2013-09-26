@@ -36,7 +36,6 @@
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/tab_audio_indicator_view_mac.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_projecting_image_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_drag_controller.h"
@@ -104,15 +103,8 @@ const CGFloat kNewTabButtonOffset = 8.0;
 // Time (in seconds) in which tabs animate to their final position.
 const NSTimeInterval kAnimationDuration = 0.125;
 
-// The amount by which the profile menu button is offset (from tab tabs or new
-// tab button).
-const CGFloat kProfileMenuButtonOffset = 6.0;
-
 // The width and height of the icon + glow for projecting mode.
 const CGFloat kProjectingIconWidthAndHeight = 32.0;
-
-// Throbbing duration on webrtc "this web page is watching you" favicon overlay.
-const int kRecordingDurationMs = 1000;
 
 // Helper class for doing NSAnimationContext calls that takes a bool to disable
 // all the work.  Useful for code that wants to conditionally animate.
@@ -165,7 +157,7 @@ NSImage* CreateImageWithSize(NSSize size,
   base::scoped_nsobject<NSImage> result([[NSImage alloc] initWithSize:size]);
   [NSGraphicsContext saveGraphicsState];
   for (ui::ScaleFactor scale_factor : ui::GetSupportedScaleFactors()) {
-    float scale = GetScaleFactorScale(scale_factor);
+    float scale = GetImageScale(scale_factor);
     NSBitmapImageRep *bmpImageRep = [[[NSBitmapImageRep alloc]
         initWithBitmapDataPlanes:NULL
                       pixelsWide:size.width * scale
@@ -1620,12 +1612,10 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
   if (newState == kTabDone || oldState != newState ||
       oldHasIcon != newHasIcon) {
     NSView* iconView = nil;
+    NSImageView* audioIndicatorView = nil;
     if (newHasIcon) {
       if (newState == kTabDone) {
         NSImageView* imageView = [self iconImageViewForContents:contents];
-        TabAudioIndicatorViewMac* tabAudioIndicatorViewMac =
-            base::mac::ObjCCast<TabAudioIndicatorViewMac>(
-                [tabController iconView]);
 
         ui::ThemeProvider* theme = [[tabStripView_ window] themeProvider];
         if (theme && [tabController projecting]) {
@@ -1643,7 +1633,6 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                 backgroundImage:[imageView image]
                  projectorImage:projector
                      throbImage:projectorGlow
-                     durationMS:kRecordingDurationMs
              animationContainer:animationContainer_.get()] autorelease];
 
           iconView = projectingView;
@@ -1661,27 +1650,24 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
                   initWithFrame:frame
                 backgroundImage:favIconMasked
                      throbImage:recording
-                     durationMS:kRecordingDurationMs
                   throbPosition:kThrobPositionBottomRight
              animationContainer:animationContainer_.get()] autorelease];
 
           iconView = recordingView;
-        } else if (chrome::IsPlayingAudio(contents) ||
-                   [tabAudioIndicatorViewMac isAnimating]) {
-          if (!tabAudioIndicatorViewMac) {
-            NSRect frame =
-                NSMakeRect(0, 0, kIconWidthAndHeight, kIconWidthAndHeight);
-            tabAudioIndicatorViewMac = [[[TabAudioIndicatorViewMac alloc]
-                initWithFrame:frame] autorelease];
-            [tabAudioIndicatorViewMac
-                setAnimationContainer:animationContainer_.get()];
-          }
-          [tabAudioIndicatorViewMac
-              setIsPlayingAudio:chrome::IsPlayingAudio(contents)];
-          [tabAudioIndicatorViewMac setBackgroundImage:[imageView image]];
-          iconView = tabAudioIndicatorViewMac;
         } else {
           iconView = imageView;
+
+          if (theme && chrome::IsPlayingAudio(contents)) {
+            NSImage* const image =
+                theme->GetNSImageNamed(IDR_TAB_AUDIO_INDICATOR);
+            if (image) {
+              NSRect frame;
+              frame.size = [image size];
+              audioIndicatorView =
+                  [[[NSImageView alloc] initWithFrame:frame] autorelease];
+              [audioIndicatorView setImage:image];
+            }
+          }
         }
       } else if (newState == kTabCrashed) {
         NSImage* oldImage = [[self iconImageViewForContents:contents] image];
@@ -1707,6 +1693,7 @@ NSImage* Overlay(NSImage* ground, NSImage* overlay, CGFloat alpha) {
       //DCHECK_LE(NSMaxX([iconView frame]),
       //          NSWidth([[tabController view] frame]) - kTabOverlap);
     }
+    [tabController setAudioIndicatorView:audioIndicatorView];
   }
 }
 

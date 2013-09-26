@@ -254,6 +254,32 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Ash.WindowSelector.Items">
+  <summary>
+    The number of items (single windows or groups of windows such as panels) in
+    the window selection. Window selection occurs when a user begins alt-tabbing
+    or presses the overview button (F5 key).
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowSelector.TimeBetweenUse" units="milliseconds">
+  <summary>
+    The amount of time between uses of window selection to switch between
+    windows. Window selection is entered by alt-tabbing or by pressing the
+    overview button (F5 key).
+  </summary>
+</histogram>
+
+<histogram name="Ash.WindowSelector.TimeInOverview" units="milliseconds">
+  <summary>
+    The amount of time spent in overview mode. Overview mode is engaged when
+    lingering on a window while alt-tabbing or by pressing the overview button.
+    The time is measured from the moment the windows begin animating to a
+    thumbnail size preview to when a window is selected or selection is
+    canceled.
+  </summary>
+</histogram>
+
 <histogram name="AsyncDNS.AttemptCountFail">
   <summary>
     Count of DnsAttempts before DnsTransaction completes with failure.
@@ -1355,6 +1381,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Cookie.ParsedCookieStatus" enum="ParsedCookieStatus">
+  <obsolete>
+    Deprecated as of 9/2013. Experiment to measure control characters in cookies
+    is finished.
+  </obsolete>
   <summary>
     When parsing a cookie, indicates if control characters were present in any
     of the cookie values and if any of the cookie values were invalid.
@@ -1374,6 +1404,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Cookie.SetAttributePairCharsValidity" enum="BooleanValid">
+  <obsolete>
+    Deprecated as of 9/2013. Experiment to measure control characters in cookies
+    is finished.
+  </obsolete>
   <summary>
     Indicates whether a cookie attribute pair was set with both a valid key and
     a valid attribute value or not. For the key, this implies that it was a
@@ -1386,6 +1420,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Cookie.SetNameValidity" enum="BooleanValid">
+  <obsolete>
+    Deprecated as of 9/2013. Experiment to measure control characters in cookies
+    is finished.
+  </obsolete>
   <summary>
     Indicates whether a cookie name was set with a valid token. A valid token is
     defined in Section 2.2 of RFC2616 which specifies a token must have no
@@ -1396,6 +1434,10 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Cookie.SetValueCookieValueValidity" enum="BooleanValid">
+  <obsolete>
+    Deprecated as of 9/2013. Experiment to measure control characters in cookies
+    is finished.
+  </obsolete>
   <summary>
     Indicates whether a cookie value was valid or invalid when there was an
     attempt to set it, where a valid value is defined in RFC 6265 as ASCII
@@ -3625,6 +3667,183 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="ExtensionActivity.ContentScript">
+  <summary>
+    For each pageload, the number of extensions that inject a content script.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedDiv">
+  <summary>
+    For each pageload, the number of extensions that create divs to add to the
+    page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedEmbed">
+  <summary>
+    For each pageload, the number of extensions that create 'embed' elements to
+    add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedIframe">
+  <summary>
+    For each pageload, the number of extensions that create iframes to add to
+    the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedInput">
+  <summary>
+    For each pageload, the number of extensions that create inputs to add to the
+    page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedLink">
+  <summary>
+    For each pageload, the number of extensions that create links to add to the
+    page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedObject">
+  <summary>
+    For each pageload, the number of extensions that create 'object' elements to
+    add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.CreatedScript">
+  <summary>
+    For each pageload, the number of extensions that create script tags to add
+    to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.DocumentWrite">
+  <summary>
+    For each pageload, the number of extensions that use document.write.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.ContentScript">
+  <summary>
+    For each www.google.com pageload, the number of extensions that inject a
+    content script.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedDiv">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create divs
+    to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedEmbed">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create
+    'embed' elements to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedIframe">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create
+    iframes to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedInput">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create
+    inputs to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedLink">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create links
+    to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedObject">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create
+    'object' elements to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.CreatedScript">
+  <summary>
+    For each www.google.com pageload, the number of extensions that create
+    script tags to add to the page.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.DocumentWrite">
+  <summary>
+    For each www.google.com pageload, the number of extensions that use
+    document.write.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.InnerHtml">
+  <summary>
+    For each www.google.com pageload, the number of extensions that set
+    innerHTML.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.InvokedDomMethod">
+  <summary>
+    For each www.google.com pageload, the number of extensions that invoke DOM
+    methods.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.ModifiedDom">
+  <summary>
+    For each www.google.com pageload, the number of extensions that set the
+    value of DOM properties via assignments.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.Google.ReadDom">
+  <summary>
+    For each www.google.com pageload, the number of extensions that read from
+    the DOM.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.InnerHtml">
+  <summary>
+    For each pageload, the number of extensions that set innerHTML.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.InvokedDomMethod">
+  <summary>
+    For each pageload, the number of extensions that invoke DOM methods.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.ModifiedDom">
+  <summary>
+    For each pageload, the number of extensions that set the value of DOM
+    properties via assignments.
+  </summary>
+</histogram>
+
+<histogram name="ExtensionActivity.ReadDom">
+  <summary>
+    For each pageload, the number of extensions that read from the DOM.
+  </summary>
+</histogram>
+
 <histogram name="ExtensionBlacklist.BlacklistInstalled"
     enum="ExtensionLocation">
   <summary>
@@ -5652,6 +5871,13 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Media.LocalRendererSinkStates" enum="LocalRendererSinkStates">
+  <summary>
+    State of the WebRtc local renderer, sampled once during the lifetime of a
+    local renderer.
+  </summary>
+</histogram>
+
 <histogram name="Media.MSE.AudioCodec" enum="MSECodec">
   <summary>
     Audio codec used in Media Source Extensions playback. Set when AddId() is
@@ -5855,6 +6081,10 @@ other types of suffix sets.
     Time needed to buffer A/V data after an underrun for the YouTube
     application.
   </summary>
+</histogram>
+
+<histogram name="MediaGalleries.Counts" enum="MediaGalleriesUsageType">
+  <summary>Various usage counts for media galleries.</summary>
 </histogram>
 
 <histogram name="Memory.BackingStore">
@@ -6714,7 +6944,82 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.DailyContentLength" units="KB">
+  <summary>
+    The total content size in KB of all HTTP/HTTPS response bodies in the
+    previous calendar day. The metric is reported when the first response in the
+    current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentLength_DataReductionProxyEnabled" units="KB">
+  <summary>
+    The total content size in KB of all HTTP/HTTPS response bodies in the
+    previous calendar day while the data reduction proxy setting was enabled.
+    The metric is reported when the first response in the current day is
+    received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentLength_ViaDataReductionProxy" units="KB">
+  <summary>
+    The total content size in KB of all HTTP/HTTPS response bodies in the
+    previous calendar day via the data reduction proxy. The metric is reported
+    when the first response in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_DataReductionProxyEnabled"
+    units="Percent">
+  <summary>
+    The percentage of total HTTP/HTTPS response body size while the data
+    reduction proxy is enabled to total HTTP/HTTPS response body size in the
+    previous calendar day. The metric is reported when the first response in the
+    current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentPercent_ViaDataReductionProxy" units="Percent">
+  <summary>
+    The percentage of total HTTP/HTTPS response body size via the data reduction
+    proxy to total HTTP/HTTPS response body size in the previous calendar day.
+    The metric is reported when the first response in the current day is
+    received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentSavingPercent" units="Percent">
+  <summary>
+    The percentage of data saving in the previous calendar day. A negative
+    saving will be shown as zero. The metric is reported when the first response
+    in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentSavingPercent_DataReductionProxyEnabled"
+    units="Percent">
+  <summary>
+    The percentage of data saving in the previous calendar day while the data
+    reduction proxy was enabled. A negative saving will be shown as zero. This
+    only counts responses while the data reduction proxy is enabled. The metric
+    is reported when the first response in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyContentSavingPercent_ViaDataReductionProxy"
+    units="Percent">
+  <summary>
+    The percentage of data saving in the previous calendar day via the data
+    reduction proxy. A negative saving will be shown as zero. This only counts
+    responses via the data reduction proxy. The metric is reported when the
+    first response in the current day is received.
+  </summary>
+</histogram>
+
 <histogram name="Net.DailyHttpContentLengthViaDataReductionProxy" units="KB">
+  <obsolete>
+    Deprecated- see Net.DailyContentLength_ViaDataReductionProxy.
+  </obsolete>
   <summary>
     Total size in KB of all response bodies in the previous calendar day that
     were received through the data reduction proxy.
@@ -6723,6 +7028,9 @@ other types of suffix sets.
 
 <histogram name="Net.DailyHttpContentLengthWithDataReductionProxyEnabled"
     units="KB">
+  <obsolete>
+    Deprecated- see Net.DailyContentLength_DataReductionProxyEnabled
+  </obsolete>
   <summary>
     Total size in KB of all response bodies in the previous calendar day that
     were received when the data reduction proxy was enabled.
@@ -6730,6 +7038,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Net.DailyHttpContentSavings" units="Percent">
+  <obsolete>
+    Deprecated- see Net.DailyContentSavingPercent.
+  </obsolete>
   <summary>
     The percentage of data saving in the previous calendar day. A negative
     saving will be shown as zero.
@@ -6738,6 +7049,9 @@ other types of suffix sets.
 
 <histogram name="Net.DailyHttpContentSavings_DataReductionProxy"
     units="Percent">
+  <obsolete>
+    Deprecated- see Net.DailyContentSavingPercent_DataReductionProxyEnabled.
+  </obsolete>
   <summary>
     The percentage of data saving in the previous calendar day when the data
     reduction proxy was enabled for at least some responses during the day. A
@@ -6746,6 +7060,9 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Net.DailyHttpOriginalContentLength" units="KB">
+  <obsolete>
+    Deprecated- see Net.DailyOriginalContentLength.
+  </obsolete>
   <summary>
     Total size in KB specified in the X-Original-Content-Length headers of all
     responses in the previous calendar day. If the header is not present in a
@@ -6754,12 +7071,49 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Net.DailyHttpReceivedContentLength" units="KB">
+  <obsolete>
+    Deprecated- see Net.DailyContentLength.
+  </obsolete>
   <summary>
     Total size in KB of all response bodies in the previous calendar day.
   </summary>
 </histogram>
 
+<histogram name="Net.DailyOriginalContentLength" units="KB">
+  <summary>
+    The total size in KB specified in the X-Original-Content-Length headers of
+    all HTTP/HTTPS response bodies in the previous calendar day. If the header
+    is not present in a response, the size of the response body is used. The
+    metric is reported when the first response in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyOriginalContentLength_DataReductionProxyEnabled"
+    units="KB">
+  <summary>
+    The total size in KB specified in the X-Original-Content-Length headers of
+    all HTTP/HTTPS response bodies in the previous calendar day while the data
+    reduction proxy is enabled. If the header is not present in a response, the
+    size of the response body is used. The metric is reported when the first
+    response in the current day is received.
+  </summary>
+</histogram>
+
+<histogram name="Net.DailyOriginalContentLength_ViaDataReductionProxy"
+    units="KB">
+  <summary>
+    The total size in KB specified in the X-Original-Content-Length headers of
+    all HTTP/HTTPS response bodies in the previous calendar day via the data
+    reduction proxy. If the header is not present in a response, the size of the
+    response body is used. The metric is reported when the first response in the
+    current day is received.
+  </summary>
+</histogram>
+
 <histogram name="Net.DailyReceivedContentViaDataReductionProxy" units="Percent">
+  <obsolete>
+    Deprecated- see Net.DailyContentPercent_ViaDataReductionProxy.
+  </obsolete>
   <summary>
     The percentage of Net.DailyHttpContentLengthViaDataReductionProxy in
     Net.DailyHttpReceivedContentLength.
@@ -6768,6 +7122,9 @@ other types of suffix sets.
 
 <histogram name="Net.DailyReceivedContentWithDataReductionProxyEnabled"
     units="Percent">
+  <obsolete>
+    Deprecated- see Net.DailyContentPercent_DataReductionProxyEnabled.
+  </obsolete>
   <summary>
     The percentage of Net.DailyHttpContentLengthWithDataReductionProxyEnabled in
     Net.DailyHttpReceivedContentLength.
@@ -7809,6 +8166,18 @@ other types of suffix sets.
   <summary>
     The number of client hello messages sent when the crypto handshake was
     confirmed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicNumStreamFramesInPacket">
+  <summary>
+    The number of stream frames bundled within a received packet.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicNumStreamFramesPerStreamInPacket">
+  <summary>
+    The number of stream frames per stream ID within a received packet.
   </summary>
 </histogram>
 
@@ -10201,6 +10570,23 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Notifications.Actions" enum="NotificationActionType">
+  <summary>
+    The actions taken on notifications, recorded every time they happen.  This
+    histogram will record every single event that happens separately.
+  </summary>
+</histogram>
+
+<histogram name="Notifications.PerNotificationActions"
+    enum="NotificationActionType">
+  <summary>
+    The actions taken on notifications, recorded once per notification, when it
+    is closed.  This differs from the Notifications.Actions histogram in that
+    multiple events of the same type on a single notification will only record a
+    single UMA event.
+  </summary>
+</histogram>
+
 <histogram name="ntp.searchurls.total">
   <summary>TBD</summary>
 </histogram>
@@ -10221,54 +10607,60 @@ other types of suffix sets.
   <summary>The pane selected when the user switches panes in the NTP.</summary>
 </histogram>
 
-<histogram name="OAuth2Login.GetOAuth2AccessTokenFailure" enum="GaiaAuthError">
+<histogram name="OAuth2Login.GetOAuth2AccessTokenFailure"
+    enum="GoogleServiceAuthError">
   <summary>
     Failure reason of final OAuth2 access token retreival call during ChromeOS
     login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.GetOAuth2AccessTokenRetry" enum="GaiaAuthError">
+<histogram name="OAuth2Login.GetOAuth2AccessTokenRetry"
+    enum="GoogleServiceAuthError">
   <summary>
     Retry reason of failed OAuth2 access token retreival call call during
     ChromeOS login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.MergeSessionFailure" enum="GaiaAuthError">
+<histogram name="OAuth2Login.MergeSessionFailure" enum="GoogleServiceAuthError">
   <summary>
     Failure reason of final MergeSession call during ChromeOS login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.MergeSessionRetry" enum="GaiaAuthError">
+<histogram name="OAuth2Login.MergeSessionRetry" enum="GoogleServiceAuthError">
   <summary>
     Retry reason of failed MergeSession call during ChromeOS login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.OAuthLoginGaiaCredFailure" enum="GaiaAuthError">
+<histogram name="OAuth2Login.OAuthLoginGaiaCredFailure"
+    enum="GoogleServiceAuthError">
   <summary>
     Failure reason of final OAuthLogin (with SID+LSID) call during ChromeOS
     login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.OAuthLoginGaiaCredRetry" enum="GaiaAuthError">
+<histogram name="OAuth2Login.OAuthLoginGaiaCredRetry"
+    enum="GoogleServiceAuthError">
   <summary>
     Retry reason of failed OAuthLogin (with SID+LSID) call during ChromeOS
     login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.OAuthLoginUberTokenFailure" enum="GaiaAuthError">
+<histogram name="OAuth2Login.OAuthLoginUberTokenFailure"
+    enum="GoogleServiceAuthError">
   <summary>
     Failure reason of final OAuthLogin (with uber token) call during ChromeOS
     login.
   </summary>
 </histogram>
 
-<histogram name="OAuth2Login.OAuthLoginUberTokenRetry" enum="GaiaAuthError">
+<histogram name="OAuth2Login.OAuthLoginUberTokenRetry"
+    enum="GoogleServiceAuthError">
   <summary>
     Retry reason of failed OAuthLogin (with uber token) call during ChromeOS
     login.
@@ -12777,6 +13169,39 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Profile.SupervisedProfileCreateError"
+    enum="GoogleServiceAuthError">
+  <summary>
+    The error code generated in the final step (registration step) of creating a
+    new supervised profile.
+  </summary>
+</histogram>
+
+<histogram name="Profile.SupervisedProfileImportError"
+    enum="GoogleServiceAuthError">
+  <summary>
+    The error code generated in the final step (registration step) of importing
+    a supervised profile.
+  </summary>
+</histogram>
+
+<histogram name="Profile.SupervisedProfileTotalCreateTime" units="milliseconds">
+  <summary>
+    Time elapsed from when the handler received the message that a user clicked
+    'Create' to create a new supervised user profile until the registration ends
+    either successfully or with a failure (both recorded in
+    Profile.SupervisedProfileCreateResult).
+  </summary>
+</histogram>
+
+<histogram name="Profile.SupervisedProfileTotalImportTime" units="milliseconds">
+  <summary>
+    Time elapsed from when the handler received the message that a user clicked
+    'Import supervised user' until the registration ends either successfully or
+    with a failure (both recorded in Profile.SupervisedProfileImportResult).
+  </summary>
+</histogram>
+
 <histogram name="ProfileReset.SendFeedback" enum="Boolean">
   <summary>
     Signifies if the user selected &quot;Send feedback&quot; checkbox in the
@@ -15089,6 +15514,14 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.App.WriteResult" enum="SimpleCacheWriteResult">
+  <obsolete>
+    Replaced 2013/09/03 by WriteResult2, which adds &quot;fast empty
+    return&quot;, which previously showed up as &quot;success&quot;.
+  </obsolete>
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.App.WriteResult2" enum="SimpleCacheWriteResult">
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
@@ -15780,6 +16213,14 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="SimpleCache.Http.WriteResult" enum="SimpleCacheWriteResult">
+  <obsolete>
+    Replaced 2013/09/03 by WriteResult2, which adds &quot;fast empty
+    return&quot;, which previously showed up as &quot;success&quot;.
+  </obsolete>
+  <summary>The outcome of Entry::WriteData in the simple cache.</summary>
+</histogram>
+
+<histogram name="SimpleCache.Http.WriteResult2" enum="SimpleCacheWriteResult">
   <summary>The outcome of Entry::WriteData in the simple cache.</summary>
 </histogram>
 
@@ -21458,22 +21899,6 @@ other types of suffix sets.
   </int>
 </enum>
 
-<enum name="GaiaAuthError" type="int">
-  <summary>Google service authentication error cause.</summary>
-  <int value="0" label="NONE"/>
-  <int value="1" label="INVALID_GAIA_CREDENTIALS"/>
-  <int value="2" label="USER_NOT_SIGNED_UP"/>
-  <int value="3" label="CONNECTION_FAILED"/>
-  <int value="4" label="CAPTCHA_REQUIRED"/>
-  <int value="5" label="ACCOUNT_DELETED"/>
-  <int value="6" label="ACCOUNT_DISABLED"/>
-  <int value="7" label="SERVICE_UNAVAILABLE"/>
-  <int value="8" label="TWO_FACTOR"/>
-  <int value="9" label="REQUEST_CANCELED"/>
-  <int value="10" label="HOSTED_NOT_ALLOWED"/>
-  <int value="11" label="NUM_STATES"/>
-</enum>
-
 <enum name="GaiaSessionRestoreOutcome" type="int">
   <int value="0" label="UNDEFINED"/>
   <int value="1" label="SUCCESS"/>
@@ -22550,6 +22975,11 @@ other types of suffix sets.
   <int value="9" label="PRERENDER_LOAD">Speculative prerendering of a page</int>
 </enum>
 
+<enum name="LocalRendererSinkStates" type="int">
+  <int value="0" label="SinkStarted"/>
+  <int value="1" label="SinkNeverStarted"/>
+</enum>
+
 <enum name="LoginFailureReason" type="int">
   <int value="0" label="NONE">None</int>
   <int value="1" label="COULD_NOT_MOUNT_CRYPTOHOME">
@@ -23117,9 +23547,21 @@ other types of suffix sets.
   <int value="37" label="WTV (Windows Television)"/>
 </enum>
 
+<enum name="MediaGalleriesUsageType" type="int">
+  <int value="0" label="Gallery added from dialog"/>
+  <int value="1" label="Gallery permission added from dialog"/>
+  <int value="2" label="Gallery permission removed from dialog"/>
+  <int value="3" label="GetMediaFileSystems API invocations"/>
+  <int value="4" label="Profiles With API Usage"/>
+  <int value="5" label="Dialog shown"/>
+  <int value="6" label="Gallery added from WebUI"/>
+  <int value="7" label="Gallery removed from WebUI"/>
+</enum>
+
 <enum name="MediaKeyError" type="int">
   <int value="1" label="kUnknownError"/>
   <int value="2" label="kClientError"/>
+  <int value="4" label="kOutputError"/>
 </enum>
 
 <enum name="MediaKeyException" type="int">
@@ -23627,6 +24069,17 @@ other types of suffix sets.
   <int value="4" label="User dismissed the promo"/>
 </enum>
 
+<enum name="NotificationActionType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Notification added"/>
+  <int value="2" label="Notificaiton updated"/>
+  <int value="3" label="Notification clicked"/>
+  <int value="4" label="Notification button clicked"/>
+  <int value="5" label="Notification displayed"/>
+  <int value="6" label="Notification closed by user"/>
+  <int value="7" label="Notification closed by system"/>
+</enum>
+
 <enum name="NtpFollowAction" type="int">
   <int value="0" label="PAGE_TRANSITION_LINK"/>
   <int value="1" label="PAGE_TRANSITION_TYPED"/>
@@ -23918,6 +24371,10 @@ other types of suffix sets.
 </enum>
 
 <enum name="ParsedCookieStatus" type="int">
+  <obsolete>
+    Deprecated as of 9/2013. Experiment to measure control characters in cookies
+    is finished.
+  </obsolete>
   <int value="0" label="All cookie values valid and without control chars"/>
   <int value="1" label="Cookie contains control chars"/>
   <int value="2" label="Cookie is invalid"/>
@@ -25036,6 +25493,7 @@ other types of suffix sets.
   <int value="2" label="Over Max Size"/>
   <int value="3" label="Bad State"/>
   <int value="4" label="Synchronous Write Failure"/>
+  <int value="5" label="Fast Empty Return (Success)"/>
 </enum>
 
 <enum name="SimpleIndexState" type="int">

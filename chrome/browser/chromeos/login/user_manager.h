@@ -93,6 +93,9 @@ class UserManager {
   // Registers user manager preferences.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
+  // Returns true if multiple profiles support is allowed.
+  static bool IsMultipleProfilesAllowed();
+
   virtual ~UserManager();
 
   virtual UserImageManager* GetUserImageManager() = 0;
@@ -210,6 +213,11 @@ class UserManager {
   // Ignored If there is no such user.
   virtual void SaveUserDisplayName(const std::string& username,
                                    const string16& display_name) = 0;
+
+  // Updates data upon User Account download.
+  virtual void UpdateUserAccountData(const std::string& username,
+                                     const string16& display_name,
+                                     const std::string& locale) = 0;
 
   // Returns the display name for user |username| if it is known (was
   // previously set by a |SaveUserDisplayName| call).

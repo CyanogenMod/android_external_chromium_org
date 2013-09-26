@@ -493,7 +493,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
       var managerPassword = selectedPod.passwordElement.value;
       if (managerPassword.empty)
         return;
-
+      if (this.disabled)
+        return;
       this.disabled = true;
       this.context_.managerId = managerId;
       this.context_.managerDisplayId = managerDisplayId;
@@ -517,6 +518,8 @@ login.createScreen('LocallyManagedUserCreationScreen',
             loadTimeData.getString('createManagedUserPasswordMismatchError'));
         return;
       }
+      if (this.disabled)
+        return;
       this.disabled = true;
       this.context_.managedName = userName;
       chrome.send('specifyLocallyManagedUserCreationFlowUserData',
@@ -577,6 +580,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
             12, 4);
         this.setButtonDisabledStatus('next', true);
       }
+      this.disabled = false;
     },
 
     /**
@@ -669,6 +673,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
     setVisiblePage_: function(visiblePage) {
       this.disabled = false;
       this.updateText_();
+      $('bubble').hide();
       var pageNames = ['intro',
                        'manager',
                        'username',
@@ -703,6 +708,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       this.currentPage_ = visiblePage;
 
       if (visiblePage == 'manager' || visiblePage == 'intro') {
+        $('managed-user-creation-password').classList.remove('password-error');
         this.managerList_.selectPod(null);
         if (this.managerList_.pods.length == 1)
           this.managerList_.selectPod(this.managerList_.pods[0]);

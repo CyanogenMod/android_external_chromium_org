@@ -8,12 +8,19 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/time/time.h"
 #include "ui/events/event_handler.h"
 
 namespace aura {
+
 class Window;
 class RootWindow;
+
+namespace client {
+class CursorClient;
 }
+
+}  // namespace aura
 
 namespace ui {
 class LocatedEvent;
@@ -50,6 +57,9 @@ class WindowOverview : public ui::EventHandler {
   // Dispatched when the list of windows has changed.
   void OnWindowsChanged();
 
+  // Moves the overview to only |root_window|.
+  void MoveToSingleRootWindow(aura::RootWindow* root_window);
+
   // ui::EventHandler:
   virtual void OnEvent(ui::Event* event) OVERRIDE;
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -69,7 +79,7 @@ class WindowOverview : public ui::EventHandler {
   void PositionWindowsOnRoot(aura::RootWindow* root_window,
                              const std::vector<WindowSelectorItem*>& windows);
 
-  void InitializeSelectionWidget();
+  void InitializeSelectionWidget(aura::RootWindow* root_window);
 
   // Updates the selection widget's location to the currently selected window.
   // If |animate| the transition to the new location is animated.
@@ -90,6 +100,12 @@ class WindowOverview : public ui::EventHandler {
   // display. Otherwise, all windows are in a single overview on
   // |single_root_window_|.
   aura::RootWindow* single_root_window_;
+
+  // The time when overview was started.
+  base::Time overview_start_time_;
+
+  // The cursor client used to lock the current cursor during overview.
+  aura::client::CursorClient* cursor_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowOverview);
 };

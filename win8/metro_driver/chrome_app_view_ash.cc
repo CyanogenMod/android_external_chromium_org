@@ -21,7 +21,7 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
-#include "ui/base/gestures/gesture_sequence.h"
+#include "ui/events/gestures/gesture_sequence.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/file_picker_ash.h"
 #include "win8/metro_driver/metro_driver.h"
@@ -303,6 +303,26 @@ uint32 GetKeyboardEventFlags() {
   if (base::win::IsAltPressed())
     flags |= ui::EF_ALT_DOWN;
   return flags;
+}
+
+bool LaunchChromeBrowserProcess (const wchar_t* additional_parameters) {
+  DVLOG(1) << "Launching chrome server";
+  base::FilePath chrome_exe_path;
+
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe_path))
+    return false;
+
+  string16 parameters = L"--silent-launch --viewer-connect ";
+  if (additional_parameters)
+    parameters += additional_parameters;
+
+  SHELLEXECUTEINFO sei = { sizeof(sei) };
+  sei.nShow = SW_SHOWNORMAL;
+  sei.lpFile = chrome_exe_path.value().c_str();
+  sei.lpDirectory = L"";
+  sei.lpParameters = parameters.c_str();
+  ::ShellExecuteEx(&sei);
+  return true;
 }
 
 }  // namespace
@@ -638,10 +658,14 @@ HRESULT ChromeAppViewAsh::OnActivate(
 
   winapp::Activation::ActivationKind activation_kind;
   CheckHR(args->get_Kind(&activation_kind));
+  DVLOG(1) << "Activation kind: " << activation_kind;
+
   if (activation_kind == winapp::Activation::ActivationKind_Search)
     HandleSearchRequest(args);
   else if (activation_kind == winapp::Activation::ActivationKind_Protocol)
     HandleProtocolRequest(args);
+  else
+    LaunchChromeBrowserProcess(NULL);
   // We call ICoreWindow::Activate after the handling for the search/protocol
   // requests because Chrome can be launched to handle a search request which
   // in turn launches the chrome browser process in desktop mode via
@@ -872,9 +896,6 @@ HRESULT ChromeAppViewAsh::OnWindowActivated(
   HRESULT hr = args->get_WindowActivationState(&state);
   if (FAILED(hr))
     return hr;
-  DVLOG(1) << "Window activation state: "  << state;
-  ui_channel_->Send(new MetroViewerHostMsg_WindowActivated(
-      state != winui::Core::CoreWindowActivationState_Deactivated));
   return S_OK;
 }
 
@@ -886,18 +907,7 @@ HRESULT ChromeAppViewAsh::HandleSearchRequest(
 
   if (!ui_channel_) {
     DVLOG(1) << "Launched to handle search request";
-    base::FilePath chrome_exe_path;
-
-    if (!PathService::Get(base::FILE_EXE, &chrome_exe_path))
-      return E_FAIL;
-
-    SHELLEXECUTEINFO sei = { sizeof(sei) };
-    sei.nShow = SW_SHOWNORMAL;
-    sei.lpFile = chrome_exe_path.value().c_str();
-    sei.lpDirectory = L"";
-    sei.lpParameters =
-        L"--silent-launch --viewer-connection=viewer --windows8-search";
-    ::ShellExecuteEx(&sei);
+    LaunchChromeBrowserProcess(L"--windows8-search");
   }
 
   mswrw::HString search_string;

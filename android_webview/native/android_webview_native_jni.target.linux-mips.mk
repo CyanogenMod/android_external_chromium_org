@@ -16,7 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "android_webview_native_webview_native_gyp_android_webview_native_jni_target_generate_jni_headers":
-# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/android_webview/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../java/src/org/chromium/android_webview/AndroidProtocolHandler.java', '../java/src/org/chromium/android_webview/AwAutofillManagerDelegate.java', '../java/src/org/chromium/android_webview/AwContents.java', '../java/src/org/chromium/android_webview/AwContentsClientBridge.java', '../java/src/org/chromium/android_webview/AwContentsIoThreadClient.java', '../java/src/org/chromium/android_webview/AwCookieManager.java', '../java/src/org/chromium/android_webview/AwFormDatabase.java', '../java/src/org/chromium/android_webview/AwHttpAuthHandler.java', '../java/src/org/chromium/android_webview/AwPicture.java', '../java/src/org/chromium/android_webview/AwQuotaManagerBridge.java', '../java/src/org/chromium/android_webview/AwResource.java', '../java/src/org/chromium/android_webview/AwSettings.java', '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java', '../java/src/org/chromium/android_webview/InterceptedRequestData.java', '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/android_webview/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../../base/android/jni_generator/jni_generator.py', '../../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/android_webview/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['../java/src/org/chromium/android_webview/AndroidProtocolHandler.java', '../java/src/org/chromium/android_webview/AwAutofillManagerDelegate.java', '../java/src/org/chromium/android_webview/AwContents.java', '../java/src/org/chromium/android_webview/AwContentsClientBridge.java', '../java/src/org/chromium/android_webview/AwContentsIoThreadClient.java', '../java/src/org/chromium/android_webview/AwCookieManager.java', '../java/src/org/chromium/android_webview/AwDevToolsServer.java', '../java/src/org/chromium/android_webview/AwFormDatabase.java', '../java/src/org/chromium/android_webview/AwHttpAuthHandler.java', '../java/src/org/chromium/android_webview/AwPicture.java', '../java/src/org/chromium/android_webview/AwQuotaManagerBridge.java', '../java/src/org/chromium/android_webview/AwResource.java', '../java/src/org/chromium/android_webview/AwSettings.java', '../java/src/org/chromium/android_webview/AwWebContentsDelegate.java', '../java/src/org/chromium/android_webview/InterceptedRequestData.java', '../java/src/org/chromium/android_webview/JavaBrowserViewRendererHelper.java'], 'action': ['../../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/android_webview/jni', '--optimize_generation', '0', '--jarjar', '../../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/android_webview/jni/AndroidProtocolHandler_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/android_webview/jni/AndroidProtocolHandler_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/android_webview/jni/AndroidProtocolHandler_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -76,6 +76,16 @@ $(gyp_shared_intermediate_dir)/android_webview/jni/AwCookieManager_jni.h: $(LOCA
 
 .PHONY: android_webview_native_android_webview_native_jni_gyp_rule_trigger
 android_webview_native_android_webview_native_jni_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/android_webview/jni/AwCookieManager_jni.h
+
+$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h: $(LOCAL_PATH)/android_webview/java/src/org/chromium/android_webview/AwDevToolsServer.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/android_webview/jni; cd $(gyp_local_path)/android_webview/native; ../../base/android/jni_generator/jni_generator.py --input_file ../java/src/org/chromium/android_webview/AwDevToolsServer.java --output_dir "$(gyp_shared_intermediate_dir)/android_webview/jni" --optimize_generation 0 --jarjar ../../android_webview/build/jarjar-rules.txt
+
+.PHONY: android_webview_native_android_webview_native_jni_gyp_rule_trigger
+android_webview_native_android_webview_native_jni_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h
 
 $(gyp_shared_intermediate_dir)/android_webview/jni/AwFormDatabase_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/android_webview/jni/AwFormDatabase_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -176,6 +186,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwContentsClientBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwContentsIoThreadClient_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwCookieManager_jni.h \
+	$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwFormDatabase_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwHttpAuthHandler_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwPicture_jni.h \
@@ -196,6 +207,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwContentsClientBridge_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwContentsIoThreadClient_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwCookieManager_jni.h \
+	$(gyp_shared_intermediate_dir)/android_webview/jni/AwDevToolsServer_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwFormDatabase_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwHttpAuthHandler_jni.h \
 	$(gyp_shared_intermediate_dir)/android_webview/jni/AwPicture_jni.h \
@@ -246,7 +258,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -325,7 +336,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

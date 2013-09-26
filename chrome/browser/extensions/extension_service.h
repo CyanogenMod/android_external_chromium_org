@@ -29,6 +29,7 @@
 #include "chrome/browser/extensions/external_provider_interface.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/menu_manager.h"
+#include "chrome/browser/extensions/pending_enables.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/extensions/update_observer.h"
@@ -137,37 +138,6 @@ class ExtensionService
       public content::NotificationObserver,
       public extensions::Blacklist::Observer {
  public:
-  // If auto-updates are turned on, default to running every 5 hours.
-  static const int kDefaultUpdateFrequencySeconds = 60 * 60 * 5;
-
-  // The name of the directory inside the profile where per-app local settings
-  // are stored.
-  static const char kLocalAppSettingsDirectoryName[];
-
-  // The name of the directory inside the profile where per-extension local
-  // settings are stored.
-  static const char kLocalExtensionSettingsDirectoryName[];
-
-  // The name of the directory inside the profile where per-app synced settings
-  // are stored.
-  static const char kSyncAppSettingsDirectoryName[];
-
-  // The name of the directory inside the profile where per-extension synced
-  // settings are stored.
-  static const char kSyncExtensionSettingsDirectoryName[];
-
-  // The name of the directory inside the profile where per-extension persistent
-  // managed settings are stored.
-  static const char kManagedSettingsDirectoryName[];
-
-  // The name of the database inside the profile where chrome-internal
-  // extension state resides.
-  static const char kStateStoreName[];
-
-  // The name of the database inside the profile where declarative extension
-  // rules are stored.
-  static const char kRulesStoreName[];
-
   // Returns the Extension of hosted or packaged apps, NULL otherwise.
   const extensions::Extension* GetInstalledApp(const GURL& url) const;
 
@@ -255,7 +225,7 @@ class ExtensionService
 
   // Getter and setter for the flag that specifies whether the extension is
   // being reloaded.
-  bool IsBeingReloaded(const std::string& extension_name) const;
+  bool IsBeingReloaded(const std::string& extension_id) const;
   void SetBeingReloaded(const std::string& extension_id, bool value);
 
   // Getter and setter for the flag that specifies if the extension has used
@@ -726,6 +696,9 @@ class ExtensionService
 
   void OnExtensionInstallPrefChanged();
 
+  // Whether the given extension has been enabled before sync has started.
+  bool IsPendingEnable(const std::string& extension_id) const;
+
   // Handles setting the extension specific values in |extension_sync_data| to
   // the current system.
   // Returns false if the changes were not completely applied and need to be
@@ -799,8 +772,7 @@ class ExtensionService
 
   // Manages the blacklisted extensions, intended as callback from
   // Blacklist::GetBlacklistedIDs.
-  void ManageBlacklist(const std::set<std::string>& old_blacklisted_ids,
-                       const std::set<std::string>& new_blacklisted_ids);
+  void ManageBlacklist(const std::set<std::string>& blacklisted_ids);
 
   // Controls if installs are delayed. See comment for
   // |installs_delayed_for_gc_|.
@@ -934,6 +906,10 @@ class ExtensionService
   // A set of the extension ids currently being reloaded.  We use this to
   // avoid showing a "new install" notice for an extension reinstall.
   std::set<std::string> extensions_being_reloaded_;
+
+  // Set of extensions/apps that have been enabled before sync has started.
+  extensions::PendingEnables pending_app_enables_;
+  extensions::PendingEnables pending_extension_enables_;
 
   scoped_ptr<ExtensionErrorUI> extension_error_ui_;
   // Sequenced task runner for extension related file operations.

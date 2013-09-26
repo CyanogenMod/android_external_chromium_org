@@ -10,7 +10,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chromeos/dbus/shill_service_client_stub.h"
+#include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/notification_service.h"
@@ -349,8 +349,7 @@ void NetworkPortalDetectorImpl::OnPortalDetectionCompleted(
   captive_portal::Result result = results.result;
   int response_code = results.response_code;
 
-  if (ShillServiceClientStub::IsStubPortalledWifiEnabled(
-          default_service_path_)) {
+  if (shill_stub_helper::IsStubPortalledWifiEnabled(default_service_path_)) {
     result = captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL;
     response_code = 200;
   }
@@ -378,7 +377,7 @@ void NetworkPortalDetectorImpl::OnPortalDetectionCompleted(
         if (state.response_code == net::HTTP_PROXY_AUTHENTICATION_REQUIRED) {
           state.status = CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED;
         } else if (default_network && (default_network->connection_state() ==
-                                       flimflam::kStatePortal)) {
+                                       shill::kStatePortal)) {
           // Take into account shill's detection results.
           state.status = CAPTIVE_PORTAL_STATUS_PORTAL;
           LOG(WARNING) << "Network " << default_network->guid() << " "

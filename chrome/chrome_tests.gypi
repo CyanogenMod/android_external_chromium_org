@@ -3,6 +3,48 @@
 # found in the LICENSE file.
 {
   'variables' : {
+    'chromedriver_unittest_sources': [
+      'test/chromedriver/capabilities_unittest.cc',
+      'test/chromedriver/chrome/chrome_finder_unittest.cc',
+      'test/chromedriver/chrome/console_logger_unittest.cc',
+      'test/chromedriver/chrome/device_manager_unittest.cc',
+      'test/chromedriver/chrome/devtools_client_impl_unittest.cc',
+      'test/chromedriver/chrome/devtools_http_client_unittest.cc',
+      'test/chromedriver/chrome/dom_tracker_unittest.cc',
+      'test/chromedriver/chrome/frame_tracker_unittest.cc',
+      'test/chromedriver/chrome/geolocation_override_manager_unittest.cc',
+      'test/chromedriver/chrome/heap_snapshot_taker_unittest.cc',
+      'test/chromedriver/chrome/javascript_dialog_manager_unittest.cc',
+      'test/chromedriver/chrome/navigation_tracker_unittest.cc',
+      'test/chromedriver/chrome/performance_logger_unittest.cc',
+      'test/chromedriver/chrome/status_unittest.cc',
+      'test/chromedriver/chrome/stub_chrome.cc',
+      'test/chromedriver/chrome/stub_chrome.h',
+      'test/chromedriver/chrome/stub_devtools_client.cc',
+      'test/chromedriver/chrome/stub_devtools_client.h',
+      'test/chromedriver/chrome/stub_web_view.cc',
+      'test/chromedriver/chrome/stub_web_view.h',
+      'test/chromedriver/chrome/web_view_impl_unittest.cc',
+      'test/chromedriver/chrome_launcher_unittest.cc',
+      'test/chromedriver/commands_unittest.cc',
+      'test/chromedriver/logging_unittest.cc',
+      'test/chromedriver/server/http_handler_unittest.cc',
+      'test/chromedriver/session_commands_unittest.cc',
+      'test/chromedriver/session_unittest.cc',
+      'test/chromedriver/util_unittest.cc',
+    ],
+    'chromedriver_test_sources': [
+      'test/chromedriver/key_converter_unittest.cc',
+      'test/chromedriver/keycode_text_conversion_unittest.cc',
+      'test/chromedriver/net/net_util_unittest.cc',
+      'test/chromedriver/net/port_server_unittest.cc',
+      'test/chromedriver/net/sync_websocket_impl_unittest.cc',
+      'test/chromedriver/net/test_http_server.cc',
+      'test/chromedriver/net/test_http_server.h',
+      'test/chromedriver/net/websocket_unittest.cc',
+      'test/chromedriver/test_util.cc',
+      'test/chromedriver/test_util.h',
+    ],
     'pyautolib_sources': [
       'app/chrome_command_ids.h',
       'app/chrome_dll_resource.h',
@@ -68,8 +110,6 @@
       'sources': [
         'test/automation/proxy_launcher.cc',
         'test/automation/proxy_launcher.h',
-        'test/reliability/automated_ui_test_base.cc',
-        'test/reliability/automated_ui_test_base.h',
         'test/ui/javascript_test_util.cc',
         'test/ui/run_all_unittests.cc',
         'test/ui/ui_perf_test.cc',
@@ -98,70 +138,6 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
-    },
-    {
-      'target_name': 'automated_ui_tests',
-      'type': 'executable',
-      'dependencies': [
-        'browser',
-        'chrome_resources.gyp:theme_resources',
-        'renderer',
-        'test_support_common',
-        'test_support_ui',
-        'test_support_ui_runner',
-        '../base/base.gyp:base',
-        '../skia/skia.gyp:skia',
-        '../third_party/libxml/libxml.gyp:libxml',
-        '../testing/gtest.gyp:gtest',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        'test/reliability/automated_ui_tests.cc',
-        'test/reliability/automated_ui_tests.h',
-      ],
-      'conditions': [
-        ['OS=="win" and buildtype=="Official"', {
-          'configurations': {
-            'Release': {
-              'msvs_settings': {
-                'VCCLCompilerTool': {
-                  'WholeProgramOptimization': 'false',
-                },
-              },
-            },
-          },
-        },],
-        ['use_x11==1', {
-          'dependencies': [
-            '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
-          ],
-        }],
-        ['OS=="win"', {
-          'dependencies': [
-            'automated_ui_tests_exe_pdb_workaround',
-          ],
-          'include_dirs': [
-            '<(DEPTH)/third_party/wtl/include',
-          ],
-          'conditions': [
-            ['win_use_allocator_shim==1', {
-              'dependencies': [
-                '<(allocator_target)',
-              ],
-            }],
-          ],
-        }],
-        ['OS=="linux" and enable_webrtc==1', {
-          'dependencies': [
-            # TODO(tommi): Figure out why the 32bit lucid builder fails to
-            # find this dependency for this target (other builders pick it up
-            # correctly).  crbug.com/231068.
-            '../third_party/libjingle/libjingle.gyp:libpeerconnection',
-          ],
-        }],
-      ],
     },
     {
       'target_name': 'interactive_ui_tests',
@@ -401,7 +377,6 @@
             '../chromeos/chromeos.gyp:chromeos',
           ],
           'sources': [
-            'browser/chromeos/input_method/keyboard_browsertest.cc',
             'browser/chromeos/input_method/textinput_browsertest.cc',
             'browser/chromeos/input_method/textinput_surroundingtext_browsertest.cc',
             'browser/chromeos/input_method/textinput_test_helper.cc',
@@ -505,7 +480,7 @@
       ],  # conditions
     },
     {
-      'target_name': 'chrome_devtools_lib',
+      'target_name': 'automation_client_lib',
       'type': 'static_library',
       'hard_dependency': 1,
       'dependencies': [
@@ -599,6 +574,8 @@
         'test/chromedriver/net/adb_client_socket.h',
         'test/chromedriver/net/net_util.cc',
         'test/chromedriver/net/net_util.h',
+        'test/chromedriver/net/port_server.cc',
+        'test/chromedriver/net/port_server.h',
         'test/chromedriver/net/sync_websocket.h',
         'test/chromedriver/net/sync_websocket_factory.cc',
         'test/chromedriver/net/sync_websocket_factory.h',
@@ -687,13 +664,12 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },
-    # This is the new ChromeDriver based on DevTools.
     {
-      'target_name': 'chromedriver2_lib',
+      'target_name': 'chromedriver_lib',
       'type': 'static_library',
       'hard_dependency': 1,
       'dependencies': [
-        'chrome_devtools_lib',
+        'automation_client_lib',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
@@ -774,27 +750,11 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },
-    # TODO(kkania): Remove this in favor of 'chromedriver' target right below.
-    {
-      'target_name': 'chromedriver2_server',
-      'type': 'executable',
-      'dependencies': [
-        'chromedriver2_lib',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        'test/chromedriver/server/chromedriver_server.cc',
-      ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
-    },
     {
       'target_name': 'chromedriver',
       'type': 'executable',
       'dependencies': [
-        'chromedriver2_lib',
+        'chromedriver_lib',
       ],
       'include_dirs': [
         '..',
@@ -806,10 +766,10 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
-      'target_name': 'chromedriver2_unittests',
+      'target_name': 'chromedriver_unittests',
       'type': 'executable',
       'dependencies': [
-        'chromedriver2_lib',
+        'chromedriver_lib',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
         '../net/net.gyp:http_server',
@@ -817,51 +777,44 @@
         '../testing/gtest.gyp:gtest',
         '../ui/ui.gyp:ui',
       ],
+      'include_dirs': [
+        '..,'
+      ],
       'sources': [
-        'test/chromedriver/capabilities_unittest.cc',
-        'test/chromedriver/chrome/chrome_finder_unittest.cc',
-        'test/chromedriver/chrome/console_logger_unittest.cc',
-        'test/chromedriver/chrome/device_manager_unittest.cc',
-        'test/chromedriver/chrome/devtools_client_impl_unittest.cc',
-        'test/chromedriver/chrome/devtools_http_client_unittest.cc',
-        'test/chromedriver/chrome/dom_tracker_unittest.cc',
-        'test/chromedriver/chrome/frame_tracker_unittest.cc',
-        'test/chromedriver/chrome/geolocation_override_manager_unittest.cc',
-        'test/chromedriver/chrome/heap_snapshot_taker_unittest.cc',
-        'test/chromedriver/chrome/javascript_dialog_manager_unittest.cc',
-        'test/chromedriver/chrome/navigation_tracker_unittest.cc',
-        'test/chromedriver/chrome/performance_logger_unittest.cc',
-        'test/chromedriver/chrome/status_unittest.cc',
-        'test/chromedriver/chrome/stub_chrome.cc',
-        'test/chromedriver/chrome/stub_chrome.h',
-        'test/chromedriver/chrome/stub_devtools_client.cc',
-        'test/chromedriver/chrome/stub_devtools_client.h',
-        'test/chromedriver/chrome/stub_web_view.cc',
-        'test/chromedriver/chrome/stub_web_view.h',
-        'test/chromedriver/chrome/web_view_impl_unittest.cc',
-        'test/chromedriver/chrome_launcher_unittest.cc',
-        'test/chromedriver/commands_unittest.cc',
-        'test/chromedriver/logging_unittest.cc',
-        'test/chromedriver/server/http_handler_unittest.cc',
-        'test/chromedriver/session_commands_unittest.cc',
-        'test/chromedriver/session_unittest.cc',
-        'test/chromedriver/util_unittest.cc',
+        '<@(chromedriver_unittest_sources)',
       ],
-      'conditions': [
-        # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
-          'dependencies': [
-            '../base/allocator/allocator.gyp:allocator',
-          ],
-        }],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    # TODO(kkania): Remove when infra no longer references this.
+    {
+      'target_name': 'chromedriver2_unittests',
+      'type': 'executable',
+      'dependencies': [
+        'chromedriver_lib',
+        '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
+        '../net/net.gyp:http_server',
+        '../net/net.gyp:net',
+        '../testing/gtest.gyp:gtest',
+        '../ui/ui.gyp:ui',
       ],
+      'include_dirs': [
+        '..,'
+      ],
+      'sources': [
+        '<@(chromedriver_unittest_sources)',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     # ChromeDriver2 tests that aren't run on the main buildbot. Available
     # as an optional test type on trybots.
     {
-      'target_name': 'chromedriver2_tests',
+      'target_name': 'chromedriver_tests',
       'type': 'executable',
       'dependencies': [
+        'chromedriver_lib',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
         '../net/net.gyp:http_server',
@@ -869,21 +822,35 @@
         '../net/net.gyp:net_test_support',
         '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
-        'chromedriver2_lib',
       ],
       'include_dirs': [
         '..,'
       ],
       'sources': [
-        'test/chromedriver/key_converter_unittest.cc',
-        'test/chromedriver/keycode_text_conversion_unittest.cc',
-        'test/chromedriver/net/net_util_unittest.cc',
-        'test/chromedriver/net/sync_websocket_impl_unittest.cc',
-        'test/chromedriver/net/test_http_server.cc',
-        'test/chromedriver/net/test_http_server.h',
-        'test/chromedriver/net/websocket_unittest.cc',
-        'test/chromedriver/test_util.cc',
-        'test/chromedriver/test_util.h',
+        '<@(chromedriver_test_sources)',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    # TODO(kkania): Remove when infra no longer references this.
+    {
+      'target_name': 'chromedriver2_tests',
+      'type': 'executable',
+      'dependencies': [
+        'chromedriver_lib',
+        '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
+        '../net/net.gyp:http_server',
+        '../net/net.gyp:net',
+        '../net/net.gyp:net_test_support',
+        '../testing/gtest.gyp:gtest',
+        '../url/url.gyp:url_lib',
+      ],
+      'include_dirs': [
+        '..,'
+      ],
+      'sources': [
+        '<@(chromedriver_test_sources)',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
@@ -949,6 +916,9 @@
         '../components/autofill/content/renderer/test_password_autofill_agent.cc',
         '../remoting/test/auth_browsertest.cc',
         '../remoting/test/launch_browsertest.cc',
+        '../remoting/test/key_code_conv.cc',
+        '../remoting/test/key_code_conv.h',
+        '../remoting/test/key_code_map.h',
         '../remoting/test/me2me_browsertest.cc',
         '../remoting/test/remote_desktop_browsertest.cc',
         '../remoting/test/remote_desktop_browsertest.h',
@@ -998,6 +968,7 @@
         'browser/chromeos/extensions/file_manager/file_browser_private_apitest.cc',
         'browser/chromeos/extensions/info_private_apitest.cc',
         'browser/chromeos/extensions/input_method_apitest_chromeos.cc',
+        'browser/chromeos/extensions/virtual_keyboard_browsertest.cc',
         'browser/chromeos/extensions/wallpaper_private_apitest.cc',
         'browser/chromeos/file_manager/desktop_notifications_browsertest.cc',
         'browser/chromeos/file_manager/drive_test_util.cc',
@@ -1043,8 +1014,6 @@
         'browser/chromeos/login/wizard_in_process_browser_test.cc',
         'browser/chromeos/login/wizard_in_process_browser_test.h',
         'browser/chromeos/memory/oom_priority_manager_browsertest.cc',
-        'browser/chromeos/policy/cros_enterprise_test_utils.cc',
-        'browser/chromeos/policy/cros_enterprise_test_utils.h',
         'browser/chromeos/policy/device_local_account_browsertest.cc',
         'browser/chromeos/policy/device_policy_cros_browser_test.cc',
         'browser/chromeos/policy/device_policy_cros_browser_test.h',
@@ -1073,6 +1042,7 @@
         'browser/errorpage_browsertest.cc',
         'browser/extensions/active_tab_apitest.cc',
         'browser/extensions/activity_log/activity_log_browsertest.cc',
+        'browser/extensions/activity_log/uma_policy_browsertest.cc',
         'browser/extensions/alert_apitest.cc',
         'browser/extensions/all_urls_apitest.cc',
         'browser/extensions/api/activity_log_private/activity_log_private_apitest.cc',
@@ -1105,6 +1075,7 @@
         'browser/extensions/api/extension_action/page_action_apitest.cc',
         'browser/extensions/api/extension_action/page_as_browser_action_apitest.cc',
         'browser/extensions/api/extension_action/script_badge_apitest.cc',
+        'browser/extensions/api/feedback_private/feedback_private_apitest.cc',
         'browser/extensions/api/file_system/file_system_apitest.cc',
         'browser/extensions/api/font_settings/font_settings_apitest.cc',
         'browser/extensions/api/history/history_apitest.cc',
@@ -1136,7 +1107,6 @@
         'browser/extensions/api/push_messaging/push_messaging_apitest.cc',
         'browser/extensions/api/push_messaging/push_messaging_canary_test.cc',
         'browser/extensions/api/push_messaging/sync_setup_helper.cc',
-        'browser/extensions/api/rtc_private/rtc_private_apitest.cc',
         'browser/extensions/api/runtime/runtime_apitest.cc',
         'browser/extensions/api/serial/serial_apitest.cc',
         'browser/extensions/api/sessions/sessions_apitest.cc',
@@ -1186,7 +1156,6 @@
         'browser/extensions/extension_apitest.cc',
         'browser/extensions/extension_apitest.h',
         'browser/extensions/extension_bindings_apitest.cc',
-        'browser/extensions/extension_blacklist_browsertest.cc',
         'browser/extensions/extension_browsertest.cc',
         'browser/extensions/extension_browsertest.h',
         'browser/extensions/extension_context_menu_browsertest.cc',
@@ -1307,8 +1276,8 @@
         'browser/printing/print_preview_dialog_controller_browsertest.cc',
         'browser/printing/printing_layout_browsertest.cc',
         'browser/process_singleton_browsertest.cc',
-        'browser/profiles/avatar_menu_model_browsertest.cc',
         'browser/profiles/profile_browsertest.cc',
+        'browser/profiles/profile_list_desktop_browsertest.cc',
         'browser/profiles/profile_manager_browsertest.cc',
         'browser/profile_resetter/profile_resetter_browsertest.cc',
         'browser/referrer_policy_browsertest.cc',
@@ -1661,7 +1630,6 @@
             ['exclude', '^browser/ui/webui/options/chromeos/'],
           ],
           'sources!': [
-            'browser/extensions/api/rtc_private/rtc_private_apitest.cc',
             'browser/extensions/api/terminal/terminal_private_apitest.cc',
             'browser/ui/ash/caps_lock_delegate_chromeos_browsertest.cc',
             'test/data/webui/certificate_viewer_dialog_test.js',
@@ -2100,71 +2068,6 @@
         }],
       ],  # conditions
     },  # target performance_browser_tests
-    {
-      # To run the tests from page_load_test.cc on Linux, we need to:
-      #
-      #   a) Run with CHROME_HEADLESS=1 to generate crash dumps.
-      #   b) Strip the binary if it's a debug build. (binary may be over 2GB)
-      'target_name': 'reliability_tests',
-      'type': 'executable',
-      'dependencies': [
-        'browser',
-        'chrome',
-        'chrome_resources.gyp:theme_resources',
-        'test_support_common',
-        'test_support_ui',
-        'test_support_ui_runner',
-        '../skia/skia.gyp:skia',
-        '../testing/gtest.gyp:gtest',
-        '../third_party/WebKit/public/blink.gyp:blink',
-      ],
-      'include_dirs': [
-        '..',
-      ],
-      'sources': [
-        'test/reliability/page_load_test.cc',
-      ],
-      'conditions': [
-        ['OS=="win" and buildtype=="Official"', {
-          'configurations': {
-            'Release': {
-              'msvs_settings': {
-                'VCCLCompilerTool': {
-                  'WholeProgramOptimization': 'false',
-                },
-              },
-            },
-          },
-        },],
-        ['OS=="win" and win_use_allocator_shim==1', {
-          'dependencies': [
-            '<(allocator_target)',
-          ],
-          'configurations': {
-            'Debug': {
-              'msvs_settings': {
-                'VCLinkerTool': {
-                  'LinkIncremental': '<(msvs_large_module_debug_link_mode)',
-                },
-              },
-            },
-          },
-        },],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        },],
-        ['OS=="linux" and enable_webrtc==1', {
-          'dependencies': [
-            # TODO(tommi): Figure out why the 32bit lucid builder fails to
-            # find this dependency for this target (other builders pick it up
-            # correctly).  crbug.com/231068.
-            '../third_party/libjingle/libjingle.gyp:libpeerconnection',
-          ],
-        }],
-      ],
-    },
     {
       'target_name': 'performance_ui_tests',
       'type': 'executable',
@@ -2664,7 +2567,7 @@
             '../base/base.gyp:test_support_perf',
             '../skia/skia.gyp:skia',
             '../testing/gtest.gyp:gtest',
-            '../webkit/support/webkit_support.gyp:glue',
+            '../webkit/glue/webkit_glue.gyp:glue',
           ],
           'sources': [
             'test/perf/perftests.cc',
@@ -2965,7 +2868,6 @@
           'suppress_wildcard': 1,
           'type': 'none',
           'dependencies': [
-            'automated_ui_tests',
             '../base/base.gyp:base_unittests',
             # browser_tests's use of subprocesses chokes gcov on 10.6?
             # Disabling for now (enabled on linux/windows below).
@@ -3010,7 +2912,6 @@
                 'gpu_tests',
                 'performance_ui_tests',
                 'pyautolib',
-                'reliability_tests',
                 'sync_integration_tests',
               ]}],
             ['OS=="mac"', {
@@ -3222,21 +3123,6 @@
     }],
     ['OS=="win"', {
       'targets' : [
-        {
-          # This target is only depended upon in Windows.
-          'target_name': 'automated_ui_tests_exe_pdb_workaround',
-          'type': 'static_library',
-          'sources': [ 'empty_pdb_workaround.cc' ],
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              # This *in the compile phase* must match the pdb name that's
-              # output by the final link. See empty_pdb_workaround.cc for
-              # more details.
-              'DebugInformationFormat': '3',
-              'ProgramDataBaseFileName': '<(PRODUCT_DIR)/automated_ui_tests.exe.pdb',
-            },
-          },
-        },
         {
           # This target is only depended upon in Windows.
           'target_name': 'browser_tests_exe_pdb_workaround',

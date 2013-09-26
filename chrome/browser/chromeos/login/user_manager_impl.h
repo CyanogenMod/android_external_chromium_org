@@ -15,6 +15,7 @@
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/multi_profile_user_controller_delegate.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_image_manager_impl.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
@@ -35,6 +36,8 @@ struct DeviceLocalAccount;
 
 namespace chromeos {
 
+class MultiProfileFirstRunNotification;
+class MultiProfileUserController;
 class RemoveUserDelegate;
 class SessionLengthLimiter;
 
@@ -43,7 +46,8 @@ class UserManagerImpl
     : public UserManager,
       public LoginUtils::Delegate,
       public content::NotificationObserver,
-      public policy::DeviceLocalAccountPolicyService::Observer {
+      public policy::DeviceLocalAccountPolicyService::Observer,
+      public MultiProfileUserControllerDelegate {
  public:
   virtual ~UserManagerImpl();
 
@@ -79,6 +83,9 @@ class UserManagerImpl
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
   virtual void SaveUserDisplayName(const std::string& username,
                                    const string16& display_name) OVERRIDE;
+  virtual void UpdateUserAccountData(const std::string& username,
+                                     const string16& display_name,
+                                     const std::string& locale) OVERRIDE;
   virtual string16 GetUserDisplayName(
       const std::string& username) const OVERRIDE;
   virtual void SaveUserDisplayEmail(const std::string& username,
@@ -151,6 +158,9 @@ class UserManagerImpl
   // policy::DeviceLocalAccountPolicyService::Observer implementation.
   virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
   virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
+
+  // Wait untill we have sufficient information on user locale and apply it.
+  void RespectLocalePreference(Profile* profile, const User* user) const;
 
  private:
   friend class UserManager;
@@ -302,6 +312,19 @@ class UserManagerImpl
   // Sends metrics in response to a regular user logging in.
   void SendRegularUserLoginMetrics(const std::string& email);
 
+  // UpdateUserAccountData() + SaveUserDisplayName() .
+  void UpdateUserAccountDataImpl(const std::string& username,
+                                 const string16& display_name,
+                                 const std::string* locale);
+
+  // Returns NULL if User is not created.
+  User* GetUserByProfile(Profile* profile) const;
+
+  Profile* GetProfileByUser(const User* user) const;
+
+  // MultiProfileUserControllerDelegate implementation:
+  virtual void OnUserNotAllowed() OVERRIDE;
+
   // Interface to the signed settings store.
   CrosSettings* cros_settings_;
 
@@ -403,6 +426,15 @@ class UserManagerImpl
 
   // Time at which this object was created.
   base::TimeTicks manager_creation_time_;
+
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      local_accounts_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      supervised_users_subscription_;
+
+  scoped_ptr<MultiProfileUserController> multi_profile_user_controller_;
+  scoped_ptr<MultiProfileFirstRunNotification>
+      multi_profile_first_run_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(UserManagerImpl);
 };

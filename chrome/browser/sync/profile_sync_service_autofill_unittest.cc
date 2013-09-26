@@ -472,12 +472,11 @@ class ProfileSyncServiceAutofillTest
      public syncer::DataTypeDebugInfoListener {
  public:
   // DataTypeDebugInfoListener implementation.
-  virtual void OnSingleDataTypeConfigureComplete(
-      const syncer::DataTypeConfigurationStats& configuration_stats) OVERRIDE {
-    association_stats_ = configuration_stats.association_stats;
-  }
-  virtual void OnConfigureComplete() OVERRIDE {
-    // Do nothing.
+  virtual void OnDataTypeConfigureComplete(
+      const std::vector<syncer::DataTypeConfigurationStats>&
+          configuration_stats) OVERRIDE {
+    ASSERT_EQ(1u, configuration_stats.size());
+    association_stats_ = configuration_stats[0].association_stats;
   }
 
  protected:
@@ -588,11 +587,10 @@ class ProfileSyncServiceAutofillTest
     EXPECT_CALL(*personal_data_manager_, IsDataLoaded()).
         WillRepeatedly(Return(true));
 
-     // We need tokens to get the tests going
-    token_service_->IssueAuthTokenForTest(
-        GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-    token_service_->IssueAuthTokenForTest(
-        GaiaConstants::kSyncService, "token");
+    // We need tokens to get the tests going
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+        ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
+    token_service_->IssueAuthTokenForTest(GaiaConstants::kSyncService, "token");
 
     sync_service_->RegisterDataTypeController(data_type_controller);
     sync_service_->Initialize();

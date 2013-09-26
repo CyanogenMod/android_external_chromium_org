@@ -18,13 +18,13 @@
 #include "ui/aura/root_window_host_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/gestures/gesture_recognizer.h"
-#include "ui/base/gestures/gesture_types.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_dispatcher.h"
+#include "ui/events/gestures/gesture_recognizer.h"
+#include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/transform.h"
@@ -46,11 +46,12 @@ class ViewProp;
 }
 
 namespace aura {
-class TestScreen;
+class MouseMovedTracker;
 class RootWindow;
 class RootWindowHost;
 class RootWindowObserver;
 class RootWindowTransformer;
+class TestScreen;
 
 // RootWindow is responsible for hosting a set of windows.
 class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
@@ -162,6 +163,9 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
 
   // Dispatches OnMouseExited to the |window| which is hiding if nessessary.
   void DispatchMouseExitToHidingWindow(Window* window);
+
+  // Dispatches a ui::ET_MOUSE_EXITED event at |point|.
+  void DispatchMouseExitAtPoint(const gfx::Point& point);
 
   // Invoked when |window|'s visibility has changed.
   void OnWindowVisibilityChanged(Window* window, bool is_visible);
@@ -298,6 +302,26 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
                        // across root windows.
   };
 
+  // TODO(sky): nuke; used for debugging 275760.
+  // Used for debugging.
+  enum MouseMovedHandlerSetReason {
+    // |mouse_moved_handler_| set during capture.
+    MOUSE_MOVED_HANDLER_SET_REASON_CAPTURE = 1,
+
+    // |mouse_moved_handler_| set from a mouse event.
+    MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED = 2,
+
+    // |mouse_moved_handler_| set from a synthesized mouse event.
+    MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED_SYNTHESIZED = 3,
+
+    // |mouse_moved_handler_| set to NULL.
+    MOUSE_MOVED_HANDLER_SET_REASON_NULL = 4,
+  };
+
+  // TODO(sky): nuke; used for debugging 275760.
+  void SetMouseMovedHandler(aura::Window* window,
+                            MouseMovedHandlerSetReason reason);
+
   // Updates the event with the appropriate transform for the device scale
   // factor. The RootWindowHostDelegate dispatches events in the physical pixel
   // coordinate. But the event processing from RootWindow onwards happen in
@@ -426,6 +450,10 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   bool draw_on_compositing_end_;
 
   bool defer_draw_scheduling_;
+
+  // TODO(sky): nuke; used for debugging 275760.
+  MouseMovedHandlerSetReason mouse_moved_handler_set_reason_;
+  scoped_ptr<MouseMovedTracker> mouse_moved_handler_tracker_;
 
   // How many move holds are outstanding. We try to defer dispatching
   // touch/mouse moves while the count is > 0.

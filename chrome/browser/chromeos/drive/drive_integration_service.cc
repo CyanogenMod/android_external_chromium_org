@@ -188,7 +188,7 @@ DriveIntegrationService::DriveIntegrationService(
   blocking_task_runner_ = blocking_pool->GetSequencedTaskRunner(
       blocking_pool->GetSequenceToken());
 
-  OAuth2TokenService* oauth_service =
+  ProfileOAuth2TokenService* oauth_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
 
   if (test_drive_service) {
@@ -239,7 +239,8 @@ DriveIntegrationService::DriveIntegrationService(
           cache_root_directory_.Append(kTemporaryFileDirectory)));
   download_handler_.reset(new DownloadHandler(file_system()));
   debug_info_collector_.reset(
-      new DebugInfoCollector(file_system(), cache_.get()));
+      new DebugInfoCollector(file_system(), cache_.get(),
+                             blocking_task_runner_.get()));
 
   if (preference_watcher) {
     preference_watcher_.reset(preference_watcher);
@@ -421,7 +422,6 @@ void DriveIntegrationService::Initialize() {
   DCHECK(enabled_);
 
   state_ = INITIALIZING;
-  drive_service_->Initialize();
 
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
@@ -440,6 +440,10 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(INITIALIZING, state_);
+
+  drive_service_->Initialize(
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
+          GetPrimaryAccountId());
 
   if (error != FILE_ERROR_OK) {
     LOG(WARNING) << "Failed to initialize: " << FileErrorToString(error);

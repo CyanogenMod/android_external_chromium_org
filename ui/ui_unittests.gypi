@@ -82,6 +82,7 @@
         '../third_party/libpng/libpng.gyp:libpng',
         '../url/url.gyp:url_lib',
         'base/strings/ui_strings.gyp:ui_strings',
+        'keycode_converter',
         'run_ui_unittests',
         'shell_dialogs',
         'ui',
@@ -155,18 +156,17 @@
         'base/dragdrop/os_exchange_data_provider_aurax11_unittest.cc',
         'base/gtk/gtk_expanded_container_unittest.cc',
         'base/gtk/gtk_im_context_util_unittest.cc',
-        'base/keycodes/usb_keycode_map_unittest.cc',
-        'base/latency_info_unittest.cc',
+        'base/keycodes/keycode_converter_unittest.cc',
         'base/models/list_model_unittest.cc',
         'base/models/list_selection_model_unittest.cc',
         'base/models/tree_node_model_unittest.cc',
-        'base/ozone/evdev/touch_event_converter_ozone_unittest.cc',
-        'base/sequential_id_generator_unittest.cc',
         'base/test/data/resource.h',
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'events/event_dispatcher_unittest.cc',
         'events/event_unittest.cc',
+        'events/latency_info_unittest.cc',
+        'events/ozone/evdev/touch_event_converter_ozone_unittest.cc',
         'gfx/blit_unittest.cc',
         'gfx/break_list_unittest.cc',
         'gfx/canvas_unittest.cc',
@@ -178,6 +178,7 @@
         'gfx/image/image_util_unittest.cc',
         'gfx/platform_font_mac_unittest.mm',
         'gfx/render_text_unittest.cc',
+        'gfx/sequential_id_generator_unittest.cc',
         'gfx/transform_util_unittest.cc',
         'gfx/utf16_indexing_unittest.cc',
         'shell_dialogs/select_file_dialog_win_unittest.cc',
@@ -239,7 +240,7 @@
         }],
         ['OS == "linux" and toolkit_views==1', {
           'sources': [
-            'base/x/events_x_unittest.cc',
+            'events/x/events_x_unittest.cc',
           ],
         }],
         ['OS != "mac" and OS != "ios"', {
@@ -310,7 +311,7 @@
         ['use_aura==1 or toolkit_views==1',  {
           'sources': [
             'base/dragdrop/os_exchange_data_unittest.cc',
-            'base/gestures/velocity_calculator_unittest.cc',
+            'events/gestures/velocity_calculator_unittest.cc',
           ],
         }, {
           'sources!': [

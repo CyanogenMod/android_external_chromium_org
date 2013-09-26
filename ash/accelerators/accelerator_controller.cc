@@ -11,11 +11,10 @@
 
 #include "ash/accelerators/accelerator_commands.h"
 #include "ash/accelerators/accelerator_table.h"
+#include "ash/accelerators/debug_commands.h"
 #include "ash/ash_switches.h"
 #include "ash/caps_lock_delegate.h"
 #include "ash/debug.h"
-#include "ash/desktop_background/desktop_background_controller.h"
-#include "ash/desktop_background/user_wallpaper_delegate.h"
 #include "ash/display/display_controller.h"
 #include "ash/display/display_manager.h"
 #include "ash/focus_cycler.h"
@@ -45,8 +44,8 @@
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/partial_screenshot_view.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/property_util.h"
 #include "ash/wm/window_cycle_controller.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "base/bind.h"
@@ -69,6 +68,7 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(OS_CHROMEOS)
+#include "ash/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
 #include "base/chromeos/chromeos_version.h"
 #endif  // defined(OS_CHROMEOS)
@@ -88,8 +88,8 @@ bool DebugShortcutsEnabled() {
 }
 
 bool OverviewEnabled() {
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAshDisableOverviewMode);
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAshEnableOverviewMode);
 }
 
 void HandleCycleBackwardMRU(const ui::Accelerator& accelerator) {
@@ -189,6 +189,18 @@ bool HandleToggleSpokenFeedback() {
   return true;
 }
 
+bool SwitchToNextUser() {
+  if (!Shell::GetInstance()->delegate()->IsMultiProfilesEnabled() ||
+      !ash::switches::ShowMultiProfileShelfMenu())
+    return false;
+  ash::SessionStateDelegate* delegate =
+      ash::Shell::GetInstance()->session_state_delegate();
+  if (delegate->NumberOfLoggedInUsers() <= 1)
+    return false;
+  delegate->SwitchActiveUserToNext();
+  return true;
+}
+
 #endif  // defined(OS_CHROMEOS)
 
 bool HandleRotatePaneFocus(Shell::Direction direction) {
@@ -267,20 +279,6 @@ bool HandleRotateScreen() {
       Shell::GetInstance()->display_manager()->GetDisplayInfo(display.id());
   Shell::GetInstance()->display_manager()->SetDisplayRotation(
       display.id(), GetNextRotation(display_info.rotation()));
-  return true;
-}
-
-bool HandleToggleDesktopBackgroundMode() {
-  DesktopBackgroundController* desktop_background_controller =
-      Shell::GetInstance()->desktop_background_controller();
-  if (desktop_background_controller->desktop_background_mode() ==
-      DesktopBackgroundController::BACKGROUND_IMAGE) {
-    desktop_background_controller->SetDesktopBackgroundSolidColorMode(
-        SK_ColorBLACK);
-  } else {
-    ash::Shell::GetInstance()->user_wallpaper_delegate()->
-        InitializeWallpaper();
-  }
   return true;
 }
 
@@ -585,6 +583,8 @@ bool AcceleratorController::PerformAction(int action,
     case SWAP_PRIMARY_DISPLAY:
       Shell::GetInstance()->display_controller()->SwapPrimaryDisplay();
       return true;
+    case SWITCH_TO_NEXT_USER:
+      return SwitchToNextUser();
     case TOGGLE_SPOKEN_FEEDBACK:
       return HandleToggleSpokenFeedback();
     case TOGGLE_WIFI:
@@ -831,7 +831,7 @@ bool AcceleratorController::PerformAction(int action,
       // http://crbug.com/135487.
       if (!window ||
           window->type() != aura::client::WINDOW_TYPE_NORMAL ||
-          wm::IsWindowFullscreen(window)) {
+          wm::GetWindowState(window)->IsFullscreen()) {
         break;
       }
 
@@ -873,7 +873,7 @@ bool AcceleratorController::PerformAction(int action,
     case ROTATE_SCREEN:
       return HandleRotateScreen();
     case TOGGLE_DESKTOP_BACKGROUND_MODE:
-      return HandleToggleDesktopBackgroundMode();
+      return debug::CycleDesktopBackgroundMode();
     case TOGGLE_ROOT_WINDOW_FULL_SCREEN:
       return HandleToggleRootWindowFullScreen();
     case DEBUG_TOGGLE_DEVICE_SCALE_FACTOR:

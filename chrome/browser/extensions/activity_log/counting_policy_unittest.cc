@@ -10,6 +10,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/simple_test_clock.h"
+#include "base/test/test_timeouts.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/extensions/activity_log/counting_policy.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -73,7 +74,7 @@ class CountingPolicyTest : public testing::Test {
   // A wrapper function for CheckReadFilteredData, so that we don't need to
   // enter empty string values for parameters we don't care about.
   void CheckReadData(
-      ActivityLogPolicy* policy,
+      ActivityLogDatabasePolicy* policy,
       const std::string& extension_id,
       int day,
       const base::Callback<void(scoped_ptr<Action::ActionVector>)>& checker) {
@@ -84,7 +85,7 @@ class CountingPolicyTest : public testing::Test {
   // A helper function to call ReadFilteredData on a policy object and wait for
   // the results to be processed.
   void CheckReadFilteredData(
-      ActivityLogPolicy* policy,
+      ActivityLogDatabasePolicy* policy,
       const std::string& extension_id,
       const Action::ActionType type,
       const std::string& api_name,
@@ -106,12 +107,12 @@ class CountingPolicyTest : public testing::Test {
                    checker,
                    base::MessageLoop::current()->QuitClosure()));
 
-    // Set up a timeout that will trigger after 8 seconds; if we haven't
-    // received any results by then assume that the test is broken.
+    // Set up a timeout for receiving results; if we haven't received anything
+    // when the timeout triggers then assume that the test is broken.
     base::CancelableClosure timeout(
         base::Bind(&CountingPolicyTest::TimeoutCallback));
     base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE, timeout.callback(), base::TimeDelta::FromSeconds(8));
+        FROM_HERE, timeout.callback(), TestTimeouts::action_timeout());
 
     // Wait for results; either the checker or the timeout callbacks should
     // cause the main loop to exit.
@@ -303,7 +304,7 @@ class CountingPolicyTest : public testing::Test {
 };
 
 TEST_F(CountingPolicyTest, Construct) {
-  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  ActivityLogDatabasePolicy* policy = new CountingPolicy(profile_.get());
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(DictionaryBuilder()
@@ -323,7 +324,7 @@ TEST_F(CountingPolicyTest, Construct) {
 }
 
 TEST_F(CountingPolicyTest, LogWithStrippedArguments) {
-  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  ActivityLogDatabasePolicy* policy = new CountingPolicy(profile_.get());
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(DictionaryBuilder()
@@ -466,7 +467,7 @@ TEST_F(CountingPolicyTest, GetOlderActions) {
 }
 
 TEST_F(CountingPolicyTest, LogAndFetchFilteredActions) {
-  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  ActivityLogDatabasePolicy* policy = new CountingPolicy(profile_.get());
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(DictionaryBuilder()
@@ -809,7 +810,7 @@ TEST_F(CountingPolicyTest, CapReturns) {
 }
 
 TEST_F(CountingPolicyTest, RemoveAllURLs) {
-  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  ActivityLogDatabasePolicy* policy = new CountingPolicy(profile_.get());
 
   // Use a mock clock to ensure that events are not recorded on the wrong day
   // when the test is run close to local midnight.
@@ -851,7 +852,7 @@ TEST_F(CountingPolicyTest, RemoveAllURLs) {
 }
 
 TEST_F(CountingPolicyTest, RemoveSpecificURLs) {
-  ActivityLogPolicy* policy = new CountingPolicy(profile_.get());
+  ActivityLogDatabasePolicy* policy = new CountingPolicy(profile_.get());
 
   // Use a mock clock to ensure that events are not recorded on the wrong day
   // when the test is run close to local midnight.

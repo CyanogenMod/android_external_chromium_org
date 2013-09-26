@@ -41,7 +41,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/extensions/extension_webkit_preferences.h"
-#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/geolocation/chrome_access_token_store.h"
 #include "chrome/browser/google/google_util.h"
@@ -126,6 +125,7 @@
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_descriptors.h"
+#include "content/public/common/url_utils.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/switches.h"
@@ -169,7 +169,7 @@
 #include "chrome/browser/chrome_browser_main_posix.h"
 #endif
 
-#if defined(OS_LINUX) || defined(OS_OPENBSD) || defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/linux_util.h"
 #include "chrome/browser/crash_handler_host_linux.h"
 #endif
@@ -790,6 +790,7 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
+    const GURL& embedder_frame_url,
     const base::DictionaryValue& extra_params) {
   Profile* profile = Profile::FromBrowserContext(
       embedder_web_contents->GetBrowserContext());
@@ -799,9 +800,16 @@ void ChromeContentBrowserClient::GuestWebContentsAttached(
     NOTREACHED();
     return;
   }
-  const GURL& url = embedder_web_contents->GetSiteInstance()->GetSiteURL();
-  const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(url);
+
+  // We usually require BrowserPlugins to be hosted by a storage isolated
+  // extension. We treat WebUI pages as a special case if they host the
+  // BrowserPlugin in a component extension iframe. In that case, we use the
+  // iframe's URL to determine the extension.
+  const GURL& embedder_site_url =
+      embedder_web_contents->GetSiteInstance()->GetSiteURL();
+  const Extension* extension = service->extensions()->GetExtensionOrAppByURL(
+      content::HasWebUIScheme(embedder_site_url) ?
+          embedder_frame_url : embedder_site_url);
   if (!extension) {
     // It's ok to return here, since we could be running a browser plugin
     // outside an extension, and don't need to attach a
@@ -1988,10 +1996,6 @@ bool ChromeContentBrowserClient::CanCreateWindow(
   if (is_guest)
     return true;
 
-  // Exempt extension processes from popup blocking.
-  if (map->process_map().Contains(render_process_id))
-    return true;
-
   HostContentSettingsMap* content_settings =
       ProfileIOData::FromResourceContext(context)->GetHostContentSettingsMap();
   BlockedWindowParams blocked_params(target_url,
@@ -2332,6 +2336,9 @@ bool ChromeContentBrowserClient::SupportsBrowserPlugin(
           switches::kEnableBrowserPluginForAllViewTypes))
     return true;
 
+  if (content::HasWebUIScheme(site_url))
+    return true;
+
   Profile* profile = Profile::FromBrowserContext(browser_context);
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
@@ -2351,7 +2358,7 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
     content::BrowserContext* browser_context,
     const GURL& url,
     bool private_api,
-    const content::SocketPermissionRequest& params) {
+    const content::SocketPermissionRequest* params) {
 #if defined(ENABLE_PLUGINS)
   Profile* profile = Profile::FromBrowserContext(browser_context);
   const ExtensionSet* extension_set = NULL;
@@ -2372,11 +2379,19 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
         extension_set) {
       const Extension* extension = extension_set->GetByID(url.host());
       if (extension) {
-        extensions::SocketPermission::CheckParam check_params(
-            params.type, params.host, params.port);
-        if (extensions::PermissionsData::CheckAPIPermissionWithParam(
-                extension, extensions::APIPermission::kSocket, &check_params)) {
-          return true;
+        if (params) {
+          extensions::SocketPermission::CheckParam check_params(
+              params->type, params->host, params->port);
+          if (extensions::PermissionsData::CheckAPIPermissionWithParam(
+                  extension, extensions::APIPermission::kSocket,
+                  &check_params)) {
+            return true;
+          }
+        } else {
+          if (extensions::PermissionsData::HasAPIPermission(
+                  extension, extensions::APIPermission::kSocket)) {
+            return true;
+          }
         }
       }
     }

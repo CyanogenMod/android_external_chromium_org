@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "content/common/media/media_player_messages_android.h"
-#include "content/renderer/media/android/renderer_demuxer_android.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
 
@@ -17,7 +16,6 @@ WebMediaPlayerProxyAndroid::WebMediaPlayerProxyAndroid(
     RenderView* render_view,
     RendererMediaPlayerManager* manager)
     : RenderViewObserver(render_view),
-      renderer_demuxer_android_(new RendererDemuxerAndroid(render_view)),
       manager_(manager) {}
 
 WebMediaPlayerProxyAndroid::~WebMediaPlayerProxyAndroid() {
@@ -33,7 +31,8 @@ bool WebMediaPlayerProxyAndroid::OnMessageReceived(const IPC::Message& msg) {
                         OnMediaPlaybackCompleted)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaBufferingUpdate,
                         OnMediaBufferingUpdate)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaSeekCompleted, OnMediaSeekCompleted)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_SeekRequest, OnSeekRequest)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_SeekCompleted, OnSeekCompleted)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaError, OnMediaError)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaVideoSizeChanged,
                         OnVideoSizeChanged)
@@ -53,12 +52,14 @@ bool WebMediaPlayerProxyAndroid::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void WebMediaPlayerProxyAndroid::Initialize(
+    MediaPlayerHostMsg_Initialize_Type type,
     int player_id,
     const GURL& url,
-    MediaPlayerHostMsg_Initialize_Type type,
-    const GURL& first_party_for_cookies) {
+    const GURL& first_party_for_cookies,
+    int demuxer_client_id) {
   Send(new MediaPlayerHostMsg_Initialize(
-      routing_id(), player_id, url, type, first_party_for_cookies));
+      routing_id(), type, player_id, url, first_party_for_cookies,
+      demuxer_client_id));
 }
 
 void WebMediaPlayerProxyAndroid::Start(int player_id) {
@@ -72,7 +73,9 @@ void WebMediaPlayerProxyAndroid::Pause(
       routing_id(), player_id, is_media_related_action));
 }
 
-void WebMediaPlayerProxyAndroid::Seek(int player_id, base::TimeDelta time) {
+void WebMediaPlayerProxyAndroid::Seek(
+    int player_id,
+    const base::TimeDelta& time) {
   Send(new MediaPlayerHostMsg_Seek(routing_id(), player_id, time));
 }
 
@@ -112,9 +115,17 @@ void WebMediaPlayerProxyAndroid::OnMediaBufferingUpdate(int player_id,
     player->OnBufferingUpdate(percent);
 }
 
-void WebMediaPlayerProxyAndroid::OnMediaSeekCompleted(
+void WebMediaPlayerProxyAndroid::OnSeekRequest(
     int player_id,
-    base::TimeDelta current_time) {
+    const base::TimeDelta& time_to_seek) {
+  WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
+  if (player)
+    player->OnSeekRequest(time_to_seek);
+}
+
+void WebMediaPlayerProxyAndroid::OnSeekCompleted(
+    int player_id,
+    const base::TimeDelta& current_time) {
   WebMediaPlayerAndroid* player = GetWebMediaPlayer(player_id);
   if (player)
     player->OnSeekComplete(current_time);
@@ -200,8 +211,10 @@ void WebMediaPlayerProxyAndroid::DidCommitCompositorFrame() {
 #endif
 
 void WebMediaPlayerProxyAndroid::InitializeCDM(int media_keys_id,
-                                               const std::vector<uint8>& uuid) {
-  Send(new MediaKeysHostMsg_InitializeCDM(routing_id(), media_keys_id, uuid));
+                                               const std::vector<uint8>& uuid,
+                                               const GURL& frame_url) {
+  Send(new MediaKeysHostMsg_InitializeCDM(
+      routing_id(), media_keys_id, uuid, frame_url));
 }
 
 void WebMediaPlayerProxyAndroid::GenerateKeyRequest(

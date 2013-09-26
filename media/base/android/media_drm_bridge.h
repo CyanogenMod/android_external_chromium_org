@@ -14,6 +14,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 #include "media/base/media_keys.h"
+#include "url/gurl.h"
+
+class GURL;
 
 namespace media {
 
@@ -29,6 +32,8 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
     SECURITY_LEVEL_3 = 3,
   };
 
+  typedef base::Callback<void(bool)> ResetCredentialsCB;
+
   virtual ~MediaDrmBridge();
 
   // Returns a MediaDrmBridge instance if |scheme_uuid| is supported, or a NULL
@@ -36,6 +41,7 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   static scoped_ptr<MediaDrmBridge> Create(
       int media_keys_id,
       const std::vector<uint8>& scheme_uuid,
+      const GURL& frame_url,
       const std::string& security_level,
       MediaPlayerManager* manager);
 
@@ -82,17 +88,32 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   // Called when error happens.
   void OnKeyError(JNIEnv* env, jobject, jstring j_session_id);
 
+  // Reset the device credentials.
+  void ResetDeviceCredentials(const ResetCredentialsCB& callback);
+
+  // Called by the java object when credential reset is completed.
+  void OnResetDeviceCredentialsCompleted(JNIEnv* env, jobject, bool success);
+
   // Helper function to determine whether a protected surface is needed for the
   // video playback.
   bool IsProtectedSurfaceRequired();
 
   int media_keys_id() const { return media_keys_id_; }
 
+  GURL frame_url() const { return frame_url_; }
+
+  static void set_can_use_media_drm(bool can_use_media_drm) {
+    can_use_media_drm_ = can_use_media_drm;
+  }
+
  private:
   static bool IsSecureDecoderRequired(SecurityLevel security_level);
 
+  static bool can_use_media_drm_;
+
   MediaDrmBridge(int media_keys_id,
                  const std::vector<uint8>& scheme_uuid,
+                 const GURL& frame_url,
                  const std::string& security_level,
                  MediaPlayerManager* manager);
 
@@ -105,6 +126,9 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   // UUID of the key system.
   std::vector<uint8> scheme_uuid_;
 
+  // media stream's frame URL.
+  const GURL frame_url_;
+
   // Java MediaDrm instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_drm_;
 
@@ -112,6 +136,8 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   MediaPlayerManager* manager_;
 
   base::Closure media_crypto_ready_cb_;
+
+  ResetCredentialsCB reset_credentials_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaDrmBridge);
 };

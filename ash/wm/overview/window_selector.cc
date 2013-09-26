@@ -12,8 +12,9 @@
 #include "ash/wm/overview/window_selector_delegate.h"
 #include "ash/wm/overview/window_selector_panels.h"
 #include "ash/wm/overview/window_selector_window.h"
-#include "ash/wm/window_settings.h"
+#include "ash/wm/window_state.h"
 #include "base/auto_reset.h"
+#include "base/metrics/histogram.h"
 #include "base/timer/timer.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
@@ -112,7 +113,7 @@ WindowSelector::WindowSelector(const WindowList& windows,
     observed_windows_.insert(windows[i]);
 
     if (windows[i]->type() == aura::client::WINDOW_TYPE_PANEL &&
-        wm::GetWindowSettings(windows[i])->panel_attached()) {
+        wm::GetWindowState(windows[i])->panel_attached()) {
       // Attached panel windows are grouped into a single overview item per
       // root window (display).
       std::vector<WindowSelectorPanels*>::iterator iter =
@@ -132,6 +133,7 @@ WindowSelector::WindowSelector(const WindowList& windows,
     }
   }
   RemoveFocusAndSetRestoreWindow();
+  UMA_HISTOGRAM_COUNTS_100("Ash.WindowSelector.Items", windows_.size());
 
   // Observe window activations and switchable containers on all root windows
   // for newly created windows during overview.
@@ -171,8 +173,18 @@ WindowSelector::~WindowSelector() {
 }
 
 void WindowSelector::Step(WindowSelector::Direction direction) {
-  DCHECK_EQ(CYCLE, mode_);
   DCHECK(!windows_.empty());
+  // Upgrade to CYCLE mode if currently in OVERVIEW mode.
+  if (mode_ != CYCLE) {
+    event_handler_.reset(new WindowSelectorEventFilter(this));
+    DCHECK(window_overview_);
+    // Set the initial selection window to animate to the new selection.
+    window_overview_->SetSelection(selected_window_);
+    window_overview_->MoveToSingleRootWindow(
+        windows_[selected_window_]->GetRootWindow());
+    mode_ = CYCLE;
+  }
+
   selected_window_ = (selected_window_ + windows_.size() +
       (direction == WindowSelector::FORWARD ? 1 : -1)) % windows_.size();
   if (window_overview_) {
@@ -290,11 +302,13 @@ void WindowSelector::RemoveFocusAndSetRestoreWindow() {
   DCHECK(!restore_focus_window_);
   restore_focus_window_ = focus_client->GetFocusedWindow();
   if (restore_focus_window_) {
-    focus_client->FocusWindow(NULL);
+    // Removing focus from the window could cause the window to be destroyed so
+    // it must be observed before removing focus.
     if (observed_windows_.find(restore_focus_window_) ==
             observed_windows_.end()) {
       restore_focus_window_->AddObserver(this);
     }
+    focus_client->FocusWindow(NULL);
   }
 }
 

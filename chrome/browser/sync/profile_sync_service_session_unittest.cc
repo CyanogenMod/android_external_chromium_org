@@ -83,11 +83,13 @@ class FakeProfileSyncService : public TestProfileSyncService {
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
       SigninManagerBase* signin,
+      ProfileOAuth2TokenService* oauth2_token_service,
       ProfileSyncService::StartBehavior behavior,
       bool synchronous_backend_initialization)
       : TestProfileSyncService(factory,
                                profile,
                                signin,
+                               oauth2_token_service,
                                behavior,
                                synchronous_backend_initialization) {}
   virtual ~FakeProfileSyncService() {}
@@ -273,12 +275,15 @@ class ProfileSyncServiceSessionTest
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile());
     signin->SetAuthenticatedUsername("test_user");
+    ProfileOAuth2TokenService* oauth2_token_service =
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
     ProfileSyncComponentsFactoryMock* factory =
         new ProfileSyncComponentsFactoryMock();
     sync_service_.reset(new FakeProfileSyncService(
         factory,
         profile(),
         signin,
+        oauth2_token_service,
         ProfileSyncService::AUTO_START,
         false));
     sync_service_->set_backend_init_callback(callback);
@@ -301,10 +306,10 @@ class ProfileSyncServiceSessionTest
     EXPECT_CALL(*factory, CreateDataTypeManager(_, _, _, _, _, _)).
         WillOnce(ReturnNewDataTypeManager());
 
-    TokenServiceFactory::GetForProfile(profile())->IssueAuthTokenForTest(
-        GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-    TokenServiceFactory::GetForProfile(profile())->IssueAuthTokenForTest(
-        GaiaConstants::kSyncService, "token");
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
+        ->UpdateCredentials("test_user", "oauth2_login_token");
+    TokenServiceFactory::GetForProfile(profile())
+        ->IssueAuthTokenForTest(GaiaConstants::kSyncService, "token");
     sync_service_->Initialize();
     base::MessageLoop::current()->Run();
     return true;

@@ -6,10 +6,10 @@
  * This class provides data access interface for dump file profiler.
  * @constructor
  */
-var Profiler = function(jsonData) {
+var Profiler = function(jsonData, template) {
   this.jsonData_ = jsonData;
   // Initialize template with templates information.
-  this.template_ = jsonData.templates['l2'];
+  this.template_ = template || jsonData.templates['l2'];
   // Initialize selected category, and nothing selected at first.
   this.selected_ = null;
 
@@ -56,6 +56,22 @@ Profiler.prototype.removeListener = function(event, callback) {
 Profiler.prototype.reparse = function() {
   this.models_ = this.parseTemplate_();
   this.emit('changed', this.models_);
+};
+
+/**
+ * Get current breakdown template.
+ * @return {Object} current breakdown template.
+ */
+Profiler.prototype.getTemplate = function() {
+  return this.template_;
+};
+
+/**
+ * Get run_id of current profiler.
+ * @return {string} run_id of current profiler.
+ */
+Profiler.prototype.getRunId = function() {
+  return this.jsonData_['run_id'];
 };
 
 /**

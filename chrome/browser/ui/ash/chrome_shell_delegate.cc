@@ -11,6 +11,7 @@
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/session_state_delegate.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
@@ -158,11 +159,12 @@ void ChromeShellDelegate::ToggleFullscreen() {
   aura::Window* window = ash::wm::GetActiveWindow();
   if (!window)
     return;
+  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
 
-  bool is_fullscreen = ash::wm::IsWindowFullscreen(window);
+  bool is_fullscreen = window_state->IsFullscreen();
 
   // Windows which cannot be maximized should not be fullscreened.
-  if (!is_fullscreen && !ash::wm::CanMaximizeWindow(window))
+  if (!is_fullscreen && !window_state->CanMaximize())
     return;
 
   Browser* browser = chrome::FindBrowserWithWindow(window);
@@ -184,7 +186,7 @@ void ChromeShellDelegate::ToggleFullscreen() {
     }
 #endif  // OS_WIN
     if (browser->is_app() && browser->app_type() != Browser::APP_TYPE_CHILD)
-      ash::wm::ToggleMaximizedWindow(window);
+      window_state->ToggleMaximized();
     else
       chrome::ToggleFullscreenMode(browser);
     return;
@@ -207,12 +209,13 @@ void ChromeShellDelegate::ToggleMaximized() {
   if (!window)
     return;
 
+  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
   // Get out of fullscreen when in fullscreen mode.
-  if (ash::wm::IsWindowFullscreen(window)) {
+  if (window_state->IsFullscreen()) {
     ToggleFullscreen();
     return;
   }
-  ash::wm::ToggleMaximizedWindow(window);
+  window_state->ToggleMaximized();
 }
 
 void ChromeShellDelegate::RestoreTab() {
@@ -275,7 +278,7 @@ aura::client::UserActionClient* ChromeShellDelegate::CreateUserActionClient() {
 }
 
 void ChromeShellDelegate::OpenFeedbackPage() {
-  chrome::OpenFeedbackDialog(GetTargetBrowser());
+  chrome::OpenFeedbackDialog(GetTargetBrowserIfAvailable());
 }
 
 void ChromeShellDelegate::RecordUserMetricsAction(
@@ -417,6 +420,14 @@ void ChromeShellDelegate::RecordUserMetricsAction(
     case ash::UMA_WINDOW_MAXIMIZE_BUTTON_SHOW_BUBBLE:
       content::RecordAction(content::UserMetricsAction("MaxButton_ShowBubble"));
       break;
+    case ash::UMA_WINDOW_OVERVIEW:
+      content::RecordAction(
+          content::UserMetricsAction("WindowSelector_Overview"));
+      break;
+    case ash::UMA_WINDOW_SELECTION:
+      content::RecordAction(
+          content::UserMetricsAction("WindowSelector_Selection"));
+      break;
   }
 }
 
@@ -438,12 +449,16 @@ string16 ChromeShellDelegate::GetProductName() const {
 }
 
 Browser* ChromeShellDelegate::GetTargetBrowser() {
-  Browser* browser = chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
+  Browser* browser = GetTargetBrowserIfAvailable();
   if (browser)
     return browser;
   return chrome::FindOrCreateTabbedBrowser(
       ProfileManager::GetDefaultProfileOrOffTheRecord(),
       chrome::HOST_DESKTOP_TYPE_ASH);
+}
+
+Browser* ChromeShellDelegate::GetTargetBrowserIfAvailable() {
+  return chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
 }
 
 keyboard::KeyboardControllerProxy*

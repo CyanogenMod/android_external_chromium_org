@@ -830,6 +830,10 @@ class AndroidCommands(object):
 
       device_hash_tuples = [h for h in device_hash_tuples if HostHas(h.path)]
 
+    if len(host_hash_tuples) > len(device_hash_tuples):
+      logging.info('%s files do not exist on the device' %
+                   (len(host_hash_tuples) - len(device_hash_tuples)))
+
     # Constructs the target device path from a given host path. Don't use when
     # only a single file is given as the base name given in device_path may
     # differ from that in host_path.
@@ -895,10 +899,8 @@ class AndroidCommands(object):
     # TODO(craigdh): Replace this educated guess with a heuristic that
     # approximates the push time for each method.
     if len(changed_files) > MAX_INDIVIDUAL_PUSHES or diff_size > 0.5 * size:
-      # We're pushing everything, remove everything first and then create it.
       self._actual_push_size += size
       if os.path.isdir(host_path):
-        self.RunShellCommand('rm -r %s' % device_path, timeout_time=2 * 60)
         self.RunShellCommand('mkdir -p %s' % device_path)
       Push(host_path, device_path)
     else:

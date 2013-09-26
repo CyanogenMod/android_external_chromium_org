@@ -35,7 +35,6 @@
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/chrome_restart_request.h"
-#include "chrome/browser/chromeos/login/language_switch_menu.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/oauth2_login_manager.h"
 #include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
@@ -106,6 +105,7 @@ class LoginUtilsImpl
         has_web_auth_cookies_(false),
         delegate_(NULL),
         should_restore_auth_session_(false),
+        exit_after_session_restore_(false),
         session_restore_strategy_(
             OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
     net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
@@ -133,10 +133,11 @@ class LoginUtilsImpl
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE;
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
 
-  // OAuth2LoginManager::Delegate overrides.
+  // OAuth2LoginManager::Observer overrides.
   virtual void OnSessionRestoreStateChanged(
       Profile* user_profile,
       OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
+  virtual void OnNewRefreshTokenAvaiable(Profile* user_profile) OVERRIDE;
   virtual void OnSessionAuthenticated(Profile* user_profile) OVERRIDE;
 
   // net::NetworkChangeNotifier::ConnectionTypeObserver overrides.
@@ -146,9 +147,6 @@ class LoginUtilsImpl
  private:
   // Restarts OAuth session authentication check.
   void KickStartAuthentication(Profile* profile);
-
-  // Check user's profile for kApplicationLocale setting.
-  void RespectLocalePreference(Profile* pref);
 
   // Callback for Profile::CREATE_STATUS_CREATED profile state.
   // Initializes basic preferences for newly created profile. Any other
@@ -187,6 +185,10 @@ class LoginUtilsImpl
   // Starts signing related services. Initiates TokenService token retrieval.
   void StartSignedInServices(Profile* profile);
 
+  // Attempts exiting browser process and esures this does not happen
+  // while we are still fetching new OAuth refresh tokens.
+  void AttemptExit(Profile* profile);
+
   UserContext user_context_;
   bool using_oauth_;
 
@@ -202,6 +204,9 @@ class LoginUtilsImpl
   // True if should restore authentication session when notified about
   // online state change.
   bool should_restore_auth_session_;
+
+  // True if we should restart chrome right after session restore.
+  bool exit_after_session_restore_;
 
   // Sesion restore strategy.
   OAuth2LoginManager::SessionRestoreStrategy session_restore_strategy_;
@@ -265,7 +270,7 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
     VLOG(1) << "Restarting to apply per-session flags...";
     DBusThreadManager::Get()->GetSessionManagerClient()->SetFlagsForUser(
         UserManager::Get()->GetActiveUser()->email(), flags);
-    chrome::AttemptExit();
+    AttemptExit(profile);
     return;
   }
 
@@ -378,10 +383,6 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
     const User* user = UserManager::Get()->FindUser(email);
     google_services_username.SetValue(user ? user->display_email() : email);
   }
-
-  // For multi-profile case don't apply profile local because it is not safe.
-  if (UserManager::Get()->GetLoggedInUsers().size() == 1)
-    RespectLocalePreference(user_profile);
 }
 
 void LoginUtilsImpl::InitSessionRestoreStrategy() {
@@ -431,11 +432,11 @@ void LoginUtilsImpl::OnProfileCreated(
   CHECK(user_profile);
 
   switch (status) {
-    case Profile::CREATE_STATUS_INITIALIZED:
-      UserProfileInitialized(user_profile);
-      break;
     case Profile::CREATE_STATUS_CREATED:
       InitProfilePreferences(user_profile, email);
+      break;
+    case Profile::CREATE_STATUS_INITIALIZED:
+      UserProfileInitialized(user_profile);
       break;
     case Profile::CREATE_STATUS_LOCAL_FAIL:
     case Profile::CREATE_STATUS_REMOTE_FAIL:
@@ -484,6 +485,7 @@ void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
           chromeos::switches::kOobeSkipPostLogin))
     return;
 
+  exit_after_session_restore_ = false;
   // Remove legacy OAuth1 token if we have one. If it's valid, we should already
   // have OAuth2 refresh token in TokenService that could be used to retrieve
   // all other tokens and user_context.
@@ -612,29 +614,6 @@ void LoginUtilsImpl::StartSignedInServices(Profile* user_profile) {
   user_context_.auth_code.clear();
 }
 
-void LoginUtilsImpl::RespectLocalePreference(Profile* profile) {
-  DCHECK(profile != NULL);
-  PrefService* prefs = profile->GetPrefs();
-  DCHECK(prefs != NULL);
-  if (g_browser_process == NULL)
-    return;
-
-  std::string pref_locale = prefs->GetString(prefs::kApplicationLocale);
-  if (pref_locale.empty())
-    pref_locale = prefs->GetString(prefs::kApplicationLocaleBackup);
-  if (pref_locale.empty())
-    pref_locale = g_browser_process->GetApplicationLocale();
-  DCHECK(!pref_locale.empty());
-  profile->ChangeAppLocale(pref_locale, Profile::APP_LOCALE_CHANGED_VIA_LOGIN);
-  // Here we don't enable keyboard layouts. Input methods are set up when
-  // the user first logs in. Then the user may customize the input methods.
-  // Hence changing input methods here, just because the user's UI language
-  // is different from the login screen UI language, is not desirable. Note
-  // that input method preferences are synced, so users can use their
-  // farovite input methods as soon as the preferences are synced.
-  LanguageSwitchMenu::SwitchLanguage(pref_locale);
-}
-
 void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
   VLOG(1) << "Completing incognito login";
 
@@ -738,28 +717,49 @@ void LoginUtilsImpl::RestoreAuthenticationSession(Profile* user_profile) {
 void LoginUtilsImpl::OnSessionRestoreStateChanged(
     Profile* user_profile,
     OAuth2LoginManager::SessionRestoreState state) {
+  User::OAuthTokenStatus user_status = User::OAUTH_TOKEN_STATUS_UNKNOWN;
   OAuth2LoginManager* login_manager =
       OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
   switch (state) {
-    case OAuth2LoginManager::SESSION_RESTORE_NOT_STARTED:
-      break;
-    case OAuth2LoginManager::SESSION_RESTORE_PREPARING:
-      break;
-    case OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS:
-      break;
     case OAuth2LoginManager::SESSION_RESTORE_DONE:
-      UserManager::Get()->SaveUserOAuthStatus(
-          UserManager::Get()->GetLoggedInUser()->email(),
-          User::OAUTH2_TOKEN_STATUS_VALID);
-      login_manager->RemoveObserver(this);
+      user_status = User::OAUTH2_TOKEN_STATUS_VALID;
       break;
     case OAuth2LoginManager::SESSION_RESTORE_FAILED:
-      UserManager::Get()->SaveUserOAuthStatus(
-          UserManager::Get()->GetLoggedInUser()->email(),
-          User::OAUTH2_TOKEN_STATUS_INVALID);
-      login_manager->RemoveObserver(this);
+      user_status = User::OAUTH2_TOKEN_STATUS_INVALID;
       break;
+    case OAuth2LoginManager::SESSION_RESTORE_NOT_STARTED:
+      return;
+    case OAuth2LoginManager::SESSION_RESTORE_PREPARING:
+      return;
+    case OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS:
+      return;
   }
+
+  // We are in one of "done" states here.
+  UserManager::Get()->SaveUserOAuthStatus(
+      UserManager::Get()->GetLoggedInUser()->email(),
+      user_status);
+  login_manager->RemoveObserver(this);
+}
+
+void LoginUtilsImpl::OnNewRefreshTokenAvaiable(Profile* user_profile) {
+  // Check if we were waiting to restart chrome.
+  if (!exit_after_session_restore_)
+    return;
+
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+  login_manager->RemoveObserver(this);
+
+  // Mark user auth token status as valid.
+  UserManager::Get()->SaveUserOAuthStatus(
+      UserManager::Get()->GetLoggedInUser()->email(),
+      User::OAUTH2_TOKEN_STATUS_VALID);
+
+  LOG(WARNING) << "Exiting after new refresh token fetched";
+  // We need to exit cleanly in this case to make sure OAuth2 RT is actually
+  // saved.
+  chrome::ExitCleanly();
 }
 
 void LoginUtilsImpl::OnSessionAuthenticated(Profile* user_profile) {
@@ -784,6 +784,29 @@ void LoginUtilsImpl::OnConnectionTypeChanged(
       RestoreAuthSession(user_profile, has_web_auth_cookies_);
     }
   }
+}
+
+void LoginUtilsImpl::AttemptExit(Profile* profile) {
+  if (session_restore_strategy_ !=
+      OAuth2LoginManager::RESTORE_FROM_COOKIE_JAR) {
+    chrome::AttemptExit();
+    return;
+  }
+
+  // We can't really quit if the session restore process that mints new
+  // refresh token is still in progress.
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(profile);
+  if (login_manager->state() !=
+          OAuth2LoginManager::SESSION_RESTORE_PREPARING &&
+      login_manager->state() !=
+          OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS) {
+    chrome::AttemptExit();
+    return;
+  }
+
+  LOG(WARNING) << "Attempting browser restart during session restore.";
+  exit_after_session_restore_ = true;
 }
 
 // static

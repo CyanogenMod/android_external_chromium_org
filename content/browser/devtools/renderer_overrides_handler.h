@@ -34,6 +34,7 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
 
   void OnClientDetached();
   void OnSwapCompositorFrame(const IPC::Message& message);
+  void OnVisibilityChanged(bool visible);
 
  private:
   void InnerSwapCompositorFrame();
@@ -53,6 +54,8 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageNavigate(
       scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> PageReload(
+      scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageGetNavigationHistory(
       scoped_refptr<DevToolsProtocol::Command> command);
   scoped_refptr<DevToolsProtocol::Response> PageNavigateToHistoryEntry(
@@ -71,6 +74,8 @@ class RendererOverridesHandler : public DevToolsProtocol::Handler {
       const cc::CompositorFrameMetadata& metadata,
       bool success,
       const SkBitmap& bitmap);
+
+  void NotifyScreencastVisibility(bool visible);
 
   // Input domain.
   scoped_refptr<DevToolsProtocol::Response> InputDispatchMouseEvent(

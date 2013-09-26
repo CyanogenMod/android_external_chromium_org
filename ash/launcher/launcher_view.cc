@@ -1196,9 +1196,9 @@ bool LauncherView::SameDragType(LauncherItemType typea,
     case TYPE_APP_SHORTCUT:
     case TYPE_BROWSER_SHORTCUT:
       return (typeb == TYPE_APP_SHORTCUT || typeb == TYPE_BROWSER_SHORTCUT);
+    case TYPE_APP_LIST:
     case TYPE_PLATFORM_APP:
     case TYPE_WINDOWED_APP:
-    case TYPE_APP_LIST:
     case TYPE_APP_PANEL:
       return typeb == typea;
     case TYPE_UNDEFINED:

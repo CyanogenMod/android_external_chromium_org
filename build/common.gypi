@@ -1134,8 +1134,8 @@
     # Contains data about the attached devices for gyp_managed_install.
     'build_device_config_path': '<(PRODUCT_DIR)/build_devices.cfg',
 
-    'sas_dll_exists': '<!(python <(DEPTH)/build/dir_exists.py <(sas_dll_path))',
-    'wix_exists': '<!(python <(DEPTH)/build/dir_exists.py <(wix_path))',
+    'sas_dll_exists': '<!(python <(DEPTH)/build/dir_exists.py "<(sas_dll_path)")',
+    'wix_exists': '<!(python <(DEPTH)/build/dir_exists.py "<(wix_path)")',
 
     'windows_sdk_default_path': '<(DEPTH)/third_party/platformsdk_win8/files',
     'directx_sdk_default_path': '<(DEPTH)/third_party/directxsdk/files',
@@ -1784,6 +1784,11 @@
         'arm_float_abi%': '',
         'arm_thumb%': 0,
       }],
+
+      # Enable brlapi by default for chromeos.
+      [ 'chromeos==1', {
+        'use_brlapi%': 1,
+      }],
     ],
 
 
@@ -1918,7 +1923,6 @@
       # Set this to use the new DX11 version of ANGLE.
       # TODO(apatrick): Remove this when the transition is complete.
       'ANGLE_DX11',
-      'WTF_VECTOR_INITIAL_SIZE=4',
     ],
     'conditions': [
       ['(OS=="mac" or OS=="ios") and asan==1', {
@@ -4618,19 +4622,15 @@
           'make_global_settings': [
             ['CC', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang)'],
             ['CXX', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
-            ['LINK', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
             ['CC.host', '$(CC)'],
             ['CXX.host', '$(CXX)'],
-            ['LINK.host', '$(LINK)'],
           ],
         }, {
           'make_global_settings': [
             ['CC', '<(make_clang_dir)/bin/clang'],
             ['CXX', '<(make_clang_dir)/bin/clang++'],
-            ['LINK', '$(CXX)'],
             ['CC.host', '$(CC)'],
             ['CXX.host', '$(CXX)'],
-            ['LINK.host', '$(LINK)'],
           ],
         }],
       ],
@@ -4641,20 +4641,16 @@
       'make_global_settings': [
         ['CC', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <(android_toolchain)/*-gcc)'],
         ['CXX', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <(android_toolchain)/*-g++)'],
-        ['LINK', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <(android_toolchain)/*-gcc)'],
         ['CC.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <!(which gcc))'],
         ['CXX.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <!(which g++))'],
-        ['LINK.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} <!(which g++))'],
       ],
     }],
     ['OS=="linux" and target_arch=="mipsel"', {
       'make_global_settings': [
         ['CC', '<(sysroot)/../bin/mipsel-linux-gnu-gcc'],
         ['CXX', '<(sysroot)/../bin/mipsel-linux-gnu-g++'],
-        ['LINK', '$(CXX)'],
         ['CC.host', '<!(which gcc)'],
         ['CXX.host', '<!(which g++)'],
-        ['LINK.host', '<!(which g++)'],
       ],
     }],
   ],

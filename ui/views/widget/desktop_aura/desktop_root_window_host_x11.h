@@ -16,8 +16,8 @@
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window_host.h"
 #include "ui/base/cursor/cursor_loader_x11.h"
-#include "ui/base/x/x11_atom_cache.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
 
@@ -106,7 +106,8 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
-      Widget::MoveLoopSource source) OVERRIDE;
+      Widget::MoveLoopSource source,
+      Widget::MoveLoopEscapeBehavior escape_behavior) OVERRIDE;
   virtual void EndMoveLoop() OVERRIDE;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual bool ShouldUseNativeFrame() OVERRIDE;
@@ -188,7 +189,7 @@ private:
 
   // X11 things
   // The display and the native X window hosting the root window.
-  Display* xdisplay_;
+  XDisplay* xdisplay_;
   ::Window xwindow_;
 
   // The native root window.

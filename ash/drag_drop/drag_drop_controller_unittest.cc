@@ -19,10 +19,10 @@
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/gestures/gesture_types.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/gestures/gesture_types.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/views/test/test_views_delegate.h"
@@ -77,7 +77,7 @@ class DragTestView : public views::View {
   virtual void WriteDragData(const gfx::Point& p,
                              OSExchangeData* data) OVERRIDE {
     data->SetString(UTF8ToUTF16("I am being dragged"));
-    gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), ui::SCALE_FACTOR_100P);
+    gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), 1.0f);
     gfx::ImageSkia image_skia(image_rep);
 
     drag_utils::SetDragImageOnDataObject(

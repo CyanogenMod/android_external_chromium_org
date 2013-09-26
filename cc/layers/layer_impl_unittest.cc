@@ -99,11 +99,9 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
       gfx::RectF(arbitrary_point_f, gfx::SizeF(1.234f, 5.678f));
   SkColor arbitrary_color = SkColorSetRGB(10, 20, 30);
   gfx::Transform arbitrary_transform;
-  arbitrary_transform.Scale3d(0.1, 0.2, 0.3);
+  arbitrary_transform.Scale3d(0.1f, 0.2f, 0.3f);
   FilterOperations arbitrary_filters;
   arbitrary_filters.Append(FilterOperation::CreateOpacityFilter(0.5f));
-  skia::RefPtr<SkImageFilter> arbitrary_filter =
-      skia::AdoptRef(new SkBlurImageFilter(SK_Scalar1, SK_Scalar1));
 
   // These properties are internal, and should not be considered "change" when
   // they are used.
@@ -117,7 +115,6 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetAnchorPointZ(arbitrary_number));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(arbitrary_filters));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(FilterOperations()));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilter(arbitrary_filter));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
       root->SetMaskLayer(LayerImpl::Create(host_impl.active_tree(), 4)));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetMasksToBounds(true));
@@ -213,18 +210,15 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       gfx::RectF(arbitrary_point_f, gfx::SizeF(1.234f, 5.678f));
   SkColor arbitrary_color = SkColorSetRGB(10, 20, 30);
   gfx::Transform arbitrary_transform;
-  arbitrary_transform.Scale3d(0.1, 0.2, 0.3);
+  arbitrary_transform.Scale3d(0.1f, 0.2f, 0.3f);
   FilterOperations arbitrary_filters;
   arbitrary_filters.Append(FilterOperation::CreateOpacityFilter(0.5f));
-  skia::RefPtr<SkImageFilter> arbitrary_filter =
-      skia::AdoptRef(new SkBlurImageFilter(SK_Scalar1, SK_Scalar1));
 
   // Related filter functions.
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilters(arbitrary_filters));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilters(FilterOperations()));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilter(arbitrary_filter));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilter(arbitrary_filter));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilters(arbitrary_filters));
 
   // Related scrolling functions.
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetMaxScrollOffset(large_vector2d));
@@ -271,7 +265,7 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   // Unrelated functions, set to the same values, no needs update.
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       root->SetAnchorPointZ(arbitrary_number));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilter(arbitrary_filter));
+  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetMasksToBounds(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetContentsOpaque(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(root->SetPosition(arbitrary_point_f));
@@ -391,6 +385,7 @@ TEST_F(LayerImplScrollTest, ScrollByWithNonZeroOffset) {
 
 class ScrollDelegateIgnore : public LayerScrollOffsetDelegate {
  public:
+  virtual void SetMaxScrollOffset(gfx::Vector2dF max_scroll_offset) OVERRIDE {}
   virtual void SetTotalScrollOffset(gfx::Vector2dF new_value) OVERRIDE {}
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE {
     return fixed_offset_;
@@ -399,6 +394,9 @@ class ScrollDelegateIgnore : public LayerScrollOffsetDelegate {
   void set_fixed_offset(gfx::Vector2dF fixed_offset) {
     fixed_offset_ = fixed_offset;
   }
+
+  virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE {}
+  virtual void SetScrollableSize(gfx::SizeF scrollable_size) OVERRIDE {}
 
  private:
   gfx::Vector2dF fixed_offset_;
@@ -441,12 +439,15 @@ TEST_F(LayerImplScrollTest, ScrollByWithIgnoringDelegate) {
 
 class ScrollDelegateAccept : public LayerScrollOffsetDelegate {
  public:
+  virtual void SetMaxScrollOffset(gfx::Vector2dF max_scroll_offset) OVERRIDE {}
   virtual void SetTotalScrollOffset(gfx::Vector2dF new_value) OVERRIDE {
     current_offset_ = new_value;
   }
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE {
     return current_offset_;
   }
+  virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE {}
+  virtual void SetScrollableSize(gfx::SizeF scrollable_size) OVERRIDE {}
 
  private:
   gfx::Vector2dF current_offset_;

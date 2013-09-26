@@ -40,7 +40,10 @@ SourceFileType GetSourceFileType(const SourceFile& file,
 const char* GetExtensionForOutputType(Target::OutputType type,
                                       Settings::TargetOS os);
 
-std::string FilePathToUTF8(const base::FilePath& path);
+std::string FilePathToUTF8(const base::FilePath::StringType& str);
+inline std::string FilePathToUTF8(const base::FilePath& path) {
+  return FilePathToUTF8(path.value());
+}
 base::FilePath UTF8ToFilePath(const base::StringPiece& sp);
 
 // Extensions -----------------------------------------------------------------
@@ -129,5 +132,10 @@ void NormalizePath(std::string* path);
 // for other systems.
 void ConvertPathToSystem(std::string* path);
 std::string PathToSystem(const std::string& path);
+
+// Takes a source-absolute path (must begin with "//") and makes it relative
+// to the given directory, which also must be source-absolute.
+std::string RebaseSourceAbsolutePath(const std::string& input,
+                                     const SourceDir& dest_dir);
 
 #endif  // TOOLS_GN_FILESYSTEM_UTILS_H_

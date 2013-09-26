@@ -17,6 +17,10 @@
 #include "ui/aura/window_tracker.h"
 
 namespace ash {
+namespace wm {
+class WindowState;
+}
+
 namespace internal {
 
 class DockedWindowLayoutManager;
@@ -157,11 +161,13 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // snapping should be used.
   SnapType GetSnapType(const gfx::Point& location) const;
 
-  // Dock when a window is at its last step in snapping sequence, undock
-  // otherwise.
-  void UpdateDockedState(bool is_docked);
+  // Docks the dragged window if |should_dock| and the window can be docked.
+  // Undocks the window if |should_dock| is false.
+  void SetDraggedWindowDocked(bool should_dock);
 
   aura::Window* window() const { return details_.window; }
+
+  wm::WindowState* window_state() { return details_.window_state; }
 
   const Details details_;
 

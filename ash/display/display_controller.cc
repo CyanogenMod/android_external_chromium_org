@@ -44,6 +44,7 @@
 #include "ash/display/output_configurator_animation.h"
 #include "chromeos/display/output_configurator.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_types.h"
 
 // Including this at the bottom to avoid other
 // potential conflict with chrome headers.
@@ -221,8 +222,8 @@ DisplayController::DisplayController()
     : primary_root_window_for_replace_(NULL),
       focus_activation_store_(new internal::FocusActivationStore()),
       mirror_window_controller_(new internal::MirrorWindowController) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
 #if defined(OS_CHROMEOS)
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switches::kAshDisableDisplayChangeLimiter) &&
       base::chromeos::IsRunningOnChromeOS())
     limiter_.reset(new DisplayChangeLimiter);
@@ -531,7 +532,7 @@ void DisplayController::EnsurePointerInDisplays() {
     const internal::DisplayInfo display_info =
         display_manager->GetDisplayInfo(display.id());
     aura::RootWindow* root_window = GetRootWindowForDisplayId(display.id());
-    if (display_info.bounds_in_pixel().Contains(
+    if (display_info.bounds_in_native().Contains(
             cursor_location_in_native_coords_for_restore_)) {
       dst_root_window = root_window;
       target_location_in_native = cursor_location_in_native_coords_for_restore_;
@@ -624,9 +625,9 @@ const gfx::Display& DisplayController::GetDisplayMatching(
 void DisplayController::OnDisplayBoundsChanged(const gfx::Display& display) {
   const internal::DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
-  DCHECK(!display_info.bounds_in_pixel().IsEmpty());
+  DCHECK(!display_info.bounds_in_native().IsEmpty());
   aura::RootWindow* root = root_windows_[display.id()];
-  root->SetHostBounds(display_info.bounds_in_pixel());
+  root->SetHostBounds(display_info.bounds_in_native());
   SetDisplayPropertiesOnHostWindow(root, display);
 }
 
@@ -641,7 +642,7 @@ void DisplayController::OnDisplayAdded(const gfx::Display& display) {
     const internal::DisplayInfo& display_info =
         GetDisplayManager()->GetDisplayInfo(display.id());
     root_windows_[display.id()]->SetHostBounds(
-        display_info.bounds_in_pixel());
+        display_info.bounds_in_native());
   } else {
     if (primary_display_id == gfx::Display::kInvalidDisplayID)
       primary_display_id = display.id();
@@ -765,10 +766,10 @@ aura::RootWindow* DisplayController::AddRootWindowForDisplay(
   static int root_window_count = 0;
   const internal::DisplayInfo& display_info =
       GetDisplayManager()->GetDisplayInfo(display.id());
-  const gfx::Rect& bounds_in_pixel = display_info.bounds_in_pixel();
-  aura::RootWindow::CreateParams params(bounds_in_pixel);
+  const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
+  aura::RootWindow::CreateParams params(bounds_in_native);
   params.host = Shell::GetInstance()->root_window_host_factory()->
-      CreateRootWindowHost(bounds_in_pixel);
+      CreateRootWindowHost(bounds_in_native);
   aura::RootWindow* root_window = new aura::RootWindow(params);
   root_window->SetName(
       base::StringPrintf("RootWindow-%d", root_window_count++));
@@ -824,7 +825,7 @@ void DisplayController::UpdateHostWindowNames() {
     std::string name =
         root_windows[i] == primary ? "aura_root_0" : "aura_root_x";
     gfx::AcceleratedWidget xwindow = root_windows[i]->GetAcceleratedWidget();
-    XStoreName(ui::GetXDisplay(), xwindow, name.c_str());
+    XStoreName(gfx::GetXDisplay(), xwindow, name.c_str());
   }
 #endif
 }

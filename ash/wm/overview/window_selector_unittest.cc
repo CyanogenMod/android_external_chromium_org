@@ -20,6 +20,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
@@ -145,6 +146,7 @@ class WindowSelectorTest : public test::AshTestBase {
 // Tests entering overview mode with two windows and selecting one.
 TEST_F(WindowSelectorTest, Basic) {
   gfx::Rect bounds(0, 0, 400, 400);
+  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
   scoped_ptr<aura::Window> window2(CreateWindow(bounds));
   scoped_ptr<aura::Window> panel1(CreatePanelWindow(bounds));
@@ -166,11 +168,18 @@ TEST_F(WindowSelectorTest, Basic) {
   // item.
   EXPECT_TRUE(WindowsOverlapping(panel1.get(), panel2.get()));
 
+  // The cursor should be locked as a pointer
+  EXPECT_EQ(ui::kCursorPointer, root_window->last_cursor().native_type());
+  EXPECT_TRUE(GetCursorClient(root_window)->IsCursorLocked());
+
   // Clicking window 1 should activate it.
   ClickWindow(window1.get());
   EXPECT_TRUE(wm::IsActiveWindow(window1.get()));
   EXPECT_FALSE(wm::IsActiveWindow(window2.get()));
   EXPECT_EQ(window1.get(), GetFocusedWindow());
+
+  // Cursor should have been unlocked.
+  EXPECT_FALSE(GetCursorClient(root_window)->IsCursorLocked());
 }
 
 // Tests entering overview mode with three windows and cycling through them.
@@ -195,6 +204,24 @@ TEST_F(WindowSelectorTest, BasicCycle) {
   EXPECT_FALSE(wm::IsActiveWindow(window2.get()));
   EXPECT_TRUE(wm::IsActiveWindow(window3.get()));
 }
+
+// Tests beginning cycling while in overview mode.
+TEST_F(WindowSelectorTest, OverviewTransitionToCycle) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  wm::ActivateWindow(window2.get());
+  wm::ActivateWindow(window1.get());
+
+  ToggleOverview();
+  Cycle(WindowSelector::FORWARD);
+  StopCycling();
+
+  EXPECT_TRUE(wm::IsActiveWindow(window2.get()));
+  EXPECT_FALSE(wm::IsActiveWindow(window1.get()));
+  EXPECT_EQ(window2.get(), GetFocusedWindow());
+}
+
 
 // Tests cycles between panel and normal windows.
 TEST_F(WindowSelectorTest, CyclePanels) {
@@ -460,6 +487,36 @@ TEST_F(WindowSelectorTest, CycleOverviewUsesCurrentDisplay) {
       ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
   EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
       ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
+}
+
+// Tests that beginning to cycle from overview mode moves windows to the
+// active display.
+TEST_F(WindowSelectorTest, MultipleDisplaysOverviewTransitionToCycle) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("400x400,400x400");
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+
+  scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 100, 100)));
+  scoped_ptr<aura::Window> window2(CreateWindow(gfx::Rect(450, 0, 100, 100)));
+  EXPECT_EQ(root_windows[0], window1->GetRootWindow());
+  EXPECT_EQ(root_windows[1], window2->GetRootWindow());
+  wm::ActivateWindow(window2.get());
+  wm::ActivateWindow(window1.get());
+
+  ToggleOverview();
+  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
+
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
+  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
+  StopCycling();
 }
 
 }  // namespace internal

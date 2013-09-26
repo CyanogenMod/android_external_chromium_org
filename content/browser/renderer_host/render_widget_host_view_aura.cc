@@ -17,9 +17,11 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
 #include "cc/resources/texture_mailbox.h"
+#include "cc/trees/layer_tree_settings.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/aura/compositor_resize_lock.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/backing_store_aura.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
@@ -59,13 +61,13 @@
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tracker.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
-#include "ui/base/gestures/gesture_recognizer.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect_conversions.h"
@@ -690,20 +692,26 @@ RenderWidgetHost* RenderWidgetHostViewAura::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewAura::WasShown() {
+  DCHECK(host_);
   if (!host_->is_hidden())
     return;
   host_->WasShown();
   if (framebuffer_holder_)
     FrameMemoryManager::GetInstance()->SetFrameVisibility(this, true);
 
-  aura::client::CursorClient* cursor_client =
-      aura::client::GetCursorClient(window_->GetRootWindow());
-  if (cursor_client)
-    NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
+  aura::RootWindow* root = window_->GetRootWindow();
+  if (root) {
+    aura::client::CursorClient* cursor_client =
+        aura::client::GetCursorClient(root);
+    if (cursor_client)
+      NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
+  }
 
   if (!current_surface_.get() && host_->is_accelerated_compositing_active() &&
       !released_front_lock_.get()) {
-    released_front_lock_ = GetCompositor()->GetCompositorLock();
+    ui::Compositor* compositor = GetCompositor();
+    if (compositor)
+      released_front_lock_ = compositor->GetCompositorLock();
   }
 
 #if defined(OS_WIN)
@@ -714,7 +722,7 @@ void RenderWidgetHostViewAura::WasShown() {
 }
 
 void RenderWidgetHostViewAura::WasHidden() {
-  if (host_->is_hidden())
+  if (!host_ || host_->is_hidden())
     return;
   host_->WasHidden();
   if (framebuffer_holder_)
@@ -961,10 +969,12 @@ bool RenderWidgetHostViewAura::IsSurfaceAvailableForCopy() const {
 
 void RenderWidgetHostViewAura::Show() {
   window_->Show();
+  WasShown();
 }
 
 void RenderWidgetHostViewAura::Hide() {
   window_->Hide();
+  WasHidden();
 }
 
 bool RenderWidgetHostViewAura::IsShowing() {
@@ -2645,32 +2655,6 @@ void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
       host_->Shutdown();
     }
   } else {
-    // Windows does not have a specific key code for AltGr and sends
-    // left-Control and right-Alt when the AltGr key is pressed. Also
-    // Windows translates AltGr modifier to Ctrl+Alt modifier. To be compatible
-    // with this behavior, we re-write keyboard event from AltGr to Alt + Ctrl
-    // key event here.
-    if (event->key_code() == ui::VKEY_ALTGR) {
-      // Synthesize Ctrl & Alt events.
-      NativeWebKeyboardEvent ctrl_webkit_event(
-          event->type(),
-          false,
-          ui::VKEY_CONTROL,
-          event->flags(),
-          ui::EventTimeForNow().InSecondsF());
-      host_->ForwardKeyboardEvent(ctrl_webkit_event);
-
-      NativeWebKeyboardEvent alt_webkit_event(
-          event->type(),
-          false,
-          ui::VKEY_MENU,
-          event->flags(),
-          ui::EventTimeForNow().InSecondsF());
-      host_->ForwardKeyboardEvent(alt_webkit_event);
-      event->SetHandled();
-      return;
-    }
-
     // We don't have to communicate with an input method here.
     if (!event->HasNativeEvent()) {
       NativeWebKeyboardEvent webkit_event(
@@ -3066,8 +3050,17 @@ void RenderWidgetHostViewAura::OnUpdateVSyncParameters(
     ui::Compositor* compositor,
     base::TimeTicks timebase,
     base::TimeDelta interval) {
-  if (IsShowing() && !last_draw_ended_.is_null())
-    host_->UpdateVSyncParameters(last_draw_ended_, interval);
+  if (IsShowing()) {
+    if (IsDeadlineSchedulingEnabled()) {
+      // The deadline scheduler has logic to stagger the draws of the
+      // Renderer and Browser built-in, so send it an accurate timebase.
+      host_->UpdateVSyncParameters(timebase, interval);
+    } else if (!last_draw_ended_.is_null()) {
+      // For the non-deadline scheduler, we send the Renderer an offset
+      // vsync timebase to avoid its draws racing the Browser's draws.
+      host_->UpdateVSyncParameters(last_draw_ended_, interval);
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3193,8 +3186,10 @@ void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
   gfx::Point local_point = screen_point;
   local_point.Offset(-screen_rect.x(), -screen_rect.y());
 
-  if (root_window->GetEventHandlerForPoint(local_point) != window_)
+  if (!root_window->HasFocus() ||
+      root_window->GetEventHandlerForPoint(local_point) != window_) {
     return;
+  }
 
   gfx::NativeCursor cursor = current_cursor_.GetNativeCursor();
   // Do not show loading cursor when the cursor is currently hidden.

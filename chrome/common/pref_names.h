@@ -288,6 +288,8 @@ extern const char kOpenNetworkConfiguration[];
 extern const char kRAConsentFirstTime[];
 extern const char kRAConsentDomains[];
 extern const char kRAConsentAlways[];
+extern const char kMultiProfileNotificationDismissed[];
+extern const char kMultiProfileUserBehavior[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -410,6 +412,8 @@ extern const char kExtensionsPref[];
 extern const char kExtensionsLastChromeVersion[];
 
 extern const char kFullscreenAllowed[];
+
+extern const char kLocalDiscoveryNotificationsEnabled[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -734,6 +738,10 @@ extern const char kAudioCaptureAllowedUrls[];
 extern const char kVideoCaptureAllowed[];
 extern const char kVideoCaptureAllowedUrls[];
 
+#if defined(OS_ANDROID)
+extern const char kProtectedMediaIdentifierEnabled[];
+#endif
+
 #if defined(OS_CHROMEOS)
 extern const char kDeviceSettingsCache[];
 extern const char kHardwareKeyboardLayout[];
@@ -756,6 +764,7 @@ extern const char kDeviceEnrollmentAutoStart[];
 extern const char kDeviceEnrollmentCanExit[];
 extern const char kUsersLRUInputMethod[];
 extern const char kEchoCheckedOffers[];
+extern const char kCachedMultiProfileUserBehavior[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -790,9 +799,10 @@ extern const char kHttpOriginalContentLength[];
 #if defined(OS_ANDROID) || defined(OS_IOS)
 extern const char kDailyHttpOriginalContentLength[];
 extern const char kDailyHttpReceivedContentLength[];
-extern const char kDailyHttpReceivedContentLengthViaDataReductionProxy[];
-extern const char
-    kDailyHttpReceivedContentLengthWithDataReductionProxyEnabled[];
+extern const char kDailyOriginalContentLengthWithDataReductionProxyEnabled[];
+extern const char kDailyContentLengthWithDataReductionProxyEnabled[];
+extern const char kDailyOriginalContentLengthViaDataReductionProxy[];
+extern const char kDailyContentLengthViaDataReductionProxy[];
 extern const char kDailyHttpContentLengthLastUpdateDate[];
 #endif
 

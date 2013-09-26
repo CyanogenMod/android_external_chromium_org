@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/win/tsf_input_scope.h"
 
 
 namespace ui {
@@ -153,8 +154,7 @@ LRESULT InputMethodIMM32::OnImeSetContext(HWND window_handle,
                                           WPARAM wparam,
                                           LPARAM lparam,
                                           BOOL* handled) {
-  active_ = (wparam == TRUE);
-  if (active_)
+  if (!!wparam)
     imm32_manager_.CreateImeWindow(window_handle);
 
   OnInputMethodChanged();
@@ -266,7 +266,9 @@ void InputMethodIMM32::UpdateIMEState() {
   // Use switch here in case we are going to add more text input types.
   // We disable input method in password field.
   const HWND window_handle = GetAttachedWindowHandle(GetTextInputClient());
-  switch (GetTextInputType()) {
+  const TextInputType text_input_type = GetTextInputType();
+  const TextInputMode text_input_mode = GetTextInputMode();
+  switch (text_input_type) {
     case ui::TEXT_INPUT_TYPE_NONE:
     case ui::TEXT_INPUT_TYPE_PASSWORD:
       imm32_manager_.DisableIME(window_handle);
@@ -278,7 +280,9 @@ void InputMethodIMM32::UpdateIMEState() {
       break;
   }
 
-  imm32_manager_.SetTextInputMode(window_handle, GetTextInputMode());
+  imm32_manager_.SetTextInputMode(window_handle, text_input_mode);
+  tsf_inputscope::SetInputScopeForTsfUnawareWindow(
+      window_handle, text_input_type, text_input_mode);
 }
 
 }  // namespace ui

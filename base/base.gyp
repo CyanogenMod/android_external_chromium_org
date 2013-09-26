@@ -77,6 +77,14 @@
             '../build/linux/system.gyp:x11',
           ],
         }],
+        ['use_aura==1 and use_x11==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:xrandr',
+          ],
+          'export_dependent_settings': [
+            '../build/linux/system.gyp:xrandr',
+          ],
+        }],
         ['OS == "android" and _toolset == "host"', {
           # Always build base as a static_library for host toolset, even if
           # we're doing a component build. Specifically, we only care about the
@@ -461,6 +469,7 @@
         'build_time_unittest.cc',
         'callback_helpers_unittest.cc',
         'callback_registry_unittest.cc',
+        'callback_registry_unittest.nc',
         'callback_unittest.cc',
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
@@ -807,6 +816,11 @@
             'debug/trace_event_win_unittest.cc',
             'time/time_win_unittest.cc',
             'win/win_util_unittest.cc',
+          ],
+        }],
+        ['use_aura==1 and use_x11==1',  {
+          'sources': [
+            'x11/edid_parser_x11_unittest.cc',
           ],
         }],
         ['use_system_nspr==1', {

@@ -9,11 +9,14 @@
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/posix/eintr_wrapper.h"
+#include "content/public/common/content_switches.h"
 #include "media/base/bitstream_buffer.h"
 
 #define NOTIFY_ERROR(x)                                            \
@@ -77,7 +80,7 @@ ExynosVideoEncodeAccelerator::MfcInputRecord::MfcInputRecord()
 }
 
 ExynosVideoEncodeAccelerator::MfcOutputRecord::MfcOutputRecord()
-    : at_device(false) {}
+    : at_device(false), address(NULL), length(0) {}
 
 ExynosVideoEncodeAccelerator::ExynosVideoEncodeAccelerator(
     media::VideoEncodeAccelerator::Client* client)
@@ -167,6 +170,9 @@ void ExynosVideoEncodeAccelerator::Initialize(
   if (output_profile >= media::H264PROFILE_MIN &&
       output_profile <= media::H264PROFILE_MAX) {
     output_format_fourcc_ = V4L2_PIX_FMT_H264;
+  } else if (output_profile >= media::VP8PROFILE_MIN &&
+             output_profile <= media::VP8PROFILE_MAX) {
+    output_format_fourcc_ = V4L2_PIX_FMT_VP8;
   } else {
     NOTIFY_ERROR(kInvalidArgumentError);
     return;
@@ -249,6 +255,9 @@ void ExynosVideoEncodeAccelerator::Initialize(
   // a UseOutputBitstreamBuffer() callback.
 
   if (!SetMfcFormats())
+    return;
+
+  if (!InitMfcControls())
     return;
 
   // VIDIOC_REQBUFS on CAPTURE queue.
@@ -364,12 +373,25 @@ void ExynosVideoEncodeAccelerator::Destroy() {
 // static
 std::vector<media::VideoEncodeAccelerator::SupportedProfile>
 ExynosVideoEncodeAccelerator::GetSupportedProfiles() {
-  std::vector<SupportedProfile> profiles(1);
-  SupportedProfile& profile = profiles[0];
+  std::vector<SupportedProfile> profiles;
+
+  SupportedProfile profile;
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(switches::kEnableWebRtcHWVp8Encoding)) {
+    profile.profile = media::VP8PROFILE_MAIN;
+    profile.max_resolution.SetSize(1920, 1088);
+    profile.max_framerate.numerator = 30;
+    profile.max_framerate.denominator = 1;
+    profiles.push_back(profile);
+  }
+
   profile.profile = media::H264PROFILE_MAIN;
   profile.max_resolution.SetSize(1920, 1088);
   profile.max_framerate.numerator = 30;
   profile.max_framerate.denominator = 1;
+  profiles.push_back(profile);
+
   return profiles;
 }
 
@@ -694,7 +716,7 @@ void ExynosVideoEncodeAccelerator::DequeueMfc() {
     memset(&dqbuf, 0, sizeof(dqbuf));
     memset(planes, 0, sizeof(planes));
     dqbuf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    dqbuf.memory   = V4L2_MEMORY_USERPTR;
+    dqbuf.memory   = V4L2_MEMORY_MMAP;
     dqbuf.m.planes = planes;
     dqbuf.length   = 1;
     if (HANDLE_EINTR(ioctl(mfc_fd_, VIDIOC_DQBUF, &dqbuf)) != 0) {
@@ -707,25 +729,39 @@ void ExynosVideoEncodeAccelerator::DequeueMfc() {
       return;
     }
     const bool key_frame = ((dqbuf.flags & V4L2_BUF_FLAG_KEYFRAME) != 0);
-    size_t output_size = dqbuf.m.planes[0].bytesused;
     MfcOutputRecord& output_record = mfc_output_buffer_map_[dqbuf.index];
     DCHECK(output_record.at_device);
     DCHECK(output_record.buffer_ref.get());
-    uint8* data =
+
+    void* output_data = output_record.address;
+    size_t output_size = dqbuf.m.planes[0].bytesused;
+    // This shouldn't happen, but just in case. We should be able to recover
+    // after next keyframe after showing some corruption.
+    DCHECK_LE(output_size, output_buffer_byte_size_);
+    if (output_size > output_buffer_byte_size_)
+      output_size = output_buffer_byte_size_;
+    uint8* target_data =
         reinterpret_cast<uint8*>(output_record.buffer_ref->shm->memory());
-    if (stream_header_size_ == 0) {
-      // Assume that the first buffer dequeued is the stream header.
-      stream_header_size_ = output_size;
-      stream_header_.reset(new uint8[stream_header_size_]);
-      memcpy(stream_header_.get(), data, stream_header_size_);
+    if (output_format_fourcc_ == V4L2_PIX_FMT_H264) {
+      if (stream_header_size_ == 0) {
+        // Assume that the first buffer dequeued is the stream header.
+        stream_header_size_ = output_size;
+        stream_header_.reset(new uint8[stream_header_size_]);
+        memcpy(stream_header_.get(), output_data, stream_header_size_);
+      }
+      if (key_frame &&
+          output_buffer_byte_size_ - stream_header_size_ >= output_size) {
+        // Insert stream header before every keyframe.
+        memcpy(target_data, stream_header_.get(), stream_header_size_);
+        memcpy(target_data + stream_header_size_, output_data, output_size);
+        output_size += stream_header_size_;
+      } else {
+        memcpy(target_data, output_data, output_size);
+      }
+    } else {
+      memcpy(target_data, output_data, output_size);
     }
-    if (key_frame &&
-        output_buffer_byte_size_ - stream_header_size_ >= output_size) {
-      // Insert stream header before every keyframe.
-      memmove(data + stream_header_size_, data, output_size);
-      memcpy(data, stream_header_.get(), stream_header_size_);
-      output_size += stream_header_size_;
-    }
+
     DVLOG(3) << "DequeueMfc(): returning "
                 "bitstream_buffer_id=" << output_record.buffer_ref->id
              << ", key_frame=" << key_frame;
@@ -875,12 +911,8 @@ bool ExynosVideoEncodeAccelerator::EnqueueMfcOutputRecord() {
   memset(qbuf_planes, 0, sizeof(qbuf_planes));
   qbuf.index                 = mfc_buffer;
   qbuf.type                  = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  qbuf.memory                = V4L2_MEMORY_USERPTR;
+  qbuf.memory                = V4L2_MEMORY_MMAP;
   qbuf.m.planes              = qbuf_planes;
-  qbuf.m.planes[0].bytesused = output_buffer->size;
-  qbuf.m.planes[0].length    = output_buffer->size;
-  qbuf.m.planes[0].m.userptr =
-      reinterpret_cast<unsigned long>(output_buffer->shm->memory());
   qbuf.length                = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_QBUF, &qbuf);
   output_record.at_device = true;
@@ -1328,7 +1360,11 @@ bool ExynosVideoEncodeAccelerator::SetMfcFormats() {
   format.fmt.pix_mp.num_planes  = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_S_FMT, &format);
 
-  struct v4l2_ext_control ctrls[7];
+  return true;
+}
+
+bool ExynosVideoEncodeAccelerator::InitMfcControls() {
+  struct v4l2_ext_control ctrls[9];
   struct v4l2_ext_controls control;
   memset(&ctrls, 0, sizeof(ctrls));
   memset(&control, 0, sizeof(control));
@@ -1355,6 +1391,12 @@ bool ExynosVideoEncodeAccelerator::SetMfcFormats() {
   // Enable macroblock-level bitrate control.
   ctrls[6].id    = V4L2_CID_MPEG_VIDEO_MB_RC_ENABLE;
   ctrls[6].value = 1;
+  // Use H.264 level 4.0 to match the supported max resolution.
+  ctrls[7].id    = V4L2_CID_MPEG_VIDEO_H264_LEVEL;
+  ctrls[7].value = V4L2_MPEG_VIDEO_H264_LEVEL_4_0;
+  // Disable periodic key frames.
+  ctrls[8].id    = V4L2_CID_MPEG_VIDEO_GOP_SIZE;
+  ctrls[8].value = 0;
   control.ctrl_class = V4L2_CTRL_CLASS_MPEG;
   control.count = arraysize(ctrls);
   control.controls = ctrls;
@@ -1407,13 +1449,33 @@ bool ExynosVideoEncodeAccelerator::CreateMfcOutputBuffers() {
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = kMfcOutputBufferCount;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_USERPTR;
+  reqbufs.memory = V4L2_MEMORY_MMAP;
   IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_REQBUFS, &reqbufs);
 
   DCHECK(mfc_output_buffer_map_.empty());
   mfc_output_buffer_map_.resize(reqbufs.count);
-  for (size_t i = 0; i < mfc_output_buffer_map_.size(); ++i)
+  for (size_t i = 0; i < mfc_output_buffer_map_.size(); ++i) {
+    struct v4l2_plane planes[1];
+    struct v4l2_buffer buffer;
+    memset(&buffer, 0, sizeof(buffer));
+    memset(planes, 0, sizeof(planes));
+    buffer.index    = i;
+    buffer.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    buffer.memory   = V4L2_MEMORY_MMAP;
+    buffer.m.planes = planes;
+    buffer.length   = arraysize(planes);
+    IOCTL_OR_ERROR_RETURN_FALSE(mfc_fd_, VIDIOC_QUERYBUF, &buffer);
+    void* address = mmap(NULL, buffer.m.planes[0].length,
+        PROT_READ | PROT_WRITE, MAP_SHARED, mfc_fd_,
+        buffer.m.planes[0].m.mem_offset);
+    if (address == MAP_FAILED) {
+      DPLOG(ERROR) << "CreateMfcOutputBuffers(): mmap() failed";
+      return false;
+    }
+    mfc_output_buffer_map_[i].address = address;
+    mfc_output_buffer_map_[i].length = buffer.m.planes[0].length;
     mfc_free_output_buffers_.push_back(i);
+  }
 
   return true;
 }
@@ -1481,11 +1543,18 @@ void ExynosVideoEncodeAccelerator::DestroyMfcOutputBuffers() {
   DCHECK(child_message_loop_proxy_->BelongsToCurrentThread());
   DCHECK(!mfc_output_streamon_);
 
+  for (size_t i = 0; i < mfc_output_buffer_map_.size(); ++i) {
+    if (mfc_output_buffer_map_[i].address != NULL) {
+      munmap(mfc_output_buffer_map_[i].address,
+             mfc_output_buffer_map_[i].length);
+    }
+  }
+
   struct v4l2_requestbuffers reqbufs;
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = 0;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_USERPTR;
+  reqbufs.memory = V4L2_MEMORY_MMAP;
   if (HANDLE_EINTR(ioctl(mfc_fd_, VIDIOC_REQBUFS, &reqbufs)) != 0)
     DPLOG(ERROR) << "DestroyMfcOutputBuffers(): ioctl() failed: VIDIOC_REQBUFS";
 

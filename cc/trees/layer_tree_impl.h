@@ -13,7 +13,7 @@
 #include "base/values.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/base/latency_info.h"
+#include "ui/events/latency_info.h"
 
 #if defined(COMPILER_GCC)
 namespace BASE_HASH_NAMESPACE {
@@ -42,8 +42,8 @@ class PaintTimeCounter;
 class Proxy;
 class ResourceProvider;
 class TileManager;
+class UIResourceRequest;
 struct RendererCapabilities;
-struct UIResourceRequest;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
 

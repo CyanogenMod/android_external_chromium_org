@@ -89,7 +89,6 @@ scoped_ptr<DrawQuad> CreateTestRenderPassDrawQuad(
                rect,          // contents_changed_since_last_frame
                gfx::RectF(),  // mask_uv_rect
                FilterOperations(),   // foreground filters
-               skia::RefPtr<SkImageFilter>(),   // foreground filter
                FilterOperations());  // background filters
 
   return quad.PassAs<DrawQuad>();
@@ -623,6 +622,8 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlpha) {
       new SkColorMatrixFilter(matrix)));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), NULL));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateReferenceFilter(filter));
 
   scoped_ptr<RenderPassDrawQuad> render_pass_quad =
       RenderPassDrawQuad::Create();
@@ -633,8 +634,7 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlpha) {
                            0,
                            pass_rect,
                            gfx::RectF(),
-                           FilterOperations(),
-                           filter,
+                           filters,
                            FilterOperations());
 
   root_pass->quad_list.push_back(render_pass_quad.PassAs<DrawQuad>());
@@ -726,6 +726,8 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlphaTranslation) {
       new SkColorMatrixFilter(matrix)));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), NULL));
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateReferenceFilter(filter));
 
   scoped_ptr<RenderPassDrawQuad> render_pass_quad =
       RenderPassDrawQuad::Create();
@@ -736,8 +738,7 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlphaTranslation) {
                            0,
                            pass_rect,
                            gfx::RectF(),
-                           FilterOperations(),
-                           filter,
+                           filters,
                            FilterOperations());
 
   root_pass->quad_list.push_back(render_pass_quad.PassAs<DrawQuad>());
@@ -931,7 +932,6 @@ class RendererPixelTestWithBackgroundFilter
           filter_pass_content_rect_,  // contents_changed_since_last_frame
           gfx::RectF(),  // mask_uv_rect
           FilterOperations(),  // filters
-          skia::RefPtr<SkImageFilter>(),  // filter
           this->background_filters_);
       root_pass->quad_list.push_back(filter_pass_quad.PassAs<DrawQuad>());
       root_pass->shared_quad_state_list.push_back(shared_state.Pass());
@@ -1329,10 +1329,10 @@ TEST_F(GLRendererPixelTest, AntiAliasingPerspective) {
 
   gfx::Rect red_rect(0, 0, 180, 500);
   gfx::Transform red_content_to_target_transform(
-      1.0,  2.4520,  10.6206, 19.0,
-      0.0,  0.3528,  5.9737,  9.5,
-      0.0, -0.2250, -0.9744,  0.0,
-      0.0,  0.0225,  0.0974,  1.0);
+      1.0f,  2.4520f,  10.6206f, 19.0f,
+      0.0f,  0.3528f,  5.9737f,  9.5f,
+      0.0f, -0.2250f, -0.9744f,  0.0f,
+      0.0f,  0.0225f,  0.0974f,  1.0f);
   scoped_ptr<SharedQuadState> red_shared_state =
       CreateTestSharedQuadState(red_content_to_target_transform, red_rect);
   scoped_ptr<SolidColorDrawQuad> red = SolidColorDrawQuad::Create();

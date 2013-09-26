@@ -67,6 +67,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void GuestWebContentsAttached(
       content::WebContents* guest_web_contents,
       content::WebContents* embedder_web_contents,
+      const GURL& embedder_frame_url,
       const base::DictionaryValue& extra_params) OVERRIDE;
   virtual void RenderProcessHostCreated(
       content::RenderProcessHost* host) OVERRIDE;
@@ -240,7 +241,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context,
       const GURL& url,
       bool private_api,
-      const content::SocketPermissionRequest& params) OVERRIDE;
+      const content::SocketPermissionRequest* params) OVERRIDE;
   virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
       content::WebContents* web_contents) OVERRIDE;
   virtual void GetAdditionalAllowedSchemesForFileSystem(

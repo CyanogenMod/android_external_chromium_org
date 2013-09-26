@@ -313,6 +313,7 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
 	net/quic/quic_ack_notifier.cc \
+	net/quic/quic_ack_notifier_manager.cc \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
@@ -497,7 +498,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -591,7 +591,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

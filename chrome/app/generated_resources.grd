@@ -277,12 +277,6 @@ are declared in build/common.gypi.
       <message name="IDS_BACKGROUND_CRASHED_EXTENSION_BALLOON_MESSAGE" desc="The contents of the balloon that is displayed when an extension crashes">
         <ph name="APP_NAME">$1<ex>Extension</ex></ph> has crashed. Click this balloon to reload the extension.
       </message>
-      <message name="IDS_BACKGROUND_MISBEHAVING_APP_BALLOON_MESSAGE" desc="The contents of the balloon that is displayed when a background force-installed app crashes multiple times">
-        Managed app <ph name="APP_NAME">$1<ex>Background App</ex></ph> installed by enterprise policy is misbehaving. Please contact your administrator.
-      </message>
-      <message name="IDS_BACKGROUND_MISBEHAVING_EXTENSION_BALLOON_MESSAGE" desc="The contents of the balloon that is displayed when an extension installed by enterprise policy crashes repeatedly">
-        Managed extension <ph name="APP_NAME">$1<ex>Extension</ex></ph> installed by enterprise policy is misbehaving. Please contact your administrator.
-      </message>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_BACKGROUND_APP_NOT_INSTALLED" desc="In Title Case: Label displayed in the status icon context menu when a profile does not have any background apps running.">
           No Background Apps Running
@@ -4052,9 +4046,64 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_OAUTH_PERMISSIONS_HEADER" desc="A line of explanatory text that precedes all GAIA account permissions that an extension might request. This is shown when an app requests permissions which are optional.">
         On your <ph name="ACCOUNT_EMAIL">$1<ex>user@example.com</ex></ph> account, it could:
       </message>
-      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files.">
-        It has permanent access to <ph name="NUMBER_OF_FILES">$1<ex>5</ex></ph> files.
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_DEFAULT" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. This is necessary for every language. This is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_OF_FILES is 11 .. 19.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>5</ex></ph> files.
       </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILE_SINGULAR" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. NUMBER_OF_FILES is one or one-like numbers : 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1,21,31, .. (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, .. (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>1</ex></ph> file.
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_RETAINED_FILE_SINGULAR" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_ZERO" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. NUMBER_OF_FILES is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>0</ex></ph> files.
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_RETAINED_FILES_ZERO" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_TWO" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. NUMBER_OF_FILES is two or two-like/dual numbers :  2 (Arabic and Irish) or  2, 102, 202 ... (Slovenian). For other languages, do NOT translated.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>2</ex></ph> files.
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_RETAINED_FILES_TWO" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang  in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_FEW" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. NUMBER_OF_FILES is few or few-like numbers in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>3</ex></ph> files.
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_RETAINED_FILES_FEW" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_EXTENSION_PROMPT_RETAINED_FILES_MANY" desc="A line of explanatory text that precedes the list of files the app has permanent access to, showing how the number of files. This is shown when an app has persistent access to files. NUMBER_OF_FILES is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        It has permanent access to <ph name="NUMBER_OF_FILES">#<ex>23</ex></ph> files.
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_RETAINED_FILES_MANY" desc="">
+        NA
+      </message>
+      </if>
 
       <if expr="is_android">
         <message name="IDS_EXTENSION_PROMPT_WARNING_FULL_ACCESS" desc="Mobile: Permission string for full access to the device and all websites.">
@@ -4078,9 +4127,64 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_3_HOSTS" desc="Permission string for access to data on three websites.">
         Access your data on <ph name="WEBSITE_1">$1<ex>www.google.com</ex></ph>, <ph name="WEBSITE_2">$2<ex>www.reddit.com</ex></ph>, and <ph name="WEBSITE_3">$3<ex>news.ycombinator.com</ex></ph>
       </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS" desc="Permission string for access to data on four or more websites.">
-        Access your data on <ph name="NUMBER_OF_OTHER_WEBSITES">$1<ex>5</ex></ph> website(s)
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_DEFAULT" desc="Permission string for access to data on four or more websites. This is necessary for every language. This is the default for all the numbers NOT covered by special cases (singular, dual/two, few, many) some languages need. For CJK, Vietnamese, Turkish and Kannada, this is the only string necessary. For languages with singular-plural distinction, this is the generic plural. For Lithuanian, NUMBER_OF_WEBSITES is 11 .. 19.">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>5</ex></ph> websites
       </message>
+
+      <if expr="lang not in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOST_SINGULAR" desc="Permission string for access to data on four or more websites. NUMBER_OF_WEBSITES is one or one-like numbers : 1 (many European and most Indian languages), 1 and 0 (French, Brazilian Portuguese and Hindi), 1,21,31, .. (Russian, Ukrainian, Croatian, Serbian, Latvian, Lithuanian), or 1, 101, 201, .. (Slovenian). Do NOT translate this for CJK, Vietnamese, Turkish and Kannada">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>1</ex></ph> websites
+      </message>
+      </if>
+      <if expr="lang in ['zh-CN', 'zh-TW', 'ko', 'ja', 'vi', 'tr', 'kn']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_WARNING_HOST_SINGULAR" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ar', 'ro', 'lv']">
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_ZERO" desc="Permission string for access to data on four or more websites. NUMBER_OF_WEBSITES is 0 (Arabic, Latvian) or 0, 2..19, 101..119, ... (Romanian). For other languages, do NOT translate.">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>0</ex></ph> websites
+      </message>
+      </if>
+      <if expr="lang not in ['ar', 'ro', 'lv']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_ZERO" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang in ['ga', 'sl', 'ar']">
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_TWO" desc="Permission string for access to data on four or more websites. NUMBER_OF_WEBSITES is two or two-like/dual numbers :  2 (Arabic and Irish) or  2, 102, 202 ... (Slovenian). For other languages, do NOT translated.">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>2</ex></ph> websites
+      </message>
+      </if>
+      <if expr="lang not in ['ga', 'sl', 'ar']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_TWO" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang  in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_FEW" desc="Permission string for access to data on four or more websites. NUMBER_OF_WEBSITES is few or few-like numbers in Arabic, Russian, Polish, Croatian, Serbian, Ukrainian, Czech, Slovak, Slovenian, Latvian. For other languages, do NOT translate.">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>3</ex></ph> websites
+      </message>
+      </if>
+      <if expr="lang not in ['ru', 'lt', 'hr', 'uk', 'cs', 'sk', 'pl', 'sl', 'ar']">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_FEW" desc="">
+        NA
+      </message>
+      </if>
+
+      <if expr="lang == 'ar'">
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_MANY" desc="Permission string for access to data on four or more websites. NUMBER_OF_WEBSITES is 11 through 99 in Arabic. For all other languages, do NOT translate.">
+        Access your data on <ph name="NUMBER_OF_WEBSITES">#<ex>23</ex></ph> websites
+      </message>
+      </if>
+      <if expr="lang != 'ar'">
+      <message translateable="false" name="IDS_EXTENSION_PROMPT_WARNING_HOSTS_MANY" desc="">
+        NA
+      </message>
+      </if>
       <message name="IDS_EXTENSION_PROMPT_WARNING_HOST_LIST" desc="Permission string (heading) for a list of websites.">
         Access your data on the following websites:
       </message>
@@ -4163,13 +4267,13 @@ Make sure you do not expose any sensitive information.
         Change your wallpaper
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_DIRECTORY" desc="Permission string for read access to directories and their contents.">
-        Read folders that you open, and all files and folders within.
+        Read folders that you open in the application
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE" desc="Permission string for write access to the file system.">
-        Write to files that you open in the application.
+        Write to files that you open in the application
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_FILE_SYSTEM_WRITE_DIRECTORY" desc="Permission string for write access to directories and their contents.">
-        Write to files and folders that you open, and all files and folders within.
+        Write to files and folders that you open in the application
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_READ_WRITE" desc="Permission string for access to read and write to all of the user's media galleries.">
         Access and change photos, music, and other media from your computer.
@@ -4341,6 +4445,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_INSTALL_DEPENDENCY_NOT_SHARED_MODULE" desc="Error displayed during installation of an extension which tries to imports resources from an extension which is not a shared module.">
         Unable to import extension with ID "<ph name="IMPORT_ID">$1<ex>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</ex></ph>" because it is not a shared module.
       </message>
+      <message name="IDS_EXTENSION_INSTALL_KIOSK_MODE_ONLY" desc="Error displayed during installation of an app with 'kiosk_only' attribute but user is not in ChromeOS kiosk mode.">
+        App with 'kiosk_only' manifest attribute must be installed in ChromeOS kiosk mode.
+      </message>
       <message name="IDS_EXTENSION_OVERLAPPING_WEB_EXTENT" desc="Error message when a user tries to install an app with a web extent that overlaps another installed app.">
         Could not add application because it conflicts with "<ph name="APP_NAME">$1<ex>Google Mail</ex></ph>".
       </message>
@@ -4477,7 +4584,7 @@ Make sure you do not expose any sensitive information.
 
       <!-- Directory access confirmation dialog -->
       <message name="IDS_EXTENSIONS_DIRECTORY_CONFIRMATION_DIALOG_TITLE" desc="Text of the title of the directory access confirmation dialog.">
-        Confirm access
+        Confirm Access
       </message>
       <message name="IDS_EXTENSIONS_DIRECTORY_CONFIRMATION_DIALOG_MESSAGE_READ_ONLY" desc="Text of the message of the directory access confirmation dialog if the app does not have write access.">
         The folder you selected contains sensitive files. Are you sure you want to grant "$1" permanent read access to this folder?
@@ -5465,17 +5572,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SAVE_PAGE_AS_MHTML_DESCRIPTION" desc="Description of the 'Save Page as MHTML' lab.">
         Disables saving pages as HTML-only or HTML Complete; enables saving pages only as MHTML: a single text file containing HTML and all sub-resources.
       </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME" desc="Title of the disable 'disable device discovery' flag.">
+      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NAME" desc="Title of the 'disable device discovery' flag.">
         Disable Device Discovery
       </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION" desc="Description for 'disable device discovery' flag.">
+      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_DESCRIPTION" desc="Description of the 'disable device discovery' flag.">
         Disable device discovery on local network.
       </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_NAME" desc="Title of the disable 'disable device discovery notificatios' flag.">
-        Disable Device Discovery Notifications
+      <message name="IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_NAME" desc="Title of the 'device discovery notificatios' flag.">
+        Device Discovery Notifications
       </message>
-      <message name="IDS_FLAGS_DISABLE_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION" desc="Description for 'disable device discovery notifications' flag.">
-        Disable device discovery notifications on local network.
+      <message name="IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION" desc="Description of the 'device discovery notifications' flag.">
+        Device discovery notifications on local network.
       </message>
       <message name="IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME" desc="Title of the touch-optimized UI flag." >
         Touch Optimized UI
@@ -5732,6 +5839,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API_DESCRIPTION" desc="Description for the flag to enable the Instant extended API.">
         Enables the Instant Extended API which provides a deeper integration with your default search provider, including a renovated New Tab Page, extracting search query terms in the omnibox, a spruced-up omnibox dropdown and Instant previews of search results as you type in the omnibox.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP" desc="Title for the flag to enable the cacheable New Tab page for Instant extended.">
+        Cacheable New Tab page for Instant Extended.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_CACHEABLE_NTP_DESCRIPTION" desc="Description for the flag to enable the cacheable New Tab page for Instant extended.">
+        Use the cacheable New Tab page for Instant Extended.
       </message>
       <message name="IDS_FLAGS_ENABLE_LOCAL_FIRST_LOAD_NTP" desc="Title for the flag to enable the local first load NTP.">
         Enable local first-load NTP in Instant Extended.
@@ -6081,6 +6194,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enable appropriate responses to canPlayType() for key systems that return the empty string by default.
       </message>
       <if expr="is_android">
+        <message name="IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_NAME" desc="Title for the flag to disable infobar popup for protected media identifier.">
+          Disable infobar popup for protected media.
+        </message>
+        <message name="IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_DESCRIPTION" desc="Description for the flag to disable infobar popup for protected media identifier.">
+          Disable infobar popup by default when accessing the protected media identifier.
+        </message>
         <message name="IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_NAME" desc="Title for the flag to enable non-conmpositing decoding in MediaDrm for encrypted content.">
           Enable non-compositing decoding.
         </message>
@@ -6160,6 +6279,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_MEMORY_MONITOR_DESCRIPTION" desc="Title for the flag to enable advanced gestures.">
         Enables visual memory monitor in status area.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_NAME" desc="Title for the multi profile shelf functionality flag.">
+        Enable multi profile shelf functionality
+      </message>
+      <message name="IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_DESCRIPTION" desc="Title for the multi profile shelf functionality flag.">
+        Enable multi profile shelf functionality
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME" desc="Title for a flag for audio switching.">
         Audio input/output menu
@@ -6392,6 +6517,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_SAML_SIGNIN_DESCRIPTION" desc="Description for the flag to enable SAML signin support.">
           Enables SAML signin support for ChromeOS login.
         </message>
+        <message name="IDS_FLAGS_ENABLE_MULTI_PROFILES_NAME" desc="Name for the flag to enable multi-profile support.">
+          Enable multiprofiles mode.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_MULTI_PROFILES_DESCRIPTION" desc="Description for the flag to enable multi-profile support.">
+          This is an unsupported experimental mode, currently limited for testing purposes to devices enrolled on google.com, and with an @google.com account as the primary user. Features may break or change significantly.
+        </message>
       </if>
       <message name="IDS_FLAGS_FULL_HISTORY_SYNC_NAME" desc="Name of the flag to disable full history sync.">
         Disable full history sync
@@ -6484,6 +6615,18 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_IMPL_SIDE_PAINTING_DESCRIPTION" desc="Description of about:flags option for impl-side painting.">
         If enabled, painting is done on a separate thread instead of the main thread.
+      </message>
+      <message name="IDS_FLAGS_DEADLINE_SCHEDULING_NAME" desc="Name of about:flags option for deadline scheduling.">
+        Deadline scheduling.
+      </message>
+      <message name="IDS_FLAGS_DEADLINE_SCHEDULING_DESCRIPTION" desc="Description of about:flags option for deadline scheduling.">
+        If enabled, latency in the Renderer may improve if the various stages of rendering are fast enough to beat a deadline. Requires threaded compositing.
+      </message>
+      <message name="IDS_FLAGS_UI_DEADLINE_SCHEDULING_NAME" desc="Name of about:flags option for UI deadline scheduling.">
+        UI deadline scheduling.
+      </message>
+      <message name="IDS_FLAGS_UI_DEADLINE_SCHEDULING_DESCRIPTION" desc="Description of about:flags option for UI deadline scheduling.">
+        If enabled, latency in the Browser may improve if the various stages of rendering are fast enough to beat a deadline. Requires threaded compositiing.
       </message>
       <message name="IDS_FLAGS_LCD_TEXT_NAME" desc="Name of about:flags option for LCD text.">
         LCD text antialiasing
@@ -6950,6 +7093,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_ABOUT_SYS_TABLE_TITLE" desc="Title of a table that contains system details">
           Details
         </message>
+        <message name="IDS_ABOUT_SYS_LOG_FILE_TABLE_TITLE" desc="Title of a table that contains details from an uploaded log">
+          Details: <ph name="FILE_NAME">$1<ex>Log.txt</ex></ph>
+        </message>
         <message name="IDS_ABOUT_SYS_EXPAND_ALL" desc="name of a button that shows (expands) all system details">
           Expand all...
         </message>
@@ -6961,6 +7107,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_ABOUT_SYS_COLLAPSE" desc="name of a button that hides (collapses) specific system details">
           Collapse...
+        </message>
+        <message name="IDS_ABOUT_SYS_PARSE_ERROR" desc="error message displayed if parsing of custom uploaded log fails">
+          Unable to parse file: <ph name="FILE_NAME">$1<ex>Log.txt</ex></ph>
         </message>
 
         <!-- chrome://mobilesetup strings -->
@@ -7378,6 +7527,12 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         <message name="IDS_PASSWORD_MANAGER_BLACKLIST_BUTTON" desc="Button text for the 'Save Password' infobar's 'Never remember for this site' option">
           Never for this site
         </message>
+        <message name="IDS_PASSWORD_MANAGER_BLACKLIST_DROP_DOWN" desc="Text for the 'Save Password' bubble's 'Never remember passwords for this site' option">
+          Never remember passwords for this site
+        </message>
+        <message name="IDS_PASSWORD_MANAGER_CANCEL_DROP_DOWN" desc="Text for the 'Save Password' bubble's 'Nope' option">
+          Nope
+        </message>
       </if>
       <if expr="is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_BUTTON" desc="Mobile: Button text for the 'Save Password' infobar's 'Remember password' option">
@@ -7623,7 +7778,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
 
       <!-- Managed User Avatar Menu -->
       <message name="IDS_MANAGED_USER_INFO" desc="Text which explains that a supervised user is managed by a custodian.">
-        This user is supervised by <ph name="CUSTODIAN_EMAIL">$1<ex>Jane.Doe@gmail.com</ex></ph>. Usage and history from this user can be reviewed by the manager on chrome.com.
+        Usage and history of this user can be reviewed by the manager (<ph name="CUSTODIAN_EMAIL">$1<ex>Jane.Doe@gmail.com</ex></ph>) on chrome.com.
       </message>
       <message name="IDS_MANAGED_USER_AVATAR_LABEL" desc="A label for the supervised user which is used in the avatar menu and as a label in the titlebar.">
         Supervised user
@@ -8015,6 +8170,33 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_SEND_FEEDBACK" desc="Text of the button which allows the user to report an issue with chrome, alternate text for a field trial">
         Send Feedback
+      </message>
+
+      <!-- settings reset bubble messages -->
+      <message name="IDS_RESETTING" desc="Text for the button, once the user clicked to reset settings.">
+        Resetting...
+      </message>
+      <message name="IDS_NO_THANKS" desc="Text for the button the user clicks to refuse settings reset.">
+        No thanks
+      </message>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_RESET_SETTINGS_MENU_ITEM" desc="In Title Case: Text for the Chrome menu option replacing Update required.">
+          Reset Altered <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> Settings
+        </message>
+      </if>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_RESET_SETTINGS_MENU_ITEM" desc="Text for the Chrome menu option replacing Update required.">
+          Reset altered <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> settings
+        </message>
+      </if>
+      <message name="IDS_RESET_BUBBLE_TITLE" desc="Text for the title of the settings reset bubble view.">
+        Reset altered <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> settings?
+      </message>
+      <message name="IDS_RESET_BUBBLE_TEXT" desc="Text for the settings reset bubble view full description.">
+        <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> detected that your browser settings may have been changed without your knowledge. Would you like to reset them to their original defaults?
+      </message>
+      <message name="IDS_REPORT_BUBBLE_TEXT" desc="Text for the settings reset bubble reporting checkbox.">
+        Help make Google Chrome better by reporting the current settings
       </message>
 
       <!-- Upgrade bubble messages -->
@@ -9996,7 +10178,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Save and protect my details with Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SAVE_IN_WALLET_TOOLTIP" desc="Tooltip text that explains how Google Wallet integration works.">
-        Google Wallet generates a new credit card number for each transaction, so the merchant never sees your personal card number.
+        A Google Wallet Virtual Card will be used for this transacation. A Virtual Card is a new card number so the seller never sees your real credit card number.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_COMPLETE_WITHOUT_WALLET" desc="An error notification shown to users when Google Wallet is found to be unavailable.">
         Oops, <ph name="WALLET_ERROR">$1<ex>Google Wallet is unavailable at this time.</ex></ph> You can complete this transaction without Google Wallet.
@@ -10017,7 +10199,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Could not save data to Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CHOOSE_DIFFERENT_WALLET_INSTRUMENT" desc="Text asking the user to choose a different payment method or address when using wallet.">
-        We need more information to complete your purchase.
+        More information is needed to complete this purchase.
       </message>
 
       <!--- Autofill dialog: Wallet interstitials -->
@@ -10028,10 +10210,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Generating Google Wallet Virtual Card...
       </message>
       <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_DONE" desc="Text the user sees after the wallet servers respond with a generated card number.">
-        Your Google Wallet Virtual Card is ready.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_CARD_GENERATION_OK_BUTTON" desc="Text for the button users have to press to proceed past the wallet card generation text.">
-        Okay, got it
+        Your Virtual Card is ready.
       </message>
 
       <!--- Autofill dialog: Wallet error messages -->
@@ -10039,13 +10218,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         There's something wrong with your Google Wallet account [12].
       </message>
       <message name="IDS_AUTOFILL_WALLET_BUYER_COUNTRY_NOT_SUPPORTED" desc="Text explaining that the user's Wallet Buyer Legal Address has a country which is unsupported. The text inside the |bars| is link text.">
-        Unfortunately, Google Wallet can only be used at this merchant by buyers with a US address. If you are a US resident, |change your home address| or pay without Google Wallet.
+        Unfortunately, Google Wallet can only be used at this merchant by buyers with a US address. If you are a US resident, please |change your home address with Wallet| or pay without using Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_WALLET_UNVERIFIED_KNOW_YOUR_CUSTOMER_STATUS" desc="Text explaining that Google Wallet failed/pending Know Your Customer (KYC) check. The text inside the |bars| is link text.">
         We were unable to verify your account information. |Fix this problem|
       </message>
       <message name="IDS_AUTOFILL_WALLET_UNSUPPORTED_MERCHANT" desc="Text explaining that the merchant is blacklisted for Google Wallet Chrome Payments due to compliance violation.">
-        Google Wallet is not supported for this merchant.
+        Google Wallet is not supported with this merchant.
       </message>
       <message name="IDS_AUTOFILL_WALLET_SERVICE_UNAVAILABLE_ERROR" desc="Text explaining that Wallet is currently unavailable.">
         Google Wallet is currently unavailable [61].
@@ -10062,7 +10241,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Email address
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SECTION_CC" desc="Label for the credit card section of the autofill dialog.">
-        Card information
+        Card details
       </message>
       <message name="IDS_AUTOFILL_DIALOG_SECTION_BILLING" desc="Label for the billing details (credit card + address) section of the autofill dialog.">
         Billing details
@@ -10128,28 +10307,28 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Google Wallet requires at least a first and last name.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_EMAIL_ADDRESS" desc="Message displayed to user when email address validation fails.">
-        Not a valid email address
+        Invalid email address. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_NUMBER" desc="Message displayed to user when credit card number validation fails.">
-        Not a valid credit card number
+        Invalid card number. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_SECURITY_CODE" desc="Message displayed to user when credit card security code validation fails.">
-        Not a valid credit card security code
+        Invalid CVC code. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_EXPIRATION_DATE" desc="Message displayed to user when credit card expiration date validation fails.">
-        Card is expired
+        The card is expired. Please check the date or enter a new card.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET" desc="Message displayed to user when user entered a credit card number that is not supported by Google Wallet.">
-        Card type is not supported by Wallet
+        This type of card is not supported by Google Wallet. Please select a different card.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_ZIP_CODE" desc="Message displayed to user when ZIP code (postal code) validation fails.">
-        Not a valid ZIP code
+        Invalid ZIP code. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_REGION" desc="Message displayed to user when the region (US state) validation fails.">
-        Not a valid state
+        Invalid state. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_PHONE_NUMBER" desc="Message displayed to user when phone number validation fails.">
-        Not a valid phone number
+        Invalid phone number. Please check and try again.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_MISSING_VALUE" desc="Message displayed to user when one of the required fields is left empty.">
         Field is required
@@ -10163,7 +10342,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Your card has been protected with the Google Wallet Virtual Card (<ph name="FRONTING_CREDIT_CARD">|$1|<ex>Visa - 1234</ex></ph>) and this number will appear on your receipt. This purchase will still be charged to your <ph name="BACKING_CREDIT_CARD">|$2|<ex>Visa - 5678</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_NEW_CREDIT_CARD_BUBBLE_LINK" desc="The text of a link at the bottom of the autofill dialog bubble that sends users to a Google Wallet billing/card management page.">
-        Manage Saved Cards
+        Manage credit cards
       </message>
 
       <message name="IDS_APPEARANCE_GROUP_NAME" desc="The title of the appearance group">
@@ -10217,7 +10396,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </if>
       <if expr="not is_android">
         <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="The label of the cloud print setup button when it hasn't been set up yet.">
-          <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> lets you access this computer's printers from anywhere. Click to enable.
+          <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph> lets you access this computer's printers from anywhere.
         </message>
       </if>
       <message name="IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_BUTTON" desc="The label of the cloud connector configure button when it hasn't been set up yet.">
@@ -10980,22 +11159,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Add more apps
       </message>
 
-      <!-- Offline page  -->
-      <if expr="pp_ifdef('chromeos')">
-        <message name="IDS_SITE_OFFLINE_LOAD_HEADLINE" desc="Offline Page HTML headline for a site.">
-          This page is not available offline.
-        </message>
-        <message name="IDS_APP_OFFLINE_LOAD_HEADLINE" desc="Offline Page HTML headline for an app.">
-          This app is not available offline.
-        </message>
-        <message name="IDS_OFFLINE_LOAD_DESCRIPTION" desc="Description for the offline page.">
-          Please reconnect to a network.
-        </message>
-        <message name="IDS_OFFLINE_NETWORK_SETTINGS">
-          Network settings
-        </message>
-      </if>
-
       <!-- Multi-profile -->
       <message name="IDS_PROFILES_OPTIONS_GROUP_NAME" desc="The name of the sync group in the options dialog.">
         Users
@@ -11026,9 +11189,16 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Switch Users
         </message>
       </if>
-      <message name="IDS_PROFILES_CREATE_NEW_PROFILE_LINK" desc="Link in the avatar menu bubble view to create a new profile.">
-        New user
-      </message>
+      <if expr="not pp_ifdef('chromeos')">
+        <message name="IDS_PROFILES_CREATE_NEW_PROFILE_LINK" desc="Link in the avatar menu bubble view to create a new profile.">
+          New user
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_PROFILES_CREATE_NEW_PROFILE_LINK" desc="Link in the avatar menu bubble view to create a new profile.">
+          Sign in another account
+        </message>
+      </if>
       <message name="IDS_PROFILES_MANAGE_PROFILES_BUTTON" desc="Button in the avatar menu bubble view to manage profiles.">
         Manage
       </message>
@@ -11047,14 +11217,17 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_PROFILES_EDIT_PROFILE_LINK" desc="Link in the avatar menu bubble to edit a profile.">
         edit
       </message>
-      <message name="IDS_PROFILES_PROFILE_USERS_BUTTON" desc="Button in the avatar menu bubble view for switching users.">
+      <message name="IDS_PROFILES_ADD_PERSON_BUTTON" desc="Button in the avatar menu bubble view for creating a new user.">
         Add person
       </message>
-      <message name="IDS_PROFILES_PROFILE_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
+      <message name="IDS_PROFILES_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
         Browse as guest
       </message>
-      <message name="IDS_PROFILES_PROFILE_EXIT_GUEST_BUTTON" desc="Button in the avatar menu bubble view for guest browsing.">
+      <message name="IDS_PROFILES_EXIT_GUEST_BUTTON" desc="Button in the avatar menu bubble view to end guest browsing.">
         End guest session
+      </message>
+      <message name="IDS_PROFILES_ALL_PEOPLE_BUTTON" desc="Button in the avatar menu bubble view for launching the user manager.">
+        View all people
       </message>
       <message name="IDS_PROFILES_PROFILE_ADD_ACCOUNT_BUTTON" desc="Button in the avatar menu bubble view used to add an account to a profile.">
         Add account for <ph name="PROFILE_NAME">$1<ex>John</ex></ph>
@@ -11180,6 +11353,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           This account is already being used on this computer.
         </message>
       </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_MULTI_PROFILES_WARNING" desc="A notification message when user signs into a multiprofile session for the first time.">
+          You have enabled multiprofiles, an unsupported experimental mode in Chrome OS. Features may change or break.
+        </message>
+      </if>
+
      <!-- SafeBrowsing -->
       <message name="IDS_SAFE_BROWSING_MALWARE_TITLE" desc="SafeBrowsing Malware HTML title">
         Malware Detected!
@@ -13386,6 +13565,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Quit <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
         </message>
         <!-- File menu -->
+        <message name="IDS_NEW_MAC" desc="The Mac menu item for creating a new file in the file menu.">
+          New
+        </message>
         <message name="IDS_NEW_TAB_MAC" desc="The Mac menu item for opening a new tab in the file menu.">
           New Tab
         </message>
@@ -13820,6 +14002,22 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <message name="IDS_MEDIASTREAM_SETTING_CHANGED_INFOBAR_MESSAGE" desc="Infobar message for reloading when media (camera, michrophone) settings was changed by user.">
       New camera and microphone settings will take effect after reloading the page.
     </message>
+
+    <!-- Proteced media identifier permission infobar -->
+    <if expr="is_android">
+      <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_INFOBAR_QUESTION" desc="Question asked on the infobar whenever URL wants to access protected media identifier. It shows the origin of the URL.">
+        @<ph name="URL">$1<ex>https://www.youtube.com</ex></ph> needs to uniquely identify your device to play premium content.
+      </message>
+      <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_ALLOW_BUTTON" desc="A button in the protected media identifier infobar for allowing access to a protected media identifier for a given origin.">
+        Allow
+      </message>
+      <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_DENY_BUTTON" desc="A button in the protected media identifier infobar for denying access to a protected media identifier for a given origin.">
+        Deny
+      </message>
+      <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_SETTINGS_LINK" desc="Link on in the protected media identifier infobar to open up its settings page.">
+        Settings
+      </message>
+    </if>
 
     <message name="IDS_SAVE_PASSWORD" desc="The status text that is used as tooltip text for the save password icon and as status text of the save password bubble when a password can be saved.">
       Would you like to save this password?
@@ -14302,7 +14500,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
     </if>
     <message name="IDS_PROFILES_DELETE_MANAGED_ADDENDUM" desc="Additional message shown in the same dialog following the IDS_PROFILES_DELETE_MESSAGE, explaining to the user what will happen if they delete the profile of a supervised user.">
-      Visited websites and settings for this supervised user may still be visible by the manager at <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://www.chrome.com/manage"&gt;</ph>www.chrome.com/manage<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+      Settings and browsing history for this supervised user may still be visible by the manager at <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://www.chrome.com/manage"&gt;</ph>www.chrome.com/manage<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
     </message>
     <message name="IDS_PROFILES_LIST_ITEM_CURRENT" desc="Text to display in the multi-profiles list when this profile is the current profile">
       <ph name="PROFILE_NAME">$1<ex>New User</ex></ph> (current)
@@ -14380,6 +14578,9 @@ You need to be signed in to use this feature.
 Creating a supervised user does not create a Google Account, and their settings and data will not follow them to other devices with Chrome Sync. Currently, a supervised user applies only to this installation of Chrome, on this device.
 
 After you create a new supervised user, you can manage their settings at any time, from any device, at www.chrome.com/manage.
+    </message>
+    <message name="IDS_NEW_MANAGED_USER_LEARN_EVEN_MORE_LABEL" desc="Label for the link within the 'Learn more' dialog for the supervised user feature, which links to a Help Center article giving even more information about the feature.">
+      Learn even more
     </message>
     <message name="IDS_NEW_MANAGED_USER_LEARN_MORE_DONE_BUTTON" desc="Text for the 'OK' button on the 'Learn more' dialog for the supervised user feature.">
       OK, got it!
@@ -14709,16 +14910,16 @@ Do you accept?
 
     <!-- Media Galleries. -->
     <message name="IDS_MEDIA_GALLERIES_DIALOG_HEADER" desc="Header for media gallery permissions dialog.">
-      Access Settings
+      Media-File Permissions for "<ph name="EXTENSION">$1<ex>Photo Editor</ex></ph>"
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_WRITE" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read and write access to the listed folders.">
-      <ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph> can access and change media in these locations.
+      "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read and write images, video, and sound files in the checked locations.
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_ONLY" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read-only access to the listed folders.">
-      <ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph> can access media in these locations.
+      "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read images, video, and sound files in the checked locations.
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_WRITE_ONLY" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has write-only access to the listed folders.">
-      <ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph> can change media in these locations.
+      "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can write images, video, and sound files in the checked locations.
     </message>
     <message name="IDS_MEDIA_GALLERIES_UNATTACHED_LOCATIONS" desc="Header for media gallery permissions to locations not currently attached, i.e. removable devices which aren't plugged in">
       Unattached locations
@@ -15093,9 +15294,15 @@ Do you accept?
       New printer on your network
     </message>
     <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER" desc="Contents of notification for a new printer showing up on your network">
-      Add <ph name="PRINTER_NAME">$1</ph> to Cloud Print so you can print from anywhere.
+      Add the printer to <ph name="PRODUCT_NAME">$1<ex>Google Cloud Print</ex></ph> so you can print from anywhere.
     </message>
-    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_DISPLAY_SOURCE_PRINTER" desc="Display name for notification for a new printer showing up on your network">
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_TITLE_PRINTER_MULTIPLE" desc="Title of notification for a new printer showing up on your network">
+      New printers on your network
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_CONTENTS_PRINTER_MULTIPLE" desc="Contents of notification for a new printer showing up on your network">
+      Add the printers to <ph name="PRODUCT_NAME">$1<ex>Google Cloud Print</ex></ph> so you can print from anywhere.
+    </message>
+    <message name="IDS_LOCAL_DISOCVERY_PRODUCT_NAME_PRINTER" desc="Display name for notification for a new printer showing up on your network">
       Google Cloud Print
     </message>
     <message name="IDS_LOCAL_DISOCVERY_NOTIFICATION_BUTTON_PRINTER" desc="Message on registration button for printer">
@@ -15105,7 +15312,7 @@ Do you accept?
       Devices
     </message>
     <message name="IDS_LOCAL_DISCOVERY_REGISTER_CONFIRMATION" desc="Confirmation for registering a printer to Google Cloud Print">
-      The following devices can be added to your account from your local network:
+      Do you wish to register the printer <ph name="PRINTER_NAME">$1</ph> to Google Cloud Print?
     </message>
     <message name="IDS_LOCAL_DISCOVERY_REGISTER_USER" desc="Label for user picker in registration dialog">
       User:
@@ -15163,6 +15370,31 @@ Do you accept?
     </message>
     <message name="IDS_LOCAL_DISCOVERY_CLOUD_DEVICES_LOGIN" desc="Text on login button for local discovery page">
       sign in
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_DEVICES_PAGE_BUTTON" desc="Text on button to take user to devices page">
+      Manage
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_AVAILABLE_DEVICES" desc="Title for 'available devices' section in devices page">
+      New devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_MY_DEVICES" desc="Title for 'my devices' section in devices page">
+      My devices
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL" desc="In local discovery page: The label of the cloud print setup button when it hasn't been set up yet.">
+      You can add classic printers connected to your computer to <ph name="CLOUD_PRINT_NAME">$1<ex>Google Cloud Print</ex></ph>.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_CONNECTOR_SECTION" desc="In local discovery page: Title of cloud print connector section.">
+      Classic printers
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_ENABLE_CHECKBOX_LABEL" desc="Label for notificatiosn-enable checkbox">
+      Show notifications when new printers are detected on the network
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_DISABLE_BUTTON_LABEL" desc="Label for button disabling local device notifications">
+      Don't show this again
+    </message>
+    <!-- People search strings -->
+    <message name="IDS_PEOPLE_SEARCH_ACTION_EMAIL_TOOLTIP" desc="Tooltip text for sending an email to the person in the result">
+      E-mail this person
     </message>
   </messages>
 

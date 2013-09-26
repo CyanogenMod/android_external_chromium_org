@@ -26,7 +26,6 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/cryptohome/cryptohome_library.h"
-#include "chromeos/cryptohome/mock_cryptohome_library.h"
 #include "chromeos/dbus/cryptohome_client_stub.h"
 #include "chromeos/dbus/dbus_client_implementation_type.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
@@ -364,10 +363,12 @@ class DeviceCloudPolicyManagerChromeOSEnrollmentTest
     if (done_)
       return;
 
+    chromeos::DeviceOAuth2TokenService* token_service =
+        chromeos::DeviceOAuth2TokenServiceFactory::Get();
     // Process robot refresh token store.
     EXPECT_EQ(
         "refreshToken4Test",
-        chromeos::DeviceOAuth2TokenServiceFactory::Get()->GetRefreshToken());
+        token_service->GetRefreshToken(token_service->GetRobotAccountId()));
   }
 
   bool is_auto_enrollment_;

@@ -21,8 +21,6 @@ extern "C" {
 
 namespace remoting {
 
-enum { kBytesPerPixelRGB32 = 4 };
-
 const uint32 kTransparent = 0;
 
 VideoDecoderVp8::VideoDecoderVp8()
@@ -39,10 +37,6 @@ VideoDecoderVp8::~VideoDecoderVp8() {
   delete codec_;
 }
 
-bool VideoDecoderVp8::IsReadyForData() {
-  return state_ == kReady;
-}
-
 void VideoDecoderVp8::Initialize(const webrtc::DesktopSize& screen_size) {
   DCHECK(!screen_size.is_empty());
 
@@ -52,8 +46,7 @@ void VideoDecoderVp8::Initialize(const webrtc::DesktopSize& screen_size) {
   transparent_region_.SetRect(webrtc::DesktopRect::MakeSize(screen_size_));
 }
 
-VideoDecoder::DecodeResult VideoDecoderVp8::DecodePacket(
-    const VideoPacket* packet) {
+bool VideoDecoderVp8::DecodePacket(const VideoPacket& packet) {
   DCHECK_EQ(kReady, state_);
 
   // Initialize the codec as needed.
@@ -73,19 +66,19 @@ VideoDecoder::DecodeResult VideoDecoderVp8::DecodePacket(
       delete codec_;
       codec_ = NULL;
       state_ = kError;
-      return DECODE_ERROR;
+      return false;
     }
   }
 
   // Do the actual decoding.
   vpx_codec_err_t ret = vpx_codec_decode(
-      codec_, reinterpret_cast<const uint8*>(packet->data().data()),
-      packet->data().size(), NULL, 0);
+      codec_, reinterpret_cast<const uint8*>(packet.data().data()),
+      packet.data().size(), NULL, 0);
   if (ret != VPX_CODEC_OK) {
     LOG(INFO) << "Decoding failed:" << vpx_codec_err_to_string(ret) << "\n"
               << "Details: " << vpx_codec_error(codec_) << "\n"
               << vpx_codec_error_detail(codec_);
-    return DECODE_ERROR;
+    return false;
   }
 
   // Gets the decoded data.
@@ -93,13 +86,13 @@ VideoDecoder::DecodeResult VideoDecoderVp8::DecodePacket(
   vpx_image_t* image = vpx_codec_get_frame(codec_, &iter);
   if (!image) {
     LOG(INFO) << "No video frame decoded";
-    return DECODE_ERROR;
+    return false;
   }
   last_image_ = image;
 
   webrtc::DesktopRegion region;
-  for (int i = 0; i < packet->dirty_rects_size(); ++i) {
-    Rect remoting_rect = packet->dirty_rects(i);
+  for (int i = 0; i < packet.dirty_rects_size(); ++i) {
+    Rect remoting_rect = packet.dirty_rects(i);
     region.AddRect(webrtc::DesktopRect::MakeXYWH(
         remoting_rect.x(), remoting_rect.y(),
         remoting_rect.width(), remoting_rect.height()));
@@ -109,9 +102,9 @@ VideoDecoder::DecodeResult VideoDecoderVp8::DecodePacket(
 
   // Update the desktop shape region.
   webrtc::DesktopRegion desktop_shape_region;
-  if (packet->has_use_desktop_shape()) {
-    for (int i = 0; i < packet->desktop_shape_rects_size(); ++i) {
-      Rect remoting_rect = packet->desktop_shape_rects(i);
+  if (packet.has_use_desktop_shape()) {
+    for (int i = 0; i < packet.desktop_shape_rects_size(); ++i) {
+      Rect remoting_rect = packet.desktop_shape_rects(i);
       desktop_shape_region.AddRect(webrtc::DesktopRect::MakeXYWH(
           remoting_rect.x(), remoting_rect.y(),
           remoting_rect.width(), remoting_rect.height()));
@@ -125,11 +118,7 @@ VideoDecoder::DecodeResult VideoDecoderVp8::DecodePacket(
 
   UpdateImageShapeRegion(&desktop_shape_region);
 
-  return DECODE_DONE;
-}
-
-VideoPacketFormat::Encoding VideoDecoderVp8::Encoding() {
-  return VideoPacketFormat::ENCODING_VP8;
+  return true;
 }
 
 void VideoDecoderVp8::Invalidate(const webrtc::DesktopSize& view_size,
@@ -274,11 +263,11 @@ void VideoDecoderVp8::FillRect(uint8* buffer,
                                const webrtc::DesktopRect& rect,
                                uint32 color) {
   uint32* ptr = reinterpret_cast<uint32*>(buffer + (rect.top() * stride) +
-      (rect.left() * kBytesPerPixelRGB32));
+      (rect.left() * kBytesPerPixel));
   int width = rect.width();
   for (int height = rect.height(); height > 0; --height) {
     std::fill(ptr, ptr + width, color);
-    ptr += stride / kBytesPerPixelRGB32;
+    ptr += stride / kBytesPerPixel;
   }
 }
 

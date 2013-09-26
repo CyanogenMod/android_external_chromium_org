@@ -39,6 +39,7 @@
 #include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/path.h"
@@ -393,7 +394,8 @@ void NewTabButton::OnMouseReleased(const ui::MouseEvent& event) {
 #endif
 
 void NewTabButton::OnPaint(gfx::Canvas* canvas) {
-  gfx::ImageSkia image = GetImageForScale(canvas->scale_factor());
+  gfx::ImageSkia image =
+      GetImageForScale(ui::GetSupportedScaleFactor(canvas->image_scale()));
   canvas->DrawImageInt(image, 0, height() - image.height());
 }
 
@@ -443,12 +445,12 @@ gfx::ImageSkia NewTabButton::GetBackgroundImage(
       GetThemeProvider()->GetImageSkiaNamed(IDR_NEWTAB_BUTTON_MASK);
   int height = mask->height();
   int width = mask->width();
-
+  float scale = ui::GetImageScale(scale_factor);
   // The canvas and mask has to use the same scale factor.
-  if (!mask->HasRepresentation(scale_factor))
+  if (!mask->HasRepresentation(scale))
     scale_factor = ui::SCALE_FACTOR_100P;
 
-  gfx::Canvas canvas(gfx::Size(width, height), scale_factor, false);
+  gfx::Canvas canvas(gfx::Size(width, height), scale, false);
 
   // For custom images the background starts at the top of the tab strip.
   // Otherwise the background starts at the top of the frame.
@@ -494,7 +496,9 @@ gfx::ImageSkia NewTabButton::GetImageForState(
   gfx::ImageSkia* overlay = GetThemeProvider()->GetImageSkiaNamed(overlay_id);
 
   gfx::Canvas canvas(
-      gfx::Size(overlay->width(), overlay->height()), scale_factor, false);
+      gfx::Size(overlay->width(), overlay->height()),
+      ui::GetImageScale(scale_factor),
+      false);
   canvas.DrawImageInt(GetBackgroundImage(state, scale_factor), 0, 0);
 
   // Draw the button border with a slight alpha.
@@ -2304,14 +2308,9 @@ gfx::Rect TabStrip::GetDropBounds(int drop_index,
                         drop_indicator_height);
 
   // If the rect doesn't fit on the monitor, push the arrow to the bottom.
-#if defined(OS_WIN) && !defined(USE_AURA)
-  gfx::Rect monitor_bounds = views::GetMonitorBoundsForRect(drop_bounds);
-  *is_beneath = (monitor_bounds.IsEmpty() ||
-                 !monitor_bounds.Contains(drop_bounds));
-#else
-  *is_beneath = false;
-  NOTIMPLEMENTED();
-#endif
+  gfx::Screen* screen = gfx::Screen::GetScreenFor(GetWidget()->GetNativeView());
+  gfx::Display display = screen->GetDisplayMatching(drop_bounds);
+  *is_beneath = !display.bounds().Contains(drop_bounds);
   if (*is_beneath)
     drop_bounds.Offset(0, drop_bounds.height() + height());
 

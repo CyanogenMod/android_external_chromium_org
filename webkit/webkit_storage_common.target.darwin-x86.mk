@@ -30,6 +30,7 @@ LOCAL_SRC_FILES := \
 	webkit/common/database/database_connections.cc \
 	webkit/common/database/database_identifier.cc \
 	webkit/common/fileapi/directory_entry.cc \
+	webkit/common/fileapi/file_system_info.cc \
 	webkit/common/fileapi/file_system_util.cc \
 	webkit/common/quota/quota_status_code.cc
 
@@ -74,7 +75,6 @@ MY_CFLAGS_Debug := \
 
 MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
@@ -164,7 +164,6 @@ MY_CFLAGS_Release := \
 
 MY_DEFS_Release := \
 	'-DANGLE_DX11' \
-	'-DWTF_VECTOR_INITIAL_SIZE=4' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
 	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \

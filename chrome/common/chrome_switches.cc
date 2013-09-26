@@ -577,6 +577,10 @@ const char kEnableContacts[]                = "enable-contacts";
 // If true devtools experimental settings are enabled.
 const char kEnableDevToolsExperiments[]     = "enable-devtools-experiments";
 
+// Enable device discovery notifications.
+const char kEnableDeviceDiscoveryNotifications[] =
+    "enable-device-discovery-notifications";
+
 // Force-enables DNS probes on main frame DNS errors.  (The user must still
 // opt in to "Use web service to resolve navigation errors".)
 const char kEnableDnsProbes[]               = "enable-dns-probes";
@@ -1130,8 +1134,10 @@ const char kPrerenderModeSwitchValueEnabled[] = "enabled";
 //   prefetch_only: No prerendering, but enables prefetching.
 const char kPrerenderModeSwitchValuePrefetchOnly[] = "prefetch_only";
 
+#if defined(OS_WIN)
 // Enable conversion from vector to raster for any page.
 const char kPrintRaster[]                   = "print-raster";
+#endif
 
 // Use IPv6 only for privet HTTP.
 const char kPrivetIPv6Only[]                   = "privet-ipv6-only";
@@ -1446,6 +1452,9 @@ const char kUninstall[]                     = "uninstall";
 // Overrides per-origin quota settings to unlimited storage for any
 // apps/origins.  This should be used only for testing purpose.
 const char kUnlimitedStorage[]              = "unlimited-storage";
+
+// Use the cacheable New Tab page for Embedded Search.
+const char kUseCacheableNewTabPage[]        = "use-cacheable-new-tab-page";
 
 // Uses Spdy for the transport protocol instead of HTTP. This is a temporary
 // testing flag.

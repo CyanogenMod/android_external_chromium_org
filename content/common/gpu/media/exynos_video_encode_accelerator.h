@@ -85,6 +85,8 @@ class ExynosVideoEncodeAccelerator : public media::VideoEncodeAccelerator {
     MfcOutputRecord();
     bool at_device;
     linked_ptr<BitstreamBufferRef> buffer_ref;
+    void* address;
+    size_t length;
   };
 
   enum {
@@ -174,6 +176,7 @@ class ExynosVideoEncodeAccelerator : public media::VideoEncodeAccelerator {
   bool CreateGscInputBuffers();
   bool CreateGscOutputBuffers();
   bool SetMfcFormats();
+  bool InitMfcControls();
   bool CreateMfcInputBuffers();
   bool CreateMfcOutputBuffers();
 

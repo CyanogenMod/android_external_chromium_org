@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/notification_service.h"
@@ -652,6 +653,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestEventName) {
              "web_view/shim");
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestOnEventProperty) {
+  TestHelper("testOnEventProperties",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadProgressEvent) {
   TestHelper("testLoadProgressEvent",
              "DoneShimTest.PASSED",
@@ -849,6 +857,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalFileURL) {
              "web_view/shim");
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadAbortIllegalJavaScriptURL) {
+  TestHelper("testLoadAbortIllegalJavaScriptURL",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestReload) {
   TestHelper("testReload",
              "DoneShimTest.PASSED",
@@ -939,7 +954,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestResizeWebviewResizesContent) {
 
 // This test makes sure we do not crash if app is closed while interstitial
 // page is being shown in guest.
-IN_PROC_BROWSER_TEST_F(WebViewTest, InterstitialTeardown) {
+// Test flaky on windows; http://crbug.com/297014 .
+#if defined(OS_WIN)
+#define MAYBE_InterstitialTeardown DISABLED_InterstitialTeardown
+#else
+#define MAYBE_InterstitialTeardown InterstitialTeardown
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_InterstitialTeardown) {
   // Start a HTTPS server so we can load an interstitial page inside guest.
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.server_certificate =
@@ -1492,7 +1513,6 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, MediaAccessAPIAllow_TestAllowAsync) {
 // Checks that window.screenX/screenY/screenLeft/screenTop works correctly for
 // guests.
 IN_PROC_BROWSER_TEST_F(WebViewTest, ScreenCoordinates) {
-  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "screen_coordinates"))
           << message_;
@@ -1622,7 +1642,6 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, ClearData) {
 #define MAYBE_ConsoleMessage ConsoleMessage
 #endif
 IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_ConsoleMessage) {
-  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTestWithArg(
       "platform_apps/web_view/common", "console_messages"))
           << message_;
@@ -1690,6 +1709,18 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SetPropertyOnDocumentReady) {
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, SetPropertyOnDocumentInteractive) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/document_interactive"))
+                  << message_;
+}
+
+// Tests overriding user agent.
+IN_PROC_BROWSER_TEST_F(WebViewTest, UserAgent) {
+  ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
+  ASSERT_TRUE(RunPlatformAppTestWithArg(
+              "platform_apps/web_view/common", "useragent")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, NoPermission) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/nopermission"))
                   << message_;
 }
 

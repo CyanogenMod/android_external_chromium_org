@@ -30,18 +30,10 @@ const int kEntryFilesSuffixLength = 2;
 
 const uint64 kMaxEntiresInIndex = 100000000;
 
-const char kIndexFileName[] = "the-real-index";
-const char kTempIndexFileName[] = "temp-index";
-
 uint32 CalculatePickleCRC(const Pickle& pickle) {
   return crc32(crc32(0, Z_NULL, 0),
                reinterpret_cast<const Bytef*>(pickle.payload()),
                pickle.payload_size());
-}
-
-void DoomEntrySetReply(const net::CompletionCallback& reply_callback,
-                       int result) {
-  reply_callback.Run(result);
 }
 
 // Used in histograms. Please only add new values at the end.
@@ -152,18 +144,18 @@ const char SimpleIndexFile::kIndexDirectory[] = "index-dir";
 // static
 const char SimpleIndexFile::kTempIndexFileName[] = "temp-index";
 
-SimpleIndexFile::IndexMetadata::IndexMetadata() :
-    magic_number_(kSimpleIndexMagicNumber),
-    version_(kSimpleVersion),
-    number_of_entries_(0),
-    cache_size_(0) {}
+SimpleIndexFile::IndexMetadata::IndexMetadata()
+    : magic_number_(kSimpleIndexMagicNumber),
+      version_(kSimpleVersion),
+      number_of_entries_(0),
+      cache_size_(0) {}
 
 SimpleIndexFile::IndexMetadata::IndexMetadata(
-    uint64 number_of_entries, uint64 cache_size) :
-    magic_number_(kSimpleIndexMagicNumber),
-    version_(kSimpleVersion),
-    number_of_entries_(number_of_entries),
-    cache_size_(cache_size) {}
+    uint64 number_of_entries, uint64 cache_size)
+    : magic_number_(kSimpleIndexMagicNumber),
+      version_(kSimpleVersion),
+      number_of_entries_(number_of_entries),
+      cache_size_(cache_size) {}
 
 void SimpleIndexFile::IndexMetadata::Serialize(Pickle* pickle) const {
   DCHECK(pickle);
@@ -284,17 +276,6 @@ void SimpleIndexFile::WriteToDisk(const SimpleIndex::EntrySet& entry_set,
       base::Passed(&pickle),
       base::TimeTicks::Now(),
       app_on_background));
-}
-
-void SimpleIndexFile::DoomEntrySet(
-    scoped_ptr<std::vector<uint64> > entry_hashes,
-    const net::CompletionCallback& reply_callback) {
-  PostTaskAndReplyWithResult(
-      worker_pool_,
-      FROM_HERE,
-      base::Bind(&SimpleSynchronousEntry::DoomEntrySet,
-                 base::Passed(entry_hashes.Pass()), cache_directory_),
-      base::Bind(&DoomEntrySetReply, reply_callback));
 }
 
 // static

@@ -32,11 +32,6 @@ class FileCacheEntry;
 typedef base::Callback<void(bool success, const FileCacheEntry& cache_entry)>
     GetCacheEntryCallback;
 
-// Callback for Iterate().
-typedef base::Callback<void(const std::string& id,
-                            const FileCacheEntry& cache_entry)>
-    CacheIterateCallback;
-
 namespace internal {
 
 // Callback for GetFileFromCache.
@@ -98,12 +93,6 @@ class FileCache {
   // See also GetCacheEntryOnUIThread().
   bool GetCacheEntry(const std::string& id, FileCacheEntry* entry);
 
-  // Runs Iterate() with |iteration_callback| on |blocking_task_runner_| and
-  // runs |completion_callback| upon completion.
-  // Must be called on UI thread.
-  void IterateOnUIThread(const CacheIterateCallback& iteration_callback,
-                         const base::Closure& completion_callback);
-
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
 
@@ -112,13 +101,6 @@ class FileCache {
   // Returns true if we successfully manage to have enough space, otherwise
   // false.
   bool FreeDiskSpaceIfNeededFor(int64 num_bytes);
-
-  // Runs GetFile() on |blocking_task_runner_|, and calls |callback| with
-  // the result asynchronously.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void GetFileOnUIThread(const std::string& id,
-                         const GetFileFromCacheCallback& callback);
 
   // Checks if file corresponding to |id| exists in cache, and returns
   // FILE_ERROR_OK with |cache_file_path| storing the path to the file.

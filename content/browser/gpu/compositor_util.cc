@@ -43,6 +43,11 @@ bool CanDoAcceleratedCompositing() {
   return true;
 }
 
+bool IsForceCompositingModeBlacklisted() {
+  return GpuDataManager::GetInstance()->IsFeatureBlacklisted(
+      gpu::GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE);
+}
+
 }  // namespace
 
 bool IsThreadedCompositingEnabled() {
@@ -61,7 +66,7 @@ bool IsThreadedCompositingEnabled() {
     return true;
   }
 
-  if (!CanDoAcceleratedCompositing())
+  if (!CanDoAcceleratedCompositing() || IsForceCompositingModeBlacklisted())
     return false;
 
   base::FieldTrial* trial =
@@ -83,7 +88,7 @@ bool IsForceCompositingModeEnabled() {
   else if (command_line.HasSwitch(switches::kForceCompositingMode))
     return true;
 
-  if (!CanDoAcceleratedCompositing())
+  if (!CanDoAcceleratedCompositing() || IsForceCompositingModeBlacklisted())
     return false;
 
   // Hardcode some platforms to use FCM, this has to be done here instead of via
@@ -118,6 +123,19 @@ bool IsDelegatedRendererEnabled() {
     LOG(ERROR) << "Disabling delegated-rendering because it needs "
                << "force-compositing-mode and threaded-compositing.";
   }
+
+  return enabled;
+}
+
+bool IsDeadlineSchedulingEnabled() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  // Default to disabled.
+  bool enabled = false;
+
+  // Flags override.
+  enabled |= command_line.HasSwitch(switches::kEnableDeadlineScheduling);
+  enabled &= !command_line.HasSwitch(switches::kDisableDeadlineScheduling);
 
   return enabled;
 }

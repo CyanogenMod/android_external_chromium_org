@@ -848,7 +848,7 @@ void RenderViewHostImpl::FilesSelectedInChooser(
   for (size_t i = 0; i < files.size(); ++i) {
     const ui::SelectedFileInfo& file = files[i];
     if (permissions == FileChooserParams::Save) {
-      ChildProcessSecurityPolicyImpl::GetInstance()->GrantCreateWriteFile(
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantCreateReadWriteFile(
           GetProcess()->GetID(), file.local_path);
     } else {
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
@@ -1494,8 +1494,8 @@ void RenderViewHostImpl::OnStartDragging(
     if (policy->CanReadFile(GetProcess()->GetID(), path))
       filtered_data.filenames.push_back(*it);
   }
-  ui::ScaleFactor scale_factor = GetScaleFactorForView(GetView());
-  gfx::ImageSkia image(gfx::ImageSkiaRep(bitmap, scale_factor));
+  float scale = ui::GetImageScale(GetScaleFactorForView(GetView()));
+  gfx::ImageSkia image(gfx::ImageSkiaRep(bitmap, scale));
   view->StartDragging(filtered_data, drag_operations_mask, image,
       bitmap_offset_in_dip, event_info);
 }

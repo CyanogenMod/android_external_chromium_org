@@ -68,7 +68,6 @@
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_MINIMIZE_H" file="win/app_window_minimize_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_MINIMIZE_P" file="win/app_window_minimize_active.png" />
       </if>
-      <structure type="chrome_scaled_image" name="IDR_AUDIO_EQUALIZER_COLUMN" file="common/audio_equalizer_column.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON" file="common/autofill_dialog_menu_button_normal.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_P" file="common/autofill_dialog_menu_button_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_AUTOFILL_DIALOG_MENU_BUTTON_H" file="common/autofill_dialog_menu_button_hover.png" />
@@ -234,6 +233,9 @@
       <structure type="chrome_scaled_image" name="IDR_DOWNLOAD_PROGRESS_BACKGROUND_32" file="download_progress_background32.png" />
       <structure type="chrome_scaled_image" name="IDR_DOWNLOAD_PROGRESS_FOREGROUND_16" file="download_progress_foreground16.png" />
       <structure type="chrome_scaled_image" name="IDR_DOWNLOAD_PROGRESS_FOREGROUND_32" file="download_progress_foreground32.png" />
+      <if expr="is_android">
+        <structure type="chrome_scaled_image" name="IDR_PROTECTED_MEDIA_IDENTIFIER_INFOBAR_ICON" file="infobar_protected_media_identifier.png" />
+      </if>
       <if expr="pp_ifdef('chromeos')">
         <structure type="chrome_scaled_image" name="IDR_ENROLL_FAILURE" file="enroll_failure.png" />
         <structure type="chrome_scaled_image" name="IDR_ENROLL_SUCCESS" file="enroll_success.png" />
@@ -323,9 +325,7 @@
       <structure type="chrome_scaled_image" name="IDR_FULLSCREEN_MENU_BUTTON" file="fullscreen_menu_button.png" />
       <structure type="chrome_scaled_image" name="IDR_GEOLOCATION_INFOBAR_ICON" file="infobar_geolocation.png" />
       <structure type="chrome_scaled_image" name="IDR_GUEST_ICON" file="common/guest_icon.png" />
-      <if expr="pp_ifdef('chromeos')">
-        <structure type="chrome_scaled_image" name="IDR_HELP_MENU" file="help_16.png" />
-      </if>
+      <structure type="chrome_scaled_image" name="IDR_HELP_MENU" file="common/help_16.png" />
       <structure type="chrome_scaled_image" name="IDR_HISTORY_FAVICON" file="common/favicon_history.png" />
       <if expr="not pp_ifdef('toolkit_views') and not is_macosx and not is_ios">
         <structure type="chrome_scaled_image" name="IDR_HOME" file="home.png" />
@@ -342,15 +342,20 @@
         <structure type="chrome_scaled_image" name="IDR_HOME_P" file="common/browser_home_pressed.png" />
       </if>
       <if expr="not is_android and not is_ios">
-        <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER24" file="icon_add_user24.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER_WHITE" file="icon_add_user_white.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_GUEST_WHITE" file="icon_guest_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_ADD_USER" file="common/icon_add_user.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_ADD_USER_WHITE" file="common/icon_add_user_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_BROWSE_GUEST" file="common/icon_browse_as_guest.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_BROWSE_GUEST_WHITE" file="common/icon_browse_as_guest_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_LOCKED" file="common/icon_locked.png" />
       </if>
       <if expr="not is_android and not is_ios and not pp_ifdef('chromeos')">
         <!-- TODO(noms): Remove this once local profile avatars are migrated -->
         <structure type="chrome_scaled_image" name="IDR_USER_MANAGER_DEFAULT_AVATAR" file="avatar_user_color.png" />
       </if>
       <if expr="pp_ifdef('chromeos')">
+        <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER24" file="icon_add_user24.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_ADD_USER_WHITE" file="icon_add_user_white.png" />
+        <structure type="chrome_scaled_image" name="IDR_ICON_GUEST_WHITE" file="icon_guest_white.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_POWER24" file="icon_power24.png" />
         <structure type="chrome_scaled_image" name="IDR_ICON_POWER_WHITE" file="icon_power_white.png" />
       </if>
@@ -504,6 +509,7 @@
       </if>
       <structure type="chrome_scaled_image" name="IDR_NEWTAB_WEBSTORE_THUMBNAIL" file="ntp_webstore_thumb.png" />
       <if expr="pp_ifdef('chromeos')">
+        <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_ALERT" file="cros/notification_alert.png" />
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_PERIPHERAL_BATTERY_LOW" file="cros/notification_peripheral_battery_low.png" />
       </if>
       <if expr="is_win or is_linux">
@@ -805,6 +811,7 @@
       <structure type="chrome_scaled_image" name="IDR_CLOSE_1_H" file="common/close_1_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_1_MASK" file="common/close_1_mask.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_1_P" file="common/close_1_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_TAB_AUDIO_INDICATOR" file="common/tab_audio_indicator.png" />
       <structure type="chrome_scaled_image" name="IDR_TAB_DROP_DOWN" file="tab_drop_down.png" />
       <structure type="chrome_scaled_image" name="IDR_TAB_DROP_UP" file="tab_drop_up.png" />
       <if expr="not pp_ifdef('toolkit_views') and not is_macosx and not is_ios">
@@ -976,6 +983,10 @@
       <structure type="chrome_scaled_image" name="IDR_ZOOM_MINUS" file="zoom_minus.png" />
       <structure type="chrome_scaled_image" name="IDR_ZOOM_PLUS" file="zoom_plus.png" />
       <structure type="chrome_scaled_image" name="IDR_ZOOM_NORMAL" file="zoom_reset.png" />
+      <!-- People search images -->
+      <structure type="chrome_scaled_image" name="IDR_PEOPLE_SEARCH_ACTION_EMAIL" file="common/mail.png" />
+      <structure type="chrome_scaled_image" name="IDR_PEOPLE_SEARCH_ACTION_EMAIL_HOVER" file="common/mail_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_PEOPLE_SEARCH_ACTION_EMAIL_PRESSED" file="common/mail_pressed.png" />
     </structures>
   </release>
 </grit>

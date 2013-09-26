@@ -22,9 +22,6 @@ namespace remoting {
 
 namespace {
 
-// URL used to create a relay session.
-const char kCreateRelaySessionURL[] = "/create_session";
-
 // Read buffer we allocate per read when reading response from
 // URLLoader. Normally the response from URL loader is smaller than 1kB.
 const int kReadSize = 1024;
@@ -320,7 +317,8 @@ PepperPortAllocator::PepperPortAllocator(
   // username fragment is shared between all candidates for this
   // channel.
   set_flags(cricket::PORTALLOCATOR_DISABLE_TCP |
-            cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG);
+            cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG|
+            cricket::PORTALLOCATOR_ENABLE_IPV6);
 }
 
 PepperPortAllocator::~PepperPortAllocator() {

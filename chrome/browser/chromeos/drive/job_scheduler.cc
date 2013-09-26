@@ -337,27 +337,6 @@ void JobScheduler::GetRemainingFileList(
   StartJob(new_job);
 }
 
-void JobScheduler::GetResourceEntry(
-    const std::string& resource_id,
-    const ClientContext& context,
-    const google_apis::GetResourceEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  JobEntry* new_job = CreateNewJob(TYPE_GET_RESOURCE_ENTRY);
-  new_job->context = context;
-  new_job->task = base::Bind(
-      &DriveServiceInterface::GetResourceEntry,
-      base::Unretained(drive_service_),
-      resource_id,
-      base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 new_job->job_info.job_id,
-                 callback));
-  new_job->abort_callback = google_apis::CreateErrorRunCallback(callback);
-  StartJob(new_job);
-}
-
 void JobScheduler::GetShareUrl(
     const std::string& resource_id,
     const GURL& embed_origin,
@@ -405,6 +384,7 @@ void JobScheduler::CopyResource(
     const std::string& resource_id,
     const std::string& parent_resource_id,
     const std::string& new_title,
+    const base::Time& last_modified,
     const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -416,6 +396,7 @@ void JobScheduler::CopyResource(
       resource_id,
       parent_resource_id,
       new_title,
+      last_modified,
       base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
@@ -449,6 +430,7 @@ void JobScheduler::MoveResource(
     const std::string& resource_id,
     const std::string& parent_resource_id,
     const std::string& new_title,
+    const base::Time& last_modified,
     const google_apis::GetResourceEntryCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
@@ -460,6 +442,7 @@ void JobScheduler::MoveResource(
       resource_id,
       parent_resource_id,
       new_title,
+      last_modified,
       base::Bind(&JobScheduler::OnGetResourceEntryJobDone,
                  weak_ptr_factory_.GetWeakPtr(),
                  new_job->job_info.job_id,
@@ -1111,7 +1094,6 @@ JobScheduler::QueueType JobScheduler::GetJobQueueType(JobType type) {
     case TYPE_GET_CHANGE_LIST:
     case TYPE_GET_REMAINING_CHANGE_LIST:
     case TYPE_GET_REMAINING_FILE_LIST:
-    case TYPE_GET_RESOURCE_ENTRY:
     case TYPE_GET_SHARE_URL:
     case TYPE_DELETE_RESOURCE:
     case TYPE_COPY_RESOURCE:

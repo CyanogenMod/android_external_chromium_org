@@ -37,14 +37,11 @@
 
 using content::BrowserThread;
 
-namespace {
 const char kChannelIdSeparator[] = "/";
 const char kUserNotSignedIn[] = "The user is not signed in.";
 const char kUserAccessTokenFailure[] =
     "Cannot obtain access token for the user.";
-const char kTokenServiceNotAvailable[] = "Failed to get token service.";
 const int kObfuscatedGaiaIdTimeoutInDays = 30;
-}
 
 namespace extensions {
 
@@ -126,9 +123,10 @@ void PushMessagingGetChannelIdFunction::StartAccessTokenFetch() {
   std::vector<std::string> scope_vector =
       extensions::ObfuscatedGaiaIdFetcher::GetScopes();
   OAuth2TokenService::ScopeSet scopes(scope_vector.begin(), scope_vector.end());
-  fetcher_access_token_request_ =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
-          ->StartRequest(scopes, this);
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
+  fetcher_access_token_request_ = token_service->StartRequest(
+      token_service->GetPrimaryAccountId(), scopes, this);
 }
 
 void PushMessagingGetChannelIdFunction::OnRefreshTokenAvailable(
@@ -189,8 +187,10 @@ void PushMessagingGetChannelIdFunction::StartGaiaIdFetch(
 
 // Check if the user is logged in.
 bool PushMessagingGetChannelIdFunction::IsUserLoggedIn() const {
-  return ProfileOAuth2TokenServiceFactory::GetForProfile(profile())
-      ->RefreshTokenIsAvailable();
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
+  return token_service->RefreshTokenIsAvailable(
+      token_service->GetPrimaryAccountId());
 }
 
 void PushMessagingGetChannelIdFunction::ReportResult(

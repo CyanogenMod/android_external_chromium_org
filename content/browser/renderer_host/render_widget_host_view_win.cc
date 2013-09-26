@@ -61,7 +61,6 @@
 #include "ui/base/ime/win/imm32_manager.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
 #include "ui/base/l10n/l10n_util_win.h"
-#include "ui/base/sequential_id_generator.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/base/touch/touch_enabled.h"
 #include "ui/base/ui_base_switches.h"
@@ -74,6 +73,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/sequential_id_generator.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
@@ -1410,7 +1410,7 @@ void RenderWidgetHostViewWin::DrawBackground(const RECT& dirty_rect,
                                              CPaintDC* dc) {
   if (!background_.empty()) {
     gfx::Rect dirty_area(dirty_rect);
-    gfx::Canvas canvas(dirty_area.size(), ui::SCALE_FACTOR_100P, true);
+    gfx::Canvas canvas(dirty_area.size(), 1.0f, true);
     canvas.Translate(-dirty_area.OffsetFromOrigin());
 
     gfx::Rect dc_rect(dc->m_ps.rcPaint);

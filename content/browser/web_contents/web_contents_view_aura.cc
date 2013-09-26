@@ -48,6 +48,7 @@
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
+#include "ui/base/dragdrop/drop_target_event.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
@@ -123,7 +124,8 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-            ui::GetScaleFactorForNativeView(web_contents_window())));
+          ui::GetImageScale(
+              ui::GetScaleFactorForNativeView(web_contents_window()))));
       image = gfx::Image(image_reps);
     }
     SetImage(image);
@@ -515,7 +517,8 @@ class OverscrollNavigationOverlay :
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-            ui::GetScaleFactorForNativeView(window_.get())));
+          ui::GetImageScale(
+              ui::GetScaleFactorForNativeView(window_.get()))));
       image = gfx::Image(image_reps);
     }
     layer_delegate_.SetImage(image);

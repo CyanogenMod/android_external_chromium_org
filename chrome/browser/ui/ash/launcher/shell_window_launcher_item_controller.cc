@@ -6,7 +6,7 @@
 
 #include "apps/native_app_window.h"
 #include "apps/shell_window.h"
-#include "ash/wm/window_settings.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item_v2app.h"
@@ -117,12 +117,14 @@ bool ShellWindowLauncherItemController::IsVisible() const {
   return false;
 }
 
-void ShellWindowLauncherItemController::Launch(
-    int event_flags) {
-  launcher_controller()->LaunchApp(app_id(), ui::EF_NONE);
+void ShellWindowLauncherItemController::Launch(ash::LaunchSource source,
+                                               int event_flags) {
+  launcher_controller()->LaunchApp(app_id(),
+                                   source,
+                                   ui::EF_NONE);
 }
 
-void ShellWindowLauncherItemController::Activate() {
+void ShellWindowLauncherItemController::Activate(ash::LaunchSource source) {
   DCHECK(!shell_windows_.empty());
   ShellWindow* window_to_activate = last_active_shell_window_ ?
       last_active_shell_window_ : shell_windows_.back();
@@ -147,7 +149,7 @@ void ShellWindowLauncherItemController::Clicked(const ui::Event& event) {
     aura::Window* panel_window = panel->GetNativeWindow();
     // If the panel is attached on another display, move it to the current
     // display and activate it.
-    if (ash::wm::GetWindowSettings(panel_window)->panel_attached() &&
+    if (ash::wm::GetWindowState(panel_window)->panel_attached() &&
         ash::wm::MoveWindowToEventRoot(panel_window, event)) {
       if (!panel->GetBaseWindow()->IsActive())
         ShowAndActivateOrMinimize(panel);

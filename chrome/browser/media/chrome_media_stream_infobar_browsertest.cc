@@ -156,8 +156,16 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
   GetUserMediaAndDeny(tab_contents);
 }
 
+// Times out on win debug builds; http://crbug.com/295723 .
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras \
+        DISABLED_DenyingMicDoesNotCauseStickyDenyForCameras
+#else
+#define MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras \
+        DenyingMicDoesNotCauseStickyDenyForCameras
+#endif
 IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingMicDoesNotCauseStickyDenyForCameras) {
+                       MAYBE_DenyingMicDoesNotCauseStickyDenyForCameras) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If mic blocking also blocked cameras, the second call here would hang.
@@ -185,8 +193,18 @@ IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
                                                kAudioOnlyCallConstraints);
 }
 
-IN_PROC_BROWSER_TEST_F(MediaStreamInfoBarTest,
-                       DenyingMicStillSucceedsWithCameraForAudioVideoCalls) {
+
+// Times out on windows, http://crbug.com/295723 .
+#if defined(OS_WIN)
+#define MAYBE_DenyingMicStillSucceedsWithCameraForAudioVideoCalls \
+        DISABLED_DenyingMicStillSucceedsWithCameraForAudioVideoCalls
+#else
+#define MAYBE_DenyingMicStillSucceedsWithCameraForAudioVideoCalls \
+        DenyingMicStillSucceedsWithCameraForAudioVideoCalls
+#endif
+IN_PROC_BROWSER_TEST_F(
+    MediaStreamInfoBarTest,
+    MAYBE_DenyingMicStillSucceedsWithCameraForAudioVideoCalls) {
   content::WebContents* tab_contents = LoadTestPageInTab();
 
   // If microphone blocking also blocked a AV call, the second call here

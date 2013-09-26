@@ -69,6 +69,32 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(MediaPlayerHostMsg_Initialize_Type)
 
+// Chrome for Android seek message sequence is:
+// 1. Renderer->Browser MediaPlayerHostMsg_Seek
+//    This is the beginning of actual seek flow in response to web app requests
+//    for seeks and browser MediaPlayerMsg_SeekRequests. With this message,
+//    the renderer asks browser to perform actual seek. At most one of these
+//    actual seeks will be in process between this message and renderer's later
+//    receipt of MediaPlayerMsg_SeekCompleted from the browser.
+// 2. Browser->Renderer MediaPlayerMsg_SeekCompleted
+//    Once the browser determines the seek is complete, it sends this message to
+//    notify the renderer of seek completion.
+//
+// Other seek-related IPC messages:
+// Browser->Renderer MediaPlayerMsg_SeekRequest
+//    Browser requests to begin a seek. All browser-initiated seeks must begin
+//    with this request. Renderer controls actual seek initiation via the normal
+//    seek flow, above, keeping web apps aware of seeks. These requests are
+//    also allowed while another actual seek is in progress.
+//
+// If the demuxer is located in the renderer, as in media source players, the
+// browser must ensure the renderer demuxer is appropriately seeked between
+// receipt of MediaPlayerHostMsg_Seek and transmission of
+// MediaPlayerMsg_SeekCompleted. The following two renderer-demuxer control
+// messages book-end the renderer-demuxer seek:
+// 1.1 Browser->Renderer MediaPlayerMsg_DemuxerSeekRequest
+// 1.2 Renderer->Browser MediaPlayerHostMsg_DemuxerSeekDone
+
 // Messages for notifying the render process of media playback status -------
 
 // Media buffering has updated.
@@ -93,8 +119,13 @@ IPC_MESSAGE_ROUTED5(MediaPlayerMsg_MediaMetadataChanged,
                     int /* height */,
                     bool /* success */)
 
+// Requests renderer player to ask its client (blink HTMLMediaElement) to seek.
+IPC_MESSAGE_ROUTED2(MediaPlayerMsg_SeekRequest,
+                    int /* player_id */,
+                    base::TimeDelta /* time_to_seek_to */)
+
 // Media seek is completed.
-IPC_MESSAGE_ROUTED2(MediaPlayerMsg_MediaSeekCompleted,
+IPC_MESSAGE_ROUTED2(MediaPlayerMsg_SeekCompleted,
                     int /* player_id */,
                     base::TimeDelta /* current_time */)
 
@@ -129,20 +160,19 @@ IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DidMediaPlayerPlay,
 IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DidMediaPlayerPause,
                     int /* player_id */)
 
-// Media seek is requested.
-IPC_MESSAGE_ROUTED3(MediaPlayerMsg_MediaSeekRequest,
-                    int /* player_id */,
-                    base::TimeDelta /* time_to_seek */,
-                    uint32 /* seek_request_id */)
+// Requests renderer demuxer seek.
+IPC_MESSAGE_CONTROL2(MediaPlayerMsg_DemuxerSeekRequest,
+                     int /* demuxer_client_id */,
+                     base::TimeDelta /* time_to_seek */)
 
 // The media source player reads data from demuxer
-IPC_MESSAGE_ROUTED2(MediaPlayerMsg_ReadFromDemuxer,
-                    int /* player_id */,
-                    media::DemuxerStream::Type /* type */)
+IPC_MESSAGE_CONTROL2(MediaPlayerMsg_ReadFromDemuxer,
+                     int /* demuxer_client_id */,
+                     media::DemuxerStream::Type /* type */)
 
 // The player needs new config data
-IPC_MESSAGE_ROUTED1(MediaPlayerMsg_MediaConfigRequest,
-                    int /* player_id */)
+IPC_MESSAGE_CONTROL1(MediaPlayerMsg_MediaConfigRequest,
+                     int /* demuxer_client_id */)
 
 // Messages for controlling the media playback in browser process ----------
 
@@ -153,13 +183,22 @@ IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_DestroyMediaPlayer,
 // Destroy all the players.
 IPC_MESSAGE_ROUTED0(MediaPlayerHostMsg_DestroyAllMediaPlayers)
 
-// Initialize a media player object with the given player_id.
-IPC_MESSAGE_ROUTED4(
+// Initialize a media player object with the given type and player_id. The other
+// parameters are used depending on the type of player.
+//
+// url: the URL to load when initializing a URL player.
+//
+// first_party_for_cookies: the cookie store to use when loading a URL.
+//
+// demuxer_client_id: the demuxer associated with this player when initializing
+// a media source player.
+IPC_MESSAGE_ROUTED5(
     MediaPlayerHostMsg_Initialize,
+    MediaPlayerHostMsg_Initialize_Type /* type */,
     int /* player_id */,
     GURL /* url */,
-    MediaPlayerHostMsg_Initialize_Type /* type */,
-    GURL /* first_party_for_cookies */)
+    GURL /* first_party_for_cookies */,
+    int /* demuxer_client_id */)
 
 // Pause the player.
 IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_Pause,
@@ -182,31 +221,30 @@ IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_SetVolume,
                     int /* player_id */,
                     double /* volume */)
 
-// Request the player to enter fullscreen.
+// Requests the player to enter fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_EnterFullscreen, int /* player_id */)
 
-// Request the player to exit fullscreen.
+// Requests the player to exit fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_ExitFullscreen, int /* player_id */)
 
-// Sent when the seek request is received by the WebMediaPlayerAndroid.
-IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_MediaSeekRequestAck,
-                    int /* player_id */,
-                    uint32 /* seek_request_id */)
+// Sent after the renderer demuxer has seeked.
+IPC_MESSAGE_CONTROL1(MediaPlayerHostMsg_DemuxerSeekDone,
+                     int /* demuxer_client_id */)
 
 // Inform the media source player that the demuxer is ready.
-IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_DemuxerReady,
-                    int /* player_id */,
-                    media::DemuxerConfigs)
+IPC_MESSAGE_CONTROL2(MediaPlayerHostMsg_DemuxerReady,
+                     int /* demuxer_client_id */,
+                     media::DemuxerConfigs)
 
 // Sent when the data was read from the ChunkDemuxer.
-IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_ReadFromDemuxerAck,
-                    int /* player_id */,
-                    media::DemuxerData)
+IPC_MESSAGE_CONTROL2(MediaPlayerHostMsg_ReadFromDemuxerAck,
+                     int /* demuxer_client_id */,
+                     media::DemuxerData)
 
 // Inform the media source player of changed media duration from demuxer.
-IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_DurationChanged,
-                    int /* player_id */,
-                    base::TimeDelta /* duration */)
+IPC_MESSAGE_CONTROL2(MediaPlayerHostMsg_DurationChanged,
+                     int /* demuxer_client_id */,
+                     base::TimeDelta /* duration */)
 
 #if defined(GOOGLE_TV)
 // Notify the player about the external surface, requesting it if necessary.
@@ -220,9 +258,10 @@ IPC_MESSAGE_ROUTED3(MediaPlayerHostMsg_NotifyExternalSurface,
 // Messages for encrypted media extensions API ------------------------------
 // TODO(xhwang): Move the following messages to a separate file.
 
-IPC_MESSAGE_ROUTED2(MediaKeysHostMsg_InitializeCDM,
+IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_InitializeCDM,
                     int /* media_keys_id */,
-                    std::vector<uint8> /* uuid */)
+                    std::vector<uint8> /* uuid */,
+                    GURL /* frame url */)
 
 IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_GenerateKeyRequest,
                     int /* media_keys_id */,

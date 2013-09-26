@@ -21,16 +21,13 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/x/x11_types.h"
 
 typedef unsigned long Atom;
-typedef unsigned long XID;
 typedef unsigned long XSharedMemoryId;  // ShmSeg in the X headers.
-typedef struct _XDisplay Display;
 typedef unsigned long Cursor;
 typedef struct _XcursorImage XcursorImage;
 typedef union _XEvent XEvent;
-typedef struct _XImage XImage;
-typedef struct _XGC *GC;
 
 #if defined(TOOLKIT_GTK)
 typedef struct _GdkDrawable GdkWindow;
@@ -56,11 +53,6 @@ namespace ui {
 UI_EXPORT bool XDisplayExists();
 // Return an X11 connection for the current, primary display.
 
-// TODO(oshima|evan): This assume there is one display and dosn't work
-// undef mutiple displays/monitor environment. Remove this and change the
-// chrome codebase to get the display from window.
-UI_EXPORT Display* GetXDisplay();
-
 // X shared memory comes in three flavors:
 // 1) No SHM support,
 // 2) SHM putimage,
@@ -71,13 +63,13 @@ enum SharedMemorySupport {
   SHARED_MEMORY_PIXMAP
 };
 // Return the shared memory type of our X connection.
-UI_EXPORT SharedMemorySupport QuerySharedMemorySupport(Display* dpy);
+UI_EXPORT SharedMemorySupport QuerySharedMemorySupport(XDisplay* dpy);
 
 // Return true iff the display supports Xrender
-UI_EXPORT bool QueryRenderSupport(Display* dpy);
+UI_EXPORT bool QueryRenderSupport(XDisplay* dpy);
 
 // Return the default screen number for the display
-int GetDefaultScreen(Display* display);
+int GetDefaultScreen(XDisplay* display);
 
 // Returns an X11 Cursor, sharable across the process.
 // |cursor_shape| is an X font cursor shape, see XCreateFontCursor().
@@ -152,9 +144,6 @@ UI_EXPORT void SetHideTitlebarWhenMaximizedProperty(
 // Clears all regions of X11's default root window by filling black pixels.
 UI_EXPORT void ClearX11DefaultRootWindow();
 
-// Return the number of bits-per-pixel for a pixmap of the given depth
-UI_EXPORT int BitsPerPixelForPixmapDepth(Display* display, int depth);
-
 // Returns true if |window| is visible.
 UI_EXPORT bool IsWindowVisible(XID window);
 
@@ -212,7 +201,7 @@ UI_EXPORT bool SetAtomArrayProperty(XID window,
 Atom GetAtom(const char* atom_name);
 
 // Sets the WM_CLASS attribute for a given X11 window.
-UI_EXPORT void SetWindowClassHint(Display* display,
+UI_EXPORT void SetWindowClassHint(XDisplay* display,
                                   XID window,
                                   std::string res_name,
                                   std::string res_class);
@@ -229,7 +218,7 @@ static const int kAllDesktops = -1;
 bool GetWindowDesktop(XID window, int* desktop);
 
 // Translates an X11 error code into a printable string.
-UI_EXPORT std::string GetX11ErrorString(Display* display, int err);
+UI_EXPORT std::string GetX11ErrorString(XDisplay* display, int err);
 
 // Implementers of this interface receive a notification for every X window of
 // the main display.
@@ -263,9 +252,9 @@ void RestackWindow(XID window, XID sibling, bool above);
 
 // Return a handle to a X ShmSeg. |shared_memory_key| is a SysV
 // IPC key. The shared memory region must contain 32-bit pixels.
-UI_EXPORT XSharedMemoryId AttachSharedMemory(Display* display,
+UI_EXPORT XSharedMemoryId AttachSharedMemory(XDisplay* display,
                                              int shared_memory_support);
-UI_EXPORT void DetachSharedMemory(Display* display, XSharedMemoryId shmseg);
+UI_EXPORT void DetachSharedMemory(XDisplay* display, XSharedMemoryId shmseg);
 
 // Copies |source_bounds| from |drawable| to |canvas| at offset |dest_offset|.
 // |source_bounds| is in physical pixels, while |dest_offset| is relative to
@@ -279,33 +268,10 @@ UI_EXPORT bool CopyAreaToCanvas(XID drawable,
 
 // Return a handle to an XRender picture where |pixmap| is a handle to a
 // pixmap containing Skia ARGB data.
-UI_EXPORT XID CreatePictureFromSkiaPixmap(Display* display, XID pixmap);
+UI_EXPORT XID CreatePictureFromSkiaPixmap(XDisplay* display, XID pixmap);
 
-// Draws ARGB data on the given pixmap using the given GC, converting to the
-// server side visual depth as needed.  Destination is assumed to be the same
-// dimensions as |data| or larger.  |data| is also assumed to be in row order
-// with each line being exactly |width| * 4 bytes long.
-UI_EXPORT void PutARGBImage(Display* display,
-                            void* visual, int depth,
-                            XID pixmap, void* pixmap_gc,
-                            const uint8* data,
-                            int width, int height);
-
-// Same as above only more general:
-// - |data_width| and |data_height| refer to the data image
-// - |src_x|, |src_y|, |copy_width| and |copy_height| define source region
-// - |dst_x|, |dst_y|, |copy_width| and |copy_height| define destination region
-UI_EXPORT void PutARGBImage(Display* display,
-                            void* visual, int depth,
-                            XID pixmap, void* pixmap_gc,
-                            const uint8* data,
-                            int data_width, int data_height,
-                            int src_x, int src_y,
-                            int dst_x, int dst_y,
-                            int copy_width, int copy_height);
-
-void FreePicture(Display* display, XID picture);
-void FreePixmap(Display* display, XID pixmap);
+void FreePicture(XDisplay* display, XID picture);
+void FreePixmap(XDisplay* display, XID pixmap);
 
 enum WindowManagerName {
   WM_UNKNOWN,
@@ -335,23 +301,6 @@ UI_EXPORT void SetDefaultX11ErrorHandlers();
 
 // Return true if a given window is in full-screen mode.
 UI_EXPORT bool IsX11WindowFullScreen(XID window);
-
-// Return true if event type is MotionNotify.
-UI_EXPORT bool IsMotionEvent(XEvent* event);
-
-// Returns the mapped button.
-int GetMappedButton(int button);
-
-// Updates button mapping. This is usually called when a MappingNotify event is
-// received.
-UI_EXPORT void UpdateButtonMap();
-
-// Initializes a XEvent that holds XKeyEvent for testing. Note that ui::EF_
-// flags should be passed as |flags|, not the native ones in <X11/X.h>.
-UI_EXPORT void InitXKeyEventForTesting(EventType type,
-                                       KeyboardCode key_code,
-                                       int flags,
-                                       XEvent* event);
 
 // Manages a piece of X11 allocated memory as a RefCountedMemory segment. This
 // object takes ownership over the passed in memory and will free it with the
@@ -419,7 +368,7 @@ class UI_EXPORT XScopedImage {
 class UI_EXPORT XScopedCursor {
  public:
   // Keeps track of |cursor| created with |display|.
-  XScopedCursor(::Cursor cursor, Display* display);
+  XScopedCursor(::Cursor cursor, XDisplay* display);
   ~XScopedCursor();
 
   ::Cursor get() const;
@@ -427,7 +376,7 @@ class UI_EXPORT XScopedCursor {
 
  private:
   ::Cursor cursor_;
-  Display* display_;
+  XDisplay* display_;
 
   DISALLOW_COPY_AND_ASSIGN(XScopedCursor);
 };

@@ -31,22 +31,8 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if defined(OS_WIN)
-#define USB_KEYMAP(usb, xkb, win, mac, code) {usb, win, code}
-#elif defined(OS_LINUX)
-#define USB_KEYMAP(usb, xkb, win, mac, code) {usb, xkb, code}
-#elif defined(OS_MACOSX)
-#define USB_KEYMAP(usb, xkb, win, mac, code) {usb, mac, code}
-#else
-#define USB_KEYMAP(usb, xkb, win, mac, code) {usb, 0, code}
-#endif
-#include "ui/base/keycodes/usb_keycode_map.h"
-#undef USB_KEYMAP
-
+#include "ui/base/keycodes/keycode_converter.h"
 #include "ui/base/resource/resource_bundle.h"
-
-static const int kDefaultWsPort = 8880;
 
 namespace content {
 namespace {
@@ -135,16 +121,13 @@ bool ExecuteScriptHelper(RenderViewHost* render_view_host,
 void BuildSimpleWebKeyEvent(WebKit::WebInputEvent::Type type,
                             ui::KeyboardCode key_code,
                             int native_key_code,
-                            bool control,
-                            bool shift,
-                            bool alt,
-                            bool command,
+                            int modifiers,
                             NativeWebKeyboardEvent* event) {
   event->nativeKeyCode = native_key_code;
   event->windowsKeyCode = key_code;
   event->setKeyIdentifierFromWindowsKeyCode();
   event->type = type;
-  event->modifiers = 0;
+  event->modifiers = modifiers;
   event->isSystemKey = false;
   event->timeStampSeconds = base::Time::Now().ToDoubleT();
   event->skip_in_browser = true;
@@ -154,18 +137,16 @@ void BuildSimpleWebKeyEvent(WebKit::WebInputEvent::Type type,
     event->text[0] = key_code;
     event->unmodifiedText[0] = key_code;
   }
+}
 
-  if (control)
-    event->modifiers |= WebKit::WebInputEvent::ControlKey;
-
-  if (shift)
-    event->modifiers |= WebKit::WebInputEvent::ShiftKey;
-
-  if (alt)
-    event->modifiers |= WebKit::WebInputEvent::AltKey;
-
-  if (command)
-    event->modifiers |= WebKit::WebInputEvent::MetaKey;
+void InjectRawKeyEvent(WebContents* web_contents,
+                       WebKit::WebInputEvent::Type type,
+                       ui::KeyboardCode key_code,
+                       int native_key_code,
+                       int modifiers) {
+  NativeWebKeyboardEvent event;
+  BuildSimpleWebKeyEvent(type, key_code, native_key_code, modifiers, &event);
+  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event);
 }
 
 void GetCookiesCallback(std::string* cookies_out,
@@ -295,43 +276,116 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
                               bool shift,
                               bool alt,
                               bool command) {
-  int native_key_code = CodeToNativeKeycode(code);
+  ui::KeycodeConverter* key_converter = ui::KeycodeConverter::GetInstance();
+  int native_key_code = key_converter->CodeToNativeKeycode(code);
 
-  NativeWebKeyboardEvent event_down;
-  BuildSimpleWebKeyEvent(
+  int modifiers = 0;
+
+  // The order of these key down events shouldn't matter for our simulation.
+  // For our simulation we can use either the left keys or the right keys.
+  if (control) {
+    modifiers |= WebKit::WebInputEvent::ControlKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::RawKeyDown,
+        ui::VKEY_CONTROL,
+        key_converter->CodeToNativeKeycode("ControlLeft"),
+        modifiers);
+  }
+
+  if (shift) {
+    modifiers |= WebKit::WebInputEvent::ShiftKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::RawKeyDown,
+        ui::VKEY_SHIFT,
+        key_converter->CodeToNativeKeycode("ShiftLeft"),
+        modifiers);
+  }
+
+  if (alt) {
+    modifiers |= WebKit::WebInputEvent::AltKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::RawKeyDown,
+        ui::VKEY_MENU,
+        key_converter->CodeToNativeKeycode("AltLeft"),
+        modifiers);
+  }
+
+  if (command) {
+    modifiers |= WebKit::WebInputEvent::MetaKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::RawKeyDown,
+        ui::VKEY_COMMAND,
+        key_converter->CodeToNativeKeycode("OSLeft"),
+        modifiers);
+  }
+
+  InjectRawKeyEvent(
+      web_contents,
       WebKit::WebInputEvent::RawKeyDown,
       key_code,
       native_key_code,
-      control,
-      shift,
-      alt,
-      command,
-      &event_down);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event_down);
+      modifiers);
 
-  NativeWebKeyboardEvent char_event;
-  BuildSimpleWebKeyEvent(
+  InjectRawKeyEvent(
+      web_contents,
       WebKit::WebInputEvent::Char,
       key_code,
       native_key_code,
-      control,
-      shift,
-      alt,
-      command,
-      &char_event);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(char_event);
+      modifiers);
 
-  NativeWebKeyboardEvent event_up;
-  BuildSimpleWebKeyEvent(
+  InjectRawKeyEvent(
+      web_contents,
       WebKit::WebInputEvent::KeyUp,
       key_code,
       native_key_code,
-      control,
-      shift,
-      alt,
-      command,
-      &event_up);
-  web_contents->GetRenderViewHost()->ForwardKeyboardEvent(event_up);
+      modifiers);
+
+  // The order of these key releases shouldn't matter for our simulation.
+  if (control) {
+    modifiers &= ~WebKit::WebInputEvent::ControlKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::KeyUp,
+        ui::VKEY_CONTROL,
+        key_converter->CodeToNativeKeycode("ControlLeft"),
+        modifiers);
+  }
+
+  if (shift) {
+    modifiers &= ~WebKit::WebInputEvent::ShiftKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::KeyUp,
+        ui::VKEY_SHIFT,
+        key_converter->CodeToNativeKeycode("ShiftLeft"),
+        modifiers);
+  }
+
+  if (alt) {
+    modifiers &= ~WebKit::WebInputEvent::AltKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::KeyUp,
+        ui::VKEY_MENU,
+        key_converter->CodeToNativeKeycode("AltLeft"),
+        modifiers);
+  }
+
+  if (command) {
+    modifiers &= ~WebKit::WebInputEvent::MetaKey;
+    InjectRawKeyEvent(
+        web_contents,
+        WebKit::WebInputEvent::KeyUp,
+        ui::VKEY_COMMAND,
+        key_converter->CodeToNativeKeycode("OSLeft"),
+        modifiers);
+  }
+
+  ASSERT_EQ(modifiers, 0);
 }
 
 namespace internal {

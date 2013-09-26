@@ -103,12 +103,11 @@ class ProfileSyncServicePreferenceTest
   }
 
   // DataTypeDebugInfoListener implementation.
-  virtual void OnSingleDataTypeConfigureComplete(
-      const syncer::DataTypeConfigurationStats& configuration_stats) OVERRIDE {
-    association_stats_ = configuration_stats.association_stats;
-  }
-  virtual void OnConfigureComplete() OVERRIDE {
-    // Do nothing.
+  virtual void OnDataTypeConfigureComplete(
+      const std::vector<syncer::DataTypeConfigurationStats>&
+          configuration_stats) OVERRIDE {
+    ASSERT_EQ(1u, configuration_stats.size());
+    association_stats_ = configuration_stats[0].association_stats;
   }
 
  protected:
@@ -185,10 +184,10 @@ class ProfileSyncServicePreferenceTest
         WillOnce(CreateAndSaveChangeProcessor(
                      &change_processor_));
     sync_service_->RegisterDataTypeController(dtc_);
-    TokenServiceFactory::GetForProfile(profile_.get())->IssueAuthTokenForTest(
-        GaiaConstants::kGaiaOAuth2LoginRefreshToken, "oauth2_login_token");
-    TokenServiceFactory::GetForProfile(profile_.get())->IssueAuthTokenForTest(
-        GaiaConstants::kSyncService, "token");
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+        ->UpdateCredentials("test", "oauth2_login_token");
+    TokenServiceFactory::GetForProfile(profile_.get())
+        ->IssueAuthTokenForTest(GaiaConstants::kSyncService, "token");
 
     sync_service_->Initialize();
     base::MessageLoop::current()->Run();
