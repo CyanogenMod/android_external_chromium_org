@@ -277,6 +277,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
       widget->UsingSynchronousRendererCompositor();
+  settings.always_overscroll = widget->UsingSynchronousRendererCompositor();
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.use_linear_fade_scrollbar_animator = true;
