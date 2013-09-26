@@ -16,6 +16,7 @@
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/visitedlink/renderer/visitedlink_slave.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_thread.h"
@@ -77,8 +78,26 @@ bool AwContentRendererClient::HandleNavigation(
   if (application_initiated && !is_redirect)
     return false;
 
-  // We are only interested in top-level navigation.
-  if (frame->parent())
+  const GURL& gurl = request.url();
+  // We allow intercepting navigations within subframes, but only if the
+  // scheme other than http or https. This is because the embedder
+  // can't distinguish main frame and subframe callbacks (which could lead
+  // to broken content if the embedder decides to not ignore the main frame
+  // navigation, but ignores the subframe navigation).
+  // The reason this is supported at all is that certain JavaScript-based
+  // frameworks use iframe navigation as a form of communication with the
+  // embedder.
+  // HandleNavigation receives about:blank navigations, (for example for
+  // empty iframes), however webview classic does not pass these to the
+  // app using shouldoverrideurlloading, so we filter them out here. We
+  // do not filter out top level about:blanks since they are allowed in
+  // Webview classic. The about:blank behavior for child frames is covered
+  // by testCalledOnJavaScriptLocationImmediateAssignRedirect().
+  // TODO(sgurun) Need to write a test for allowing about:blank for top
+  // navigations.
+  if (frame->parent() && (gurl.SchemeIs(chrome::kHttpScheme) ||
+                          gurl.SchemeIs(chrome::kHttpsScheme) ||
+                          gurl.SchemeIs(chrome::kAboutScheme)))
     return false;
 
   bool ignore_navigation = false;
