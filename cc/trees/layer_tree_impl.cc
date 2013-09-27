@@ -301,6 +301,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree(),
                  "SourceFrameNumber",
                  source_frame_number_);
+    bool can_render_to_separate_surface =
+        !output_surface()->ForcedDrawToSoftwareDevice();
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
         layer_tree_host_impl_->DeviceViewport().size(),
@@ -310,6 +312,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
         root_scroll_layer_ ? root_scroll_layer_->parent() : NULL,
         MaxTextureSize(),
         settings().can_use_lcd_text,
+        can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
         layer_tree_host_impl_->device_viewport_valid_for_tile_management(),
         &render_surface_layer_list_);
