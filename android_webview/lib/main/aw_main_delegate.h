@@ -47,7 +47,6 @@ class AwMainDelegate : public content::ContentMainDelegate,
       AwBrowserContext* browser_context) OVERRIDE;
   virtual content::WebContentsViewDelegate* CreateViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
-  virtual AwWebPreferencesPopulater* CreateWebPreferencesPopulater() OVERRIDE;
 
   scoped_ptr<content::BrowserMainRunner> browser_runner_;
   AwContentClient content_client_;
