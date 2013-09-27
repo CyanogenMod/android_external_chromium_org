@@ -2900,12 +2900,15 @@ import java.util.Map;
     public void setAccessibilityState(boolean state) {
         if (!state) {
             setInjectedAccessibility(false);
-            mNativeAccessibilityAllowed = false;
-        } else {
-            boolean useScriptInjection = isDeviceAccessibilityScriptInjectionEnabled();
-            setInjectedAccessibility(useScriptInjection);
-            mNativeAccessibilityAllowed = !useScriptInjection;
+            return;
         }
+
+        if (isDeviceAccessibilityScriptInjectionEnabled()) {
+            setInjectedAccessibility(true);
+            return;
+        }
+
+        mNativeAccessibilityAllowed = true;
     }
 
     /**
