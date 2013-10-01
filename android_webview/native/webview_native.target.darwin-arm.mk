@@ -43,7 +43,6 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_settings.cc \
 	android_webview/native/aw_web_contents_delegate.cc \
 	android_webview/native/aw_web_contents_view_delegate.cc \
-	android_webview/native/aw_web_preferences_populater_impl.cc \
 	android_webview/native/cookie_manager.cc \
 	android_webview/native/input_stream_impl.cc \
 	android_webview/native/intercepted_request_data_impl.cc \
