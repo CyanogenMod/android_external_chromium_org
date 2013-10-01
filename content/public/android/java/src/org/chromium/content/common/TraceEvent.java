@@ -11,6 +11,8 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.util.Printer;
 
+import org.chromium.base.ThreadUtils;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -233,7 +235,7 @@ public class TraceEvent {
     public static synchronized void setEnabled(boolean enabled) {
         if (sEnabled == enabled) return;
         sEnabled = enabled;
-        Looper.getMainLooper().setMessageLogging(
+        ThreadUtils.getUiThreadLooper().setMessageLogging(
                 enabled ? LooperMonitor.getInstance() : null);
     }
 
