@@ -864,6 +864,7 @@ struct SubtreeGlobals {
   LayerType* page_scale_application_layer;
   bool can_adjust_raster_scales;
   bool can_update_tile_priorities;
+  bool can_render_to_separate_surface;
 };
 
 template<typename LayerType, typename RenderSurfaceType>
@@ -1208,8 +1209,14 @@ static void CalculateDrawPropertiesInternal(
       ? combined_transform_scales
       : gfx::Vector2dF(layer_scale_factors, layer_scale_factors);
 
-  if (SubtreeShouldRenderToSeparateSurface(
-          layer, combined_transform.Preserves2dAxisAlignment())) {
+  bool render_to_separate_surface;
+  if (globals.can_render_to_separate_surface) {
+    render_to_separate_surface = SubtreeShouldRenderToSeparateSurface(
+          layer, combined_transform.Preserves2dAxisAlignment());
+  } else {
+    render_to_separate_surface = IsRootLayer(layer);
+  }
+  if (render_to_separate_surface) {
     // Check back-face visibility before continuing with this surface and its
     // subtree
     if (!layer->double_sided() && TransformToParentIsKnown(layer) &&
@@ -1671,6 +1678,8 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.device_scale_factor = inputs->device_scale_factor;
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
+  globals.can_render_to_separate_surface =
+      inputs->can_render_to_separate_surface;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
   globals.can_update_tile_priorities = inputs->can_update_tile_priorities;
 
@@ -1730,6 +1739,8 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.device_scale_factor = inputs->device_scale_factor;
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
+  globals.can_render_to_separate_surface =
+      inputs->can_render_to_separate_surface;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
   globals.can_update_tile_priorities = inputs->can_update_tile_priorities;
 
