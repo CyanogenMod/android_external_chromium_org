@@ -85,7 +85,7 @@ class AwContentsClientCallbackHelper {
 
     private final AwContentsClient mContentsClient;
 
-    private final Handler mHandler = new Handler(Looper.getMainLooper()) {
+    private final Handler mHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             switch(msg.what) {
