@@ -339,11 +339,7 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
     return compositor_ && client_->RequestDrawGL(java_canvas);
   }
   // Perform a software draw
-  block_invalidates_ = true;
-  bool result = DrawSWInternal(java_canvas, clip);
-  block_invalidates_ = false;
-  EnsureContinuousInvalidation(NULL, false);
-  return result;
+  return DrawSWInternal(java_canvas, clip);
 }
 
 bool InProcessViewRenderer::InitializeHwDraw() {
@@ -408,10 +404,6 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
-  // DrawGL may be called without OnDraw, so cancel |fallback_tick_| here as
-  // well just to be safe.
-  fallback_tick_.Cancel();
-
   if (last_egl_context_ != current_context) {
     // TODO(boliu): Handle context lost
     TRACE_EVENT_INSTANT0(
@@ -423,6 +415,10 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
         "android_webview", "EarlyOut_NoCompositor", TRACE_EVENT_SCOPE_THREAD);
     return;
   }
+
+  // DrawGL may be called without OnDraw, so cancel |fallback_tick_| here as
+  // well just to be safe.
+  fallback_tick_.Cancel();
 
   // Update memory budget. This will no-op in compositor if the policy has not
   // changed since last draw.
@@ -481,8 +477,6 @@ void InProcessViewRenderer::SetGlobalVisibleRect(
 
 bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
                                            const gfx::Rect& clip) {
-  fallback_tick_.Cancel();
-
   if (clip.IsEmpty()) {
     TRACE_EVENT_INSTANT0(
         "android_webview", "EarlyOut_EmptyClip", TRACE_EVENT_SCOPE_THREAD);
@@ -885,16 +879,19 @@ void InProcessViewRenderer::FallbackTickFired() {
   if (compositor_needs_continuous_invalidate_ && compositor_) {
     SkDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
     SkCanvas canvas(&device);
-    block_invalidates_ = true;
     CompositeSW(&canvas);
   }
-  block_invalidates_ = false;
-  EnsureContinuousInvalidation(NULL, false);
 }
 
 bool InProcessViewRenderer::CompositeSW(SkCanvas* canvas) {
   DCHECK(compositor_);
-  return compositor_->DemandDrawSw(canvas);
+
+  fallback_tick_.Cancel();
+  block_invalidates_ = true;
+  bool result = compositor_->DemandDrawSw(canvas);
+  block_invalidates_ = false;
+  EnsureContinuousInvalidation(NULL, false);
+  return result;
 }
 
 std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
@@ -923,6 +920,8 @@ std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
   base::StringAppendF(&str,
                       "overscroll_rounding_error_: %s ",
                       overscroll_rounding_error_.ToString().c_str());
+  base::StringAppendF(
+      &str, "on_new_picture_enable: %d ", on_new_picture_enable_);
   if (draw_info) {
     base::StringAppendF(&str,
                         "clip left top right bottom: [%d %d %d %d] ",
