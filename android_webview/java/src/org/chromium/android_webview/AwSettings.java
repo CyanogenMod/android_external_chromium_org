@@ -4,10 +4,12 @@
 
 package org.chromium.android_webview;
 
+import android.content.pm.PackageManager;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.Process;
 import android.provider.Settings;
 import android.webkit.WebSettings.PluginState;
 import android.webkit.WebSettings;
@@ -44,8 +46,9 @@ public class AwSettings {
 
     // Values passed in on construction.
     private final boolean mHasInternetPermission;
-    private final ZoomSupportChangeListener mZoomChangeListener;
-    private final double mDIPScale;
+
+    private ZoomSupportChangeListener mZoomChangeListener;
+    private double mDIPScale = 1.0;
 
     // Lock to protect all settings.
     private final Object mAwSettingsLock = new Object();
@@ -129,6 +132,10 @@ public class AwSettings {
         private Handler mHandler;
 
         EventHandler() {
+        }
+
+        void bindUiThread() {
+            if (mHandler != null) return;
             mHandler = new Handler(ThreadUtils.getUiThreadLooper()) {
                     @Override
                     public void handleMessage(Message msg) {
@@ -145,9 +152,22 @@ public class AwSettings {
                 };
         }
 
+        void maybeRunOnUiThreadBlocking(Runnable r) {
+            if (mHandler != null) {
+                ThreadUtils.runOnUiThreadBlocking(r);
+            }
+        }
+
+        void maybePostOnUiThread(Runnable r) {
+            if (mHandler != null) {
+                mHandler.post(r);
+            }
+        }
+
         private void updateWebkitPreferencesLocked() {
             assert Thread.holdsLock(mAwSettingsLock);
             if (mNativeAwSettings == 0) return;
+            if (mHandler == null) return;
             if (ThreadUtils.runningOnUiThread()) {
                 updateWebkitPreferencesOnUiThreadLocked();
             } else {
@@ -172,26 +192,23 @@ public class AwSettings {
         public void onGestureZoomSupportChanged(boolean supportsGestureZoom);
     }
 
-    public AwSettings(Context context, boolean hasInternetPermission,
-            ZoomSupportChangeListener zoomChangeListener,
+    public AwSettings(Context context,
             boolean isAccessFromFileURLsGrantedByDefault,
-            double dipScale,
             boolean supportsLegacyQuirks) {
-        ThreadUtils.assertOnUiThread();
+       boolean hasInternetPermission = context.checkPermission(
+                    android.Manifest.permission.INTERNET,
+                    Process.myPid(),
+                    Process.myUid()) == PackageManager.PERMISSION_GRANTED;
         synchronized (mAwSettingsLock) {
             mHasInternetPermission = hasInternetPermission;
-            mZoomChangeListener = zoomChangeListener;
-            mDIPScale = dipScale;
-            mEventHandler = new EventHandler();
             mBlockNetworkLoads = !hasInternetPermission;
-
+            mEventHandler = new EventHandler();
             if (isAccessFromFileURLsGrantedByDefault) {
                 mAllowUniversalAccessFromFileURLs = true;
                 mAllowFileAccessFromFileURLs = true;
             }
 
             mUserAgent = LazyDefaultUserAgent.sInstance;
-            onGestureZoomSupportChanged(supportsGestureZoomLocked());
 
             // Respect the system setting for password echoing.
             mPasswordEchoEnabled = Settings.System.getInt(context.getContentResolver(),
@@ -213,15 +230,31 @@ public class AwSettings {
         return mDIPScale;
     }
 
-    public void setWebContents(int nativeWebContents) {
+    void setDIPScale(double dipScale) {
+        synchronized (mAwSettingsLock) {
+            mDIPScale = dipScale;
+            // TODO(joth): This should also be synced over to native side, but right now
+            // the setDIPScale call is always followed by a setWebContents() which covers this.
+        }
+    }
+
+    void setZoomListener(ZoomSupportChangeListener zoomChangeListener) {
+        synchronized (mAwSettingsLock) {
+            mZoomChangeListener = zoomChangeListener;
+        }
+    }
+
+    void setWebContents(int nativeWebContents) {
         synchronized (mAwSettingsLock) {
             if (mNativeAwSettings != 0) {
                 nativeDestroy(mNativeAwSettings);
                 assert mNativeAwSettings == 0;  // nativeAwSettingsGone should have been called.
             }
             if (nativeWebContents != 0) {
+                mEventHandler.bindUiThread();
                 mNativeAwSettings = nativeInit(nativeWebContents);
                 nativeUpdateEverythingLocked(mNativeAwSettings);
+                onGestureZoomSupportChanged(supportsGestureZoomLocked());
             }
         }
     }
@@ -324,7 +357,7 @@ public class AwSettings {
         synchronized (mAwSettingsLock) {
             if (mInitialPageScalePercent != scaleInPercent) {
                 mInitialPageScalePercent = scaleInPercent;
-                ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                mEventHandler.maybeRunOnUiThreadBlocking(new Runnable() {
                     @Override
                     public void run() {
                         if (mNativeAwSettings != 0) {
@@ -377,7 +410,7 @@ public class AwSettings {
         synchronized (mAwSettingsLock) {
             if (mAutoCompleteEnabled != enable) {
                 mAutoCompleteEnabled = enable;
-                ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                mEventHandler.maybeRunOnUiThreadBlocking(new Runnable() {
                     @Override
                     public void run() {
                         if (mNativeAwSettings != 0) {
@@ -423,7 +456,7 @@ public class AwSettings {
                 mUserAgent = ua;
             }
             if (!oldUserAgent.equals(mUserAgent)) {
-                ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                mEventHandler.maybeRunOnUiThreadBlocking(new Runnable() {
                     @Override
                     public void run() {
                         if (mNativeAwSettings != 0) {
@@ -457,7 +490,7 @@ public class AwSettings {
             if (mLoadWithOverviewMode != overview) {
                 mLoadWithOverviewMode = overview;
                 mEventHandler.updateWebkitPreferencesLocked();
-                ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                mEventHandler.maybeRunOnUiThreadBlocking(new Runnable() {
                     @Override
                     public void run() {
                         if (mNativeAwSettings != 0) {
@@ -1254,10 +1287,14 @@ public class AwSettings {
 
     private void onGestureZoomSupportChanged(final boolean supportsGestureZoom) {
         // Always post asynchronously here, to avoid doubling back onto the caller.
-        ThreadUtils.postOnUiThread(new Runnable() {
+        mEventHandler.maybePostOnUiThread(new Runnable() {
             @Override
             public void run() {
-                mZoomChangeListener.onGestureZoomSupportChanged(supportsGestureZoom);
+                synchronized (mAwSettingsLock) {
+                    if (mZoomChangeListener != null) {
+                        mZoomChangeListener.onGestureZoomSupportChanged(supportsGestureZoom);
+                    }
+                }
             }
         });
     }
@@ -1357,6 +1394,7 @@ public class AwSettings {
 
     private void updateWebkitPreferencesOnUiThreadLocked() {
         if (mNativeAwSettings != 0) {
+            assert mEventHandler.mHandler != null;
             ThreadUtils.assertOnUiThread();
             nativeUpdateWebkitPreferencesLocked(mNativeAwSettings);
         }
