@@ -26,6 +26,7 @@ CONTENT_EXPORT net::CookieStore* CreatePersistentCookieStore(
     bool restore_old_session_cookies,
     quota::SpecialStoragePolicy* storage_policy,
     net::CookieMonster::Delegate* cookie_monster_delegate,
+    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner);
 
 }  // namespace content

@@ -1199,11 +1199,19 @@ net::CookieStore* CreatePersistentCookieStore(
     bool restore_old_session_cookies,
     quota::SpecialStoragePolicy* storage_policy,
     net::CookieMonster::Delegate* cookie_monster_delegate,
+    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner) {
+  scoped_refptr<base::SequencedTaskRunner> real_client_task_runner;
+  if (client_task_runner.get()) {
+    real_client_task_runner = client_task_runner;
+  } else {
+    real_client_task_runner =
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
+  }
   SQLitePersistentCookieStore* persistent_store =
       new SQLitePersistentCookieStore(
           path,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+          real_client_task_runner,
           background_task_runner.get() ? background_task_runner :
               BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
                   BrowserThread::GetBlockingPool()->GetSequenceToken()),

@@ -14,10 +14,6 @@ class CookieMonster;
 
 namespace android_webview {
 
-// This is called on the IO thread when the CookieMonster has been created.
-// Note that the UI thread is blocked during this call.
-void DidCreateCookieMonster(net::CookieMonster* cookie_monster);
-
 // Called lazily when the job factory is being constructed.
 scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
     CreateAndroidAssetFileProtocolHandler();
