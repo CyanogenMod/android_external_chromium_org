@@ -22,6 +22,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.sync.signin.AccountManagerDelegate;
 import org.chromium.sync.signin.AccountManagerHelper;
 
@@ -87,7 +88,7 @@ public class MockAccountManager implements AccountManagerDelegate {
         // The manifest that is backing testContext needs to provide the
         // MockGrantCredentialsPermissionActivity.
         mTestContext = testContext;
-        mMainHandler = new Handler(mContext.getMainLooper());
+        mMainHandler = new Handler(ThreadUtils.getUiThreadLooper());
         mExecutor = new SingleThreadedExecutor();
         mAccounts = new HashSet<AccountHolder>();
         mAccountPermissionPreparations = new LinkedList<AccountAuthTokenPreparation>();

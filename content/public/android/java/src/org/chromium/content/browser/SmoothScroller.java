@@ -15,6 +15,7 @@ import android.view.MotionEvent;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.base.ThreadUtils;
 
 /**
  * Provides a Java-side implementation for chrome.gpuBenchmarking.smoothScrollBy.
@@ -26,7 +27,7 @@ public class SmoothScroller {
     private final float mMouseEventX;
     private final float mMouseEventY;
 
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private final Handler mHandler = new Handler(ThreadUtils.getUiThreadLooper());
 
     private TimeAnimator mTimeAnimator;
 

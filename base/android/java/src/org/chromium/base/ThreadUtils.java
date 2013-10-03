@@ -17,6 +17,34 @@ import java.util.concurrent.FutureTask;
  */
 public class ThreadUtils {
 
+    private static boolean sWillOverride = false;
+
+    private static Handler sUiThreadHandler = null;
+
+    public static synchronized void setWillOverrideUiThread() {
+        sWillOverride = true;
+    }
+
+    public static synchronized void setUiThread(Looper looper) {
+        if (sUiThreadHandler != null && sUiThreadHandler.getLooper() != looper) {
+            throw new RuntimeException("UI thread looper is already set to " +
+                    sUiThreadHandler.getLooper() + " (Main thread looper is " +
+                    Looper.getMainLooper() + "), cannot set to new looper " + looper);
+        } else {
+            sUiThreadHandler = new Handler(looper);
+        }
+    }
+
+    private static synchronized Handler getUiThreadHandler() {
+        if (sUiThreadHandler == null) {
+            if (sWillOverride) {
+                throw new RuntimeException("Did not yet override the UI thread");
+            }
+            sUiThreadHandler = new Handler(Looper.getMainLooper());
+        }
+        return sUiThreadHandler;
+    }
+
     /**
      * Run the supplied Runnable on the main thread. The method will block until the Runnable
      * completes.
@@ -107,7 +135,7 @@ public class ThreadUtils {
         if (runningOnUiThread()) {
             r.run();
         } else {
-            LazyHolder.sUiThreadHandler.post(r);
+            getUiThreadHandler().post(r);
         }
     }
 
@@ -119,7 +147,7 @@ public class ThreadUtils {
      * @return The queried task (to aid inline construction)
      */
     public static <T> FutureTask<T> postOnUiThread(FutureTask<T> task) {
-        LazyHolder.sUiThreadHandler.post(task);
+        getUiThreadHandler().post(task);
         return task;
     }
 
@@ -130,7 +158,7 @@ public class ThreadUtils {
      * @param task The Runnable to run
      */
     public static void postOnUiThread(Runnable r) {
-        LazyHolder.sUiThreadHandler.post(r);
+        getUiThreadHandler().post(r);
     }
 
     /**
@@ -141,7 +169,7 @@ public class ThreadUtils {
      * @param delayMillis The delay in milliseconds until the Runnable will be run
      */
     public static void postOnUiThreadDelayed(Runnable r, long delayMillis) {
-        LazyHolder.sUiThreadHandler.postDelayed(r, delayMillis);
+        getUiThreadHandler().postDelayed(r, delayMillis);
     }
 
     /**
@@ -155,7 +183,11 @@ public class ThreadUtils {
      * @return true iff the current thread is the main (UI) thread.
      */
     public static boolean runningOnUiThread() {
-      return Looper.getMainLooper() == Looper.myLooper();
+        return getUiThreadHandler().getLooper() == Looper.myLooper();
+    }
+
+    public static Looper getUiThreadLooper() {
+        return getUiThreadHandler().getLooper();
     }
 
     /**
@@ -164,9 +196,5 @@ public class ThreadUtils {
     @CalledByNative
     public static void setThreadPriorityAudio(int tid) {
       Process.setThreadPriority(tid, Process.THREAD_PRIORITY_AUDIO);
-    }
-
-    private static class LazyHolder {
-        private static Handler sUiThreadHandler = new Handler(Looper.getMainLooper());
     }
 }

@@ -129,7 +129,7 @@ public class AwSettings {
         private Handler mHandler;
 
         EventHandler() {
-            mHandler = new Handler(Looper.getMainLooper()) {
+            mHandler = new Handler(ThreadUtils.getUiThreadLooper()) {
                     @Override
                     public void handleMessage(Message msg) {
                         switch (msg.what) {
@@ -148,7 +148,7 @@ public class AwSettings {
         private void updateWebkitPreferencesLocked() {
             assert Thread.holdsLock(mAwSettingsLock);
             if (mNativeAwSettings == 0) return;
-            if (Looper.myLooper() == mHandler.getLooper()) {
+            if (ThreadUtils.runningOnUiThread()) {
                 updateWebkitPreferencesOnUiThreadLocked();
             } else {
                 // We're being called on a background thread, so post a message.

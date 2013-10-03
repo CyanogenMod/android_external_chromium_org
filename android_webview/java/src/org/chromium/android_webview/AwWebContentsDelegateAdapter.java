@@ -14,6 +14,7 @@ import android.view.View;
 import android.webkit.ConsoleMessage;
 import android.webkit.ValueCallback;
 
+import org.chromium.base.ThreadUtils;
 import org.chromium.content.browser.ContentViewCore;
 
 /**
@@ -138,7 +139,7 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
 
         // TODO(sgurun) Remember the URL to cancel the reload behavior
         // if it is different than the most recent NavigationController entry.
-        final Handler handler = new Handler(Looper.getMainLooper()) {
+        final Handler handler = new Handler(ThreadUtils.getUiThreadLooper()) {
             @Override
             public void handleMessage(Message msg) {
                 switch(msg.what) {
