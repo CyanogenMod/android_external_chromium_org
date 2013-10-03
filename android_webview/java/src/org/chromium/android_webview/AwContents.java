@@ -4,6 +4,8 @@
 
 package org.chromium.android_webview;
 
+import android.content.ComponentCallbacks2;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -191,6 +193,8 @@ public class AwContents {
 
     private AwAutofillManagerDelegate mAwAutofillManagerDelegate;
 
+    private ComponentCallbacks2 mComponentCallbacks;
+
     private static final class DestroyRunnable implements Runnable {
         private int mNativeAwContents;
         private DestroyRunnable(int nativeAwContents) {
@@ -367,6 +371,22 @@ public class AwContents {
             mScrollOffsetManager.onUnhandledFlingStartEvent();
         }
     }
+
+    private class AwComponentCallbacks implements ComponentCallbacks2 {
+          @Override
+          public void onTrimMemory(int level) {
+              if (mNativeAwContents == 0) return;
+              nativeTrimMemory(mNativeAwContents, level);
+          }
+
+          @Override
+          public void onLowMemory() {
+          }
+
+          @Override
+          public void onConfigurationChanged(Configuration configuration) {
+          }
+    };
 
     /**
      * @param browserContext the browsing context to associate this view contents with.
@@ -1415,6 +1435,10 @@ public class AwContents {
         mContentViewCore.onAttachedToWindow();
         nativeOnAttachedToWindow(mNativeAwContents, mContainerView.getWidth(),
                 mContainerView.getHeight());
+
+        if (mComponentCallbacks != null) return;
+        mComponentCallbacks = new AwComponentCallbacks();
+        mContainerView.getContext().registerComponentCallbacks(mComponentCallbacks);
     }
 
     /**
@@ -1428,6 +1452,11 @@ public class AwContents {
         }
 
         mContentViewCore.onDetachedFromWindow();
+
+        if (mComponentCallbacks != null) {
+          mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
+          mComponentCallbacks = null;
+        }
 
         if (mPendingDetachCleanupReferences != null) {
             for (int i = 0; i < mPendingDetachCleanupReferences.size(); ++i) {
@@ -1906,4 +1935,6 @@ public class AwContents {
             int nativeAwContents, boolean value, String requestingFrame);
 
     private native void nativeSetJsOnlineProperty(int nativeAwContents, boolean networkUp);
+
+    private native void nativeTrimMemory(int nativeAwContents, int level);
 }
