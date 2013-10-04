@@ -3192,6 +3192,7 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
       GetContentClient()->renderer()->HandleNavigation(
           this,
           static_cast<DocumentState*>(extraData),
+          opener_id_,
           frame,
           request, type,
           default_policy,
