@@ -24,7 +24,7 @@ static base::android::RegistrationMethod
 JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
   base::android::InitVM(vm);
   JNIEnv* env = base::android::AttachCurrentThread();
-  if (!content::RegisterLibraryLoaderEntryHook(env))
+  if (!content::RegisterLibraryLoaderEntryHook(env, false))
     return -1;
 
   // Register JNI for components we depend on.

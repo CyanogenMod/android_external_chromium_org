@@ -16,7 +16,8 @@ namespace content {
 // exposed to the calling java code.  This handles only registering the content
 // specific callbacks.  Any application specific JNI bindings should happen
 // once the native library has fully loaded.
-CONTENT_EXPORT bool RegisterLibraryLoaderEntryHook(JNIEnv* env);
+CONTENT_EXPORT bool RegisterLibraryLoaderEntryHook(JNIEnv* env,
+                                                   bool lazy_jni_registration);
 
 // Call on exit to delete the AtExitManager which OnLibraryLoadedOnUIThread
 // created.
