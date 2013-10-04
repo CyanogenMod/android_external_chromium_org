@@ -165,8 +165,9 @@ bool SchedulerStateMachine::ShouldDraw() const {
 }
 
 bool SchedulerStateMachine::ShouldAttemptTreeActivation() const {
-  return has_pending_tree_ && inside_begin_frame_ &&
-         !HasAttemptedTreeActivationThisFrame();
+  // === START ANDROID FORK FOR http://b/11001058
+  return has_pending_tree_ && !HasAttemptedTreeActivationThisFrame();
+  // === END   ANDROID FORK FOR http://b/11001058
 }
 
 bool SchedulerStateMachine::ShouldUpdateVisibleTiles() const {
