@@ -92,6 +92,8 @@ namespace android_webview {
 
 namespace {
 
+bool g_should_download_favicons = false;
+
 JavaBrowserViewRendererHelper* java_renderer_helper() {
   return JavaBrowserViewRendererHelper::GetInstance();
 }
@@ -562,6 +564,10 @@ void AwContents::OnFindResultReceived(int active_ordinal,
       env, obj.obj(), active_ordinal, match_count, finished);
 }
 
+bool AwContents::ShouldDownloadFavicon(const GURL& icon_url) {
+  return g_should_download_favicons;
+}
+
 void AwContents::OnReceivedIcon(const GURL& icon_url, const SkBitmap& bitmap) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
@@ -919,6 +925,10 @@ void AwContents::SetJsOnlineProperty(JNIEnv* env,
 
 void AwContents::TrimMemory(JNIEnv* env, jobject obj, jint level) {
   browser_view_renderer_->TrimMemory(level);
+}
+
+void SetShouldDownloadFavicons(JNIEnv* env, jclass jclazz) {
+  g_should_download_favicons = true;
 }
 
 }  // namespace android_webview
