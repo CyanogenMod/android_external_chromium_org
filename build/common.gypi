@@ -293,6 +293,13 @@
       # to 0 to use GNU as to assemble.
       'clang_use_integrated_as%': 2,
 
+      # Use Clang's link-time-optimizer.  The default, 0, indicates
+      # that no LTO will be performed.  Set to 1 to enable LTO.
+      'clang_use_lto%': 1,
+
+      # Use Clang optimized for Snapdragon
+      'clang_use_snapdragon%': 1,
+
       # Enable building with ASAN (Clang's -fsanitize=address option).
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/addresssanitizer
@@ -847,6 +854,8 @@
     'clang_use_chrome_plugins%': '<(clang_use_chrome_plugins)',
     'mac_want_real_dsym%': '<(mac_want_real_dsym)',
     'clang_use_integrated_as%': '<(clang_use_integrated_as)',
+    'clang_use_lto%': '<(clang_use_lto)',
+    'clang_use_snapdragon%': '<(clang_use_snapdragon)',
     'asan%': '<(asan)',
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
@@ -1006,7 +1015,7 @@
     # Clang stuff.
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
-    'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-snapdragon',
+    'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-build/Release+Asserts',
 
     # These two variables can be set in GYP_DEFINES while running
     # |gclient runhooks| to let clang run a plugin in every compilation.
@@ -1680,6 +1689,17 @@
       }],
       ['msan==1', {
         'clang%': 1,
+      }],
+      ['clang_use_snapdragon==1', {
+        'conditions': [
+          ['asan!=1 and tsan!=1 and msan!=1', {
+            'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-snapdragon',
+            'clang_use_lto%': 1,
+          }, {
+            'clang_use_snapdragon%': 0,
+
+          }],
+        ],
       }],
 
       ['OS=="linux" and clang_type_profiler==1', {
