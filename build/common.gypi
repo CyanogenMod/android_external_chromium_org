@@ -1795,8 +1795,12 @@
       }],
       ['arm_version==7 and android_webview_build==0', {
         'arm_arch%': 'armv7-a',
-        'arm_tune%': 'cortex-a8',
         'conditions': [
+          ['clang==1', {
+            'arm_tune%': '',
+          }, {
+            'arm_tune%': 'cortex-a8',
+          }],
           ['arm_neon==1', {
             'arm_fpu%': 'neon',
           }, {
