@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "components/auto_login_parser/auto_login_parser.h"
+#include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -25,6 +26,7 @@
 
 using android_webview::AwContentsIoThreadClient;
 using content::BrowserThread;
+using navigation_interception::InterceptNavigationDelegate;
 
 namespace {
 
@@ -221,6 +223,24 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
 
   throttles->push_back(new IoThreadClientThrottle(
       child_id, route_id, request));
+
+  bool allow_intercepting =
+      // We allow intercepting navigations within subframes, but only if the
+      // scheme other than http or https. This is because the embedder
+      // can't distinguish main frame and subframe callbacks (which could lead
+      // to broken content if the embedder decides to not ignore the main frame
+      // navigation, but ignores the subframe navigation).
+      // The reason this is supported at all is that certain JavaScript-based
+      // frameworks use iframe navigation as a form of communication with the
+      // embedder.
+      (resource_type == ResourceType::MAIN_FRAME ||
+       (resource_type == ResourceType::SUB_FRAME &&
+        !request->url().SchemeIs(chrome::kHttpScheme) &&
+        !request->url().SchemeIs(chrome::kHttpsScheme)));
+  if (allow_intercepting) {
+    throttles->push_back(InterceptNavigationDelegate::CreateThrottleFor(
+        request));
+  }
 }
 
 void AwResourceDispatcherHostDelegate::DownloadStarting(
