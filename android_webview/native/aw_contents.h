@@ -79,7 +79,8 @@ class AwContents : public FindHelper::Listener,
                     jobject aw_contents,
                     jobject web_contents_delegate,
                     jobject contents_client_bridge,
-                    jobject io_thread_client);
+                    jobject io_thread_client,
+                    jobject intercept_navigation_delegate);
   jint GetWebContents(JNIEnv* env, jobject obj);
   jint GetAwContentsClientBridge(JNIEnv* env, jobject obj);
 
