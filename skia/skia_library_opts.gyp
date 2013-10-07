@@ -30,6 +30,16 @@
       'includes': [
         'skia_common.gypi',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+            'clang_use_integrated_as': 0,
+          }],
+        ],
+      },
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
@@ -63,12 +73,7 @@
                 '__ARM_HAVE_NEON',
               ],
             }],
-            [ 'arm_version >= 7 and arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
-              ],
-            }],
-            [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
+            [ '(clang==0 or clang_use_integrated_as==0) and arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
               'cflags': [
                 # The neon assembly contains conditional instructions which
                 # aren't enclosed in an IT block. The assembler complains
@@ -150,6 +155,16 @@
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+	    'clang_use_integrated_as': 0,
+	  }],
+	],
+      },
+          'includes': [
+            '../build/clang.gypi',
+          ],
       'conditions': [
         [ 'OS in ["linux", "freebsd", "openbsd", "solaris", "android"]', {
           'cflags': [
@@ -184,6 +199,16 @@
       'includes': [
         'skia_common.gypi',
       ],
+      'variables': {
+        'conditions': [
+          ['clang==1', {
+            'clang_use_integrated_as': 0,
+          }],
+        ],
+      },
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/src/core',
@@ -207,6 +232,16 @@
       'targets': [
         {
           'target_name': 'skia_opts_neon',
+          'variables': {
+            'conditions': [
+              ['clang==1', {
+	      'clang_use_integrated_as': 0,
+	      }],
+	    ],
+          },
+          'includes': [
+            '../build/clang.gypi',
+          ],
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
@@ -246,9 +281,10 @@
                 '__ARM_HAVE_NEON',
               ],
             }],
-            ['arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+            ['clang==1', {
+              'include_dirs': [
+                 '../..'
+                 '../skia/config',
               ],
             }],
           ],

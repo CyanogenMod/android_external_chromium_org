@@ -3,7 +3,25 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'conditions': [
+      ['clang==1', {
+        # Do not use clang's integrated assembler.  It doesn't grok
+        # some neon instructions.
+        'clang_use_integrated_as': 0,
+      }],
+    ],
+  },
   'conditions': [
+    ['clang==0 or clang_use_integrated_as==0', {
+      'cflags': [
+        # The neon assembly contains conditional instructions which
+        # aren't enclosed in an IT block. The GNU assembler complains
+        # without this option.
+        # See #86592.
+        '-Wa,-mimplicit-it=always',
+      ],
+    }],
     # In component mode (shared_lib), we build all of skia as a single DLL.
     # However, in the static mode, we need to build skia as multiple targets
     # in order to support the use case where a platform (e.g. Android) may
