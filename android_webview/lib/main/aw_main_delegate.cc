@@ -76,6 +76,9 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // Enable D-PAD navigation for application compatibility.
   cl->AppendSwitch(switches::kEnableSpatialNavigation);
 
+  // Disable compositor touch hit testing for now to mitigate risk of bugs.
+  cl->AppendSwitch(cc::switches::kDisableCompositorTouchHitTesting);
+
   // Disable WebRTC.
   cl->AppendSwitch(switches::kDisableWebRTC);
 
