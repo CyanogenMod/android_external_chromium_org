@@ -44,7 +44,7 @@ COMPILE_ASSERT(arraysize(g_max_sockets_per_pool) ==
 // TODO(yutak): Look at the usage and determine the right value after
 // WebSocket protocol stack starts to work.
 int g_max_sockets_per_group[] = {
-  6,  // NORMAL_SOCKET_POOL
+  18,  // NORMAL_SOCKET_POOL
   30  // WEBSOCKET_SOCKET_POOL
 };
 
