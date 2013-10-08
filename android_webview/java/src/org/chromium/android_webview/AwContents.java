@@ -76,6 +76,10 @@ public class AwContents {
 
     private static final String WEB_ARCHIVE_EXTENSION = ".mht";
 
+    // Used to avoid enabling zooming in / out if resulting zooming will
+    // produce little visible difference.
+    private static final float ZOOM_CONTROLS_EPSILON = 0.007f;
+
     /**
      * WebKit hit test related data strcutre. These are used to implement
      * getHitTestResult, requestFocusNodeHref, requestImageRef methods in WebView.
@@ -490,7 +494,6 @@ public class AwContents {
         mSettings.setDefaultVideoPosterURL(
                 mDefaultVideoPosterRequestHandler.getDefaultVideoPosterURL());
         mSettings.setDIPScale(mDIPScale);
-        mContentsClient.setDIPScale(mDIPScale);
         mScrollOffsetManager = new AwScrollOffsetManager(new AwScrollOffsetManagerDelegate(),
                 new OverScroller(mContainerView.getContext()));
 
@@ -1342,29 +1345,47 @@ public class AwContents {
     /**
      * @see android.webkit.WebView#canZoomIn()
      */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
     public boolean canZoomIn() {
-        return mContentViewCore.canZoomIn();
+        final float zoomInExtent = mContentViewCore.getRenderCoordinates().getMaxPageScaleFactor()
+                - mPageScaleFactor;
+        return zoomInExtent > ZOOM_CONTROLS_EPSILON;
     }
 
     /**
      * @see android.webkit.WebView#canZoomOut()
      */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
     public boolean canZoomOut() {
-        return mContentViewCore.canZoomOut();
+        final float zoomOutExtent = mPageScaleFactor
+                - mContentViewCore.getRenderCoordinates().getMinPageScaleFactor();
+        return zoomOutExtent > ZOOM_CONTROLS_EPSILON;
     }
 
     /**
      * @see android.webkit.WebView#zoomIn()
      */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
     public boolean zoomIn() {
-        return mContentViewCore.zoomIn();
+        if (!canZoomIn()) {
+            return false;
+        }
+        return mContentViewCore.pinchByDelta(1.25f);
     }
 
     /**
      * @see android.webkit.WebView#zoomOut()
      */
+    // This method uses the term 'zoom' for legacy reasons, but relates
+    // to what chrome calls the 'page scale factor'.
     public boolean zoomOut() {
-        return mContentViewCore.zoomOut();
+        if (!canZoomOut()) {
+            return false;
+        }
+        return mContentViewCore.pinchByDelta(0.8f);
     }
 
     /**
@@ -1824,7 +1845,12 @@ public class AwContents {
 
     @CalledByNative
     private void setPageScaleFactor(float pageScaleFactor) {
+        if (mPageScaleFactor == pageScaleFactor)
+            return;
+        float oldPageScaleFactor = mPageScaleFactor;
         mPageScaleFactor = pageScaleFactor;
+        mContentsClient.getCallbackHelper().postOnScaleChangedScaled(
+                (float)(oldPageScaleFactor * mDIPScale), (float)(mPageScaleFactor * mDIPScale));
     }
 
     @CalledByNative
