@@ -285,65 +285,17 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
+    // Use this delegate only to post onPageStarted messages, since using WebContentsObserver
+    // causes bugs with existing applications. The three problems observed are stale URLs,
+    // out of order onPageStarted's and double onPageStarted's.
+    // TODO(sgurun) implementing onPageStarted via a resource throttle has a performance hit
+    // waiting for UI thread. Let's try to find a non-resource-throttle solution.
     private class InterceptNavigationDelegateImpl implements InterceptNavigationDelegate {
-        private String mLastLoadUrlAddress;
-
-        public void onUrlLoadRequested(String url) {
-            mLastLoadUrlAddress = url;
-        }
-
         @Override
         public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
             final String url = navigationParams.url;
-            final int transitionType = navigationParams.pageTransitionType;
-            final boolean isLoadUrl =
-                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_FROM_API) != 0;
-            final boolean isBackForward =
-                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_FORWARD_BACK) != 0;
-            final boolean isReload =
-                    (transitionType & PageTransitionTypes.PAGE_TRANSITION_CORE_MASK) ==
-                    PageTransitionTypes.PAGE_TRANSITION_RELOAD;
-            final boolean isRedirect = navigationParams.isRedirect;
-
-            boolean ignoreNavigation = false;
-            // TODO(sgurun) cleanup existing shouldIgnoreNavigation in next patch.
-            if (true) return false;
-
-            // Any navigation from loadUrl, goBack/Forward, or reload, are considered application
-            // initiated and hence will not yield a shouldOverrideUrlLoading() callback.
-            // TODO(joth): Using PageTransitionTypes should be sufficient to determine all app
-            // initiated navigations, and so mLastLoadUrlAddress should be removed.
-            if ((isLoadUrl && !isRedirect) || isBackForward ||
-                    mLastLoadUrlAddress != null && mLastLoadUrlAddress.equals(url)) {
-                // Support the case where the user clicks on a link that takes them back to the
-                // same page.
-                mLastLoadUrlAddress = null;
-
-                // If the embedder requested the load of a certain URL via the loadUrl API, then we
-                // do not offer it to AwContentsClient.shouldOverrideUrlLoading.
-                // The embedder is also not allowed to intercept POST requests because of
-                // crbug.com/155250.
-            } else if (!navigationParams.isPost) {
-                ignoreNavigation = mContentsClient.shouldOverrideUrlLoading(url);
-            }
-
-            // The existing contract is that shouldOverrideUrlLoading callbacks are delivered before
-            // onPageStarted callbacks; third party apps depend on this behavior.
-            // Using a ResouceThrottle to implement the navigation interception feature results in
-            // the WebContentsObserver.didStartLoading callback happening before the
-            // ResourceThrottle has a chance to run.
-            // To preserve the ordering the onPageStarted callback is synthesized from the
-            // shouldOverrideUrlLoading, and only if the navigation was not ignored (this
-            // balances out with the onPageFinished callback, which is suppressed in the
-            // AwContentsClient if the navigation was ignored).
-            if (!ignoreNavigation) {
-                // The shouldOverrideUrlLoading call might have resulted in posting messages to the
-                // UI thread. Using sendMessage here (instead of calling onPageStarted directly)
-                // will allow those to run in order.
-                mContentsClient.getCallbackHelper().postOnPageStarted(url);
-            }
-
-            return ignoreNavigation;
+            mContentsClient.getCallbackHelper().postOnPageStarted(url);
+            return false;
         }
     }
 
@@ -909,22 +861,12 @@ public class AwContents {
 
         mContentViewCore.loadUrl(params);
 
-        suppressInterceptionForThisNavigation();
-
         // The behavior of WebViewClassic uses the populateVisitedLinks callback in WebKit.
         // Chromium does not use this use code path and the best emulation of this behavior to call
         // request visited links once on the first URL load of the WebView.
         if (!mHasRequestedVisitedHistoryFromClient) {
           mHasRequestedVisitedHistoryFromClient = true;
           requestVisitedHistoryFromClient();
-        }
-    }
-
-    private void suppressInterceptionForThisNavigation() {
-        if (mInterceptNavigationDelegate != null) {
-            // getUrl returns a sanitized address in the same format that will be used for
-            // callbacks, so it's safe to use string comparison as an equality check later on.
-            mInterceptNavigationDelegate.onUrlLoadRequested(mContentViewCore.getUrl());
         }
     }
 
@@ -1139,8 +1081,6 @@ public class AwContents {
      */
     public void goBack() {
         mContentViewCore.goBack();
-
-        suppressInterceptionForThisNavigation();
     }
 
     /**
@@ -1155,8 +1095,6 @@ public class AwContents {
      */
     public void goForward() {
         mContentViewCore.goForward();
-
-        suppressInterceptionForThisNavigation();
     }
 
     /**
@@ -1171,8 +1109,6 @@ public class AwContents {
      */
     public void goBackOrForward(int steps) {
         mContentViewCore.goToOffset(steps);
-
-        suppressInterceptionForThisNavigation();
     }
 
     /**
@@ -1863,11 +1799,6 @@ public class AwContents {
     private void onWebLayoutContentsSizeChanged(int widthCss, int heightCss) {
         // This change notification comes from the renderer thread, not from the cc/ impl thread.
         mLayoutSizer.onContentSizeChanged(widthCss, heightCss);
-    }
-
-    @CalledByNative
-    private boolean onShouldOverrideUrlLoading(String url) {
-        return mContentsClient.shouldOverrideUrlLoading(url);
     }
 
     @CalledByNative

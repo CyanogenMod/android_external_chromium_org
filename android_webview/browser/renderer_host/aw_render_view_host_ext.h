@@ -28,8 +28,6 @@ class AwRenderViewHostExtClient {
   virtual void OnWebLayoutPageScaleFactorChanged(float page_scale_factor) = 0;
   virtual void OnWebLayoutContentsSizeChanged(
       const gfx::Size& contents_size) = 0;
-  // Called when there is a top level navigation.
-  virtual bool OnShouldOverrideUrlLoading(const base::string16& url) = 0;
 
  protected:
   virtual ~AwRenderViewHostExtClient() {}
@@ -94,8 +92,6 @@ class AwRenderViewHostExt : public content::WebContentsObserver,
   void OnUpdateHitTestData(const AwHitTestData& hit_test_data);
   void OnPageScaleFactorChanged(float page_scale_factor);
   void OnContentsSizeChanged(const gfx::Size& contents_size);
-  void OnShouldOverrideUrlLoading(const base::string16& url,
-                                  bool* ignore_navigation);
 
   bool IsRenderViewReady() const;
 

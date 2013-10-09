@@ -31,6 +31,8 @@
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "url/gurl.h"
 
+using content::RenderThread;
+
 namespace android_webview {
 
 AwContentRendererClient::AwContentRendererClient() {
@@ -44,7 +46,7 @@ void AwContentRendererClient::RenderThreadStarted() {
       ASCIIToUTF16(android_webview::kContentScheme));
   WebKit::WebSecurityPolicy::registerURLSchemeAsLocal(content_scheme);
 
-  content::RenderThread* thread = content::RenderThread::Get();
+  RenderThread* thread = content::RenderThread::Get();
 
   aw_render_process_observer_.reset(new AwRenderProcessObserver);
   thread->AddObserver(aw_render_process_observer_.get());
@@ -56,6 +58,7 @@ void AwContentRendererClient::RenderThreadStarted() {
 bool AwContentRendererClient::HandleNavigation(
     content::RenderView* view,
     content::DocumentState* document_state,
+    int opener_id,
     WebKit::WebFrame* frame,
     const WebKit::WebURLRequest& request,
     WebKit::WebNavigationType type,
@@ -101,11 +104,15 @@ bool AwContentRendererClient::HandleNavigation(
     return false;
 
   bool ignore_navigation = false;
-  int routing_id = view->GetRoutingID();
   base::string16 url =  request.url().string();
-  view->Send (new AwViewHostMsg_ShouldOverrideUrlLoading(routing_id,
-                                                         url,
-                                                         &ignore_navigation));
+
+  int routing_id = view->GetRoutingID();
+  // When opener_id is valid (popup case), use opener id for routing.
+  if (opener_id != MSG_ROUTING_NONE)
+    routing_id = opener_id;
+  RenderThread::Get()->Send(new AwViewHostMsg_ShouldOverrideUrlLoading(
+      routing_id, url, &ignore_navigation));
+
   return ignore_navigation;
 }
 

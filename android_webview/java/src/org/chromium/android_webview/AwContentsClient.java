@@ -65,16 +65,6 @@ public abstract class AwContentsClient {
         }
 
         @Override
-        public void didStartLoading(final String url) {
-            ThreadUtils.postOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    AwContentsClient.this.onPageStarted(url);
-                }
-            });
-        }
-
-        @Override
         public void didStopLoading(final String url) {
             ThreadUtils.postOnUiThread(new Runnable() {
                 @Override
