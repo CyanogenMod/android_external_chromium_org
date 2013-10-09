@@ -422,6 +422,7 @@ void CookieManager::HasCookiesCompleted(base::WaitableEvent* completion,
 
 bool CookieManager::AllowFileSchemeCookies() {
   base::AutoLock lock(cookie_monster_lock_);
+  EnsureCookieMonsterExistsLocked();
   return AllowFileSchemeCookiesLocked();
 }
 
@@ -431,6 +432,7 @@ bool CookieManager::AllowFileSchemeCookiesLocked() {
 
 void CookieManager::SetAcceptFileSchemeCookies(bool accept) {
   base::AutoLock lock(cookie_monster_lock_);
+  EnsureCookieMonsterExistsLocked();
   SetAcceptFileSchemeCookiesLocked(accept);
 }
 
