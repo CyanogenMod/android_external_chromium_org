@@ -40,6 +40,7 @@
 #include "components/autofill/content/browser/autofill_driver_impl.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/navigation_interception/intercept_navigation_delegate.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cert_store.h"
@@ -72,6 +73,7 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
+using navigation_interception::InterceptNavigationDelegate;
 using content::BrowserThread;
 using content::ContentViewCore;
 using content::WebContents;
@@ -204,7 +206,8 @@ void AwContents::SetJavaPeers(JNIEnv* env,
                               jobject aw_contents,
                               jobject web_contents_delegate,
                               jobject contents_client_bridge,
-                              jobject io_thread_client) {
+                              jobject io_thread_client,
+                              jobject intercept_navigation_delegate) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // The |aw_content| param is technically spurious as it duplicates |obj| but
   // is passed over anyway to make the binding more explicit.
@@ -224,6 +227,12 @@ void AwContents::SetJavaPeers(JNIEnv* env,
   int child_id = web_contents_->GetRenderProcessHost()->GetID();
   int route_id = web_contents_->GetRoutingID();
   AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
+
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  InterceptNavigationDelegate::Associate(
+      web_contents_.get(),
+      make_scoped_ptr(new InterceptNavigationDelegate(
+          env, intercept_navigation_delegate)));
 }
 
 void AwContents::SetSaveFormData(bool enabled) {
