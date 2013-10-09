@@ -58,7 +58,8 @@ LayerTreeSettings::LayerTreeSettings()
       use_map_image(false),
       compositor_name("ChromiumCompositor"),
       ignore_root_layer_flings(false),
-      always_overscroll(false) {
+      always_overscroll(false),
+      touch_hit_testing(true) {
   // TODO(danakj): Renable surface caching when we can do it more realiably.
   // crbug.com/170713
   cache_render_pass_contents = false;

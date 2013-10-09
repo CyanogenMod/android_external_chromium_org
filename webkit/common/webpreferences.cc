@@ -117,6 +117,7 @@ WebPreferences::WebPreferences()
       experimental_websocket_enabled(false),
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
+      compositor_touch_hit_testing(true),
       cookie_enabled(true)
 #if defined(OS_ANDROID)
       ,
