@@ -55,7 +55,8 @@ class CC_EXPORT Renderer {
 
   // This passes ownership of the render passes to the renderer. It should
   // consume them, and empty the list.
-  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order) = 0;
+  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                         bool disable_picture_quad_image_filtering) = 0;
 
   // Waits for rendering to finish.
   virtual void Finish() = 0;

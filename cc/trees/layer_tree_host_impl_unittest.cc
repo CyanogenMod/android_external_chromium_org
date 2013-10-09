@@ -2327,6 +2327,8 @@ class TestScrollOffsetDelegate : public LayerScrollOffsetDelegate {
     return getter_return_value_;
   }
 
+  virtual bool IsExternalFlingActive() const OVERRIDE { return false; }
+
   virtual void SetPageScaleFactor(float page_scale_factor) OVERRIDE {
     page_scale_factor_ = page_scale_factor;
   }
