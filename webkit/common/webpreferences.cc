@@ -79,6 +79,7 @@ WebPreferences::WebPreferences()
       allow_running_insecure_content(false),
       password_echo_enabled(false),
       should_print_backgrounds(false),
+      should_clear_document_background(true),
       enable_scroll_animator(false),
       visual_word_movement_enabled(false),
       css_sticky_position_enabled(false),
