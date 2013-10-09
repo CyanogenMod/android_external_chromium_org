@@ -262,6 +262,8 @@ class CC_EXPORT LayerTreeHostImpl
   LayerImpl* RootScrollLayer() const;
   LayerImpl* CurrentlyScrollingLayer() const;
 
+  bool IsCurrentlyScrolling() const;
+
   virtual void SetVisible(bool visible);
   bool visible() const { return visible_; }
 

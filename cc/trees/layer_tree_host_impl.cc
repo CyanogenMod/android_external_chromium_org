@@ -1297,11 +1297,14 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
     active_tree_->hud_layer()->UpdateHudTexture(resource_provider_.get());
 
   if (output_surface_->ForcedDrawToSoftwareDevice()) {
+    bool disable_picture_quad_image_filtering =
+        IsCurrentlyScrolling() || needs_animate_layers();
+
     scoped_ptr<SoftwareRenderer> temp_software_renderer =
         SoftwareRenderer::Create(this, output_surface_.get(), NULL);
-    temp_software_renderer->DrawFrame(&frame->render_passes);
+    temp_software_renderer->DrawFrame(&frame->render_passes, disable_picture_quad_image_filtering);
   } else {
-    renderer_->DrawFrame(&frame->render_passes);
+    renderer_->DrawFrame(&frame->render_passes, false);
   }
   // The render passes should be consumed by the renderer.
   DCHECK(frame->render_passes.empty());
@@ -1407,6 +1410,11 @@ LayerImpl* LayerTreeHostImpl::RootScrollLayer() const {
 
 LayerImpl* LayerTreeHostImpl::CurrentlyScrollingLayer() const {
   return active_tree_->CurrentlyScrollingLayer();
+}
+
+bool LayerTreeHostImpl::IsCurrentlyScrolling() const {
+  return CurrentlyScrollingLayer() ||
+         (RootScrollLayer() && RootScrollLayer()->IsExternalFlingActive());
 }
 
 // Content layers can be either directly scrollable or contained in an outer
