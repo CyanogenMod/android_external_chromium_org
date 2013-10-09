@@ -65,6 +65,7 @@ class CC_EXPORT LayerTreeSettings {
   std::string compositor_name;
   bool ignore_root_layer_flings;
   bool always_overscroll;
+  bool touch_hit_testing;
 
   LayerTreeDebugState initial_debug_state;
 };

@@ -38,6 +38,7 @@ CC_EXPORT extern const char kEnablePinchVirtualViewport[];
 CC_EXPORT extern const char kEnablePartialSwap[];
 CC_EXPORT extern const char kStrictLayerPropertyChangeChecking[];
 CC_EXPORT extern const char kUseMapImage[];
+CC_EXPORT extern const char kDisableCompositorTouchHitTesting[];
 
 // Switches for both the renderer and ui compositors.
 CC_EXPORT extern const char kUIDisablePartialSwap[];

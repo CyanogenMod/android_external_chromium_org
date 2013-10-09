@@ -131,6 +131,10 @@ const char kUseMapImage[] = "use-map-image";
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
 
+// Disable touch hit testing in the compositor.
+const char kDisableCompositorTouchHitTesting[] =
+    "disable-compositor-touch-hit-testing";
+
 bool IsImplSidePaintingEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
