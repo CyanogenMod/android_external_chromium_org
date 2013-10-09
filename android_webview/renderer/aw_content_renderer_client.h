@@ -43,6 +43,7 @@ class AwContentRendererClient : public content::ContentRendererClient {
 
   virtual bool HandleNavigation(content::RenderView* view,
                                 content::DocumentState* document_state,
+                                int opener_id,
                                 WebKit::WebFrame* frame,
                                 const WebKit::WebURLRequest& request,
                                 WebKit::WebNavigationType type,

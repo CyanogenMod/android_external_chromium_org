@@ -94,6 +94,7 @@ bool ContentRendererClient::AllowPopup() {
 bool ContentRendererClient::HandleNavigation(
     RenderView* view,
     DocumentState* document_state,
+    int opener_id,
     WebKit::WebFrame* frame,
     const WebKit::WebURLRequest& request,
     WebKit::WebNavigationType type,

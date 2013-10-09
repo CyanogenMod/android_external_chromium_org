@@ -224,20 +224,9 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
   throttles->push_back(new IoThreadClientThrottle(
       child_id, route_id, request));
 
-  bool allow_intercepting =
-      // We allow intercepting navigations within subframes, but only if the
-      // scheme other than http or https. This is because the embedder
-      // can't distinguish main frame and subframe callbacks (which could lead
-      // to broken content if the embedder decides to not ignore the main frame
-      // navigation, but ignores the subframe navigation).
-      // The reason this is supported at all is that certain JavaScript-based
-      // frameworks use iframe navigation as a form of communication with the
-      // embedder.
-      (resource_type == ResourceType::MAIN_FRAME ||
-       (resource_type == ResourceType::SUB_FRAME &&
-        !request->url().SchemeIs(chrome::kHttpScheme) &&
-        !request->url().SchemeIs(chrome::kHttpsScheme)));
-  if (allow_intercepting) {
+  // We only intercept navigations with main frames since this throttle is
+  // exclusively for posting onPageStarted's.
+  if (resource_type == ResourceType::MAIN_FRAME) {
     throttles->push_back(InterceptNavigationDelegate::CreateThrottleFor(
         request));
   }

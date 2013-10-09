@@ -170,6 +170,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // ignored by WebKit. This method is used by CEF.
   virtual bool HandleNavigation(RenderView* view,
                                 DocumentState* document_state,
+                                int opener_id,
                                 WebKit::WebFrame* frame,
                                 const WebKit::WebURLRequest& request,
                                 WebKit::WebNavigationType type,
