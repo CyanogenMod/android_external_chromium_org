@@ -3390,6 +3390,13 @@ WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
   return default_policy;
 }
 
+bool RenderViewImpl::shouldAbortNavigationAfterUrlResolve(const WebURL& base,
+                                              const WebString& fragment,
+                                              const WebURL& result) {
+  return GetContentClient()->renderer()->ShouldAbortNavigationAfterUrlResolve(
+      this, base, fragment, result);
+}
+
 WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
     WebFrame* frame, const WebURLRequest& request, WebNavigationType type,
     WebNavigationPolicy default_policy, bool is_redirect) {

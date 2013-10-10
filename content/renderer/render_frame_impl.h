@@ -83,6 +83,9 @@ class CONTENT_EXPORT RenderFrameImpl
       WebKit::WebNavigationType type,
       WebKit::WebNavigationPolicy default_policy,
       bool is_redirect);
+  virtual bool shouldAbortNavigationAfterUrlResolve(const WebKit::WebURL& base,
+                                        const WebKit::WebString& fragment,
+                                        const WebKit::WebURL& result) OVERRIDE;
   virtual void willSendSubmitEvent(WebKit::WebFrame* frame,
                                    const WebKit::WebFormElement& form);
   virtual void willSubmitForm(WebKit::WebFrame* frame,

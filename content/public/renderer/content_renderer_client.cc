@@ -103,6 +103,13 @@ bool ContentRendererClient::HandleNavigation(
   return false;
 }
 
+bool ContentRendererClient::ShouldAbortNavigationAfterUrlResolve(content::RenderView* view,
+                                                const GURL& base,
+                                                const base::string16& fragment,
+                                                const GURL& result) {
+  return false;
+}
+
 bool ContentRendererClient::ShouldFork(WebKit::WebFrame* frame,
                                        const GURL& url,
                                        const std::string& http_method,
