@@ -49,6 +49,10 @@ class AwContentRendererClient : public content::ContentRendererClient {
                                 WebKit::WebNavigationType type,
                                 WebKit::WebNavigationPolicy default_policy,
                                 bool is_redirect) OVERRIDE;
+  virtual bool ShouldAbortNavigationAfterUrlResolve(content::RenderView* view,
+                                   const GURL& base,
+                                   const base::string16& fragment,
+                                   const GURL& result) OVERRIDE;
 
  private:
   scoped_ptr<AwRenderProcessObserver> aw_render_process_observer_;

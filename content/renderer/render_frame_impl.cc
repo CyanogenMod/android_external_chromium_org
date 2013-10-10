@@ -293,6 +293,12 @@ WebKit::WebNavigationPolicy RenderFrameImpl::decidePolicyForNavigation(
       frame, request, type, default_policy, is_redirect);
 }
 
+bool RenderFrameImpl::shouldAbortNavigationAfterUrlResolve(const WebURL& base,
+                                               const WebString& fragment,
+                                               const WebURL& result) {
+  return render_view_->shouldAbortNavigationAfterUrlResolve(base, fragment, result);
+}
+
 void RenderFrameImpl::willSendSubmitEvent(WebKit::WebFrame* frame,
                                           const WebKit::WebFormElement& form) {
   // Some login forms have onSubmit handlers that put a hash of the password
