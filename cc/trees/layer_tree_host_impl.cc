@@ -1295,8 +1295,10 @@ void LayerTreeHostImpl::DrawLayers(FrameData* frame,
   // Because the contents of the HUD depend on everything else in the frame, the
   // contents of its texture are updated as the last thing before the frame is
   // drawn.
-  if (active_tree_->hud_layer())
-    active_tree_->hud_layer()->UpdateHudTexture(resource_provider_.get());
+  if (active_tree_->hud_layer()) {
+    active_tree_->hud_layer()->UpdateHudTexture(
+        GetDrawMode(output_surface_.get()), resource_provider_.get());
+  }
 
   if (output_surface_->ForcedDrawToSoftwareDevice()) {
     bool disable_picture_quad_image_filtering =
