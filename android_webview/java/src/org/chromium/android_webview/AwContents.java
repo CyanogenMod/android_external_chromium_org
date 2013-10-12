@@ -657,8 +657,12 @@ public class AwContents {
     private AwPdfExporter mAwPdfExporter;
 
     public AwPdfExporter getPdfExporter() {
+        // mNativeAwContents can be null, due to destroy().
+        if (mNativeAwContents == 0) {
+            return null;
+        }
         if (mAwPdfExporter == null) {
-            mAwPdfExporter = new AwPdfExporter();
+            mAwPdfExporter = new AwPdfExporter(mContainerView);
             nativeCreatePdfExporter(mNativeAwContents, mAwPdfExporter);
         }
         return mAwPdfExporter;
