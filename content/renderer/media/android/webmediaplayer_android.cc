@@ -125,17 +125,7 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
   needs_establish_peer_ = false;
   current_frame_ = VideoFrame::CreateBlackFrame(gfx::Size(1, 1));
 #endif
-  if (stream_texture_factory_) {
-    stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
-    if (needs_establish_peer_ && stream_texture_proxy_) {
-      stream_id_ = stream_texture_factory_->CreateStreamTexture(
-          kGLTextureExternalOES,
-          &texture_id_,
-          &texture_mailbox_,
-          &texture_mailbox_sync_point_);
-      ReallocateVideoFrame();
-    }
-  }
+  TryCreateStreamTextureProxyIfNeeded();
 
   if (WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
     // TODO(xhwang): Report an error when there is encrypted stream but EME is
@@ -299,6 +289,8 @@ void WebMediaPlayerAndroid::play() {
   if (audio_renderer_ && paused())
     audio_renderer_->Play();
 #endif
+
+  TryCreateStreamTextureProxyIfNeeded();
   if (hasVideo() && needs_establish_peer_)
     EstablishSurfaceTexturePeer();
 
@@ -629,11 +621,7 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
   } else if (stream_texture_factory_ && !stream_texture_proxy_) {
     // Do deferred stream texture creation finally.
     if (paused()) {
-      stream_id_ = stream_texture_factory_->CreateStreamTexture(
-          kGLTextureExternalOES,
-          &texture_id_,
-          &texture_mailbox_,
-          &texture_mailbox_sync_point_);
+      DoCreateStreamTexture();
       SetNeedsEstablishPeer(true);
     } else {
       EstablishSurfaceTexturePeer();
@@ -850,6 +838,25 @@ void WebMediaPlayerAndroid::PutCurrentFrame(
     const scoped_refptr<media::VideoFrame>& frame) {
 }
 
+void WebMediaPlayerAndroid::TryCreateStreamTextureProxyIfNeeded() {
+  // Already created.
+  if (stream_texture_proxy_)
+    return;
+
+  // No factory to create proxy.
+  if (!stream_texture_factory_)
+    return;
+
+  stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
+  if (needs_establish_peer_ && stream_texture_proxy_) {
+    DoCreateStreamTexture();
+    ReallocateVideoFrame();
+  }
+
+  if (stream_texture_proxy_ && video_frame_provider_client_)
+    stream_texture_proxy_->SetClient(video_frame_provider_client_);
+}
+
 void WebMediaPlayerAndroid::EstablishSurfaceTexturePeer() {
   if (!stream_texture_proxy_)
     return;
@@ -862,17 +869,24 @@ void WebMediaPlayerAndroid::EstablishSurfaceTexturePeer() {
     texture_id_ = 0;
     texture_mailbox_ = gpu::Mailbox();
     texture_mailbox_sync_point_ = 0;
-    stream_id_ = stream_texture_factory_->CreateStreamTexture(
-        kGLTextureExternalOES,
-        &texture_id_,
-        &texture_mailbox_,
-        &texture_mailbox_sync_point_);
+    DoCreateStreamTexture();
     ReallocateVideoFrame();
     stream_texture_proxy_initialized_ = false;
   }
   if (stream_texture_factory_.get() && stream_id_)
     stream_texture_factory_->EstablishPeer(stream_id_, player_id_);
   needs_establish_peer_ = false;
+}
+
+void WebMediaPlayerAndroid::DoCreateStreamTexture() {
+  DCHECK(!stream_id_);
+  DCHECK(!texture_id_);
+  DCHECK(!texture_mailbox_sync_point_);
+  stream_id_ = stream_texture_factory_->CreateStreamTexture(
+      kGLTextureExternalOES,
+      &texture_id_,
+      &texture_mailbox_,
+      &texture_mailbox_sync_point_);
 }
 
 void WebMediaPlayerAndroid::SetNeedsEstablishPeer(bool needs_establish_peer) {

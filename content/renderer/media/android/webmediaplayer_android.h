@@ -242,6 +242,9 @@ class WebMediaPlayerAndroid
   // Helper methods for posting task for setting states and update WebKit.
   void UpdateNetworkState(WebKit::WebMediaPlayer::NetworkState state);
   void UpdateReadyState(WebKit::WebMediaPlayer::ReadyState state);
+  void TryCreateStreamTextureProxyIfNeeded();
+  void DoCreateStreamTexture();
+
 
   // Helper method to reestablish the surface texture peer for android
   // media player.
