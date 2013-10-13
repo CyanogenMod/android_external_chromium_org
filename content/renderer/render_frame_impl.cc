@@ -603,7 +603,12 @@ void RenderFrameImpl::willSendRequest(
   request.setRequestorID(GetRoutingID());
   request.setHasUserGesture(WebUserGestureIndicator::isProcessingUserGesture());
 
-  if (!navigation_state->extra_headers().empty()) {
+  // Forked for WebView, http://crbug.com/306873
+  // Only add the extra headers on the navigation state if the request is for
+  // the main frame. This emulates the old WebView's behaviour where these
+  // headers don't apply to other resource loads.
+  if (!navigation_state->extra_headers().empty() &&
+      request.targetType() == WebURLRequest::TargetIsMainFrame) {
     for (net::HttpUtil::HeadersIterator i(
         navigation_state->extra_headers().begin(),
         navigation_state->extra_headers().end(), "\n");
