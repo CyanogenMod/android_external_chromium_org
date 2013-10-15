@@ -75,10 +75,11 @@ void GLImageEGL::Destroy() {
 }
 
 void GLImageEGL::ReleaseTexImage() {
-  // === START ANDROID WORKAROUND http://b/10205015
+  // === START ANDROID WORKAROUND http://b/10205015 and http://b/10892941
   static bool is_qcom = strcmp((char*)glGetString(GL_VENDOR), "Qualcomm") == 0;
-  if (is_qcom) return;
-  // === END   ANDROID WORKAROUND http://b/10205015
+  static bool is_arm = strcmp((char*)glGetString(GL_VENDOR), "ARM") == 0;
+  if (is_qcom || is_arm) return;
+  // === END   ANDROID WORKAROUND http://b/10205015 and http://b/10892941
   char zero[4] = { 0, };
   glTexImage2D(GL_TEXTURE_2D,
                0,
