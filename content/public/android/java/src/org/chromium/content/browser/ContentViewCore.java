@@ -2214,10 +2214,10 @@ import java.util.Map;
     // Makes the insertion/selection handles invisible. They will fade back in shortly after the
     // last call to scheduleTextHandleFadeIn (or temporarilyHideTextHandles).
     private void temporarilyHideTextHandles() {
-        if (isSelectionHandleShowing()) {
+        if (isSelectionHandleShowing() && !mSelectionHandleController.isDragging()) {
             mSelectionHandleController.setHandleVisibility(HandleView.INVISIBLE);
         }
-        if (isInsertionHandleShowing()) {
+        if (isInsertionHandleShowing() && !mInsertionHandleController.isDragging()) {
             mInsertionHandleController.setHandleVisibility(HandleView.INVISIBLE);
         }
         scheduleTextHandleFadeIn();
