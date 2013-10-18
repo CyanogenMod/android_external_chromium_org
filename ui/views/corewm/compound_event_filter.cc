@@ -23,6 +23,7 @@ namespace corewm {
 namespace {
 
 bool ShouldHideCursorOnKeyEvent(const ui::KeyEvent& event) {
+#if defined(OS_CHROMEOS)
   // All alt and control key commands are ignored.
   if (event.IsAltDown() || event.IsControlDown())
     return false;
@@ -64,6 +65,9 @@ bool ShouldHideCursorOnKeyEvent(const ui::KeyEvent& event) {
     return false;
 
   return true;
+#else  // !defined(OS_CHROMEOS)
+  return false;
+#endif  // defined(OS_CHROMEOS)
 }
 
 }  // namespace
@@ -252,7 +256,7 @@ void CompoundEventFilter::OnScrollEvent(ui::ScrollEvent* event) {
 void CompoundEventFilter::OnTouchEvent(ui::TouchEvent* event) {
   FilterTouchEvent(event);
   if (!event->handled() && event->type() == ui::ET_TOUCH_PRESSED &&
-      !aura::Env::GetInstance()->is_mouse_button_down()) {
+      !aura::Env::GetInstance()->IsMouseButtonDown()) {
     SetMouseEventsEnableStateOnEvent(
         static_cast<aura::Window*>(event->target()), event, false);
   }

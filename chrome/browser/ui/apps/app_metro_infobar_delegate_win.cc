@@ -4,15 +4,15 @@
 
 #include "chrome/browser/ui/apps/app_metro_infobar_delegate_win.h"
 
-#include "apps/app_launch_for_metro_restart_win.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/metro_utils/metro_chrome_win.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/app_list/app_list_service_win.h"
+#include "chrome/browser/ui/app_list/app_list_icon_win.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -67,7 +67,7 @@ AppMetroInfoBarDelegateWin::AppMetroInfoBarDelegateWin(
 AppMetroInfoBarDelegateWin::~AppMetroInfoBarDelegateWin() {}
 
 int AppMetroInfoBarDelegateWin::GetIconID() const {
-  return chrome::GetAppListIconResourceId();
+  return GetAppListIconResourceId();
 }
 
 string16 AppMetroInfoBarDelegateWin::GetMessageText() const {
@@ -88,7 +88,7 @@ bool AppMetroInfoBarDelegateWin::Accept() {
   if (mode_ == SHOW_APP_LIST) {
     prefs->SetBoolean(prefs::kRestartWithAppList, true);
   } else {
-    apps::SetAppLaunchForMetroRestart(
+    app_metro_launch::SetAppLaunchForMetroRestart(
         Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
         extension_id_);
   }

@@ -142,8 +142,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.li
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/picker_resources.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.linux-arm.mk
@@ -152,8 +153,7 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.linux-arm.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.linux-arm.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.linux-arm.mk
@@ -203,6 +203,9 @@ include $(LOCAL_PATH)/third_party/zlib/google/zip.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.linux-arm.mk
 include $(LOCAL_PATH)/third_party/zlib/zlib.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.linux-arm.mk
+include $(LOCAL_PATH)/ui/events/events.target.linux-arm.mk
+include $(LOCAL_PATH)/ui/gfx/gfx.target.linux-arm.mk
+include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-arm.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-arm.mk

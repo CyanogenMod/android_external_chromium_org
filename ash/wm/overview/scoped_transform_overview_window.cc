@@ -4,7 +4,9 @@
 
 #include "ash/wm/overview/scoped_transform_overview_window.h"
 
+#include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/wm/window_state.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/root_window.h"
@@ -84,6 +86,7 @@ class CleanupWidgetAfterAnimationObserver : public ui::LayerAnimationObserver {
  public:
   CleanupWidgetAfterAnimationObserver(views::Widget* widget, ui::Layer* layer);
 
+  // ui::LayerAnimationObserver:
   virtual void OnLayerAnimationEnded(
       ui::LayerAnimationSequence* sequence) OVERRIDE;
   virtual void OnLayerAnimationAborted(
@@ -91,10 +94,9 @@ class CleanupWidgetAfterAnimationObserver : public ui::LayerAnimationObserver {
   virtual void OnLayerAnimationScheduled(
       ui::LayerAnimationSequence* sequence) OVERRIDE;
 
- protected:
+ private:
   virtual ~CleanupWidgetAfterAnimationObserver();
 
- private:
   views::Widget* widget_;
   ui::Layer* layer_;
 
@@ -149,6 +151,51 @@ class WindowSelectorAnimationSettings
   }
 };
 
+void SetTransformOnWindow(aura::Window* window,
+                          const gfx::Transform& transform,
+                          bool animate) {
+  if (animate) {
+    WindowSelectorAnimationSettings animation_settings(window);
+    window->SetTransform(transform);
+  } else {
+    window->SetTransform(transform);
+  }
+}
+
+gfx::Transform TranslateTransformOrigin(const gfx::Vector2d& new_origin,
+                                        const gfx::Transform& transform) {
+  gfx::Transform result;
+  result.Translate(-new_origin.x(), -new_origin.y());
+  result.PreconcatTransform(transform);
+  result.Translate(new_origin.x(), new_origin.y());
+  return result;
+}
+
+void SetTransformOnWindowAndAllTransientChildren(
+    aura::Window* window,
+    const gfx::Transform& transform,
+    bool animate) {
+  SetTransformOnWindow(window, transform, animate);
+
+  aura::Window::Windows transient_children = window->transient_children();
+  for (aura::Window::Windows::iterator iter = transient_children.begin();
+       iter != transient_children.end(); ++iter) {
+    aura::Window* transient_child = *iter;
+    gfx::Rect window_bounds = window->bounds();
+    gfx::Rect child_bounds = transient_child->bounds();
+    gfx::Transform transient_window_transform(
+        TranslateTransformOrigin(child_bounds.origin() - window_bounds.origin(),
+                                 transform));
+    SetTransformOnWindow(transient_child, transient_window_transform, animate);
+  }
+}
+
+aura::Window* GetModalTransientParent(aura::Window* window) {
+  if (window->GetProperty(aura::client::kModalKey) == ui::MODAL_TYPE_WINDOW)
+    return window->transient_parent();
+  return NULL;
+}
+
 }  // namespace
 
 const int ScopedTransformOverviewWindow::kTransitionMilliseconds = 100;
@@ -160,6 +207,7 @@ ScopedTransformOverviewWindow::ScopedTransformOverviewWindow(
       layer_(NULL),
       minimized_(window->GetProperty(aura::client::kShowStateKey) ==
                  ui::SHOW_STATE_MINIMIZED),
+      ignored_by_shelf_(ash::wm::GetWindowState(window)->ignored_by_shelf()),
       overview_started_(false),
       original_transform_(window->layer()->GetTargetTransform()) {
 }
@@ -174,7 +222,7 @@ ScopedTransformOverviewWindow::~ScopedTransformOverviewWindow() {
     // layer after the animation is complete.
     if (window_copy_)
       new CleanupWidgetAfterAnimationObserver(window_copy_, layer_);
-    AnimateTransformOnWindowAndTransientChildren(original_transform_);
+    SetTransformOnWindowAndTransientChildren(original_transform_, true);
     window_copy_ = NULL;
     layer_ = NULL;
     if (minimized_ && window_->GetProperty(aura::client::kShowStateKey) !=
@@ -182,11 +230,15 @@ ScopedTransformOverviewWindow::~ScopedTransformOverviewWindow() {
       // Setting opacity 0 and visible false ensures that the property change
       // to SHOW_STATE_MINIMIZED will not animate the window from its original
       // bounds to the minimized position.
-      window_->layer()->SetOpacity(0);
+      // Hiding the window needs to be done before the target opacity is 0,
+      // otherwise the layer's visibility will not be updated
+      // (See VisibilityController::UpdateLayerVisibility).
       window_->Hide();
+      window_->layer()->SetOpacity(0);
       window_->SetProperty(aura::client::kShowStateKey,
                            ui::SHOW_STATE_MINIMIZED);
     }
+    ash::wm::GetWindowState(window_)->set_ignored_by_shelf(ignored_by_shelf_);
   } else if (window_copy_) {
     // If this class still owns a copy of the window, clean up the copy. This
     // will be the case if the window was destroyed.
@@ -198,10 +250,27 @@ ScopedTransformOverviewWindow::~ScopedTransformOverviewWindow() {
   }
 }
 
-bool ScopedTransformOverviewWindow::Contains(const aura::Window* window) const {
-  if (window_copy_ && window_copy_->GetNativeWindow()->Contains(window))
+bool ScopedTransformOverviewWindow::Contains(const aura::Window* target) const {
+  if (window_copy_ && window_copy_->GetNativeWindow()->Contains(target))
     return true;
-  return window_->Contains(window);
+  aura::Window* window = window_;
+  while (window) {
+    if (window->Contains(target))
+      return true;
+    window = GetModalTransientParent(window);
+  }
+  return false;
+}
+
+gfx::Rect ScopedTransformOverviewWindow::GetBoundsInScreen() const {
+  gfx::Rect bounds;
+  aura::Window* window = window_;
+  while (window) {
+    bounds.Union(ScreenAsh::ConvertRectToScreen(window->parent(),
+                                                window->GetTargetBounds()));
+    window = GetModalTransientParent(window);
+  }
+  return bounds;
 }
 
 void ScopedTransformOverviewWindow::RestoreWindow() {
@@ -240,54 +309,62 @@ gfx::Transform ScopedTransformOverviewWindow::
 
 void ScopedTransformOverviewWindow::SetTransform(
     aura::RootWindow* root_window,
-    const gfx::Transform& transform) {
-  // If this is the first transform, perform one-time window modifications
-  // necessary for overview mode.
-  if (!overview_started_) {
-    OnOverviewStarted();
-    overview_started_ = true;
+    const gfx::Transform& transform,
+    bool animate) {
+  DCHECK(overview_started_);
+
+  // If the window bounds have changed and a copy of the window is being
+  // shown on another display, forcibly recreate the copy.
+  if (window_copy_ && window_copy_->GetNativeWindow()->GetBoundsInScreen() !=
+      window_->GetBoundsInScreen()) {
+    DCHECK_NE(window_->GetRootWindow(), root_window);
+    // TODO(flackr): If only the position changed and not the size, update the
+    // existing window_copy_'s position and continue to use it.
+    window_copy_->Close();
+    if (layer_)
+      views::corewm::DeepDeleteLayers(layer_);
+    window_copy_ = NULL;
+    layer_ = NULL;
   }
 
   if (root_window != window_->GetRootWindow() && !window_copy_) {
     DCHECK(!layer_);
+    // TODO(flackr): Create copies of the transient children and transient
+    // parent windows as well. Currently they will only be visible on the
+    // window's initial display.
     layer_ = views::corewm::RecreateWindowLayers(window_, true);
     window_copy_ = CreateCopyOfWindow(root_window, window_, layer_);
   }
-  AnimateTransformOnWindowAndTransientChildren(transform);
+  SetTransformOnWindowAndTransientChildren(transform, animate);
 }
 
-void ScopedTransformOverviewWindow::
-    AnimateTransformOnWindowAndTransientChildren(
-        const gfx::Transform& transform) {
-  WindowSelectorAnimationSettings animation_settings(window_);
-  window_->SetTransform(transform);
-
+void ScopedTransformOverviewWindow::SetTransformOnWindowAndTransientChildren(
+    const gfx::Transform& transform,
+    bool animate) {
+  gfx::Point origin(GetBoundsInScreen().origin());
+  aura::Window* window = window_;
+  while (window->transient_parent())
+    window = window->transient_parent();
   if (window_copy_) {
-    WindowSelectorAnimationSettings animation_settings(
-        window_copy_->GetNativeWindow());
-    window_copy_->GetNativeWindow()->SetTransform(transform);
+    SetTransformOnWindow(
+        window_copy_->GetNativeWindow(),
+        TranslateTransformOrigin(ScreenAsh::ConvertRectToScreen(
+            window_->parent(), window_->GetTargetBounds()).origin() - origin,
+            transform),
+        animate);
   }
-
-  // TODO(flackr): Create copies of the transient children windows as well.
-  // Currently they will only be visible on the window's initial display.
-  aura::Window::Windows transient_children = window_->transient_children();
-  for (aura::Window::Windows::iterator iter = transient_children.begin();
-       iter != transient_children.end(); ++iter) {
-    aura::Window* transient_child = *iter;
-    WindowSelectorAnimationSettings animation_settings(transient_child);
-    gfx::Transform transient_window_transform;
-    gfx::Rect window_bounds = window_->bounds();
-    gfx::Rect child_bounds = transient_child->bounds();
-    transient_window_transform.Translate(window_bounds.x() - child_bounds.x(),
-                                         window_bounds.y() - child_bounds.y());
-    transient_window_transform.PreconcatTransform(transform);
-    transient_window_transform.Translate(child_bounds.x() - window_bounds.x(),
-                                         child_bounds.y() - window_bounds.y());
-    transient_child->SetTransform(transient_window_transform);
-  }
+  SetTransformOnWindowAndAllTransientChildren(
+      window,
+      TranslateTransformOrigin(ScreenAsh::ConvertRectToScreen(
+          window->parent(), window->GetTargetBounds()).origin() - origin,
+          transform),
+      animate);
 }
 
-void ScopedTransformOverviewWindow::OnOverviewStarted() {
+void ScopedTransformOverviewWindow::PrepareForOverview() {
+  DCHECK(!overview_started_);
+  overview_started_ = true;
+  ash::wm::GetWindowState(window_)->set_ignored_by_shelf(true);
   RestoreWindow();
 }
 

@@ -7,6 +7,8 @@
       'SOURCES' : [
         'main.cc',
         'socket_test.cc',
+        'echo_server.cc',
+        'echo_server.h',
       ],
       'DEPS': ['ppapi_simple', 'nacl_io'],
       # Order matters here: gtest has a "main" function that will be used if
@@ -23,7 +25,6 @@
   'DEST': 'tests',
   'NAME': 'nacl_io_socket_test',
   'TITLE': 'NaCl IO Socket test',
-  'PRE': '''\nCHROME_ARGS = --allow-nacl-socket-api=localhost\n''',
   'SOCKET_PERMISSIONS': [
     "tcp-listen:*:*",
     "tcp-connect",

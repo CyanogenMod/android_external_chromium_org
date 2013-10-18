@@ -367,6 +367,23 @@ void CommandBufferProxyImpl::SetContextLostReason(
   NOTREACHED();
 }
 
+bool CommandBufferProxyImpl::SupportsGpuMemoryBuffer() {
+  return false;
+}
+
+gfx::GpuMemoryBuffer* CommandBufferProxyImpl::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    int32* id) {
+  NOTREACHED();
+  return NULL;
+}
+
+void CommandBufferProxyImpl::DestroyGpuMemoryBuffer(int32 id) {
+  NOTREACHED();
+}
+
 int CommandBufferProxyImpl::GetRouteID() const {
   return route_id_;
 }
@@ -416,29 +433,25 @@ uint32 CommandBufferProxyImpl::InsertSyncPoint() {
   return sync_point;
 }
 
-bool CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
+void CommandBufferProxyImpl::SignalSyncPoint(uint32 sync_point,
                                              const base::Closure& callback) {
-  if (last_state_.error != gpu::error::kNoError) {
-    return false;
-  }
+  if (last_state_.error != gpu::error::kNoError)
+    return;
 
   uint32 signal_id = next_signal_id_++;
   if (!Send(new GpuCommandBufferMsg_SignalSyncPoint(route_id_,
                                                     sync_point,
                                                     signal_id))) {
-    return false;
+    return;
   }
 
   signal_tasks_.insert(std::make_pair(signal_id, callback));
-
-  return true;
 }
 
-bool CommandBufferProxyImpl::SignalQuery(unsigned query,
+void CommandBufferProxyImpl::SignalQuery(uint32 query,
                                          const base::Closure& callback) {
-  if (last_state_.error != gpu::error::kNoError) {
-    return false;
-  }
+  if (last_state_.error != gpu::error::kNoError)
+    return;
 
   // Signal identifiers are hidden, so nobody outside of this class will see
   // them. (And thus, they cannot save them.) The IDs themselves only last
@@ -452,12 +465,10 @@ bool CommandBufferProxyImpl::SignalQuery(unsigned query,
   if (!Send(new GpuCommandBufferMsg_SignalQuery(route_id_,
                                                 query,
                                                 signal_id))) {
-    return false;
+    return;
   }
 
   signal_tasks_.insert(std::make_pair(signal_id, callback));
-
-  return true;
 }
 
 

@@ -80,6 +80,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void set_owned_by_parent(bool owned_by_parent) {
     owned_by_parent_ = owned_by_parent;
   }
+  bool owned_by_parent() const { return owned_by_parent_; }
 
   // A type is used to identify a class of Windows and customize behavior such
   // as event handling and parenting.  This field should only be consumed by the
@@ -395,6 +396,18 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   // Called when this window's parent has changed.
   void OnParentChanged();
+
+  // Populates |ancestors| with all transient ancestors of |window| that are
+  // children of |this|. Returns true if any ancestors were found, false if not.
+  bool GetAllTransientAncestors(Window* window, Windows* ancestors) const;
+
+  // Replaces two windows |window1| and |window2| with their possible transient
+  // ancestors that are still siblings (have a common transient parent).
+  // |window1| and |window2| are not modified if such ancestors cannot be found.
+  void FindCommonSiblings(Window** window1, Window** window2) const;
+
+  // Returns true when |ancestor| is a transient ancestor of |this|.
+  bool HasTransientAncestor(const Window* ancestor) const;
 
   // Determines the real location for stacking |child| and invokes
   // StackChildRelativeToImpl().

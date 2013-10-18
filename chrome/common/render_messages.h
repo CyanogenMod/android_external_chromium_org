@@ -311,10 +311,6 @@ IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFocusChanged,
                     OmniboxFocusState /* new_focus_state */,
                     OmniboxFocusChangeReason /* reason */)
 
-IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxFontInformation,
-                    string16 /* omnibox_font */,
-                    size_t /* omnibox_font_size */)
-
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxMarginChange,
                     int /* start */,
                     int /* width */)
@@ -652,9 +648,10 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockRunningInsecureContent)
 
 #if defined(OS_ANDROID)
 // Contains info about whether the current page can be treated as a webapp.
-IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_DidRetrieveWebappInformation,
+IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_DidRetrieveWebappInformation,
                     bool /* success */,
-                    bool /* is_webapp_capable */,
+                    bool /* is_mobile_webapp_capable */,
+                    bool /* is_apple_mobile_webapp_capable */,
                     GURL /* expected_url */)
 #endif  // defined(OS_ANDROID)
 
@@ -759,6 +756,12 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SetVoiceSearchSupported,
                     int /* page_id */,
                     bool /* supported */)
+
+// Tells the renderer a list of URLs which should be bounced back to the browser
+// process so that they can be assigned to an Instant renderer.
+IPC_MESSAGE_CONTROL2(ChromeViewMsg_SetSearchURLs,
+                     std::vector<GURL> /* search_urls */,
+                     GURL /* new_tab_page_url */)
 
 // Tells listeners that a detailed message was reported to the console by
 // WebKit.

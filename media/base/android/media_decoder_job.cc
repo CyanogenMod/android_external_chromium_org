@@ -6,9 +6,11 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "media/base/android/media_codec_bridge.h"
 #include "media/base/bind_to_loop.h"
+#include "media/base/buffers.h"
 
 namespace media {
 
@@ -40,6 +42,11 @@ void MediaDecoderJob::OnDataReceived(const DemuxerData& data) {
   DVLOG(1) << __FUNCTION__ << ": " << data.access_units.size() << " units";
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(!on_data_received_cb_.is_null());
+
+  TRACE_EVENT_ASYNC_END2(
+      "media", "MediaDecoderJob::RequestData", this,
+      "Data type", data.type == media::DemuxerStream::AUDIO ? "AUDIO" : "VIDEO",
+      "Units read", data.access_units.size());
 
   base::Closure done_cb = base::ResetAndReturn(&on_data_received_cb_);
 
@@ -132,6 +139,7 @@ void MediaDecoderJob::Release() {
 MediaCodecStatus MediaDecoderJob::QueueInputBuffer(const AccessUnit& unit) {
   DVLOG(1) << __FUNCTION__;
   DCHECK(decoder_loop_->BelongsToCurrentThread());
+  TRACE_EVENT0("media", __FUNCTION__);
 
   int input_buf_index = input_buf_index_;
   input_buf_index_ = -1;
@@ -155,22 +163,20 @@ MediaCodecStatus MediaDecoderJob::QueueInputBuffer(const AccessUnit& unit) {
     return MEDIA_CODEC_INPUT_END_OF_STREAM;
   }
 
-  if (unit.key_id.empty()) {
+  if (unit.key_id.empty() || unit.iv.empty()) {
+    DCHECK(unit.iv.empty() || !unit.key_id.empty());
     return media_codec_bridge_->QueueInputBuffer(
         input_buf_index, &unit.data[0], unit.data.size(), unit.timestamp);
   }
 
-  if (unit.iv.empty() || unit.subsamples.empty()) {
-    DVLOG(1) << "The access unit doesn't have iv or subsamples while it "
-               << "has key IDs!";
-    return MEDIA_CODEC_ERROR;
-  }
-
   MediaCodecStatus status = media_codec_bridge_->QueueSecureInputBuffer(
-      input_buf_index, &unit.data[0], unit.data.size(),
+      input_buf_index,
+      &unit.data[0], unit.data.size(),
       reinterpret_cast<const uint8*>(&unit.key_id[0]), unit.key_id.size(),
       reinterpret_cast<const uint8*>(&unit.iv[0]), unit.iv.size(),
-      &unit.subsamples[0], unit.subsamples.size(), unit.timestamp);
+      unit.subsamples.empty() ? NULL : &unit.subsamples[0],
+      unit.subsamples.size(),
+      unit.timestamp);
 
   // In case of MEDIA_CODEC_NO_KEY, we must reuse the |input_buf_index_|.
   // Otherwise MediaDrm will report errors.
@@ -199,6 +205,8 @@ void MediaDecoderJob::RequestData(const base::Closure& done_cb) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(on_data_received_cb_.is_null());
   DCHECK(!input_eos_encountered_);
+
+  TRACE_EVENT_ASYNC_BEGIN0("media", "MediaDecoderJob::RequestData", this);
 
   received_data_ = DemuxerData();
   access_unit_index_ = 0;
@@ -230,15 +238,23 @@ void MediaDecoderJob::DecodeInternal(
     const MediaDecoderJob::DecoderCallback& callback) {
   DVLOG(1) << __FUNCTION__;
   DCHECK(decoder_loop_->BelongsToCurrentThread());
+  TRACE_EVENT0("media", __FUNCTION__);
 
   if (needs_flush) {
     DVLOG(1) << "DecodeInternal needs flush.";
     input_eos_encountered_ = false;
     MediaCodecStatus reset_status = media_codec_bridge_->Reset();
     if (MEDIA_CODEC_OK != reset_status) {
-      callback.Run(reset_status, start_presentation_timestamp, 0);
+      callback.Run(reset_status, kNoTimestamp(), 0);
       return;
     }
+  }
+
+  // For aborted access unit, just skip it and inform the player.
+  if (unit.status == DemuxerStream::kAborted) {
+    // TODO(qinmin): use a new enum instead of MEDIA_CODEC_STOPPED.
+    callback.Run(MEDIA_CODEC_STOPPED, kNoTimestamp(), 0);
+    return;
   }
 
   MediaCodecStatus input_status = MEDIA_CODEC_INPUT_END_OF_STREAM;
@@ -247,7 +263,7 @@ void MediaDecoderJob::DecodeInternal(
     if (input_status == MEDIA_CODEC_INPUT_END_OF_STREAM) {
       input_eos_encountered_ = true;
     } else if (input_status != MEDIA_CODEC_OK) {
-      callback.Run(input_status, start_presentation_timestamp, 0);
+      callback.Run(input_status, kNoTimestamp(), 0);
       return;
     }
   }
@@ -267,10 +283,12 @@ void MediaDecoderJob::DecodeInternal(
 
   if (status != MEDIA_CODEC_OK) {
     if (status == MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED) {
-        media_codec_bridge_->GetOutputBuffers();
-        status = MEDIA_CODEC_OK;
+        if (media_codec_bridge_->GetOutputBuffers())
+          status = MEDIA_CODEC_OK;
+        else
+          status = MEDIA_CODEC_ERROR;
     }
-    callback.Run(status, start_presentation_timestamp, 0);
+    callback.Run(status, kNoTimestamp(), 0);
     return;
   }
 
@@ -280,36 +298,51 @@ void MediaDecoderJob::DecodeInternal(
   else if (input_status == MEDIA_CODEC_INPUT_END_OF_STREAM)
     status = MEDIA_CODEC_INPUT_END_OF_STREAM;
 
+  // Check whether we need to render the output.
+  // TODO(qinmin): comparing |unit.timestamp| with |preroll_timestamp_| is not
+  // accurate due to data reordering. Need to use the |presentation_timestamp|
+  // for video, and use |size| to calculate the timestamp for audio.
+  bool render_output  = unit.timestamp >= preroll_timestamp_ &&
+      (status != MEDIA_CODEC_OUTPUT_END_OF_STREAM || size != 0u);
   base::TimeDelta time_to_render;
   DCHECK(!start_time_ticks.is_null());
-  if (ComputeTimeToRender()) {
+  if (render_output && ComputeTimeToRender()) {
     time_to_render = presentation_timestamp - (base::TimeTicks::Now() -
         start_time_ticks + start_presentation_timestamp);
   }
 
-  // TODO(acolwell): Change to > since the else will never run for audio.
-  if (time_to_render >= base::TimeDelta()) {
+  if (time_to_render > base::TimeDelta()) {
     decoder_loop_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&MediaDecoderJob::ReleaseOutputBuffer,
-                   weak_this_.GetWeakPtr(), buffer_index, size,
-                   presentation_timestamp, callback, status),
+                   weak_this_.GetWeakPtr(), buffer_index, size, render_output,
+                   base::Bind(callback, status, presentation_timestamp)),
         time_to_render);
     return;
   }
 
   // TODO(qinmin): The codec is lagging behind, need to recalculate the
-  // |start_presentation_timestamp_| and |start_time_ticks_|.
+  // |start_presentation_timestamp_| and |start_time_ticks_| in
+  // media_source_player.cc.
   DVLOG(1) << "codec is lagging behind :" << time_to_render.InMicroseconds();
-  ReleaseOutputBuffer(buffer_index, size, presentation_timestamp,
-                      callback, status);
+  if (render_output) {
+    // The player won't expect a timestamp smaller than the
+    // |start_presentation_timestamp|. However, this could happen due to decoder
+    // errors.
+    presentation_timestamp = std::max(
+        presentation_timestamp, start_presentation_timestamp);
+  } else {
+    presentation_timestamp = kNoTimestamp();
+  }
+  ReleaseOutputCompletionCallback completion_callback = base::Bind(
+      callback, status, presentation_timestamp);
+  ReleaseOutputBuffer(buffer_index, size, render_output, completion_callback);
 }
 
 void MediaDecoderJob::OnDecodeCompleted(
     MediaCodecStatus status, const base::TimeDelta& presentation_timestamp,
     size_t audio_output_bytes) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
-  DCHECK(status != MEDIA_CODEC_STOPPED || received_data_.access_units.empty());
 
   if (destroy_pending_) {
     delete this;

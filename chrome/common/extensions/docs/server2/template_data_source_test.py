@@ -9,10 +9,10 @@ import sys
 import unittest
 
 from api_data_source import APIDataSource
+from features_bundle import FeaturesBundle
 from compiled_file_system import CompiledFileSystem
 from local_file_system import LocalFileSystem
 from object_store_creator import ObjectStoreCreator
-from permissions_data_source import PermissionsDataSource
 from reference_resolver import ReferenceResolver
 from template_data_source import TemplateDataSource
 from test_branch_utility import TestBranchUtility
@@ -33,6 +33,17 @@ class _FakeFactory(object):
     return self._input_dict
 
 
+class _FakeFeaturesBundle(object):
+  def GetPermissionFeatures(self):
+    return {}
+
+
+class _FakeServerInstance(object):
+  def __init__(self):
+    self.features_bundle = _FakeFeaturesBundle()
+    self.object_store_creator = ObjectStoreCreator.ForTest()
+
+
 class TemplateDataSourceTest(unittest.TestCase):
 
   def setUp(self):
@@ -42,8 +53,6 @@ class TemplateDataSourceTest(unittest.TestCase):
     self._fake_api_list_data_source_factory = _FakeFactory()
     self._fake_intro_data_source_factory = _FakeFactory()
     self._fake_samples_data_source_factory = _FakeFactory()
-    self._permissions_data_source = PermissionsDataSource(
-      _FakeFactory(), LocalFileSystem.Create(), '', '', '')
 
   def _ReadLocalFile(self, filename):
     with open(os.path.join(self._base_path, filename), 'r') as f:
@@ -57,9 +66,11 @@ class TemplateDataSourceTest(unittest.TestCase):
         data_source.Render(template_name))
 
   def _CreateTemplateDataSource(self, compiled_fs_factory, api_data=None):
+    file_system = LocalFileSystem(self._base_path)
     if api_data is None:
       api_data_factory = APIDataSource.Factory(
       compiled_fs_factory,
+      file_system,
       'fake_path',
       _FakeFactory(),
       TestBranchUtility.CreateWithCannedData())
@@ -79,17 +90,15 @@ class TemplateDataSourceTest(unittest.TestCase):
         self._fake_intro_data_source_factory,
         self._fake_samples_data_source_factory,
         compiled_fs_factory,
+        file_system,
         reference_resolver_factory,
-        self._permissions_data_source,
         '.',
         '.',
         ''))
 
   def testSimple(self):
     self._base_path = os.path.join(self._base_path, 'simple')
-    fetcher = LocalFileSystem(self._base_path)
     compiled_fs_factory = CompiledFileSystem.Factory(
-        fetcher,
         ObjectStoreCreator.ForTest())
     t_data_source = self._CreateTemplateDataSource(
         compiled_fs_factory,
@@ -105,9 +114,7 @@ class TemplateDataSourceTest(unittest.TestCase):
   @DisableLogging('warning')
   def testNotFound(self):
     self._base_path = os.path.join(self._base_path, 'simple')
-    fetcher = LocalFileSystem(self._base_path)
     compiled_fs_factory = CompiledFileSystem.Factory(
-        fetcher,
         ObjectStoreCreator.ForTest())
     t_data_source = self._CreateTemplateDataSource(
         compiled_fs_factory,
@@ -116,9 +123,7 @@ class TemplateDataSourceTest(unittest.TestCase):
 
   def testPartials(self):
     self._base_path = os.path.join(self._base_path, 'partials')
-    fetcher = LocalFileSystem(self._base_path)
     compiled_fs_factory = CompiledFileSystem.Factory(
-        fetcher,
         ObjectStoreCreator.ForTest())
     t_data_source = self._CreateTemplateDataSource(compiled_fs_factory)
     self.assertEqual(
@@ -128,10 +133,8 @@ class TemplateDataSourceTest(unittest.TestCase):
 
   def testRender(self):
     self._base_path = os.path.join(self._base_path, 'render')
-    fetcher = LocalFileSystem(self._base_path)
     context = json.loads(self._ReadLocalFile('test1.json'))
     compiled_fs_factory = CompiledFileSystem.Factory(
-        fetcher,
         ObjectStoreCreator.ForTest())
     self._RenderTest(
         'test1',

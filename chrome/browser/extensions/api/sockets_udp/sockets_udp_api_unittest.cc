@@ -22,6 +22,7 @@ namespace utils = extension_function_test_utils;
 namespace extensions {
 namespace api {
 
+static
 BrowserContextKeyedService* ApiResourceManagerTestFactory(
     content::BrowserContext* profile) {
   content::BrowserThread::ID id;
@@ -71,7 +72,7 @@ TEST_F(SocketsUdpUnitTest, Create) {
 
   // Run tests
   scoped_ptr<base::DictionaryValue> result(RunFunctionAndReturnDict(
-      function, "[{\"resumable\": true, \"name\": \"foo\"}]"));
+      function, "[{\"persistent\": true, \"name\": \"foo\"}]"));
   ASSERT_TRUE(result.get());
 }
 

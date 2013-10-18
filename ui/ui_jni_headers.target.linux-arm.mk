@@ -15,7 +15,7 @@ GYP_TARGET_DEPENDENCIES :=
 
 
 ### Generated for rule "ui_ui_gyp_ui_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/ui/Clipboard.java', 'android/java/src/org/chromium/ui/gfx/BitmapHelper.java', 'android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java', 'android/java/src/org/chromium/ui/LocalizationUtils.java', 'android/java/src/org/chromium/ui/SelectFileDialog.java', 'android/java/src/org/chromium/ui/ViewAndroid.java', 'android/java/src/org/chromium/ui/WindowAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/ui/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['android/java/src/org/chromium/ui/Clipboard.java', 'android/java/src/org/chromium/ui/LocalizationUtils.java', 'android/java/src/org/chromium/ui/SelectFileDialog.java', 'android/java/src/org/chromium/ui/ViewAndroid.java', 'android/java/src/org/chromium/ui/WindowAndroid.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/ui/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -25,26 +25,6 @@ $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h: $(LOCAL_PATH)/ui/android/
 
 .PHONY: ui_ui_jni_headers_gyp_rule_trigger
 ui_ui_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h
-
-$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/BitmapHelper.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/gfx/BitmapHelper.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
-
-.PHONY: ui_ui_jni_headers_gyp_rule_trigger
-ui_ui_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h
-
-$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h: $(LOCAL_PATH)/ui/android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/ui/jni; cd $(gyp_local_path)/ui; ../base/android/jni_generator/jni_generator.py --input_file android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java --output_dir "$(gyp_shared_intermediate_dir)/ui/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
-
-.PHONY: ui_ui_jni_headers_gyp_rule_trigger
-ui_ui_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h
 
 $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -90,8 +70,6 @@ ui_ui_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/ui/jni/Window
 
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h \
-	$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h \
-	$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h \
@@ -102,8 +80,6 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTP
 
 LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/ui/jni/Clipboard_jni.h \
-	$(gyp_shared_intermediate_dir)/ui/jni/BitmapHelper_jni.h \
-	$(gyp_shared_intermediate_dir)/ui/jni/DeviceDisplayInfo_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/LocalizationUtils_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/SelectFileDialog_jni.h \
 	$(gyp_shared_intermediate_dir)/ui/jni/ViewAndroid_jni.h \
@@ -159,7 +135,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -238,7 +213,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

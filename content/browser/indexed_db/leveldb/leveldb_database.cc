@@ -30,6 +30,20 @@ using base::StringPiece;
 
 namespace content {
 
+// Forcing flushes to disk at the end of a transaction guarantees that the
+// data hit disk, but drastically impacts throughput when the filesystem is
+// busy with background compactions. Not syncing trades off reliability for
+// performance. Note that background compactions which move data from the
+// log to SSTs are still done with reliable writes.
+//
+// Sync writes are necessary on Windows for quota calculations; POSIX
+// calculates file sizes correctly even when not synced to disk.
+#if defined(OS_WIN)
+static const bool kSyncWrites = true;
+#else
+static const bool kSyncWrites = false;
+#endif
+
 static leveldb::Slice MakeSlice(const StringPiece& s) {
   return leveldb::Slice(s.begin(), s.size());
 }
@@ -82,11 +96,7 @@ static leveldb::Status OpenDB(leveldb::Comparator* comparator,
   options.comparator = comparator;
   options.create_if_missing = true;
   options.paranoid_checks = true;
-
-  // Marking compression as explicitly off so snappy support can be
-  // compiled in for other leveldb clients without implicitly enabling
-  // it for IndexedDB. http://crbug.com/81384
-  options.compression = leveldb::kNoCompression;
+  options.compression = leveldb::kSnappyCompression;
 
   // For info about the troubles we've run into with this parameter, see:
   // https://code.google.com/p/chromium/issues/detail?id=227313#c11
@@ -104,6 +114,30 @@ bool LevelDBDatabase::Destroy(const base::FilePath& file_name) {
   const leveldb::Status s =
       leveldb::DestroyDB(file_name.AsUTF8Unsafe(), options);
   return s.ok();
+}
+
+namespace {
+class LockImpl : public LevelDBLock {
+ public:
+  explicit LockImpl(leveldb::Env* env, leveldb::FileLock* lock)
+      : env_(env), lock_(lock) {}
+  virtual ~LockImpl() { env_->UnlockFile(lock_); }
+ private:
+  leveldb::Env* env_;
+  leveldb::FileLock* lock_;
+};
+}
+
+scoped_ptr<LevelDBLock> LevelDBDatabase::LockForTesting(
+    const base::FilePath& file_name) {
+  leveldb::Env* env = leveldb::IDBEnv();
+  base::FilePath lock_path = file_name.AppendASCII("LOCK");
+  leveldb::FileLock* lock = NULL;
+  leveldb::Status status = env->LockFile(lock_path.AsUTF8Unsafe(), &lock);
+  if (!status.ok())
+    return scoped_ptr<LevelDBLock>();
+  DCHECK(lock);
+  return scoped_ptr<LevelDBLock>(new LockImpl(env, lock));
 }
 
 static int CheckFreeSpace(const char* const type,
@@ -328,7 +362,7 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
 
 bool LevelDBDatabase::Put(const StringPiece& key, std::string* value) {
   leveldb::WriteOptions write_options;
-  write_options.sync = true;
+  write_options.sync = kSyncWrites;
 
   const leveldb::Status s =
       db_->Put(write_options, MakeSlice(key), MakeSlice(*value));
@@ -340,7 +374,7 @@ bool LevelDBDatabase::Put(const StringPiece& key, std::string* value) {
 
 bool LevelDBDatabase::Remove(const StringPiece& key) {
   leveldb::WriteOptions write_options;
-  write_options.sync = true;
+  write_options.sync = kSyncWrites;
 
   const leveldb::Status s = db_->Delete(write_options, MakeSlice(key));
   if (s.ok())
@@ -375,7 +409,7 @@ bool LevelDBDatabase::Get(const StringPiece& key,
 
 bool LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
   leveldb::WriteOptions write_options;
-  write_options.sync = true;
+  write_options.sync = kSyncWrites;
 
   const leveldb::Status s =
       db_->Write(write_options, write_batch.write_batch_.get());

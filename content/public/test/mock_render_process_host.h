@@ -67,6 +67,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual bool InSameStoragePartition(
       StoragePartition* partition) const OVERRIDE;
   virtual IPC::ChannelProxy* GetChannel() OVERRIDE;
+  virtual void AddFilter(BrowserMessageFilter* filter) OVERRIDE;
   virtual bool FastShutdownForPageCount(size_t count) OVERRIDE;
   virtual base::TimeDelta GetChildProcessIdleTime() const OVERRIDE;
   virtual void SurfaceUpdated(int32 surface_id) OVERRIDE;
@@ -97,6 +98,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   BrowserContext* browser_context_;
 
   IDMap<RenderWidgetHost> render_widget_hosts_;
+  int prev_routing_id_;
   IDMap<IPC::Listener> listeners_;
   bool fast_shutdown_started_;
 

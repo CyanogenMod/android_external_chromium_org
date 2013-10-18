@@ -32,7 +32,6 @@
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
-#include "chrome/browser/printing/print_system_task_proxy.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/profiles/profile.h"
@@ -46,6 +45,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/print_messages.h"
 #include "content/public/browser/browser_context.h"
@@ -162,8 +162,17 @@ const char kNumberFormat[] = "numberFormat";
 // Name of a dictionary field specifying whether to print automatically in
 // kiosk mode. See http://crbug.com/31395.
 const char kPrintAutomaticallyInKioskMode[] = "printAutomaticallyInKioskMode";
+#if defined(OS_WIN)
+const char kHidePrintWithSystemDialogLink[] = "hidePrintWithSystemDialogLink";
+#endif
 // Name of a dictionary field holding the state of selection for document.
 const char kDocumentHasSelection[] = "documentHasSelection";
+
+// Additional printer capability setting keys.
+const char kPrinterId[] = "printerId";
+const char kDisableColorOption[] = "disableColorOption";
+const char kSetDuplexAsDefault[] = "setDuplexAsDefault";
+const char kPrinterDefaultDuplexValue[] = "printerDefaultDuplexValue";
 
 // Get the print job settings dictionary from |args|. The caller takes
 // ownership of the returned DictionaryValue. Returns NULL on failure.
@@ -211,7 +220,7 @@ void ReportPrintSettingsStats(const DictionaryValue& settings) {
   int color_mode = 0;
   if (settings.GetInteger(printing::kSettingColor, &color_mode)) {
     ReportPrintSettingHistogram(
-        printing::isColorModelSelected(color_mode) ? COLOR : BLACK_AND_WHITE);
+        printing::IsColorModelSelected(color_mode) ? COLOR : BLACK_AND_WHITE);
   }
 
   bool headers = false;
@@ -242,8 +251,104 @@ void PrintToPdfCallback(Metafile* metafile, const base::FilePath& path) {
       base::Bind(&base::DeletePointer<Metafile>, metafile));
 }
 
-static base::LazyInstance<printing::StickySettings> sticky_settings =
+std::string GetDefaultPrinterOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  std::string default_printer = print_backend->GetDefaultPrinterName();
+  VLOG(1) << "Default Printer: " << default_printer;
+  return default_printer;
+}
+
+void EnumeratePrintersOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend,
+    base::ListValue* printers) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  VLOG(1) << "Enumerate printers start";
+  printing::PrinterList printer_list;
+  print_backend->EnumeratePrinters(&printer_list);
+
+  for (printing::PrinterList::iterator it = printer_list.begin();
+       it != printer_list.end(); ++it) {
+    base::DictionaryValue* printer_info = new base::DictionaryValue;
+    std::string printer_name;
+#if defined(OS_MACOSX)
+    // On Mac, |it->printer_description| specifies the printer name and
+    // |it->printer_name| specifies the device name / printer queue name.
+    printer_name = it->printer_description;
+#else
+    printer_name = it->printer_name;
+#endif
+    printer_info->SetString(printing::kSettingPrinterName, printer_name);
+    printer_info->SetString(printing::kSettingDeviceName, it->printer_name);
+    VLOG(1) << "Found printer " << printer_name
+            << " with device name " << it->printer_name;
+    printers->Append(printer_info);
+  }
+  VLOG(1) << "Enumerate printers finished, found " << printers->GetSize()
+          << " printers";
+}
+
+typedef base::Callback<void(const base::DictionaryValue*)>
+    GetPrinterCapabilitiesSuccessCallback;
+typedef base::Callback<void(const std::string&)>
+    GetPrinterCapabilitiesFailureCallback;
+
+void GetPrinterCapabilitiesOnFileThread(
+    scoped_refptr<printing::PrintBackend> print_backend,
+    const std::string& printer_name,
+    const GetPrinterCapabilitiesSuccessCallback& success_cb,
+    const GetPrinterCapabilitiesFailureCallback& failure_cb) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK(!printer_name.empty());
+
+  VLOG(1) << "Get printer capabilities start for " << printer_name;
+  crash_keys::ScopedPrinterInfo crash_key(
+      print_backend->GetPrinterDriverInfo(printer_name));
+
+  if (!print_backend->IsValidPrinter(printer_name)) {
+    // TODO(gene): Notify explicitly if printer is not valid, instead of
+    // failed to get capabilities.
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(failure_cb, printer_name));
+    return;
+  }
+
+  printing::PrinterSemanticCapsAndDefaults info;
+  if (!print_backend->GetPrinterSemanticCapsAndDefaults(printer_name, &info)) {
+    LOG(WARNING) << "Failed to get capabilities for " << printer_name;
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(failure_cb, printer_name));
+    return;
+  }
+
+  scoped_ptr<base::DictionaryValue> settings_info(new base::DictionaryValue);
+  settings_info->SetString(kPrinterId, printer_name);
+  settings_info->SetBoolean(kDisableColorOption, !info.color_changeable);
+  settings_info->SetBoolean(printing::kSettingSetColorAsDefault,
+                            info.color_default);
+  // TODO(gene): Make new capabilities format for Print Preview
+  // that will suit semantic capabiltities better.
+  // Refactor pld API code below
+  bool default_duplex = info.duplex_capable ?
+      (info.duplex_default != printing::SIMPLEX) : false;
+  int duplex_value = info.duplex_capable ?
+      printing::LONG_EDGE : printing::UNKNOWN_DUPLEX_MODE;
+  settings_info->SetBoolean(kSetDuplexAsDefault, default_duplex);
+  settings_info->SetInteger(kPrinterDefaultDuplexValue, duplex_value);
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(success_cb, base::Owned(settings_info.release())));
+}
+
+base::LazyInstance<printing::StickySettings> g_sticky_settings =
     LAZY_INSTANCE_INITIALIZER;
+
+printing::StickySettings* GetStickySettings() {
+  return g_sticky_settings.Pointer();
+}
 
 }  // namespace
 
@@ -320,18 +425,14 @@ class PrintPreviewHandler::AccessTokenService
   DISALLOW_COPY_AND_ASSIGN(AccessTokenService);
 };
 
-// static
-printing::StickySettings* PrintPreviewHandler::GetStickySettings() {
-  return sticky_settings.Pointer();
-}
-
 PrintPreviewHandler::PrintPreviewHandler()
     : print_backend_(printing::PrintBackend::CreateInstance(NULL)),
       regenerate_preview_request_count_(0),
       manage_printers_dialog_request_count_(0),
       manage_cloud_printers_dialog_request_count_(0),
       reported_failed_preview_(false),
-      has_logged_printers_count_(false) {
+      has_logged_printers_count_(false),
+      weak_factory_(this) {
   ReportUserActionHistogram(PREVIEW_STARTED);
 }
 
@@ -399,15 +500,14 @@ WebContents* PrintPreviewHandler::preview_web_contents() const {
 }
 
 void PrintPreviewHandler::HandleGetPrinters(const ListValue* /*args*/) {
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                               print_backend_.get(),
-                               has_logged_printers_count_);
-  has_logged_printers_count_ = true;
-
-  BrowserThread::PostTask(
+  base::ListValue* results = new base::ListValue;
+  BrowserThread::PostTaskAndReply(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::EnumeratePrinters, task.get()));
+      base::Bind(&EnumeratePrintersOnFileThread, print_backend_,
+                 base::Unretained(results)),
+      base::Bind(&PrintPreviewHandler::SetupPrinterList,
+                 weak_factory_.GetWeakPtr(),
+                 base::Owned(results)));
 }
 
 void PrintPreviewHandler::HandleGetPreview(const ListValue* args) {
@@ -637,26 +737,23 @@ void PrintPreviewHandler::HandleGetPrinterCapabilities(const ListValue* args) {
   if (!ret || printer_name.empty())
     return;
 
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                               print_backend_.get(),
-                               has_logged_printers_count_);
-
+  GetPrinterCapabilitiesSuccessCallback success_cb =
+      base::Bind(&PrintPreviewHandler::SendPrinterCapabilities,
+                 weak_factory_.GetWeakPtr());
+  GetPrinterCapabilitiesFailureCallback failure_cb =
+      base::Bind(&PrintPreviewHandler::SendFailedToGetPrinterCapabilities,
+                 weak_factory_.GetWeakPtr());
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::GetPrinterCapabilities, task.get(),
-                 printer_name));
+      base::Bind(&GetPrinterCapabilitiesOnFileThread,
+                 print_backend_, printer_name, success_cb, failure_cb));
 }
 
-// static
-void PrintPreviewHandler::OnSigninComplete(
-    const base::WeakPtr<PrintPreviewHandler>& handler) {
-  if (handler.get()) {
-    PrintPreviewUI* print_preview_ui =
-        static_cast<PrintPreviewUI*>(handler->web_ui()->GetController());
-    if (print_preview_ui)
-      print_preview_ui->OnReloadPrintersList();
-  }
+void PrintPreviewHandler::OnSigninComplete() {
+  PrintPreviewUI* print_preview_ui =
+      static_cast<PrintPreviewUI*>(web_ui()->GetController());
+  if (print_preview_ui)
+    print_preview_ui->OnReloadPrintersList();
 }
 
 void PrintPreviewHandler::HandleSignin(const ListValue* /*args*/) {
@@ -665,7 +762,8 @@ void PrintPreviewHandler::HandleSignin(const ListValue* /*args*/) {
   print_dialog_cloud::CreateCloudPrintSigninDialog(
       preview_web_contents()->GetBrowserContext(),
       modal_parent,
-      base::Bind(&PrintPreviewHandler::OnSigninComplete, AsWeakPtr()));
+      base::Bind(&PrintPreviewHandler::OnSigninComplete,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void PrintPreviewHandler::HandleGetAccessToken(const base::ListValue* args) {
@@ -788,13 +886,11 @@ void PrintPreviewHandler::GetNumberFormatAndMeasurementSystem(
 }
 
 void PrintPreviewHandler::HandleGetInitialSettings(const ListValue* /*args*/) {
-  scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(),
-                                print_backend_.get(),
-                                has_logged_printers_count_);
-  BrowserThread::PostTask(
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE, FROM_HERE,
-      base::Bind(&PrintSystemTaskProxy::GetDefaultPrinter, task.get()));
+      base::Bind(&GetDefaultPrinterOnFileThread, print_backend_),
+      base::Bind(&PrintPreviewHandler::SendInitialSettings,
+                 weak_factory_.GetWeakPtr()));
   SendCloudPrintEnabled();
 }
 
@@ -843,10 +939,9 @@ void PrintPreviewHandler::HandleForceOpenNewTab(const ListValue* args) {
 }
 
 void PrintPreviewHandler::SendInitialSettings(
-    const std::string& default_printer,
-    const std::string& cloud_print_data) {
-  PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(
-      web_ui()->GetController());
+    const std::string& default_printer) {
+  PrintPreviewUI* print_preview_ui =
+      static_cast<PrintPreviewUI*>(web_ui()->GetController());
 
   base::DictionaryValue initial_settings;
   initial_settings.SetString(kInitiatorTitle,
@@ -868,6 +963,13 @@ void PrintPreviewHandler::SendInitialSettings(
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   initial_settings.SetBoolean(kPrintAutomaticallyInKioskMode,
                               cmdline->HasSwitch(switches::kKioskModePrinting));
+#if defined(OS_WIN)
+  // In Win8 metro, the system print dialog can only open on the desktop.  Doing
+  // so will cause the browser to appear hung, so we don't show the link in
+  // metro.
+  bool is_ash = (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH);
+  initial_settings.SetBoolean(kHidePrintWithSystemDialogLink, is_ash);
+#endif
 
   if (print_preview_ui->source_is_modifiable())
     GetNumberFormatAndMeasurementSystem(&initial_settings);
@@ -888,10 +990,10 @@ void PrintPreviewHandler::SendAccessToken(const std::string& type,
 }
 
 void PrintPreviewHandler::SendPrinterCapabilities(
-    const DictionaryValue& settings_info) {
+    const DictionaryValue* settings_info) {
   VLOG(1) << "Get printer capabilities finished";
   web_ui()->CallJavascriptFunction("updateWithPrinterCapabilities",
-                                   settings_info);
+                                   *settings_info);
 }
 
 void PrintPreviewHandler::SendFailedToGetPrinterCapabilities(
@@ -902,8 +1004,13 @@ void PrintPreviewHandler::SendFailedToGetPrinterCapabilities(
                                    printer_name_value);
 }
 
-void PrintPreviewHandler::SetupPrinterList(const ListValue& printers) {
-  web_ui()->CallJavascriptFunction("setPrinters", printers);
+void PrintPreviewHandler::SetupPrinterList(const base::ListValue* printers) {
+  if (!has_logged_printers_count_) {
+    UMA_HISTOGRAM_COUNTS("PrintPreview.NumberOfPrinters", printers->GetSize());
+    has_logged_printers_count_ = true;
+  }
+
+  web_ui()->CallJavascriptFunction("setPrinters", *printers);
 }
 
 void PrintPreviewHandler::SendCloudPrintEnabled() {
@@ -947,7 +1054,7 @@ void PrintPreviewHandler::SelectFile(const base::FilePath& default_filename) {
   file_type_info.extensions.resize(1);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("pdf"));
 
-  // Initializing save_path_ if it is not already initialized.
+  // Initializing |save_path_| if it is not already initialized.
   printing::StickySettings* sticky_settings = GetStickySettings();
   if (!sticky_settings->save_path()) {
     // Allowing IO operation temporarily. It is ok to do so here because

@@ -329,13 +329,11 @@ Browser::Browser(const CreateParams& params)
                                          params.profile)),
       app_name_(params.app_name),
       app_type_(params.app_type),
-      chrome_updater_factory_(this),
       cancel_download_confirmation_state_(NOT_PROMPTED),
       override_bounds_(params.initial_bounds),
       initial_show_state_(params.initial_show_state),
       is_session_restore_(params.is_session_restore),
       host_desktop_type_(params.host_desktop_type),
-      weak_factory_(this),
       content_setting_bubble_model_delegate_(
           new BrowserContentSettingBubbleModelDelegate(this)),
       toolbar_model_delegate_(new BrowserToolbarModelDelegate(this)),
@@ -344,7 +342,9 @@ Browser::Browser(const CreateParams& params)
       bookmark_bar_state_(BookmarkBar::HIDDEN),
       command_controller_(new chrome::BrowserCommandController(
           this, g_browser_process->profile_manager())),
-      window_has_shown_(false) {
+      window_has_shown_(false),
+      chrome_updater_factory_(this),
+      weak_factory_(this) {
   // If this causes a crash then a window is being opened using a profile type
   // that is disallowed by policy. The crash prevents the disabled window type
   // from opening at all, but the path that triggered it should be fixed.
@@ -843,19 +843,9 @@ void Browser::UpdateDownloadShelfVisibility(bool visible) {
 
 // static
 bool Browser::RunUnloadEventsHelper(WebContents* contents) {
-  // If the WebContents is not connected yet, then there's no unload
-  // handler we can fire even if the WebContents has an unload listener.
-  // One case where we hit this is in a tab that has an infinite loop
-  // before load.
-  if (contents->NeedToFireBeforeUnload()) {
-    // If the page has unload listeners, then we tell the renderer to fire
-    // them. Once they have fired, we'll get a message back saying whether
-    // to proceed closing the page or not, which sends us back to this method
-    // with the NeedToFireBeforeUnload bit cleared.
-    contents->GetRenderViewHost()->FirePageBeforeUnload(false);
-    return true;
-  }
-  return false;
+  if (IsFastTabUnloadEnabled())
+    return chrome::FastUnloadController::RunUnloadEventsHelper(contents);
+  return chrome::UnloadController::RunUnloadEventsHelper(contents);
 }
 
 // static
@@ -1048,15 +1038,9 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
                                int reason) {
   content::RecordAction(UserMetricsAction("ActiveTabChanged"));
 
-  // Switch the find bar to the new tab if necessary.  This must be done before
-  // changing focus for unittests to pass.
-  // TODO(pkasting): http://crbug.com/297385  Move this to near the end of this
-  // function (where it used to be) once the find bar properly restores
-  // selections across tab changes.
-  if (HasFindBarController()) {
-    find_bar_controller_->ChangeWebContents(new_contents);
-    find_bar_controller_->find_bar()->MoveWindowIfNecessary(gfx::Rect(), true);
-  }
+  // Update the bookmark state, since the BrowserWindow may query it during
+  // OnActiveTabChanged() below.
+  UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TAB_SWITCH);
 
   // Let the BrowserWindow do its handling.  On e.g. views this changes the
   // focused object, which should happen before we update the toolbar below,
@@ -1099,6 +1083,11 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
         tab_strip_model_->GetActiveWebContents())->GetStatusText());
   }
 
+  if (HasFindBarController()) {
+    find_bar_controller_->ChangeWebContents(new_contents);
+    find_bar_controller_->find_bar()->MoveWindowIfNecessary(gfx::Rect(), true);
+  }
+
   // Update sessions. Don't force creation of sessions. If sessions doesn't
   // exist, the change will be picked up by sessions when created.
   SessionService* session_service =
@@ -1107,8 +1096,6 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
     session_service->SetSelectedTabInWindow(session_id(),
                                             tab_strip_model_->active_index());
   }
-
-  UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TAB_SWITCH);
 
   // This needs to be called after UpdateSearchState().
   if (instant_controller_)
@@ -1609,16 +1596,9 @@ void Browser::EnumerateDirectory(WebContents* web_contents,
 }
 
 bool Browser::EmbedsFullscreenWidget() const {
-#if defined(TOOLKIT_GTK)
-  // TODO(miu): On GTK, the balloon widget for Tab/HTML5 fullscreen needs to be
-  // fixed before we can implement embedded fullscreen widgets.
-  // http://crbug.com/286545
-  return false;
-#else
   // TODO(miu): Make this feature switchable in about:flags?
   return CommandLine::ForCurrentProcess()->
       HasSwitch(switches::kEmbedFlashFullscreen);
-#endif
 }
 
 void Browser::ToggleFullscreenModeForTab(WebContents* web_contents,
@@ -2170,7 +2150,8 @@ bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,
     if (is_type_tabbed())
       features |= FEATURE_TOOLBAR;
 
-    if (!is_app())
+    if (!is_app() || CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableStreamlinedHostedApps))
       features |= FEATURE_LOCATIONBAR;
   }
   return !!(features & feature);

@@ -12,6 +12,7 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/sync_point_manager.h"
 #include "content/common/gpu/texture_image_transport_surface.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gl/gl_implementation.h"
@@ -107,10 +108,9 @@ void ImageTransportHelper::SendAcceleratedSurfacePostSubBuffer(
   manager_->Send(new GpuHostMsg_AcceleratedSurfacePostSubBuffer(params));
 }
 
-void ImageTransportHelper::SendAcceleratedSurfaceRelease(
-    GpuHostMsg_AcceleratedSurfaceRelease_Params params) {
+void ImageTransportHelper::SendAcceleratedSurfaceRelease() {
+  GpuHostMsg_AcceleratedSurfaceRelease_Params params;
   params.surface_id = stub_->surface_id();
-  params.route_id = route_id_;
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceRelease(params));
 }
 
@@ -251,7 +251,8 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
   bool result = gfx::GLSurfaceAdapter::SwapBuffers();
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);
@@ -274,7 +275,8 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
     int x, int y, int width, int height) {
   SendVSyncUpdateIfAvailable();
   bool result = gfx::GLSurfaceAdapter::PostSubBuffer(x, y, width, height);
-  latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
 
   if (transport_) {
     DCHECK(!is_swap_buffers_pending_);

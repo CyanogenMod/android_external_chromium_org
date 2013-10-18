@@ -42,7 +42,7 @@ class Vp8Encoder {
     kAltRefBuffer = 0,
     kGoldenBuffer = 1,
     kLastBuffer = 2,
-    kNoBuffer = 3 // Note: must be last.
+    kNoBuffer = 3  // Note: must be last.
   };
 
   void InitEncode(int number_of_cores);
@@ -54,7 +54,7 @@ class Vp8Encoder {
   Vp8Buffers GetNextBufferToUpdate();
 
   // Calculate which previous frame to reference.
-  uint8_t GetLatestFrameIdToReference();
+  uint8 GetLatestFrameIdToReference();
 
   // Get encoder flags for our referenced encoder buffers.
   void GetCodecReferenceFlags(vpx_codec_flags_t* flags);

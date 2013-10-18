@@ -53,6 +53,22 @@ class RootWindowObserver;
 class RootWindowTransformer;
 class TestScreen;
 
+// TODO(sky): nuke; used for debugging 275760.
+// Used for debugging.
+enum MouseMovedHandlerSetReason {
+  // |mouse_moved_handler_| set during capture.
+  MOUSE_MOVED_HANDLER_SET_REASON_CAPTURE = 1,
+
+  // |mouse_moved_handler_| set from a mouse event.
+  MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED = 2,
+
+  // |mouse_moved_handler_| set from a synthesized mouse event.
+  MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED_SYNTHESIZED = 3,
+
+  // |mouse_moved_handler_| set to NULL.
+  MOUSE_MOVED_HANDLER_SET_REASON_NULL = 4,
+};
+
 // RootWindow is responsible for hosting a set of windows.
 class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
                                public ui::CompositorObserver,
@@ -303,22 +319,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   };
 
   // TODO(sky): nuke; used for debugging 275760.
-  // Used for debugging.
-  enum MouseMovedHandlerSetReason {
-    // |mouse_moved_handler_| set during capture.
-    MOUSE_MOVED_HANDLER_SET_REASON_CAPTURE = 1,
-
-    // |mouse_moved_handler_| set from a mouse event.
-    MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED = 2,
-
-    // |mouse_moved_handler_| set from a synthesized mouse event.
-    MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED_SYNTHESIZED = 3,
-
-    // |mouse_moved_handler_| set to NULL.
-    MOUSE_MOVED_HANDLER_SET_REASON_NULL = 4,
-  };
-
-  // TODO(sky): nuke; used for debugging 275760.
   void SetMouseMovedHandler(aura::Window* window,
                             MouseMovedHandlerSetReason reason);
 
@@ -398,7 +398,7 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // methods dispatch events from RootWindowHost the coordinates are in terms of
   // the root.
   bool DispatchMouseEventImpl(ui::MouseEvent* event);
-  bool DispatchMouseEventRepost(ui::MouseEvent* event);
+  void DispatchMouseEventRepost(ui::MouseEvent* event);
   bool DispatchMouseEventToTarget(ui::MouseEvent* event, Window* target);
   bool DispatchTouchEventImpl(ui::TouchEvent* event);
   // Reposts the gesture event to the Window which is a target for the event
@@ -423,12 +423,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   scoped_ptr<ui::Compositor> compositor_;
 
   scoped_ptr<RootWindowHost> host_;
-
-  // Used to schedule painting.
-  base::WeakPtrFactory<RootWindow> schedule_paint_factory_;
-
-  // Use to post mouse move event.
-  base::WeakPtrFactory<RootWindow> event_factory_;
 
   // Touch ids that are currently down.
   uint32 touch_ids_down_;
@@ -458,17 +452,25 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // How many move holds are outstanding. We try to defer dispatching
   // touch/mouse moves while the count is > 0.
   int move_hold_count_;
-  // Used to schedule DispatchHeldEvents() when |move_hold_count_| goes to 0.
-  base::WeakPtrFactory<RootWindow> held_event_factory_;
   scoped_ptr<ui::LocatedEvent> held_move_event_;
 
   // Allowing for reposting of events. Used when exiting context menus.
   scoped_ptr<ui::LocatedEvent>  held_repostable_event_;
-  base::WeakPtrFactory<RootWindow> repostable_event_factory_;
 
   scoped_ptr<ui::ViewProp> prop_;
 
   scoped_ptr<RootWindowTransformer> transformer_;
+
+  // Used to schedule painting.
+  base::WeakPtrFactory<RootWindow> schedule_paint_factory_;
+
+  // Use to post mouse move event.
+  base::WeakPtrFactory<RootWindow> event_factory_;
+
+  // Used to schedule DispatchHeldEvents() when |move_hold_count_| goes to 0.
+  base::WeakPtrFactory<RootWindow> held_event_factory_;
+
+  base::WeakPtrFactory<RootWindow> repostable_event_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindow);
 };

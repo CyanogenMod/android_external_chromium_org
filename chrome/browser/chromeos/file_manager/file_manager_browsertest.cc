@@ -17,6 +17,7 @@
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_value_converter.h"
+#include "base/json/json_writer.h"
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -524,6 +525,11 @@ void FileManagerBrowserTest::SetUpCommandLine(CommandLine* command_line) {
     command_line->AppendSwitchNative(chromeos::switches::kLoginUser, "");
     command_line->AppendSwitch(switches::kIncognito);
   }
+  // TODO(yoshiki): Remove the flag when the feature is launched.
+  if (std::tr1::get<1>(GetParam()) == std::string("suggestAppDialog")) {
+    command_line->AppendSwitch(
+        chromeos::switches::kFileManagerEnableWebstoreIntegration);
+  }
   ExtensionApiTest::SetUpCommandLine(command_line);
 }
 
@@ -565,6 +571,22 @@ IN_PROC_BROWSER_TEST_P(FileManagerBrowserTest, Test) {
     } else if (name == "isInGuestMode") {
       // Obtain whether the test is in guest mode or not.
       entry.function->Reply(std::tr1::get<0>(GetParam()) ? "true" : "false");
+    } else if (name == "getCwsWidgetContainerMockUrl") {
+      // Obtain whether the test is in guest mode or not.
+      const GURL url = embedded_test_server()->GetURL(
+            "/chromeos/file_manager/cws_container_mock/index.html");
+      std::string origin = url.GetOrigin().spec();
+
+      // Removes trailing a slash.
+      if (*origin.rbegin() == '/')
+        origin.resize(origin.length() - 1);
+
+      const scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
+      res->SetString("url", url.spec());
+      res->SetString("origin", origin);
+      std::string jsonString;
+      base::JSONWriter::Write(res.get(), &jsonString);
+      entry.function->Reply(jsonString);
     } else if (name == "addEntries") {
       // Add entries to the specified volume.
       AddEntriesMessage message;
@@ -598,8 +620,6 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(IN_GUEST_MODE, "fileDisplayDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "fileDisplayDrive")));
 
-// TODO(mtomasz): Fix this test. crbug.com/252561
-/*
 INSTANTIATE_TEST_CASE_P(
     OpenSpecialTypes,
     FileManagerBrowserTest,
@@ -613,7 +633,6 @@ INSTANTIATE_TEST_CASE_P(
                       TestParameter(NOT_IN_GUEST_MODE,
                                     "galleryOpenDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "galleryOpenDrive")));
-*/
 
 INSTANTIATE_TEST_CASE_P(
     KeyboardOperations,
@@ -687,6 +706,23 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Values(TestParameter(IN_GUEST_MODE, "traverseDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "traverseDownloads"),
                       TestParameter(NOT_IN_GUEST_MODE, "traverseDrive")));
+
+INSTANTIATE_TEST_CASE_P(
+    SuggestAppDialog,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE, "suggestAppDialog")));
+
+INSTANTIATE_TEST_CASE_P(
+    NavigationList,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
+                                    "traverseNavigationList")));
+
+INSTANTIATE_TEST_CASE_P(
+    TabIndex,
+    FileManagerBrowserTest,
+    ::testing::Values(TestParameter(NOT_IN_GUEST_MODE,
+                                    "searchBoxFocus")));
 
 }  // namespace
 }  // namespace file_manager

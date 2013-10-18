@@ -11,50 +11,94 @@
 namespace autofill {
 namespace wallet {
 
-TEST(WalletServiceUrl, CheckDefaultUrls) {
-  EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/wallet/"
-           "autocheckout/v1/getWalletItemsJwtless",
-            GetGetWalletItemsUrl().spec());
-  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/"
+TEST(WalletServiceSandboxUrl, CheckSandboxUrls) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kWalletServiceUseSandbox, "1");
+
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online/v2/u/1/wallet/"
+            "autocheckout/v1/getWalletItemsJwtless",
+           GetGetWalletItemsUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/u/1/"
             "autocheckout/v1/getFullWalletJwtless?s7e=otp",
-            GetGetFullWalletUrl().spec());
-  EXPECT_EQ("https://wallet-web.sandbox.google.com/manage/paymentMethods",
-            GetManageInstrumentsUrl().spec());
-  EXPECT_EQ("https://wallet-web.sandbox.google.com/manage/settings/addresses",
-            GetManageAddressesUrl().spec());
-  EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/wallet/"
+            GetGetFullWalletUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/manage/w/1/paymentMethods",
+            GetManageInstrumentsUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/manage/w/1/settings/"
+            "addresses",
+            GetManageAddressesUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online/v2/u/1/wallet/"
             "autocheckout/v1/acceptLegalDocument",
-            GetAcceptLegalDocumentsUrl().spec());
-  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/"
+            GetAcceptLegalDocumentsUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/u/2/"
             "autocheckout/v1/authenticateInstrument?s7e=cvn",
-            GetAuthenticateInstrumentUrl().spec());
-  EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/wallet/"
+            GetAuthenticateInstrumentUrl(2).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online/v2/u/1/wallet/"
             "autocheckout/v1/reportStatus",
-            GetSendStatusUrl().spec());
-  EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/wallet/"
+            GetSendStatusUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online/v2/u/1/wallet/"
             "autocheckout/v1/saveToWallet",
-            GetSaveToWalletNoEscrowUrl().spec());
-  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/"
+            GetSaveToWalletNoEscrowUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online-secure/v2/u/1/"
             "autocheckout/v1/saveToWallet?s7e=card_number%3Bcvn",
-            GetSaveToWalletUrl().spec());
-  EXPECT_EQ("https://payments-form-dogfood.sandbox.google.com/online/v2/"
+            GetSaveToWalletUrl(1).spec());
+  EXPECT_EQ("https://wallet-web.sandbox.google.com/online/v2/u/0/"
+            "passiveauth?isChromePayments=true",
+            GetPassiveAuthUrl().spec());
+}
+
+TEST(WalletServiceSandboxUrl, CheckProdUrls) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kWalletServiceUseSandbox, "0");
+
+  EXPECT_EQ("https://wallet.google.com/online/v2/u/1/wallet/"
+            "autocheckout/v1/getWalletItemsJwtless",
+            GetGetWalletItemsUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online-secure/v2/u/1/"
+            "autocheckout/v1/getFullWalletJwtless?s7e=otp",
+            GetGetFullWalletUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/manage/w/1/paymentMethods",
+            GetManageInstrumentsUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/manage/w/1/settings/addresses",
+            GetManageAddressesUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online/v2/u/1/wallet/"
+            "autocheckout/v1/acceptLegalDocument",
+            GetAcceptLegalDocumentsUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online-secure/v2/u/4/"
+            "autocheckout/v1/authenticateInstrument?s7e=cvn",
+            GetAuthenticateInstrumentUrl(4).spec());
+  EXPECT_EQ("https://wallet.google.com/online/v2/u/1/wallet/"
+            "autocheckout/v1/reportStatus",
+            GetSendStatusUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online/v2/u/1/wallet/"
+            "autocheckout/v1/saveToWallet",
+            GetSaveToWalletNoEscrowUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online-secure/v2/u/1/"
+            "autocheckout/v1/saveToWallet?s7e=card_number%3Bcvn",
+            GetSaveToWalletUrl(1).spec());
+  EXPECT_EQ("https://wallet.google.com/online/v2/u/0/"
             "passiveauth?isChromePayments=true",
             GetPassiveAuthUrl().spec());
 }
 
 TEST(WalletServiceUrl, IsUsingProd) {
-  // The sandbox servers are the default (for now). Update if this changes.
+#if defined(OS_MACOSX)
   EXPECT_FALSE(IsUsingProd());
+#else
+  EXPECT_TRUE(IsUsingProd());
+#endif
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  command_line->AppendSwitch(switches::kWalletServiceUseProd);
-  EXPECT_TRUE(IsUsingProd());
-
-  const GURL prod_get_items_url = GetGetWalletItemsUrl();
-  command_line->AppendSwitchASCII(switches::kWalletServiceUrl, "http://goo.gl");
+  command_line->AppendSwitchASCII(switches::kWalletServiceUseSandbox, "1");
   EXPECT_FALSE(IsUsingProd());
 
-  ASSERT_NE(prod_get_items_url, GetGetWalletItemsUrl());
+  const GURL sandbox_get_items_url = GetGetWalletItemsUrl(0);
+  const GURL fake_service_url = GURL("http://goo.gl");
+  command_line->AppendSwitchASCII(switches::kWalletServiceUrl,
+                                  fake_service_url.spec());
+
+  const GURL flag_get_items_url = GetGetWalletItemsUrl(0);
+  EXPECT_NE(sandbox_get_items_url, flag_get_items_url);
+  EXPECT_EQ(fake_service_url.GetOrigin(), flag_get_items_url.GetOrigin());
 }
 
 }  // namespace wallet

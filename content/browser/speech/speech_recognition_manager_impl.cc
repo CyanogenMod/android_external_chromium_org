@@ -51,7 +51,7 @@ SpeechRecognitionManager* SpeechRecognitionManager::GetInstance() {
   return SpeechRecognitionManagerImpl::GetInstance();
 }
 
-void SpeechRecognitionManager::SetManagerForTests(
+void SpeechRecognitionManager::SetManagerForTesting(
     SpeechRecognitionManager* manager) {
   manager_for_tests_ = manager;
 }
@@ -184,10 +184,15 @@ void SpeechRecognitionManagerImpl::RecognitionAllowedCallback(int session_id,
   if (!SessionExists(session_id))
     return;
 
+  SessionsTable::iterator iter = sessions_.find(session_id);
+  DCHECK(iter != sessions_.end());
+  Session* session = iter->second;
+
+  if (session->abort_requested)
+    return;
+
   if (ask_user) {
-    SessionsTable::iterator iter = sessions_.find(session_id);
-    DCHECK(iter != sessions_.end());
-    SpeechRecognitionSessionContext& context = iter->second->context;
+    SpeechRecognitionSessionContext& context = session->context;
     context.label = media_stream_manager_->MakeMediaAccessRequest(
         context.render_process_id,
         context.render_view_id,
@@ -252,6 +257,11 @@ void SpeechRecognitionManagerImpl::AbortSession(int session_id) {
 
   SessionsTable::iterator iter = sessions_.find(session_id);
   iter->second->ui.reset();
+
+  if (iter->second->abort_requested)
+    return;
+
+  iter->second->abort_requested = true;
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -609,6 +619,8 @@ void SpeechRecognitionManagerImpl::SessionDelete(Session* session) {
   DCHECK(session->recognizer.get() == NULL || !session->recognizer->IsActive());
   if (primary_session_id_ == session->id)
     primary_session_id_ = kSessionIDInvalid;
+  if (!session->context.label.empty())
+    media_stream_manager_->CancelRequest(session->context.label);
   sessions_.erase(session->id);
   delete session;
 }
@@ -674,6 +686,7 @@ void SpeechRecognitionManagerImpl::ShowAudioInputSettings() {
 
 SpeechRecognitionManagerImpl::Session::Session()
   : id(kSessionIDInvalid),
+    abort_requested(false),
     listener_is_active(true) {
 }
 

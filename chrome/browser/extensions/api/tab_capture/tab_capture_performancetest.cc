@@ -34,8 +34,6 @@
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gl/gl_switches.h"
 
-namespace chrome {
-
 namespace {
 
 const char kExtensionId[] = "ddchlicdkolnonkihahngkmmmjnjlkkf";
@@ -56,7 +54,6 @@ enum TestFlags {
   kScaleQualityGood    = 2 << 5,
   kScaleQualityBest    = 3 << 5,
 };
-
 
 class TabCapturePerformanceTest
     : public ExtensionApiTest,
@@ -234,8 +231,7 @@ class TabCapturePerformanceTest
 }  // namespace
 
 
-// Disabled due to failures on GPU bots (crbug.com/279443)
-IN_PROC_BROWSER_TEST_P(TabCapturePerformanceTest, DISABLED_Performance) {
+IN_PROC_BROWSER_TEST_P(TabCapturePerformanceTest, Performance) {
   RunTest("TabCapturePerformance");
 }
 
@@ -275,5 +271,3 @@ INSTANTIATE_TEST_CASE_P(
         kScalingTestBase | kScaleQualityBest | kSmallWindow));
 
 #endif  // USE_AURA
-
-}  // namespace chrome

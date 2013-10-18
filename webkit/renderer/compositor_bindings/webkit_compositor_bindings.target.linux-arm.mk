@@ -35,6 +35,7 @@ LOCAL_SRC_FILES := \
 	webkit/renderer/compositor_bindings/web_content_layer_impl.cc \
 	webkit/renderer/compositor_bindings/web_external_bitmap_impl.cc \
 	webkit/renderer/compositor_bindings/web_external_texture_layer_impl.cc \
+	webkit/renderer/compositor_bindings/web_filter_animation_curve_impl.cc \
 	webkit/renderer/compositor_bindings/web_filter_operations_impl.cc \
 	webkit/renderer/compositor_bindings/web_float_animation_curve_impl.cc \
 	webkit/renderer/compositor_bindings/web_image_layer_impl.cc \
@@ -92,7 +93,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -207,7 +207,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

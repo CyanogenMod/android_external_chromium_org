@@ -26,6 +26,7 @@ const char kAboutVersionURL[] = "about:version";
 // This is a WebUI page that lists other WebUI pages.
 const char kChromeUIAboutURL[] = "chrome://about/";
 const char kChromeUIAppsURL[] = "chrome://apps/";
+const char kChromeUIAppListStartPageURL[] = "chrome://app-list/";
 const char kChromeUIBookmarksURL[] = "chrome://bookmarks/";
 const char kChromeUICertificateViewerURL[] = "chrome://view-cert/";
 const char kChromeUIChromeURLsURL[] = "chrome://chrome-urls/";
@@ -83,6 +84,7 @@ const char kChromeUITaskManagerURL[] = "chrome://tasks/";
 const char kChromeUITermsURL[] = "chrome://terms/";
 const char kChromeUIThemeURL[] = "chrome://theme/";
 const char kChromeUIThumbnailURL[] = "chrome://thumb/";
+const char kChromeUIThumbnailListURL[] = "chrome://thumbnails/";
 const char kChromeUIUberURL[] = "chrome://chrome/";
 const char kChromeUIUberFrameURL[] = "chrome://uber-frame/";
 const char kChromeUIUserActionsURL[] = "chrome://user-actions/";
@@ -143,6 +145,7 @@ const char kChromeUIWebRtcLogsURL[] = "chrome://webrtc-logs/";
 const char kChromeUIAboutHost[] = "about";
 const char kChromeUIBlankHost[] = "blank";
 const char kChromeUIAppLauncherPageHost[] = "apps";
+const char kChromeUIAppListStartPageHost[] = "app-list";
 const char kChromeUIBookmarksHost[] = "bookmarks";
 const char kChromeUICacheHost[] = "cache";
 const char kChromeUICertificateViewerHost[] = "view-cert";
@@ -163,6 +166,7 @@ const char kChromeUIDNSHost[] = "dns";
 const char kChromeUIDownloadsHost[] = "downloads";
 const char kChromeUIDriveInternalsHost[] = "drive-internals";
 const char kChromeUIEditSearchEngineDialogHost[] = "editsearchengine";
+const char kChromeUIEnhancedBookmarksHost[] = "enhanced-bookmarks";
 const char kChromeUIExtensionIconHost[] = "extension-icon";
 const char kChromeUIExtensionInfoHost[] = "extension-info";
 const char kChromeUIExtensionsFrameHost[] = "extensions-frame";
@@ -220,6 +224,7 @@ const char kChromeUITermsHost[] = "terms";
 const char kChromeUIThemeHost[] = "theme";
 const char kChromeUIThumbnailHost[] = "thumb";
 const char kChromeUIThumbnailHost2[] = "thumb2";
+const char kChromeUIThumbnailListHost[] = "thumbnails";
 const char kChromeUITouchIconHost[] = "touch-icon";
 const char kChromeUITranslateInternalsHost[] = "translate-internals";
 const char kChromeUIUberFrameHost[] = "uber-frame";
@@ -265,6 +270,7 @@ const char kChromeUIRotateHost[] = "rotate";
 const char kChromeUISimUnlockHost[] = "sim-unlock";
 const char kChromeUISlideshowHost[] = "slideshow";
 const char kChromeUISlowHost[] = "slow";
+const char kChromeUISlowTraceHost[] = "slow_trace";
 const char kChromeUISystemInfoHost[] = "system";
 const char kChromeUIUserImageHost[] = "userimage";
 
@@ -374,15 +380,19 @@ const char kChromeAccessibilityHelpURL[] =
     "https://support.google.com/chromeos/?p=accessibility_menu";
 #endif  // defined(OS_CHROMEOS)
 
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
 const char kChromeSyncLearnMoreURL[] =
-#if defined(OS_CHROMEOS)
-    "http://support.google.com/chromeos/bin/answer.py?answer=165139";
-#else
     "http://support.google.com/chrome/bin/answer.py?answer=165139";
-#endif
+
+const char kChromeSyncMergeTroubleshootingURL[] =
+    "https://support.google.com/chrome/answer/1181420#merge";
+#endif  // defined(ENABLE_ONE_CLICK_SIGNIN)
 
 const char kChromeEnterpriseSignInLearnMoreURL[] =
   "http://support.google.com/chromeos/bin/answer.py?hl=en&answer=1331549";
+
+const char kResetProfileSettingsLearnMoreURL[] =
+    "https://support.google.com/chrome/?p=ui_reset_settings";
 
 const char kSupervisedUserManagementURL[] = "https://www.chrome.com/manage";
 
@@ -442,6 +452,11 @@ const char kDoNotTrackLearnMoreURL[] =
     "https://support.google.com/chromeos/?p=settings_do_not_track";
 #else
     "https://support.google.com/chrome/?p=settings_do_not_track";
+#endif
+
+#if defined(OS_CHROMEOS)
+const char kAttestationForContentProtectionLearnMoreURL[] =
+    "https://support.google.com/chromebook/?p=tpm";
 #endif
 
 const char kChromiumProjectURL[] = "http://www.chromium.org/";
@@ -515,6 +530,7 @@ const char kNotificationsHelpURL[] =
 // Add hosts here to be included in chrome://chrome-urls (about:about).
 // These hosts will also be suggested by BuiltinProvider.
 const char* const kChromeHostURLs[] = {
+  kChromeUIAppLauncherPageHost,
   kChromeUICacheHost,
   kChromeUIChromeURLsHost,
   kChromeUICrashesHost,

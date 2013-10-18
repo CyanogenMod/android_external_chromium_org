@@ -10,6 +10,7 @@
 #include "base/mac/foundation_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
+#include "chrome/browser/ui/chrome_style.h"
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_constants.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_button.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_details_container.h"
@@ -55,7 +56,7 @@
   [saveInChromeCheckbox_ setButtonType:NSSwitchButton];
   [saveInChromeCheckbox_ setTitle:
       base::SysUTF16ToNSString(delegate_->SaveLocallyText())];
-  [saveInChromeCheckbox_ setState:NSOnState];
+  [self updateSaveInChrome];
   [saveInChromeCheckbox_ sizeToFit];
   [[self view] addSubview:saveInChromeCheckbox_];
 
@@ -134,9 +135,9 @@
   [buttonContainer_ setFrameOrigin:buttonFrame.origin];
 
   NSRect checkboxFrame = [saveInChromeCheckbox_ frame];
-  checkboxFrame.origin.y = NSMidY(buttonFrame) - NSHeight(checkboxFrame) / 2.0;
-  [saveInChromeCheckbox_ setFrameOrigin:checkboxFrame.origin];
-
+  [saveInChromeCheckbox_ setFrameOrigin:
+      NSMakePoint(chrome_style::kHorizontalPadding,
+                  NSMidY(buttonFrame) - NSHeight(checkboxFrame) / 2.0)];
   currentY = NSMaxY(buttonFrame) + autofill::kDetailBottomPadding;
 
   NSRect notificationFrame = NSZeroRect;
@@ -190,6 +191,7 @@
   frame = NSMakeRect(
       NSWidth(frame) - NSMaxX([button frame]), 0,
       NSMaxX([button frame]), NSHeight([button frame]));
+  frame = NSOffsetRect(frame, -chrome_style::kHorizontalPadding, 0);
 
   [buttonContainer_ setFrame:frame];
 }
@@ -231,7 +233,7 @@
 }
 
 - (void)modelChanged {
-  [saveInChromeCheckbox_ setHidden:!delegate_->ShouldOfferToSaveInChrome()];
+  [self updateSaveInChrome];
   [detailsContainer_ modelChanged];
 }
 
@@ -279,6 +281,16 @@
 
 - (BOOL)validate {
   return [detailsContainer_ validate];
+}
+
+- (void)updateSaveInChrome {
+  [saveInChromeCheckbox_ setHidden:!delegate_->ShouldOfferToSaveInChrome()];
+  [saveInChromeCheckbox_ setState:
+      (delegate_->ShouldSaveInChrome() ? NSOnState : NSOffState)];
+}
+
+- (void)updateErrorBubble {
+  [detailsContainer_ updateErrorBubble];
 }
 
 @end

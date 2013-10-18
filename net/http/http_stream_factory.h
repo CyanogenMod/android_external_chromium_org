@@ -265,25 +265,24 @@ class NET_EXPORT HttpStreamFactory {
   // Sets http/1.1 as the only protocol supported via NPN or Alternate-Protocol.
   static void EnableNpnHttpOnly();
 
-  // Sets http/1.1, quic and spdy/2 (the default spdy protocol) as the protocols
-  // supported via NPN or Alternate-Protocol.
-  static void EnableNpnSpdy();
-
-  // Sets http/1.1, quic, spdy/2, and spdy/3 as the protocols supported via NPN
-  // or Alternate-Protocol.
+  // Sets http/1.1, quic, and spdy/3 as the protocols supported via
+  // NPN or Alternate-Protocol.
   static void EnableNpnSpdy3();
 
-  // Sets http/1.1, quic, spdy/2, spdy/3, and spdy/3.1 as the protocols
+  // Sets http/1.1, quic, spdy/3, and spdy/3.1 as the protocols
   // supported via NPN or Alternate-Protocol.
   static void EnableNpnSpdy31();
 
-  // Sets http/1.1, quic, spdy/2, spdy/3, spdy/3.1, and spdy/4a2 as
-  // the protocols supported via NPN or Alternate-Protocol.
+  // Sets http/1.1, quic, spdy/2, spdy/3, and spdy/3.1 as the
+  // protocols supported via NPN or Alternate-Protocol.
+  static void EnableNpnSpdy31WithSpdy2();
+
+  // Sets http/1.1, quic, spdy/3, spdy/3.1, and spdy/4a2 as the
+  // protocols supported via NPN or Alternate-Protocol.
   static void EnableNpnSpdy4a2();
 
-  // Sets http/1.1, quic, spdy/2, spdy/3, spdy/3.1, spdy/4a2, and
-  // http/2 draft 04 as the protocols supported via NPN or
-  // Alternate-Protocol.
+  // Sets http/1.1, quic, spdy/3, spdy/3.1, spdy/4a2, and http/2 draft
+  // 04 as the protocols supported via NPN or Alternate-Protocol.
   static void EnableNpnHttp2Draft04();
 
   // Sets the protocols supported by NPN (next protocol negotiation) during the
@@ -298,8 +297,13 @@ class NET_EXPORT HttpStreamFactory {
   HttpStreamFactory();
 
  private:
+  // |protocol| must be a valid protocol value.
+  static bool IsProtocolEnabled(AlternateProtocol protocol);
+  static void SetProtocolEnabled(AlternateProtocol protocol);
+  static void ResetEnabledProtocols();
+
   static std::vector<std::string>* next_protos_;
-  static bool enabled_protocols_[NUM_ALTERNATE_PROTOCOLS];
+  static bool enabled_protocols_[NUM_VALID_ALTERNATE_PROTOCOLS];
   static bool spdy_enabled_;
   static bool use_alternate_protocols_;
   static bool force_spdy_over_ssl_;

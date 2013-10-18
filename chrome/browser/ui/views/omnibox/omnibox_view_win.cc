@@ -921,9 +921,6 @@ bool OmniboxViewWin::OnAfterPossibleChangeInternal(bool force_text_changed) {
       text_before_change_, new_text, new_sel.cpMin, new_sel.cpMax,
       selection_differs, text_differs, just_deleted_text, !IsImeComposing());
 
-  if (selection_differs)
-    controller()->OnSelectionBoundsChanged();
-
   if (something_changed && text_differs)
     TextChanged();
 
@@ -1397,10 +1394,10 @@ void OmniboxViewWin::OnCopy() {
   if (write_url) {
     BookmarkNodeData data;
     data.ReadFromTuple(url, text);
-    data.WriteToClipboard();
+    data.WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
   } else {
     ui::ScopedClipboardWriter scw(ui::Clipboard::GetForCurrentThread(),
-                                  ui::Clipboard::BUFFER_STANDARD);
+                                  ui::CLIPBOARD_TYPE_COPY_PASTE);
     scw.WriteText(text);
   }
 }

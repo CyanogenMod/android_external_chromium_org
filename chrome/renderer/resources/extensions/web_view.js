@@ -16,7 +16,7 @@ var WebRequestEvent = require('webRequestInternal').WebRequestEvent;
 var WebRequestSchema =
     requireNative('schema_registry').GetSchema('webRequest');
 var WebView = require('binding').Binding.create('webview').generate();
-var WebViewNatives = requireNative('webview_natives');
+var idGenerator = requireNative('id_generator');
 
 // This secret enables hiding <webview> private members from the outside scope.
 // Outside of this file, |secret| is inaccessible. The only way to access the
@@ -111,7 +111,9 @@ var WEB_VIEW_EVENTS = {
     },
     evt: CreateEvent('webview.onPermissionRequest'),
     fields: [
+      'identifier',
       'lastUnlockedBySelf',
+      'name',
       'permission',
       'requestMethod',
       'url',
@@ -358,7 +360,7 @@ WebViewInternal.prototype.setupWebviewNodeProperties_ = function() {
     get: function() {
       if (browserPluginNode.contentWindow)
         return browserPluginNode.contentWindow;
-      console.error(ERROR_MSG_CONTENTWINDOW_NOT_AVAILABLE);
+      window.console.error(ERROR_MSG_CONTENTWINDOW_NOT_AVAILABLE);
     },
     // No setter.
     enumerable: true
@@ -550,7 +552,7 @@ WebViewInternal.prototype.handleSizeChangedEvent_ =
  */
 WebViewInternal.prototype.setupWebviewNodeEvents_ = function() {
   var self = this;
-  this.viewInstanceId_ = WebViewNatives.GetNextInstanceID();
+  this.viewInstanceId_ = idGenerator.GetNextId();
   var onInstanceIdAllocated = function(e) {
     var detail = e.detail ? JSON.parse(e.detail) : {};
     self.instanceId_ = detail.windowId;
@@ -669,7 +671,7 @@ WebViewInternal.prototype.handleNewWindowEvent_ =
 
   var showWarningMessage = function() {
     var WARNING_MSG_NEWWINDOW_BLOCKED = '<webview>: A new window was blocked.';
-    console.warn(WARNING_MSG_NEWWINDOW_BLOCKED);
+    window.console.warn(WARNING_MSG_NEWWINDOW_BLOCKED);
   };
 
   var self = this;
@@ -686,7 +688,7 @@ WebViewInternal.prototype.handleNewWindowEvent_ =
     actionTaken = true;
   };
 
-  var window = {
+  var windowObj = {
     attach: function(webview) {
       validateCall();
       if (!webview)
@@ -701,21 +703,22 @@ WebViewInternal.prototype.handleNewWindowEvent_ =
             browserPluginNode['-internal-attachWindowTo'](webview,
                                                           event.windowId);
         if (!attached) {
-          console.error(ERROR_MSG_NEWWINDOW_UNABLE_TO_ATTACH);
+          window.console.error(ERROR_MSG_NEWWINDOW_UNABLE_TO_ATTACH);
         }
         // If the object being passed into attach is not a valid <webview>
         // then we will fail and it will be treated as if the new window
         // was rejected. The permission API plumbing is used here to clean
         // up the state created for the new window if attaching fails.
-        WebView.setPermission(self.instanceId_, requestId, attached, '');
+        WebView.setPermission(
+            self.instanceId_, requestId, attached ? 'allow' : 'deny');
       }, 0);
     },
     discard: function() {
       validateCall();
-      WebView.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, 'deny');
     }
   };
-  webViewEvent.window = window;
+  webViewEvent.window = windowObj;
 
   var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
   if (actionTaken) {
@@ -723,20 +726,30 @@ WebViewInternal.prototype.handleNewWindowEvent_ =
   }
 
   if (defaultPrevented) {
-    // Make browser plugin track lifetime of |window|.
-    MessagingNatives.BindToGC(window, function() {
+    // Make browser plugin track lifetime of |windowObj|.
+    MessagingNatives.BindToGC(windowObj, function() {
       // Avoid showing a warning message if the decision has already been made.
       if (actionTaken) {
         return;
       }
-      WebView.setPermission(self.instanceId_, requestId, false, '');
-      showWarningMessage();
+      WebView.setPermission(
+          self.instanceId_, requestId, 'default', '', function(allowed) {
+        if (allowed) {
+          return;
+        }
+        showWarningMessage();
+      });
     });
   } else {
     actionTaken = true;
     // The default action is to discard the window.
-    WebView.setPermission(self.instanceId_, requestId, false, '');
-    showWarningMessage();
+    WebView.setPermission(
+        self.instanceId_, requestId, 'default', '', function(allowed) {
+      if (allowed) {
+        return;
+      }
+      showWarningMessage();
+    });
   }
 };
 
@@ -748,16 +761,30 @@ WebViewInternal.prototype.handlePermissionEvent_ =
   var showWarningMessage = function(permission) {
     var WARNING_MSG_PERMISSION_DENIED = '<webview>: ' +
         'The permission request for "%1" has been denied.';
-    console.warn(WARNING_MSG_PERMISSION_DENIED.replace('%1', permission));
+    window.console.warn(
+        WARNING_MSG_PERMISSION_DENIED.replace('%1', permission));
   };
 
-  var PERMISSION_TYPES = this.getPermissionTypes_();
+  var requestId = event.requestId;
+
+  var PERMISSION_TYPES = this.getPermissionTypes_().concat(
+                             this.maybeGetExperimentalPermissions_());
+  if (PERMISSION_TYPES.indexOf(event.permission) < 0) {
+    // The permission type is not allowed. Trigger the default response.
+    WebView.setPermission(
+        self.instanceId_, requestId, 'default', '', function(allowed) {
+      if (allowed) {
+        return;
+      }
+      showWarningMessage(event.permission);
+    });
+    return;
+  }
 
   var self = this;
   var browserPluginNode = this.browserPluginNode_;
   var webviewNode = this.webviewNode_;
 
-  var requestId = event.requestId;
   var decisionMade = false;
 
   var validateCall = function() {
@@ -771,11 +798,11 @@ WebViewInternal.prototype.handlePermissionEvent_ =
   var request = {
     allow: function() {
       validateCall();
-      WebView.setPermission(self.instanceId_, requestId, true, '');
+      WebView.setPermission(self.instanceId_, requestId, 'allow');
     },
     deny: function() {
       validateCall();
-      WebView.setPermission(self.instanceId_, requestId, false, '');
+      WebView.setPermission(self.instanceId_, requestId, 'deny');
     }
   };
   webViewEvent.request = request;
@@ -792,13 +819,23 @@ WebViewInternal.prototype.handlePermissionEvent_ =
       if (decisionMade) {
         return;
       }
-      WebView.setPermission(self.instanceId_, requestId, false, '');
-      showWarningMessage(event.permission);
+      WebView.setPermission(
+          self.instanceId_, requestId, 'default', '', function(allowed) {
+        if (allowed) {
+          return;
+        }
+        showWarningMessage(event.permission);
+      });
     });
   } else {
     decisionMade = true;
-    WebView.setPermission(self.instanceId_, requestId, false, '');
-    showWarningMessage(event.permission);
+    WebView.setPermission(
+        self.instanceId_, requestId, 'default', '', function(allowed) {
+      if (allowed) {
+        return;
+      }
+      showWarningMessage(event.permission);
+    });
   }
 };
 
@@ -968,6 +1005,14 @@ WebViewInternal.prototype.maybeGetExperimentalEvents_ = function() {};
  * @private
  */
 WebViewInternal.prototype.maybeAttachWebRequestEventToWebview_ = function() {};
+
+/**
+ * Implemented when the experimental API is available.
+ * @private
+ */
+WebViewInternal.prototype.maybeGetExperimentalPermissions_ = function() {
+  return [];
+};
 
 exports.WebView = WebView;
 exports.WebViewInternal = WebViewInternal;

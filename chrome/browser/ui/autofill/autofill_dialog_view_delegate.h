@@ -133,6 +133,9 @@ class AutofillDialogViewDelegate {
   // rest of the fields in a section.
   virtual bool FieldControlsIcons(ServerFieldType type) const = 0;
 
+  // Returns a tooltip for the given field, or an empty string if none exists.
+  virtual string16 TooltipForField(ServerFieldType type) const = 0;
+
   // Decides whether input of |value| is valid for a field of type |type|. If
   // valid, the returned string will be empty. Otherwise it will contain an
   // error message.
@@ -142,11 +145,9 @@ class AutofillDialogViewDelegate {
 
 
   // Decides whether the combination of all |inputs| is valid, returns a
-  // map of field types to error strings.
-  virtual ValidityData InputsAreValid(
-      DialogSection section,
-      const DetailOutputMap& inputs,
-      ValidationType validation_type) = 0;
+  // map of field types to validity messages.
+  virtual ValidityMessages InputsAreValid(DialogSection section,
+                                          const DetailOutputMap& inputs) = 0;
 
   // Called when the user changes the contents of a text field or activates it
   // (by focusing and then clicking it). |was_edit| is true when the function
@@ -165,6 +166,9 @@ class AutofillDialogViewDelegate {
 
   // Called when focus has changed position within the view.
   virtual void FocusMoved() = 0;
+
+  // Whether the view should show a validation error bubble.
+  virtual bool ShouldShowErrorBubble() const = 0;
 
   // Miscellany ----------------------------------------------------------------
 

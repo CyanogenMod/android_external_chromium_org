@@ -30,6 +30,7 @@ class CompoundEventFilter;
 class InputMethodEventFilter;
 class ScopedCaptureClient;
 class ShadowController;
+class TooltipController;
 class VisibilityController;
 class WindowModalityController;
 }
@@ -37,7 +38,6 @@ class WindowModalityController;
 class DesktopRootWindowHost;
 class DropHelper;
 class NativeWidgetAuraWindowObserver;
-class ScopedTooltipClient;
 class TooltipManagerAura;
 class WindowReorderer;
 
@@ -59,7 +59,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
 
   // Called by our DesktopRootWindowHost after it has deleted native resources;
   // this is the signal that we should start our shutdown.
-  void OnHostClosed();
+  virtual void OnHostClosed();
 
   // Installs the input method filter on |root|. This is intended to be invoked
   // by the DesktopRootWindowHost implementation during Init().
@@ -80,6 +80,11 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // Ensures that the correct window is activated/deactivated based on whether
   // we are being activated/deactivated.
   void HandleActivationChanged(bool active);
+
+  // Installs the window modality controller event filter on the |root|. This
+  // should be invoked by the DesktopRootWindowHost implementation immediately
+  // after creation of the RootWindow.
+  void InstallWindowModalityController(aura::RootWindow* root);
 
  protected:
   // Overridden from internal::NativeWidgetPrivate:
@@ -134,6 +139,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual void Deactivate() OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+  virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void Maximize() OVERRIDE;
   virtual void Minimize() OVERRIDE;
   virtual bool IsMaximized() const OVERRIDE;
@@ -168,7 +174,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual gfx::Size GetMaximumSize() const OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE;
+                               const gfx::Rect& new_bounds) OVERRIDE {}
   virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
   virtual bool ShouldDescendIntoChildForEventHandling(
@@ -216,8 +222,15 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // Overridden from aura::RootWindowObserver:
   virtual void OnRootWindowHostCloseRequested(
       const aura::RootWindow* root) OVERRIDE;
+  virtual void OnRootWindowHostResized(const aura::RootWindow* root) OVERRIDE;
+  virtual void OnRootWindowHostMoved(const aura::RootWindow* root,
+                                     const gfx::Point& new_origin) OVERRIDE;
 
  private:
+  // To save a clear on platforms where the window is never transparent, the
+  // window is only set as transparent when the glass frame is in use.
+  void UpdateWindowTransparency();
+
   // See class documentation for Widget in widget.h for a note about ownership.
   Widget::InitParams::Ownership ownership_;
 
@@ -260,7 +273,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   scoped_ptr<DropHelper> drop_helper_;
   int last_drop_operation_;
 
-  scoped_ptr<ScopedTooltipClient> scoped_tooltip_client_;
+  scoped_ptr<corewm::TooltipController> tooltip_controller_;
   scoped_ptr<TooltipManagerAura> tooltip_manager_;
 
   scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
@@ -278,6 +291,9 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // Reorders child windows of |window_| associated with a view based on the
   // order of the associated views in the widget's view hierarchy.
   scoped_ptr<WindowReorderer> window_reorderer_;
+
+  // See class documentation for Widget in widget.h for a note about type.
+  Widget::InitParams::Type widget_type_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopNativeWidgetAura);
 };

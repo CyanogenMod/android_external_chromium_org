@@ -53,7 +53,7 @@ class LocationBarViewMac : public LocationBar,
 
   // Overridden from LocationBar:
   virtual void ShowFirstRunBubble() OVERRIDE;
-  virtual string16 GetInputString() const OVERRIDE;
+  virtual GURL GetDestinationURL() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
   virtual content::PageTransition GetPageTransition() const OVERRIDE;
   virtual void AcceptInput() OVERRIDE;
@@ -92,6 +92,10 @@ class LocationBarViewMac : public LocationBar,
   // be obscured by other UI (wrench menu) or redundant (+/- from wrench).
   void ZoomChangedForActiveTab(bool can_show_bubble);
 
+  // Pops up a bubble for a content setting. This depends on the image having
+  // already been laid out, therefore it must be called after Layout().
+  void PopUpContentSettingIfNeeded();
+
   // Get the point in window coordinates on the star for the bookmark bubble to
   // aim at.
   NSPoint GetBookmarkBubblePoint() const;
@@ -103,11 +107,6 @@ class LocationBarViewMac : public LocationBar,
   // When any image decorations change, call this to ensure everything is
   // redrawn and laid out if necessary.
   void OnDecorationsChanged();
-
-  // Updates the location bar.  We also reset the bar's permanent text and
-  // security style, and, if |contents| is non-NULL, also restore saved state
-  // that the tab holds.
-  void Update(const content::WebContents* contents);
 
   // Layout the various decorations which live in the field.
   void Layout();
@@ -132,25 +131,10 @@ class LocationBarViewMac : public LocationBar,
   // is called and this function returns |NSZeroPoint|.
   NSPoint GetPageActionBubblePoint(ExtensionAction* page_action);
 
-  // Get the blocked-popup content setting's frame in window
-  // coordinates.  Used by the blocked-popup animation.  Returns
-  // |NSZeroRect| if the relevant content setting decoration is not
-  // visible.
-  NSRect GetBlockedPopupRect() const;
-
   // OmniboxEditController:
-  virtual void OnAutocompleteAccept(
-      const GURL& url,
-      WindowOpenDisposition disposition,
-      content::PageTransition transition,
-      const GURL& alternate_nav_url) OVERRIDE;
+  virtual void Update(const content::WebContents* contents) OVERRIDE;
   virtual void OnChanged() OVERRIDE;
-  virtual void OnSelectionBoundsChanged() OVERRIDE;
-  virtual void OnInputInProgress(bool in_progress) OVERRIDE;
-  virtual void OnKillFocus() OVERRIDE;
   virtual void OnSetFocus() OVERRIDE;
-  virtual gfx::Image GetFavicon() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual ToolbarModel* GetToolbarModel() OVERRIDE;
@@ -211,17 +195,7 @@ class LocationBarViewMac : public LocationBar,
 
   scoped_ptr<OmniboxViewMac> omnibox_view_;
 
-  CommandUpdater* command_updater_;  // Weak, owned by Browser.
-
   AutocompleteTextField* field_;  // owned by tab controller
-
-  // When we get an OnAutocompleteAccept notification from the autocomplete
-  // edit, we save the input string so we can give it back to the browser on
-  // the LocationBar interface via GetInputString().
-  string16 location_input_;
-
-  // The user's desired disposition for how their input should be opened.
-  WindowOpenDisposition disposition_;
 
   // A decoration that shows an icon to the left of the address.
   scoped_ptr<LocationIconDecoration> location_icon_decoration_;
@@ -258,9 +232,6 @@ class LocationBarViewMac : public LocationBar,
   Profile* profile_;
 
   Browser* browser_;
-
-  // The transition type to use for the navigation.
-  content::PageTransition transition_;
 
   // Used to register for notifications received by NotificationObserver.
   content::NotificationRegistrar registrar_;

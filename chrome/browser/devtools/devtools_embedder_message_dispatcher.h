@@ -28,6 +28,7 @@ class DevToolsEmbedderMessageDispatcher {
 
     virtual void ActivateWindow() = 0;
     virtual void CloseWindow() = 0;
+    virtual void SetWindowBounds(int x, int y, int width, int height) = 0;
     virtual void MoveWindow(int x, int y) = 0;
     virtual void SetDockSide(const std::string& side) = 0;
     virtual void OpenInNewTab(const std::string& url) = 0;
@@ -51,7 +52,7 @@ class DevToolsEmbedderMessageDispatcher {
 
   ~DevToolsEmbedderMessageDispatcher();
 
-  void Dispatch(const std::string& message);
+  std::string Dispatch(const std::string& method, base::ListValue* params);
 
  private:
   typedef base::Callback<bool(const base::ListValue&)> Handler;

@@ -39,7 +39,6 @@
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bubble_delegate.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bubble_sign_in_delegate.h"
-#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -700,6 +699,11 @@ bool BrowserView::IsAlwaysOnTop() const {
   return false;
 }
 
+void BrowserView::SetAlwaysOnTop(bool always_on_top) {
+  // Not implemented for browser windows.
+  NOTIMPLEMENTED();
+}
+
 gfx::NativeWindow BrowserView::GetNativeWindow() {
   // While the browser destruction is going on, the widget can already be gone,
   // but utility functions like FindBrowserWithWindow will come here and crash.
@@ -1131,10 +1135,6 @@ void BrowserView::ConfirmAddSearchProvider(TemplateURL* template_url,
                            profile);
 }
 
-void BrowserView::ToggleBookmarkBar() {
-  chrome::ToggleBookmarkBarWhenVisible(browser_->profile());
-}
-
 void BrowserView::ShowUpdateChromeDialog() {
   UpdateRecommendedMessageBox::Show(GetWidget()->GetNativeWindow());
 }
@@ -1302,6 +1302,7 @@ bool BrowserView::PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
   //   with the browser, and it is not a reserved one, do nothing.
 
   if (browser_->is_app()) {
+    // Let all keys fall through to a v1 app's web content, even accelerators.
     // We don't have to flip |is_keyboard_shortcut| here. If we do that, the app
     // might not be able to see a subsequent Char event. See OnHandleInputEvent
     // in content/renderer/render_widget.cc for details.
@@ -1336,7 +1337,8 @@ bool BrowserView::PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
     if (event.type == WebKit::WebInputEvent::RawKeyDown)
       *is_keyboard_shortcut = true;
   } else if (processed) {
-    // |accelerator| is a non-browser shortcut (e.g. F4-F10 on Ash).
+    // |accelerator| is a non-browser shortcut (e.g. F4-F10 on Ash). Report
+    // that we handled it.
     return true;
   }
 
@@ -1473,7 +1475,8 @@ bool BrowserView::CanMaximize() const {
 }
 
 bool BrowserView::CanActivate() const {
-  if (!AppModalDialogQueue::GetInstance()->active_dialog())
+  if (!AppModalDialogQueue::GetInstance()->active_dialog() ||
+      !AppModalDialogQueue::GetInstance()->active_dialog()->native_dialog())
     return true;
 
 #if defined(USE_AURA) && defined(OS_CHROMEOS)
@@ -1534,18 +1537,18 @@ gfx::ImageSkia BrowserView::GetWindowAppIcon() {
 }
 
 gfx::ImageSkia BrowserView::GetWindowIcon() {
-  if (browser_->is_app())
+  if (browser_->is_app() || browser_->is_type_popup())
     return browser_->GetCurrentPageIcon().AsImageSkia();
   return gfx::ImageSkia();
 }
 
 bool BrowserView::ShouldShowWindowIcon() const {
-#if defined(USE_ASH)
   // For Ash only, app host windows do not show an icon, crbug.com/119411.
   // Child windows (i.e. popups) do show an icon.
-  if (browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
+  if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
+      browser_->is_app() && browser_->app_type() == Browser::APP_TYPE_HOST)
     return false;
-#endif
+
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
 }
 
@@ -2315,12 +2318,8 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   browser_->WindowFullscreenStateChanged();
 
   if (fullscreen) {
-    if (!chrome::IsRunningInAppMode() &&
-        type != FOR_METRO &&
-        !ShouldUseImmersiveFullscreenForUrl(url)) {
-      fullscreen_bubble_.reset(new FullscreenExitBubbleViews(
-          this, url, bubble_type));
-    }
+    if (!chrome::IsRunningInAppMode() && type != FOR_METRO)
+      UpdateFullscreenExitBubbleContent(url, bubble_type);
   } else {
 #if defined(OS_WIN) && !defined(USE_AURA)
     if (omnibox_win) {

@@ -45,9 +45,6 @@ class CONTENT_EXPORT CompositorImpl
   static bool IsInitialized();
   static bool IsThreadingEnabled();
 
-  // Returns true if initialized with DIRECT_CONTEXT_ON_DRAW_THREAD.
-  static bool UsesDirectGL();
-
   // Returns the Java Surface object for a given view surface id.
   static jobject GetSurface(int surface_id);
 
@@ -58,10 +55,8 @@ class CONTENT_EXPORT CompositorImpl
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual void setDeviceScaleFactor(float factor) OVERRIDE;
   virtual void SetWindowBounds(const gfx::Size& size) OVERRIDE;
-  virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
   virtual bool CompositeAndReadback(
       void *pixels, const gfx::Rect& rect) OVERRIDE;
-  virtual void SetNeedsRedraw() OVERRIDE;
   virtual void Composite() OVERRIDE;
   virtual cc::UIResourceId GenerateUIResource(
       const cc::UIResourceBitmap& bitmap) OVERRIDE;
@@ -92,9 +87,7 @@ class CONTENT_EXPORT CompositorImpl
   virtual void DidCompleteSwapBuffers() OVERRIDE;
   virtual void ScheduleComposite() OVERRIDE;
   virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+      OffscreenContextProvider() OVERRIDE;
 
   // WebGraphicsContext3DSwapBuffersClient implementation.
   virtual void OnViewContextSwapBuffersPosted() OVERRIDE;

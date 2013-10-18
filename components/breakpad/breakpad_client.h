@@ -42,6 +42,10 @@ class BreakpadClient {
   BreakpadClient();
   virtual ~BreakpadClient();
 
+  // Sets the Breakpad client ID, which is a unique identifier for the client
+  // that is sending crash reports. After it is set, it should not be changed.
+  virtual void SetClientID(const std::string& client_id);
+
 #if defined(OS_WIN)
   // Returns true if an alternative location to store the minidump files was
   // specified. Returns true if |crash_dir| was set.
@@ -67,9 +71,6 @@ class BreakpadClient {
   // restarting after a crash.
   virtual bool AboutToRestart();
 
-  // Returns a GUID to embed in the crash report.
-  virtual base::string16 GetCrashGUID();
-
   // Returns true if the crash report uploader supports deferred uploads.
   virtual bool GetDeferredUploadsSupported(bool is_per_user_install);
 
@@ -82,6 +83,12 @@ class BreakpadClient {
   // Returns the result code to return when breakpad failed to respawn a
   // crashed process.
   virtual int GetResultCodeRespawnFailed();
+
+  // Invoked when initializing breakpad in the browser process.
+  virtual void InitBrowserCrashDumpsRegKey();
+
+  // Invoked before attempting to write a minidump.
+  virtual void RecordCrashDumpAttempt(bool is_real_crash);
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_IOS)
@@ -113,6 +120,10 @@ class BreakpadClient {
 #if defined(OS_WIN) || defined(OS_MACOSX)
   // Returns true if the user has given consent to collect stats.
   virtual bool GetCollectStatsConsent();
+
+  // Returns true if breakpad is enforced via management policies. In that
+  // case, |breakpad_enabled| is set to the value enforced by policies.
+  virtual bool ReportingIsEnforcedByPolicy(bool* breakpad_enabled);
 #endif
 
 #if defined(OS_ANDROID)

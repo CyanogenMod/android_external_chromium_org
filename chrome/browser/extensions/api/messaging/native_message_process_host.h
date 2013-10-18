@@ -92,6 +92,7 @@ class NativeMessageProcessHost
 
   // Callback for NativeProcessLauncher::Launch().
   void OnHostProcessLaunched(NativeProcessLauncher::LaunchResult result,
+                             base::ProcessHandle process_handle,
                              base::PlatformFile read_file,
                              base::PlatformFile write_file);
 
@@ -131,6 +132,8 @@ class NativeMessageProcessHost
   // due to an error.
   bool closed_;
 
+  base::ProcessHandle process_handle_;
+
   // Input stream handle and reader.
   base::PlatformFile read_file_;
   scoped_ptr<net::FileStream> read_stream_;
@@ -147,9 +150,6 @@ class NativeMessageProcessHost
 
   // Set to true when a read is pending.
   bool read_pending_;
-
-  // Set to true once we've read EOF from the child process.
-  bool read_eof_;
 
   // Buffer for incomplete incoming messages.
   std::string incoming_data_;

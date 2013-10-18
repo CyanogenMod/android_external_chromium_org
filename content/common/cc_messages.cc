@@ -352,7 +352,6 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
-  WriteParam(m, p.has_occlusion_from_outside_target_surface);
   WriteParam(m, p.shared_quad_state_list.size());
   WriteParam(m, p.quad_list.size());
 
@@ -362,6 +361,13 @@ void ParamTraits<cc::RenderPass>::Write(
   size_t shared_quad_state_index = 0;
   for (size_t i = 0; i < p.quad_list.size(); ++i) {
     const cc::DrawQuad* quad = p.quad_list[i];
+    DCHECK(quad->rect.Contains(quad->visible_rect))
+        << quad->material << " rect: " << quad->rect.ToString()
+        << " visible_rect: " << quad->visible_rect.ToString();
+    DCHECK(quad->opaque_rect.IsEmpty() ||
+           quad->rect.Contains(quad->opaque_rect))
+        << quad->material << " rect: " << quad->rect.ToString()
+        << " opaque_rect: " << quad->opaque_rect.ToString();
 
     switch (quad->material) {
       case cc::DrawQuad::CHECKERBOARD:
@@ -444,7 +450,6 @@ bool ParamTraits<cc::RenderPass>::Read(
   gfx::RectF damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
-  bool has_occlusion_from_outside_target_surface;
   size_t shared_quad_state_list_size;
   size_t quad_list_size;
 
@@ -453,7 +458,6 @@ bool ParamTraits<cc::RenderPass>::Read(
       !ReadParam(m, iter, &damage_rect) ||
       !ReadParam(m, iter, &transform_to_root_target) ||
       !ReadParam(m, iter, &has_transparent_background) ||
-      !ReadParam(m, iter, &has_occlusion_from_outside_target_surface) ||
       !ReadParam(m, iter, &shared_quad_state_list_size) ||
       !ReadParam(m, iter, &quad_list_size))
     return false;
@@ -462,8 +466,7 @@ bool ParamTraits<cc::RenderPass>::Read(
             output_rect,
             damage_rect,
             transform_to_root_target,
-            has_transparent_background,
-            has_occlusion_from_outside_target_surface);
+            has_transparent_background);
 
   for (size_t i = 0; i < shared_quad_state_list_size; ++i) {
     scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
@@ -516,6 +519,19 @@ bool ParamTraits<cc::RenderPass>::Read(
     }
     if (!draw_quad)
       return false;
+    if (!draw_quad->rect.Contains(draw_quad->visible_rect)) {
+      LOG(ERROR) << "Quad with invalid visible rect " << draw_quad->material
+                 << " rect: " << draw_quad->rect.ToString()
+                 << " visible_rect: " << draw_quad->visible_rect.ToString();
+      return false;
+    }
+    if (!draw_quad->opaque_rect.IsEmpty() &&
+        !draw_quad->rect.Contains(draw_quad->opaque_rect)) {
+      LOG(ERROR) << "Quad with invalid opaque rect " << draw_quad->material
+                 << " rect: " << draw_quad->rect.ToString()
+                 << " opaque_rect: " << draw_quad->opaque_rect.ToString();
+      return false;
+    }
 
     size_t shared_quad_state_index;
     if (!ReadParam(m, iter, &shared_quad_state_index) ||
@@ -547,8 +563,6 @@ void ParamTraits<cc::RenderPass>::Log(
   LogParam(p.transform_to_root_target, l);
   l->append(", ");
   LogParam(p.has_transparent_background, l);
-  l->append(", ");
-  LogParam(p.has_occlusion_from_outside_target_surface, l);
   l->append(", ");
 
   l->append("[");
@@ -730,6 +744,7 @@ void ParamTraits<cc::CompositorFrameAck>::Log(const param_type& p,
 
 void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
                                                 const param_type& p) {
+  DCHECK_NE(0u, p.render_pass_list.size());
   WriteParam(m, p.resource_list);
   WriteParam(m, p.render_pass_list.size());
   for (size_t i = 0; i < p.render_pass_list.size(); ++i)
@@ -744,7 +759,7 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
   size_t num_render_passes;
   if (!ReadParam(m, iter, &p->resource_list) ||
       !ReadParam(m, iter, &num_render_passes) ||
-      num_render_passes > kMaxRenderPasses)
+      num_render_passes > kMaxRenderPasses || num_render_passes == 0)
     return false;
   for (size_t i = 0; i < num_render_passes; ++i) {
     scoped_ptr<cc::RenderPass> render_pass = cc::RenderPass::Create();

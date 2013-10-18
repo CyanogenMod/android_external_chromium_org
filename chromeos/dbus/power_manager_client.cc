@@ -147,18 +147,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
     SimpleMethodCallToPowerManager(power_manager::kRequestShutdownMethod);
   }
 
-  virtual void RequestIdleNotification(int64 threshold) OVERRIDE {
-    dbus::MethodCall method_call(power_manager::kPowerManagerInterface,
-                                 power_manager::kRequestIdleNotification);
-    dbus::MessageWriter writer(&method_call);
-    writer.AppendInt64(threshold);
-
-    power_manager_proxy_->CallMethod(
-        &method_call,
-        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
-        dbus::ObjectProxy::EmptyResponseCallback());
-  }
-
   virtual void NotifyUserActivity(
       power_manager::UserActivityType type) OVERRIDE {
     dbus::MethodCall method_call(
@@ -262,14 +250,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
 
     power_manager_proxy_->ConnectToSignal(
         power_manager::kPowerManagerInterface,
-        power_manager::kIdleNotifySignal,
-        base::Bind(&PowerManagerClientImpl::IdleNotifySignalReceived,
-                   weak_ptr_factory_.GetWeakPtr()),
-        base::Bind(&PowerManagerClientImpl::SignalConnected,
-                   weak_ptr_factory_.GetWeakPtr()));
-
-    power_manager_proxy_->ConnectToSignal(
-        power_manager::kPowerManagerInterface,
         power_manager::kInputEventSignal,
         base::Bind(&PowerManagerClientImpl::InputEventReceived,
                    weak_ptr_factory_.GetWeakPtr()),
@@ -338,7 +318,8 @@ class PowerManagerClientImpl : public PowerManagerClient {
         dbus::ObjectProxy::EmptyResponseCallback());
   }
 
-  void NameOwnerChangedReceived(dbus::Signal* signal) {
+  void NameOwnerChangedReceived(const std::string& old_owner,
+                                const std::string& new_owner) {
     VLOG(1) << "Power manager restarted";
     RegisterSuspendDelay();
     SetIsProjecting(last_is_projecting_);
@@ -445,20 +426,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
     suspend_delay_id_ = protobuf.delay_id();
     has_suspend_delay_id_ = true;
     VLOG(1) << "Registered suspend delay " << suspend_delay_id_;
-  }
-
-  void IdleNotifySignalReceived(dbus::Signal* signal) {
-    dbus::MessageReader reader(signal);
-    int64 threshold = 0;
-    if (!reader.PopInt64(&threshold)) {
-      LOG(ERROR) << "Idle Notify signal had incorrect parameters: "
-                 << signal->ToString();
-      return;
-    }
-    DCHECK_GT(threshold, 0);
-
-    VLOG(1) << "Idle Notify: " << threshold;
-    FOR_EACH_OBSERVER(Observer, observers_, IdleNotify(threshold));
   }
 
   void SuspendImminentReceived(dbus::Signal* signal) {
@@ -740,14 +707,6 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
   virtual void RequestRestart() OVERRIDE {}
   virtual void RequestShutdown() OVERRIDE {}
 
-  virtual void RequestIdleNotification(int64 threshold) OVERRIDE {
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&PowerManagerClientStubImpl::TriggerIdleNotify,
-                   weak_ptr_factory_.GetWeakPtr(), threshold),
-        base::TimeDelta::FromMilliseconds(threshold));
-  }
-
   virtual void NotifyUserActivity(
       power_manager::UserActivityType type) OVERRIDE {}
   virtual void NotifyVideoActivity(bool is_fullscreen) OVERRIDE {}
@@ -832,10 +791,6 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
     int brightness_level = static_cast<int>(brightness_);
     FOR_EACH_OBSERVER(Observer, observers_,
                       BrightnessChanged(brightness_level, user_initiated));
-  }
-
-  void TriggerIdleNotify(int64 threshold) {
-    FOR_EACH_OBSERVER(Observer, observers_, IdleNotify(threshold));
   }
 
   bool discharging_;

@@ -5,7 +5,9 @@
 import hashlib
 import json
 import logging
+import posixpath
 import re
+import traceback
 
 from compiled_file_system import CompiledFileSystem
 import third_party.json_schema_compiler.json_comment_eater as json_comment_eater
@@ -23,9 +25,8 @@ class SamplesDataSource(object):
     '''
     def __init__(self,
                  host_file_system,
-                 compiled_host_fs_factory,
                  app_samples_file_system,
-                 compiled_app_samples_fs_factory,
+                 compiled_fs_factory,
                  ref_resolver_factory,
                  extension_samples_path,
                  base_path):
@@ -34,11 +35,13 @@ class SamplesDataSource(object):
       self._ref_resolver = ref_resolver_factory.Create()
       self._extension_samples_path = extension_samples_path
       self._base_path = base_path
-      self._extensions_cache = compiled_host_fs_factory.Create(
+      self._extensions_cache = compiled_fs_factory.Create(
+          host_file_system,
           self._MakeSamplesList,
           SamplesDataSource,
           category='extensions')
-      self._apps_cache = compiled_app_samples_fs_factory.Create(
+      self._apps_cache = compiled_fs_factory.Create(
+          app_samples_file_system,
           lambda *args: self._MakeSamplesList(*args, is_apps=True),
           SamplesDataSource,
           category='apps')
@@ -64,7 +67,7 @@ class SamplesDataSource(object):
       return calls.union(re.findall(chrome_regex, js_file))
 
     def _GetDataFromManifest(self, path, file_system):
-      manifest = file_system.ReadSingle(path + '/manifest.json')
+      manifest = file_system.ReadSingle(path + '/manifest.json').Get()
       try:
         manifest_json = json.loads(json_comment_eater.Nom(manifest))
       except ValueError as e:
@@ -80,7 +83,7 @@ class SamplesDataSource(object):
       if not l10n_data['default_locale']:
         return l10n_data
       locales_path = path + '/_locales/'
-      locales_dir = file_system.ReadSingle(locales_path)
+      locales_dir = file_system.ReadSingle(locales_path).Get()
       if locales_dir:
         locales_files = file_system.Read(
             [locales_path + f + 'messages.json' for f in locales_dir]).Get()
@@ -146,12 +149,12 @@ class SamplesDataSource(object):
 
         manifest_data = self._GetDataFromManifest(sample_path, file_system)
         if manifest_data['icon'] is None:
-          icon_path = '%s/static/%s' % (self._base_path, DEFAULT_ICON_PATH)
+          icon_path = posixpath.join(
+              self._base_path, 'static', DEFAULT_ICON_PATH)
         else:
           icon_path = '%s/%s' % (icon_base, manifest_data['icon'])
         manifest_data.update({
           'icon': icon_path,
-          'id': hashlib.md5(url).hexdigest(),
           'download_url': download_url,
           'url': url,
           'files': [f.replace(sample_path + '/', '') for f in sample_files],
@@ -173,6 +176,9 @@ class SamplesDataSource(object):
     self._base_path = base_path
     self._request = request
 
+  def _GetSampleId(self, sample_name):
+    return sample_name.lower().replace(' ', '-')
+
   def _GetAcceptedLanguages(self):
     accept_language = self._request.headers.get('Accept-Language', None)
     if accept_language is None:
@@ -185,7 +191,7 @@ class SamplesDataSource(object):
     only the samples that use the API |api_name|. |key| is either 'apps' or
     'extensions'.
     '''
-    api_search = api_name + '_'
+    api_search = api_name.replace('.', '_') + '_'
     samples_list = []
     try:
       for sample in self.get(key):
@@ -203,10 +209,10 @@ class SamplesDataSource(object):
 
   def _CreateSamplesDict(self, key):
     if key == 'apps':
-      samples_list = self._apps_cache.GetFromFileListing('/')
+      samples_list = self._apps_cache.GetFromFileListing('/').Get()
     else:
       samples_list = self._extensions_cache.GetFromFileListing(
-          self._extension_samples_path + '/')
+          self._extension_samples_path + '/').Get()
     return_list = []
     for dict_ in samples_list:
       name = dict_['name']
@@ -227,12 +233,14 @@ class SamplesDataSource(object):
           locale_data = sample_data['locales'][locale]
           sample_data['name'] = locale_data[name_key]['message']
           sample_data['description'] = locale_data[description_key]['message']
+          sample_data['id'] = self._GetSampleId(sample_data['name'])
         except Exception as e:
-          logging.error(e)
+          logging.error(traceback.format_exc())
           # Revert the sample to the original dict.
           sample_data = dict_
         return_list.append(sample_data)
       else:
+        dict_['id'] = self._GetSampleId(name)
         return_list.append(dict_)
     return return_list
 

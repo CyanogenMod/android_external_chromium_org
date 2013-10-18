@@ -124,7 +124,7 @@ class UI_EXPORT InputMethodIBus
                                 uint32 ibus_state);
 
   // chromeos::IBusInputContextHandlerInterface overrides:
-  virtual void CommitText(const chromeos::IBusText& text) OVERRIDE;
+  virtual void CommitText(const std::string& text) OVERRIDE;
   virtual void ForwardKeyEvent(uint32 keyval,
                                uint32 keycode,
                                uint32 state) OVERRIDE;
@@ -165,6 +165,10 @@ class UI_EXPORT InputMethodIBus
 
   // Indicates if the composition text is changed or deleted.
   bool composition_changed_;
+
+  // If it's true then all input method result received before the next key
+  // event will be discarded.
+  bool suppress_next_result_;
 
   // The latest id of key event.
   uint32 current_keyevent_id_;

@@ -86,8 +86,11 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
       logging.warning('CPU stats cannot be retrieved on non-rooted device.')
       return {}
     stats = self._adb.GetProtectedFileContents('/proc/%s/stat' % pid,
-                                               log_result=False)[0].split()
-    return proc_util.GetCpuStats(stats)
+                                               log_result=False)
+    if not stats:
+      logging.warning('Unable to get /proc/%s/stat, process gone?', pid)
+      return {}
+    return proc_util.GetCpuStats(stats[0].split())
 
   def GetCpuTimestamp(self):
     if not self._adb.CanAccessProtectedFileContents():
@@ -100,6 +103,7 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
   def GetMemoryStats(self, pid):
     memory_usage = self._adb.GetMemoryUsageForPid(pid)[0]
     return {'ProportionalSetSize': memory_usage['Pss'] * 1024,
+            'SharedDirty': memory_usage['Shared_Dirty'] * 1024,
             'PrivateDirty': memory_usage['Private_Dirty'] * 1024}
 
   def GetIOStats(self, pid):
@@ -145,3 +149,14 @@ class AndroidPlatformBackend(platform_backend.PlatformBackend):
 
   def FlushSystemCacheForDirectory(self, directory, ignoring=None):
     raise NotImplementedError()
+
+  def LaunchApplication(self, application, parameters=None):
+    if not parameters:
+      parameters = ''
+    self._adb.RunShellCommand('am start ' + parameters + ' ' + application)
+
+  def IsApplicationRunning(self, application):
+    return len(self._adb.ExtractPid(application)) > 0
+
+  def CanLaunchApplication(self, application):
+    return True

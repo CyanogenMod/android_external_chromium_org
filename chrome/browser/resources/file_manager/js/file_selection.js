@@ -188,7 +188,7 @@ FileSelectionHandler.IMAGE_HOVER_PREVIEW_SIZE = 200;
 /**
  * Update the UI when the selection model changes.
  *
- * @param {cr.Event} event The change event.
+ * @param {Event} event The change event.
  */
 FileSelectionHandler.prototype.onFileSelectionChanged = function(event) {
   var indexes =
@@ -322,8 +322,8 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
   }
 
   // Sync the commands availability.
-  if (selection.totalCount != 0)
-    this.fileManager_.updateCommands();
+  if (this.fileManager_.commandHandler)
+    this.fileManager_.commandHandler.updateAvailability();
 
   // Update context menu.
   this.fileManager_.updateContextMenuActionItems(null, false);

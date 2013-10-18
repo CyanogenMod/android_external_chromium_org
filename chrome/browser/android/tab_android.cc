@@ -5,6 +5,7 @@
 #include "chrome/browser/android/tab_android.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_string.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
 #include "chrome/browser/android/webapps/single_tab_mode_tab_helper.h"
 #include "chrome/browser/browser_process.h"
@@ -17,14 +18,18 @@
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_manager_delegate_impl.h"
+#include "chrome/browser/predictors/resource_prefetch_predictor_factory.h"
+#include "chrome/browser/predictors/resource_prefetch_predictor_tab_helper.h"
 #include "chrome/browser/prerender/prerender_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ssl/ssl_tab_helper.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate_android.h"
+#include "chrome/browser/tab_contents/navigation_metrics_recorder.h"
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/alternate_error_tab_observer.h"
+#include "chrome/browser/ui/android/infobars/infobar_container_android.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
@@ -38,6 +43,7 @@
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "components/autofill/content/browser/autofill_driver_impl.h"
 #include "content/public/browser/android/content_view_core.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
@@ -64,6 +70,8 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
   // Set the view type.
   extensions::SetViewType(contents, extensions::VIEW_TYPE_TAB_CONTENTS);
 
+  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+
   // SessionTabHelper comes first because it sets up the tab ID, and other
   // helpers may rely on that.
   SessionTabHelper::CreateForWebContents(contents);
@@ -82,6 +90,7 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
   FindTabHelper::CreateForWebContents(contents);
   HistoryTabHelper::CreateForWebContents(contents);
   InfoBarService::CreateForWebContents(contents);
+  NavigationMetricsRecorder::CreateForWebContents(contents);
   chrome_browser_net::NetErrorTabHelper::CreateForWebContents(contents);
   PasswordManagerDelegateImpl::CreateForWebContents(contents);
   PasswordManager::CreateForWebContentsAndDelegate(
@@ -95,6 +104,11 @@ void BrowserTabContents::AttachTabHelpers(content::WebContents* contents) {
   TabSpecificContentSettings::CreateForWebContents(contents);
   TranslateTabHelper::CreateForWebContents(contents);
   WindowAndroidHelper::CreateForWebContents(contents);
+
+  if (predictors::ResourcePrefetchPredictorFactory::GetForProfile(profile)) {
+    predictors::ResourcePrefetchPredictorTabHelper::CreateForWebContents(
+        contents);
+  }
 }
 
 // TODO(dtrainor): Refactor so we do not need this method.
@@ -156,6 +170,18 @@ browser_sync::SyncedTabDelegate* TabAndroid::GetSyncedTabDelegate() const {
 void TabAndroid::SwapTabContents(content::WebContents* old_contents,
                                  content::WebContents* new_contents) {
   JNIEnv* env = base::android::AttachCurrentThread();
+
+  // We need to notify the native InfobarContainer so infobars can be swapped.
+  InfoBarContainerAndroid* infobar_container =
+      reinterpret_cast<InfoBarContainerAndroid*>(
+          Java_TabBase_getNativeInfoBarContainer(
+              env,
+              weak_java_tab_.get(env).obj()));
+  InfoBarService* new_infobar_service = new_contents ?
+      InfoBarService::FromWebContents(new_contents) : NULL;
+  if (new_infobar_service)
+    infobar_container->ChangeInfoBarService(new_infobar_service);
+
   Java_TabBase_swapWebContents(
       env,
       weak_java_tab_.get(env).obj(),
@@ -305,6 +331,26 @@ void TabAndroid::LaunchBlockedPopups(JNIEnv* env, jobject obj) {
 ToolbarModel::SecurityLevel TabAndroid::GetSecurityLevel(JNIEnv* env,
                                                          jobject obj) {
   return ToolbarModelImpl::GetSecurityLevelForWebContents(web_contents());
+}
+
+void TabAndroid::SetActiveNavigationEntryTitleForUrl(JNIEnv* env,
+                                                     jobject obj,
+                                                     jstring jurl,
+                                                     jstring jtitle) {
+  DCHECK(web_contents());
+
+  string16 title;
+  if (jtitle)
+    title = base::android::ConvertJavaStringToUTF16(env, jtitle);
+
+  std::string url;
+  if (jurl)
+    url = base::android::ConvertJavaStringToUTF8(env, jurl);
+
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetVisibleEntry();
+  if (entry && url == entry->GetVirtualURL().spec())
+    entry->SetTitle(title);
 }
 
 bool TabAndroid::RegisterTabAndroid(JNIEnv* env) {

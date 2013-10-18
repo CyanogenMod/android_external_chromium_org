@@ -190,10 +190,10 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_otr_state.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/crash_keys.h"
 #include "chrome/common/metrics/caching_permuted_entropy_provider.h"
 #include "chrome/common/metrics/metrics_log_manager.h"
 #include "chrome/common/net/test_server_locations.h"
@@ -220,7 +220,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/external_metrics.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
+#include "chromeos/system/statistics_provider.h"
 #endif
 
 #if defined(OS_WIN)
@@ -591,7 +591,7 @@ void MetricsService::EnableRecording() {
   recording_active_ = true;
 
   ForceClientIdCreation();
-  child_process_logging::SetClientId(client_id_);
+  crash_keys::SetClientID(client_id_);
   if (!log_manager_.current_log())
     OpenNewLog();
 
@@ -906,8 +906,8 @@ void MetricsService::InitializeMetricsState() {
   }
 
   // Initialize uptime counters.
-  int64 startup_uptime = MetricsLog::GetIncrementalUptime(pref);
-  DCHECK_EQ(0, startup_uptime);
+  const base::TimeDelta startup_uptime = GetIncrementalUptime(pref);
+  DCHECK_EQ(0, startup_uptime.InMicroseconds());
   // For backwards compatibility, leave this intact in case Omaha is checking
   // them.  prefs::kStabilityLastTimestampSec may also be useless now.
   // TODO(jar): Delete these if they have no uses.
@@ -1048,7 +1048,25 @@ void MetricsService::ReceivedProfilerData(
 
 void MetricsService::FinishedReceivingProfilerData() {
   DCHECK_EQ(INIT_TASK_SCHEDULED, state_);
-    state_ = INIT_TASK_DONE;
+  state_ = INIT_TASK_DONE;
+}
+
+base::TimeDelta MetricsService::GetIncrementalUptime(PrefService* pref) {
+  base::TimeTicks now = base::TimeTicks::Now();
+  // If this is the first call, init |last_updated_time_|.
+  if (last_updated_time_.is_null())
+    last_updated_time_ = now;
+  const base::TimeDelta incremental_time = now - last_updated_time_;
+  last_updated_time_ = now;
+
+  const int64 incremental_time_secs = incremental_time.InSeconds();
+  if (incremental_time_secs > 0) {
+    int64 metrics_uptime = pref->GetInt64(prefs::kUninstallMetricsUptimeSec);
+    metrics_uptime += incremental_time_secs;
+    pref->SetInt64(prefs::kUninstallMetricsUptimeSec, metrics_uptime);
+  }
+
+  return incremental_time;
 }
 
 int MetricsService::GetLowEntropySource() {
@@ -1168,7 +1186,9 @@ void MetricsService::CloseCurrentLog() {
       static_cast<MetricsLog*>(log_manager_.current_log());
   DCHECK(current_log);
   current_log->RecordEnvironmentProto(plugins_, google_update_metrics_);
-  current_log->RecordIncrementalStabilityElements(plugins_);
+  PrefService* pref = g_browser_process->local_state();
+  current_log->RecordIncrementalStabilityElements(plugins_,
+                                                  GetIncrementalUptime(pref));
   RecordCurrentHistograms();
 
   log_manager_.FinishCurrentLog();
@@ -1376,7 +1396,9 @@ void MetricsService::PrepareInitialLog() {
 
   DCHECK(initial_log_.get());
   initial_log_->set_hardware_class(hardware_class_);
-  initial_log_->RecordEnvironment(plugins_, google_update_metrics_);
+  PrefService* pref = g_browser_process->local_state();
+  initial_log_->RecordEnvironment(plugins_, google_update_metrics_,
+                                  GetIncrementalUptime(pref));
 
   // Histograms only get written to the current log, so make the new log current
   // before writing them.

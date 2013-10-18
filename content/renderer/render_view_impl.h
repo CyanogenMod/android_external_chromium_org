@@ -506,7 +506,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual WebKit::WebSpeechInputController* speechInputController(
       WebKit::WebSpeechInputListener* listener);
   virtual WebKit::WebSpeechRecognizer* speechRecognizer();
-  virtual WebKit::WebDeviceOrientationClient* deviceOrientationClient();
   virtual void zoomLimitsChanged(double minimum_level, double maximum_level);
   virtual void zoomLevelChanged();
   virtual double zoomLevelToZoomFactor(double zoom_level) const;
@@ -544,6 +543,10 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didDisownOpener(WebKit::WebFrame* frame);
   virtual void frameDetached(WebKit::WebFrame* frame);
   virtual void willClose(WebKit::WebFrame* frame);
+  virtual void didMatchCSS(
+      WebKit::WebFrame* frame,
+      const WebKit::WebVector<WebKit::WebString>& newly_matching_selectors,
+      const WebKit::WebVector<WebKit::WebString>& stopped_matching_selectors);
 
   // The WebDataSource::ExtraData* is assumed to be a DocumentState* subclass.
   virtual WebKit::WebNavigationPolicy decidePolicyForNavigation(
@@ -697,6 +700,7 @@ class CONTENT_EXPORT RenderViewImpl
                                              const std::string& value) OVERRIDE;
   virtual void ClearEditCommands() OVERRIDE;
   virtual SSLStatus GetSSLStatusOfFrame(WebKit::WebFrame* frame) const OVERRIDE;
+  virtual const std::string& GetAcceptLanguages() const OVERRIDE;
 #if defined(OS_ANDROID)
   virtual void UpdateTopControlsState(TopControlsState constraints,
                                       TopControlsState current,
@@ -722,7 +726,6 @@ class CONTENT_EXPORT RenderViewImpl
   // RenderWidget overrides:
   virtual void Close() OVERRIDE;
   virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
-  virtual void WillInitiatePaint() OVERRIDE;
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
   virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
@@ -775,6 +778,8 @@ class CONTENT_EXPORT RenderViewImpl
   explicit RenderViewImpl(RenderViewImplParams* params);
 
   void Initialize(RenderViewImplParams* params);
+  virtual void SetScreenMetricsEmulationParameters(
+      float device_scale_factor, float root_layer_scale) OVERRIDE;
 
   // Do not delete directly.  This class is reference counted.
   virtual ~RenderViewImpl();
@@ -832,6 +837,8 @@ class CONTENT_EXPORT RenderViewImpl
                            ShouldUpdateSelectionTextFromContextMenuParams);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, BasicRenderFrame);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, TextInputTypeWithPepper);
+  FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, Suppresses);
+  FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, DoesNotSuppress);
 
   typedef std::map<GURL, double> HostZoomLevels;
 
@@ -1158,6 +1165,9 @@ class CONTENT_EXPORT RenderViewImpl
   // Coordinate conversion -----------------------------------------------------
 
   gfx::RectF ClientRectToPhysicalWindowRect(const gfx::RectF& rect) const;
+
+  // Helper for LatencyInfo construction.
+  int64 GetLatencyComponentId();
 
   // ---------------------------------------------------------------------------
   // ADDING NEW FUNCTIONS? Please keep private functions alphabetized and put

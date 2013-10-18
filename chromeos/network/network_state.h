@@ -8,11 +8,15 @@
 #include <string>
 #include <vector>
 
-#include "base/values.h"
 #include "chromeos/network/managed_state.h"
 #include "chromeos/network/network_ui_data.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 #include "url/gurl.h"
+
+namespace base {
+class DictionaryValue;
+class Value;
+}
 
 namespace chromeos {
 
@@ -43,6 +47,7 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
 
   // Accessors
   const std::string& security() const { return security_; }
+  const std::string& eap_method() const { return eap_method_; }
   const std::string& device_path() const { return device_path_; }
   const std::string& guid() const { return guid_; }
   const std::string& connection_state() const { return connection_state_; }
@@ -50,7 +55,6 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   const std::string& error() const { return error_; }
   bool connectable() const { return connectable_; }
 
-  const base::DictionaryValue& proxy_config() const { return proxy_config_; }
   const NetworkUIData& ui_data() const { return ui_data_; }
 
   // IPConfig Properties. These require an extra call to ShillIPConfigClient,
@@ -83,9 +87,6 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   bool IsConnectedState() const;
   bool IsConnectingState() const;
 
-  // Returns true if the ONC source is a device or user policy.
-  bool IsManaged() const;
-
   // Returns true if the network properties are stored in a user profile.
   bool IsPrivate() const;
 
@@ -116,16 +117,13 @@ class CHROMEOS_EXPORT NetworkState : public ManagedState {
   // Instead use NetworkConfigurationHandler::GetProperties() to asynchronously
   // request properties from Shill.
   std::string security_;
+  std::string eap_method_;  // Needed for WiFi EAP networks
   std::string device_path_;
   std::string guid_;
   std::string connection_state_;
   std::string profile_path_;
   std::string error_;
   bool connectable_;
-
-  // TODO(pneubeck): Remove ProxyConfig once NetworkConfigurationHandler
-  // provides proxy configuration. crbug.com/241775
-  base::DictionaryValue proxy_config_;
 
   // This is convenient to keep cached for now, but shouldn't be necessary;
   // avoid using it if possible.

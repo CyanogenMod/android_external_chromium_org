@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.19",
+  "version": "2.22",
   "entries": [
     {
       "id": 1,
@@ -369,17 +369,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 28,
-      "cr_bugs": [277817],
-      "description": "Disable use of ANGLE_instanced_arrays on Windows",
-      "os": {
-        "type": "win"
-      },
-      "features": [
-        "disable_angle_instanced_arrays"
-      ]
-    },
-    {
       "id": 29,
       "cr_bugs": [278606],
       "description": "Testing fences is broken on QualComm.",
@@ -593,6 +582,32 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "gl_renderer": {
         "op": "=",
         "value": "PowerVR SGX 540"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 43,
+      "cr_bugs": [299494],
+      "description": "Framebuffer discarding doesn't accept trivial attachments on Vivante.",
+      "os": {
+        "type": "android"
+      },
+      "gl_extensions": {
+        "op": "contains",
+        "value": "GL_VIV_shader_binary"
+      },
+      "features": [
+        "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 44,
+      "cr_bugs": [301988],
+      "description": "Framebuffer discarding causes jumpy scrolling on Mali drivers",
+      "os": {
+        "type": "chromeos"
       },
       "features": [
         "disable_ext_discard_framebuffer"

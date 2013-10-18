@@ -125,7 +125,6 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
                                        bool anchor_point,
                                        float page_scale,
-                                       base::TimeTicks start_time,
                                        base::TimeDelta duration) OVERRIDE;
   virtual void ScheduleAnimation() OVERRIDE;
   virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_port) OVERRIDE;
@@ -279,6 +278,12 @@ class CC_EXPORT LayerTreeHostImpl
   LayerImpl* RootScrollLayer() const;
   LayerImpl* CurrentlyScrollingLayer() const;
 
+  int scroll_layer_id_when_mouse_over_scrollbar() {
+    return scroll_layer_id_when_mouse_over_scrollbar_;
+  }
+
+  bool IsCurrentlyScrolling() const;
+
   virtual void SetVisible(bool visible);
   bool visible() const { return visible_; }
 
@@ -346,26 +351,6 @@ class CC_EXPORT LayerTreeHostImpl
   void SetDebugState(const LayerTreeDebugState& new_debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
-  class CC_EXPORT CullRenderPassesWithCachedTextures {
- public:
-    bool ShouldRemoveRenderPass(const RenderPassDrawQuad& quad,
-                                const FrameData& frame) const;
-
-    // Iterates from the root first, in order to remove the surfaces closest
-    // to the root with cached textures, and all surfaces that draw into
-    // them.
-    size_t RenderPassListBegin(const RenderPassList& list) const {
-      return list.size() - 1;
-    }
-    size_t RenderPassListEnd(const RenderPassList& list) const { return 0 - 1; }
-    size_t RenderPassListNext(size_t it) const { return it - 1; }
-
-    explicit CullRenderPassesWithCachedTextures(Renderer* renderer)
-        : renderer_(renderer) {}
- private:
-    Renderer* renderer_;
-  };
-
   class CC_EXPORT CullRenderPassesWithNoQuads {
  public:
     bool ShouldRemoveRenderPass(const RenderPassDrawQuad& quad,
@@ -415,6 +400,11 @@ class CC_EXPORT LayerTreeHostImpl
 
   virtual ResourceProvider::ResourceId ResourceIdForUIResource(
       UIResourceId uid) const;
+
+  struct UIResourceData {
+    ResourceProvider::ResourceId resource_id;
+    gfx::Size size;
+  };
 
  protected:
   LayerTreeHostImpl(
@@ -477,14 +467,18 @@ class CC_EXPORT LayerTreeHostImpl
   bool EnsureRenderSurfaceLayerList();
   void ClearCurrentlyScrollingLayer();
 
+  bool HandleMouseOverScrollbar(LayerImpl* layer_impl,
+                                gfx::PointF device_viewport_point);
+
   void AnimateScrollbarsRecursive(LayerImpl* layer,
                                   base::TimeTicks time);
 
   void UpdateCurrentFrameTime(base::TimeTicks* ticks, base::Time* now) const;
 
-  LayerImpl* FindScrollLayerForViewportPoint(
-      gfx::Point viewport_point,
+  LayerImpl* FindScrollLayerForDeviceViewportPoint(
+      gfx::PointF device_viewport_point,
       InputHandler::ScrollInputType type,
+      LayerImpl* layer_hit_by_point,
       bool* scroll_on_main_thread);
   float DeviceSpaceDistanceToLayer(gfx::PointF device_viewport_point,
                                    LayerImpl* layer_impl);
@@ -497,7 +491,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   void MarkUIResourceNotEvicted(UIResourceId uid);
 
-  typedef base::hash_map<UIResourceId, ResourceProvider::ResourceId>
+  typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
   UIResourceMap ui_resource_map_;
 
@@ -531,7 +525,9 @@ class CC_EXPORT LayerTreeHostImpl
   InputHandlerClient* input_handler_client_;
   bool did_lock_scrolling_layer_;
   bool should_bubble_scrolls_;
+  bool last_scroll_did_bubble_;
   bool wheel_scrolling_;
+  int scroll_layer_id_when_mouse_over_scrollbar_;
 
   bool tile_priorities_dirty_;
 

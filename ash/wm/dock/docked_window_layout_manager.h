@@ -9,6 +9,8 @@
 #include "ash/shelf/shelf_layout_manager_observer.h"
 #include "ash/shell_observer.h"
 #include "ash/wm/dock/dock_types.h"
+#include "ash/wm/dock/docked_window_layout_manager_observer.h"
+#include "ash/wm/window_state_observer.h"
 #include "ash/wm/workspace/snap_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -40,6 +42,7 @@ namespace internal {
 class DockedWindowLayoutManagerObserver;
 class DockedWindowResizerTest;
 class ShelfLayoutManager;
+class WorkspaceController;
 
 // DockedWindowLayoutManager is responsible for organizing windows when they are
 // docked to the side of a screen. It is associated with a specific container
@@ -59,12 +62,13 @@ class ASH_EXPORT DockedWindowLayoutManager
       public aura::WindowObserver,
       public aura::client::ActivationChangeObserver,
       public keyboard::KeyboardControllerObserver,
-      public ash::ShelfLayoutManagerObserver {
+      public wm::WindowStateObserver {
  public:
   // Maximum width of the docked windows area.
   static const int kMaxDockWidth;
 
-  explicit DockedWindowLayoutManager(aura::Window* dock_container);
+  DockedWindowLayoutManager(aura::Window* dock_container,
+                            WorkspaceController* workspace_controller);
   virtual ~DockedWindowLayoutManager();
 
   // Disconnects observers before container windows get destroyed.
@@ -123,12 +127,16 @@ class ASH_EXPORT DockedWindowLayoutManager
                               const gfx::Rect& requested_bounds) OVERRIDE;
 
   // ash::ShellObserver:
+  virtual void OnDisplayWorkAreaInsetsChanged() OVERRIDE;
+  virtual void OnFullscreenStateChanged(bool is_fullscreen,
+                                        aura::RootWindow* root_window) OVERRIDE;
   virtual void OnShelfAlignmentChanged(aura::RootWindow* root_window) OVERRIDE;
 
+  // wm::WindowStateObserver:
+  virtual void OnWindowShowTypeChanged(wm::WindowState* window_state,
+                                       wm::WindowShowType old_type) OVERRIDE;
+
   // aura::WindowObserver:
-  virtual void OnWindowPropertyChanged(aura::Window* window,
-                                       const void* key,
-                                       intptr_t old) OVERRIDE;
   virtual void OnWindowBoundsChanged(aura::Window* window,
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) OVERRIDE;
@@ -139,10 +147,6 @@ class ASH_EXPORT DockedWindowLayoutManager
   // aura::client::ActivationChangeObserver:
   virtual void OnWindowActivated(aura::Window* gained_active,
                                  aura::Window* lost_active) OVERRIDE;
-
-  // ShelfLayoutManagerObserver:
-  virtual void WillChangeVisibilityState(
-      ShelfVisibilityState new_state) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(DockedWindowResizerTest, AttachTryDetach);
@@ -179,8 +183,8 @@ class ASH_EXPORT DockedWindowLayoutManager
   void MaybeMinimizeChildrenExcept(aura::Window* child);
 
   // Minimize / restore window and relayout.
-  void MinimizeDockedWindow(aura::Window* window);
-  void RestoreDockedWindow(aura::Window* window);
+  void MinimizeDockedWindow(wm::WindowState* window_state);
+  void RestoreDockedWindow(wm::WindowState* window_state);
 
   // Updates docked layout state when a window gets inside the dock.
   void OnWindowDocked(aura::Window* window);
@@ -200,8 +204,9 @@ class ASH_EXPORT DockedWindowLayoutManager
   void Relayout();
 
   // Updates |docked_bounds_| and workspace insets when bounds of docked windows
-  // area change.
-  void UpdateDockBounds();
+  // area change. Passing |reason| to observers allows selectively skipping
+  // notifications.
+  void UpdateDockBounds(DockedWindowLayoutManagerObserver::Reason reason);
 
   // Called whenever the window stacking order needs to be updated (e.g. focus
   // changes or a window is moved).
@@ -230,13 +235,12 @@ class ASH_EXPORT DockedWindowLayoutManager
   // that was previously established in Relayout. This allows easier reordering.
   bool is_dragged_from_dock_;
 
-  // The launcher we are observing for launcher icon changes.
+  // The launcher to respond to launcher alignment changes.
   Launcher* launcher_;
-  // The shelf layout manager being observed for visibility changes.
-  ShelfLayoutManager* shelf_layout_manager_;
-  // Tracks the visibility of the shelf. Defaults to false when there is no
-  // shelf.
-  bool shelf_hidden_;
+  // Workspace controller that can be checked for fullscreen mode.
+  WorkspaceController* workspace_controller_;
+  // Tracks if any window in the same root window is in fullscreen mode.
+  bool in_fullscreen_;
   // Current width of the dock.
   int docked_width_;
 

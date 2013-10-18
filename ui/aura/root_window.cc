@@ -136,8 +136,9 @@ class SimpleRootWindowTransformer : public RootWindowTransformer {
 // TODO(sky): nuke; used for debugging 275760.
 class MouseMovedTracker : public WindowObserver {
  public:
-  explicit MouseMovedTracker(Window* window)
-      : window_(window) {
+  MouseMovedTracker(MouseMovedHandlerSetReason reason, Window* window)
+      : reason_(reason),
+        window_(window) {
     window_->AddObserver(this);
   }
 
@@ -146,11 +147,14 @@ class MouseMovedTracker : public WindowObserver {
   }
 
   virtual void OnWindowDestroyed(Window* window) OVERRIDE {
+    const MouseMovedHandlerSetReason reason = reason_;
+    base::debug::Alias(&reason);
     CHECK(false);
   }
 
 
  private:
+  const MouseMovedHandlerSetReason reason_;
   Window* window_;
 
   DISALLOW_COPY_AND_ASSIGN(MouseMovedTracker);
@@ -167,8 +171,6 @@ RootWindow::CreateParams::CreateParams(const gfx::Rect& a_initial_bounds)
 RootWindow::RootWindow(const CreateParams& params)
     : Window(NULL),
       host_(CreateHost(this, params)),
-      schedule_paint_factory_(this),
-      event_factory_(this),
       touch_ids_down_(0),
       last_cursor_(ui::kCursorNull),
       mouse_pressed_handler_(NULL),
@@ -181,6 +183,8 @@ RootWindow::RootWindow(const CreateParams& params)
       defer_draw_scheduling_(false),
       mouse_moved_handler_set_reason_(MOUSE_MOVED_HANDLER_SET_REASON_NULL),
       move_hold_count_(0),
+      schedule_paint_factory_(this),
+      event_factory_(this),
       held_event_factory_(this),
       repostable_event_factory_(this) {
   SetName("RootWindow");
@@ -688,6 +692,12 @@ void RootWindow::UpdateCapture(Window* old_capture,
     gesture_recognizer_->CleanupStateForConsumer(old_capture);
   }
 
+  // |mouse_moved_handler_| may have been set to a Window in a different root
+  // (see below). Clear it here to ensure we don't end up referencing a stale
+  // Window.
+  if (mouse_moved_handler_ && !Contains(mouse_moved_handler_))
+    SetMouseMovedHandler(NULL, MOUSE_MOVED_HANDLER_SET_REASON_NULL);
+
   if (old_capture && old_capture->GetRootWindow() == this &&
       old_capture->delegate()) {
     // Send a capture changed event with bogus location data.
@@ -699,18 +709,10 @@ void RootWindow::UpdateCapture(Window* old_capture,
     old_capture->delegate()->OnCaptureLost();
   }
 
-  // Reset the mouse_moved_handler_ if the mouse_moved_handler_ belongs
-  // to another root window when losing the capture.
-  if (mouse_moved_handler_ && old_capture &&
-      old_capture->Contains(mouse_moved_handler_) &&
-      old_capture->GetRootWindow() != this) {
-    SetMouseMovedHandler(NULL, MOUSE_MOVED_HANDLER_SET_REASON_NULL);
-  }
-
   if (new_capture) {
     // Make all subsequent mouse events go to the capture window. We shouldn't
     // need to send an event here as OnCaptureLost() should take care of that.
-    if (mouse_moved_handler_ || Env::GetInstance()->is_mouse_button_down())
+    if (mouse_moved_handler_ || Env::GetInstance()->IsMouseButtonDown())
       SetMouseMovedHandler(new_capture, MOUSE_MOVED_HANDLER_SET_REASON_CAPTURE);
   } else {
     // Make sure mouse_moved_handler gets updated.
@@ -739,7 +741,7 @@ void RootWindow::SetMouseMovedHandler(Window* window,
   mouse_moved_handler_ = window;
   mouse_moved_handler_set_reason_ = reason;
   if (window)
-    mouse_moved_handler_tracker_.reset(new MouseMovedTracker(window));
+    mouse_moved_handler_tracker_.reset(new MouseMovedTracker(reason, window));
   else
     mouse_moved_handler_tracker_.reset();
 }
@@ -1040,12 +1042,19 @@ bool RootWindow::DispatchMouseEventImpl(ui::MouseEvent* event) {
   return DispatchMouseEventToTarget(event, target);
 }
 
-bool RootWindow::DispatchMouseEventRepost(ui::MouseEvent* event) {
+void RootWindow::DispatchMouseEventRepost(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_PRESSED)
-    return false;
-  mouse_pressed_handler_ = NULL;
-  Window* target = GetEventHandlerForPoint(event->location());
-  return DispatchMouseEventToTarget(event, target);
+    return;
+  Window* target = client::GetCaptureWindow(this);
+  RootWindow* root = this;
+  if (!target) {
+    target = GetEventHandlerForPoint(event->location());
+  } else {
+    root = target->GetRootWindow();
+    CHECK(root);  // Capture window better be in valid root.
+  }
+  root->mouse_pressed_handler_ = NULL;
+  root->DispatchMouseEventToTarget(event, target);
 }
 
 bool RootWindow::DispatchGestureEventRepost(ui::GestureEvent* event) {
@@ -1128,6 +1137,7 @@ bool RootWindow::DispatchMouseEventToTarget(ui::MouseEvent* event,
             return false;
         } else {
           SetMouseMovedHandler(NULL, MOUSE_MOVED_HANDLER_SET_REASON_NULL);
+          return false;
         }
       }
       break;

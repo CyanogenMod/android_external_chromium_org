@@ -44,6 +44,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/aw_settings.cc \
 	android_webview/native/aw_web_contents_delegate.cc \
 	android_webview/native/aw_web_contents_view_delegate.cc \
+	android_webview/native/aw_web_preferences_populater_impl.cc \
 	android_webview/native/cookie_manager.cc \
 	android_webview/native/input_stream_impl.cc \
 	android_webview/native/intercepted_request_data_impl.cc \
@@ -95,7 +96,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -205,7 +205,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

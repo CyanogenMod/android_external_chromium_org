@@ -10,13 +10,6 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 
-// TODO(gman): GenVertexArraysOES
-// TODO(gman): GenVertexArraysOESImmediate
-// TODO(gman): DeleteVertexArraysOES
-// TODO(gman): DeleteVertexArraysOESImmediate
-// TODO(gman): IsVertexArrayOES
-// TODO(gman): BindVertexArrayOES
-// TODO(gman): SwapBuffers
 // TODO(gman): GetMaxValueInBufferCHROMIUM
 // TODO(gman): GenSharedIdsCHROMIUM
 
@@ -47,6 +40,7 @@
 // TODO(gman): DrawElementsInstancedANGLE
 // TODO(gman): VertexAttribDivisorANGLE
 // TODO(gman): GenMailboxCHROMIUM
+
 // TODO(gman): ProduceTextureCHROMIUM
 // TODO(gman): ProduceTextureCHROMIUMImmediate
 // TODO(gman): ConsumeTextureCHROMIUM

@@ -137,8 +137,7 @@ bool GetOrCreateV8Value(const PP_Var& var,
       }
       HostArrayBufferVar* host_buffer =
           static_cast<HostArrayBufferVar*>(buffer);
-      *result =
-          v8::Local<v8::Value>::New(host_buffer->webkit_buffer().toV8Value());
+      *result = host_buffer->webkit_buffer().toV8Value();
       break;
     }
     case PP_VARTYPE_ARRAY:
@@ -168,6 +167,7 @@ bool GetOrCreateV8Value(const PP_Var& var,
 // the map. |did_create| indicates if a new PP_Var was created as a result of
 // calling the function.
 bool GetOrCreateVar(v8::Handle<v8::Value> val,
+                    v8::Handle<v8::Context> context,
                     PP_Var* result,
                     bool* did_create,
                     HandleVarMap* visited_handles,
@@ -214,7 +214,13 @@ bool GetOrCreateVar(v8::Handle<v8::Value> val,
           *web_array_buffer));
       *result = buffer_var->GetPPVar();
     } else {
-      *result = (new DictionaryVar())->GetPPVar();
+      bool was_resource;
+      if (!resource_converter->FromV8Value(val->ToObject(), context, result,
+                                           &was_resource))
+        return false;
+      if (!was_resource) {
+        *result = (new DictionaryVar())->GetPPVar();
+      }
     }
   } else {
     // Silently ignore the case where we can't convert to a Var as we may
@@ -396,7 +402,7 @@ void V8VarConverter::FromV8Value(
     }
 
     bool did_create = false;
-    if (!GetOrCreateVar(current_v8, &current_var, &did_create,
+    if (!GetOrCreateVar(current_v8, context, &current_var, &did_create,
                         &visited_handles, &parent_handles,
                         resource_converter_.get())) {
       message_loop_proxy_->PostTask(FROM_HERE,
@@ -436,7 +442,7 @@ void V8VarConverter::FromV8Value(
           continue;
 
         PP_Var child_var;
-        if (!GetOrCreateVar(child_v8, &child_var, &did_create,
+        if (!GetOrCreateVar(child_v8, context, &child_var, &did_create,
                             &visited_handles, &parent_handles,
                             resource_converter_.get())) {
           message_loop_proxy_->PostTask(FROM_HERE,
@@ -489,7 +495,7 @@ void V8VarConverter::FromV8Value(
         }
 
         PP_Var child_var;
-        if (!GetOrCreateVar(child_v8, &child_var, &did_create,
+        if (!GetOrCreateVar(child_v8, context, &child_var, &did_create,
                             &visited_handles, &parent_handles,
                             resource_converter_.get())) {
           message_loop_proxy_->PostTask(FROM_HERE,

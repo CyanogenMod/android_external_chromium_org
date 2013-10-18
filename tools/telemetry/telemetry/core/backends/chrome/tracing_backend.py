@@ -161,6 +161,7 @@ class TracingBackend(object):
     # Tracing.start will send asynchronous notifications containing trace
     # data, until Tracing.end is called.
     self._thread = threading.Thread(target=self._TracingReader)
+    self._thread.daemon = True
     self._thread.start()
     return True
 
@@ -174,7 +175,9 @@ class TracingBackend(object):
     if self._IsTracing():
       req = {'method': 'Tracing.end'}
       self._conn.SendRequest(req)
-      self._thread.join()
+      self._thread.join(timeout=30)
+      if self._thread.is_alive():
+        raise RuntimeError('Timed out waiting for tracing thread to join.')
       self._thread = None
     if self._nesting == 0:
       self._category_filter = None
@@ -213,8 +216,13 @@ class TracingBackend(object):
             logging.warning('Unexpected type in tracing data')
         elif 'Tracing.tracingComplete' == res.get('method'):
           break
-      except (socket.error, websocket.WebSocketException):
-        logging.warning('Timeout waiting for tracing response, unusual.')
+      except websocket.WebSocketTimeoutException as e:
+        logging.warning('Unusual timeout waiting for tracing response (%s).',
+                        e)
+      except (socket.error, websocket.WebSocketException) as e:
+        logging.warning('Unrecoverable exception when reading tracing response '
+                        '(%s, %s).', type(e), e)
+        raise
 
   def Close(self):
     self._conn.Close()

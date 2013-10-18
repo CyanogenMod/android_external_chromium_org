@@ -633,8 +633,7 @@ void HistoryBackend::InitImpl(const std::string& languages) {
   // renaming "thumbnail" references to "favicons" or something of the
   // sort.
   thumbnail_db_.reset(new ThumbnailDatabase());
-  if (thumbnail_db_->Init(thumbnail_name,
-                          db_.get()) != sql::INIT_OK) {
+  if (thumbnail_db_->Init(thumbnail_name) != sql::INIT_OK) {
     // Unlike the main database, we don't error out when the database is too
     // new because this error is much less severe. Generally, this shouldn't
     // happen since the thumbnail and main database versions should be in sync.
@@ -1381,7 +1380,7 @@ void HistoryBackend::QueryHistoryText(URLDatabase* url_db,
   for (size_t i = 0; i < text_matches.size(); i++) {
     const URLRow& text_match = text_matches[i];
     // Get all visits for given URL match.
-    visit_db->GetVisitsForURLWithOptions(text_match.id(), options, &visits);
+    visit_db->GetVisibleVisitsForURL(text_match.id(), options, &visits);
     for (size_t j = 0; j < visits.size(); j++) {
       URLResult url_result(text_match);
       url_result.set_visit_time(visits[j].visit_time);

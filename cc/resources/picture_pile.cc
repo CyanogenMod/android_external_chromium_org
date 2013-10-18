@@ -5,10 +5,11 @@
 #include "cc/resources/picture_pile.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "cc/base/region.h"
-#include "cc/debug/benchmark_instrumentation.h"
+#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/picture_pile_impl.h"
 
 namespace {
@@ -112,11 +113,19 @@ bool PicturePile::Update(
          pic != pic_list.end(); ++pic) {
       if (!(*pic)->HasRecording()) {
         modified_pile = true;
-        TRACE_EVENT0(benchmark_instrumentation::kCategory,
-                     benchmark_instrumentation::kRecordLoop);
-        for (int i = 0; i < repeat_count; i++)
-          (*pic)->Record(painter, tile_grid_info_, stats_instrumentation);
-        (*pic)->GatherPixelRefs(tile_grid_info_, stats_instrumentation);
+        base::TimeDelta best_duration = base::TimeDelta::FromInternalValue(
+            std::numeric_limits<int64>::max());
+        for (int i = 0; i < repeat_count; i++) {
+          base::TimeTicks start_time = stats_instrumentation->StartRecording();
+          (*pic)->Record(painter, tile_grid_info_);
+          base::TimeDelta duration =
+              stats_instrumentation->EndRecording(start_time);
+          best_duration = std::min(duration, best_duration);
+        }
+        int recorded_pixel_count =
+            (*pic)->LayerRect().width() * (*pic)->LayerRect().height();
+        stats_instrumentation->AddRecord(best_duration, recorded_pixel_count);
+        (*pic)->GatherPixelRefs(tile_grid_info_);
         (*pic)->CloneForDrawing(num_raster_threads_);
       }
     }

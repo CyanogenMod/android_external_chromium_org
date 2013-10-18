@@ -155,10 +155,10 @@ MediaCodecBridge::~MediaCodecBridge() {
     Java_MediaCodecBridge_release(env, j_media_codec_.obj());
 }
 
-void MediaCodecBridge::StartInternal() {
+bool MediaCodecBridge::StartInternal() {
   JNIEnv* env = AttachCurrentThread();
-  Java_MediaCodecBridge_start(env, j_media_codec_.obj());
-  GetOutputBuffers();
+  return Java_MediaCodecBridge_start(env, j_media_codec_.obj()) &&
+         GetOutputBuffers();
 }
 
 MediaCodecStatus MediaCodecBridge::Reset() {
@@ -182,12 +182,12 @@ void MediaCodecBridge::GetOutputFormat(int* width, int* height) {
 MediaCodecStatus MediaCodecBridge::QueueInputBuffer(
     int index, const uint8* data, int data_size,
     const base::TimeDelta& presentation_time) {
-  int size_to_copy = FillInputBuffer(index, data, data_size);
-  DCHECK_EQ(size_to_copy, data_size);
+  if (!FillInputBuffer(index, data, data_size))
+    return MEDIA_CODEC_ERROR;
   JNIEnv* env = AttachCurrentThread();
   return static_cast<MediaCodecStatus>(Java_MediaCodecBridge_queueInputBuffer(
       env, j_media_codec_.obj(),
-      index, 0, size_to_copy, presentation_time.InMicroseconds(), 0));
+      index, 0, data_size, presentation_time.InMicroseconds(), 0));
 }
 
 MediaCodecStatus MediaCodecBridge::QueueSecureInputBuffer(
@@ -195,29 +195,46 @@ MediaCodecStatus MediaCodecBridge::QueueSecureInputBuffer(
     int key_id_size, const uint8* iv, int iv_size,
     const SubsampleEntry* subsamples, int subsamples_size,
     const base::TimeDelta& presentation_time) {
-  int size_to_copy = FillInputBuffer(index, data, data_size);
-  DCHECK_EQ(size_to_copy, data_size);
+  if (!FillInputBuffer(index, data, data_size))
+    return MEDIA_CODEC_ERROR;
 
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jbyteArray> j_key_id =
       base::android::ToJavaByteArray(env, key_id, key_id_size);
   ScopedJavaLocalRef<jbyteArray> j_iv =
       base::android::ToJavaByteArray(env, iv, iv_size);
-  scoped_ptr<jint[]> native_clear_array(new jint[subsamples_size]);
-  scoped_ptr<jint[]> native_cypher_array(new jint[subsamples_size]);
-  for (int i = 0; i < subsamples_size; ++i) {
-    native_clear_array[i] = subsamples[i].clear_bytes;
-    native_cypher_array[i] = subsamples[i].cypher_bytes;
+
+  // MediaCodec.CryptoInfo documentations says passing NULL for |clear_array|
+  // to indicate that all data is encrypted. But it doesn't specify what
+  // |cypher_array| and |subsamples_size| should be in that case. Passing
+  // one subsample here just to be on the safe side.
+  int new_subsamples_size = subsamples_size == 0 ? 1 : subsamples_size;
+
+  scoped_ptr<jint[]> native_clear_array(new jint[new_subsamples_size]);
+  scoped_ptr<jint[]> native_cypher_array(new jint[new_subsamples_size]);
+
+  if (subsamples_size == 0) {
+    DCHECK(!subsamples);
+    native_clear_array[0] = 0;
+    native_cypher_array[0] = data_size;
+  } else {
+    DCHECK_GT(subsamples_size, 0);
+    DCHECK(subsamples);
+    for (int i = 0; i < subsamples_size; ++i) {
+      native_clear_array[i] = subsamples[i].clear_bytes;
+      native_cypher_array[i] = subsamples[i].cypher_bytes;
+    }
   }
-  ScopedJavaLocalRef<jintArray> clear_array = ToJavaIntArray(
-      env, native_clear_array.Pass(), subsamples_size);
-  ScopedJavaLocalRef<jintArray> cypher_array = ToJavaIntArray(
-      env, native_cypher_array.Pass(), subsamples_size);
+
+  ScopedJavaLocalRef<jintArray> clear_array =
+        ToJavaIntArray(env, native_clear_array.Pass(), new_subsamples_size);
+  ScopedJavaLocalRef<jintArray> cypher_array =
+        ToJavaIntArray(env, native_cypher_array.Pass(), new_subsamples_size);
 
   return static_cast<MediaCodecStatus>(
       Java_MediaCodecBridge_queueSecureInputBuffer(
           env, j_media_codec_.obj(), index, 0, j_iv.obj(), j_key_id.obj(),
-          clear_array.obj(), cypher_array.obj(), subsamples_size,
+          clear_array.obj(), cypher_array.obj(), new_subsamples_size,
           presentation_time.InMicroseconds()));
 }
 
@@ -266,30 +283,27 @@ void MediaCodecBridge::ReleaseOutputBuffer(int index, bool render) {
       env, j_media_codec_.obj(), index, render);
 }
 
-void MediaCodecBridge::GetOutputBuffers() {
+bool MediaCodecBridge::GetOutputBuffers() {
   JNIEnv* env = AttachCurrentThread();
-  Java_MediaCodecBridge_getOutputBuffers(env, j_media_codec_.obj());
+  return Java_MediaCodecBridge_getOutputBuffers(env, j_media_codec_.obj());
 }
 
-size_t MediaCodecBridge::FillInputBuffer(
-    int index, const uint8* data, int size) {
+bool MediaCodecBridge::FillInputBuffer(int index, const uint8* data, int size) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobject> j_buffer(
       Java_MediaCodecBridge_getInputBuffer(env, j_media_codec_.obj(), index));
+  jlong capacity = env->GetDirectBufferCapacity(j_buffer.obj());
+  if (size > capacity) {
+    LOG(ERROR) << "Input buffer size " << size
+               << " exceeds MediaCodec input buffer capacity: " << capacity;
+    return false;
+  }
 
   uint8* direct_buffer =
       static_cast<uint8*>(env->GetDirectBufferAddress(j_buffer.obj()));
-  int64 buffer_capacity = env->GetDirectBufferCapacity(j_buffer.obj());
-
-  int size_to_copy = (buffer_capacity < size) ? buffer_capacity : size;
-  // TODO(qinmin): Handling the case that not all the data can be copied.
-  DCHECK(size_to_copy == size) <<
-      "Failed to fill all the data into the input buffer. Size to fill: "
-      << size << ". Size filled: " << size_to_copy;
-  if (size_to_copy > 0)
-    memcpy(direct_buffer, data, size_to_copy);
-  return size_to_copy;
+  memcpy(direct_buffer, data, size);
+  return true;
 }
 
 AudioCodecBridge::AudioCodecBridge(const std::string& mime)
@@ -325,8 +339,7 @@ bool AudioCodecBridge::Start(
     return false;
   }
 
-  StartInternal();
-  return true;
+  return StartInternal();
 }
 
 bool AudioCodecBridge::ConfigureMediaFormat(
@@ -478,8 +491,8 @@ bool VideoCodecBridge::Start(
       env, media_codec(), j_format.obj(), surface, media_crypto, 0)) {
     return false;
   }
-  StartInternal();
-  return true;
+
+  return StartInternal();
 }
 
 AudioCodecBridge* AudioCodecBridge::Create(const AudioCodec codec) {

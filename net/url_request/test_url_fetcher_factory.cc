@@ -14,6 +14,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_impl.h"
+#include "net/url_request/url_fetcher_response_writer.h"
 #include "net/url_request/url_request_status.h"
 
 namespace net {
@@ -147,6 +148,10 @@ void TestURLFetcher::SaveResponseToTemporaryFile(
     scoped_refptr<base::TaskRunner> file_task_runner) {
 }
 
+void TestURLFetcher::SaveResponseWithWriter(
+    scoped_ptr<URLFetcherResponseWriter> response_writer) {
+}
+
 HttpResponseHeaders* TestURLFetcher::GetResponseHeaders() const {
   return fake_response_headers_.get();
 }
@@ -184,11 +189,6 @@ int TestURLFetcher::GetResponseCode() const {
 
 const ResponseCookies& TestURLFetcher::GetCookies() const {
   return fake_cookies_;
-}
-
-bool TestURLFetcher::FileErrorOccurred(int* out_error_code) const {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 void TestURLFetcher::ReceivedContentWasMalformed() {
@@ -357,18 +357,12 @@ URLFetcher* FakeURLFetcherFactory::CreateURLFetcher(
   return fake_fetcher.release();
 }
 
-void FakeURLFetcherFactory::SetFakeResponseForURL(
+void FakeURLFetcherFactory::SetFakeResponse(
     const GURL& url,
     const std::string& response_data,
     bool success) {
   // Overwrite existing URL if it already exists.
   fake_responses_[url] = std::make_pair(response_data, success);
-}
-
-void FakeURLFetcherFactory::SetFakeResponse(const std::string& url,
-                                            const std::string& response_data,
-                                            bool success) {
-  SetFakeResponseForURL(GURL(url), response_data, success);
 }
 
 void FakeURLFetcherFactory::ClearFakeResponses() {

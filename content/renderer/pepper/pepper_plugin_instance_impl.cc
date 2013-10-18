@@ -117,6 +117,10 @@
 #include "v8/include/v8.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
+#if defined(OS_CHROMEOS)
+#include "ui/events/keycodes/keyboard_codes_posix.h"
+#endif
+
 #if defined(OS_MACOSX)
 #include "printing/metafile_impl.h"
 #endif  // defined(OS_MACOSX)
@@ -333,6 +337,33 @@ scoped_ptr<const char*[]> StringVectorToArgArray(
   return array.Pass();
 }
 
+// Returns true if this is a "system reserved" key which should not be sent to
+// a plugin. Some poorly behaving plugins (like Flash) incorrectly report that
+// they handle all keys sent to them. This can prevent keystrokes from working
+// for things like screen brightness and volume control.
+bool IsReservedSystemInputEvent(const WebKit::WebInputEvent& event) {
+#if defined(OS_CHROMEOS)
+  if (event.type != WebInputEvent::KeyDown &&
+      event.type != WebInputEvent::KeyUp)
+    return false;
+  const WebKit::WebKeyboardEvent& key_event =
+      static_cast<const WebKit::WebKeyboardEvent&>(event);
+  switch (key_event.windowsKeyCode) {
+    case ui::VKEY_BRIGHTNESS_DOWN:
+    case ui::VKEY_BRIGHTNESS_UP:
+    case ui::VKEY_KBD_BRIGHTNESS_DOWN:
+    case ui::VKEY_KBD_BRIGHTNESS_UP:
+    case ui::VKEY_VOLUME_MUTE:
+    case ui::VKEY_VOLUME_DOWN:
+    case ui::VKEY_VOLUME_UP:
+      return true;
+    default:
+      return false;
+  }
+#endif  // defined(OS_CHROMEOS)
+  return false;
+}
+
 class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
  public:
   PluginInstanceLockTarget(PepperPluginInstanceImpl* plugin)
@@ -438,7 +469,7 @@ void PepperPluginInstanceImpl::GamepadImpl::Sample(
   WebKit::WebGamepads webkit_data;
   RenderThreadImpl::current()->SampleGamepads(&webkit_data);
   ConvertWebKitGamepadData(
-      *reinterpret_cast<const ppapi::WebKitGamepads*>(&webkit_data), data);
+      bit_cast<ppapi::WebKitGamepads>(webkit_data), data);
 }
 
 PepperPluginInstanceImpl::PepperPluginInstanceImpl(
@@ -456,7 +487,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       plugin_url_(plugin_url),
       full_frame_(false),
       sent_initial_did_change_view_(false),
-      view_change_weak_ptr_factory_(this),
       bound_graphics_2d_platform_(NULL),
       has_webkit_focus_(false),
       has_content_area_focus_(false),
@@ -493,7 +523,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       document_loader_(NULL),
       external_document_load_(false),
       npp_(new NPP_t),
-      isolate_(v8::Isolate::GetCurrent()) {
+      isolate_(v8::Isolate::GetCurrent()),
+      view_change_weak_ptr_factory_(this) {
   pp_instance_ = HostGlobals::Get()->AddInstance(this);
 
   memset(&current_print_settings_, 0, sizeof(current_print_settings_));
@@ -960,6 +991,10 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
   if (module()->is_crashed())
     return false;
 
+  // Don't send reserved system key events to plugins.
+  if (IsReservedSystemInputEvent(event))
+    return false;
+
   // Keep a reference on the stack. See NOTE above.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
 
@@ -1112,13 +1147,6 @@ void PepperPluginInstanceImpl::PageVisibilityChanged(bool is_visible) {
   // |view_data_| haven't been properly initialized.
   if (sent_initial_did_change_view_)
     SendDidChangeView();
-}
-
-void PepperPluginInstanceImpl::ViewWillInitiatePaint() {
-  if (bound_graphics_2d_platform_)
-    bound_graphics_2d_platform_->ViewWillInitiatePaint();
-  else if (bound_graphics_3d_.get())
-    bound_graphics_3d_->ViewWillInitiatePaint();
 }
 
 void PepperPluginInstanceImpl::ViewInitiatedPaint() {

@@ -160,7 +160,7 @@ gpu::CommandBuffer::State PPB_Graphics3D_Impl::FlushSyncFast(
 }
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
-  return GetCommandBuffer()->InsertSyncPoint();
+  return platform_context_->GetGpuControl()->InsertSyncPoint();
 }
 
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
@@ -170,9 +170,6 @@ bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
 
 bool PPB_Graphics3D_Impl::IsOpaque() {
   return platform_context_->IsOpaque();
-}
-
-void PPB_Graphics3D_Impl::ViewWillInitiatePaint() {
 }
 
 void PPB_Graphics3D_Impl::ViewInitiatedPaint() {
@@ -187,6 +184,10 @@ void PPB_Graphics3D_Impl::ViewFlushedPaint() {
 
 gpu::CommandBuffer* PPB_Graphics3D_Impl::GetCommandBuffer() {
   return platform_context_->GetCommandBuffer();
+}
+
+gpu::GpuControl* PPB_Graphics3D_Impl::GetGpuControl() {
+  return platform_context_->GetGpuControl();
 }
 
 int32 PPB_Graphics3D_Impl::DoSwapBuffers() {

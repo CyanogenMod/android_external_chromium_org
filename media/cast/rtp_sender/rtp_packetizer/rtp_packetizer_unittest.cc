@@ -4,14 +4,14 @@
 
 #include "media/cast/rtp_sender/rtp_packetizer/rtp_packetizer.h"
 
-#include <gtest/gtest.h>
-
 #include "base/memory/scoped_ptr.h"
+#include "base/test/simple_test_tick_clock.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/pacing/paced_sender.h"
 #include "media/cast/rtp_common/rtp_defines.h"
 #include "media/cast/rtp_sender/packet_storage/packet_storage.h"
 #include "media/cast/rtp_sender/rtp_packetizer/test/rtp_header_parser.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 namespace media {
 namespace cast {
@@ -23,10 +23,10 @@ static const int kTimeOffset = 22222;
 static const int kMaxPacketLength = 1500;
 static const bool kMarkerBit = true;
 static const int kSsrc = 0x12345;
-static const uint8 kFrameId = 1;
 static const unsigned int kFrameSize = 5000;
 static const int kTotalHeaderLength = 19;
 static const int kMaxPacketStorageTimeMs = 300;
+static const int64 kStartMillisecond = 0;
 
 class TestRtpPacketTransport : public PacedPacketSender {
  public:
@@ -34,7 +34,9 @@ class TestRtpPacketTransport : public PacedPacketSender {
        : config_(config),
          sequence_number_(kSeqNum),
          packets_sent_(0),
-         expected_number_of_packets_(0) {}
+         expected_number_of_packets_(0),
+         expected_packet_id_(0),
+         expected_frame_id_(0) {}
 
   void VerifyRtpHeader(const RtpCastHeader& rtp_header) {
     VerifyCommonRtpHeader(rtp_header);
@@ -52,23 +54,31 @@ class TestRtpPacketTransport : public PacedPacketSender {
   }
 
   void VerifyCastRtpHeader(const RtpCastHeader& rtp_header) {
-    // TODO(mikhal)
+    EXPECT_FALSE(rtp_header.is_key_frame);
+    EXPECT_EQ(expected_frame_id_, rtp_header.frame_id);
+    EXPECT_EQ(expected_packet_id_, rtp_header.packet_id);
+    EXPECT_EQ(expected_number_of_packets_ - 1, rtp_header.max_packet_id);
+    EXPECT_TRUE(rtp_header.is_reference);
+    EXPECT_EQ(static_cast<uint8>(expected_frame_id_ - 1),
+        rtp_header.reference_frame_id);
   }
 
-  virtual bool SendPacket(const std::vector<uint8>& packet,
-                          int num_packets) OVERRIDE {
-    EXPECT_EQ(expected_number_of_packets_, num_packets);
-    ++packets_sent_;
-    RtpHeaderParser parser(packet.data(), packet.size());
-    RtpCastHeader rtp_header;
-    parser.Parse(&rtp_header);
-    VerifyRtpHeader(rtp_header);
-    ++sequence_number_;
+  virtual bool SendPackets(const PacketList& packets) OVERRIDE {
+    EXPECT_EQ(expected_number_of_packets_, packets.size());
+    PacketList::const_iterator it = packets.begin();
+    for (; it != packets.end(); ++it) {
+      ++packets_sent_;
+      RtpHeaderParser parser(it->data(), it->size());
+      RtpCastHeader rtp_header;
+      parser.Parse(&rtp_header);
+      VerifyRtpHeader(rtp_header);
+      ++sequence_number_;
+      ++expected_packet_id_;
+    }
     return true;
   }
 
-  virtual bool ResendPacket(const std::vector<uint8>& packet,
-                            int num_of_packets) OVERRIDE {
+  virtual bool ResendPackets(const PacketList& packets) OVERRIDE {
     EXPECT_TRUE(false);
     return false;
   }
@@ -86,31 +96,36 @@ class TestRtpPacketTransport : public PacedPacketSender {
   uint32 sequence_number_;
   int packets_sent_;
   int expected_number_of_packets_;
+  // Assuming packets arrive in sequence.
+  int expected_packet_id_;
+  int expected_frame_id_;
 };
 
 class RtpPacketizerTest : public ::testing::Test {
  protected:
   RtpPacketizerTest()
       :video_frame_(),
-       packet_storage_(kMaxPacketStorageTimeMs) {
+       packet_storage_(&testing_clock_, kMaxPacketStorageTimeMs) {
     config_.sequence_number = kSeqNum;
     config_.ssrc = kSsrc;
     config_.payload_type = kPayload;
     config_.max_payload_length = kMaxPacketLength;
     transport_.reset(new TestRtpPacketTransport(config_));
+    testing_clock_.Advance(
+        base::TimeDelta::FromMilliseconds(kStartMillisecond));
     rtp_packetizer_.reset(
         new RtpPacketizer(transport_.get(), &packet_storage_, config_));
   }
 
-  ~RtpPacketizerTest() {}
+  virtual ~RtpPacketizerTest() {}
 
-  void SetUp() {
+  virtual void SetUp() {
     video_frame_.key_frame = false;
-    video_frame_.frame_id = kFrameId;
-    video_frame_.last_referenced_frame_id = kFrameId - 1;
+    video_frame_.last_referenced_frame_id = 255;
     video_frame_.data.assign(kFrameSize, 123);
   }
 
+  base::SimpleTestTickClock testing_clock_;
   scoped_ptr<RtpPacketizer> rtp_packetizer_;
   RtpPacketizerConfig config_;
   scoped_ptr<TestRtpPacketTransport> transport_;
@@ -124,7 +139,7 @@ TEST_F(RtpPacketizerTest, SendStandardPackets) {
 
   base::TimeTicks time;
   time += base::TimeDelta::FromMilliseconds(kTimestampMs);
-    rtp_packetizer_->IncomingEncodedVideoFrame(&video_frame_,time);
+  rtp_packetizer_->IncomingEncodedVideoFrame(&video_frame_, time);
 }
 
 TEST_F(RtpPacketizerTest, Stats) {
@@ -134,9 +149,9 @@ TEST_F(RtpPacketizerTest, Stats) {
   unsigned int expected_num_of_packets = kFrameSize / kMaxPacketLength + 1;
   transport_->SetExpectedNumberOfPackets(expected_num_of_packets);
 
-  base::TimeTicks time;
-  time += base::TimeDelta::FromMilliseconds(kTimestampMs);
-  rtp_packetizer_->IncomingEncodedVideoFrame(&video_frame_, time);
+  testing_clock_.Advance(base::TimeDelta::FromMilliseconds(kTimestampMs));
+  rtp_packetizer_->IncomingEncodedVideoFrame(&video_frame_,
+                                             testing_clock_.NowTicks());
   EXPECT_EQ(expected_num_of_packets, rtp_packetizer_->send_packets_count());
   EXPECT_EQ(kFrameSize, rtp_packetizer_->send_octet_count());
 }

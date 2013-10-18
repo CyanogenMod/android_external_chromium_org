@@ -100,6 +100,11 @@ int ki_chmod(const char *path, mode_t mode) {
   return s_kp->chmod(path, mode);
 }
 
+int ki_fchmod(int fd, mode_t mode) {
+  ON_NOSYS_RETURN(-1);
+  return s_kp->fchmod(fd, mode);
+}
+
 int ki_stat(const char *path, struct stat *buf) {
   ON_NOSYS_RETURN(-1);
   return s_kp->stat(path, buf);
@@ -221,14 +226,14 @@ int ki_open_resource(const char* file) {
   ON_NOSYS_RETURN(-1);  return s_kp->open_resource(file);
 }
 
-int ki_fcntl(int d, int request, char* argp) {
+int ki_fcntl(int d, int request, va_list args) {
   ON_NOSYS_RETURN(-1);
-  return s_kp->fcntl(d, request, argp);
+  return s_kp->fcntl(d, request, args);
 }
 
-int ki_ioctl(int d, int request, char* argp) {
+int ki_ioctl(int d, int request, va_list args) {
   ON_NOSYS_RETURN(-1);
-  return s_kp->ioctl(d, request, argp);
+  return s_kp->ioctl(d, request, args);
 }
 
 int ki_chown(const char* path, uid_t owner, gid_t group) {
@@ -316,6 +321,7 @@ int ki_getpeername(int fd, struct sockaddr* addr, socklen_t* len) {
 int ki_getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
   return s_kp->getsockname(fd, addr, len);
 }
+
 int ki_getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len) {
   return s_kp->getsockopt(fd, lvl, optname, optval, len);
 }

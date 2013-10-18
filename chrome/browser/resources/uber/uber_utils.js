@@ -39,7 +39,7 @@ cr.define('uber', function() {
    * @private
    */
   function handleScroll() {
-    var offset = document.body.scrollLeft * -1;
+    var offset = document.documentElement.scrollLeft * -1;
     for (var i = 0; i < headerElements.length; i++) {
       // As a workaround for http://crbug.com/231830, set the transform to
       // 'none' rather than 0px.
@@ -47,7 +47,7 @@ cr.define('uber', function() {
           'translateX(' + offset + 'px)' : 'none';
     }
 
-    invokeMethodOnParent('adjustToScroll', document.body.scrollLeft);
+    invokeMethodOnParent('adjustToScroll', document.documentElement.scrollLeft);
   };
 
   /**
@@ -67,7 +67,7 @@ cr.define('uber', function() {
    * @private
    */
   function handleFrameSelected() {
-    document.body.scrollLeft = 0;
+    document.documentElement.scrollLeft = 0;
   }
 
   /**
@@ -80,8 +80,7 @@ cr.define('uber', function() {
    * @param {Object} params A structure that holds wheel deltas in X and Y.
    */
   function handleMouseWheel(params) {
-    document.body.scrollTop -= params.deltaY * 49 / 120;
-    document.body.scrollLeft -= params.deltaX * 49 / 120;
+    window.scrollBy(-params.deltaX * 49 / 120, -params.deltaY * 49 / 120);
   }
 
   /**

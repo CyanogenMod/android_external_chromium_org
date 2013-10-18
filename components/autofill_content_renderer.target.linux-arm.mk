@@ -32,7 +32,7 @@ LOCAL_SRC_FILES := \
 	components/autofill/content/renderer/page_click_tracker.cc \
 	components/autofill/content/renderer/password_autofill_agent.cc \
 	components/autofill/content/renderer/password_form_conversion_utils.cc \
-	components/autofill/content/renderer/password_generation_manager.cc
+	components/autofill/content/renderer/password_generation_agent.cc
 
 
 # Flags passed to both C and C++ files.
@@ -79,7 +79,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -185,7 +184,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

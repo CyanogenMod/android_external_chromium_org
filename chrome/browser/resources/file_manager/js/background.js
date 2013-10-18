@@ -5,7 +5,14 @@
 'use strict';
 
 /**
+ * Number of runtime errors catched in the background page.
+ * @type {number}
+ */
+var JSErrorCount = 0;
+
+/**
  * Map of all currently open app window. The key is an app id.
+ * @type {Object.<string, AppWindow>}
  */
 var appWindows = {};
 
@@ -591,7 +598,26 @@ function initApp() {
       chrome.storage.local.set({strings: strings}, callback);
     });
   });
+
+  // Count runtime JavaScript errors.
+  window.onerror = function() {
+    JSErrorCount++;
+  };
 }
 
 // Initialize Files.app.
 initApp();
+
+/**
+ * Progress center of the background page.
+ * @type {ProgressCenter}
+ */
+window.progressCenter = new ProgressCenter();
+
+/**
+ * Event handler for progress center.
+ * @type {ProgressCenter}
+ */
+var progressCenterHandler = new ProgressCenterHandler(
+    FileOperationManager.getInstance(),
+    window.progressCenter);

@@ -27,7 +27,6 @@ class SSLConfigServiceManager;
 
 #if defined(OS_CHROMEOS)
 namespace chromeos {
-class EnterpriseExtensionObserver;
 class LocaleChangeGuard;
 class Preferences;
 }
@@ -129,8 +128,8 @@ class ProfileImpl : public Profile {
   virtual void ChangeAppLocale(const std::string& locale,
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
-  virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE;
   virtual void InitChromeOSPreferences() OVERRIDE;
+  virtual bool IsLoginProfile() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -193,7 +192,7 @@ class ProfileImpl : public Profile {
 
   PrefProxyConfigTracker* CreateProxyConfigTracker();
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
   PrefChangeRegistrar pref_change_registrar_;
 
   base::FilePath path_;
@@ -246,10 +245,9 @@ class ProfileImpl : public Profile {
 #if defined(OS_CHROMEOS)
   scoped_ptr<chromeos::Preferences> chromeos_preferences_;
 
-  scoped_ptr<chromeos::EnterpriseExtensionObserver>
-      chromeos_enterprise_extension_observer_;
-
   scoped_ptr<chromeos::LocaleChangeGuard> locale_change_guard_;
+
+  bool is_login_profile_;
 #endif
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;

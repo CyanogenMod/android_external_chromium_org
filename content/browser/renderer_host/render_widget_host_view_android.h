@@ -14,6 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
+#include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/delegated_renderer_layer_client.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/output/begin_frame_args.h"
@@ -34,6 +35,7 @@ struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 
 namespace cc {
 class CopyOutputResult;
+class DelegatedFrameProvider;
 class DelegatedRendererLayer;
 class Layer;
 class SingleReleaseCallback;
@@ -51,7 +53,6 @@ class ContentViewCoreImpl;
 class OverscrollGlow;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
-class SurfaceTextureTransportClient;
 struct NativeWebKeyboardEvent;
 
 // -----------------------------------------------------------------------------
@@ -62,6 +63,7 @@ class RenderWidgetHostViewAndroid
       public BrowserAccessibilityDelegate,
       public cc::TextureLayerClient,
       public cc::DelegatedRendererLayerClient,
+      public cc::DelegatedFrameResourceCollectionClient,
       public ImageTransportFactoryAndroidObserver {
  public:
   RenderWidgetHostViewAndroid(RenderWidgetHostImpl* widget,
@@ -196,7 +198,9 @@ class RenderWidgetHostViewAndroid
 
   // cc::DelegatedRendererLayerClient implementation.
   virtual void DidCommitFrameData() OVERRIDE;
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {}
+
+  // cc::DelegatedFrameResourceCollectionClient implementation.
+  virtual void UnusedResourcesAreAvailable() OVERRIDE;
 
   // ImageTransportFactoryAndroidObserver implementation.
   virtual void OnLostResources() OVERRIDE;
@@ -212,7 +216,6 @@ class RenderWidgetHostViewAndroid
   void SendBeginFrame(const cc::BeginFrameArgs& args);
 
   void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
-  void OnProcessImeBatchStateAck(bool is_begin);
   void OnDidChangeBodyBackgroundColor(SkColor color);
   void OnStartContentIntent(const GURL& content_url);
   void OnSetNeedsBeginFrame(bool enabled);
@@ -248,6 +251,7 @@ class RenderWidgetHostViewAndroid
 
   void RunAckCallbacks();
 
+  void DestroyDelegatedContent();
   void SwapDelegatedFrame(uint32 output_surface_id,
                           scoped_ptr<cc::DelegatedFrameData> frame_data);
   void SendDelegatedFrameAck(uint32 output_surface_id);
@@ -299,6 +303,8 @@ class RenderWidgetHostViewAndroid
   // The texture layer for this view when using browser-side compositing.
   scoped_refptr<cc::TextureLayer> texture_layer_;
 
+  scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection_;
+  scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
 
   // The layer used for rendering the contents of this view.
@@ -314,9 +320,6 @@ class RenderWidgetHostViewAndroid
 
   // The most recent content size that was pushed to the texture layer.
   gfx::Size content_size_in_layer_;
-
-  // Used for image transport when needing to share resources across threads.
-  scoped_ptr<SurfaceTextureTransportClient> surface_texture_transport_;
 
   // The mailbox of the previously received frame.
   gpu::Mailbox current_mailbox_;

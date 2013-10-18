@@ -54,8 +54,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/android/email_detector.cc \
 	content/renderer/android/phone_number_detector.cc \
 	content/renderer/android/synchronous_compositor_factory.cc \
+	content/renderer/clipboard_utils.cc \
 	content/renderer/cursor_utils.cc \
-	content/renderer/device_orientation_dispatcher.cc \
 	content/renderer/device_orientation/device_motion_event_pump.cc \
 	content/renderer/device_orientation/device_orientation_event_pump.cc \
 	content/renderer/device_orientation/device_sensor_event_pump.cc \
@@ -183,8 +183,8 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_preferences.cc \
 	content/renderer/web_ui_extension.cc \
 	content/renderer/web_ui_extension_data.cc \
-	content/renderer/webcrypto_impl.cc \
-	content/renderer/webcrypto_impl_openssl.cc \
+	content/renderer/webcrypto/webcrypto_impl.cc \
+	content/renderer/webcrypto/webcrypto_impl_openssl.cc \
 	content/renderer/websharedworker_proxy.cc \
 	content/renderer/websharedworkerrepository_impl.cc
 
@@ -234,7 +234,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -377,7 +376,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

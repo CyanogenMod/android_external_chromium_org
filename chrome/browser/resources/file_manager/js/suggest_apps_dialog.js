@@ -37,41 +37,14 @@ var CWS_WIDGET_URL =
 var CWS_WIDGET_ORIGIN = 'https://clients5.google.com';
 
 /**
- * RegExp to extract the origin (shema, host and port) from the URL.
- * TODO(yoshiki): Remove this before ShareDialog launches or M31 branch cut.
- *
- * @type {RegExp}
- * @const
- */
-var REGEXP_EXTRACT_HOST = /^https?:\/\/[\w\.\-]+(?:\:\d{1,5})?(?=\/)/;
-
-/**
- * RegExp to check if the origin is google host or not.
- * Google hosts must be on https and default port.
- * TODO(yoshiki): Remove this before ShareDialog launches or M31 branch cut.
- *
- * @type {RegExp}
- * @const
- */
-var REGEXP_GOOGLE_MATCH = /^https:\/\/[\w\.\-]+\.google\.com$/;
-
-/**
- * RegExp to check if the origin is localhost or not.
- * TODO(yoshiki): Remove this before ShareDialog launches or M31 branch cut.
- *
- * @type {RegExp}
- * @const
- */
-var REGEXP_LOCALHOST_MATCH = /^https?:\/\/localhost(?:\:\d{1,5})?$/;
-
-/**
  * Creates dialog in DOM tree.
  *
  * @param {HTMLElement} parentNode Node to be parent for this dialog.
+ * @param {Object} state Static state of suggest app dialog.
  * @constructor
  * @extends {FileManagerDialogBase}
  */
-function SuggestAppsDialog(parentNode) {
+function SuggestAppsDialog(parentNode, state) {
   FileManagerDialogBase.call(this, parentNode);
 
   this.frame_.id = 'suggest-app-dialog';
@@ -107,8 +80,10 @@ function SuggestAppsDialog(parentNode) {
 
   this.webview_ = null;
   this.accessToken_ = null;
-  this.widgetUrl_ = CWS_WIDGET_URL;
-  this.widgetOrigin_ = CWS_WIDGET_ORIGIN;
+  this.widgetUrl_ =
+      state.overrideCwsContainerUrlForTest || CWS_WIDGET_URL;
+  this.widgetOrigin_ =
+      state.overrideCwsContainerOriginForTest || CWS_WIDGET_ORIGIN;
 
   this.extension_ = null;
   this.mime_ = null;
@@ -184,6 +159,11 @@ SuggestAppsDialog.prototype.authorizeRequest_ = function(e) {
  * @private
  */
 SuggestAppsDialog.prototype.retrieveAuthorizeToken_ = function(callback) {
+  if (window.IN_TEST) {
+    // In test, use a dummy string as token. This must be a non-empty string.
+    this.accessToken_ = 'DUMMY_ACCESS_TOKEN_FOR_TEST';
+  }
+
   if (this.accessToken_) {
     callback();
     return;
@@ -274,7 +254,7 @@ SuggestAppsDialog.prototype.show = function(extension, mime, onDialogClosed) {
 
 /**
  * Called when the 'See more...' link is clicked to be navigated to Webstore.
- * @param {Event} e Evnet.
+ * @param {Event} e Event.
  * @private
  */
 SuggestAppsDialog.prototype.onWebstoreLinkClicked_ = function(e) {
@@ -285,8 +265,8 @@ SuggestAppsDialog.prototype.onWebstoreLinkClicked_ = function(e) {
 };
 
 /**
- * Called when the widget is loaded successfuly.
- * @param {Event} event Evnet.
+ * Called when the widget is loaded successfully.
+ * @param {Event} event Event.
  * @private
  */
 SuggestAppsDialog.prototype.onWidgetLoaded_ = function(event) {
@@ -298,7 +278,7 @@ SuggestAppsDialog.prototype.onWidgetLoaded_ = function(event) {
 
 /**
  * Called when the widget is failed to load.
- * @param {Event} event Evnet.
+ * @param {Event} event Event.
  * @private
  */
 SuggestAppsDialog.prototype.onWidgetLoadFailed_ = function(event) {
@@ -309,8 +289,21 @@ SuggestAppsDialog.prototype.onWidgetLoadFailed_ = function(event) {
 };
 
 /**
+ * Called when the connection status is changed.
+ * @param {util.DriveConnectionType} connectionType Current connection type.
+ */
+SuggestAppsDialog.prototype.onDriveConnectionChanged =
+    function(connectionType) {
+  if (this.state_ !== SuggestAppsDialog.State.UNINITIALIZED &&
+      connectionType === util.DriveConnectionType.OFFLINE) {
+    this.state_ = SuggestAppsDialog.State.INITIALIZE_FAILED_CLOSING;
+    this.hide();
+  }
+};
+
+/**
  * Called when receiving the install request from the webview client.
- * @param {Event} e Evnet.
+ * @param {Event} e Event.
  * @private
  */
 SuggestAppsDialog.prototype.onInstallRequest_ = function(e) {

@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/logging.h"
-#include "media/cast/cast_config.h"
 #include "media/cast/cast_defines.h"
 
 namespace media {
@@ -25,24 +24,23 @@ class StoredPacket {
     packet_.reserve(kIpPacketSize);
   }
 
-  void Save(const std::vector<uint8>& packet) {
-    DCHECK_LT(packet.size(), kIpPacketSize) << "Invalid argument";
+  void Save(const Packet* packet) {
+    DCHECK_LT(packet->size(), kIpPacketSize) << "Invalid argument";
     packet_.clear();
-    packet_.insert(packet_.begin(), packet.begin(), packet.end());
+    packet_.insert(packet_.begin(), packet->begin(), packet->end());
   }
 
-  void GetCopy(std::vector<uint8>* packet) {
-    packet->insert(packet->begin(), packet_.begin(), packet_.end());
+  void GetCopy(PacketList* packets) {
+    packets->push_back(Packet(packet_.begin(), packet_.end()));
   }
 
  private:
-  std::vector<uint8> packet_;
+  Packet packet_;
 };
 
-
-PacketStorage::PacketStorage(int max_time_stored_ms)
-    : default_tick_clock_(new base::DefaultTickClock()),
-      clock_(default_tick_clock_.get()) {
+PacketStorage::PacketStorage(base::TickClock* clock,
+                             int max_time_stored_ms)
+    : clock_(clock) {
   max_time_stored_ = base::TimeDelta::FromMilliseconds(max_time_stored_ms);
   DCHECK_LE(max_time_stored_ms, kMaxAllowedTimeStoredMs) << "Invalid argument";
 }
@@ -98,9 +96,8 @@ void PacketStorage::CleanupOldPackets(base::TimeTicks now) {
   }
 }
 
-void PacketStorage::StorePacket(uint8 frame_id,
-                                uint16 packet_id,
-                                const std::vector<uint8>& packet) {
+void PacketStorage::StorePacket(uint8 frame_id, uint16 packet_id,
+                                const Packet* packet) {
   base::TimeTicks now = clock_->NowTicks();
   CleanupOldPackets(now);
 
@@ -127,13 +124,13 @@ void PacketStorage::StorePacket(uint8 frame_id,
 
 bool PacketStorage::GetPacket(uint8 frame_id,
                               uint16 packet_id,
-                              std::vector<uint8>* packet) {
+                              PacketList* packets) {
   uint32 index = (static_cast<uint32>(frame_id) << 16) + packet_id;
   PacketMapIterator it = stored_packets_.find(index);
   if (it == stored_packets_.end()) {
     return false;
   }
-  it->second->GetCopy(packet);
+  it->second->GetCopy(packets);
   return true;
 }
 

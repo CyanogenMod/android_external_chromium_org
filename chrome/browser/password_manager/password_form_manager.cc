@@ -51,7 +51,7 @@ PasswordFormManager::PasswordFormManager(Profile* profile,
 }
 
 PasswordFormManager::~PasswordFormManager() {
-  UMA_HISTOGRAM_ENUMERATION("PasswordManager.ActionsTaken",
+  UMA_HISTOGRAM_ENUMERATION("PasswordManager.ActionsTakenWithPsl",
                             GetActionsTaken(),
                             kMaxNumActionsTaken);
   // In case the tab is closed before the next navigation occurs this will
@@ -139,6 +139,7 @@ void PasswordFormManager::PermanentlyBlacklist() {
 
   // Retroactively forget existing matches for this form, so we NEVER prompt or
   // autofill it again.
+  int num_passwords_deleted = 0;
   if (!best_matches_.empty()) {
     PasswordFormMap::const_iterator iter;
     PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
@@ -154,10 +155,15 @@ void PasswordFormManager::PermanentlyBlacklist() {
       // delete logins that were actually saved on a different page (hence with
       // different origin URL) and just happened to match this form because of
       // the scoring algorithm. See bug 1204493.
-      if (iter->second->origin == observed_form_.origin)
+      if (iter->second->origin == observed_form_.origin) {
         password_store->RemoveLogin(*iter->second);
+        ++num_passwords_deleted;
+      }
     }
   }
+
+  UMA_HISTOGRAM_COUNTS("PasswordManager.NumPasswordsDeletedWhenBlacklisting",
+                       num_passwords_deleted);
 
   // Save the pending_credentials_ entry marked as blacklisted.
   SaveAsNewLogin(false);
@@ -212,6 +218,8 @@ void PasswordFormManager::ProvisionallySave(
     // Public suffix matches should always be new logins, since we want to store
     // them so they can automatically be filled in later.
     is_new_login_ = IsPendingCredentialsPublicSuffixMatch();
+    if (is_new_login_)
+      user_action_ = kUserActionChoosePslMatch;
 
     // Check to see if we're using a known username but a new password.
     if (pending_credentials_.password_value != credentials.password_value)
@@ -352,6 +360,9 @@ void PasswordFormManager::OnRequestDone(
     if (best_matches_.find(it->username_value) == best_matches_.end())
       best_matches_[it->username_value] = new PasswordForm(*it);
   }
+
+  UMA_HISTOGRAM_COUNTS("PasswordManager.NumPasswordsNotShown",
+                       logins_result.size() - best_matches_.size());
 
   // It is possible we have at least one match but have no preferred_match_,
   // because a user may have chosen to 'Forget' the preferred match. So we
@@ -571,7 +582,13 @@ void PasswordFormManager::CheckForAccountCreationForm(
   if (pending.times_used == 1) {
     FormStructure pending_structure(pending.form_data);
     FormStructure observed_structure(observed.form_data);
-    if (pending_structure.FormSignature() !=
+    // Ignore |pending_structure| if its FormData has no fields. This is to
+    // weed out those credentials that were saved before FormData was added
+    // to PasswordForm. Even without this check, these FormStructure's won't
+    // be uploaded, but it makes it hard to see if we are encountering
+    // unexpected errors.
+    if (!pending.form_data.fields.empty() &&
+        pending_structure.FormSignature() !=
             observed_structure.FormSignature()) {
       autofill::AutofillDriverImpl* driver =
           autofill::AutofillDriverImpl::FromWebContents(web_contents_);

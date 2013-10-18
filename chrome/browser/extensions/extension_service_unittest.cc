@@ -402,7 +402,9 @@ class MockProviderVisitor
 
   virtual bool OnExternalExtensionUpdateUrlFound(
       const std::string& id, const GURL& update_url,
-      Manifest::Location location) OVERRIDE {
+      Manifest::Location location,
+      int creation_flags,
+      bool mark_acknowledged) OVERRIDE {
     ++ids_found_;
     DictionaryValue* pref;
     // This tests is to make sure that the provider only notifies us of the
@@ -1803,7 +1805,9 @@ TEST_F(ExtensionServiceTest, UninstallingExternalExtensions) {
   ASSERT_FALSE(service_->pending_extension_manager()->AddFromExternalUpdateUrl(
       good_crx,
       GURL("http:://fake.update/url"),
-      Manifest::EXTERNAL_PREF_DOWNLOAD));
+      Manifest::EXTERNAL_PREF_DOWNLOAD,
+      Extension::NO_FLAGS,
+      false));
 
   ASSERT_FALSE(service_->pending_extension_manager()->IsIdPending(good_crx));
 }
@@ -3167,7 +3171,8 @@ TEST_F(ExtensionServiceTest, DISABLED_UpdatePendingTheme) {
 TEST_F(ExtensionServiceTest, MAYBE_UpdatePendingExternalCrx) {
   InitializeEmptyExtensionService();
   EXPECT_TRUE(service_->pending_extension_manager()->AddFromExternalUpdateUrl(
-      theme_crx, GURL(), Manifest::EXTERNAL_PREF_DOWNLOAD));
+      theme_crx, GURL(), Manifest::EXTERNAL_PREF_DOWNLOAD, Extension::NO_FLAGS,
+      false));
 
   EXPECT_TRUE(service_->pending_extension_manager()->IsIdPending(theme_crx));
 
@@ -3204,7 +3209,8 @@ TEST_F(ExtensionServiceTest, UpdatePendingExternalCrxWinsOverSync) {
 
   // Add a crx to be updated, with the same ID, from a non-sync source.
   EXPECT_TRUE(service_->pending_extension_manager()->AddFromExternalUpdateUrl(
-      kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_PREF_DOWNLOAD));
+      kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_PREF_DOWNLOAD,
+      Extension::NO_FLAGS, false));
 
   // Check that there is a pending crx, with is_from_sync set to false.
   ASSERT_TRUE((pending_extension_info = service_->pending_extension_manager()->
@@ -3293,7 +3299,8 @@ TEST_F(ExtensionServiceTest, UpdatePendingExtensionAlreadyInstalled) {
   service_->pending_extension_manager()->AddExtensionImpl(
       good->id(), extensions::ManifestURL::GetUpdateURL(good),
       Version(), &IsExtension, kGoodIsFromSync,
-      kGoodInstallSilently, Manifest::INTERNAL);
+      kGoodInstallSilently, Manifest::INTERNAL,
+      Extension::NO_FLAGS, false);
   UpdateExtension(good->id(), path, ENABLED);
 
   EXPECT_FALSE(service_->pending_extension_manager()->IsIdPending(kGoodId));
@@ -4916,6 +4923,21 @@ TEST_F(ExtensionServiceTest, ExternalPrefProvider) {
       "  }"
       "}";
   EXPECT_EQ(1, from_webstore_visitor.Visit(json_data));
+
+  // Test require_permissions_consent.
+  MockProviderVisitor permissions_consent_visitor(
+      base_path, Extension::REQUIRE_PERMISSIONS_CONSENT);
+  json_data =
+      "{"
+      "  \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\": {"
+      "    \"external_crx\": \"RandomExtension.crx\","
+      "    \"external_version\": \"1.0\","
+      "    \"require_permissions_consent\": true"
+      "  }"
+      "}";
+  {
+    EXPECT_EQ(1, permissions_consent_visitor.Visit(json_data));
+  }
 }
 
 // Test loading good extensions from the profile directory.
@@ -5897,19 +5919,22 @@ TEST_F(ExtensionServiceTest, InstallPriorityExternalUpdateUrl) {
   // Skip install when the location is the same.
   EXPECT_FALSE(
       service_->OnExternalExtensionUpdateUrlFound(
-          kGoodId, GURL(kGoodUpdateURL), Manifest::INTERNAL));
+          kGoodId, GURL(kGoodUpdateURL), Manifest::INTERNAL,
+          Extension::NO_FLAGS, false));
   EXPECT_FALSE(pending->IsIdPending(kGoodId));
 
   // Install when the location has higher priority.
   EXPECT_TRUE(
       service_->OnExternalExtensionUpdateUrlFound(
-          kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_POLICY_DOWNLOAD));
+          kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_POLICY_DOWNLOAD,
+          Extension::NO_FLAGS, false));
   EXPECT_TRUE(pending->IsIdPending(kGoodId));
 
   // Try the low priority again.  Should be rejected.
   EXPECT_FALSE(
       service_->OnExternalExtensionUpdateUrlFound(
-          kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_PREF_DOWNLOAD));
+          kGoodId, GURL(kGoodUpdateURL), Manifest::EXTERNAL_PREF_DOWNLOAD,
+          Extension::NO_FLAGS, false));
   // The existing record should still be present in the pending extension
   // manager.
   EXPECT_TRUE(pending->IsIdPending(kGoodId));
@@ -5919,7 +5944,8 @@ TEST_F(ExtensionServiceTest, InstallPriorityExternalUpdateUrl) {
   // Skip install when the location has the same priority as the installed
   // location.
   EXPECT_FALSE(service_->OnExternalExtensionUpdateUrlFound(
-      kGoodId, GURL(kGoodUpdateURL), Manifest::INTERNAL));
+      kGoodId, GURL(kGoodUpdateURL), Manifest::INTERNAL,
+      Extension::NO_FLAGS, false));
 
   EXPECT_FALSE(pending->IsIdPending(kGoodId));
 }
@@ -6138,7 +6164,8 @@ TEST_F(ExtensionServiceTest, ConcurrentExternalLocalFile) {
   GURL kUpdateUrl("http://example.com/update");
   EXPECT_TRUE(
       service_->OnExternalExtensionUpdateUrlFound(
-          kGoodId, kUpdateUrl, Manifest::EXTERNAL_POLICY_DOWNLOAD));
+          kGoodId, kUpdateUrl, Manifest::EXTERNAL_POLICY_DOWNLOAD,
+          Extension::NO_FLAGS, false));
   EXPECT_TRUE((info = pending->GetById(kGoodId)));
   EXPECT_FALSE(info->version().IsValid());
 }
@@ -6182,7 +6209,8 @@ class ExtensionSourcePriorityTest : public ExtensionServiceTest {
   // Fake an external source adding a URL to fetch an extension from.
   bool AddPendingExternalPrefUrl() {
     return service_->pending_extension_manager()->AddFromExternalUpdateUrl(
-        crx_id_, GURL(), Manifest::EXTERNAL_PREF_DOWNLOAD);
+        crx_id_, GURL(), Manifest::EXTERNAL_PREF_DOWNLOAD,
+        Extension::NO_FLAGS, false);
   }
 
   // Fake an external file from external_extensions.json.
@@ -6204,7 +6232,8 @@ class ExtensionSourcePriorityTest : public ExtensionServiceTest {
   bool AddPendingPolicyInstall() {
     // Get path to the CRX with id |kGoodId|.
     return service_->OnExternalExtensionUpdateUrlFound(
-        crx_id_, GURL(), Manifest::EXTERNAL_POLICY_DOWNLOAD);
+        crx_id_, GURL(), Manifest::EXTERNAL_POLICY_DOWNLOAD,
+        Extension::NO_FLAGS, false);
   }
 
   // Get the install source of a pending extension.
@@ -6530,4 +6559,67 @@ TEST_F(ExtensionServiceTest, InstallBlacklistedExtension) {
   EXPECT_TRUE(service_->extension_prefs()->IsExtensionBlacklisted(id));
   EXPECT_TRUE(
       service_->extension_prefs()->IsBlacklistedExtensionAcknowledged(id));
+}
+
+TEST_F(ExtensionServiceTest, ReconcileKnownDisabledNoneDisabled) {
+  // A profile with 3 extensions installed: good0, good1, and good2.
+  InitializeGoodInstalledExtensionService();
+
+  // Initializing shouldn't disable any extensions if none are known to be
+  // disabled.
+  service_->Init();
+
+  extensions::ExtensionIdSet expected_extensions;
+  expected_extensions.insert(good0);
+  expected_extensions.insert(good1);
+  expected_extensions.insert(good2);
+
+  extensions::ExtensionIdSet expected_disabled_extensions;
+
+  EXPECT_EQ(expected_extensions, service_->extensions()->GetIDs());
+  EXPECT_EQ(expected_disabled_extensions,
+            service_->disabled_extensions()->GetIDs());
+}
+
+TEST_F(ExtensionServiceTest, ReconcileKnownDisabledWithSideEnable) {
+  // A profile with 3 extensions installed: good0, good1, and good2.
+  InitializeGoodInstalledExtensionService();
+
+  ExtensionPrefs* extension_prefs = service_->extension_prefs();
+
+  // Disable good1.
+  extension_prefs->SetExtensionState(good1, Extension::DISABLED);
+
+  // Mark both good1 and good2 as "known_disabled" (effectively making good2
+  // look as if it had been side-enabled).
+  extensions::ExtensionIdSet known_disabled;
+  known_disabled.insert(good1);
+  known_disabled.insert(good2);
+  extension_prefs->SetKnownDisabled(known_disabled);
+
+  // Initialize the service (which should disable good2 since it's known to be
+  // disabled).
+  service_->Init();
+
+  extensions::ExtensionIdSet expected_extensions;
+  expected_extensions.insert(good0);
+
+  extensions::ExtensionIdSet expected_disabled_extensions;
+  expected_disabled_extensions.insert(good1);
+  expected_disabled_extensions.insert(good2);
+
+  EXPECT_EQ(expected_extensions, service_->extensions()->GetIDs());
+  EXPECT_EQ(expected_disabled_extensions,
+            service_->disabled_extensions()->GetIDs());
+
+  // Make sure that re-enabling an extension sticks across calls to
+  // ReconcileKnownDisabled().
+  service_->EnableExtension(good2);
+  service_->ReconcileKnownDisabled();
+  expected_extensions.insert(good2);
+  expected_disabled_extensions.erase(good2);
+
+  EXPECT_EQ(expected_extensions, service_->extensions()->GetIDs());
+  EXPECT_EQ(expected_disabled_extensions,
+            service_->disabled_extensions()->GetIDs());
 }

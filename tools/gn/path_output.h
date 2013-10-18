@@ -16,6 +16,10 @@
 class OutputFile;
 class SourceFile;
 
+namespace base {
+class FilePath;
+}
+
 // Writes file names to streams assuming a certain input directory and
 // escaping rules. This gives us a central place for managing this state.
 class PathOutput {
@@ -37,6 +41,8 @@ class PathOutput {
   // Read-only since inverse_current_dir_ is computed depending on this.
   EscapingMode escaping_mode() const { return options_.mode; }
 
+  const SourceDir& current_dir() const { return current_dir_; }
+
   // When true, converts slashes to the system-type path separators (on
   // Windows, this is a backslash, this is a NOP otherwise).
   //
@@ -53,6 +59,7 @@ class PathOutput {
 
   void WriteFile(std::ostream& out, const SourceFile& file) const;
   void WriteFile(std::ostream& out, const OutputFile& file) const;
+  void WriteFile(std::ostream& out, const base::FilePath& file) const;
   void WriteDir(std::ostream& out,
                 const SourceDir& dir,
                 DirSlashEnding slash_ending) const;

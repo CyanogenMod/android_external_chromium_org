@@ -4,7 +4,6 @@
 
 #include "nacl_io/kernel_proxy.h"
 
-
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -155,18 +154,18 @@ int KernelProxy::open_resource(const char* path) {
   return AllocateFD(handle);
 }
 
-int KernelProxy::open(const char* path, int oflags) {
+int KernelProxy::open(const char* path, int open_flags) {
   ScopedMount mnt;
   ScopedMountNode node;
 
-  Error error = AcquireMountAndNode(path, oflags, &mnt, &node);
+  Error error = AcquireMountAndNode(path, open_flags, &mnt, &node);
   if (error) {
     errno = error;
     return -1;
   }
 
   ScopedKernelHandle handle(new KernelHandle(mnt, node));
-  error = handle->Init(oflags);
+  error = handle->Init(open_flags);
   if (error) {
     errno = error;
     return -1;
@@ -539,7 +538,7 @@ int KernelProxy::isatty(int fd) {
   return 0;
 }
 
-int KernelProxy::ioctl(int fd, int request, char* argp) {
+int KernelProxy::ioctl(int fd, int request, va_list args) {
   ScopedKernelHandle handle;
   Error error = AcquireHandle(fd, &handle);
   if (error) {
@@ -547,7 +546,7 @@ int KernelProxy::ioctl(int fd, int request, char* argp) {
     return -1;
   }
 
-  error = handle->node()->Ioctl(request, argp);
+  error = handle->node()->VIoctl(request, args);
   if (error) {
     errno = error;
     return -1;
@@ -624,7 +623,7 @@ int KernelProxy::fchmod(int fd, int mode) {
   return 0;
 }
 
-int KernelProxy::fcntl(int fd, int request, char *argp) {
+int KernelProxy::fcntl(int fd, int request, va_list args) {
   ScopedKernelHandle handle;
   Error error = AcquireHandle(fd, &handle);
   if (error) {
@@ -632,9 +631,14 @@ int KernelProxy::fcntl(int fd, int request, char *argp) {
     return -1;
   }
 
-  // TODO(sbc): Needs implementation.
-  errno = ENOSYS;
-  return -1;
+  int rtn = 0;
+  error = handle->VFcntl(request, &rtn, args);
+  if (error) {
+    errno = error;
+    return -1;
+  }
+
+  return rtn;
 }
 
 int KernelProxy::access(const char* path, int amode) {
@@ -1015,7 +1019,6 @@ int KernelProxy::poll(struct pollfd *fds, nfds_t nfds, int timeout) {
 }
 
 
-
 // Socket Functions
 int KernelProxy::accept(int fd, struct sockaddr* addr, socklen_t* len) {
   if (NULL == addr || NULL == len) {
@@ -1024,11 +1027,33 @@ int KernelProxy::accept(int fd, struct sockaddr* addr, socklen_t* len) {
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
-  errno = EINVAL;
-  return -1;
+  PP_Resource new_sock = 0;
+  error = handle->Accept(&new_sock, addr, len);
+  if (error != 0) {
+    errno = error;
+    return -1;
+  }
+
+  MountNodeSocket* sock = new MountNodeTCP(stream_mount_.get(), new_sock);
+
+  // The MountNodeSocket now holds a reference to the new socket
+  // so we release ours.
+  ppapi_->ReleaseResource(new_sock);
+  error = sock->Init(S_IREAD | S_IWRITE);
+  if (error != 0) {
+    errno = error;
+    return -1;
+  }
+
+  ScopedMountNode node(sock);
+  ScopedKernelHandle new_handle(new KernelHandle(stream_mount_, node));
+  return AllocateFD(new_handle);
 }
 
 int KernelProxy::bind(int fd, const struct sockaddr* addr, socklen_t len) {
@@ -1057,12 +1082,15 @@ int KernelProxy::connect(int fd, const struct sockaddr* addr, socklen_t len) {
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
-  Error err = handle->socket_node()->Connect(addr, len);
-  if (err != 0) {
-    errno = err;
+  error = handle->Connect(addr, len);
+  if (error != 0) {
+    errno = error;
     return -1;
   }
 
@@ -1112,10 +1140,10 @@ int KernelProxy::getsockname(int fd, struct sockaddr* addr, socklen_t* len) {
 }
 
 int KernelProxy::getsockopt(int fd,
-                         int lvl,
-                         int optname,
-                         void* optval,
-                         socklen_t* len) {
+                            int lvl,
+                            int optname,
+                            void* optval,
+                            socklen_t* len) {
   if (NULL == optval || NULL == len) {
     errno = EFAULT;
     return -1;
@@ -1125,8 +1153,13 @@ int KernelProxy::getsockopt(int fd,
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->GetSockOpt(lvl, optname, optval, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::listen(int fd, int backlog) {
@@ -1134,8 +1167,13 @@ int KernelProxy::listen(int fd, int backlog) {
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EOPNOTSUPP;
-  return -1;
+  Error err = handle->socket_node()->Listen(backlog);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 ssize_t KernelProxy::recv(int fd,
@@ -1148,13 +1186,16 @@ ssize_t KernelProxy::recv(int fd,
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
   int out_len = 0;
-  Error err = handle->socket_node()->Recv(buf, len, flags, &out_len);
-  if (err != 0) {
-    errno = err;
+  error = handle->Recv(buf, len, flags, &out_len);
+  if (error != 0) {
+    errno = error;
     return -1;
   }
 
@@ -1178,18 +1219,16 @@ ssize_t KernelProxy::recvfrom(int fd,
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
   int out_len = 0;
-  Error err = handle->socket_node()->RecvFrom(buf,
-                                              len,
-                                              flags,
-                                              addr,
-                                              addrlen,
-                                              &out_len);
-  if (err != 0) {
-    errno = err;
+  error = handle->RecvFrom(buf, len, flags, addr, addrlen, &out_len);
+  if (error != 0) {
+    errno = error;
     return -1;
   }
 
@@ -1217,13 +1256,16 @@ ssize_t KernelProxy::send(int fd, const void* buf, size_t len, int flags) {
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
   int out_len = 0;
-  Error err = handle->socket_node()->Send(buf, len, flags, &out_len);
-  if (err != 0) {
-    errno = err;
+  error = handle->Send(buf, len, flags, &out_len);
+  if (error != 0) {
+    errno = error;
     return -1;
   }
 
@@ -1247,15 +1289,16 @@ ssize_t KernelProxy::sendto(int fd,
   }
 
   ScopedKernelHandle handle;
-  if (AcquireSocketHandle(fd, &handle) == -1)
+  Error error = AcquireHandle(fd, &handle);
+  if (error) {
+    errno = error;
     return -1;
+  }
 
   int out_len = 0;
-  Error err =
-      handle->socket_node()->SendTo(buf, len, flags, addr, addrlen, &out_len);
-
-  if (err != 0) {
-    errno = err;
+  error = handle->SendTo(buf, len, flags, addr, addrlen, &out_len);
+  if (error != 0) {
+    errno = error;
     return -1;
   }
 
@@ -1290,8 +1333,13 @@ int KernelProxy::setsockopt(int fd,
   if (AcquireSocketHandle(fd, &handle) == -1)
     return -1;
 
-  errno = EINVAL;
-  return -1;
+  Error err = handle->socket_node()->SetSockOpt(lvl, optname, optval, len);
+  if (err != 0) {
+    errno = err;
+    return -1;
+  }
+
+  return 0;
 }
 
 int KernelProxy::shutdown(int fd, int how) {
@@ -1330,13 +1378,14 @@ int KernelProxy::socket(int domain, int type, int protocol) {
   }
 
   ScopedMountNode node(sock);
-  if (sock->Init(S_IREAD | S_IWRITE) == 0) {
-    ScopedKernelHandle handle(new KernelHandle(stream_mount_, node));
-    return AllocateFD(handle);
+  Error rtn = sock->Init(S_IREAD | S_IWRITE);
+  if (rtn != 0) {
+    errno = rtn;
+    return -1;
   }
 
-  // If we failed to init, assume we don't have access.
-  return EACCES;
+  ScopedKernelHandle handle(new KernelHandle(stream_mount_, node));
+  return AllocateFD(handle);
 }
 
 int KernelProxy::socketpair(int domain, int type, int protocol, int* sv) {

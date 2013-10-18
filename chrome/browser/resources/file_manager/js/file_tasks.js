@@ -62,11 +62,13 @@ FileTasks.WEB_STORE_HANDLER_BASE_URL =
  * @return {string} URL
  */
 FileTasks.createWebStoreLink = function(extension, mimeType) {
-  if (extension == '' || mimeType == '')
+  if (!extension)
     return FileTasks.CHROME_WEB_STORE_URL;
 
   var url = FileTasks.WEB_STORE_HANDLER_BASE_URL;
   url += '?_fe=' + extension.toLowerCase().replace(/[^\w]/g, '');
+
+  // If a mime is given, add it into the URL.
   if (mimeType)
     url += '&_fmt=' + mimeType.replace(/[^-\w\/]/g, '');
   return url;
@@ -268,8 +270,8 @@ FileTasks.prototype.processTasks_ = function(tasks) {
 /**
  * Executes default task.
  *
- * @param {function(boolean, Array.<string>)=} opt_callback Called wheh the
- *     default task is executed, or the error is occured.
+ * @param {function(boolean, Array.<string>)=} opt_callback Called when the
+ *     default task is executed, or the error is occurred.
  * @private
  */
 FileTasks.prototype.executeDefault_ = function(opt_callback) {
@@ -282,8 +284,8 @@ FileTasks.prototype.executeDefault_ = function(opt_callback) {
  * Executes default task.
  *
  * @param {Array.<string>} urls Urls to execute.
- * @param {function(boolean, Array.<string>)=} opt_callback Called wheh the
- *     default task is executed, or the error is occured.
+ * @param {function(boolean, Array.<string>)=} opt_callback Called when the
+ *     default task is executed, or the error is occurred.
  * @private
  */
 FileTasks.prototype.executeDefaultInternal_ = function(urls, opt_callback) {
@@ -428,17 +430,13 @@ FileTasks.prototype.executeInternalTask_ = function(id, urls) {
       urls = fm.getAllUrlsInCurrentDirectory().filter(FileType.isAudio);
       position = urls.indexOf(selectedUrl);
     }
-    chrome.runtime.getBackgroundPage(function(background) {
-      background.launchAudioPlayer({ items: urls, position: position });
-    });
+    fm.backgroundPage.launchAudioPlayer({ items: urls, position: position });
     return;
   }
 
   if (id == 'watch') {
     console.assert(urls.length == 1, 'Cannot open multiple videos');
-    chrome.runtime.getBackgroundPage(function(background) {
-      background.launchVideoPlayer(urls[0]);
-    });
+    fm.backgroundPage.launchVideoPlayer(urls[0]);
     return;
   }
 
@@ -563,15 +561,16 @@ FileTasks.prototype.openGalleryInternal_ = function(urls) {
     // root. We should check more granular permission to know whether the file
     // is writable or not.
     var readonly = fm.isOnReadonlyDirectory();
-    var currentDir = fm.directoryModel_.getCurrentDirEntry();
+    var currentDir = fm.getCurrentDirectoryEntry();
     var downloadsVolume =
         fm.volumeManager_.getVolumeInfo(RootDirectory.DOWNLOADS);
     var downloadsDir = downloadsVolume && downloadsVolume.root;
     var readonlyDirName = null;
-    if (readonly) {
+    if (readonly && currentDir) {
+      var rootPath = PathUtil.getRootPath(currentDir.fullPath);
       readonlyDirName = fm.isOnDrive() ?
-          PathUtil.getRootLabel(PathUtil.getRootPath(currentDir.fullPath)) :
-          fm.directoryModel_.getCurrentRootName();
+          PathUtil.getRootLabel(rootPath) :
+          PathUtil.basename(rootPath);
     }
 
     var context = {

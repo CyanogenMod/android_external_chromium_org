@@ -418,10 +418,10 @@ static bool LayerShouldBeSkipped(LayerType* layer,
                                  bool layer_is_visible) {
   // Layers can be skipped if any of these conditions are met.
   //   - is not visible due to it or one of its ancestors being hidden.
-  //   - does not draw content.
-  //   - is transparent
   //   - has empty bounds
   //   - the layer is not double-sided, but its back face is visible.
+  //   - is transparent
+  //   - does not draw content and does not participate in hit testing.
   //
   // Some additional conditions need to be computed at a later point after the
   // recursion is finished.
@@ -435,7 +435,7 @@ static bool LayerShouldBeSkipped(LayerType* layer,
   if (!layer_is_visible)
     return true;
 
-  if (!layer->DrawsContent() || layer->bounds().IsEmpty())
+  if (layer->bounds().IsEmpty())
     return true;
 
   LayerType* backface_test_layer = layer;
@@ -450,6 +450,13 @@ static bool LayerShouldBeSkipped(LayerType* layer,
   if (!backface_test_layer->double_sided() &&
       TransformToScreenIsKnown(backface_test_layer) &&
       IsLayerBackFaceVisible(backface_test_layer))
+    return true;
+
+  // The layer is visible to events.  If it's subject to hit testing, then
+  // we can't skip it.
+  bool can_accept_input = !layer->touch_event_handler_region().IsEmpty() ||
+      layer->have_wheel_event_handlers();
+  if (!layer->DrawsContent() && !can_accept_input)
     return true;
 
   return false;
@@ -475,6 +482,7 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
   // The opacity of a layer always applies to its children (either implicitly
   // via a render surface or explicitly if the parent preserves 3D), so the
   // entire subtree can be skipped if this layer is fully transparent.
+  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity();
 }
 
@@ -495,6 +503,7 @@ static inline bool SubtreeShouldBeSkipped(Layer* layer,
   // In particular, it should not cause the subtree to be skipped.
   // Similarly, for layers that might animate opacity using an impl-only
   // animation, their subtree should also not be skipped.
+  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity() && !layer->OpacityIsAnimating() &&
          !layer->OpacityCanAnimateOnImplThread();
 }
@@ -580,7 +589,7 @@ static bool SubtreeShouldRenderToSeparateSurface(
   bool layer_clips_external_content =
       LayerClipsSubtree(layer) || layer->HasDelegatedContent();
   if (layer_clips_external_content && !axis_aligned_with_respect_to_parent &&
-      !layer->draw_properties().descendants_can_clip_selves) {
+      num_descendants_that_draw_content > 0) {
     TRACE_EVENT_INSTANT0(
         "cc",
         "LayerTreeHostCommon::SubtreeShouldRenderToSeparateSurface clipping",
@@ -807,20 +816,30 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
   // render_surfaces.
   //
 
+  // Scroll compensation restarts from identity under two possible conditions:
+  //  - the current layer is a container for fixed-position descendants
+  //  - the current layer is fixed-position itself, so any fixed-position
+  //    descendants are positioned with respect to this layer. Thus, any
+  //    fixed position descendants only need to compensate for scrollDeltas
+  //    that occur below this layer.
+  bool current_layer_resets_scroll_compensation_for_descendants =
+      layer->IsContainerForFixedPositionLayers() ||
+      layer->position_constraint().is_fixed_position();
+
   // Avoid the overheads (including stack allocation and matrix
   // initialization/copy) if we know that the scroll compensation doesn't need
   // to be reset or adjusted.
   gfx::Vector2dF scroll_delta = GetEffectiveScrollDelta(layer);
-  if (!layer->IsContainerForFixedPositionLayers() &&
+  if (!current_layer_resets_scroll_compensation_for_descendants &&
       scroll_delta.IsZero() && !layer->render_surface())
     return current_scroll_compensation_matrix;
 
   // Start as identity matrix.
   gfx::Transform next_scroll_compensation_matrix;
 
-  // If this layer is not a container, then it inherits the existing scroll
-  // compensations.
-  if (!layer->IsContainerForFixedPositionLayers())
+  // If this layer does not reset scroll compensation, then it inherits the
+  // existing scroll compensations.
+  if (!current_layer_resets_scroll_compensation_for_descendants)
     next_scroll_compensation_matrix = current_scroll_compensation_matrix;
 
   // If the current layer has a non-zero scroll_delta, then we should compute
@@ -1017,7 +1036,6 @@ static void PreCalculateMetaInformation(
     PreCalculateMetaInformationRecursiveData* recursive_data) {
   bool has_delegated_content = layer->HasDelegatedContent();
   int num_descendants_that_draw_content = 0;
-  bool descendants_can_clip_selves = true;
 
   if (has_delegated_content) {
     // Layers with delegated content need to be treated as if they have as
@@ -1025,7 +1043,6 @@ static void PreCalculateMetaInformation(
     // Since we don't know this number right now, we choose one that acts like
     // infinity for our purposes.
     num_descendants_that_draw_content = 1000;
-    descendants_can_clip_selves = false;
   }
 
   if (layer->clip_parent())
@@ -1038,20 +1055,9 @@ static void PreCalculateMetaInformation(
     PreCalculateMetaInformationRecursiveData data_for_child;
     PreCalculateMetaInformation(child_layer, &data_for_child);
 
-    if (!has_delegated_content) {
-      bool sublayer_transform_prevents_clip =
-          !layer->sublayer_transform().IsPositiveScaleOrTranslation();
-
-      num_descendants_that_draw_content += child_layer->DrawsContent() ? 1 : 0;
-      num_descendants_that_draw_content +=
-          child_layer->draw_properties().num_descendants_that_draw_content;
-
-      if ((child_layer->DrawsContent() && !child_layer->CanClipSelf()) ||
-          !child_layer->draw_properties().descendants_can_clip_selves ||
-          sublayer_transform_prevents_clip ||
-          !child_layer->transform().IsPositiveScaleOrTranslation())
-        descendants_can_clip_selves = false;
-    }
+    num_descendants_that_draw_content += child_layer->DrawsContent() ? 1 : 0;
+    num_descendants_that_draw_content +=
+        child_layer->draw_properties().num_descendants_that_draw_content;
 
     recursive_data->Merge(data_for_child);
   }
@@ -1069,8 +1075,6 @@ static void PreCalculateMetaInformation(
       num_descendants_that_draw_content;
   layer->draw_properties().num_unclipped_descendants =
       recursive_data->num_unclipped_descendants;
-  layer->draw_properties().descendants_can_clip_selves =
-      descendants_can_clip_selves;
   layer->draw_properties().layer_or_descendant_has_copy_request =
       recursive_data->layer_or_descendant_has_copy_request;
 }
@@ -1088,6 +1092,7 @@ struct SubtreeGlobals {
   float page_scale_factor;
   LayerType* page_scale_application_layer;
   bool can_adjust_raster_scales;
+  bool can_render_to_separate_surface;
 };
 
 template<typename LayerType, typename RenderSurfaceType>
@@ -1448,8 +1453,14 @@ static void CalculateDrawPropertiesInternal(
       ? combined_transform_scales
       : gfx::Vector2dF(layer_scale_factors, layer_scale_factors);
 
-  if (SubtreeShouldRenderToSeparateSurface(
-          layer, combined_transform.Preserves2dAxisAlignment())) {
+  bool render_to_separate_surface;
+  if (globals.can_render_to_separate_surface) {
+    render_to_separate_surface = SubtreeShouldRenderToSeparateSurface(
+          layer, combined_transform.Preserves2dAxisAlignment());
+  } else {
+    render_to_separate_surface = IsRootLayer(layer);
+  }
+  if (render_to_separate_surface) {
     // Check back-face visibility before continuing with this surface and its
     // subtree
     if (!layer->double_sided() && TransformToParentIsKnown(layer) &&
@@ -1752,8 +1763,6 @@ static void CalculateDrawPropertiesInternal(
   for (size_t i = 0; i < layer->children().size(); ++i) {
     LayerType* child =
         LayerTreeHostCommon::get_child_as_raw_ptr(layer->children(), i);
-    gfx::Rect drawable_content_rect_of_child_subtree;
-    gfx::Transform identity_matrix;
     CalculateDrawPropertiesInternal<LayerType,
                                     LayerListType,
                                     RenderSurfaceType>(
@@ -1939,6 +1948,8 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.device_scale_factor = inputs->device_scale_factor;
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
+  globals.can_render_to_separate_surface =
+      inputs->can_render_to_separate_surface;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
 
   DataForRecursion<Layer, RenderSurface> data_for_recursion;
@@ -1996,6 +2007,8 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   globals.device_scale_factor = inputs->device_scale_factor;
   globals.page_scale_factor = inputs->page_scale_factor;
   globals.page_scale_application_layer = inputs->page_scale_application_layer;
+  globals.can_render_to_separate_surface =
+      inputs->can_render_to_separate_surface;
   globals.can_adjust_raster_scales = inputs->can_adjust_raster_scales;
 
   DataForRecursion<LayerImpl, RenderSurfaceImpl> data_for_recursion;

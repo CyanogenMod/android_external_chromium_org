@@ -103,6 +103,9 @@ const char kQuicFieldTrialName[] = "QUIC";
 const char kQuicFieldTrialEnabledGroupName[] = "Enabled";
 const char kQuicFieldTrialHttpsEnabledGroupName[] = "HttpsEnabled";
 
+const char kSpdyFieldTrialName[] = "SPDY";
+const char kSpdyFieldTrialDisabledGroupName[] = "SpdyDisabled";
+
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 void ObserveKeychainEvents() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -511,6 +514,8 @@ void IOThread::InitAsync() {
   ChromeNetworkDelegate* network_delegate =
       new ChromeNetworkDelegate(extension_event_router_forwarder_,
                                 &system_enable_referrers_);
+  if (command_line.HasSwitch(switches::kEnableClientHints))
+    network_delegate->SetEnableClientHints();
   if (command_line.HasSwitch(switches::kDisableExtensionsHttpThrottling))
     network_delegate->NeverThrottleRequests();
   globals_->system_network_delegate.reset(network_delegate);
@@ -685,7 +690,14 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
 
   // Only handle use-spdy command line flags if "spdy.disabled" preference is
   // not disabled via policy.
-  if (!is_spdy_disabled_by_policy_) {
+  if (is_spdy_disabled_by_policy_) {
+    base::FieldTrial* trial = base::FieldTrialList::Find(kSpdyFieldTrialName);
+    if (trial)
+      trial->Disable();
+  } else {
+    std::string spdy_trial_group =
+        base::FieldTrialList::FindFullName(kSpdyFieldTrialName);
+
     if (command_line.HasSwitch(switches::kEnableIPPooling))
       globals_->enable_spdy_ip_pooling.set(true);
 
@@ -699,6 +711,7 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
       // Enable WebSocket over SPDY.
       net::WebSocketJob::set_websocket_over_spdy_enabled(true);
     }
+
     if (command_line.HasSwitch(switches::kMaxSpdyConcurrentStreams)) {
       globals_->max_spdy_concurrent_streams_limit.set(
           GetSwitchValueAsInt(command_line,
@@ -721,13 +734,18 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
       net::HttpStreamFactory::EnableNpnSpdy4a2();
     } else if (command_line.HasSwitch(switches::kDisableSpdy31)) {
       net::HttpStreamFactory::EnableNpnSpdy3();
-    } else if (command_line.HasSwitch(switches::kEnableNpn)) {
-      net::HttpStreamFactory::EnableNpnSpdy();
+    } else if (command_line.HasSwitch(switches::kEnableSpdy2)) {
+      net::HttpStreamFactory::EnableNpnSpdy31WithSpdy2();
     } else if (command_line.HasSwitch(switches::kEnableNpnHttpOnly)) {
       net::HttpStreamFactory::EnableNpnHttpOnly();
     } else {
-      // Use SPDY/3.1 by default.
-      net::HttpStreamFactory::EnableNpnSpdy31();
+      if (spdy_trial_group == kSpdyFieldTrialDisabledGroupName &&
+          !command_line.HasSwitch(switches::kEnableWebSocketOverSpdy)) {
+         net::HttpStreamFactory::set_spdy_enabled(false);
+      } else {
+        // Use SPDY/3.1 by default.
+        net::HttpStreamFactory::EnableNpnSpdy31();
+      }
     }
   }
 
@@ -768,11 +786,11 @@ void IOThread::EnableSpdy(const std::string& mode) {
     if (option == kOff) {
       net::HttpStreamFactory::set_spdy_enabled(false);
     } else if (option == kDisableSSL) {
-      globals_->spdy_default_protocol.set(net::kProtoSPDY2);
+      globals_->spdy_default_protocol.set(net::kProtoSPDY3);
       net::HttpStreamFactory::set_force_spdy_over_ssl(false);
       net::HttpStreamFactory::set_force_spdy_always(true);
     } else if (option == kSSL) {
-      globals_->spdy_default_protocol.set(net::kProtoSPDY2);
+      globals_->spdy_default_protocol.set(net::kProtoSPDY3);
       net::HttpStreamFactory::set_force_spdy_over_ssl(true);
       net::HttpStreamFactory::set_force_spdy_always(true);
     } else if (option == kDisablePing) {
@@ -786,7 +804,7 @@ void IOThread::EnableSpdy(const std::string& mode) {
     } else if (option == kForceAltProtocols) {
       net::PortAlternateProtocolPair pair;
       pair.port = 443;
-      pair.protocol = net::NPN_SPDY_2;
+      pair.protocol = net::NPN_SPDY_3;
       net::HttpServerPropertiesImpl::ForceAlternateProtocol(pair);
     } else if (option == kSingleDomain) {
       DLOG(INFO) << "FORCING SINGLE DOMAIN";

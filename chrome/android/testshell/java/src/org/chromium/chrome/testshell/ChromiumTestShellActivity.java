@@ -24,6 +24,7 @@ import org.chromium.content.browser.ContentVideoViewClient;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.DeviceUtils;
+import org.chromium.content.browser.TracingControllerAndroid;
 import org.chromium.content.common.CommandLine;
 import org.chromium.sync.signin.ChromeSigninController;
 import org.chromium.ui.WindowAndroid;
@@ -33,19 +34,6 @@ import org.chromium.ui.WindowAndroid;
  */
 public class ChromiumTestShellActivity extends Activity implements MenuHandler {
     private static final String TAG = "ChromiumTestShellActivity";
-    /**
-     * Sending an intent with this action will simulate a memory pressure signal
-     * at a critical level.
-     */
-    private static final String ACTION_LOW_MEMORY =
-            "org.chromium.chrome_test_shell.action.ACTION_LOW_MEMORY";
-
-    /**
-     * Sending an intent with this action will simulate a memory pressure signal
-     * at a moderate level.
-     */
-    private static final String ACTION_TRIM_MEMORY_MODERATE =
-            "org.chromium.chrome_test_shell.action.ACTION_TRIM_MEMORY_MODERATE";
 
     private WindowAndroid mWindow;
     private TabManager mTabManager;
@@ -97,9 +85,9 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
         mDevToolsServer = new DevToolsServer("chromium_testshell");
         mDevToolsServer.setRemoteDebuggingEnabled(true);
         mSyncController = SyncController.get(this);
-        // In case this method is called after the first onResume(), we need to inform the
-        // SyncController that we have resumed.
-        mSyncController.onResume();
+        // In case this method is called after the first onStart(), we need to inform the
+        // SyncController that we have started.
+        mSyncController.onStart();
     }
 
     @Override
@@ -132,13 +120,7 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
 
     @Override
     protected void onNewIntent(Intent intent) {
-        if (ACTION_LOW_MEMORY.equals(intent.getAction())) {
-            MemoryPressureListener.simulateMemoryPressureSignal(TRIM_MEMORY_COMPLETE);
-            return;
-        } else if (ACTION_TRIM_MEMORY_MODERATE.equals(intent.getAction())) {
-            MemoryPressureListener.simulateMemoryPressureSignal(TRIM_MEMORY_MODERATE);
-            return;
-        }
+        if (MemoryPressureListener.handleDebugIntent(this, intent.getAction())) return;
 
         String url = getUrlFromIntent(intent);
         if (!TextUtils.isEmpty(url)) {
@@ -148,22 +130,22 @@ public class ChromiumTestShellActivity extends Activity implements MenuHandler {
     }
 
     @Override
-    protected void onPause() {
-        ContentView view = getActiveContentView();
-        if (view != null) view.onActivityPause();
+    protected void onStop() {
+        super.onStop();
 
-        super.onPause();
+        ContentView view = getActiveContentView();
+        if (view != null) view.onHide();
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    protected void onStart() {
+        super.onStart();
 
         ContentView view = getActiveContentView();
-        if (view != null) view.onActivityResume();
+        if (view != null) view.onShow();
 
         if (mSyncController != null) {
-            mSyncController.onResume();
+            mSyncController.onStart();
         }
     }
 

@@ -287,15 +287,14 @@ class FastFetchFeedFetcher : public ChangeListLoader::FeedFetcher {
   // since currently we always use WAPI for fast fetch, regardless of the flag.
   void FixResourceIdInChangeList(ChangeList* change_list) {
     std::vector<ResourceEntry>* entries = change_list->mutable_entries();
+    std::vector<std::string>* parent_resource_ids =
+        change_list->mutable_parent_resource_ids();
     for (size_t i = 0; i < entries->size(); ++i) {
       ResourceEntry* entry = &(*entries)[i];
       if (entry->has_resource_id())
         entry->set_resource_id(FixResourceId(entry->resource_id()));
 
-      // Currently parent local id is the parent's resource id.
-      // It will be replaced by actual local id. (crbug.com/260514).
-      if (entry->has_parent_local_id())
-        entry->set_parent_local_id(FixResourceId(entry->parent_local_id()));
+      (*parent_resource_ids)[i] = FixResourceId((*parent_resource_ids)[i]);
     }
   }
 
@@ -560,23 +559,22 @@ void ChangeListLoader::LoadFromServerIfNeededAfterGetAbout(
     google_apis::GDataErrorCode status,
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(GDataToFileError(status) == FILE_ERROR_OK,
-            about_resource.get() != NULL);
 
-  if (GDataToFileError(status) == FILE_ERROR_OK) {
-    DCHECK(about_resource);
-    last_known_remote_changestamp_ = about_resource->largest_change_id();
-    root_folder_id_ = about_resource->root_folder_id();
+  FileError error = GDataToFileError(status);
+  if (error != FILE_ERROR_OK) {
+    OnChangeListLoadComplete(error);
+    return;
   }
 
-  int64 remote_changestamp =
-      about_resource ? about_resource->largest_change_id() : 0;
+  DCHECK(about_resource);
+  last_known_remote_changestamp_ = about_resource->largest_change_id();
+  root_folder_id_ = about_resource->root_folder_id();
+
+  int64 remote_changestamp = about_resource->largest_change_id();
   if (remote_changestamp > 0 && local_changestamp >= remote_changestamp) {
     if (local_changestamp > remote_changestamp) {
       LOG(WARNING) << "Local resource metadata is fresher than server, local = "
-                   << local_changestamp
-                   << ", server = "
-                   << remote_changestamp;
+                   << local_changestamp << ", server = " << remote_changestamp;
     }
 
     // No changes detected, tell the client that the loading was successful.
@@ -585,15 +583,6 @@ void ChangeListLoader::LoadFromServerIfNeededAfterGetAbout(
   }
 
   int64 start_changestamp = local_changestamp > 0 ? local_changestamp + 1 : 0;
-  if (start_changestamp == 0 && !about_resource.get()) {
-    // Full update needs AboutResource. If this is a full update, we should
-    // just give up. Note that to exit from the change list loading, we
-    // always have to flush the pending callback tasks via
-    // OnChangeListLoadComplete.
-    OnChangeListLoadComplete(FILE_ERROR_FAILED);
-    return;
-  }
-
   if (directory_fetch_info.empty()) {
     // If the caller is not interested in a particular directory, just start
     // loading the change list.
@@ -619,6 +608,7 @@ void ChangeListLoader::LoadFromServerIfNeededAfterLoadDirectory(
     int64 start_changestamp,
     FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(about_resource);
 
   if (error == FILE_ERROR_OK) {
     // The directory fast-fetch succeeded. Runs the callbacks waiting for the
@@ -634,6 +624,7 @@ void ChangeListLoader::LoadChangeListFromServer(
     int64 start_changestamp) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!change_feed_fetcher_);
+  DCHECK(about_resource);
 
   bool is_delta_update = start_changestamp != 0;
 
@@ -658,6 +649,7 @@ void ChangeListLoader::LoadChangeListFromServerAfterLoadChangeList(
     FileError error,
     ScopedVector<ChangeList> change_lists) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(about_resource);
 
   // Delete the fetcher first.
   change_feed_fetcher_.reset();
@@ -823,6 +815,7 @@ void ChangeListLoader::DoLoadGrandRootDirectoryFromServerAfterGetAboutResource(
     scoped_ptr<google_apis::AboutResource> about_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+  DCHECK(about_resource);
   DCHECK_EQ(directory_fetch_info.resource_id(),
             util::kDriveGrandRootSpecialResourceId);
 
@@ -888,8 +881,6 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(
     return;
   }
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(change_lists.Pass(), &entry_map, NULL);
   base::FilePath* directory_path = new base::FilePath;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
@@ -897,7 +888,7 @@ void ChangeListLoader::DoLoadDirectoryFromServerAfterLoad(
       base::Bind(&ChangeListProcessor::RefreshDirectory,
                  resource_metadata_,
                  directory_fetch_info,
-                 entry_map,
+                 base::Passed(&change_lists),
                  directory_path),
       base::Bind(&ChangeListLoader::DoLoadDirectoryFromServerAfterRefresh,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -930,6 +921,7 @@ void ChangeListLoader::UpdateFromChangeList(
     const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
+  DCHECK(about_resource);
 
   ChangeListProcessor* change_list_processor =
       new ChangeListProcessor(resource_metadata_);

@@ -11,11 +11,12 @@
 #include "ash/launcher/launcher.h"
 #include "ash/launcher/launcher_button.h"
 #include "ash/launcher/launcher_icon_observer.h"
+#include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
-#include "ash/launcher/launcher_tooltip_manager.h"
 #include "ash/launcher/launcher_types.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_tooltip_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
@@ -24,6 +25,7 @@
 #include "ash/test/launcher_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_launcher_delegate.h"
+#include "ash/test/test_launcher_item_delegate.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -207,10 +209,15 @@ class LauncherViewTest : public AshTestBase {
     launcher_view_ = test::LauncherTestAPI(launcher).launcher_view();
 
     // The bounds should be big enough for 4 buttons + overflow chevron.
-    launcher_view_->SetBounds(0, 0, 500, 50);
+    launcher_view_->SetBounds(0, 0, 500,
+        internal::ShelfLayoutManager::GetPreferredShelfSize());
 
     test_api_.reset(new LauncherViewTestAPI(launcher_view_));
     test_api_->SetAnimationDuration(1);  // Speeds up animation for test.
+
+    item_manager_ =
+        ash::Shell::GetInstance()->launcher_item_delegate_manager();
+    DCHECK(item_manager_);
 
     // Add browser shortcut launcher item at index 0 for test.
     AddBrowserShortcut();
@@ -222,12 +229,19 @@ class LauncherViewTest : public AshTestBase {
   }
 
  protected:
+  void CreateAndSetLauncherItemDelegateForID(LauncherID id) {
+    scoped_ptr<LauncherItemDelegate> delegate(
+        new ash::test::TestLauncherItemDelegate(NULL));
+    item_manager_->SetLauncherItemDelegate(id, delegate.Pass());
+  }
+
   LauncherID AddBrowserShortcut() {
     LauncherItem browser_shortcut;
     browser_shortcut.type = TYPE_BROWSER_SHORTCUT;
 
     LauncherID id = model_->next_id();
     model_->AddAt(browser_index_, browser_shortcut);
+    CreateAndSetLauncherItemDelegateForID(id);
     test_api_->RunMessageLoopUntilAnimationsDone();
     return id;
   }
@@ -239,6 +253,7 @@ class LauncherViewTest : public AshTestBase {
 
     LauncherID id = model_->next_id();
     model_->Add(item);
+    CreateAndSetLauncherItemDelegateForID(id);
     test_api_->RunMessageLoopUntilAnimationsDone();
     return id;
   }
@@ -256,6 +271,7 @@ class LauncherViewTest : public AshTestBase {
 
     LauncherID id = model_->next_id();
     model_->Add(item);
+    CreateAndSetLauncherItemDelegateForID(id);
     return id;
   }
 
@@ -266,6 +282,7 @@ class LauncherViewTest : public AshTestBase {
 
     LauncherID id = model_->next_id();
     model_->Add(item);
+    CreateAndSetLauncherItemDelegateForID(id);
     return id;
   }
 
@@ -386,6 +403,7 @@ class LauncherViewTest : public AshTestBase {
   LauncherModel* model_;
   internal::LauncherView* launcher_view_;
   int browser_index_;
+  LauncherItemDelegateManager* item_manager_;
 
   scoped_ptr<LauncherViewTestAPI> test_api_;
 
@@ -411,30 +429,47 @@ class LauncherViewLegacyShelfLayoutTest : public LauncherViewTest {
   DISALLOW_COPY_AND_ASSIGN(LauncherViewLegacyShelfLayoutTest);
 };
 
+class ScopedTextDirectionChange {
+ public:
+  ScopedTextDirectionChange(bool is_rtl)
+      : is_rtl_(is_rtl) {
+    original_locale_ = l10n_util::GetApplicationLocale(std::string());
+    if (is_rtl_)
+      base::i18n::SetICUDefaultLocale("he");
+    CheckTextDirectionIsCorrect();
+  }
+
+  ~ScopedTextDirectionChange() {
+    if (is_rtl_)
+      base::i18n::SetICUDefaultLocale(original_locale_);
+  }
+
+ private:
+  void CheckTextDirectionIsCorrect() {
+    ASSERT_EQ(is_rtl_, base::i18n::IsRTL());
+  }
+
+  bool is_rtl_;
+  std::string original_locale_;
+};
+
 class LauncherViewTextDirectionTest
     : public LauncherViewTest,
       public testing::WithParamInterface<bool> {
  public:
-  LauncherViewTextDirectionTest() : is_rtl_(GetParam()) {}
+  LauncherViewTextDirectionTest() : text_direction_change_(GetParam()) {}
   virtual ~LauncherViewTextDirectionTest() {}
 
   virtual void SetUp() OVERRIDE {
     LauncherViewTest::SetUp();
-    original_locale_ = l10n_util::GetApplicationLocale(std::string());
-    if (is_rtl_)
-      base::i18n::SetICUDefaultLocale("he");
-    ASSERT_EQ(is_rtl_, base::i18n::IsRTL());
   }
 
   virtual void TearDown() OVERRIDE {
-    if (is_rtl_)
-      base::i18n::SetICUDefaultLocale(original_locale_);
     LauncherViewTest::TearDown();
   }
 
  private:
-  bool is_rtl_;
-  std::string original_locale_;
+  ScopedTextDirectionChange text_direction_change_;
 
   DISALLOW_COPY_AND_ASSIGN(LauncherViewTextDirectionTest);
 };
@@ -1038,7 +1073,7 @@ TEST_F(LauncherViewTest, LauncherItemBoundsCheck) {
   VerifyLauncherItemBoundsAreValid();
 }
 
-TEST_F(LauncherViewTest, LauncherTooltipTest) {
+TEST_F(LauncherViewTest, ShelfTooltipTest) {
   ASSERT_EQ(test_api_->GetLastVisibleIndex() + 1,
             test_api_->GetButtonCount());
 
@@ -1050,7 +1085,7 @@ TEST_F(LauncherViewTest, LauncherTooltipTest) {
   internal::LauncherButton* platform_button = GetButtonByID(platform_button_id);
 
   internal::LauncherButtonHost* button_host = launcher_view_;
-  internal::LauncherTooltipManager* tooltip_manager =
+  internal::ShelfTooltipManager* tooltip_manager =
       launcher_view_->tooltip_manager();
 
   button_host->MouseEnteredButton(app_button);
@@ -1088,7 +1123,7 @@ TEST_F(LauncherViewTest, LauncherTooltipTest) {
 // button, see crbug.com/288838.
 TEST_F(LauncherViewTest, RemovingItemClosesTooltip) {
   internal::LauncherButtonHost* button_host = launcher_view_;
-  internal::LauncherTooltipManager* tooltip_manager =
+  internal::ShelfTooltipManager* tooltip_manager =
       launcher_view_->tooltip_manager();
 
   // Add an item to the launcher.
@@ -1114,7 +1149,7 @@ TEST_F(LauncherViewTest, RemovingItemClosesTooltip) {
 // Changing the shelf alignment closes any open tooltip.
 TEST_F(LauncherViewTest, ShelfAlignmentClosesTooltip) {
   internal::LauncherButtonHost* button_host = launcher_view_;
-  internal::LauncherTooltipManager* tooltip_manager =
+  internal::ShelfTooltipManager* tooltip_manager =
       launcher_view_->tooltip_manager();
 
   // Add an item to the launcher.
@@ -1208,7 +1243,7 @@ TEST_F(LauncherViewTest, ShouldHideTooltipWithAppListWindowTest) {
 // Test that by moving the mouse cursor off the button onto the bubble it closes
 // the bubble.
 TEST_F(LauncherViewTest, ShouldHideTooltipWhenHoveringOnTooltip) {
-  internal::LauncherTooltipManager* tooltip_manager =
+  internal::ShelfTooltipManager* tooltip_manager =
       launcher_view_->tooltip_manager();
   tooltip_manager->CreateZeroDelayTimerForTest();
   aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
@@ -1294,7 +1329,53 @@ TEST_F(LauncherViewLegacyShelfLayoutTest, CheckFittsLaw) {
   EXPECT_GT(ideal_bounds_0.width(), ideal_bounds_1.width());
 }
 
+class LauncherViewVisibleBoundsTest : public LauncherViewTest,
+                                      public testing::WithParamInterface<bool> {
+ public:
+  LauncherViewVisibleBoundsTest() : text_direction_change_(GetParam()) {}
+
+  void CheckAllItemsAreInBounds() {
+    gfx::Rect visible_bounds = launcher_view_->GetVisibleItemsBoundsInScreen();
+    gfx::Rect launcher_bounds = launcher_view_->GetBoundsInScreen();
+    EXPECT_TRUE(launcher_bounds.Contains(visible_bounds));
+    for (int i = 0; i < test_api_->GetButtonCount(); ++i)
+      if (internal::LauncherButton* button = test_api_->GetButton(i))
+        EXPECT_TRUE(visible_bounds.Contains(button->GetBoundsInScreen()));
+    CheckAppListButtonIsInBounds();
+  }
+
+  void CheckAppListButtonIsInBounds() {
+    gfx::Rect visible_bounds = launcher_view_->GetVisibleItemsBoundsInScreen();
+    gfx::Rect app_list_button_bounds = launcher_view_->GetAppListButtonView()->
+       GetBoundsInScreen();
+    EXPECT_TRUE(visible_bounds.Contains(app_list_button_bounds));
+  }
+
+ private:
+  ScopedTextDirectionChange text_direction_change_;
+
+  DISALLOW_COPY_AND_ASSIGN(LauncherViewVisibleBoundsTest);
+};
+
+TEST_P(LauncherViewVisibleBoundsTest, ItemsAreInBounds) {
+  // Adding elements leaving some empty space.
+  for (int i = 0; i < 3; i++) {
+    AddAppShortcut();
+  }
+  test_api_->RunMessageLoopUntilAnimationsDone();
+  EXPECT_FALSE(test_api_->IsOverflowButtonVisible());
+  CheckAllItemsAreInBounds();
+  // Same for overflow case.
+  while (!test_api_->IsOverflowButtonVisible()) {
+    AddAppShortcut();
+  }
+  test_api_->RunMessageLoopUntilAnimationsDone();
+  CheckAllItemsAreInBounds();
+}
+
 INSTANTIATE_TEST_CASE_P(LtrRtl, LauncherViewTextDirectionTest, testing::Bool());
+INSTANTIATE_TEST_CASE_P(VisibleBounds, LauncherViewVisibleBoundsTest,
+    testing::Bool());
 
 }  // namespace test
 }  // namespace ash

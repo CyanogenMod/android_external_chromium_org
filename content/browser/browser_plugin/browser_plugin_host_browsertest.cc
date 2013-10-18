@@ -431,7 +431,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, EmbedderChangedAfterSwap) {
   GURL test_https_url(https_server.GetURL(
       "files/browser_plugin_title_change.html"));
   content::WindowedNotificationObserver swap_observer(
-      content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+      content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
       content::Source<WebContents>(test_embedder()->web_contents()));
   NavigateToURL(shell(), test_https_url);
   swap_observer.Wait();
@@ -583,9 +583,8 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, ReloadEmbedder) {
 }
 
 // Always failing in the win7_aura try bot. See http://crbug.com/181107.
-// Times out under AddressSanitizer on Mac. See http://crbug.com/297576.
-#if (defined(OS_WIN) && defined(USE_AURA)) || \
-    (defined(OS_MACOSX) && defined(ADDRESS_SANITIZER))
+// Times out on the Mac. See http://crbug.com/297576.
+#if (defined(OS_WIN) && defined(USE_AURA)) || defined(OS_MACOSX)
 #define MAYBE_AcceptDragEvents DISABLED_AcceptDragEvents
 #else
 #define MAYBE_AcceptDragEvents AcceptDragEvents
@@ -811,8 +810,7 @@ IN_PROC_BROWSER_TEST_F(BrowserPluginHostTest, DoNotCrashOnInvalidNavigation) {
   // should be blocked because the scheme isn't web-safe or a pseudo-scheme.
   ExecuteSyncJSFunction(
       test_embedder()->web_contents()->GetRenderViewHost(),
-      base::StringPrintf("SetSrc('%s://abc123');",
-                         chrome::kGuestScheme));
+      base::StringPrintf("SetSrc('%s://abc123');", kGuestScheme));
   EXPECT_TRUE(delegate->load_aborted());
   EXPECT_TRUE(delegate->load_aborted_url().is_valid());
 }

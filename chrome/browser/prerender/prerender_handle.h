@@ -41,6 +41,10 @@ class PrerenderHandle : public base::NonThreadSafe,
     // Signals that the prerender has stopped running.
     virtual void OnPrerenderStop(PrerenderHandle* handle) = 0;
 
+    // Signals that this prerender has just become a MatchComplete replacement.
+    virtual void OnPrerenderCreatedMatchCompleteReplacement(
+        PrerenderHandle* handle) = 0;
+
    protected:
     Observer();
     virtual ~Observer();
@@ -77,6 +81,13 @@ class PrerenderHandle : public base::NonThreadSafe,
   // Returns whether this PrerenderHandle represents the same prerender as
   // the other PrerenderHandle object specified.
   bool RepresentingSamePrerenderAs(PrerenderHandle* other) const;
+
+  // Retrieves the SessionStorageNamespace of the underlying prerender, if
+  // available.
+  content::SessionStorageNamespace* GetSessionStorageNamespace() const;
+
+  // Returns the child id of the prerender.
+  int GetChildId() const;
 
  private:
   friend class PrerenderManager;

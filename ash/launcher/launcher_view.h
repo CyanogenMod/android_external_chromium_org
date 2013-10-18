@@ -42,10 +42,10 @@ namespace internal {
 
 class DragImageView;
 class LauncherButton;
-class LauncherTooltipManager;
-class ShelfLayoutManager;
 class OverflowBubble;
 class OverflowButton;
+class ShelfLayoutManager;
+class ShelfTooltipManager;
 
 class ASH_EXPORT LauncherView : public views::View,
                                 public LauncherModelObserver,
@@ -61,7 +61,7 @@ class ASH_EXPORT LauncherView : public views::View,
                ShelfLayoutManager* shelf_layout_manager);
   virtual ~LauncherView();
 
-  LauncherTooltipManager* tooltip_manager() { return tooltip_.get(); }
+  ShelfTooltipManager* tooltip_manager() { return tooltip_.get(); }
 
   LauncherModel* model() { return model_; }
 
@@ -86,6 +86,12 @@ class ASH_EXPORT LauncherView : public views::View,
   // Returns true if overflow bubble is shown.
   bool IsShowingOverflowBubble() const;
 
+  // Sets owner overflow bubble instance from which this launcher view pops
+  // out as overflow.
+  void set_owner_overflow_bubble(OverflowBubble* owner) {
+    owner_overflow_bubble_ = owner;
+  }
+
   views::View* GetAppListButtonView() const;
 
   // Returns true if the mouse cursor exits the area for launcher tooltip.
@@ -96,6 +102,10 @@ class ASH_EXPORT LauncherView : public views::View,
 
   int leading_inset() const { return leading_inset_; }
   void set_leading_inset(int leading_inset) { leading_inset_ = leading_inset; }
+
+  // Returns rectangle bounding all visible launcher items. Used screen
+  // coordinate system.
+  gfx::Rect GetVisibleItemsBoundsInScreen();
 
   // Overridden from FocusTraversable:
   virtual views::FocusSearch* GetFocusSearch() OVERRIDE;
@@ -322,7 +332,9 @@ class ASH_EXPORT LauncherView : public views::View,
 
   scoped_ptr<OverflowBubble> overflow_bubble_;
 
-  scoped_ptr<LauncherTooltipManager> tooltip_;
+  OverflowBubble* owner_overflow_bubble_;
+
+  scoped_ptr<ShelfTooltipManager> tooltip_;
 
   // Pointer device that initiated the current drag operation. If there is no
   // current dragging operation, this is NONE.

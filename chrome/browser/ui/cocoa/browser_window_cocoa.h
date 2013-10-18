@@ -49,6 +49,7 @@ class BrowserWindowCocoa :
   virtual bool IsActive() const OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
   virtual BrowserWindowTesting* GetBrowserWindowTesting() OVERRIDE;
   virtual StatusBubble* GetStatusBubble() OVERRIDE;
@@ -96,7 +97,6 @@ class BrowserWindowCocoa :
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
-  virtual void ToggleBookmarkBar() OVERRIDE;
   virtual void ShowUpdateChromeDialog() OVERRIDE;
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;

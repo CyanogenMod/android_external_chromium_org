@@ -17,10 +17,6 @@
 
 class Browser;
 
-namespace ash {
-class WindowPositioner;
-}
-
 namespace content {
 class WebContents;
 }
@@ -39,10 +35,6 @@ class ChromeShellDelegate : public ash::ShellDelegate,
 
   static ChromeShellDelegate* instance() { return instance_; }
 
-  ash::WindowPositioner* window_positioner() {
-    return window_positioner_.get();
-  }
-
   // ash::ShellDelegate overrides;
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
   virtual bool IsMultiProfilesEnabled() const OVERRIDE;
@@ -54,7 +46,7 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   virtual void NewWindow(bool is_incognito) OVERRIDE;
   virtual void ToggleFullscreen() OVERRIDE;
   virtual void ToggleMaximized() OVERRIDE;
-  virtual void OpenFileManager(bool as_dialog) OVERRIDE;
+  virtual void OpenFileManager() OVERRIDE;
   virtual void OpenCrosh() OVERRIDE;
   virtual void RestoreTab() OVERRIDE;
   virtual void ShowKeyboardOverlay() OVERRIDE;
@@ -116,10 +108,6 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   static ChromeShellDelegate* instance_;
 
   content::NotificationRegistrar registrar_;
-
-  scoped_ptr<ash::WindowPositioner> window_positioner_;
-
-  base::WeakPtrFactory<ChromeShellDelegate> weak_factory_;
 
   ChromeLauncherController* launcher_delegate_;
 

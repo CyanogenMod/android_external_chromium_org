@@ -46,6 +46,9 @@ class ScopedTransformOverviewWindow {
   // used to determine if an event targetted this window.
   bool Contains(const aura::Window* target) const;
 
+  // Returns the original bounds of all transformed windows.
+  gfx::Rect GetBoundsInScreen() const;
+
   // Restores the window if it was minimized.
   void RestoreWindow();
 
@@ -58,22 +61,24 @@ class ScopedTransformOverviewWindow {
   // anything on the window at destruction time.
   void OnWindowDestroyed();
 
+  // Prepares for overview mode by doing any necessary actions before entering.
+  virtual void PrepareForOverview();
+
   // Sets |transform| on the window and a copy of the window if the target
-  // |root_window| is not the window's root window.
+  // |root_window| is not the window's root window. If |animate| the transform
+  // is animated in, otherwise it is immediately applied.
   void SetTransform(aura::RootWindow* root_window,
-                    const gfx::Transform& transform);
+                    const gfx::Transform& transform,
+                    bool animate);
 
   aura::Window* window() const { return window_; }
 
- protected:
-  // Dispatched when the overview of this window has started.
-  virtual void OnOverviewStarted();
-
  private:
   // Applies the |transform| to the overview window and all of its transient
-  // children using animations.
-  void AnimateTransformOnWindowAndTransientChildren(
-      const gfx::Transform& transform);
+  // children using animations. If |animate| the transform is animated in,
+  // otherwise it is applied immediately.
+  void SetTransformOnWindowAndTransientChildren(const gfx::Transform& transform,
+                                                bool animate);
 
   // A weak pointer to the real window in the overview.
   aura::Window* window_;
@@ -87,6 +92,9 @@ class ScopedTransformOverviewWindow {
   // If true, the window was minimized and should be restored if the window
   // was not selected.
   bool minimized_;
+
+  // Tracks if this window was ignored by the shelf.
+  bool ignored_by_shelf_;
 
   // True if the window has been transformed for overview mode.
   bool overview_started_;

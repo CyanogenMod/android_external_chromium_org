@@ -55,7 +55,7 @@ fileOperationUtil.deduplicatePath = function(
  * @param {function(Array.<Entry>)} successCallback Called when the traverse
  *     is successfully done with the array of the entries.
  * @param {function(FileError)} errorCallback Called on error with the first
- *     occured error (i.e. following errors will just be discarded).
+ *     occurred error (i.e. following errors will just be discarded).
  */
 fileOperationUtil.resolveRecursively = function(
     entry, successCallback, errorCallback) {
@@ -125,19 +125,6 @@ fileOperationUtil.resolveRecursively = function(
 };
 
 /**
- * Sets last modified date to the entry.
- * @param {Entry} entry The entry to which the last modified is set.
- * @param {Date} modificationTime The last modified time.
- */
-fileOperationUtil.setLastModified = function(entry, modificationTime) {
-  chrome.fileBrowserPrivate.setLastModified(
-      entry.toURL(), '' + Math.round(modificationTime.getTime() / 1000));
-};
-
-/**
- * CAUTION: THIS IS STILL UNDER DEVELOPMENT. DO NOT USE.
- * This will replace copyRecursively defined below.
- *
  * Copies source to parent with the name newName recursively.
  * This should work very similar to FileSystem API's copyTo. The difference is;
  * - The progress callback is supported.
@@ -179,10 +166,10 @@ fileOperationUtil.copyTo = function(
       return;
 
     switch (status.type) {
-      case 'begin_entry_copy':
+      case 'begin_copy_entry':
         break;
 
-      case 'end_entry_copy':
+      case 'end_copy_entry':
         entryChangedCallback(status.sourceUrl, status.destinationUrl);
         break;
 
@@ -246,345 +233,6 @@ fileOperationUtil.copyTo = function(
 };
 
 /**
- * Copies source to parent with the name newName recursively.
- *
- * @param {Entry} source The entry to be copied.
- * @param {DirectoryEntry} parent The entry of the destination directory.
- * @param {string} newName The name of copied file.
- * @param {function(string, string)} entryChangedCallback
- *     Callback invoked when an entry is created with the source url and
- *     the destination url.
- * @param {function(string, number)} progressCallback Callback invoked
- *     periodically during the copying. It takes the source url and the
- *     processed bytes of it.
- * @param {function(string)} successCallback Callback invoked when the copy
- *     is successfully done with the url of the created entry.
- * @param {function(FileError)} errorCallback Callback invoked when an error
- *     is found.
- * @return {function()} Callback to cancel the current file copy operation.
- *     When the cancel is done, errorCallback will be called. The returned
- *     callback must not be called more than once.
- */
-fileOperationUtil.copyRecursively = function(
-    source, parent, newName, entryChangedCallback, progressCallback,
-    successCallback, errorCallback) {
-  // Notify that the copy begins for each entry.
-  progressCallback(source, 0);
-
-  // If the entry is a file, redirect it to copyFile_().
-  if (source.isFile) {
-    return fileOperationUtil.copyFile_(
-        source, parent, newName, progressCallback,
-        function(entry) {
-          entryChangedCallback(source.toURL(), entry.toURL());
-          successCallback(entry.toURL());
-        },
-        errorCallback);
-  }
-
-  // Hereafter, the source is directory.
-  var cancelRequested = false;
-  var cancelCallback = null;
-
-  // First, we create the directory copy.
-  parent.getDirectory(
-      newName, {create: true, exclusive: true},
-      function(dirEntry) {
-        entryChangedCallback(source.toURL(), dirEntry.toURL());
-        if (cancelRequested) {
-          errorCallback(util.createFileError(FileError.ABORT_ERR));
-          return;
-        }
-
-        // Iterate on children, and copy them recursively.
-        util.forEachDirEntry(
-            source,
-            function(child, callback) {
-              if (cancelRequested) {
-                errorCallback(util.createFileError(FileError.ABORT_ERR));
-                return;
-              }
-
-              cancelCallback = fileOperationUtil.copyRecursively(
-                  child, dirEntry, child.name, entryChangedCallback,
-                  progressCallback,
-                  function() {
-                    cancelCallback = null;
-                    callback();
-                  },
-                  function(error) {
-                    cancelCallback = null;
-                    errorCallback(error);
-                  });
-            },
-            function() {
-              successCallback(dirEntry.toURL());
-            },
-            errorCallback);
-      },
-      errorCallback);
-
-  return function() {
-    cancelRequested = true;
-    if (cancelCallback) {
-      cancelCallback();
-      cancelCallback = null;
-    }
-  };
-};
-
-/**
- * Copies a file from source to the parent directory with newName.
- * See also copyFileByStream_ and copyFileOnDrive_ for the implementation
- * details.
- *
- * @param {FileEntry} source The file entry to be copied.
- * @param {DirectoryEntry} parent The entry of the destination directory.
- * @param {string} newName The name of copied file.
- * @param {function(string, number)} progressCallback Callback invoked
- *     periodically during the file writing with the source url and the
- *     number of the processed bytes.
- * @param {function(FileEntry)} successCallback Callback invoked when the copy
- *     is successfully done with the entry of the created file.
- * @param {function(FileError)} errorCallback Callback invoked when an error
- *     is found.
- * @return {function()} Callback to cancel the current file copy operation.
- *     When the cancel is done, errorCallback will be called. The returned
- *     callback must not be called more than once.
- * @private
- */
-fileOperationUtil.copyFile_ = function(
-    source, parent, newName, progressCallback, successCallback, errorCallback) {
-  if (!PathUtil.isDriveBasedPath(source.fullPath) &&
-      !PathUtil.isDriveBasedPath(parent.fullPath)) {
-    // Copying a file between non-Drive file systems.
-    return fileOperationUtil.copyFileByStream_(
-        source, parent, newName, progressCallback, successCallback,
-        errorCallback);
-  } else {
-    // Copying related to the Drive file system.
-    return fileOperationUtil.copyFileOnDrive_(
-        source, parent, newName, progressCallback, successCallback,
-        errorCallback);
-  }
-};
-
-/**
- * Copies a file by using File and FileWriter objects.
- *
- * This is a js-implementation of FileEntry.copyTo(). Unfortunately, copyTo
- * doesn't support periodical progress updating nor cancelling. To support
- * these operations, this method implements copyTo by streaming way in
- * JavaScript.
- *
- * Note that this is designed for file copying on local file system. We have
- * some special cases about copying on Drive file system. See also
- * copyFileOnDrive_() for more details.
- *
- * @param {FileEntry} source The file entry to be copied.
- * @param {DirectoryEntry} parent The entry of the destination directory.
- * @param {string} newName The name of copied file.
- * @param {function(string, number)} progressCallback Callback invoked
- *     periodically during the file writing with the source url and the
- *     number of the processed bytes.
- * @param {function(FileEntry)} successCallback Callback invoked when the copy
- *     is successfully done with the entry of the created file.
- * @param {function(FileError)} errorCallback Callback invoked when an error
- *     is found.
- * @return {function()} Callback to cancel the current file copy operation.
- *     When the cancel is done, errorCallback will be called. The returned
- *     callback must not be called more than once.
- * @private
- */
-fileOperationUtil.copyFileByStream_ = function(
-    source, parent, newName, progressCallback, successCallback, errorCallback) {
-  // Set to true when cancel is requested.
-  var cancelRequested = false;
-
-  source.file(function(file) {
-    if (cancelRequested) {
-      errorCallback(util.createFileError(FileError.ABORT_ERR));
-      return;
-    }
-
-    parent.getFile(newName, {create: true, exclusive: true}, function(target) {
-      if (cancelRequested) {
-        errorCallback(util.createFileError(FileError.ABORT_ERR));
-        return;
-      }
-
-      target.createWriter(function(writer) {
-        if (cancelRequested) {
-          errorCallback(util.createFileError(FileError.ABORT_ERR));
-          return;
-        }
-
-        writer.onerror = writer.onabort = function(progress) {
-          errorCallback(cancelRequested ?
-              util.createFileError(FileError.ABORT_ERR) :
-                  writer.error);
-        };
-
-        writer.onprogress = function(progress) {
-          if (cancelRequested) {
-            // If the copy was cancelled, we should abort the operation.
-            // The errorCallback will be called by writer.onabort after the
-            // termination.
-            writer.abort();
-            return;
-          }
-          progressCallback(source.toURL(), progress.loaded);
-        };
-
-        writer.onwrite = function() {
-          if (cancelRequested) {
-            errorCallback(util.createFileError(FileError.ABORT_ERR));
-            return;
-          }
-
-          source.getMetadata(function(metadata) {
-            if (cancelRequested) {
-              errorCallback(util.createFileError(FileError.ABORT_ERR));
-              return;
-            }
-
-            fileOperationUtil.setLastModified(
-                target, metadata.modificationTime);
-            successCallback(target);
-          }, errorCallback);
-        };
-
-        writer.write(file);
-      }, errorCallback);
-    }, errorCallback);
-  }, errorCallback);
-
-  return function() { cancelRequested = true; };
-};
-
-/**
- * Copies a file a) from Drive to local, b) from local to Drive, or c) from
- * Drive to Drive.
- * Currently, we need to take care about following two things for Drive:
- *
- * 1) Copying hosted document.
- * In theory, it is impossible to actual copy a hosted document to other
- * file system. Thus, instead, Drive file system backend creates a JSON file
- * referring to the hosted document. Also, when it is uploaded by copyTo,
- * the hosted document is copied on the server. Note that, this doesn't work
- * when a user creates a file by FileWriter (as copyFileEntry_ does).
- *
- * 2) File transfer between local and Drive server.
- * There are two directions of file transfer; from local to Drive and from
- * Drive to local.
- * The file transfer from local to Drive is done as a part of file system
- * background sync (kicked after the copy operation is done). So we don't need
- * to take care about it here. To copy the file from Drive to local (or Drive
- * to Drive with GData WAPI), we need to download the file content (if it is
- * not locally cached). During the downloading, we can listen the periodical
- * updating and cancel the downloding via private API.
- *
- * This function supports progress updating and cancelling partially.
- * Unfortunately, FileEntry.copyTo doesn't support progress updating nor
- * cancelling, so we support them only during file downloading.
- *
- * Note: we're planning to move copyTo logic into c++ side. crbug.com/261492
- *
- * @param {FileEntry} source The entry of the file to be copied.
- * @param {DirectoryEntry} parent The entry of the destination directory.
- * @param {string} newName The name of the copied file.
- * @param {function(string, number)} progressCallback Callback invoked
- *     periodically during the file writing with the source url and the
- *     number of the processed bytes.
- * @param {function(FileEntry)} successCallback Callback invoked when the
- *     file copy is successfully done with the entry of the copied file.
- * @param {function(FileError)} errorCallback Callback invoked when an error
- *     is found.
- * @return {function()} Callback to cancel the current file copy operation.
- *     When the cancel is done, errorCallback will be called. The returned
- *     callback must not be called more than once.
- * @private
- */
-fileOperationUtil.copyFileOnDrive_ = function(
-    source, parent, newName, progressCallback, successCallback, errorCallback) {
-  // Set to true when cancel is requested.
-  var cancelRequested = false;
-  var cancelCallback = null;
-
-  var onCopyToCompleted = null;
-
-  // Progress callback.
-  // Because the uploading the file from local cache to Drive server will be
-  // done as a part of background Drive file system sync, so for this copy
-  // operation, what we need to take care about is only file downloading.
-  if (PathUtil.isDriveBasedPath(source.fullPath)) {
-    var sourceUrl = source.toURL();
-    var sourcePath = util.extractFilePath(sourceUrl);
-    var onFileTransfersUpdated = function(statusList) {
-      for (var i = 0; i < statusList.length; i++) {
-        var status = statusList[i];
-
-        // Comparing urls is unreliable, since they may use different
-        // url encoding schemes (eg. rfc2396 vs. rfc3986).
-        var filePath = util.extractFilePath(status.fileUrl);
-        if (filePath == sourcePath) {
-          progressCallback(source.toURL(), status.processed);
-          return;
-        }
-      }
-    };
-
-    // Subscribe to listen file transfer updating notifications.
-    chrome.fileBrowserPrivate.onFileTransfersUpdated.addListener(
-        onFileTransfersUpdated);
-
-    // Currently, we do NOT upload the file during the copy operation.
-    // It will be done as a part of file system sync after copy operation.
-    // So, we can cancel only file downloading.
-    cancelCallback = function() {
-      chrome.fileBrowserPrivate.cancelFileTransfers(
-          [sourceUrl], function() {});
-    };
-
-    // We need to clean up on copyTo completion regardless if it is
-    // successfully done or not.
-    onCopyToCompleted = function() {
-      cancelCallback = null;
-      chrome.fileBrowserPrivate.onFileTransfersUpdated.removeListener(
-          onFileTransfersUpdated);
-    };
-  }
-
-  source.copyTo(
-      parent, newName,
-      function(entry) {
-        if (onCopyToCompleted)
-          onCopyToCompleted();
-
-        if (cancelRequested) {
-          errorCallback(util.createFileError(FileError.ABORT_ERR));
-          return;
-        }
-
-        successCallback(entry);
-      },
-      function(error) {
-        if (onCopyToCompleted)
-          onCopyToCompleted();
-
-        errorCallback(error);
-      });
-
-  return function() {
-    cancelRequested = true;
-    if (cancelCallback) {
-      cancelCallback();
-      cancelCallback = null;
-    }
-  };
-};
-
-/**
  * Thin wrapper of chrome.fileBrowserPrivate.zipSelection to adapt its
  * interface similar to copyTo().
  *
@@ -643,7 +291,7 @@ FileOperationManager.getInstance = function() {
 };
 
 /**
- * Manages cr.Event dispatching.
+ * Manages Event dispatching.
  * Currently this can send three types of events: "copy-progress",
  * "copy-operation-completed" and "delete".
  *
@@ -672,7 +320,7 @@ FileOperationManager.EventRouter.prototype.__proto__ = cr.EventTarget.prototype;
  */
 FileOperationManager.EventRouter.prototype.sendProgressEvent = function(
     reason, status, opt_error) {
-  var event = new cr.Event('copy-progress');
+  var event = new Event('copy-progress');
   event.reason = reason;
   event.status = status;
   if (opt_error)
@@ -688,7 +336,7 @@ FileOperationManager.EventRouter.prototype.sendProgressEvent = function(
  */
 FileOperationManager.EventRouter.prototype.sendEntryChangedEvent = function(
     kind, entry) {
-  var event = new cr.Event('entry-changed');
+  var event = new Event('entry-changed');
   event.kind = kind;
   event.entry = entry;
   this.dispatchEvent(event);
@@ -704,7 +352,7 @@ FileOperationManager.EventRouter.prototype.sendEntryChangedEvent = function(
  */
 FileOperationManager.EventRouter.prototype.sendDeleteEvent = function(
     reason, urls) {
-  var event = new cr.Event('delete');
+  var event = new Event('delete');
   event.reason = reason;
   event.urls = urls;
   this.dispatchEvent(event);
@@ -1005,7 +653,7 @@ FileOperationManager.CopyTask.processEntry_ = function(
           return;
         }
 
-        cancelCallback = fileOperationUtil.copyRecursively(
+        cancelCallback = fileOperationUtil.copyTo(
             sourceEntry, destinationEntry, destinationName,
             entryChangedCallback, progressCallback,
             function(entry) {
@@ -1328,7 +976,7 @@ FileOperationManager.prototype.getStatus = function() {
     if (task.operationType != operationType)
       operationType = null;
 
-    // Assuming the number of entries is small enough, count everytime.
+    // Assuming the number of entries is small enough, count every time.
     for (var j = 0; j < task.processingEntries.length; j++) {
       for (var url in task.processingEntries[j]) {
         ++result.numRemainingItems;
@@ -1351,7 +999,7 @@ FileOperationManager.prototype.getStatus = function() {
 /**
  * Adds an event listener for the tasks.
  * @param {string} type The name of the event.
- * @param {function(cr.Event)} handler The handler for the event.
+ * @param {function(Event)} handler The handler for the event.
  *     This is called when the event is dispatched.
  */
 FileOperationManager.prototype.addEventListener = function(type, handler) {
@@ -1361,7 +1009,7 @@ FileOperationManager.prototype.addEventListener = function(type, handler) {
 /**
  * Removes an event listener for the tasks.
  * @param {string} type The name of the event.
- * @param {function(cr.Event)} handler The handler to be removed.
+ * @param {function(Event)} handler The handler to be removed.
  */
 FileOperationManager.prototype.removeEventListener = function(type, handler) {
   this.eventRouter_.removeEventListener(type, handler);
@@ -1376,7 +1024,7 @@ FileOperationManager.prototype.hasQueuedTasks = function() {
 };
 
 /**
- * Unloads the host page in 5 secs of idleing. Need to be called
+ * Unloads the host page in 5 secs of idling. Need to be called
  * each time this.copyTasks_.length or this.deleteTasks_.length
  * changed.
  *
@@ -1527,7 +1175,7 @@ FileOperationManager.prototype.paste = function(
 };
 
 /**
- * Checks if the move operation is avaiable between the given two locations.
+ * Checks if the move operation is available between the given two locations.
  *
  * @param {DirectoryEntry} sourceEntry An entry from the source.
  * @param {DirectoryEntry} targetDirEntry Directory entry for the target.

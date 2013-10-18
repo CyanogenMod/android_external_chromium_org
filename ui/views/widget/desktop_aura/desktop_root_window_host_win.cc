@@ -19,6 +19,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path_win.h"
+#include "ui/gfx/vector2d.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/native_theme_aura.h"
 #include "ui/native_theme/native_theme_win.h"
@@ -27,6 +28,7 @@
 #include "ui/views/corewm/cursor_manager.h"
 #include "ui/views/corewm/focus_controller.h"
 #include "ui/views/corewm/input_method_event_filter.h"
+#include "ui/views/corewm/tooltip_win.h"
 #include "ui/views/corewm/window_animations.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
@@ -62,7 +64,8 @@ DesktopRootWindowHostWin::DesktopRootWindowHostWin(
       content_window_(NULL),
       should_animate_window_close_(false),
       pending_close_(false),
-      has_non_client_view_(false) {
+      has_non_client_view_(false),
+      tooltip_(NULL) {
 }
 
 DesktopRootWindowHostWin::~DesktopRootWindowHostWin() {
@@ -123,6 +126,7 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
   root_window_->Init();
   root_window_->AddChild(content_window_);
 
+  desktop_native_widget_aura_->InstallWindowModalityController(root_window_);
   desktop_native_widget_aura_->CreateCaptureClient(root_window_);
 
   corewm::FocusController* focus_controller =
@@ -169,6 +173,12 @@ aura::RootWindow* DesktopRootWindowHostWin::Init(
 
 void DesktopRootWindowHostWin::InitFocus(aura::Window* window) {
   focus_client_->FocusWindow(window);
+}
+
+scoped_ptr<corewm::Tooltip> DesktopRootWindowHostWin::CreateTooltip() {
+  DCHECK(!tooltip_);
+  tooltip_ = new corewm::TooltipWin(GetAcceleratedWidget());
+  return scoped_ptr<corewm::Tooltip>(tooltip_);
 }
 
 void DesktopRootWindowHostWin::Close() {
@@ -298,6 +308,10 @@ void DesktopRootWindowHostWin::SetAlwaysOnTop(bool always_on_top) {
   message_handler_->SetAlwaysOnTop(always_on_top);
 }
 
+bool DesktopRootWindowHostWin::IsAlwaysOnTop() const {
+  return message_handler_->IsAlwaysOnTop();
+}
+
 void DesktopRootWindowHostWin::SetWindowTitle(const string16& title) {
   message_handler_->SetTitle(title);
 }
@@ -416,18 +430,28 @@ gfx::Rect DesktopRootWindowHostWin::GetBounds() const {
   gfx::Rect bounds(WidgetSizeIsClientSize() ?
       message_handler_->GetClientAreaBoundsInScreen() :
       message_handler_->GetWindowBoundsInScreen());
-  gfx::Rect without_expansion(bounds.x() - window_expansion_.x(),
-                              bounds.y() - window_expansion_.y(),
-                              bounds.width() - window_expansion_.width(),
-                              bounds.height() - window_expansion_.height());
+
+  // If the window bounds were expanded we need to return the original bounds
+  // To achieve this we do the reverse of the expansion, i.e. add the
+  // window_expansion_top_left_delta_ to the origin and subtract the
+  // window_expansion_bottom_right_delta_ from the width and height.
+  gfx::Rect without_expansion(
+      bounds.x() + window_expansion_top_left_delta_.x(),
+      bounds.y() + window_expansion_top_left_delta_.y(),
+      bounds.width() - window_expansion_bottom_right_delta_.x(),
+      bounds.height() - window_expansion_bottom_right_delta_.y());
   return without_expansion;
 }
 
 void DesktopRootWindowHostWin::SetBounds(const gfx::Rect& bounds) {
-  gfx::Rect expanded(bounds.x() + window_expansion_.x(),
-                     bounds.y() + window_expansion_.y(),
-                     bounds.width() + window_expansion_.width(),
-                     bounds.height() + window_expansion_.height());
+  // If the window bounds have to be expanded we need to subtract the
+  // window_expansion_top_left_delta_ from the origin and add the
+  // window_expansion_bottom_right_delta_ to the width and height
+  gfx::Rect expanded(
+      bounds.x() - window_expansion_top_left_delta_.x(),
+      bounds.y() - window_expansion_top_left_delta_.y(),
+      bounds.width() + window_expansion_bottom_right_delta_.x(),
+      bounds.height() + window_expansion_bottom_right_delta_.y());
   message_handler_->SetBounds(expanded);
 }
 
@@ -504,10 +528,12 @@ void DesktopRootWindowHostWin::PrepareForShutdown() {
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopRootWindowHostWin, aura::AnimationHost implementation:
 
-void DesktopRootWindowHostWin::SetHostTransitionBounds(
-    const gfx::Rect& bounds) {
+void DesktopRootWindowHostWin::SetHostTransitionOffsets(
+    const gfx::Vector2d& top_left_delta,
+    const gfx::Vector2d& bottom_right_delta) {
   gfx::Rect bounds_without_expansion = GetBounds();
-  window_expansion_ = bounds;
+  window_expansion_top_left_delta_ = top_left_delta;
+  window_expansion_bottom_right_delta_ = bottom_right_delta;
   SetBounds(bounds_without_expansion);
 }
 
@@ -548,6 +574,8 @@ bool DesktopRootWindowHostWin::CanMaximize() const {
 }
 
 bool DesktopRootWindowHostWin::CanActivate() const {
+  if (IsModalWindowActive())
+    return true;
   return native_widget_delegate_->CanActivate();
 }
 
@@ -635,6 +663,11 @@ void DesktopRootWindowHostWin::HandleAppDeactivated() {
 }
 
 void DesktopRootWindowHostWin::HandleActivationChanged(bool active) {
+  // This can be invoked from HWNDMessageHandler::Init(), at which point we're
+  // not in a good state and need to ignore it.
+  if (!root_window_host_delegate_)
+    return;
+
   if (active)
     root_window_host_delegate_->OnHostActivated();
   desktop_native_widget_aura_->HandleActivationChanged(active);
@@ -724,14 +757,8 @@ void DesktopRootWindowHostWin::HandleVisibilityChanged(bool visible) {
 
 void DesktopRootWindowHostWin::HandleClientSizeChanged(
     const gfx::Size& new_size) {
-  gfx::Size without_expansion(new_size.width() - window_expansion_.width(),
-                              new_size.height() - window_expansion_.height());
   if (root_window_host_delegate_)
     root_window_host_delegate_->OnHostResized(new_size);
-  // TODO(beng): replace with a layout manager??
-  gfx::Size dip_size = gfx::win::ScreenToDIPSize(without_expansion);
-  content_window_->SetBounds(gfx::Rect(dip_size));
-  native_widget_delegate_->OnNativeWidgetSizeChanged(dip_size);
 }
 
 void DesktopRootWindowHostWin::HandleFrameChanged() {
@@ -814,12 +841,14 @@ void DesktopRootWindowHostWin::HandlePaint(gfx::Canvas* canvas) {
 bool DesktopRootWindowHostWin::HandleTooltipNotify(int w_param,
                                                    NMHDR* l_param,
                                                    LRESULT* l_result) {
-  return false;
+  return tooltip_ && tooltip_->HandleNotify(w_param, l_param, l_result);
 }
 
 void DesktopRootWindowHostWin::HandleTooltipMouseMove(UINT message,
                                                       WPARAM w_param,
                                                       LPARAM l_param) {
+  // TooltipWin implementation doesn't need this.
+  // TODO(sky): remove from HWNDMessageHandler once non-aura path nuked.
 }
 
 bool DesktopRootWindowHostWin::PreHandleMSG(UINT message,
@@ -853,6 +882,23 @@ void DesktopRootWindowHostWin::SetWindowTransparency() {
   bool transparent = ShouldUseNativeFrame() && !IsFullscreen();
   root_window_->compositor()->SetHostHasTransparentBackground(transparent);
   root_window_->SetTransparent(transparent);
+}
+
+bool DesktopRootWindowHostWin::IsModalWindowActive() const {
+  // This function can get called during window creation which occurs before
+  // root_window_ has been created.
+  if (!root_window_)
+    return false;
+
+  aura::Window::Windows::const_iterator index;
+  for (index = root_window_->children().begin();
+       index != root_window_->children().end();
+       ++index) {
+    if ((*index)->GetProperty(aura::client::kModalKey) !=
+        ui:: MODAL_TYPE_NONE && (*index)->TargetVisibility())
+      return true;
+  }
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

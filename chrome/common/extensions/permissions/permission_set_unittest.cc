@@ -14,9 +14,9 @@
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using extension_test_util::LoadManifest;
@@ -654,7 +654,6 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kPointerLock);
   skip.insert(APIPermission::kPower);
   skip.insert(APIPermission::kPushMessaging);
-  skip.insert(APIPermission::kScreensaver);
   skip.insert(APIPermission::kSessions);
   skip.insert(APIPermission::kStorage);
   skip.insert(APIPermission::kSystemCpu);
@@ -663,6 +662,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kSystemStorage);
   skip.insert(APIPermission::kTts);
   skip.insert(APIPermission::kUnlimitedStorage);
+  skip.insert(APIPermission::kWebRtc);
   skip.insert(APIPermission::kWebView);
 
   // TODO(erikkay) add a string for this permission.
@@ -701,6 +701,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kAutoTestPrivate);
   skip.insert(APIPermission::kBookmarkManagerPrivate);
   skip.insert(APIPermission::kBrailleDisplayPrivate);
+  skip.insert(APIPermission::kCast);
   skip.insert(APIPermission::kChromeosInfoPrivate);
   skip.insert(APIPermission::kCloudPrintPrivate);
   skip.insert(APIPermission::kCommandLinePrivate);
@@ -720,6 +721,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kMetricsPrivate);
   skip.insert(APIPermission::kMDns);
   skip.insert(APIPermission::kPreferencesPrivate);
+  skip.insert(APIPermission::kPrincipalsPrivate);
   skip.insert(APIPermission::kImageWriterPrivate);
   skip.insert(APIPermission::kRtcPrivate);
   skip.insert(APIPermission::kStreamsPrivate);
@@ -749,12 +751,6 @@ TEST(PermissionsTest, PermissionMessages) {
        i != permissions.end(); ++i) {
     const APIPermissionInfo* permission_info = i->info();
     EXPECT_TRUE(permission_info != NULL);
-
-    // Always skip permissions that cannot be in the manifest.
-    scoped_ptr<const APIPermission> permission(
-        permission_info->CreateAPIPermission());
-    if (permission->ManifestEntryForbidden())
-      continue;
 
     if (skip.count(i->id())) {
       EXPECT_EQ(PermissionMessage::kNone, permission_info->message_id())
@@ -1013,15 +1009,12 @@ TEST(PermissionsTest, GetWarningMessages_PlatformApppHosts) {
   ASSERT_EQ(0u, warnings.size());
 }
 
-TEST(PermissionsTest, GetDistinctHostsForDisplay) {
-  scoped_refptr<PermissionSet> perm_set;
-  APIPermissionSet empty_perms;
+TEST(PermissionsTest, GetDistinctHosts) {
+  URLPatternSet explicit_hosts;
   std::set<std::string> expected;
   expected.insert("www.foo.com");
   expected.insert("www.bar.com");
   expected.insert("www.baz.com");
-  URLPatternSet explicit_hosts;
-  URLPatternSet scriptable_hosts;
 
   {
     SCOPED_TRACE("no dupes");
@@ -1033,9 +1026,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
         URLPattern(URLPattern::SCHEME_HTTP, "http://www.bar.com/path"));
     explicit_hosts.AddPattern(
         URLPattern(URLPattern::SCHEME_HTTP, "http://www.baz.com/path"));
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1046,9 +1038,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
         URLPattern(URLPattern::SCHEME_HTTP, "http://www.foo.com/path"));
     explicit_hosts.AddPattern(
         URLPattern(URLPattern::SCHEME_HTTP, "http://www.baz.com/path"));
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1057,9 +1048,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
     // Add a pattern that differs only by scheme. This should be filtered out.
     explicit_hosts.AddPattern(
         URLPattern(URLPattern::SCHEME_HTTPS, "https://www.bar.com/path"));
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1068,9 +1058,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
     // Add some dupes by path.
     explicit_hosts.AddPattern(
         URLPattern(URLPattern::SCHEME_HTTP, "http://www.bar.com/pathypath"));
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1085,9 +1074,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
     expected.insert("monkey.www.bar.com");
     expected.insert("bar.com");
 
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1116,9 +1104,8 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
 
     expected.insert("www.foo.xyzzy");
 
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
@@ -1129,15 +1116,16 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
 
     expected.insert("*.google.com");
 
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 
   {
     SCOPED_TRACE("scriptable hosts");
+
+    APIPermissionSet empty_perms;
     explicit_hosts.ClearPatterns();
-    scriptable_hosts.ClearPatterns();
+    URLPatternSet scriptable_hosts;
     expected.clear();
 
     explicit_hosts.AddPattern(
@@ -1148,32 +1136,30 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay) {
     expected.insert("*.google.com");
     expected.insert("*.example.com");
 
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    scoped_refptr<PermissionSet> perm_set(new PermissionSet(
+        empty_perms, explicit_hosts, scriptable_hosts));
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(perm_set->effective_hosts(),
+                                              true, true));
   }
 
   {
     // We don't display warnings for file URLs because they are off by default.
     SCOPED_TRACE("file urls");
+
     explicit_hosts.ClearPatterns();
-    scriptable_hosts.ClearPatterns();
     expected.clear();
 
     explicit_hosts.AddPattern(
         URLPattern(URLPattern::SCHEME_FILE, "file:///*"));
 
-    perm_set = new PermissionSet(
-        empty_perms, explicit_hosts, scriptable_hosts);
-    EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+    EXPECT_EQ(expected,
+              PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
   }
 }
 
-TEST(PermissionsTest, GetDistinctHostsForDisplay_ComIsBestRcd) {
-  scoped_refptr<PermissionSet> perm_set;
-  APIPermissionSet empty_perms;
+TEST(PermissionsTest, GetDistinctHosts_ComIsBestRcd) {
   URLPatternSet explicit_hosts;
-  URLPatternSet scriptable_hosts;
   explicit_hosts.AddPattern(
       URLPattern(URLPattern::SCHEME_HTTP, "http://www.foo.ca/path"));
   explicit_hosts.AddPattern(
@@ -1189,16 +1175,12 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay_ComIsBestRcd) {
 
   std::set<std::string> expected;
   expected.insert("www.foo.com");
-  perm_set = new PermissionSet(
-      empty_perms, explicit_hosts, scriptable_hosts);
-  EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+  EXPECT_EQ(expected,
+            PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
 }
 
-TEST(PermissionsTest, GetDistinctHostsForDisplay_NetIs2ndBestRcd) {
-  scoped_refptr<PermissionSet> perm_set;
-  APIPermissionSet empty_perms;
+TEST(PermissionsTest, GetDistinctHosts_NetIs2ndBestRcd) {
   URLPatternSet explicit_hosts;
-  URLPatternSet scriptable_hosts;
   explicit_hosts.AddPattern(
       URLPattern(URLPattern::SCHEME_HTTP, "http://www.foo.ca/path"));
   explicit_hosts.AddPattern(
@@ -1213,17 +1195,12 @@ TEST(PermissionsTest, GetDistinctHostsForDisplay_NetIs2ndBestRcd) {
 
   std::set<std::string> expected;
   expected.insert("www.foo.net");
-  perm_set = new PermissionSet(
-      empty_perms, explicit_hosts, scriptable_hosts);
-  EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+  EXPECT_EQ(expected,
+            PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
 }
 
-TEST(PermissionsTest,
-     GetDistinctHostsForDisplay_OrgIs3rdBestRcd) {
-  scoped_refptr<PermissionSet> perm_set;
-  APIPermissionSet empty_perms;
+TEST(PermissionsTest, GetDistinctHosts_OrgIs3rdBestRcd) {
   URLPatternSet explicit_hosts;
-  URLPatternSet scriptable_hosts;
   explicit_hosts.AddPattern(
       URLPattern(URLPattern::SCHEME_HTTP, "http://www.foo.ca/path"));
   explicit_hosts.AddPattern(
@@ -1237,17 +1214,12 @@ TEST(PermissionsTest,
 
   std::set<std::string> expected;
   expected.insert("www.foo.org");
-  perm_set = new PermissionSet(
-      empty_perms, explicit_hosts, scriptable_hosts);
-  EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+  EXPECT_EQ(expected,
+            PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
 }
 
-TEST(PermissionsTest,
-     GetDistinctHostsForDisplay_FirstInListIs4thBestRcd) {
-  scoped_refptr<PermissionSet> perm_set;
-  APIPermissionSet empty_perms;
+TEST(PermissionsTest, GetDistinctHosts_FirstInListIs4thBestRcd) {
   URLPatternSet explicit_hosts;
-  URLPatternSet scriptable_hosts;
   explicit_hosts.AddPattern(
       URLPattern(URLPattern::SCHEME_HTTP, "http://www.foo.ca/path"));
   // No http://www.foo.org/path
@@ -1260,9 +1232,8 @@ TEST(PermissionsTest,
 
   std::set<std::string> expected;
   expected.insert("www.foo.ca");
-  perm_set = new PermissionSet(
-      empty_perms, explicit_hosts, scriptable_hosts);
-  EXPECT_EQ(expected, perm_set->GetDistinctHostsForDisplay());
+  EXPECT_EQ(expected,
+            PermissionSet::GetDistinctHosts(explicit_hosts, true, true));
 }
 
 TEST(PermissionsTest, HasLessHostPrivilegesThan) {

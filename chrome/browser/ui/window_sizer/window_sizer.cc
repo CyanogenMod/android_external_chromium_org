@@ -19,9 +19,9 @@
 #include "ui/gfx/screen.h"
 
 #if defined(USE_ASH)
+#include "ash/shell.h"
+#include "ash/wm/window_positioner.h"
 #include "chrome/browser/ui/ash/ash_init.h"
-#include "chrome/browser/ui/ash/chrome_shell_delegate.h"
-#include "chrome/browser/ui/ash/window_positioner.h"
 #endif
 
 // Minimum height of the visible part of a window.
@@ -138,15 +138,6 @@ class DefaultStateProvider : public WindowSizer::StateProvider {
 ///////////////////////////////////////////////////////////////////////////////
 // WindowSizer, public:
 
-// The number of pixels which are kept free top, left and right when a window
-// gets positioned to its default location.
-// static
-const int WindowSizer::kDesktopBorderSize = 16;
-
-// Maximum width of a window even if there is more room on the desktop.
-// static
-const int WindowSizer::kMaximumWindowWidth = 1100;
-
 WindowSizer::WindowSizer(StateProvider* state_provider, const Browser* browser)
     : state_provider_(state_provider),
       // TODO(scottmg): NativeScreen is wrong. http://crbug.com/133312
@@ -200,9 +191,8 @@ void WindowSizer::DetermineWindowBoundsAndShowState(
     } else if (chrome::ShouldOpenAshOnStartup() &&
                browser_ && browser_->host_desktop_type() ==
                chrome::HOST_DESKTOP_TYPE_ASH) {
-      // Saved bounds's show state takes precedence over one in last
-      // bounds in ash.  If you have a question or an issue, please
-      // contact oshima@chromium.org.
+      // In ash, saved show state takes precidence.  If you have a
+      // question or an issue, please contact oshima@chromium.org.
       GetSavedWindowBounds(bounds, show_state);
     }
 #endif
@@ -214,14 +204,14 @@ void WindowSizer::DetermineWindowBoundsAndShowState(
       return;
     // No saved placement, figure out some sensible default size based on
     // the user's screen size.
-    GetDefaultWindowBounds(bounds);
+    GetDefaultWindowBounds(screen_->GetPrimaryDisplay(), bounds);
   } else {
 #if defined(USE_ASH)
     // In case of a popup with an 'unspecified' location in ash, we are
     // looking for a good screen location. We are interpreting (0,0) as an
     // unspecified location.
     if (IsPopupBrowserInAsh() && bounds->origin().IsOrigin()) {
-      *bounds = ChromeShellDelegate::instance()->window_positioner()->
+      *bounds = ash::Shell::GetInstance()->window_positioner()->
           GetPopupPosition(*bounds);
       return;
     }
@@ -267,17 +257,18 @@ bool WindowSizer::GetSavedWindowBounds(gfx::Rect* bounds,
   return true;
 }
 
-void WindowSizer::GetDefaultWindowBounds(gfx::Rect* default_bounds) const {
+void WindowSizer::GetDefaultWindowBounds(const gfx::Display& display,
+                                         gfx::Rect* default_bounds) const {
+  DCHECK(default_bounds);
 #if defined(USE_ASH)
   // TODO(beng): insufficient but currently necessary. http://crbug.com/133312
   if (chrome::ShouldOpenAshOnStartup()) {
-    GetDefaultWindowBoundsAsh(default_bounds);
+    *default_bounds = ash::WindowPositioner::GetDefaultWindowBounds(
+        display);
     return;
   }
 #endif
-  DCHECK(default_bounds);
-
-  gfx::Rect work_area = screen_->GetPrimaryDisplay().work_area();
+  gfx::Rect work_area = display.work_area();
 
   // The default size is either some reasonably wide width, or if the work
   // area is narrower, then the work area width less some aesthetic padding.
@@ -315,11 +306,11 @@ void WindowSizer::AdjustBoundsToBeVisibleOnMonitorContaining(
 
   // Find the size of the work area of the monitor that intersects the bounds
   // of the anchor window.
-  gfx::Rect work_area = screen_->GetDisplayMatching(other_bounds).work_area();
+  gfx::Display display = screen_->GetDisplayMatching(other_bounds);
 
   // If height or width are 0, reset to the default size.
   gfx::Rect default_bounds;
-  GetDefaultWindowBounds(&default_bounds);
+  GetDefaultWindowBounds(display, &default_bounds);
   if (bounds->height() <= 0)
     bounds->set_height(default_bounds.height());
   if (bounds->width() <= 0)
@@ -329,6 +320,7 @@ void WindowSizer::AdjustBoundsToBeVisibleOnMonitorContaining(
   bounds->set_height(std::max(kMinVisibleHeight, bounds->height()));
   bounds->set_width(std::max(kMinVisibleWidth, bounds->width()));
 
+  gfx::Rect work_area = display.work_area();
   // Ensure that the title bar is not above the work area.
   if (bounds->y() < work_area.y())
     bounds->set_y(work_area.y());

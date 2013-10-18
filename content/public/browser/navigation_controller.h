@@ -212,6 +212,8 @@ class NavigationController {
 
   // Active entry --------------------------------------------------------------
 
+  // THIS IS DEPRECATED. DO NOT USE. Use GetVisibleEntry instead.
+  //
   // Returns the active entry, which is the transient entry if any, the pending
   // entry if a navigation is in progress or the last committed entry otherwise.
   // NOTE: This can be NULL!!
@@ -300,7 +302,8 @@ class NavigationController {
   virtual void LoadURLWithParams(const LoadURLParams& params) = 0;
 
   // Loads the current page if this NavigationController was restored from
-  // history and the current page has not loaded yet.
+  // history and the current page has not loaded yet or if the load was
+  // explicitly requested using SetNeedsReload().
   virtual void LoadIfNecessary() = 0;
 
   // Renavigation --------------------------------------------------------------
@@ -364,8 +367,14 @@ class NavigationController {
   virtual int32 GetMaxRestoredPageID() const = 0;
 
   // Returns true if a reload happens when activated (SetActive(true) is
-  // invoked). This is true for session/tab restore and cloned tabs.
+  // invoked). This is true for session/tab restore, cloned tabs and tabs that
+  // requested a reload (using SetNeedsReload()) after their renderer was
+  // killed.
   virtual bool NeedsReload() const = 0;
+
+  // Request a reload to happen when activated. This can be used when a renderer
+  // backing a background tab is killed by the system on Android or ChromeOS.
+  virtual void SetNeedsReload() = 0;
 
   // Cancels a repost that brought up a warning.
   virtual void CancelPendingReload() = 0;

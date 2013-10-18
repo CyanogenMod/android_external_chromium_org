@@ -21,10 +21,10 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -89,6 +89,10 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_UNSUPPORTED_REQUIREMENT = 1 << 3,
     DISABLE_SIDELOAD_WIPEOUT = 1 << 4,
     DISABLE_UNKNOWN_FROM_SYNC = 1 << 5,
+    // Disabled because the user has not yet consented to the permissions,
+    // for instance for a default installed item.
+    DISABLE_PERMISSIONS_CONSENT = 1 << 6,
+    DISABLE_KNOWN_DISABLED = 1 << 7,
   };
 
   enum InstallType {
@@ -145,6 +149,11 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // |WAS_INSTALLED_BY_DEFAULT| installed by default when the profile was
     // created.
     WAS_INSTALLED_BY_DEFAULT = 1 << 7,
+
+    // |REQUIRE_PERMISSIONS_CONSENT| means that user needs to accept permissions
+    // before running the app even if it is marked as |WAS_INSTALLED_BY_DEFAULT|
+    // and |FROM_WEBSTORE|.
+    REQUIRE_PERMISSIONS_CONSENT = 1 << 8,
   };
 
   static scoped_refptr<Extension> Create(const base::FilePath& path,
@@ -311,6 +320,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   bool from_bookmark() const { return (creation_flags_ & FROM_BOOKMARK) != 0; }
   bool was_installed_by_default() const {
     return (creation_flags_ & WAS_INSTALLED_BY_DEFAULT) != 0;
+  }
+  bool requires_permissions_consent() const {
+    return (creation_flags_ & REQUIRE_PERMISSIONS_CONSENT) != 0;
   }
 
   // App-related.

@@ -12,18 +12,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/features/base_feature_provider.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/chrome_scheme_hosts.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/api_permission_set.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/user_script.h"
@@ -37,21 +37,6 @@ namespace errors = manifest_errors;
 namespace {
 
 PermissionsData::PolicyDelegate* g_policy_delegate = NULL;
-
-bool ContainsManifestForbiddenPermission(const APIPermissionSet& apis,
-                                         string16* error) {
-  CHECK(error);
-  for (APIPermissionSet::const_iterator iter = apis.begin();
-       iter != apis.end(); ++iter) {
-    if ((*iter)->ManifestEntryForbidden()) {
-      *error = ErrorUtils::FormatErrorMessageUTF16(
-          errors::kPermissionNotAllowedInManifest,
-          (*iter)->info()->name());
-      return true;
-    }
-  }
-  return false;
-}
 
 // Custom checks for the experimental permission that can't be expressed in
 // _permission_features.json.
@@ -134,7 +119,7 @@ bool ParseHelper(Extension* extension,
   // Verify feature availability of permissions.
   std::vector<APIPermission::ID> to_remove;
   FeatureProvider* permission_features =
-      BaseFeatureProvider::GetByName("permission");
+      FeatureProvider::GetPermissionFeatures();
   for (APIPermissionSet::const_iterator iter = api_permissions->begin();
        iter != api_permissions->end(); ++iter) {
     Feature* feature = permission_features->GetFeature(iter->name());
@@ -406,6 +391,9 @@ const URLPatternSet& PermissionsData::GetEffectiveHostPermissions(
 // static
 bool PermissionsData::CanSilentlyIncreasePermissions(
     const Extension* extension) {
+  if (extension->requires_permissions_consent())
+    return false;
+
   return extension->location() != Manifest::INTERNAL;
 }
 
@@ -614,13 +602,6 @@ bool PermissionsData::ParsePermissions(Extension* extension, string16* error) {
                    &initial_optional_permissions_->api_permissions,
                    &initial_optional_permissions_->host_permissions,
                    error)) {
-    return false;
-  }
-
-  if (ContainsManifestForbiddenPermission(
-          initial_required_permissions_->api_permissions, error) ||
-      ContainsManifestForbiddenPermission(
-          initial_optional_permissions_->api_permissions, error)) {
     return false;
   }
 

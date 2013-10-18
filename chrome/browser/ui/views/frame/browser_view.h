@@ -263,6 +263,7 @@ class BrowserView : public BrowserWindow,
   virtual bool IsActive() const OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
   virtual BrowserWindowTesting* GetBrowserWindowTesting() OVERRIDE;
   virtual StatusBubble* GetStatusBubble() OVERRIDE;
@@ -316,7 +317,6 @@ class BrowserView : public BrowserWindow,
   virtual void DisableInactiveFrame() OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
-  virtual void ToggleBookmarkBar() OVERRIDE;
   virtual void ShowUpdateChromeDialog() OVERRIDE;
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;

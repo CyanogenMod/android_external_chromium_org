@@ -265,8 +265,6 @@ TEST_F(GLES2DecoderTest1, BlendFuncSeparateValidArgs) {
 }
 // TODO(gman): BufferData
 
-// TODO(gman): BufferDataImmediate
-
 // TODO(gman): BufferSubData
 
 // TODO(gman): BufferSubDataImmediate
@@ -354,8 +352,6 @@ TEST_F(GLES2DecoderTest1, ColorMaskValidArgs) {
 }
 // TODO(gman): CompileShader
 // TODO(gman): CompressedTexImage2D
-
-// TODO(gman): CompressedTexImage2DImmediate
 
 // TODO(gman): CompressedTexImage2DBucket
 // TODO(gman): CompressedTexSubImage2D
@@ -1110,8 +1106,6 @@ TEST_F(GLES2DecoderTest1, GenTexturesImmediateInvalidArgs) {
 
 // TODO(gman): GetAttribLocation
 
-// TODO(gman): GetAttribLocationImmediate
-
 // TODO(gman): GetAttribLocationBucket
 
 
@@ -1819,8 +1813,6 @@ TEST_F(GLES2DecoderTest1, GetTexParameterivInvalidArgs2_1) {
 
 // TODO(gman): GetUniformLocation
 
-// TODO(gman): GetUniformLocationImmediate
-
 // TODO(gman): GetUniformLocationBucket
 
 
@@ -1864,6 +1856,85 @@ TEST_F(GLES2DecoderTest1, GetVertexAttribfvInvalidArgs2_1) {
       kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
+}
+
+TEST_F(GLES2DecoderTest1, GetVertexAttribivValidArgs) {
+  SpecializedSetup<cmds::GetVertexAttribiv, 0>(true);
+  typedef cmds::GetVertexAttribiv::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  result->size = 0;
+  cmds::GetVertexAttribiv cmd;
+  cmd.Init(
+      1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
+      shared_memory_offset_);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
+                GL_VERTEX_ATTRIB_ARRAY_NORMALIZED),
+            result->GetNumResults());
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_F(GLES2DecoderTest1, GetVertexAttribivInvalidArgs2_0) {
+  EXPECT_CALL(*gl_, GetVertexAttribiv(_, _, _)).Times(0);
+  SpecializedSetup<cmds::GetVertexAttribiv, 0>(false);
+  cmds::GetVertexAttribiv::Result* result =
+      static_cast<cmds::GetVertexAttribiv::Result*>(shared_memory_address_);
+  result->size = 0;
+  cmds::GetVertexAttribiv cmd;
+  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, kInvalidSharedMemoryId, 0);
+  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
+  EXPECT_EQ(0u, result->size);
+}
+
+TEST_F(GLES2DecoderTest1, GetVertexAttribivInvalidArgs2_1) {
+  EXPECT_CALL(*gl_, GetVertexAttribiv(_, _, _)).Times(0);
+  SpecializedSetup<cmds::GetVertexAttribiv, 0>(false);
+  cmds::GetVertexAttribiv::Result* result =
+      static_cast<cmds::GetVertexAttribiv::Result*>(shared_memory_address_);
+  result->size = 0;
+  cmds::GetVertexAttribiv cmd;
+  cmd.Init(
+      1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
+      kInvalidSharedMemoryOffset);
+  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
+  EXPECT_EQ(0u, result->size);
+}
+// TODO(gman): GetVertexAttribPointerv
+
+
+TEST_F(GLES2DecoderTest1, HintValidArgs) {
+  EXPECT_CALL(*gl_, Hint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST));
+  SpecializedSetup<cmds::Hint, 0>(true);
+  cmds::Hint cmd;
+  cmd.Init(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_F(GLES2DecoderTest1, HintInvalidArgs0_0) {
+  EXPECT_CALL(*gl_, Hint(_, _)).Times(0);
+  SpecializedSetup<cmds::Hint, 0>(false);
+  cmds::Hint cmd;
+  cmd.Init(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
+TEST_F(GLES2DecoderTest1, IsBufferValidArgs) {
+  SpecializedSetup<cmds::IsBuffer, 0>(true);
+  cmds::IsBuffer cmd;
+  cmd.Init(client_buffer_id_, shared_memory_id_, shared_memory_offset_);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_F(GLES2DecoderTest1, IsBufferInvalidArgsBadSharedMemoryId) {
+  SpecializedSetup<cmds::IsBuffer, 0>(false);
+  cmds::IsBuffer cmd;
+  cmd.Init(client_buffer_id_, kInvalidSharedMemoryId, shared_memory_offset_);
+  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
+  cmd.Init(client_buffer_id_, shared_memory_id_, kInvalidSharedMemoryOffset);
+  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
 }
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_1_AUTOGEN_H_
 

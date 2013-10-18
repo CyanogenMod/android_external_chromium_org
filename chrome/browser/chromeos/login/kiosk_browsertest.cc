@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -28,7 +28,6 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -48,6 +47,7 @@
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -762,7 +762,8 @@ IN_PROC_BROWSER_TEST_P(KioskEnterpriseTest, EnterpriseKioskApp) {
   content::RunAllPendingInMessageLoop();
 }
 
-INSTANTIATE_TEST_CASE_P(KioskEnterpriseTestInstantiation,
+// Disabled due to failures; http://crbug.com/306611.
+INSTANTIATE_TEST_CASE_P(DISABLED_KioskEnterpriseTestInstantiation,
                         KioskEnterpriseTest,
                         testing::Bool());
 

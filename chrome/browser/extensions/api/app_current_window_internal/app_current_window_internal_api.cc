@@ -4,9 +4,9 @@
 
 #include "chrome/browser/extensions/api/app_current_window_internal/app_current_window_internal_api.h"
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/app_current_window_internal.h"
@@ -20,6 +20,8 @@ namespace SetBounds = extensions::api::app_current_window_internal::SetBounds;
 namespace SetIcon = extensions::api::app_current_window_internal::SetIcon;
 namespace SetInputRegion =
     extensions::api::app_current_window_internal::SetInputRegion;
+namespace SetAlwaysOnTop =
+    extensions::api::app_current_window_internal::SetAlwaysOnTop;
 
 using apps::ShellWindow;
 using extensions::api::app_current_window_internal::Bounds;
@@ -154,6 +156,7 @@ bool AppCurrentWindowInternalSetInputRegionFunction::RunWithWindow(
     ShellWindow* window) {
 
   const char* whitelist[] = {
+    "EBA908206905323CECE6DC4B276A58A0F4AC573F",
     "2775E568AC98F9578791F1EAB65A1BF5F8CEF414",
     "4AA3C5D69A4AECBD236CAD7884502209F0F5C169",
     "E410CDAB2C6E6DD408D731016CECF2444000A912",
@@ -198,6 +201,15 @@ bool AppCurrentWindowInternalSetInputRegionFunction::RunWithWindow(
 
   window->UpdateInputRegion(region.Pass());
 
+  return true;
+}
+
+bool AppCurrentWindowInternalSetAlwaysOnTopFunction::RunWithWindow(
+    ShellWindow* window) {
+  scoped_ptr<SetAlwaysOnTop::Params> params(
+      SetAlwaysOnTop::Params::Create(*args_));
+  CHECK(params.get());
+  window->GetBaseWindow()->SetAlwaysOnTop(params->always_on_top);
   return true;
 }
 

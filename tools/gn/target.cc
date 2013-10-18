@@ -138,12 +138,13 @@ void Target::OnResolved() {
     }
   }
 
-  // Copy our own ldflags to the final set. This will be from our target and
-  // all of our configs. We do this for ldflags because it must get inherited
-  // through the dependency tree (other flags don't work this way).
+  // Copy our own libs and lib_dirs to the final set. This will be from our
+  // target and all of our configs. We do this specially since these must be
+  // inherited through the dependency tree (other flags don't work this way).
   for (ConfigValuesIterator iter(this); !iter.done(); iter.Next()) {
-    all_ldflags_.append(iter.cur().ldflags().begin(),
-                        iter.cur().ldflags().end());
+    const ConfigValues& cur = iter.cur();
+    all_lib_dirs_.append(cur.lib_dirs().begin(), cur.lib_dirs().end());
+    all_libs_.append(cur.libs().begin(), cur.libs().end());
   }
 
   if (output_type_ != GROUP) {
@@ -187,20 +188,25 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
 
     // Direct dependent libraries.
     if (dep->output_type() == STATIC_LIBRARY ||
-        dep->output_type() == SHARED_LIBRARY)
+        dep->output_type() == SHARED_LIBRARY ||
+        dep->output_type() == SOURCE_SET)
       inherited_libraries_.insert(dep);
 
     // Inherited libraries and flags are inherited across static library
-    // boundaries.
-    if (dep->output_type() != SHARED_LIBRARY &&
+    // boundaries. For external targets, assume that the external_link_deps
+    // will take care of this.
+    if ((!dep->external() ||
+         !settings()->build_settings()->using_external_generator()) &&
+        dep->output_type() != SHARED_LIBRARY &&
         dep->output_type() != EXECUTABLE) {
       const std::set<const Target*> inherited = dep->inherited_libraries();
       for (std::set<const Target*>::const_iterator i = inherited.begin();
            i != inherited.end(); ++i)
         inherited_libraries_.insert(*i);
 
-      // Inherited system libraries.
-      all_ldflags_.append(dep->all_ldflags());
+      // Inherited library settings.
+      all_lib_dirs_.append(dep->all_lib_dirs());
+      all_libs_.append(dep->all_libs());
     }
   }
 

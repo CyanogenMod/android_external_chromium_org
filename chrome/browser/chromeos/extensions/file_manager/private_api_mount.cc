@@ -22,118 +22,49 @@
 
 using chromeos::disks::DiskMountManager;
 using content::BrowserThread;
-using extensions::api::file_browser_private::MountPointInfo;
+namespace file_browser_private = extensions::api::file_browser_private;
 
 namespace extensions {
-namespace {
-
-// Returns the Value of the |volume_info|.
-linked_ptr<MountPointInfo> CreateValueFromVolumeInfo(
-    const file_manager::VolumeInfo& volume_info,
-    Profile* profile,
-    const std::string& extension_id) {
-  linked_ptr<MountPointInfo> result(new MountPointInfo);
-
-  result->volume_type = MountPointInfo::VOLUME_TYPE_NONE;
-  switch (volume_info.type) {
-    case file_manager::VOLUME_TYPE_GOOGLE_DRIVE:
-      result->volume_type = MountPointInfo::VOLUME_TYPE_DRIVE;
-      break;
-    case file_manager::VOLUME_TYPE_DOWNLOADS_DIRECTORY:
-      result->volume_type = MountPointInfo::VOLUME_TYPE_DOWNLOADS;
-      break;
-    case file_manager::VOLUME_TYPE_REMOVABLE_DISK_PARTITION:
-      result->volume_type = MountPointInfo::VOLUME_TYPE_REMOVABLE;
-      break;
-    case file_manager::VOLUME_TYPE_MOUNTED_ARCHIVE_FILE:
-      result->volume_type = MountPointInfo::VOLUME_TYPE_ARCHIVE;
-      break;
-  }
-  DCHECK_NE(result->volume_type, MountPointInfo::VOLUME_TYPE_NONE);
-
-  if (!volume_info.source_path.empty())
-    result->source_path.reset(
-        new std::string(volume_info.source_path.AsUTF8Unsafe()));
-
-  // Convert mount point path to relative path with the external file system
-  // exposed within File API.
-  base::FilePath relative_path;
-  if (file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
-          profile, extension_id, volume_info.mount_path, &relative_path))
-    result->mount_path.reset(
-        new std::string(relative_path.AsUTF8Unsafe()));
-
-  result->mount_condition =
-      DiskMountManager::MountConditionToString(volume_info.mount_condition);
-  return result;
-}
-
-}  // namespace
 
 bool FileBrowserPrivateAddMountFunction::RunImpl() {
-  using extensions::api::file_browser_private::AddMount::Params;
+  using file_browser_private::AddMount::Params;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
   drive::util::Log(logging::LOG_INFO,
-                   "%s[%d] called. (source: '%s', type:'%s')",
+                   "%s[%d] called. (source: '%s')",
                    name().c_str(),
                    request_id(),
-                   params->source.empty() ? "(none)" : params->source.c_str(),
-                   Params::ToString(params->volume_type).c_str());
+                   params->source.empty() ? "(none)" : params->source.c_str());
   set_log_on_completion(true);
 
-  switch (params->volume_type) {
-    case Params::VOLUME_TYPE_DRIVE: {
-      // Dispatch fake 'mounted' event because JS code depends on it.
-      // TODO(hashimoto): Remove this redanduncy.
-      file_manager::VolumeManager::Get(profile_)->OnFileSystemMounted();
+  const base::FilePath path = file_manager::util::GetLocalPathFromURL(
+      render_view_host(), profile(), GURL(params->source));
 
-      // Pass back the drive mount point path as source path.
-      const std::string& drive_path =
-          drive::util::GetDriveMountPointPathAsString();
-      SetResult(new base::StringValue(drive_path));
-      SendResponse(true);
-      return true;
-    }
+  if (path.empty())
+    return false;
 
-    case Params::VOLUME_TYPE_ARCHIVE: {
-      const base::FilePath path = file_manager::util::GetLocalPathFromURL(
-          render_view_host(), profile(), GURL(params->source));
+  // Check if the source path is under Drive cache directory.
+  if (drive::util::IsUnderDriveMountPoint(path)) {
+    drive::FileSystemInterface* file_system =
+        drive::util::GetFileSystemByProfile(profile());
+    if (!file_system)
+      return false;
 
-      if (path.empty())
-        return false;
-
-      const base::FilePath::StringType display_name = path.BaseName().value();
-
-      // Check if the source path is under Drive cache directory.
-      if (drive::util::IsUnderDriveMountPoint(path)) {
-        drive::FileSystemInterface* file_system =
-            drive::util::GetFileSystemByProfile(profile());
-        if (!file_system)
-          return false;
-
-        file_system->MarkCacheFileAsMounted(
-            drive::util::ExtractDrivePath(path),
-            base::Bind(&FileBrowserPrivateAddMountFunction::OnMountedStateSet,
-                       this, display_name));
-      } else {
-        OnMountedStateSet(display_name, drive::FILE_ERROR_OK, path);
-      }
-      return true;
-    }
-
-    case Params::VOLUME_TYPE_NONE:
-      // Invalid mount type.
-      break;
+    file_system->MarkCacheFileAsMounted(
+        drive::util::ExtractDrivePath(path),
+        base::Bind(
+            &FileBrowserPrivateAddMountFunction::RunAfterMarkCacheFileAsMounted,
+            this, path.BaseName()));
+  } else {
+    RunAfterMarkCacheFileAsMounted(
+        path.BaseName(), drive::FILE_ERROR_OK, path);
   }
-
-  error_ = "Invalid mount type";
-  return false;
+  return true;
 }
 
-void FileBrowserPrivateAddMountFunction::OnMountedStateSet(
-    const base::FilePath::StringType& file_name,
+void FileBrowserPrivateAddMountFunction::RunAfterMarkCacheFileAsMounted(
+    const base::FilePath& display_name,
     drive::FileError error,
     const base::FilePath& file_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -143,18 +74,21 @@ void FileBrowserPrivateAddMountFunction::OnMountedStateSet(
     return;
   }
 
-  DiskMountManager* disk_mount_manager = DiskMountManager::GetInstance();
   // Pass back the actual source path of the mount point.
-  SetResult(new base::StringValue(file_path.value()));
+  SetResult(new base::StringValue(file_path.AsUTF8Unsafe()));
   SendResponse(true);
+
   // MountPath() takes a std::string.
+  DiskMountManager* disk_mount_manager = DiskMountManager::GetInstance();
   disk_mount_manager->MountPath(
-      file_path.AsUTF8Unsafe(), base::FilePath(file_name).Extension(),
-      file_name, chromeos::MOUNT_TYPE_ARCHIVE);
+      file_path.AsUTF8Unsafe(),
+      base::FilePath(display_name.Extension()).AsUTF8Unsafe(),
+      display_name.AsUTF8Unsafe(),
+      chromeos::MOUNT_TYPE_ARCHIVE);
 }
 
 bool FileBrowserPrivateRemoveMountFunction::RunImpl() {
-  using extensions::api::file_browser_private::RemoveMount::Params;
+  using file_browser_private::RemoveMount::Params;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -196,7 +130,7 @@ void FileBrowserPrivateRemoveMountFunction::GetSelectedFileInfoResponse(
   SendResponse(true);
 }
 
-bool FileBrowserPrivateGetMountPointsFunction::RunImpl() {
+bool FileBrowserPrivateGetVolumeMetadataListFunction::RunImpl() {
   if (args_->GetSize())
     return false;
 
@@ -204,11 +138,13 @@ bool FileBrowserPrivateGetMountPointsFunction::RunImpl() {
       file_manager::VolumeManager::Get(profile_)->GetVolumeInfoList();
 
   std::string log_string;
-  std::vector<linked_ptr<extensions::api::file_browser_private::
-                         MountPointInfo> > result;
+  std::vector<linked_ptr<file_browser_private::VolumeMetadata> > result;
   for (size_t i = 0; i < volume_info_list.size(); ++i) {
-    result.push_back(CreateValueFromVolumeInfo(
-        volume_info_list[i], profile(), extension_id()));
+    linked_ptr<file_browser_private::VolumeMetadata> volume_metadata(
+        new file_browser_private::VolumeMetadata);
+    file_manager::util::VolumeInfoToVolumeMetadata(
+        profile(), volume_info_list[i], volume_metadata.get());
+    result.push_back(volume_metadata);
     if (!log_string.empty())
       log_string += ", ";
     log_string += volume_info_list[i].mount_path.AsUTF8Unsafe();
@@ -219,8 +155,8 @@ bool FileBrowserPrivateGetMountPointsFunction::RunImpl() {
       "%s[%d] succeeded. (results: '[%s]', %" PRIuS " mount points)",
       name().c_str(), request_id(), log_string.c_str(), result.size());
 
-  results_ = extensions::api::file_browser_private::
-      GetMountPoints::Results::Create(result);
+  results_ =
+      file_browser_private::GetVolumeMetadataList::Results::Create(result);
   SendResponse(true);
   return true;
 }

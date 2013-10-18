@@ -8,7 +8,9 @@
 #include "ash/screen_ash.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_properties.h"
+#include "ash/wm/window_state_observer.h"
 #include "ash/wm/window_util.h"
+#include "ash/wm/wm_types.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -32,7 +34,11 @@ WindowState::WindowState(aura::Window* window)
       panel_attached_(true),
       continue_drag_after_reparent_(false),
       ignored_by_shelf_(false),
-      always_restores_to_restore_bounds_(false) {
+      can_consume_system_keys_(false),
+      top_row_keys_are_function_keys_(false),
+      always_restores_to_restore_bounds_(false),
+      window_show_type_(ToWindowShowType(GetShowState())) {
+  window_->AddObserver(this);
 }
 
 WindowState::~WindowState() {
@@ -93,9 +99,9 @@ bool WindowState::CanActivate() const {
 }
 
 bool WindowState::CanSnap() const {
-  if (!CanResize())
-    return false;
-  if (window_->type() == aura::client::WINDOW_TYPE_PANEL)
+  if (!CanResize() ||
+      window_->type() == aura::client::WINDOW_TYPE_PANEL ||
+      window_->transient_parent())
     return false;
   // If a window has a maximum size defined, snapping may make it too big.
   return window_->delegate() ? window_->delegate()->GetMaximumSize().IsEmpty() :
@@ -108,6 +114,14 @@ bool WindowState::HasRestoreBounds() const {
 
 void WindowState::Maximize() {
   window_->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
+}
+
+void WindowState::SnapLeft(const gfx::Rect& bounds) {
+  SnapWindow(SHOW_TYPE_LEFT_SNAPPED, bounds);
+}
+
+void WindowState::SnapRight(const gfx::Rect& bounds) {
+  SnapWindow(SHOW_TYPE_LEFT_SNAPPED, bounds);
 }
 
 void WindowState::Minimize() {
@@ -182,11 +196,11 @@ void WindowState::SetPreAutoManageWindowBounds(
   pre_auto_manage_window_bounds_.reset(new gfx::Rect(bounds));
 }
 
-void WindowState::AddObserver(Observer* observer) {
+void WindowState::AddObserver(WindowStateObserver* observer) {
   observer_list_.AddObserver(observer);
 }
 
-void WindowState::RemoveObserver(Observer* observer) {
+void WindowState::RemoveObserver(WindowStateObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -195,8 +209,49 @@ void WindowState::SetTrackedByWorkspace(bool tracked_by_workspace) {
     return;
   bool old = tracked_by_workspace_;
   tracked_by_workspace_ = tracked_by_workspace;
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnTrackedByWorkspaceChanged(window_, old));
+  FOR_EACH_OBSERVER(WindowStateObserver, observer_list_,
+                    OnTrackedByWorkspaceChanged(this, old));
+}
+
+void WindowState::OnWindowPropertyChanged(aura::Window* window,
+                                          const void* key,
+                                          intptr_t old) {
+  DCHECK_EQ(window, window_);
+  if (key == aura::client::kShowStateKey) {
+    window_show_type_ = ToWindowShowType(GetShowState());
+    ui::WindowShowState old_state = static_cast<ui::WindowShowState>(old);
+    // TODO(oshima): Notify only when the state has changed.
+    // Doing so break a few tests now.
+    FOR_EACH_OBSERVER(
+        WindowStateObserver, observer_list_,
+        OnWindowShowTypeChanged(this, ToWindowShowType(old_state)));
+  }
+}
+
+void WindowState::OnWindowDestroying(aura::Window* window) {
+  window_->RemoveObserver(this);
+}
+
+void WindowState::SnapWindow(WindowShowType left_or_right,
+                             const gfx::Rect& bounds) {
+  if (IsMaximizedOrFullscreen()) {
+    // Before we can set the bounds we need to restore the window.
+    // Restoring the window will set the window to its restored bounds.
+    // To avoid an unnecessary bounds changes (which may have side effects)
+    // we set the restore bounds to the bounds we want, restore the window,
+    // then reset the restore bounds. This way no unnecessary bounds
+    // changes occurs and the original restore bounds is remembered.
+    gfx::Rect restore_bounds_in_screen =
+        GetRestoreBoundsInScreen();
+    SetRestoreBoundsInParent(bounds);
+    Restore();
+    SetRestoreBoundsInScreen(restore_bounds_in_screen);
+  } else {
+    window_->SetBounds(bounds);
+  }
+  DCHECK(left_or_right == SHOW_TYPE_LEFT_SNAPPED ||
+         left_or_right == SHOW_TYPE_RIGHT_SNAPPED);
+  window_show_type_ = left_or_right;
 }
 
 WindowState* GetActiveWindowState() {

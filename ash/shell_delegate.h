@@ -67,6 +67,7 @@ enum UserMetricsAction {
   UMA_ACCEL_SEARCH_LWIN,
   UMA_ACCEL_SHUT_DOWN_POWER_BUTTON,
   UMA_CLOSE_THROUGH_CONTEXT_MENU,
+  UMA_GESTURE_OVERVIEW,
   UMA_LAUNCHER_CLICK_ON_APP,
   UMA_LAUNCHER_CLICK_ON_APPLIST_BUTTON,
   UMA_MINIMIZE_PER_KEY,
@@ -145,7 +146,7 @@ class ASH_EXPORT ShellDelegate {
   virtual void ToggleMaximized() = 0;
 
   // Invoked when an accelerator is used to open the file manager.
-  virtual void OpenFileManager(bool as_dialog) = 0;
+  virtual void OpenFileManager() = 0;
 
   // Invoked when the user opens Crosh.
   virtual void OpenCrosh() = 0;

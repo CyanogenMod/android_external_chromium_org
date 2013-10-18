@@ -16,7 +16,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/app/breakpad_mac.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/browser_process.h"
@@ -89,7 +88,6 @@
 #include "chrome/browser/user_style_sheet_watcher.h"
 #include "chrome/browser/user_style_sheet_watcher_factory.h"
 #include "chrome/browser/validation_message_message_filter.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -107,8 +105,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_constants.h"
 #include "components/nacl/common/nacl_process_type.h"
+#include "components/translate/common/translate_switches.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_main_parts.h"
@@ -149,6 +149,7 @@
 #elif defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_main_mac.h"
 #include "chrome/browser/spellchecker/spellcheck_message_filter_mac.h"
+#include "components/breakpad/breakpad_mac.h"
 #elif defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chrome_browser_main_chromeos.h"
 #include "chrome/browser/chromeos/drive/file_system_backend_delegate.h"
@@ -171,6 +172,7 @@
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/linux_util.h"
+#include "chrome/app/breakpad_linux.h"
 #include "chrome/browser/crash_handler_host_linux.h"
 #endif
 
@@ -247,6 +249,10 @@ using extensions::APIPermission;
 using extensions::Extension;
 using extensions::Manifest;
 using message_center::NotifierId;
+
+#if defined(OS_MACOSX)
+using breakpad::IsCrashReporterEnabled;
+#endif
 
 namespace {
 
@@ -360,6 +366,9 @@ bool HandleWebUI(GURL* url, content::BrowserContext* browser_context) {
   if (chromeos::UserManager::Get()->IsLoggedInAsGuest()) {
     if (url->SchemeIs(chrome::kChromeUIScheme) &&
         (url->DomainIs(chrome::kChromeUIBookmarksHost) ||
+#if defined(ENABLE_ENHANCED_BOOKMARKS)
+         url->DomainIs(chrome::kChromeUIEnhancedBookmarksHost) ||
+#endif
          url->DomainIs(chrome::kChromeUIHistoryHost))) {
       // Rewrite with new tab URL
       *url = GURL(chrome::kChromeUINewTabURL);
@@ -661,7 +670,7 @@ std::string ChromeContentBrowserClient::GetStoragePartitionIdForSite(
 
   // The partition ID for webview guest processes is the string value of its
   // SiteInstance URL - "chrome-guest://app_id/persist?partition".
-  if (site.SchemeIs(chrome::kGuestScheme))
+  if (site.SchemeIs(content::kGuestScheme))
     partition_id = site.spec();
 
   DCHECK(IsValidStoragePartitionId(browser_context, partition_id));
@@ -698,7 +707,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
   // a specially formatted URL, based on the application it is hosted by and
   // the partition requested by it. The format for that URL is:
   // chrome-guest://partition_domain/persist?partition_name
-  if (site.SchemeIs(chrome::kGuestScheme)) {
+  if (site.SchemeIs(content::kGuestScheme)) {
     // Since guest URLs are only used for packaged apps, there must be an app
     // id in the URL.
     CHECK(site.has_host());
@@ -833,41 +842,42 @@ void ChromeContentBrowserClient::RenderProcessHostCreated(
   net::URLRequestContextGetter* context =
       profile->GetRequestContextForRenderProcess(id);
 
-  host->GetChannel()->AddFilter(new ChromeRenderMessageFilter(
-      id, profile, context));
+  host->AddFilter(new ChromeRenderMessageFilter(id, profile, context));
 #if defined(ENABLE_PLUGINS)
-  host->GetChannel()->AddFilter(new PluginInfoMessageFilter(id, profile));
+  host->AddFilter(new PluginInfoMessageFilter(id, profile));
 #endif
 #if defined(ENABLE_PRINTING)
-  host->GetChannel()->AddFilter(new PrintingMessageFilter(id, profile));
+  host->AddFilter(new PrintingMessageFilter(id, profile));
 #endif
-  host->GetChannel()->AddFilter(
-      new SearchProviderInstallStateMessageFilter(id, profile));
+  host->AddFilter(new SearchProviderInstallStateMessageFilter(id, profile));
 #if defined(ENABLE_SPELLCHECK)
-  host->GetChannel()->AddFilter(new SpellCheckMessageFilter(id));
+  host->AddFilter(new SpellCheckMessageFilter(id));
 #endif
 #if defined(OS_MACOSX)
-  host->GetChannel()->AddFilter(new SpellCheckMessageFilterMac(id));
+  host->AddFilter(new SpellCheckMessageFilterMac(id));
 #endif
-  host->GetChannel()->AddFilter(new ChromeNetBenchmarkingMessageFilter(
+  host->AddFilter(new ChromeNetBenchmarkingMessageFilter(
       id, profile, context));
-  host->GetChannel()->AddFilter(
-      new prerender::PrerenderMessageFilter(id, profile));
-  host->GetChannel()->AddFilter(new ValidationMessageMessageFilter(id));
-  host->GetChannel()->AddFilter(new TtsMessageFilter(id, profile));
+  host->AddFilter(new prerender::PrerenderMessageFilter(id, profile));
+  host->AddFilter(new ValidationMessageMessageFilter(id));
+  host->AddFilter(new TtsMessageFilter(id, profile));
 #if defined(ENABLE_WEBRTC)
-  host->GetChannel()->AddFilter(new WebRtcLoggingHandlerHost());
+  WebRtcLoggingHandlerHost* webrtc_logging_handler_host =
+      new WebRtcLoggingHandlerHost();
+  host->AddFilter(webrtc_logging_handler_host);
+  host->SetUserData(host, new base::UserDataAdapter<WebRtcLoggingHandlerHost>(
+      webrtc_logging_handler_host));
 #endif
 #if !defined(DISABLE_NACL)
   ExtensionInfoMap* extension_info_map =
       extensions::ExtensionSystem::Get(profile)->info_map();
-  host->GetChannel()->AddFilter(new NaClHostMessageFilter(
+  host->AddFilter(new NaClHostMessageFilter(
       id, profile->IsOffTheRecord(),
       profile->GetPath(), extension_info_map,
       context));
 #endif
 #if defined(OS_ANDROID)
-  host->GetChannel()->AddFilter(new EncryptedMediaMessageFilterAndroid());
+  host->AddFilter(new EncryptedMediaMessageFilterAndroid());
 #endif
 
   host->Send(new ChromeViewMsg_SetIsIncognitoProcess(
@@ -1322,18 +1332,17 @@ std::string ChromeContentBrowserClient::GetCanonicalEncodingNameByAliasName(
 
 void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     CommandLine* command_line, int child_process_id) {
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX)
   if (IsCrashReporterEnabled()) {
+    std::string enable_crash_reporter;
+    GoogleUpdateSettings::GetMetricsId(&enable_crash_reporter);
+#if !defined(OS_MACOSX)
+    enable_crash_reporter += "," + base::GetLinuxDistro();
+#endif
     command_line->AppendSwitchASCII(switches::kEnableCrashReporter,
-                                    child_process_logging::GetClientId());
+        enable_crash_reporter);
   }
-#elif defined(OS_POSIX)
-  if (IsCrashReporterEnabled()) {
-    command_line->AppendSwitchASCII(switches::kEnableCrashReporter,
-        child_process_logging::GetClientId() + "," + base::GetLinuxDistro());
-  }
-
-#endif  // OS_MACOSX
+#endif  // OS_POSIX
 
   if (logging::DialogsAreSuppressed())
     command_line->AppendSwitch(switches::kNoErrorDialogs);
@@ -1411,8 +1420,10 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
       autofill::switches::kDisableInteractiveAutocomplete,
+      autofill::switches::kDisablePasswordGeneration,
       autofill::switches::kEnableExperimentalFormFilling,
       autofill::switches::kEnableInteractiveAutocomplete,
+      autofill::switches::kEnablePasswordGeneration,
       extensions::switches::kAllowLegacyExtensionManifests,
       extensions::switches::kAllowScriptingGallery,
       extensions::switches::kEnableExperimentalExtensionApis,
@@ -1436,7 +1447,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableIPCFuzzing,
       switches::kEnableNaCl,
       switches::kEnableNetBenchmarking,
-      switches::kEnablePasswordGeneration,
       switches::kEnableWatchdog,
       switches::kMemoryProfiling,
       switches::kMessageLoopHistogrammer,
@@ -1452,8 +1462,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kRecordMode,
       switches::kSilentDumpOnDCHECK,
       switches::kSpdyProxyAuthOrigin,
-      switches::kTranslateSecurityOrigin,
       switches::kWhitelistedExtensionID,
+      translate::switches::kTranslateSecurityOrigin,
     };
 
     command_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -2546,5 +2556,26 @@ crypto::CryptoModuleBlockingPasswordDelegate*
       chrome::kCryptoModulePasswordKeygen, url.host());
 }
 #endif
+
+bool ChromeContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
+    content::BrowserContext* browser_context,
+    const GURL& url) {
+#if defined(ENABLE_PLUGINS)
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  const ExtensionSet* extension_set = NULL;
+  if (profile) {
+    extension_set = extensions::ExtensionSystem::Get(profile)->
+        extension_service()->extensions();
+  }
+  // TODO(teravest): Populate allowed_file_handle_origins_ when FileIO is moved
+  // from the renderer to the browser.
+  return IsExtensionOrSharedModuleWhitelisted(url, extension_set,
+                                              allowed_file_handle_origins_) ||
+         IsHostAllowedByCommandLine(url, extension_set,
+                                    switches::kAllowNaClFileHandleAPI);
+#else
+  return false;
+#endif
+}
 
 }  // namespace chrome

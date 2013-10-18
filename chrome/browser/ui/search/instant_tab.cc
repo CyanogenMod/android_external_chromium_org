@@ -6,7 +6,6 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/ntp/ntp_user_data_logger.h"
-#include "chrome/common/ntp_logging_events.h"
 #include "content/public/browser/web_contents.h"
 
 InstantTab::InstantTab(InstantPage::Delegate* delegate,
@@ -22,14 +21,6 @@ void InstantTab::Init(content::WebContents* contents) {
 }
 
 // static
-void InstantTab::LogEvent(content::WebContents* contents,
-                          NTPLoggingEventType event) {
-  NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(contents);
-  if (data)
-    data->LogEvent(event);
-}
-
-// static
 void InstantTab::EmitMouseoverCount(content::WebContents* contents) {
   NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(contents);
   if (data)
@@ -40,26 +31,10 @@ bool InstantTab::ShouldProcessAboutToNavigateMainFrame() {
   return true;
 }
 
-bool InstantTab::ShouldProcessFocusOmnibox() {
-  return true;
-}
-
 bool InstantTab::ShouldProcessNavigateToURL() {
   return true;
 }
 
 bool InstantTab::ShouldProcessPasteIntoOmnibox() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessDeleteMostVisitedItem() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessUndoMostVisitedDeletion() {
-  return true;
-}
-
-bool InstantTab::ShouldProcessUndoAllMostVisitedDeletions() {
   return true;
 }

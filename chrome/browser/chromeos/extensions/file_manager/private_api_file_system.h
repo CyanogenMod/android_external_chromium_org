@@ -43,13 +43,6 @@ class FileBrowserPrivateRequestFileSystemFunction
                                 const GURL& root_url);
   void RespondFailedOnUIThread(base::PlatformFileError error_code);
 
-  // Called when FileSystemContext::OpenFileSystem() is done.
-  void DidOpenFileSystem(
-      scoped_refptr<fileapi::FileSystemContext> file_system_context,
-      base::PlatformFileError result,
-      const std::string& name,
-      const GURL& root_url);
-
   // Called when something goes wrong. Records the error to |error_| per the
   // error code and reports that the private API function failed.
   void DidFail(base::PlatformFileError error_code);
@@ -118,21 +111,6 @@ class FileBrowserPrivateRemoveFileWatchFunction : public FileWatchFunctionBase {
       const std::string& extension_id) OVERRIDE;
 };
 
-// Implements the chrome.fileBrowserPrivate.setLastModified method.
-// Sets last modified date in seconds of local file
-class FileBrowserPrivateSetLastModifiedFunction
-    : public LoggedAsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.setLastModified",
-                             FILEBROWSERPRIVATE_SETLASTMODIFIED)
-
- protected:
-  virtual ~FileBrowserPrivateSetLastModifiedFunction() {}
-
-  // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
-};
-
 // Implements the chrome.fileBrowserPrivate.getSizeStats method.
 class FileBrowserPrivateGetSizeStatsFunction
     : public LoggedAsyncExtensionFunction {
@@ -153,21 +131,6 @@ class FileBrowserPrivateGetSizeStatsFunction
 
   void GetSizeStatsCallback(const uint64* total_size,
                             const uint64* remaining_size);
-};
-
-// Implements the chrome.fileBrowserPrivate.getVolumeMetadata method.
-// Retrieves devices meta-data. Expects volume's device path as an argument.
-class FileBrowserPrivateGetVolumeMetadataFunction
-    : public LoggedAsyncExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.getVolumeMetadata",
-                             FILEBROWSERPRIVATE_GETVOLUMEMETADATA)
-
- protected:
-  virtual ~FileBrowserPrivateGetVolumeMetadataFunction() {}
-
-  // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.validatePathNameLength method.

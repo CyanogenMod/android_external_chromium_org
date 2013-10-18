@@ -10,8 +10,6 @@
 #include "ash/shell/panel_window.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/bluetooth/tray_bluetooth.h"
-#include "ash/system/brightness/tray_brightness.h"
-#include "ash/system/chromeos/tray_tracing.h"
 #include "ash/system/date/tray_date.h"
 #include "ash/system/drive/tray_drive.h"
 #include "ash/system/ime/tray_ime.h"
@@ -48,6 +46,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/system/chromeos/audio/tray_audio.h"
+#include "ash/system/chromeos/brightness/tray_brightness.h"
 #include "ash/system/chromeos/enterprise/tray_enterprise.h"
 #include "ash/system/chromeos/managed/tray_locally_managed_user.h"
 #include "ash/system/chromeos/network/tray_network.h"
@@ -58,6 +57,7 @@
 #include "ash/system/chromeos/screen_security/screen_share_tray_item.h"
 #include "ash/system/chromeos/settings/tray_settings.h"
 #include "ash/system/chromeos/tray_display.h"
+#include "ash/system/chromeos/tray_tracing.h"
 #include "ui/message_center/message_center.h"
 #endif
 
@@ -154,49 +154,51 @@ void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
           0;
   // Note: We purposely use one more item then logged in users to account for
   // the additional separator.
-  for (int i = 0; i <= maximum_user_profiles; i++)
-    AddTrayItem(new internal::TrayUser(this, i));
-
+  for (int i = 0; i <= maximum_user_profiles; i++) {
+    internal::TrayUser* tray_user = new internal::TrayUser(this, i);
+    AddTrayItem(tray_user);
+    user_items_.push_back(tray_user);
+  }
 #endif
+
+  tray_accessibility_ = new internal::TrayAccessibility(this);
+
 #if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TrayEnterprise(this));
   AddTrayItem(new internal::TrayLocallyManagedUser(this));
-#endif
   AddTrayItem(new internal::TrayIME(this));
-  tray_accessibility_ = new internal::TrayAccessibility(this);
   AddTrayItem(tray_accessibility_);
-#if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TrayTracing(this));
   AddTrayItem(
       new internal::TrayPower(this, message_center::MessageCenter::Get()));
-#endif
-#if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TrayNetwork(this));
   AddTrayItem(new internal::TrayVPN(this));
   AddTrayItem(new internal::TraySms(this));
-#endif
-#if !defined(OS_WIN)
   AddTrayItem(new internal::TrayBluetooth(this));
-#endif
   AddTrayItem(new internal::TrayDrive(this));
-#if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TrayDisplay(this));
   AddTrayItem(new internal::ScreenCaptureTrayItem(this));
   AddTrayItem(new internal::ScreenShareTrayItem(this));
   AddTrayItem(new internal::TrayAudio(this));
-#endif
-#if !defined(OS_WIN)
   AddTrayItem(new internal::TrayBrightness(this));
   AddTrayItem(new internal::TrayCapsLock(this));
-#endif
-#if defined(OS_CHROMEOS)
   AddTrayItem(new internal::TraySettings(this));
-#endif
   AddTrayItem(new internal::TrayUpdate(this));
   AddTrayItem(new internal::TrayDate(this));
+#elif defined(OS_WIN)
+  AddTrayItem(tray_accessibility_);
+  AddTrayItem(new internal::TrayDate(this));
+#elif defined(OS_LINUX)
+  AddTrayItem(new internal::TrayIME(this));
+  AddTrayItem(tray_accessibility_);
+  AddTrayItem(new internal::TrayBluetooth(this));
+  AddTrayItem(new internal::TrayDrive(this));
+  AddTrayItem(new internal::TrayCapsLock(this));
+  AddTrayItem(new internal::TrayUpdate(this));
+  AddTrayItem(new internal::TrayDate(this));
+#endif
 
 #if defined(OS_LINUX)
-  // Add memory monitor if enabled.
   CommandLine* cmd = CommandLine::ForCurrentProcess();
   if (cmd->HasSwitch(ash::switches::kAshEnableMemoryMonitor))
     AddTrayItem(new internal::TrayMonitor(this));
@@ -226,6 +228,10 @@ void SystemTray::RemoveTrayItem(SystemTrayItem* item) {
 
 const std::vector<SystemTrayItem*>& SystemTray::GetTrayItems() const {
   return items_.get();
+}
+
+const std::vector<internal::TrayUser*>& SystemTray::GetTrayUserItems() const {
+  return user_items_;
 }
 
 void SystemTray::ShowDefaultView(BubbleCreationType creation_type) {
@@ -362,15 +368,9 @@ bool SystemTray::HasSystemBubbleType(SystemTrayBubble::BubbleType type) {
 }
 
 void SystemTray::DestroySystemBubble() {
-  system_bubble_.reset();
+  CloseSystemBubbleAndDeactivateSystemTray();
   detailed_item_ = NULL;
   UpdateWebNotifications();
-  // When closing a system bubble with the alternate shelf layout, we need to
-  // turn off the active tinting of the shelf.
-  if (full_system_tray_menu_) {
-    SetDrawBackgroundAsActive(false);
-    full_system_tray_menu_ = false;
-  }
 }
 
 void SystemTray::DestroyNotificationBubble() {
@@ -562,7 +562,7 @@ void SystemTray::SetShelfAlignment(ShelfAlignment alignment) {
   internal::TrayBackgroundView::SetShelfAlignment(alignment);
   UpdateAfterShelfAlignmentChange(alignment);
   // Destroy any existing bubble so that it is rebuilt correctly.
-  system_bubble_.reset();
+  CloseSystemBubbleAndDeactivateSystemTray();
   // Rebuild any notification bubble.
   if (notification_bubble_) {
     notification_bubble_.reset();
@@ -641,6 +641,12 @@ void SystemTray::HideBubble(const TrayBubbleView* bubble_view) {
   HideBubbleWithView(bubble_view);
 }
 
+views::View* SystemTray::GetTrayItemViewForTest(SystemTrayItem* item) {
+  std::map<SystemTrayItem*, views::View*>::iterator it =
+      tray_item_map_.find(item);
+  return it == tray_item_map_.end() ? NULL : it->second;
+}
+
 bool SystemTray::PerformAction(const ui::Event& event) {
   // If we're already showing the default view, hide it; otherwise, show it
   // (and hide any popup that's currently shown).
@@ -661,6 +667,16 @@ bool SystemTray::PerformAction(const ui::Event& event) {
     ShowDefaultViewWithOffset(BUBBLE_CREATE_NEW, arrow_offset);
   }
   return true;
+}
+
+void SystemTray::CloseSystemBubbleAndDeactivateSystemTray() {
+  system_bubble_.reset();
+  // When closing a system bubble with the alternate shelf layout, we need to
+  // turn off the active tinting of the shelf.
+  if (full_system_tray_menu_) {
+    SetDrawBackgroundAsActive(false);
+    full_system_tray_menu_ = false;
+  }
 }
 
 }  // namespace ash

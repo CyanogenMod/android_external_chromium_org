@@ -4,6 +4,7 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
@@ -100,12 +101,14 @@ class PlatformAppUrlRedirectorBrowserTest : public PlatformAppBrowserTest {
   // but should not launch it.
   void TestNegativeNavigationInBrowser(const char* matching_target_page,
                                        content::PageTransition transition,
+                                       const char* success_tab_title,
                                        const char* handler);
 
   // Same as above, but expects the |mismatching_target_page| should not match
   // any of the |handler|'s url_handlers, and therefor not launch the app.
   void TestMismatchingNavigationInBrowser(const char* mismatching_target_page,
                                           content::PageTransition transition,
+                                          const char* success_tab_title,
                                           const char* handler);
 };
 
@@ -288,10 +291,16 @@ void PlatformAppUrlRedirectorBrowserTest::TestNavigationInBrowser(
 void PlatformAppUrlRedirectorBrowserTest::TestNegativeNavigationInBrowser(
     const char* matching_target_page,
     content::PageTransition transition,
+    const char* success_tab_title,
     const char* handler) {
   ASSERT_TRUE(StartEmbeddedTestServer());
 
   InstallPlatformApp(handler);
+
+  const string16 success_title = ASCIIToUTF16(success_tab_title);
+  content::WebContents* tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  content::TitleWatcher title_watcher(tab, success_title);
 
   chrome::NavigateParams params(
       browser(),
@@ -300,20 +309,26 @@ void PlatformAppUrlRedirectorBrowserTest::TestNegativeNavigationInBrowser(
       transition);
   ui_test_utils::NavigateToURL(&params);
 
+  ASSERT_EQ(success_title, title_watcher.WaitAndGetTitle());
   ASSERT_EQ(0U, GetShellWindowCount());
 }
 
 void PlatformAppUrlRedirectorBrowserTest::TestMismatchingNavigationInBrowser(
     const char* mismatching_target_page,
     content::PageTransition transition,
+    const char* success_tab_title,
     const char* handler) {
-  TestNegativeNavigationInBrowser(mismatching_target_page, transition, handler);
+  TestNegativeNavigationInBrowser(
+      mismatching_target_page, transition, success_tab_title, handler);
 }
 
 // Test that a click on a regular link in a tab launches an app that has
 // matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        ClickInTabIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInTab(
       "url_handlers/launching_pages/click_link.html",
       "url_handlers/handlers/simple",
@@ -324,6 +339,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        BlankClickInTabIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInTab(
       "url_handlers/launching_pages/click_blank_link.html",
       "url_handlers/handlers/simple",
@@ -334,6 +352,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        WindowOpenInTabIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInTab(
       "url_handlers/launching_pages/call_window_open.html",
       "url_handlers/handlers/simple",
@@ -344,6 +365,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        MismatchingClickInTabNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestMismatchingNavigationInTab(
       "url_handlers/launching_pages/click_mismatching_link.html",
       "Mismatching link target loaded",
@@ -354,6 +378,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // another app that has matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        BlankClickInAppIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInApp(
       "url_handlers/launchers/click_blank_link",
       "Launcher done",
@@ -365,6 +392,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // another app that has matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        WindowOpenInAppIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInApp(
       "url_handlers/launchers/call_window_open",
       "Launcher done",
@@ -376,6 +406,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // click on a target='_blank' link in another app's window.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        MismatchingWindowOpenInAppNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestMismatchingNavigationInApp(
       "url_handlers/launchers/call_mismatching_window_open",
       "Launcher done",
@@ -386,6 +419,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // even when there are other (or the same) apps that have matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        WebviewNavigationNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   // The launcher clicks on a link, which gets intercepted and launches the
   // handler. The handler also redirects an embedded webview to the URL. The
   // webview should just navigate without creating an endless loop of
@@ -402,6 +438,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // even when there are other (or the same) apps that have matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        MismatchingBlankClickInAppNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   // The launcher clicks on a link, which gets intercepted and launches the
   // handler. The handler also redirects an embedded webview to the URL. The
   // webview should just navigate without creating an endless loop of
@@ -417,6 +456,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        EntryInOmnibarIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNavigationInBrowser(
       "url_handlers/common/target.html",
       content::PAGE_TRANSITION_TYPED,
@@ -428,20 +470,26 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // URL entry in the omnibar.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        MismatchingEntryInOmnibarNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestMismatchingNavigationInBrowser(
       "url_handlers/common/mismatching_target.html",
       content::PAGE_TRANSITION_TYPED,
+      "Mismatching link target loaded",
       "url_handlers/handlers/simple");
 }
 
 // Test that a form submission in a page is never subject to interception
 // by apps even with matching url_handlers.
-// Test disabled due to flakiness (http://crbug.com/288984).
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
-                       DISABLED_FormSubmissionInTabNotIntercepted) {
-  TestNegativeNavigationInBrowser(
-      "url_handlers/common/target.html",
-      content::PAGE_TRANSITION_FORM_SUBMIT,
+                       FormSubmissionInTabNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
+  TestMismatchingNavigationInTab(
+      "url_handlers/launching_pages/submit_form.html",
+      "Link target loaded",
       "url_handlers/handlers/simple");
 }
 
@@ -449,6 +497,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
 // by apps even with matching url_handlers.
 IN_PROC_BROWSER_TEST_F(PlatformAppUrlRedirectorBrowserTest,
                        XhrInTabNotIntercepted) {
+#if defined (OS_WIN)
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) return;  // Bug 301638
+#endif
   TestNegativeXhrInTab(
       "url_handlers/xhr_downloader/main.html",
       "XHR succeeded",

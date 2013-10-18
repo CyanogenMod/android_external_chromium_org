@@ -10,8 +10,10 @@
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/local_to_remote_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
+#include "chrome/browser/sync_file_system/drive_backend/register_app_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
+#include "chrome/browser/sync_file_system/drive_backend/uninstall_app_task.h"
 #include "chrome/browser/sync_file_system/sync_task.h"
 
 namespace sync_file_system {
@@ -20,16 +22,15 @@ namespace drive_backend {
 SyncEngine::SyncEngine(
     const base::FilePath& base_dir,
     base::SequencedTaskRunner* task_runner,
-    scoped_ptr<drive::DriveAPIService> drive_api,
+    scoped_ptr<drive::DriveAPIService> drive_service,
     drive::DriveNotificationManager* notification_manager,
     ExtensionService* extension_service)
     : base_dir_(base_dir),
       task_runner_(task_runner),
-      drive_api_(drive_api.Pass()),
+      drive_service_(drive_service.Pass()),
       notification_manager_(notification_manager),
       extension_service_(extension_service),
-      weak_ptr_factory_(this),
-      task_manager_(weak_ptr_factory_.GetWeakPtr()) {
+      weak_ptr_factory_(this) {
 }
 
 SyncEngine::~SyncEngine() {
@@ -37,13 +38,15 @@ SyncEngine::~SyncEngine() {
 }
 
 void SyncEngine::Initialize() {
-  task_manager_.Initialize(SYNC_STATUS_OK);
+  DCHECK(!task_manager_);
+  task_manager_.reset(new SyncTaskManager(weak_ptr_factory_.GetWeakPtr()));
+  task_manager_->Initialize(SYNC_STATUS_OK);
 
   SyncEngineInitializer* initializer =
       new SyncEngineInitializer(task_runner_.get(),
-                                drive_api_.get(),
+                                drive_service_.get(),
                                 base_dir_.Append(kDatabaseName));
-  task_manager_.ScheduleSyncTask(
+  task_manager_->ScheduleSyncTask(
       scoped_ptr<SyncTask>(initializer),
       base::Bind(&SyncEngine::DidInitialize, weak_ptr_factory_.GetWeakPtr(),
                  initializer));
@@ -60,17 +63,15 @@ void SyncEngine::AddFileStatusObserver(FileStatusObserver* observer) {
 void SyncEngine::RegisterOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  task_manager_.ScheduleTask(
-      base::Bind(&SyncEngine::DoRegisterApp,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 origin.host()),
+  task_manager_->ScheduleSyncTask(
+      scoped_ptr<SyncTask>(new RegisterAppTask(this, origin.host())),
       callback);
 }
 
 void SyncEngine::EnableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  task_manager_.ScheduleTask(
+  task_manager_->ScheduleTask(
       base::Bind(&SyncEngine::DoEnableApp,
                  weak_ptr_factory_.GetWeakPtr(),
                  origin.host()),
@@ -80,7 +81,7 @@ void SyncEngine::EnableOrigin(
 void SyncEngine::DisableOrigin(
     const GURL& origin,
     const SyncStatusCallback& callback) {
-  task_manager_.ScheduleTask(
+  task_manager_->ScheduleTask(
       base::Bind(&SyncEngine::DoDisableApp,
                  weak_ptr_factory_.GetWeakPtr(),
                  origin.host()),
@@ -91,17 +92,15 @@ void SyncEngine::UninstallOrigin(
     const GURL& origin,
     UninstallFlag flag,
     const SyncStatusCallback& callback) {
-  task_manager_.ScheduleTask(
-      base::Bind(&SyncEngine::DoUninstallApp,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 origin.host(), flag),
+  task_manager_->ScheduleSyncTask(
+      scoped_ptr<SyncTask>(new UninstallAppTask(this, origin.host(), flag)),
       callback);
 }
 
 void SyncEngine::ProcessRemoteChange(
     const SyncFileCallback& callback) {
   RemoteToLocalSyncer* syncer = new RemoteToLocalSyncer;
-  task_manager_.ScheduleSyncTask(
+  task_manager_->ScheduleSyncTask(
       scoped_ptr<SyncTask>(syncer),
       base::Bind(&SyncEngine::DidProcessRemoteChange,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -174,7 +173,7 @@ void SyncEngine::ApplyLocalChange(
     const fileapi::FileSystemURL& url,
     const SyncStatusCallback& callback) {
   LocalToRemoteSyncer* syncer = new LocalToRemoteSyncer;
-  task_manager_.ScheduleSyncTask(
+  task_manager_->ScheduleSyncTask(
       scoped_ptr<SyncTask>(syncer),
       base::Bind(&SyncEngine::DidApplyLocalChange,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -197,9 +196,12 @@ void SyncEngine::OnPushNotificationEnabled(bool enabled) {
   NOTIMPLEMENTED();
 }
 
-void SyncEngine::DoRegisterApp(const std::string& app_id,
-                               const SyncStatusCallback& callback) {
-  NOTIMPLEMENTED();
+drive::DriveServiceInterface* SyncEngine::GetDriveService() {
+  return drive_service_.get();
+}
+
+MetadataDatabase* SyncEngine::GetMetadataDatabase() {
+  return metadata_database_.get();
 }
 
 void SyncEngine::DoDisableApp(const std::string& app_id,
@@ -212,16 +214,9 @@ void SyncEngine::DoEnableApp(const std::string& app_id,
   NOTIMPLEMENTED();
 }
 
-void SyncEngine::DoUninstallApp(const std::string& app_id,
-                                UninstallFlag flag,
-                                const SyncStatusCallback& callback) {
-  NOTIMPLEMENTED();
-}
-
-
 void SyncEngine::DidInitialize(SyncEngineInitializer* initializer,
                                SyncStatusCode status) {
-  NOTIMPLEMENTED();
+  metadata_database_ = initializer->PassMetadataDatabase();
 }
 
 void SyncEngine::DidProcessRemoteChange(RemoteToLocalSyncer* syncer,

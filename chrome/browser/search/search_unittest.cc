@@ -26,6 +26,7 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/renderer_preferences.h"
+#include "url/gurl.h"
 
 namespace chrome {
 
@@ -328,17 +329,20 @@ class SearchTest : public BrowserWithTestWindowTest {
     TemplateURLService* template_url_service =
         TemplateURLServiceFactory::GetForProfile(profile());
     ui_test_utils::WaitForTemplateURLServiceToLoad(template_url_service);
-    SetSearchProvider();
+    SetSearchProvider(true, false);
   }
 
-  void SetSearchProvider() {
+  void SetSearchProvider(bool set_ntp_url, bool insecure_ntp_url) {
     TemplateURLService* template_url_service =
         TemplateURLServiceFactory::GetForProfile(profile());
     TemplateURLData data;
     data.SetURL("http://foo.com/url?bar={searchTerms}");
     data.instant_url = "http://foo.com/instant?"
         "{google:omniboxStartMarginParameter}foo=foo#foo=foo&strk";
-    data.new_tab_url = "http://foo.com/newtab?strk";
+    if (set_ntp_url) {
+      data.new_tab_url = (insecure_ntp_url ? "http" : "https") +
+          std::string("://foo.com/newtab?strk");
+    }
     data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
     data.search_terms_replacement_key = "strk";
 
@@ -719,6 +723,26 @@ TEST_F(SearchTest, UseLocalNTPInIncognito) {
       profile()->GetOffTheRecordProfile()));
 }
 
+TEST_F(SearchTest, UseLocalNTPIfNTPURLIsInsecure) {
+  EnableInstantExtendedAPIForTesting();
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+      "Group1 use_cacheable_ntp:1"));
+  // Set an insecure new tab page URL and verify that it's ignored.
+  SetSearchProvider(true, true);
+  EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl),
+            chrome::GetNewTabPageURL(profile()));
+}
+
+TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
+  EnableInstantExtendedAPIForTesting();
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("InstantExtended",
+      "Group1 use_cacheable_ntp:1"));
+  // Set an insecure new tab page URL and verify that it's ignored.
+  SetSearchProvider(false, true);
+  EXPECT_EQ(GURL(chrome::kChromeSearchLocalNtpUrl),
+            chrome::GetNewTabPageURL(profile()));
+}
+
 TEST_F(SearchTest, GetInstantURLExtendedEnabled) {
   // Instant is disabled, so no Instant URL.
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin));
@@ -878,6 +902,13 @@ TEST_F(SearchTest, IsNTPURL) {
   EXPECT_FALSE(chrome::IsNTPURL(remote_ntp_url, NULL));
   EXPECT_FALSE(chrome::IsNTPURL(search_url_with_search_terms, NULL));
   EXPECT_FALSE(chrome::IsNTPURL(search_url_without_search_terms, NULL));
+}
+
+TEST_F(SearchTest, GetSearchURLs) {
+  std::vector<GURL> search_urls = GetSearchURLs(profile());
+  EXPECT_EQ(2U, search_urls.size());
+  EXPECT_EQ("http://foo.com/alt#quux=", search_urls[0].spec());
+  EXPECT_EQ("http://foo.com/url?bar=", search_urls[1].spec());
 }
 
 }  // namespace chrome

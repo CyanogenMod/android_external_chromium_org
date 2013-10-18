@@ -123,6 +123,10 @@ class ShellWindow : public content::NotificationObserver,
 
     // If true, the window will be focused on creation. Defaults to true.
     bool focused;
+
+    // If true, the window will stay on top of other windows that are not
+    // configured to be always on top. Defaults to false.
+    bool always_on_top;
   };
 
   class Delegate {
@@ -219,7 +223,7 @@ class ShellWindow : public content::NotificationObserver,
   void OnNativeClose();
 
   // Should be called by native implementations when the window size, position,
-  // or minimized/maximized state has changed.
+  // minimized/maximized, or visibility state has changed.
   void OnNativeWindowChanged();
 
   // Should be called by native implementations when the window is activated.
@@ -378,6 +382,9 @@ class ShellWindow : public content::NotificationObserver,
   bool fullscreen_for_window_api_;
   // Fullscreen entered by HTML requestFullscreen.
   bool fullscreen_for_tab_;
+
+  // The window content is visible.
+  bool is_content_visible_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellWindow);
 };

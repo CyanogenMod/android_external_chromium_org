@@ -9,6 +9,7 @@
 #include "base/debug/trace_event.h"
 #include "chrome/browser/android/bookmarks_bridge.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
+#include "chrome/browser/android/chromium_application.h"
 #include "chrome/browser/android/content_view_util.h"
 #include "chrome/browser/android/dev_tools_server.h"
 #include "chrome/browser/android/favicon_helper.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/history/android/sqlite_cursor.h"
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
 #include "chrome/browser/lifetime/application_lifetime_android.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_android.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/search_engines/template_url_service_android.h"
 #include "chrome/browser/signin/android_profile_oauth2_token_service.h"
@@ -40,6 +42,7 @@
 #include "chrome/browser/ui/android/infobars/confirm_infobar.h"
 #include "chrome/browser/ui/android/infobars/infobar_android.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
+#include "chrome/browser/ui/android/infobars/translate_infobar.h"
 #include "chrome/browser/ui/android/javascript_app_modal_dialog_android.h"
 #include "chrome/browser/ui/android/navigation_popup.h"
 #include "chrome/browser/ui/android/ssl_client_certificate_request.h"
@@ -81,6 +84,8 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     ChromeHttpAuthHandler::RegisterChromeHttpAuthHandler },
   { "ChromeWebContentsDelegateAndroid",
     RegisterChromeWebContentsDelegateAndroid },
+  { "ChromiumApplication",
+    ChromiumApplication::RegisterBindings },
   {"ConfirmInfoBarDelegate", RegisterConfirmInfoBarDelegate},
   { "ContentViewUtil", RegisterContentViewUtil },
   { "DevToolsServer", RegisterDevToolsServer },
@@ -102,12 +107,14 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     autofill::PersonalDataManagerAndroid::Register },
   { "ProfileAndroid", ProfileAndroid::RegisterProfileAndroid },
   { "ProfileSyncService", ProfileSyncServiceAndroid::Register },
+  { "DataReductionProxySettings", DataReductionProxySettingsAndroid::Register },
   { "SigninManager", SigninManagerAndroid::Register },
   { "SqliteCursor", SQLiteCursor::RegisterSqliteCursor },
   { "SSLClientCertificateRequest", RegisterSSLClientCertificateRequestAndroid },
   { "StartupMetricUtils", RegisterStartupMetricUtils },
   { "TabAndroid", TabAndroid::RegisterTabAndroid },
   { "TemplateUrlServiceAndroid", TemplateUrlServiceAndroid::Register },
+  { "TranslateInfoBarDelegate", RegisterTranslateInfoBarDelegate},
   { "TtsPlatformImpl", TtsPlatformImplAndroid::Register },
   {"UrlUtilities", RegisterUrlUtilities},
   { "ValidationMessageBubbleAndroid",

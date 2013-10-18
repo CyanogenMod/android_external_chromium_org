@@ -8,7 +8,7 @@
  * ImportingDialog manages the import process (which is really a copying).
  * @param {HTMLElement} parentNode Node to be parent for this dialog.
  * @param {FileOperationManager} fileOperationManager File operation manager
- *     isntance.
+ *     instance.
  * @param {MetadataCache} metadataCache Metadata cache.
  * @param {number=} opt_parentWindowId Id of the parent window.
  * @constructor
@@ -176,7 +176,7 @@ ImportingDialog.prototype.onContainerKeyDown_ = function(event) {
 
 /**
  * 'copy-progress' event handler. Show progress.
- * @param {cr.Event} event A 'copy-progress' event from FileOperationManager.
+ * @param {Event} event A 'copy-progress' event from FileOperationManager.
  * @private
  */
 ImportingDialog.prototype.onCopyProgress_ = function(event) {

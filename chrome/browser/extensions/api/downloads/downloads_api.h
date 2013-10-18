@@ -207,6 +207,8 @@ class DownloadsAcceptDangerFunction : public AsyncExtensionFunction {
                             DownloadDangerPrompt::Action action);
 
  private:
+  void PromptOrWait(int download_id, int retries);
+
   static OnPromptCreatedCallback* on_prompt_created_;
   DISALLOW_COPY_AND_ASSIGN(DownloadsAcceptDangerFunction);
 };
@@ -379,7 +381,7 @@ class ExtensionDownloadsEventRouter : public extensions::EventRouter::Observer,
 
  private:
   void DispatchEvent(
-      const char* event_name,
+      const std::string& event_name,
       bool include_incognito,
       const extensions::Event::WillDispatchCallback& will_dispatch_callback,
       base::Value* json_arg);

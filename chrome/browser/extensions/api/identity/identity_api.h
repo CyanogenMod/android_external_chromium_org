@@ -250,7 +250,6 @@ class IdentityAPI : public ProfileKeyedAPI,
 
   explicit IdentityAPI(Profile* profile);
   virtual ~IdentityAPI();
-  void Initialize();
 
   // Request serialization queue for getAuthToken.
   IdentityMintRequestQueue* mint_queue();
@@ -274,6 +273,7 @@ class IdentityAPI : public ProfileKeyedAPI,
   static ProfileKeyedAPIFactory<IdentityAPI>* GetFactoryInstance();
 
   // AuthStatusProvider implementation.
+  virtual std::string GetAccountId() const OVERRIDE;
   virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
 
   // OAuth2TokenService::Observer implementation:
@@ -290,7 +290,6 @@ class IdentityAPI : public ProfileKeyedAPI,
 
   Profile* profile_;
   GoogleServiceAuthError error_;
-  bool initialized_;
   IdentityMintRequestQueue mint_queue_;
   CachedTokens token_cache_;
 };

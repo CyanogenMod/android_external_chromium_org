@@ -9,11 +9,11 @@
 #include "base/values.h"
 #include "chrome/common/extensions/api/manifest_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/api_permission_set.h"
 
 namespace extensions {
 
@@ -95,6 +95,14 @@ scoped_ptr<SocketsManifestData> SocketsManifestData::FromValue(
     if (!ParseHostPattern(result.get(),
         content::SocketPermissionRequest::UDP_MULTICAST_MEMBERSHIP,
         sockets->udp->multicast_membership,
+        error)) {
+      return scoped_ptr<SocketsManifestData>();
+    }
+  }
+  if (sockets->tcp) {
+    if (!ParseHostPattern(result.get(),
+        content::SocketPermissionRequest::TCP_CONNECT,
+        sockets->tcp->connect,
         error)) {
       return scoped_ptr<SocketsManifestData>();
     }

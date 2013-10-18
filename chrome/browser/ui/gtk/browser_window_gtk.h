@@ -84,6 +84,7 @@ class BrowserWindowGtk
   virtual bool IsActive() const OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
   virtual BrowserWindowTesting* GetBrowserWindowTesting() OVERRIDE;
   virtual StatusBubble* GetStatusBubble() OVERRIDE;
@@ -131,7 +132,6 @@ class BrowserWindowGtk
   virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
   virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
                                         Profile* profile) OVERRIDE;
-  virtual void ToggleBookmarkBar() OVERRIDE;
   virtual void ShowUpdateChromeDialog() OVERRIDE;
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;
@@ -573,9 +573,13 @@ class BrowserWindowGtk
   // The accelerator group used to handle accelerators, owned by this object.
   GtkAccelGroup* accel_group_;
 
-  scoped_ptr<FullscreenExitBubbleGtk> fullscreen_exit_bubble_;
+  // Set to true while this BrowserWindowGtk is fullscreened.  This is needed
+  // because GTK cannot ensure requests to fullscreen the window will be honored
+  // by all window managers; and therefore bit-testing |state_| is not a
+  // reliable "is fullscreened" test.  http://crbug.com/286545
+  bool is_fullscreen_;
 
-  FullscreenExitBubbleType fullscreen_exit_bubble_type_;
+  scoped_ptr<FullscreenExitBubbleGtk> fullscreen_exit_bubble_;
 
   content::NotificationRegistrar registrar_;
 

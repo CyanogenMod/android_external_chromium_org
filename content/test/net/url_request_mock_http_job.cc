@@ -76,12 +76,10 @@ void URLRequestMockHTTPJob::AddUrlHandler(const base::FilePath& base_path) {
 // static
 void URLRequestMockHTTPJob::AddHostnameToFileHandler(
     const std::string& hostname,
-    const base::FilePath& file_path) {
+    const base::FilePath& file) {
   net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
-  filter->AddHostnameProtocolHandler("http", hostname,
-      scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          new ProtocolHandler(file_path, true)));
-
+  filter->AddHostnameProtocolHandler(
+      "http", hostname, CreateProtocolHandlerForSingleFile(file));
 }
 
 // static
@@ -108,6 +106,14 @@ scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
 URLRequestMockHTTPJob::CreateProtocolHandler(const base::FilePath& base_path) {
   return scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
       new ProtocolHandler(base_path, false));
+}
+
+// static
+scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>
+URLRequestMockHTTPJob::CreateProtocolHandlerForSingleFile(
+    const base::FilePath& file) {
+  return scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+      new ProtocolHandler(file, true));
 }
 
 URLRequestMockHTTPJob::URLRequestMockHTTPJob(
@@ -147,6 +153,8 @@ void URLRequestMockHTTPJob::GetResponseInfoConst(
   if (!base::ReadFileToString(header_file, &raw_headers))
     return;
 
+  // Handle CRLF line-endings.
+  ReplaceSubstringsAfterOffset(&raw_headers, 0, "\r\n", "\n");
   // ParseRawHeaders expects \0 to end each header line.
   ReplaceSubstringsAfterOffset(&raw_headers, 0, "\n", std::string("\0", 1));
   info->headers = new net::HttpResponseHeaders(raw_headers);

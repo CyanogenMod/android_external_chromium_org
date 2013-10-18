@@ -313,7 +313,7 @@ cr.define('cr.ui', function() {
       this.selectionModel = new ListSelectionModel(length);
 
       this.addEventListener('dblclick', this.handleDoubleClick_);
-      this.addEventListener('mousedown', this.handlePointerDownUp_);
+      this.addEventListener('mousedown', handleMouseDown);
       this.addEventListener('mouseup', this.handlePointerDownUp_);
       this.addEventListener('keydown', this.handleKeyDown);
       this.addEventListener('focus', this.handleElementFocus_, true);
@@ -512,18 +512,8 @@ cr.define('cr.ui', function() {
      * @private
      */
     handleElementBlur_: function(e) {
-      // When the blur event happens we do not know who is getting focus so we
-      // delay this a bit until we know if the new focus node is outside the
-      // list.
-      // We need 51 msec delay because InlineEditableList sets focus after
-      // 50 msec.
-      var list = this;
-      var doc = e.target.ownerDocument;
-      window.setTimeout(function() {
-        var activeElement = doc.activeElement;
-        if (!list.contains(activeElement))
-          list.hasElementFocus = false;
-      }, 51);
+      if (!this.contains(e.relatedTarget))
+        this.hasElementFocus = false;
     },
 
     /**
@@ -563,7 +553,7 @@ cr.define('cr.ui', function() {
     /**
      * Callback from the selection model. We dispatch {@code change} events
      * when the selection changes.
-     * @param {!cr.Event} e Event with change info.
+     * @param {!Event} e Event with change info.
      * @private
      */
     handleOnChange_: function(ce) {
@@ -1126,6 +1116,10 @@ cr.define('cr.ui', function() {
 
       this.afterFiller_.style.height = afterFillerHeight + 'px';
 
+      // Restores the number of pixels scrolled, since it might be changed while
+      // DOM operations.
+      this.scrollTop = scrollTop;
+
       // We don't set the lead or selected properties until after adding all
       // items, in case they force relayout in response to these events.
       var listItem = null;
@@ -1282,6 +1276,47 @@ cr.define('cr.ui', function() {
    * that point even though it doesn't actually have the page focus.
    */
   cr.defineProperty(List, 'hasElementFocus', cr.PropertyKind.BOOL_ATTR);
+
+  /**
+   * Mousedown event handler.
+   * @this {List}
+   * @param {MouseEvent} e The mouse event object.
+   */
+  function handleMouseDown(e) {
+    this.handlePointerDownUp_(e);
+
+    if (e.defaultPrevented)
+      return;
+
+    // If non-focusable area in a list item is clicked and the item still
+    // contains the focused element, the item did a special focus handling
+    // [1] and we should not focus on the list.
+    //
+    // [1] For example, clicking non-focusable area gives focus on the first
+    // form control in the item.
+    var listItem = this.getListItemAncestor(e.target);
+    if (listItem && !tryFocusOnAncestor(e.target, listItem) &&
+        listItem.contains(listItem.ownerDocument.activeElement)) {
+      e.preventDefault();
+    }
+  }
+
+  /**
+   * Try focusing on |eventTarget| or its ancestor under |root|.
+   * This is a helper for handleMouseDown.
+   * @param {!Element} start An element which we start to try.
+   * @param {!Element} root An element which we finish to try.
+   * @return {boolean} True if we focused on an element successfully.
+   */
+  function tryFocusOnAncestor(start, root) {
+    for (var element = start; element && element != root;
+        element = element.parentElement) {
+      element.focus();
+      if (root.ownerDocument.activeElement == element)
+        return true;
+    }
+    return false;
+  }
 
   return {
     List: List

@@ -13,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/local_discovery/cloud_print_account_manager.h"
 #include "chrome/browser/local_discovery/privet_confirm_api_flow.h"
 #include "chrome/browser/local_discovery/privet_constants.h"
@@ -34,6 +35,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
@@ -55,7 +57,10 @@ namespace {
 const char kPrivetAutomatedClaimURLFormat[] = "%s/confirm?token=%s";
 const int kRegistrationAnnouncementTimeoutSeconds = 5;
 
-LocalDiscoveryUIHandler::Factory* g_factory = NULL;
+const int kInitialRequeryTimeSeconds = 1;
+const int kMaxRequeryTimeSeconds = 2; // Time for last requery
+const int kRequeryExpontentialGrowthBase = 2;
+
 int g_num_visible = 0;
 
 }  // namespace
@@ -77,25 +82,9 @@ LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() : is_visible_(false) {
 #endif  // !defined(OS_MACOSX)
 }
 
-LocalDiscoveryUIHandler::LocalDiscoveryUIHandler(
-    scoped_ptr<PrivetDeviceLister> privet_lister) : is_visible_(false) {
-  privet_lister.swap(privet_lister_);
-}
-
 LocalDiscoveryUIHandler::~LocalDiscoveryUIHandler() {
   ResetCurrentRegistration();
   SetIsVisible(false);
-}
-
-// static
-LocalDiscoveryUIHandler* LocalDiscoveryUIHandler::Create() {
-  if (g_factory) return g_factory->CreateLocalDiscoveryUIHandler();
-  return new LocalDiscoveryUIHandler();
-}
-
-// static
-void LocalDiscoveryUIHandler::SetFactory(Factory* factory) {
-  g_factory = factory;
 }
 
 // static
@@ -139,7 +128,6 @@ void LocalDiscoveryUIHandler::RegisterMessages() {
                    base::Unretained(this)));
   }
 #endif  // defined(ENABLE_FULL_PRINTING)
-
 }
 
 void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
@@ -157,13 +145,20 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
   }
 
   privet_lister_->Start();
-  privet_lister_->DiscoverNewDevices(false);
+  SendQuery(kInitialRequeryTimeSeconds);
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   StartCloudPrintConnector();
 #endif
 
   CheckUserLoggedIn();
+
+  notification_registrar_.RemoveAll();
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
+                              content::Source<Profile>(profile));
+  notification_registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
+                              content::Source<Profile>(profile));
 }
 
 void LocalDiscoveryUIHandler::HandleIsVisible(const base::ListValue* args) {
@@ -301,7 +296,21 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterError(
     PrivetRegisterOperation::FailureReason reason,
     int printer_http_code,
     const DictionaryValue* json) {
-  // TODO(noamsml): Add detailed error message.
+  std::string error;
+
+  if (reason == PrivetRegisterOperation::FAILURE_JSON_ERROR &&
+      json->GetString(kPrivetKeyError, &error)) {
+    if (error == kPrivetErrorTimeout) {
+        web_ui()->CallJavascriptFunction(
+            "local_discovery.onRegistrationTimeout");
+      return;
+    } else if (error == kPrivetErrorCancel) {
+      web_ui()->CallJavascriptFunction(
+            "local_discovery.onRegistrationCanceledPrinter");
+      return;
+    }
+  }
+
   SendRegisterError();
 }
 
@@ -316,6 +325,10 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterDone(
   DeviceDescriptionMap::iterator found = device_descriptions_.find(name);
 
   if (found == device_descriptions_.end() || found->second.id.empty()) {
+    // HACK(noamsml): Generate network traffic so the Windows firewall doesn't
+    // block the printer's announcement.
+    privet_lister_->DiscoverNewDevices(false);
+
     new_register_device_ = name;
     registration_announce_timeout_.Reset(base::Bind(
         &LocalDiscoveryUIHandler::OnAnnouncementTimeoutReached,
@@ -341,7 +354,6 @@ void LocalDiscoveryUIHandler::OnConfirmDone(
     confirm_api_call_flow_.reset();
     current_register_operation_->CompleteRegistration();
   } else {
-    // TODO(noamsml): Add detailed error message.
     SendRegisterError();
   }
 }
@@ -372,7 +384,7 @@ void LocalDiscoveryUIHandler::DeviceChanged(
 
     if (name == new_register_device_) {
       new_register_device_.clear();
-      SendRegisterDone();
+      SendRegisterDone(description);
     }
   }
 }
@@ -388,7 +400,7 @@ void LocalDiscoveryUIHandler::DeviceRemoved(const std::string& name) {
 
 void LocalDiscoveryUIHandler::DeviceCacheFlushed() {
   web_ui()->CallJavascriptFunction("local_discovery.onDeviceCacheFlushed");
-  privet_lister_->DiscoverNewDevices(false);
+  SendQuery(kInitialRequeryTimeSeconds);
 }
 
 void LocalDiscoveryUIHandler::OnCloudPrintPrinterListReady() {
@@ -426,13 +438,34 @@ void LocalDiscoveryUIHandler::OnCloudPrintPrinterListUnavailable() {
       "local_discovery.onCloudDeviceListUnavailable");
 }
 
+void LocalDiscoveryUIHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL:
+    case chrome::NOTIFICATION_GOOGLE_SIGNED_OUT:
+      CheckUserLoggedIn();
+      break;
+    default:
+      NOTREACHED();
+  }
+}
 
 void LocalDiscoveryUIHandler::SendRegisterError() {
   web_ui()->CallJavascriptFunction("local_discovery.onRegistrationFailed");
 }
 
-void LocalDiscoveryUIHandler::SendRegisterDone() {
-  web_ui()->CallJavascriptFunction("local_discovery.onRegistrationSuccess");
+void LocalDiscoveryUIHandler::SendRegisterDone(
+    const DeviceDescription& device) {
+  base::DictionaryValue printer_value;
+
+  printer_value.SetString("id", device.id);
+  printer_value.SetString("display_name", device.name);
+  printer_value.SetString("description", device.description);
+
+  web_ui()->CallJavascriptFunction("local_discovery.onRegistrationSuccess",
+                                   printer_value);
 }
 
 void LocalDiscoveryUIHandler::SetIsVisible(bool visible) {
@@ -487,6 +520,24 @@ void LocalDiscoveryUIHandler::CheckUserLoggedIn() {
   base::FundamentalValue logged_in_value(!GetSyncAccount().empty());
   web_ui()->CallJavascriptFunction("local_discovery.setUserLoggedIn",
                                    logged_in_value);
+}
+
+void LocalDiscoveryUIHandler::ScheduleQuery(int timeout_seconds) {
+  if (timeout_seconds <= kMaxRequeryTimeSeconds) {
+    requery_callback_.Reset(base::Bind(&LocalDiscoveryUIHandler::SendQuery,
+                                       base::Unretained(this),
+                                       timeout_seconds * 2));
+
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        requery_callback_.callback(),
+        base::TimeDelta::FromSeconds(timeout_seconds));
+  }
+}
+
+void LocalDiscoveryUIHandler::SendQuery(int next_timeout_seconds) {
+  privet_lister_->DiscoverNewDevices(false);
+  ScheduleQuery(next_timeout_seconds);
 }
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)

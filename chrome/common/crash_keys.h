@@ -19,6 +19,9 @@ namespace crash_keys {
 // reporting server. Returns the size of the union of all keys.
 size_t RegisterChromeCrashKeys();
 
+// Sets the GUID by which this crash reporting client can be identified.
+void SetClientID(const std::string& client_id);
+
 // Sets the kSwitch and kNumSwitches keys based on the given |command_line|.
 void SetSwitchesFromCommandLine(const CommandLine* command_line);
 
@@ -45,6 +48,9 @@ class ScopedPrinterInfo {
 };
 
 // Crash Key Name Constants ////////////////////////////////////////////////////
+
+// The GUID used to identify this client to the crash system.
+extern const char kClientID[];
 
 // The product release/distribution channel.
 extern const char kChannel[];
@@ -86,11 +92,11 @@ extern const char kGPUDeviceID[];
 extern const char kGPUDriverVersion[];
 extern const char kGPUPixelShaderVersion[];
 extern const char kGPUVertexShaderVersion[];
-#if defined(OS_LINUX)
+#if defined(OS_MACOSX)
+extern const char kGPUGLVersion[];
+#elif defined(OS_POSIX)
 extern const char kGPUVendor[];
 extern const char kGPURenderer[];
-#elif defined(OS_MACOSX)
-extern const char kGPUGLVersion[];
 #endif
 
 // The user's printers, up to kPrinterInfoCount. Should be set with
@@ -121,9 +127,6 @@ extern const char kSendAction[];
 // deliberate crash.
 extern const char kZombie[];
 extern const char kZombieTrace[];
-
-// Backtrace of a Thread's dtor for <http://crbug.com/274705>.
-extern const char kPasswordThreadDtorTrace[];
 
 }  // namespace mac
 #endif

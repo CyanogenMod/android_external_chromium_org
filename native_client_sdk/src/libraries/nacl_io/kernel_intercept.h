@@ -5,6 +5,8 @@
 #ifndef LIBRARIES_NACL_IO_KERNEL_INTERCEPT_H_
 #define LIBRARIES_NACL_IO_KERNEL_INTERCEPT_H_
 
+#include <stdarg.h>
+
 #include <ppapi/c/ppb.h>
 #include <ppapi/c/pp_instance.h>
 
@@ -37,6 +39,7 @@ char* ki_getwd(char* buf);
 int ki_dup(int oldfd);
 int ki_dup2(int oldfd, int newfd);
 int ki_chmod(const char* path, mode_t mode);
+int ki_fchmod(int fd, mode_t mode);
 int ki_stat(const char* path, struct stat* buf);
 int ki_mkdir(const char* path, mode_t mode);
 int ki_rmdir(const char* path);
@@ -63,8 +66,8 @@ void* ki_mmap(void* addr, size_t length, int prot, int flags, int fd,
               off_t offset);
 int ki_munmap(void* addr, size_t length);
 int ki_open_resource(const char* file);
-int ki_fcntl(int d, int request, char* argp);
-int ki_ioctl(int d, int request, char* argp);
+int ki_fcntl(int d, int request, va_list args);
+int ki_ioctl(int d, int request, va_list args);
 int ki_chown(const char* path, uid_t owner, gid_t group);
 int ki_fchown(int fd, uid_t owner, gid_t group);
 int ki_lchown(const char* path, uid_t owner, gid_t group);

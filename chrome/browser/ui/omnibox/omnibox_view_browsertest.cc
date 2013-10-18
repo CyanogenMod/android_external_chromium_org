@@ -4,7 +4,6 @@
 
 #include <stdio.h>
 
-#include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -137,7 +136,7 @@ std::string GetPrimarySelectionText() {
 // Stores the given text to clipboard.
 void SetClipboardText(const string16& text) {
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  ui::ScopedClipboardWriter writer(clipboard, ui::Clipboard::BUFFER_STANDARD);
+  ui::ScopedClipboardWriter writer(clipboard, ui::CLIPBOARD_TYPE_COPY_PASTE);
   writer.WriteText(text);
 }
 
@@ -262,13 +261,7 @@ class OmniboxViewTest : public InProcessBrowserTest,
         TemplateURLServiceFactory::GetForProfile(profile);
     ASSERT_TRUE(model);
 
-    if (!model->loaded()) {
-      content::NotificationRegistrar registrar;
-      registrar.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
-                    content::Source<TemplateURLService>(model));
-      model->Load();
-      content::RunMessageLoop();
-    }
+    ui_test_utils::WaitForTemplateURLServiceToLoad(model);
 
     ASSERT_TRUE(model->loaded());
     // Remove built-in template urls, like google.com, bing.com etc., as they
@@ -364,7 +357,6 @@ class OmniboxViewTest : public InProcessBrowserTest,
       case chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY:
       case chrome::NOTIFICATION_HISTORY_LOADED:
       case chrome::NOTIFICATION_HISTORY_URLS_MODIFIED:
-      case chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED:
         break;
       default:
         FAIL() << "Unexpected notification type";
@@ -1581,6 +1573,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, Paste) {
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_V, kCtrlOrCmdMask));
   EXPECT_EQ(ASCIIToUTF16("ab123cd"), omnibox_view->GetText());
   EXPECT_TRUE(popup_model->IsOpen());
+
+  // Ctrl/Cmd+Alt+V should not paste.
+  ASSERT_NO_FATAL_FAILURE(
+      SendKey(ui::VKEY_V, kCtrlOrCmdMask | ui::EF_ALT_DOWN));
+  EXPECT_EQ(ASCIIToUTF16("ab123cd"), omnibox_view->GetText());
+  // TODO(msw): Test that AltGr+V does not paste.
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CopyURLToClipboard) {
@@ -1608,17 +1606,16 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CopyURLToClipboard) {
   omnibox_view->SelectAll(true);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  clipboard->Clear(ui::Clipboard::BUFFER_STANDARD);
+  clipboard->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_COPY));
   EXPECT_EQ(ASCIIToUTF16(target_url), omnibox_view->GetText());
   EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetPlainTextFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
 
-  // The Mac is the only platform which doesn't write html.
-#if !defined(OS_MACOSX)
-  EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetHtmlFormatType(), ui::Clipboard::BUFFER_STANDARD));
-#endif
+  // Make sure HTML format isn't written. See
+  // BookmarkNodeData::WriteToClipboard() for details.
+  EXPECT_FALSE(clipboard->IsFormatAvailable(
+      ui::Clipboard::GetHtmlFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
 
   // These platforms should read bookmark format.
 #if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
@@ -1655,17 +1652,16 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutURLToClipboard) {
   omnibox_view->SelectAll(true);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  clipboard->Clear(ui::Clipboard::BUFFER_STANDARD);
+  clipboard->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_CUT));
   EXPECT_EQ(string16(), omnibox_view->GetText());
   EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetPlainTextFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
 
-  // The Mac is the only platform which doesn't write html.
-#if !defined(OS_MACOSX)
-  EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetHtmlFormatType(), ui::Clipboard::BUFFER_STANDARD));
-#endif
+  // Make sure HTML format isn't written. See
+  // BookmarkNodeData::WriteToClipboard() for details.
+  EXPECT_FALSE(clipboard->IsFormatAvailable(
+      ui::Clipboard::GetHtmlFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
 
   // These platforms should read bookmark format.
 #if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
@@ -1691,12 +1687,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CopyTextToClipboard) {
   omnibox_view->SelectAll(true);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  clipboard->Clear(ui::Clipboard::BUFFER_STANDARD);
+  clipboard->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_COPY));
   EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetPlainTextFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
   EXPECT_FALSE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetHtmlFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetHtmlFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
   EXPECT_EQ(ASCIIToUTF16(target_text), omnibox_view->GetText());
 }
 
@@ -1714,12 +1710,12 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutTextToClipboard) {
   omnibox_view->SelectAll(true);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
-  clipboard->Clear(ui::Clipboard::BUFFER_STANDARD);
+  clipboard->Clear(ui::CLIPBOARD_TYPE_COPY_PASTE);
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_CUT));
   EXPECT_TRUE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetPlainTextFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetPlainTextFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
   EXPECT_FALSE(clipboard->IsFormatAvailable(
-      ui::Clipboard::GetHtmlFormatType(), ui::Clipboard::BUFFER_STANDARD));
+      ui::Clipboard::GetHtmlFormatType(), ui::CLIPBOARD_TYPE_COPY_PASTE));
   EXPECT_EQ(string16(), omnibox_view->GetText());
 }
 

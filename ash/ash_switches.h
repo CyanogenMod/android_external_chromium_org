@@ -22,8 +22,6 @@ ASH_EXPORT extern const char kAshConstrainPointerToRoot[];
 ASH_EXPORT extern const char kAshCopyHostBackgroundAtBoot[];
 ASH_EXPORT extern const char kAshDebugShortcuts[];
 ASH_EXPORT extern const char kAshDebugShowPreferredNetworks[];
-ASH_EXPORT extern const char kAshDefaultGuestWallpaperLarge[];
-ASH_EXPORT extern const char kAshDefaultGuestWallpaperSmall[];
 ASH_EXPORT extern const char kAshDefaultWallpaperLarge[];
 ASH_EXPORT extern const char kAshDefaultWallpaperSmall[];
 ASH_EXPORT extern const char kAshDisableAlternateShelfLayout[];
@@ -35,7 +33,7 @@ ASH_EXPORT extern const char kAshDisableAutoMaximizing[];
 ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
 ASH_EXPORT extern const char kAshDisableDragOffShelf[];
 ASH_EXPORT extern const char kAshDisableImmersiveFullscreen[];
-ASH_EXPORT extern const char kAshDisableNewLockAnimations[];
+ASH_EXPORT extern const char kAshDisableOverviewMode[];
 ASH_EXPORT extern const char kAshDisableDragAndDropAppListToLauncher[];
 #if defined(OS_CHROMEOS)
 ASH_EXPORT extern const char kAshDisableSoftwareMirroring[];
@@ -46,22 +44,25 @@ ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
 ASH_EXPORT extern const char kAshEnableAlternateFrameCaptionButtonStyle[];
 ASH_EXPORT extern const char kAshEnableBrightnessControl[];
 ASH_EXPORT extern const char kAshEnableDockedWindows[];
+#if defined(OS_CHROMEOS)
+ASH_EXPORT extern const char kAshEnableFullMultiProfileMode[];
+#endif
 ASH_EXPORT extern const char kAshEnableImmersiveFullscreen[];
-ASH_EXPORT extern const char kAshEnableOverviewMode[];
 #if defined(OS_LINUX)
 ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
-#endif
-#if defined(OS_CHROMEOS)
-ASH_EXPORT extern const char kAshEnableMultiProfileShelfMenu[];
 #endif
 ASH_EXPORT extern const char kAshEnableOak[];
 ASH_EXPORT extern const char kAshEnableSoftwareMirroring[];
 ASH_EXPORT extern const char kAshEnableStickyEdges[];
 ASH_EXPORT extern const char kAshEnableTrayDragging[];
 ASH_EXPORT extern const char kAshForceMirrorMode[];
+ASH_EXPORT extern const char kAshGuestWallpaperLarge[];
+ASH_EXPORT extern const char kAshGuestWallpaperSmall[];
 ASH_EXPORT extern const char kAshHideNotificationsForFactory[];
 ASH_EXPORT extern const char kAshHostWindowBounds[];
 ASH_EXPORT extern const char kAshImmersiveHideTabIndicators[];
+ASH_EXPORT extern const char kAshOemWallpaperLarge[];
+ASH_EXPORT extern const char kAshOemWallpaperSmall[];
 ASH_EXPORT extern const char kAshSecondaryDisplayLayout[];
 ASH_EXPORT extern const char kAshTouchHud[];
 ASH_EXPORT extern const char kAshUseAlternateShelfLayout[];
@@ -70,8 +71,6 @@ ASH_EXPORT extern const char kAuraLegacyPowerButton[];
 #if defined(OS_WIN)
 ASH_EXPORT extern const char kForceAshToDesktop[];
 #endif
-ASH_EXPORT extern const char kForcedMaximizeMode[];
-
 ASH_EXPORT extern const char kShowShelfAlignmentMenu[];
 ASH_EXPORT extern const char kHideShelfAlignmentMenu[];
 
@@ -88,8 +87,11 @@ ASH_EXPORT bool UseDragOffShelf();
 // Returns true if side shelf alignment is enabled.
 ASH_EXPORT bool ShowShelfAlignmentMenu();
 
-// Returns true if the MultiProfile shelf menu should be shown.
-ASH_EXPORT bool ShowMultiProfileShelfMenu();
+// Returns true if the full MultiProfile mode (M-31 version) is used.
+ASH_EXPORT bool UseFullMultiProfileMode();
+
+// Returns true if overview mode should be activated for window switching.
+ASH_EXPORT bool UseOverviewMode();
 
 #if defined(OS_CHROMEOS)
 // Returns true if new audio handler should be used.

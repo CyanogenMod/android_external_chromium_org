@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+gyp_file = "root.gyp"
+
 group("root") {
   deps = [
     "//base(//build/toolchain/nacl:x86_newlib)",
@@ -9,11 +11,11 @@ group("root") {
     "//crypto",
     "//ipc",
     "//net",
-    "//net/third_party/nss/ssl",
+    "//net/third_party/nss:ssl",
     "//sdch",
     "//third_party/icu:icudata",
     "//third_party/leveldatabase",
-    "//third_party/zlib:chrome_zlib",
+    "//third_party/zlib",
     "//skia",
     "//tools/gn",
     "//url",

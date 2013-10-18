@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/auto_reset.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_writer.h"
@@ -20,6 +21,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "content/public/test/test_utils.h"
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#include "chrome/browser/media_galleries/fileapi/picasa_finder.h"
+#include "chrome/common/media_galleries/picasa_test_util.h"
+#include "chrome/common/media_galleries/picasa_types.h"
+#include "chrome/common/media_galleries/pmp_test_util.h"
+#endif
+
 using extensions::PlatformAppBrowserTest;
 
 namespace {
@@ -33,17 +41,14 @@ base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("C:\\qux");
 base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("/qux");
 #endif
 
-}  // namespace
-
 // This function is to ensure at least one (fake) media gallery exists for
 // testing platforms with no default media galleries, such as CHROMEOS.
 void MakeFakeMediaGalleryForTest(Profile* profile, const base::FilePath& path) {
-  base::RunLoop runloop;
-  StorageMonitor::GetInstance()->EnsureInitialized(runloop.QuitClosure());
-  runloop.Run();
-
   MediaGalleriesPreferences* preferences =
       g_browser_process->media_file_system_registry()->GetPreferences(profile);
+  base::RunLoop runloop;
+  preferences->EnsureInitialized(runloop.QuitClosure());
+  runloop.Run();
 
   MediaGalleryPrefInfo gallery_info;
   ASSERT_FALSE(preferences->LookUpGalleryByPath(path, &gallery_info));
@@ -59,6 +64,8 @@ void MakeFakeMediaGalleryForTest(Profile* profile, const base::FilePath& path) {
   content::RunAllPendingInMessageLoop();
 }
 
+}  // namespace
+
 class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
  protected:
   MediaGalleriesPlatformAppBrowserTest() : test_jpg_size_(0) {}
@@ -66,12 +73,12 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     PlatformAppBrowserTest::SetUpOnMainThread();
-    ensure_media_directories_exist_.reset(new EnsureMediaDirectoriesExists);
+    ensure_media_directories_exists_.reset(new EnsureMediaDirectoriesExists);
     PopulatePicturesDirectoryTestData();
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {
-    ensure_media_directories_exist_.reset();
+    ensure_media_directories_exists_.reset();
     PlatformAppBrowserTest::TearDownOnMainThread();
   }
 
@@ -82,6 +89,28 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
 
   bool RunMediaGalleriesTestWithArg(const std::string& extension_name,
                                     const base::ListValue& custom_arg_value) {
+    // Copy the test data for this test into a temporary directory. Then add
+    // a common_injected.js to the temporary copy and run it.
+    const char kTestDir[] = "api_test/media_galleries/";
+    base::FilePath from_dir =
+        test_data_dir_.AppendASCII(kTestDir + extension_name);
+    from_dir = from_dir.NormalizePathSeparators();
+
+    base::ScopedTempDir temp_dir;
+    if (!temp_dir.CreateUniqueTempDir())
+      return false;
+
+    if (!base::CopyDirectory(from_dir, temp_dir.path(), true))
+      return false;
+
+    base::FilePath common_js_path(
+        GetCommonDataDir().AppendASCII("common_injected.js"));
+    base::FilePath inject_js_path(
+        temp_dir.path().AppendASCII(extension_name)
+                       .AppendASCII("common_injected.js"));
+    if (!base::CopyFile(common_js_path, inject_js_path))
+      return false;
+
     const char* custom_arg = NULL;
     std::string json_string;
     if (!custom_arg_value.empty()) {
@@ -89,8 +118,8 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
       custom_arg = json_string.c_str();
     }
 
-    const char kTestDir[] = "api_test/media_galleries/";
-    return RunPlatformAppTestWithArg(kTestDir + extension_name, custom_arg);
+    base::AutoReset<base::FilePath> reset(&test_data_dir_, temp_dir.path());
+    return RunPlatformAppTestWithArg(extension_name, custom_arg);
   }
 
   void AttachFakeDevice() {
@@ -110,13 +139,10 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
   }
 
   void PopulatePicturesDirectoryTestData() {
-    if (ensure_media_directories_exist_->num_galleries() == 0)
+    if (ensure_media_directories_exists_->num_galleries() == 0)
       return;
 
-    base::FilePath test_data_path =
-        test_data_dir_.AppendASCII("api_test")
-                      .AppendASCII("media_galleries")
-                      .AppendASCII("common");
+    base::FilePath test_data_path(GetCommonDataDir());
     base::FilePath write_path;
     ASSERT_TRUE(PathService::Get(chrome::DIR_USER_PICTURES, &write_path));
 
@@ -134,22 +160,68 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     test_jpg_size_ = base::checked_numeric_cast<int>(file_size);
   }
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
+  void PopulatePicasaTestData(const base::FilePath& metadata_root) {
+    base::FilePath picasa_database_path =
+        metadata_root.AppendASCII(picasa::kPicasaDatabaseDirName);
+    base::FilePath picasa_temp_dir_path =
+        metadata_root.AppendASCII(picasa::kPicasaTempDirName);
+    ASSERT_TRUE(file_util::CreateDirectory(picasa_database_path));
+    ASSERT_TRUE(file_util::CreateDirectory(picasa_temp_dir_path));
+
+    // Create fake folder directories.
+    base::FilePath folders_root =
+        ensure_media_directories_exists_->GetFakePicasaFoldersRootPath();
+    base::FilePath fake_folder_1 = folders_root.AppendASCII("folder1");
+    base::FilePath fake_folder_2 = folders_root.AppendASCII("folder2");
+    ASSERT_TRUE(file_util::CreateDirectory(fake_folder_1));
+    ASSERT_TRUE(file_util::CreateDirectory(fake_folder_2));
+
+    // Write folder and album contents.
+    picasa::WriteTestAlbumTable(
+        picasa_database_path, fake_folder_1, fake_folder_2);
+    picasa::WriteTestAlbumsImagesIndex(fake_folder_1, fake_folder_2);
+
+    base::FilePath test_jpg_path = GetCommonDataDir().AppendASCII("test.jpg");
+    ASSERT_TRUE(base::CopyFile(
+        test_jpg_path, fake_folder_1.AppendASCII("InBoth.jpg")));
+    ASSERT_TRUE(base::CopyFile(
+        test_jpg_path, fake_folder_1.AppendASCII("InSecondAlbumOnly.jpg")));
+    ASSERT_TRUE(base::CopyFile(
+        test_jpg_path, fake_folder_2.AppendASCII("InFirstAlbumOnly.jpg")));
+  }
+#endif
+
+  base::FilePath GetCommonDataDir() const {
+    return test_data_dir_.AppendASCII("api_test")
+                         .AppendASCII("media_galleries")
+                         .AppendASCII("common");
+  }
+
   int num_galleries() const {
-    return ensure_media_directories_exist_->num_galleries();
+    return ensure_media_directories_exists_->num_galleries();
   }
 
   int test_jpg_size() const { return test_jpg_size_; }
 
+  EnsureMediaDirectoriesExists* ensure_media_directories_exists() const {
+    return ensure_media_directories_exists_.get();
+  }
+
  private:
   std::string device_id_;
   int test_jpg_size_;
-  scoped_ptr<EnsureMediaDirectoriesExists> ensure_media_directories_exist_;
+  scoped_ptr<EnsureMediaDirectoriesExists> ensure_media_directories_exists_;
 };
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        MediaGalleriesNoAccess) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  MakeFakeMediaGalleryForTest(browser()->profile(), temp_dir.path());
+
   base::ListValue custom_args;
-  custom_args.AppendInteger(num_galleries());
+  custom_args.AppendInteger(num_galleries() + 1);
 
   ASSERT_TRUE(RunMediaGalleriesTestWithArg("no_access", custom_args))
       << message_;
@@ -183,14 +255,6 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       MediaGalleriesCopyToNoAccess) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  MakeFakeMediaGalleryForTest(browser()->profile(), temp_dir.path());
-  ASSERT_TRUE(RunMediaGalleriesTest("copy_to_access/no_access")) << message_;
-}
-
-IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        MediaGalleriesAccessAttached) {
   AttachFakeDevice();
 
@@ -208,3 +272,32 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        GetFilesystemMetadata) {
   ASSERT_TRUE(RunMediaGalleriesTest("metadata")) << message_;
 }
+
+#if defined(OS_WIN)|| defined(OS_MACOSX)
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
+                       PicasaDefaultLocation) {
+#if defined(OS_WIN)
+  base::FilePath metadata_root = ensure_media_directories_exists()->
+      GetFakeLocalAppDataPath().AppendASCII("Google").AppendASCII("Picasa2");
+#elif defined(OS_MACOSX)
+  base::FilePath metadata_root = ensure_media_directories_exists()->
+      GetFakeAppDataPath().AppendASCII("Google").AppendASCII("Picasa3");
+#endif
+  PopulatePicasaTestData(metadata_root);
+  ASSERT_TRUE(RunMediaGalleriesTest("picasa")) << message_;
+}
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
+                       PicasaCustomLocation) {
+  base::ScopedTempDir fake_alternate_app_data_dir;
+  ASSERT_TRUE(fake_alternate_app_data_dir.CreateUniqueTempDir());
+  ensure_media_directories_exists()->WriteCustomPicasaAppDataPathToRegistry(
+      fake_alternate_app_data_dir.path());
+  base::FilePath metadata_root = fake_alternate_app_data_dir.path()
+      .AppendASCII("Google").AppendASCII("Picasa2");
+  PopulatePicasaTestData(metadata_root);
+  ASSERT_TRUE(RunMediaGalleriesTest("picasa")) << message_;
+}
+#endif  // defined(OS_WIN)

@@ -557,7 +557,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       <message name="IDS_OK" desc="Used for OK on buttons">
         OK
       </message>
-      <message name="IDS_CANCEL" desc="Used for Cancel on buttons">
+      <message name="IDS_CANCEL" desc="Used for Cancel on buttons" formatter_data="android_java">
         Cancel
       </message>
       <message name="IDS_ADD" desc="Used for Add on buttons">
@@ -570,7 +570,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         &amp;Edit
       </message>
       <message name="IDS_LEARN_MORE" desc="Learn more text">
-        Learn more
+        Learn&#160;more
       </message>
       <message name="IDS_CLOSE" desc="A generic term for Close on buttons and menus.">
         Close
@@ -1361,9 +1361,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_FEEDBACK" desc="The text label of the Report Bug menu item">
           &amp;Report an issue...
         </message>
-        <message name="IDS_FEEDBACK_ALT" desc="The alternate text label of the Report Bug menu item, for a field trial">
-          &amp;Send Feedback
-        </message>
         <message name="IDS_DEV_TOOLS" desc="The text label of the Developer Tools menu item">
           &amp;Developer tools
         </message>
@@ -1386,9 +1383,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
         <message name="IDS_FEEDBACK" desc="In Title Case: The text label of the Report Bug menu item">
           &amp;Report an Issue...
-        </message>
-        <message name="IDS_FEEDBACK_ALT" desc="The alternate text label of the Report Bug menu item, for a field trial">
-          &amp;Send Feedback
         </message>
         <message name="IDS_DEV_TOOLS" desc="In Title Case: The text label of the Developer Tools menu item">
           &amp;Developer Tools
@@ -3957,6 +3951,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_TITLE" desc="Titlebar of the extension or app permissions review window">
         Current Permissions
       </message>
+      <message name="IDS_EXTENSION_FIRST_RUN_PROMPT_TITLE" desc="Titlebar of the extension or app permissions prompt window">
+        Confirm Permissions
+      </message>
       <message name="IDS_EXTENSION_INSTALL_PROMPT_HEADING" desc="First bold line in the content area of the extension or app installation prompt. Asks the user if they want to install a particular extension or app.">
         Add "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>"?
       </message>
@@ -3980,6 +3977,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_HEADING" desc="First bold line in the content area of the extension or app permissions prompt. Shows the user the permissions a particular extension or app has.">
         <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>
+      </message>
+      <message name="IDS_EXTENSION_FIRST_RUN_PROMPT_HEADING" desc="First bold line in the content area of the extension or app permissions prompt. Asks the user if they want to accept permission for a particular app.">
+        Enable "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>"?
       </message>
 
       <!-- Extension alerts. -->
@@ -4408,6 +4408,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_CANT_INSTALL_POLICY_BLOCKED" desc="Error message when a user tries to install an extension that is blocked by administrator policy.">
         <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> (extension ID "<ph name="EXTENSION_ID">$2<ex>nckgahadagoaajjgafhacjanaoiihapd</ex></ph>") is blocked by the administrator.
+      </message>
+      <message name="IDS_EXTENSION_CANT_INSTALL_IN_DEVICE_LOCAL_ACCOUNT" desc="Error message when a user tries to install or the administrator tries to force-install through policy an extension that is not allowed in a device-local account.">
+        <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> (extension ID "<ph name="EXTENSION_ID">$2<ex>nckgahadagoaajjgafhacjanaoiihapd</ex></ph>") is not allowed in this type of session.
       </message>
       <message name="IDS_EXTENSION_CANT_MODIFY_POLICY_REQUIRED" desc="Error message when a user tries to remove or change an extension that is required by administrator policy.">
         The administrator of this machine requires <ph name="EXTENSION_NAME">$1<ex>Google Talk</ex></ph> to be installed. It cannot be removed or modified.
@@ -4939,6 +4942,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSION_PROMPT_PERMISSIONS_CLEAR_RETAINED_FILES_BUTTON" desc="Text for the Revoke File Access button on the extension permissions prompt">
         Revoke File Access
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_FIRST_RUN_ACCEPT_BUTTON" desc="Text for the allow button on the first run promopt to accept permissions and launch app">
+        Accept and open
       </message>
       <message name="IDS_EXTENSION_WEB_STORE_TITLE" desc="Text for the Chrome Web Store">
         Chrome Web Store
@@ -5622,17 +5628,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_DISABLE_TOUCH_ADJUSTMENT_DESCRIPTION" desc="Description of the disable touch adjustment flag.">
         Disables touch adjustment support.  Touch adjustment is the process of refining the position of a touch gesture in order to compensate for touches having poor resolution compared to a mouse.
       </message>
+      <message name="IDS_FLAGS_DISABLE_COMPOSITOR_TOUCH_HIT_TESTING_NAME" desc="Title of the disable compositor touch hit testing flag.">
+        Disable compositor touch hit testing.
+      </message>
+      <message name="IDS_FLAGS_DISABLE_COMPOSITOR_TOUCH_HIT_TESTING_DESCRIPTION" desc="Description of the disable compositor touch hit testing flags.">
+        Disables an optimization intended to improve touch scrolling responsiveness.  Forces all touch events to go to the blink main thread to look for handlers, instead of potentially short-circuiting from the compositor thread.
+      </message>
       <message name="IDS_ENABLE_BACKLOADER_NAME" desc="Title of the enable background loader flag." >
         Enable background loader component for hosted applications
       </message>
       <message name="IDS_ENABLE_BACKLOADER_DESCRIPTION" desc="Description of the enable background loader flag.">
         Enable background loader component for hosted applications.
-      </message>
-      <message name="IDS_ENABLE_SCREENSAVER_EXTENSION_NAME" desc="Title of the enble screensaver extensions flag." >
-        Enable screensaver extensions.
-      </message>
-      <message name="IDS_ENABLE_SCREENSAVER_EXTENSION_DESCRIPTION" desc="Description of the enable screensaver extensions flag.">
-        Enable screensaver extensions.
       </message>
       <message name="IDS_FLAGS_CONFLICTS_CHECK_NAME" desc="Title of the run conflicts check flag">
         Check for known conflicts with 3rd party modules.
@@ -5773,11 +5779,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_APP_WINDOW_CONTROLS_DESCRIPTION" desc="Description of the 'Enable 'window-controls' element' lab.">
         Enables using 'window-controls' HTML elements in packaged apps.
       </message>
-      <message name="IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_DESCRIPTION" desc="Description of the 'Batched shutdown' lab.">
-        Enabling this options delays closing browser windows during shutdown until the shutdown is no longer cancellable.
+      <message name="IDS_FLAGS_DISABLE_BATCHED_SHUTDOWN_DESCRIPTION" desc="Description of the 'Batched shutdown' lab.">
+        Disables delaying closing browser windows during shutdown until shutdown is no longer cancellable.
       </message>
-      <message name="IDS_FLAGS_ENABLE_BATCHED_SHUTDOWN_NAME" desc="Name of the 'Batched shutdown' lab.">
-        Enable batched browser shutdown
+      <message name="IDS_FLAGS_DISABLE_BATCHED_SHUTDOWN_NAME" desc="Name of the 'Batched shutdown' lab.">
+        Disable batched browser shutdown
       </message>
       <message name="IDS_FLAGS_SCRIPT_BADGES_NAME" desc="Name of the 'Script Badges' lab.">
         Script badges
@@ -5946,11 +5952,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_WEBSOCKET_DESCRIPTION" desc="Description for the flag to enable experimental WebSocket implementation in chrome/net">
         Use the explemental WebSocket implementation.
       </message>
-      <message name="IDS_FLAGS_ENABLE_WALLET_PRODUCTION_SERVICE_NAME" desc="Title for the flag to enable using production Online Wallet.">
-        Enable Online Wallet production service
+      <message name="IDS_FLAGS_WALLET_SERVICE_USE_SANDBOX_NAME" desc="Title for the flag to use the Online Wallet sandbox servers (instead of production).">
+        Use Wallet sandbox servers
       </message>
-      <message name="IDS_FLAGS_ENABLE_WALLET_PRODUCTION_SERVICE_DESCRIPTION" desc="Description of the flag to enable using production Online Wallet.">
-        Use the production service for any Online Wallet API calls. This flag is only meaningful if a feature that uses Online Wallet is enabled. Production Online Wallet is also not yet enabled for all users.
+      <message name="IDS_FLAGS_WALLET_SERVICE_USE_SANDBOX_DESCRIPTION" desc="Description of the flag to use the Online Wallet sandbox servers.">
+        For developers: use the sandbox service for Wallet API calls for requestAutocomplete().
       </message>
       <message name="IDS_FLAGS_OVERSCROLL_HISTORY_NAVIGATION_NAME" desc="Title for the flag for history navigation from horizontal overscroll.">
         Overscroll history navigation
@@ -6175,6 +6181,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_WEBKIT_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the prefixed Media Source API.">
         Disable the experimental WebKitMediaSource object. This object allows JavaScript to send media data directly to a video element.
       </message>
+      <message name="IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the unprefixed Media Source API.">
+        Disable unprefixed Media Source API.
+      </message>
+      <message name="IDS_FLAGS_DISABLE_UNPREFIXED_MEDIA_SOURCE_DESCRIPTION" desc="Description for the flag to disable the unprefixed Media Source API.">
+        Disable the unprefixed MediaSource object. This object allows JavaScript to send media data directly to a video element.
+      </message>
       <message name="IDS_FLAGS_ENABLE_ENCRYPTED_MEDIA_NAME" desc="Title for the flag to enable the (unprefixed) Encrypted Media Extensions APIs (e.g. MediaKeys).">
         Enable Encrypted Media Extensions.
       </message>
@@ -6199,6 +6211,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_DESCRIPTION" desc="Description for the flag to disable infobar popup for protected media identifier.">
           Disable infobar popup by default when accessing the protected media identifier.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_MEDIADRM_NAME" desc="Title for the flag to enable MediaDrm for encrypted content.">
+          Enable MediaDrm.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_MEDIADRM_DESCRIPTION" desc="Description for the flag to enable MediaDrm for encrypted content.">
+          Enable MediaDrm by default for Encrypted Media Extensions.
         </message>
         <message name="IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_NAME" desc="Title for the flag to enable non-conmpositing decoding in MediaDrm for encrypted content.">
           Enable non-compositing decoding.
@@ -6250,23 +6268,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ASH_FRAME_CAPTION_BUTTON_STYLE_DESCRIPTION" desc="Description for the flag for the alternate frame caption button style.">
         Enables an experimental visual style for the frame caption buttons (minimize, maximize, close).
       </message>
-      <message name="IDS_FLAGS_DISABLE_TAB_SCRUBBING_NAME" desc="Title for the flag to disable tab scrubbing.">
-        Disable tab scrubbing
-      </message>
-      <message name="IDS_FLAGS_DISABLE_TAB_SCRUBBING_DESCRIPTION" desc="Description for the flag to disable tab scrubbing.">
-        Disables tab switching via 3 finger horizontal scroll.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_NAME" desc="Title for the flag to enable workspace scrubbing.">
-        Enable workspace scrubbing
-      </message>
-      <message name="IDS_FLAGS_ENABLE_WORKSPACE_SCRUBBING_DESCRIPTION" desc="Description for the flag to enable workspace scrubbing.">
-        Enables workspace switching via 3 finger vertical scroll.
-      </message>
       <message name="IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_NAME" desc="Title for the flag to disable drag and drop from the app list menu to the launcher.">
-        Drag and drop from the app list menu to the launcher
+        Drag and drop from the app list menu to the shelf.
       </message>
       <message name="IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_DESCRIPTION" desc="Description for the flag to disable drag and drop opertions from the app list menu to the launcher.">
-        Disallow drag and drop from the app list menu to the launcher.
+        Disallow drag and drop from the app list menu to the shelf.
       </message>
       <message name="IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_NAME" desc="Title for the flag for immersive fullscreen mode.">
         Immersive fullscreen
@@ -6280,11 +6286,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_MEMORY_MONITOR_DESCRIPTION" desc="Title for the flag to enable advanced gestures.">
         Enables visual memory monitor in status area.
       </message>
-      <message name="IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_NAME" desc="Title for the multi profile shelf functionality flag.">
-        Enable multi profile shelf functionality
+      <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE" desc="Title for the full multi profile mode flag.">
+        Enable full multi profile mode
       </message>
-      <message name="IDS_FLAGS_ENABLE_MULTI_PROFILE_SHELF_DESCRIPTION" desc="Title for the multi profile shelf functionality flag.">
-        Enable multi profile shelf functionality
+      <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE_DESCRIPTION" desc="Title for the full multi profile mode flag.">
+        Enable full multi profile mode
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME" desc="Title for a flag for audio switching.">
         Audio input/output menu
@@ -6365,12 +6371,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_EXPERIMENTAL_WEB_PLATFORM_FEATURES_DESCRIPTION" desc="Description for the flag to enable experimental Web Platform features.">
         Enable experimental Web Platform features that are in development.
       </message>
-      <message name="IDS_FLAGS_CSS_SHADERS_NAME" desc="Name for the flag to enable CSS Shaders.">
-        Enable CSS Shaders.
-      </message>
-      <message name="IDS_FLAGS_CSS_SHADERS_DESCRIPTION" desc="Description for the flag to enable CSS Shaders.">
-        Enable filter effects on DOM elements using custom GLSL shaders. More info at https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html#feCustomElement.
-      </message>
       <message name="IDS_FLAGS_NTP_OTHER_SESSIONS_MENU_NAME" desc="Name for the flag to disable the 'Other devices' menu on the NTP.">
         Disable NTP 'Other devices' menu.
       </message>
@@ -6388,12 +6388,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_DEVTOOLS_EXPERIMENTS_DESCRIPTION" desc="Description for the flag to enable experiments in Developer Tools.">
         Enable Developer Tools experiments. Use Settings panel in Developer Tools to toggle individual experiments.
-      </message>
-      <message name="IDS_FLAGS_REMOTE_DEBUGGING_RAW_USB_NAME" desc="Name for the flag to enable remote debugging of Chrome for Android over raw USB interface.">
-        Enable Remote Debugging over USB.
-      </message>
-      <message name="IDS_FLAGS_REMOTE_DEBUGGING_RAW_USB_DESCRIPTION" desc="Description for the flag to enable remote debugging of Chrome for Android over raw USB interface.">
-        Enable Remote Debugging of Chrome for Android over raw USB interface (no need to install / run Android Debug Bridge).
       </message>
       <message name="IDS_FLAGS_SILENT_DEBUGGER_EXTENSION_API_NAME" desc="Name for the flag to enable silent debugging via chrome.debugger extension API.">
         Enable Silent Debugging.
@@ -6425,18 +6419,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SHOW_SHELF_ALIGNMENT_MENU_DESCRIPTION" desc="Description for the flag to show a menu that lets you change the alignment of the shelf.">
         Enables a menu that allows changing the side the shelf is aligned to.
       </message>
-     <message name="IDS_FLAGS_FORCE_MAXIMIZE_MODE_NAME" desc="Name for the flag which forces the window manager to use maximized mode wherever possible.">
-        Always maximized mode
-     </message>
-     <message name="IDS_FLAGS_FORCE_MAXIMIZE_MODE_DESCRIPTION" desc="Description for the flag which forces the window manager to use maximized mode wherever possible.">
-       Forces the window manager to use maximize mode wherever possible.
-     </message>
-
       <message name="IDS_FLAGS_DISABLE_MINIMIZE_ON_SECOND_LAUNCHER_ITEM_CLICK_NAME" desc="Name for the flag which allows to minimize a window upon launcher item click under certain conditions.">
-        Disallow launcher to minimize-on-click
+        Disallow shelf to minimize-on-click.
       </message>
       <message name="IDS_FLAGS_DISABLE_MINIMIZE_ON_SECOND_LAUNCHER_ITEM_CLICK_DESCRIPTION" desc="Description for the flag which allows to minimize a window upon launcher item click under certain conditions.">
-        Disallow the launcher to minimize a window if a launcher item gets clicked which has only a single, already active, window associated with it.
+        Disallow the shelf to minimize a window if a shelf item gets clicked which has only a single, already active, window associated with it.
       </message>
 
       <message name="IDS_FLAGS_SHOW_TOUCH_HUD_NAME" desc="Name for the flag to show a heads-up display for tracking touch-points.">
@@ -6498,12 +6485,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_FLAGS_SHILL_CAPTIVE_PORTAL_DETECTOR" desc="Description for the option of Captive Portal detector.">
           Shill Captive Portal detector
-        </message>
-        <message name="IDS_FLAGS_ASH_NEW_LOCK_ANIMATIONS" desc="Name for the flag to switch lock animations.">
-          Disable new lock animations.
-        </message>
-        <message name="IDS_FLAGS_ASH_NEW_LOCK_ANIMATIONS_DESCRIPTION" desc="Description for the flag to switch lock animations.">
-          Disables new lock animations.
         </message>
         <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_NAME" desc="Name for the flag to enable sticky keys.">
           Enable sticky keys.
@@ -6768,11 +6749,53 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to disable the app list on startup.">
         Disable the app launcher on startup. While this flag is set the launcher will be disabled every time Chrome starts. This is used for testing the app launcher install flow.
       </message>
+      <if expr="pp_ifdef('enable_app_list')">
+        <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_NAME" desc="Name of the flag to enable the start page of app launcher.">
+          Enable the app launcher start page.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_DESCRIPTION" desc="Description of the flag to enable the start page of app launcher.">
+          Enable the app launcher start page. If enabled, app launcher will show a start page in addition to the apps grid.
+        </message>
+      </if>
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_NAME" desc="Name of the flag to disable sync of user account image.">
         Disable avatar sync.
       </message>
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION" desc="Description for the flag to disable sync of user account image.">
         Disables sync of user account image between different ChromeOS devices.
+      </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_ENABLE_CAST_NAME" desc="Name of the flag to enable Chromecast support.">
+          Enable Chromecast support
+        </message>
+        <message name="IDS_FLAGS_ENABLE_CAST_DESCRIPTION" desc="Description for the flag to enable playing videos remotely on Chromecast.">
+          Enable playing videos remotely on Chromecast.
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to enable new first-run UI.">
+          Enable new first-run UI.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_DESCRIPTION" desc="Description for the flag to enable new first-run UI.">
+          If enabled, overlay tutorial will be shown after first login.
+        </message>
+      </if>
+      <message name="IDS_FLAGS_HIDPI_NAME" desc="Name of flag to enable/disable HiDPI Support.">
+        HiDPI Support
+      </message>
+      <message name="IDS_FLAGS_HIDPI_DESCRIPTION" desc="Description of flag to enable/disable HiDPI Support.">
+        If enabled, application size and layout will adapt to the operating system's DPI settings.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_NAME" desc="Name of the flag to enable streamlined hosted apps.">
+        Enable experimental streamlined hosted apps.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_DESCRIPTION" desc="Description for the flag to enable streamlined hosted apps.">
+        Enables an experimental, more streamlined hosted app experience.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_NAME" desc="Name of the flag to enable streamlined ServiceWorker.">
+        Enable support for ServiceWorker.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_DESCRIPTION" desc="Description for the flag to enable ServiceWorker.">
+        ServiceWorker is a new kind of web worker that can intercept resource requests. See https://github.com/slightlyoff/ServiceWorker for more information.
       </message>
 
       <!-- Crashes -->
@@ -6796,12 +6819,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_CRASHES_DISABLED_HEADER" desc="The header for chrome://crashes when crash reporting is disabled">
         Crash reporting is disabled.
-      </message>
-      <message name="IDS_FLAGS_HIDPI_NAME" desc="Name of flag to enable/disable HiDPI Support.">
-        HiDPI Support
-      </message>
-      <message name="IDS_FLAGS_HIDPI_DESCRIPTION" desc="Description of flag to enable/disable HiDPI Support.">
-        If enabled, application size and layout will adapt to the operating system's DPI settings.
       </message>
 
       <!-- WebRTC logs -->
@@ -8167,9 +8184,6 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_REPORT_AN_ISSUE" desc="Text of the button which allows the user to report an issue with Chrome.">
         Report an issue
-      </message>
-      <message name="IDS_SEND_FEEDBACK" desc="Text of the button which allows the user to report an issue with chrome, alternate text for a field trial">
-        Send Feedback
       </message>
 
       <!-- settings reset bubble messages -->
@@ -10149,6 +10163,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_PLACEHOLDER_PHONE_NUMBER" desc="The placeholder/label text for phone number in the requestAutocomplete dialog.">
         Phone number
       </message>
+      <message name="IDS_AUTOFILL_DIALOG_TOOLTIP_PHONE_NUMBER" desc="A tooltip explaining why the user must enter a phone number.">
+        Merchants often need this in case there are problems shipping your order.
+      </message>
 
       <!-- Autofill dialog: title bar -->
       <message name="IDS_AUTOFILL_DIALOG_TITLE" desc="Title for autofill dialog which asks user to input address + payment info.">
@@ -10215,7 +10232,7 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
 
       <!--- Autofill dialog: Wallet error messages -->
       <message name="IDS_AUTOFILL_WALLET_BUYER_ACCOUNT_ERROR" desc="Text explaining that the user's Wallet account cannot be used.">
-        There's something wrong with your Google Wallet account [12].
+        There's something wrong with your Google Wallet account.
       </message>
       <message name="IDS_AUTOFILL_WALLET_BUYER_COUNTRY_NOT_SUPPORTED" desc="Text explaining that the user's Wallet Buyer Legal Address has a country which is unsupported. The text inside the |bars| is link text.">
         Unfortunately, Google Wallet can only be used at this merchant by buyers with a US address. If you are a US resident, please |change your home address with Wallet| or pay without using Google Wallet.
@@ -10227,10 +10244,13 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         Google Wallet is not supported with this merchant.
       </message>
       <message name="IDS_AUTOFILL_WALLET_SERVICE_UNAVAILABLE_ERROR" desc="Text explaining that Wallet is currently unavailable.">
-        Google Wallet is currently unavailable [61].
+        Google Wallet is currently unavailable.
       </message>
       <message name="IDS_AUTOFILL_WALLET_UNKNOWN_ERROR" desc="Text explaining that Wallet encountered an unknown error.">
-        Google Wallet has encountered an unknown error [<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
+        Google Wallet has encountered an error.
+      </message>
+      <message name="IDS_AUTOFILL_WALLET_ERROR_CODE_TOOLTIP" desc="Text shown in a (?) tooltip to explain which error Chrome encountered when trying to communicate with Online Wallet.">
+        Error code: <ph name="ERROR_CODE">$1<ex>54</ex></ph>
       </message>
 
       <!-- Autofill dialog: detail section -->
@@ -11671,7 +11691,7 @@ The following application will be launched if you accept this request:
 
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_OPTIONS_DISABLE_GDATA" desc="The text in the options panel describes that we can disable webdrive on ChromeOS.">
-          Disable Google Drive on this device.
+          Disable Google Drive on this device
         </message>
       </if>
 
@@ -12798,6 +12818,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
         (default)
       </message>
 
+      <message name="IDS_FILE_BROWSER_VIEW_TYPE_LABEL" desc="In File Manager, the label for the button menu to switch view types (e.g., list view or thumbnail view)">
+        View
+      </message>
       <message name="IDS_FILE_BROWSER_DETAIL_VIEW_TOOLTIP" desc="Tooltip for the List View button.">
         List view
       </message>
@@ -14006,7 +14029,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
     <!-- Proteced media identifier permission infobar -->
     <if expr="is_android">
       <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_INFOBAR_QUESTION" desc="Question asked on the infobar whenever URL wants to access protected media identifier. It shows the origin of the URL.">
-        @<ph name="URL">$1<ex>https://www.youtube.com</ex></ph> needs to uniquely identify your device to play premium content.
+        <ph name="URL">$1<ex>https://www.youtube.com</ex></ph> needs to uniquely identify your device to play premium content.
       </message>
       <message name="IDS_PROTECTED_MEDIA_IDENTIFIER_ALLOW_BUTTON" desc="A button in the protected media identifier infobar for allowing access to a protected media identifier for a given origin.">
         Allow
@@ -14704,10 +14727,10 @@ Please check your email at <ph name="ACCOUNT_EMAIL">$2<ex>jane.doe@gmail.com</ex
     <!-- Aura strings -->
     <if expr="pp_ifdef('use_ash')">
       <message name="IDS_LAUNCHER_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of the launcher for apps configured to open in a tab">
-        New Tab
+        New tab
       </message>
       <message name="IDS_LAUNCHER_CONTEXT_MENU_NEW_WINDOW" desc="Title text for the 'open new' context menu item of the launcher for apps configured to open windowed">
-        New Window
+        New window
       </message>
       <message name="IDS_LAUNCHER_CONTEXT_MENU_CLOSE" desc="Title text for the 'close' context menu item of the launcher">
         Close
@@ -14977,41 +15000,75 @@ Do you accept?
     <message name="IDS_APP_LIST_CONTACT_VIDEO_TOOLTIP" desc="Tooltip text for the 'video' icon displayed next to a contact search result.">
       Start Hangout
     </message>
-    <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
-      New Tab
-    </message>
-    <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_WINDOW" desc="Title text for the 'open new' context menu item of an app list item configured to open windowed">
-      New Window
-    </message>
-    <message name="IDS_APP_LIST_CONTEXT_MENU_PIN" desc="Title text for the 'pin' context menu item of an app list item.">
-      Pin to Launcher
-    </message>
-    <message name="IDS_APP_LIST_CONTEXT_MENU_UNPIN" desc="Title text for the 'unpin' context menu item of an app list item.">
-      Unpin from Launcher
-    </message>
-    <message name="IDS_APP_LIST_UNINSTALL_ITEM" desc="Title text for the 'uninstall' context menu item of an app list item.">
-      Uninstall
-    </message>
-    <message name="IDS_SEARCH_BOX_HINT" desc="Hint text for the search box in app list window.">
-      Search
-    </message>
-    <message name="IDS_APP_LIST_SIGNIN_BUTTON" desc="App launcher signin button text.">
-      Sign in
-    </message>
-    <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_TEXT" desc="App launcher signin learn more link text.">
-      Learn more
-    </message>
+    <if expr="not pp_ifdef('use_titlecase')">
+      <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
+        New tab
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_WINDOW" desc="Title text for the 'open new' context menu item of an app list item configured to open windowed">
+        New window
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_PIN" desc="Title text for the 'pin' context menu item of an app list item.">
+        Pin to shelf
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_UNPIN" desc="Title text for the 'unpin' context menu item of an app list item.">
+        Unpin from shelf
+      </message>
+      <message name="IDS_APP_LIST_UNINSTALL_ITEM" desc="Title text for the 'uninstall' context menu item of an app list item.">
+        Uninstall
+      </message>
+      <message name="IDS_SEARCH_BOX_HINT" desc="Hint text for the search box in app list window.">
+        Search
+      </message>
+      <message name="IDS_APP_LIST_SIGNIN_BUTTON" desc="App launcher signin button text.">
+        Sign in
+      </message>
+      <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_TEXT" desc="App launcher signin learn more link text.">
+        Learn more
+      </message>
+      <message name="IDS_APP_LIST_NEW_WINDOW" desc="The text label of the New Window menu item">
+        New window
+      </message>
+      <message name="IDS_APP_LIST_NEW_INCOGNITO_WINDOW" desc="The text label of the New incognito window menu item">
+        New incognito window
+      </message>
+    </if>
+    <if expr="pp_ifdef('use_titlecase')">
+      <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_TAB" desc="Title text for the 'open new' context menu item of an app list item configured to open in a tab">
+        New Tab
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_NEW_WINDOW" desc="Title text for the 'open new' context menu item of an app list item configured to open windowed">
+        New Window
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_PIN" desc="Title text for the 'pin' context menu item of an app list item.">
+        Pin to Shelf
+      </message>
+      <message name="IDS_APP_LIST_CONTEXT_MENU_UNPIN" desc="Title text for the 'unpin' context menu item of an app list item.">
+        Unpin from Shelf
+      </message>
+      <message name="IDS_APP_LIST_UNINSTALL_ITEM" desc="Title text for the 'uninstall' context menu item of an app list item.">
+        Uninstall
+      </message>
+      <message name="IDS_SEARCH_BOX_HINT" desc="Hint text for the search box in app list window.">
+        Search
+      </message>
+      <message name="IDS_APP_LIST_SIGNIN_BUTTON" desc="App launcher signin button text.">
+        Sign In
+      </message>
+      <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_TEXT" desc="App launcher signin learn more link text.">
+        Learn More
+      </message>
+      <message name="IDS_APP_LIST_NEW_WINDOW" desc="The text label of the New Window menu item">
+        New Window
+      </message>
+      <message name="IDS_APP_LIST_NEW_INCOGNITO_WINDOW" desc="The text label of the New incognito window menu item">
+        New Incognito Window
+      </message>
+    </if>
     <message name="IDS_APP_LIST_SIGNIN_LEARN_MORE_LINK" desc="App launcher signin learn more URL.">
       https://support.google.com/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=165139&amp;p=settings_sign_in
     </message>
     <message name="IDS_APP_LIST_SIGNIN_SETTINGS_TEXT" desc="App launcher signin settings link text.">
       App Launcher Settings
-    </message>
-    <message name="IDS_APP_LIST_NEW_WINDOW" desc="The text label of the New Window menu item">
-      New window
-    </message>
-    <message name="IDS_APP_LIST_NEW_INCOGNITO_WINDOW" desc="The text label of the New incognito window menu item">
-      New incognito window
     </message>
 
     <!-- chrome://diagnostics strings -->
@@ -15324,7 +15381,7 @@ Do you accept?
       Adding printer...
     </message>
     <message name="IDS_LOCAL_DISCOVERY_ERROR_OCURRED" desc="Title for error page">
-      An error has occured
+      Could not complete registration
     </message>
     <message name="IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1" desc="Message for adding printer number 1">
       You must confirm registration on your printer to finish this process - check it now.
@@ -15394,7 +15451,16 @@ Do you accept?
     </message>
     <!-- People search strings -->
     <message name="IDS_PEOPLE_SEARCH_ACTION_EMAIL_TOOLTIP" desc="Tooltip text for sending an email to the person in the result">
-      E-mail this person
+      Email this person
+    </message>
+    <message name="IDS_PEOPLE_SEARCH_ACTION_CHAT_TOOLTIP" desc="Tooltip text for starting a chat with the person in the result">
+      Chat with this person
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTER_CANCELED_ON_PRINTER" desc="Label for when registration is canceled on the printer side">
+      Printer registration has been canceled.
+    </message>
+    <message name="IDS_LOCAL_DISCOVERY_REGISTER_TIMEOUT_ON_PRINTER" desc="Label for when registration has timed out on the printer side">
+      Printer registration has timed out. In order to register a printer, you must confirm registration on the printer.
     </message>
   </messages>
 

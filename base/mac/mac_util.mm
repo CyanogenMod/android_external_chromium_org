@@ -592,7 +592,7 @@ int MacOSXMinorVersionInternal() {
   // immediate death.
   CHECK(darwin_major_version >= 6);
   int mac_os_x_minor_version = darwin_major_version - 4;
-  DLOG_IF(WARNING, darwin_major_version > 12) << "Assuming Darwin "
+  DLOG_IF(WARNING, darwin_major_version > 13) << "Assuming Darwin "
       << base::IntToString(darwin_major_version) << " is Mac OS X 10."
       << base::IntToString(mac_os_x_minor_version);
 
@@ -610,6 +610,7 @@ enum {
   SNOW_LEOPARD_MINOR_VERSION = 6,
   LION_MINOR_VERSION = 7,
   MOUNTAIN_LION_MINOR_VERSION = 8,
+  MAVERICKS_MINOR_VERSION = 9,
 };
 
 }  // namespace
@@ -623,12 +624,6 @@ bool IsOSSnowLeopard() {
 #if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
 bool IsOSLion() {
   return MacOSXMinorVersion() == LION_MINOR_VERSION;
-}
-#endif
-
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
-bool IsOSLionOrEarlier() {
-  return MacOSXMinorVersion() <= LION_MINOR_VERSION;
 }
 #endif
 
@@ -650,9 +645,21 @@ bool IsOSMountainLionOrLater() {
 }
 #endif
 
-#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_8)
-bool IsOSLaterThanMountainLion_DontCallThis() {
-  return MacOSXMinorVersion() > MOUNTAIN_LION_MINOR_VERSION;
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSMavericks() {
+  return MacOSXMinorVersion() == MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_9)
+bool IsOSMavericksOrLater() {
+  return MacOSXMinorVersion() >= MAVERICKS_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_9)
+bool IsOSLaterThanMavericks_DontCallThis() {
+  return MacOSXMinorVersion() > MAVERICKS_MINOR_VERSION;
 }
 #endif
 

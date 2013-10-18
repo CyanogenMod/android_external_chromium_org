@@ -34,7 +34,7 @@
 #include "extensions/browser/view_type_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 #if defined(OS_WIN)
 #include "win8/util/win8_util.h"
@@ -178,7 +178,7 @@ BookmarkManagerPrivateEventRouter::~BookmarkManagerPrivateEventRouter() {
 }
 
 void BookmarkManagerPrivateEventRouter::DispatchEvent(
-    const char* event_name,
+    const std::string& event_name,
     scoped_ptr<base::ListValue> args) {
   if (!ExtensionSystem::Get(profile_)->event_router())
     return;
@@ -189,7 +189,7 @@ void BookmarkManagerPrivateEventRouter::DispatchEvent(
 
 void BookmarkManagerPrivateEventRouter::DispatchDragEvent(
     const BookmarkNodeData& data,
-    const char* event_name) {
+    const std::string& event_name) {
   if (data.size() == 0)
     return;
 

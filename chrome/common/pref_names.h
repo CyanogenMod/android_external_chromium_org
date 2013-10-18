@@ -31,6 +31,7 @@ extern const char kRestoreOnStartupMigrated[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
 extern const char kURLsToRestoreOnStartup[];
+extern const char kForceEphemeralProfiles[];
 
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -153,6 +154,7 @@ extern const char kWebKitPasswordEchoEnabled[];
 extern const char kPasswordGenerationEnabled[];
 extern const char kPasswordManagerEnabled[];
 extern const char kPasswordManagerAllowShowPasswords[];
+extern const char kPasswordManagerGroupsForDomains[];
 extern const char kAutologinEnabled[];
 extern const char kReverseAutologinEnabled[];
 extern const char kReverseAutologinRejectedEmailList[];
@@ -248,6 +250,7 @@ extern const char kScreenMagnifierEnabled[];
 extern const char kScreenMagnifierType[];
 extern const char kScreenMagnifierScale[];
 extern const char kVirtualKeyboardEnabled[];
+extern const char kAutoclickEnabled[];
 extern const char kShouldAlwaysShowAccessibilityMenu[];
 extern const char kLabsAdvancedFilesystemEnabled[];
 extern const char kLabsMediaplayerEnabled[];
@@ -325,6 +328,7 @@ extern const char kExtensionsUIDeveloperMode[];
 extern const char kExtensionToolbarSize[];
 extern const char kExtensionToolbar[];
 extern const char kExtensionCommands[];
+extern const char kExtensionKnownDisabled[];
 extern const char kPluginsLastInternalDirectory[];
 extern const char kPluginsPluginsList[];
 extern const char kPluginsDisabledPlugins[];
@@ -405,8 +409,10 @@ extern const char kManagedUsers[];
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
 extern const char kMessageCenterEnabledSyncNotifierIds[];
+extern const char kWelcomeNotificationDismissed[];
 extern const char kEnabledSyncedNotificationSendingServices[];
 extern const char kInitializedSyncedNotificationSendingServices[];
+extern const char kSyncedNotificationFirstRun[];
 
 extern const char kExtensionsPref[];
 extern const char kExtensionsLastChromeVersion[];
@@ -414,6 +420,8 @@ extern const char kExtensionsLastChromeVersion[];
 extern const char kFullscreenAllowed[];
 
 extern const char kLocalDiscoveryNotificationsEnabled[];
+
+extern const char kProfileResetPromptMemento[];
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];
@@ -588,6 +596,7 @@ extern const char kNtpAppPageNames[];
 
 extern const char kDevToolsAdbKey[];
 extern const char kDevToolsDisabled[];
+extern const char kDevToolsDiscoverUsbDevicesEnabled[];
 extern const char kDevToolsDockSide[];
 extern const char kDevToolsEditedFiles[];
 extern const char kDevToolsFileSystemPaths[];
@@ -624,6 +633,7 @@ extern const char kSyncFaviconTracking[];
 extern const char kSyncHistoryDeleteDirectives[];
 extern const char kSyncManagedUserSettings[];
 extern const char kSyncManagedUsers[];
+extern const char kSyncArticles[];
 extern const char kSyncPasswords[];
 extern const char kSyncPreferences[];
 extern const char kSyncPriorityPreferences[];
@@ -902,6 +912,7 @@ extern const char kRLZBrand[];
 extern const char kRLZDisabled[];
 #endif
 
+#if defined(ENABLE_APP_LIST)
 extern const char kAppListProfile[];
 extern const char kRestartWithAppList[];
 
@@ -909,6 +920,15 @@ extern const char kLastAppListLaunchPing[];
 extern const char kAppListLaunchCount[];
 extern const char kLastAppListAppLaunchPing[];
 extern const char kAppListAppLaunchCount[];
+extern const char kAppLauncherHasBeenEnabled[];
+extern const char kAppLauncherIsEnabled[];
+extern const char kAppLauncherShortcutVersion[];
+extern const char kShowAppLauncherPromo[];
+#endif
+
+extern const char kAppLaunchForMetroRestart[];
+extern const char kAppLaunchForMetroRestartProfile[];
+extern const char kAppShortcutsHaveBeenCreated[];
 
 extern const char kModuleConflictBubbleShown[];
 
@@ -918,6 +938,8 @@ extern const char kEnableDRM[];
 extern const char kWatchdogExtensionActive[];
 
 extern const char kProfilePreferenceHashes[];
+
+extern const char kNetworkTimeMapping[];
 
 }  // namespace prefs
 

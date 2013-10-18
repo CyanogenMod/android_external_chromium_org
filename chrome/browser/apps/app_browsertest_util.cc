@@ -5,8 +5,8 @@
 #include "chrome/browser/apps/app_browsertest_util.h"
 
 #include "apps/app_window_contents.h"
-#include "apps/native_app_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
@@ -50,10 +50,10 @@ const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
 
   app_loaded_observer.Wait();
 
@@ -77,10 +77,10 @@ const Extension* PlatformAppBrowserTest::InstallAndLaunchPlatformApp(
 
   const Extension* extension = InstallPlatformApp(name);
 
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
 
   app_loaded_observer.Wait();
 

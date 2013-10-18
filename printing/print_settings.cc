@@ -98,13 +98,13 @@ void GetColorModelForMode(
 }
 #endif  // defined(USE_CUPS)
 
-bool isColorModelSelected(int model) {
-  return (model != GRAY &&
-          model != BLACK &&
-          model != PRINTOUTMODE_NORMAL_GRAY &&
-          model != COLORMODE_MONOCHROME &&
-          model != PROCESSCOLORMODEL_GREYSCALE &&
-          model != HP_COLOR_BLACK);
+bool IsColorModelSelected(int color_mode) {
+  return (color_mode != GRAY &&
+          color_mode != BLACK &&
+          color_mode != PRINTOUTMODE_NORMAL_GRAY &&
+          color_mode != COLORMODE_MONOCHROME &&
+          color_mode != PROCESSCOLORMODEL_GREYSCALE &&
+          color_mode != HP_COLOR_BLACK);
 }
 
 // Global SequenceNumber used for generating unique cookie values.
@@ -132,9 +132,9 @@ void PrintSettings::Clear() {
   max_shrink = 2.;
   desired_dpi = 72;
   selection_only = false;
-  date = string16();
-  title = string16();
-  url = string16();
+  date = base::string16();
+  title = base::string16();
+  url = base::string16();
   display_header_footer = false;
   printer_name_.clear();
   device_name_.clear();

@@ -10,6 +10,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
+#include "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_pop_up_button.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_section_view.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_suggestion_container.h"
@@ -39,17 +40,14 @@ const int kRelatedControlVerticalSpacing = 8;
 // TODO(estade): pull out these constants, and figure out better values
 // for them. Note: These are duplicated from Views code.
 
-// Fixed width for the section label.
-const int kLabelWidth = 180;
-
-// Padding between section label and section input.
-const int kPadding = 30;
-
 // Fixed width for the details section.
-const int kDetailsWidth = 300;
+const int kDetailsWidth = 440;
 
 // Top/bottom inset for contents of a detail section.
 const size_t kDetailSectionInset = 10;
+
+// Vertical padding around the section header.
+const CGFloat kVerticalHeaderPadding = 6;
 
 // Break suggestion text into two lines. TODO(groby): Should be on delegate.
 void BreakSuggestionText(const string16& text,
@@ -210,14 +208,12 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
   NSSize labelSize = [label_ frame].size;  // Assumes sizeToFit was called.
   CGFloat controlHeight = [inputs_ preferredHeightForWidth:kDetailsWidth];
-  if ([inputs_ isHidden])
+  if (showSuggestions_)
     controlHeight = [suggestContainer_ preferredSize].height;
-  CGFloat contentHeight = std::max(controlHeight, labelSize.height);
-  contentHeight = std::max(contentHeight, labelSize.height);
-  contentHeight = std::max(contentHeight, NSHeight([suggestButton_ frame]));
 
-  return NSMakeSize(kLabelWidth + kPadding + kDetailsWidth,
-                    contentHeight + 2 * kDetailSectionInset);
+  return NSMakeSize(kDetailsWidth + 2 * chrome_style::kHorizontalPadding,
+                    labelSize.height + kVerticalHeaderPadding +
+                        controlHeight + 2 * kDetailSectionInset);
 }
 
 - (void)performLayout {
@@ -227,43 +223,39 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   NSSize buttonSize = [suggestButton_ frame].size;  // Assume sizeToFit.
   NSSize labelSize = [label_ frame].size;  // Assumes sizeToFit was called.
   CGFloat controlHeight = [inputs_ preferredHeightForWidth:kDetailsWidth];
-  if ([inputs_ isHidden])
+  if (showSuggestions_)
     controlHeight = [suggestContainer_ preferredSize].height;
 
   NSRect viewFrame = NSZeroRect;
   viewFrame.size = [self preferredSize];
 
-  NSRect contentFrame = NSInsetRect(viewFrame, 0, kDetailSectionInset);
-  NSRect dummy;
+  NSRect contentFrame = NSInsetRect(viewFrame,
+                                    chrome_style::kHorizontalPadding,
+                                    kDetailSectionInset);
+  NSRect controlFrame, labelFrame, buttonFrame;
 
-  // Set up three content columns. kLabelWidth is first column width,
-  // then padding, then have suggestButton and inputs share kDetailsWidth.
-  NSRect column[3];
-  NSDivideRect(contentFrame, &column[0], &dummy, kLabelWidth, NSMinXEdge);
-  NSDivideRect(contentFrame, &column[1], &dummy, kDetailsWidth, NSMaxXEdge);
-  NSDivideRect(column[1],
-               &column[2], &column[1], buttonSize.width, NSMaxXEdge);
+  // Label is top left, suggestion button is top right, controls are below that.
+  NSDivideRect(contentFrame, &labelFrame, &controlFrame,
+               kVerticalHeaderPadding + labelSize.height, NSMaxYEdge);
+  NSDivideRect(labelFrame, &buttonFrame, &labelFrame,
+               buttonSize.width, NSMaxXEdge);
 
-  // Center inputs by height in column 1.
-  NSRect controlFrame = column[1];
-  int centerOffset = (NSHeight(controlFrame) - controlHeight) / 2;
-  controlFrame.origin.x += centerOffset;
-  controlFrame.size.height = controlHeight;
+  labelFrame = NSOffsetRect(labelFrame, 0, kVerticalHeaderPadding);
+  labelFrame.size = labelSize;
 
-  // Align label to right top in column 0.
-  NSRect labelFrame;
-  NSDivideRect(column[0], &labelFrame, &dummy, labelSize.height, NSMaxYEdge);
-  NSDivideRect(labelFrame, &labelFrame, &dummy, labelSize.width, NSMaxXEdge);
+  buttonFrame = NSOffsetRect(buttonFrame, 0, 5);
+  buttonFrame.size = buttonSize;
 
-  // suggest button is top left of column 2.
-  NSRect buttonFrame = column[2];
-  NSDivideRect(column[2], &buttonFrame, &dummy, buttonSize.height, NSMaxYEdge);
-
-  [[suggestContainer_ view] setFrame:controlFrame];
-  [suggestContainer_ performLayout];
-  [inputs_ setFrame:controlFrame];
+  if (showSuggestions_) {
+    [[suggestContainer_ view] setFrame:controlFrame];
+    [suggestContainer_ performLayout];
+  } else {
+    [inputs_ setFrame:controlFrame];
+  }
   [label_ setFrame:labelFrame];
   [suggestButton_ setFrame:buttonFrame];
+  [inputs_ setHidden:showSuggestions_];
+  [[suggestContainer_ view] setHidden:!showSuggestions_];
   [view_ setFrameSize:viewFrame.size];
 }
 
@@ -285,10 +277,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
       delegate_->SuggestionStateForSection(section_);
   // TODO(estade): use |vertically_compact_text| when it fits.
   const base::string16& text = suggestionState.horizontally_compact_text;
-  bool showSuggestions = suggestionState.visible;
-
-  [[suggestContainer_ view] setHidden:!showSuggestions];
-  [inputs_ setHidden:showSuggestions];
+  showSuggestions_ = suggestionState.visible;
 
   base::string16 line1;
   base::string16 line2;
@@ -302,8 +291,8 @@ bool CompareInputRows(const autofill::DetailInput* input1,
     NSImage* extraIcon = suggestionState.extra_icon.AsNSImage();
     [suggestContainer_ showInputField:extraText withIcon:extraIcon];
   }
-  [view_ setShouldHighlightOnHover:showSuggestions];
-  if (showSuggestions)
+  [view_ setShouldHighlightOnHover:showSuggestions_];
+  if (showSuggestions_)
     [view_ setClickTarget:suggestButton_];
   else
     [view_ setClickTarget:nil];
@@ -342,30 +331,36 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 }
 
 - (BOOL)validateFor:(autofill::ValidationType)validationType {
-  DCHECK(![[self view] isHidden]);
-
   NSArray* fields = nil;
   if (![inputs_ isHidden]) {
     fields = [inputs_ subviews];
   } else if (section_ == autofill::SECTION_CC) {
-    fields = @[[suggestContainer_ inputField]];
+    fields = @[ [suggestContainer_ inputField] ];
   }
+
+  // Ensure only editable fields are validated.
+  fields = [fields filteredArrayUsingPredicate:
+      [NSPredicate predicateWithBlock:
+          ^BOOL(NSControl<AutofillInputField>* field, NSDictionary* bindings) {
+              return [field isEnabled];
+          }]];
 
   autofill::DetailOutputMap detailOutputs;
   [self fillDetailOutputs:&detailOutputs fromControls:fields];
-  autofill::ValidityData invalidInputs = delegate_->InputsAreValid(
-      section_, detailOutputs, validationType);
+  autofill::ValidityMessages messages = delegate_->InputsAreValid(
+      section_, detailOutputs);
 
   for (NSControl<AutofillInputField>* input in fields) {
     const autofill::ServerFieldType type = [self fieldTypeForControl:input];
-    if (invalidInputs.count(type))
-      [input setValidityMessage:base::SysUTF16ToNSString(invalidInputs[type])];
-    else
-      [input setValidityMessage:@""];
+    const autofill::ValidityMessage& message =
+        messages.GetMessageOrDefault(type);
+    if (validationType != autofill::VALIDATE_FINAL && !message.sure)
+      continue;
+    [input setValidityMessage:base::SysUTF16ToNSString(message.text)];
     [validationDelegate_ updateMessageForField:input];
   }
 
-  return invalidInputs.empty();
+  return !messages.HasErrors();
 }
 
 #pragma mark Internal API for AutofillSectionContainer.
@@ -405,7 +400,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   // so flagging them as invalid prematurely is not helpful. However,
   // correcting a minor mistake (i.e. a wrong CC digit) should immediately
   // result in validation - positive user feedback.
-  if ([textfield invalid]) {
+  if ([textfield invalid] && edited) {
     string16 message = delegate_->InputValidityMessage(section_,
                                                          type,
                                                          fieldValue);
@@ -479,8 +474,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
 
     [field setEnabled:iter->editable];
 
-    // TODO(groby): For comboboxes, "empty" means "set to default index"
-    if (shouldClobber || [[field fieldValue] length] == 0) {
+    if (shouldClobber || [field isDefault]) {
       [field setFieldValue:base::SysUTF16ToNSString(iter->initial_value)];
       AutofillTextField* textField =
           base::mac::ObjCCast<AutofillTextField>(field);
@@ -492,6 +486,8 @@ bool CompareInputRows(const autofill::DetailInput* input1,
         }
       }
     }
+    if (shouldClobber)
+      [field setValidityMessage:@""];
   }
   [self modelChanged];
 }
@@ -507,21 +503,22 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   NSImage* image =
       rb.GetNativeImageNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON).ToNSImage();
   [[button cell] setImage:image
-             forButtonState:image_button_cell::kDefaultState];
+           forButtonState:image_button_cell::kDefaultState];
   image = rb.GetNativeImageNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_H).
       ToNSImage();
   [[button cell] setImage:image
-             forButtonState:image_button_cell::kHoverState];
+           forButtonState:image_button_cell::kHoverState];
   image = rb.GetNativeImageNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_P).
       ToNSImage();
   [[button cell] setImage:image
-             forButtonState:image_button_cell::kPressedState];
+           forButtonState:image_button_cell::kPressedState];
   image = rb.GetNativeImageNamed(IDR_AUTOFILL_DIALOG_MENU_BUTTON_D).
       ToNSImage();
   [[button cell] setImage:image
-             forButtonState:image_button_cell::kDisabledState];
+           forButtonState:image_button_cell::kDisabledState];
 
-  [button sizeToFit];
+  // ImageButtonCell's cellSize is not working. (http://crbug.com/298501)
+  [button setFrameSize:[image size]];
   return button.autorelease();
 }
 
@@ -541,33 +538,35 @@ bool CompareInputRows(const autofill::DetailInput* input1,
   for (size_t i = 0; i < detailInputs_.size(); ++i) {
     const autofill::DetailInput& input = *detailInputs_[i];
     int kColumnSetId = input.row_id;
-    ColumnSet* column_set = layout->GetColumnSet(kColumnSetId);
-    if (!column_set) {
+    ColumnSet* columnSet = layout->GetColumnSet(kColumnSetId);
+    if (!columnSet) {
       // Create a new column set and row.
-      column_set = layout->AddColumnSet(kColumnSetId);
+      columnSet = layout->AddColumnSet(kColumnSetId);
       if (i != 0 && kColumnSetId != -1)
         layout->AddPaddingRow(kRelatedControlVerticalSpacing);
       layout->StartRow(0, kColumnSetId);
     } else {
       // Add a new column to existing row.
-      column_set->AddPaddingColumn(kRelatedControlHorizontalSpacing);
+      columnSet->AddPaddingColumn(kRelatedControlHorizontalSpacing);
       // Must explicitly skip the padding column since we've already started
       // adding views.
       layout->SkipColumns(1);
     }
 
-    column_set->AddColumn(input.expand_weight ? input.expand_weight : 1.0f);
+    columnSet->AddColumn(input.expand_weight ? input.expand_weight : 1.0f);
 
-    ui::ComboboxModel* input_model =
+    ui::ComboboxModel* inputModel =
         delegate_->ComboboxModelForAutofillType(input.type);
     base::scoped_nsprotocol<NSControl<AutofillInputField>*> control;
-    if (input_model) {
+    if (inputModel) {
       base::scoped_nsobject<AutofillPopUpButton> popup(
           [[AutofillPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO]);
-      for (int i = 0; i < input_model->GetItemCount(); ++i) {
-        [popup addItemWithTitle:
-            base::SysUTF16ToNSString(input_model->GetItemAt(i))];
+      for (int i = 0; i < inputModel->GetItemCount(); ++i) {
+         [popup addItemWithTitle:
+             base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
       }
+      [popup setDefaultValue:base::SysUTF16ToNSString(
+          inputModel->GetItemAt(inputModel->GetDefaultIndex()))];
       control.reset(popup.release());
     } else {
       base::scoped_nsobject<AutofillTextField> field(
@@ -577,6 +576,7 @@ bool CompareInputRows(const autofill::DetailInput* input1,
       [[field cell] setIcon:
           delegate_->IconForField(
               input.type, input.initial_value).AsNSImage()];
+      [field setDefaultValue:@""];
       control.reset(field.release());
     }
     [control setFieldValue:base::SysUTF16ToNSString(input.initial_value)];

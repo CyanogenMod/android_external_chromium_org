@@ -130,19 +130,19 @@ TEST_F(RootWindowTest, OnHostMouseEvent) {
 
 TEST_F(RootWindowTest, RepostEvent) {
   // Test RepostEvent in RootWindow. It only works for Mouse Press.
-  EXPECT_FALSE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_FALSE(Env::GetInstance()->IsMouseButtonDown());
   gfx::Point point(10, 10);
   ui::MouseEvent event(
       ui::ET_MOUSE_PRESSED, point, point, ui::EF_LEFT_MOUSE_BUTTON);
   root_window()->RepostEvent(event);
   RunAllPendingInMessageLoop();
-  EXPECT_TRUE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_TRUE(Env::GetInstance()->IsMouseButtonDown());
 }
 
 // Check that we correctly track the state of the mouse buttons in response to
 // button press and release events.
 TEST_F(RootWindowTest, MouseButtonState) {
-  EXPECT_FALSE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_FALSE(Env::GetInstance()->IsMouseButtonDown());
 
   gfx::Point location;
   scoped_ptr<ui::MouseEvent> event;
@@ -154,7 +154,7 @@ TEST_F(RootWindowTest, MouseButtonState) {
       location,
       ui::EF_LEFT_MOUSE_BUTTON));
   root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(event.get());
-  EXPECT_TRUE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_TRUE(Env::GetInstance()->IsMouseButtonDown());
 
   // Additionally press the right.
   event.reset(new ui::MouseEvent(
@@ -163,7 +163,7 @@ TEST_F(RootWindowTest, MouseButtonState) {
       location,
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON));
   root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(event.get());
-  EXPECT_TRUE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_TRUE(Env::GetInstance()->IsMouseButtonDown());
 
   // Release the left button.
   event.reset(new ui::MouseEvent(
@@ -172,7 +172,7 @@ TEST_F(RootWindowTest, MouseButtonState) {
       location,
       ui::EF_RIGHT_MOUSE_BUTTON));
   root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(event.get());
-  EXPECT_TRUE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_TRUE(Env::GetInstance()->IsMouseButtonDown());
 
   // Release the right button.  We should ignore the Shift-is-down flag.
   event.reset(new ui::MouseEvent(
@@ -181,7 +181,7 @@ TEST_F(RootWindowTest, MouseButtonState) {
       location,
       ui::EF_SHIFT_DOWN));
   root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(event.get());
-  EXPECT_FALSE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_FALSE(Env::GetInstance()->IsMouseButtonDown());
 
   // Press the middle button.
   event.reset(new ui::MouseEvent(
@@ -190,7 +190,7 @@ TEST_F(RootWindowTest, MouseButtonState) {
       location,
       ui::EF_MIDDLE_MOUSE_BUTTON));
   root_window()->AsRootWindowHostDelegate()->OnHostMouseEvent(event.get());
-  EXPECT_TRUE(Env::GetInstance()->is_mouse_button_down());
+  EXPECT_TRUE(Env::GetInstance()->IsMouseButtonDown());
 }
 
 TEST_F(RootWindowTest, TranslatedEvent) {
@@ -508,6 +508,28 @@ std::string EventTypesToString(const EventFilterRecorder::Events& events) {
 }
 
 }  // namespace
+
+// Verifies a repost mouse event targets the window with capture (if there is
+// one).
+TEST_F(RootWindowTest, RepostTargetsCaptureWindow) {
+  // Set capture on |window| generate a mouse event (that is reposted) and not
+  // over |window| and verify |window| gets it (|window| gets it because it has
+  // capture).
+  EXPECT_FALSE(Env::GetInstance()->IsMouseButtonDown());
+  scoped_ptr<Window> window(CreateNormalWindow(1, root_window(), NULL));
+  window->SetBounds(gfx::Rect(20, 20, 40, 30));
+  EventFilterRecorder* recorder = new EventFilterRecorder;
+  window->SetEventFilter(recorder);  // Takes ownership.
+  window->SetCapture();
+  const ui::MouseEvent press_event(
+      ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(),
+      ui::EF_LEFT_MOUSE_BUTTON);
+  root_window()->RepostEvent(press_event);
+  RunAllPendingInMessageLoop();  // Necessitated by RepostEvent().
+  // Mouse moves/enters may be generated. We only care about a pressed.
+  EXPECT_TRUE(EventTypesToString(recorder->events()).find("MOUSE_PRESSED") !=
+              std::string::npos) << EventTypesToString(recorder->events());
+}
 
 TEST_F(RootWindowTest, MouseMovesHeld) {
   EventFilterRecorder* filter = new EventFilterRecorder;
@@ -1045,6 +1067,71 @@ TEST_F(RootWindowTest, GestureRepostEventOrder) {
 
   EXPECT_EQ(kExpectedTargetEvents,
             EventTypesToString(repost_event_recorder->events()));
+}
+
+class OnMouseExitDeletingEventFilter : public EventFilterRecorder {
+ public:
+  OnMouseExitDeletingEventFilter() : window_to_delete_(NULL) {}
+  virtual ~OnMouseExitDeletingEventFilter() {}
+
+  void set_window_to_delete(Window* window_to_delete) {
+    window_to_delete_ = window_to_delete;
+  }
+
+ private:
+  // Overridden from ui::EventHandler:
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
+    EventFilterRecorder::OnMouseEvent(event);
+    if (window_to_delete_) {
+      delete window_to_delete_;
+      window_to_delete_ = NULL;
+    }
+  }
+
+  Window* window_to_delete_;
+
+  DISALLOW_COPY_AND_ASSIGN(OnMouseExitDeletingEventFilter);
+};
+
+// Tests that RootWindow drops mouse-moved event that is supposed to be sent to
+// a child, but the child is destroyed because of the synthesized mouse-exit
+// event generated on the previous mouse_moved_handler_.
+TEST_F(RootWindowTest, DeleteWindowDuringMouseMovedDispatch) {
+  // Create window 1 and set its event filter. Window 1 will take ownership of
+  // the event filter.
+  scoped_ptr<Window> w1(CreateNormalWindow(1, root_window(), NULL));
+  OnMouseExitDeletingEventFilter* w1_filter =
+      new OnMouseExitDeletingEventFilter();
+  w1->SetEventFilter(w1_filter);
+  w1->SetBounds(gfx::Rect(20, 20, 60, 60));
+  EXPECT_EQ(NULL, root_window()->mouse_moved_handler());
+
+  test::EventGenerator generator(root_window(), w1.get());
+
+  // Move mouse over window 1 to set it as the |mouse_moved_handler_| for the
+  // root window.
+  generator.MoveMouseTo(51, 51);
+  EXPECT_EQ(w1.get(), root_window()->mouse_moved_handler());
+
+  // Create window 2 under the mouse cursor and stack it above window 1.
+  Window* w2 = CreateNormalWindow(2, root_window(), NULL);
+  w2->SetBounds(gfx::Rect(30, 30, 40, 40));
+  root_window()->StackChildAbove(w2, w1.get());
+
+  // Set window 2 as the window that is to be deleted when a mouse-exited event
+  // happens on window 1.
+  w1_filter->set_window_to_delete(w2);
+
+  // Move mosue over window 2. This should generate a mouse-exited event for
+  // window 1 resulting in deletion of window 2. The original mouse-moved event
+  // that was targeted to window 2 should be dropped since window 2 is
+  // destroyed. This test passes if no crash happens.
+  generator.MoveMouseTo(52, 52);
+  EXPECT_EQ(NULL, root_window()->mouse_moved_handler());
+
+  // Check events received by window 1.
+  EXPECT_EQ("MOUSE_ENTERED MOUSE_MOVED MOUSE_EXITED",
+            EventTypesToString(w1_filter->events()));
 }
 
 }  // namespace aura

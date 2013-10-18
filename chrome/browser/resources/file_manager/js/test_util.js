@@ -61,14 +61,14 @@ test.util.repeatUntilTrue_ = function(closure) {
 /**
  * Opens the main Files.app's window and waits until it is ready.
  *
- * @param {string} path Path of the directory to be opened.
+ * @param {Object} appState App state.
  * @param {function(string)} callback Completion callback with the new window's
  *     App ID.
  */
-test.util.async.openMainWindow = function(path, callback) {
+test.util.async.openMainWindow = function(appState, callback) {
   var steps = [
     function() {
-      launchFileManager({defaultPath: path},
+      launchFileManager(appState,
                         undefined,  // opt_type
                         undefined,  // opt_id
                         steps.shift());
@@ -132,7 +132,7 @@ test.util.sync.getDocument_ = function(contentWindow, opt_iframeQuery) {
  * @return {number} Error count.
  */
 test.util.sync.getErrorCount = function() {
-  var totalCount = 0;
+  var totalCount = JSErrorCount;
   for (var appId in appWindows) {
     var contentWindow = appWindows[appId].contentWindow;
     if (contentWindow.JSErrorCount)
@@ -193,6 +193,33 @@ test.util.sync.getFileList = function(contentWindow) {
     ]);
   }
   return fileList;
+};
+
+/**
+ * Checkes if the given label and path of the volume are selected.
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} label Correct label the selected volume should have.
+ * @param {string} path Correct path the selected volume should have.
+ * @return {boolean} True for success.
+ */
+test.util.sync.checkSelectedVolume = function(contentWindow, label, path) {
+  var list = contentWindow.document.querySelector('#navigation-list');
+  var rows = list.querySelectorAll('li');
+  var selected = [];
+  for (var i = 0; i < rows.length; ++i) {
+    if (rows[i].hasAttribute('selected'))
+      selected.push(rows[i]);
+  }
+  // Selected item must be one.
+  if (selected.length !== 1)
+    return false;
+
+  if (selected[0].modelItem.path !== path ||
+      selected[0].querySelector('.root-label').textContent !== label) {
+    return false;
+  }
+
+  return true;
 };
 
 /**
@@ -305,7 +332,7 @@ test.util.async.performAutocompleteAndWait = function(
   // Dispatch a 'focus' event to the search box so that the autocomplete list
   // is attached to the search box. Note that calling searchBox.focus() won't
   // dispatch a 'focus' event.
-  var searchBox = contentWindow.document.querySelector('#search-box');
+  var searchBox = contentWindow.document.querySelector('#search-box input');
   var focusEvent = contentWindow.document.createEvent('Event');
   focusEvent.initEvent('focus', true /* bubbles */, true /* cancelable */);
   searchBox.dispatchEvent(focusEvent);
@@ -438,7 +465,7 @@ test.util.async.selectVolume = function(contentWindow, iconName, callback) {
  * @param {Window} contentWindow Window to be tested.
  * @param {Array.<Array.<string>>} expected Expected contents of file list.
  * @param {{orderCheck:boolean=, ignoreLastModifiedTime:boolean=}=} opt_options
- *     Options of the comparision. If orderCheck is true, it also compares the
+ *     Options of the comparison. If orderCheck is true, it also compares the
  *     order of files. If ignoreLastModifiedTime is true, it compares the file
  *     without its last modified time.
  * @param {function()} callback Callback function to notify the caller that
@@ -565,7 +592,7 @@ test.util.sync.fakeMouseClick = function(
  */
 test.util.sync.fakeMouseDoubleClick = function(
     contentWindow, targetQuery, opt_iframeQuery) {
-  // Double click is always preceeded with a single click.
+  // Double click is always preceded with a single click.
   if (!test.util.sync.fakeMouseClick(
       contentWindow, targetQuery, opt_iframeQuery)) {
     return false;
@@ -695,7 +722,7 @@ test.util.sync.execCommand = function(contentWindow, command) {
  * Registers message listener, which runs test utility functions.
  */
 test.util.registerRemoteTestUtils = function() {
-  // Register the message listenr.
+  // Register the message listener.
   var onMessage = chrome.runtime ? chrome.runtime.onMessageExternal :
       chrome.extension.onMessageExternal;
   // Return true for asynchronous functions and false for synchronous.

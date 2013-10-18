@@ -83,6 +83,7 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
       texture_mailbox_sync_point_(0),
       stream_id_(0),
       is_playing_(false),
+      playing_started_(false),
       needs_establish_peer_(true),
       stream_texture_proxy_initialized_(false),
       has_size_info_(false),
@@ -125,19 +126,9 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
   needs_establish_peer_ = false;
   current_frame_ = VideoFrame::CreateBlackFrame(gfx::Size(1, 1));
 #endif
-  if (stream_texture_factory_) {
-    stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
-    if (needs_establish_peer_ && stream_texture_proxy_) {
-      stream_id_ = stream_texture_factory_->CreateStreamTexture(
-          kGLTextureExternalOES,
-          &texture_id_,
-          &texture_mailbox_,
-          &texture_mailbox_sync_point_);
-      ReallocateVideoFrame();
-    }
-  }
+  TryCreateStreamTextureProxyIfNeeded();
 
-  if (WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
+  if (WebKit::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     // TODO(xhwang): Report an error when there is encrypted stream but EME is
     // not enabled. Currently the player just doesn't start and waits for ever.
     decryptor_.reset(new ProxyDecryptor(
@@ -300,6 +291,11 @@ void WebMediaPlayerAndroid::DidLoadMediaInfo(
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
     UpdateReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
   }
+  // Android doesn't start fetching resources until an implementation-defined
+  // event (e.g. playback request) occurs. Sets the network state to IDLE
+  // if play is not requested yet.
+  if (!playing_started_)
+    UpdateNetworkState(WebMediaPlayer::NetworkStateIdle);
 }
 
 void WebMediaPlayerAndroid::play() {
@@ -312,12 +308,16 @@ void WebMediaPlayerAndroid::play() {
   if (audio_renderer_ && paused())
     audio_renderer_->Play();
 #endif
+
+  TryCreateStreamTextureProxyIfNeeded();
   if (hasVideo() && needs_establish_peer_)
     EstablishSurfaceTexturePeer();
 
   if (paused())
     proxy_->Start(player_id_);
   UpdatePlayingState(true);
+  UpdateNetworkState(WebMediaPlayer::NetworkStateLoading);
+  playing_started_ = true;
 }
 
 void WebMediaPlayerAndroid::pause() {
@@ -340,13 +340,21 @@ void WebMediaPlayerAndroid::seek(double seconds) {
   base::TimeDelta new_seek_time = ConvertSecondsToTimestamp(seconds);
 
   if (seeking_) {
-    // Suppress redundant seek to same microsecond as current seek. Also clear
-    // any pending seek in this case. For example, seek(1), seek(2), seek(1)
-    // without any intervening seek completion should result in only a current
-    // seek to (1) without any left-over pending seek.
     if (new_seek_time == seek_time_) {
-      pending_seek_ = false;
-      return;
+      if (media_source_delegate_) {
+        if (!pending_seek_) {
+          // If using media source demuxer, only suppress redundant seeks if
+          // there is no pending seek. This enforces that any pending seek that
+          // results in a demuxer seek is preceded by matching
+          // CancelPendingSeek() and StartWaitingForSeek() calls.
+          return;
+        }
+      } else {
+        // Suppress all redundant seeks if unrestricted by media source
+        // demuxer API.
+        pending_seek_ = false;
+        return;
+      }
     }
 
     pending_seek_ = true;
@@ -703,11 +711,7 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
       proxy_->RequestExternalSurface(player_id_, last_computed_rect_);
   } else if (stream_texture_factory_ && !stream_id_) {
     // Do deferred stream texture creation finally.
-    stream_id_ = stream_texture_factory_->CreateStreamTexture(
-        kGLTextureExternalOES,
-        &texture_id_,
-        &texture_mailbox_,
-        &texture_mailbox_sync_point_);
+    DoCreateStreamTexture();
     if (paused()) {
       SetNeedsEstablishPeer(true);
     } else {
@@ -908,6 +912,25 @@ void WebMediaPlayerAndroid::PutCurrentFrame(
     const scoped_refptr<media::VideoFrame>& frame) {
 }
 
+void WebMediaPlayerAndroid::TryCreateStreamTextureProxyIfNeeded() {
+  // Already created.
+  if (stream_texture_proxy_)
+    return;
+
+  // No factory to create proxy.
+  if (!stream_texture_factory_)
+    return;
+
+  stream_texture_proxy_.reset(stream_texture_factory_->CreateProxy());
+  if (needs_establish_peer_ && stream_texture_proxy_) {
+    DoCreateStreamTexture();
+    ReallocateVideoFrame();
+  }
+
+  if (stream_texture_proxy_ && video_frame_provider_client_)
+    stream_texture_proxy_->SetClient(video_frame_provider_client_);
+}
+
 void WebMediaPlayerAndroid::EstablishSurfaceTexturePeer() {
   if (!stream_texture_proxy_)
     return;
@@ -920,17 +943,24 @@ void WebMediaPlayerAndroid::EstablishSurfaceTexturePeer() {
     texture_id_ = 0;
     texture_mailbox_ = gpu::Mailbox();
     texture_mailbox_sync_point_ = 0;
-    stream_id_ = stream_texture_factory_->CreateStreamTexture(
-        kGLTextureExternalOES,
-        &texture_id_,
-        &texture_mailbox_,
-        &texture_mailbox_sync_point_);
+    DoCreateStreamTexture();
     ReallocateVideoFrame();
     stream_texture_proxy_initialized_ = false;
   }
   if (stream_texture_factory_.get() && stream_id_)
     stream_texture_factory_->EstablishPeer(stream_id_, player_id_);
   needs_establish_peer_ = false;
+}
+
+void WebMediaPlayerAndroid::DoCreateStreamTexture() {
+  DCHECK(!stream_id_);
+  DCHECK(!texture_id_);
+  DCHECK(!texture_mailbox_sync_point_);
+  stream_id_ = stream_texture_factory_->CreateStreamTexture(
+      kGLTextureExternalOES,
+      &texture_id_,
+      &texture_mailbox_,
+      &texture_mailbox_sync_point_);
 }
 
 void WebMediaPlayerAndroid::SetNeedsEstablishPeer(bool needs_establish_peer) {
@@ -1183,13 +1213,12 @@ void WebMediaPlayerAndroid::OnMediaSourceOpened(
   client_->mediaSourceOpened(web_media_source);
 }
 
-void WebMediaPlayerAndroid::OnNeedKey(const std::string& session_id,
-                                      const std::string& type,
+void WebMediaPlayerAndroid::OnNeedKey(const std::string& type,
                                       const std::vector<uint8>& init_data) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   // Do not fire NeedKey event if encrypted media is not enabled.
   if (!WebKit::WebRuntimeFeatures::isEncryptedMediaEnabled() &&
-      !WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
+      !WebKit::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     return;
   }
 
@@ -1200,8 +1229,9 @@ void WebMediaPlayerAndroid::OnNeedKey(const std::string& session_id,
     init_data_type_ = type;
 
   const uint8* init_data_ptr = init_data.empty() ? NULL : &init_data[0];
+  // TODO(xhwang): Drop |keySystem| and |sessionId| in keyNeeded() call.
   client_->keyNeeded(WebString(),
-                     WebString::fromUTF8(session_id),
+                     WebString(),
                      init_data_ptr,
                      init_data.size());
 }

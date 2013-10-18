@@ -42,13 +42,15 @@
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/cryptohome/cryptohome_library.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
-#include "chromeos/cryptohome/mock_cryptohome_library.h"
 #include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/network/network_handler.h"
+#include "chromeos/system/mock_statistics_provider.h"
+#include "chromeos/system/statistics_provider.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -216,6 +218,11 @@ class LoginUtilsTest : public testing::Test,
     CryptohomeLibrary::Initialize();
     LoginState::Initialize();
 
+    EXPECT_CALL(mock_statistics_provider_, GetMachineStatistic(_, _))
+        .WillRepeatedly(Return(false));
+    chromeos::system::StatisticsProvider::SetTestProvider(
+        &mock_statistics_provider_);
+
     mock_input_method_manager_ = new input_method::MockInputMethodManager();
     input_method::InitializeForTesting(mock_input_method_manager_);
     disks::DiskMountManager::InitializeForTesting(&mock_disk_mount_manager_);
@@ -224,49 +231,6 @@ class LoginUtilsTest : public testing::Test,
     mock_async_method_caller_ = new cryptohome::MockAsyncMethodCaller;
     cryptohome::AsyncMethodCaller::InitializeForTesting(
         mock_async_method_caller_);
-
-    cryptohome_.reset(new MockCryptohomeLibrary());
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsInvalid())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsFirstInstall())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, TpmIsEnabled())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttributeOwned, kTrue))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttributeOwner,
-                                                   kUsername))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseDomain,
-                                                   kDomain))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseMode,
-                                                   kMode))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesSet(kAttrEnterpriseDeviceId,
-                                                   kDeviceId))
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesFinalize())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwned, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kTrue),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeConsumerKiosk, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kFalse),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttributeOwner, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kUsername),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseDomain, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kDomain),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseMode, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kMode),
-                              Return(true)));
-    EXPECT_CALL(*cryptohome_, InstallAttributesGet(kAttrEnterpriseDeviceId, _))
-        .WillRepeatedly(DoAll(SetArgPointee<1>(kDeviceId),
-                              Return(true)));
-    CryptohomeLibrary::SetForTest(cryptohome_.get());
 
     test_device_settings_service_.reset(new ScopedTestDeviceSettingsService);
     test_cros_settings_.reset(new ScopedTestCrosSettings);
@@ -324,8 +288,6 @@ class LoginUtilsTest : public testing::Test,
     browser_process_->SetBrowserPolicyConnector(NULL);
     QuitIOLoop();
     RunUntilIdle();
-
-    CryptohomeLibrary::SetForTest(NULL);
   }
 
   void TearDownOnIO() {
@@ -401,10 +363,6 @@ class LoginUtilsTest : public testing::Test,
   }
 
   void EnrollDevice(const std::string& username) {
-    EXPECT_CALL(*cryptohome_, InstallAttributesIsFirstInstall())
-        .WillOnce(Return(true))
-        .WillRepeatedly(Return(false));
-
     base::RunLoop loop;
     policy::EnterpriseInstallAttributes::LockResult result;
     connector_->GetInstallAttributes()->LockDevice(
@@ -426,8 +384,6 @@ class LoginUtilsTest : public testing::Test,
     DeviceSettingsService::Get()->SetSessionManager(
         &device_settings_test_helper, new MockOwnerKeyUtil());
 
-    EXPECT_CALL(*cryptohome_, GetSystemSalt())
-        .WillRepeatedly(Return(std::string("stub_system_salt")));
     EXPECT_CALL(*mock_async_method_caller_, AsyncMount(_, _, _, _))
         .WillRepeatedly(Return());
     EXPECT_CALL(*mock_async_method_caller_, AsyncGetSanitizedUsername(_, _))
@@ -529,10 +485,11 @@ class LoginUtilsTest : public testing::Test,
 
   cryptohome::MockAsyncMethodCaller* mock_async_method_caller_;
 
-  policy::BrowserPolicyConnector* connector_;
-  scoped_ptr<MockCryptohomeLibrary> cryptohome_;
+  chromeos::system::MockStatisticsProvider mock_statistics_provider_;
 
-  // Initialized after |mock_dbus_thread_manager_| and |cryptohome_| are set up.
+  policy::BrowserPolicyConnector* connector_;
+
+  // Initialized after |mock_dbus_thread_manager_| is set up.
   scoped_ptr<ScopedTestDeviceSettingsService> test_device_settings_service_;
   scoped_ptr<ScopedTestCrosSettings> test_cros_settings_;
   scoped_ptr<ScopedTestUserManager> test_user_manager_;

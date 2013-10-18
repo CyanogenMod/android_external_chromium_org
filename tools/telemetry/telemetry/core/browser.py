@@ -39,6 +39,7 @@ class Browser(object):
     self.credentials = browser_credentials.BrowserCredentials()
     self._platform.SetFullPerformanceModeEnabled(True)
     self._active_profilers = []
+    self._profilers_states = {}
 
   def __enter__(self):
     return self
@@ -234,9 +235,12 @@ class Browser(object):
       raise Exception('The %s profiler is not '
                       'supported on this platform.' % profiler_name)
 
+    if not profiler_name in self._profilers_states:
+      self._profilers_states[profiler_name] = {}
+
     self._active_profilers.append(
         profiler_class(self._browser_backend, self._platform_backend,
-            base_output_file))
+            base_output_file, self._profilers_states[profiler_name]))
 
   def StopProfiling(self):
     """Stops all active profilers and saves their results.
@@ -290,14 +294,14 @@ class Browser(object):
 
   def SetHTTPServerDirectories(self, paths):
     """Returns True if the HTTP server was started, False otherwise."""
-    if not isinstance(paths, list):
-      paths = [paths]
-    paths = [os.path.abspath(p) for p in paths]
-
-    if paths and self._http_server and self._http_server.paths == paths:
-      return False
+    if isinstance(paths, basestring):
+      paths = set([paths])
+    paths = set(os.path.realpath(p) for p in paths)
 
     if self._http_server:
+      if paths and self._http_server.paths == paths:
+        return False
+
       self._http_server.Close()
       self._http_server = None
 

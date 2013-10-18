@@ -49,7 +49,6 @@ static const char kNameId[] = "name";
 static const char kReadOnlyId[] = "readonly";
 static const char kUntrustedId[] = "untrusted";
 static const char kExtractableId[] = "extractable";
-static const char kSecurityDeviceId[] = "device";
 static const char kErrorId[] = "error";
 static const char kPolicyTrustedId[] = "policy";
 
@@ -290,8 +289,8 @@ void FileAccessProvider::DoWrite(const base::FilePath& path,
 CertificateManagerHandler::CertificateManagerHandler()
     : use_hardware_backed_(false),
       file_access_provider_(new FileAccessProvider()),
-      weak_ptr_factory_(this),
-      cert_id_map_(new CertIdMap) {
+      cert_id_map_(new CertIdMap),
+      weak_ptr_factory_(this) {
   certificate_manager_model_.reset(new CertificateManagerModel(this));
 }
 

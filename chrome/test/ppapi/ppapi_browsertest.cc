@@ -287,17 +287,19 @@ TEST_PPAPI_NACL(Graphics2D_FlushOffscreenUpdate)
 TEST_PPAPI_NACL(Graphics2D_BindNull)
 
 #if defined(OS_WIN)
-// In-process and NaCl tests are having flaky failures on Win: crbug.com/242252
-#define MAYBE_IN_Graphics3D DISABLED_Graphics3D
-#define MAYBE_OUT_Graphics3D Graphics3D
-#define MAYBE_NACL_Graphics3D DISABLED_Graphics3D
-#elif defined(OS_WIN) && defined(USE_AURA)
+#if defined(USE_AURA)
 // These tests fail with the test compositor which is what's used by default for
 // browser tests on Windows Aura. Renable when the software compositor is
 // available.
 #define MAYBE_IN_Graphics3D DISABLED_Graphics3D
 #define MAYBE_OUT_Graphics3D DISABLED_Graphics3D
 #define MAYBE_NACL_Graphics3D DISABLED_Graphics3D
+#else  // defined(USE_AURA)
+// In-process and NaCl tests are having flaky failures on Win: crbug.com/242252
+#define MAYBE_IN_Graphics3D DISABLED_Graphics3D
+#define MAYBE_OUT_Graphics3D Graphics3D
+#define MAYBE_NACL_Graphics3D DISABLED_Graphics3D
+#endif  // defined(USE_AURA)
 #else
 // The tests are failing in-process. crbug.com/280282
 #define MAYBE_IN_Graphics3D DISABLED_Graphics3D
@@ -326,6 +328,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, TCPSocket) {
       LIST_TEST(TCPSocket_SetOption)
       LIST_TEST(TCPSocket_Listen)
       LIST_TEST(TCPSocket_Backlog)
+      LIST_TEST(TCPSocket_Interface_1_0)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, TCPSocket) {
@@ -335,6 +338,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, TCPSocket) {
       LIST_TEST(TCPSocket_SetOption)
       LIST_TEST(TCPSocket_Listen)
       LIST_TEST(TCPSocket_Backlog)
+      LIST_TEST(TCPSocket_Interface_1_0)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(TCPSocket)) {
@@ -344,6 +348,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(TCPSocket)) {
       LIST_TEST(TCPSocket_SetOption)
       LIST_TEST(TCPSocket_Listen)
       LIST_TEST(TCPSocket_Backlog)
+      LIST_TEST(TCPSocket_Interface_1_0)
   );
 }
 IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, TCPSocket) {
@@ -353,6 +358,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, TCPSocket) {
       LIST_TEST(TCPSocket_SetOption)
       LIST_TEST(TCPSocket_Listen)
       LIST_TEST(TCPSocket_Backlog)
+      LIST_TEST(TCPSocket_Interface_1_0)
   );
 }
 
@@ -637,9 +643,9 @@ TEST_PPAPI_NACL(DISABLED_URLRequest_SetProperty)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendDataToBody)
 TEST_PPAPI_NACL(URLRequest_AppendDataToBody)
-TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_AppendFileToBody)
-TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_AppendFileToBody)
-TEST_PPAPI_NACL(URLRequest_AppendFileToBody)
+TEST_PPAPI_IN_PROCESS_VIA_HTTP(DISABLED_URLRequest_AppendFileToBody)
+TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(DISABLED_URLRequest_AppendFileToBody)
+TEST_PPAPI_NACL(DISABLED_URLRequest_AppendFileToBody)
 TEST_PPAPI_IN_PROCESS_VIA_HTTP(URLRequest_Stress)
 TEST_PPAPI_OUT_OF_PROCESS_VIA_HTTP(URLRequest_Stress)
 TEST_PPAPI_NACL(URLRequest_Stress)
@@ -781,7 +787,6 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
-      LIST_TEST(FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -797,7 +802,6 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
-      LIST_TEST(FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -813,8 +817,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
-      // The following test requires PPB_FileIO_Trusted, not available in NaCl.
-      LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -830,8 +832,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileIO)) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
-      // The following test requires PPB_FileIO_Trusted, not available in NaCl.
-      LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -847,8 +847,6 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
       LIST_TEST(FileIO_ReadWriteSetLength)
       LIST_TEST(FileIO_ReadToArrayWriteSetLength)
       LIST_TEST(FileIO_TouchQuery)
-      // The following test requires PPB_FileIO_Trusted, not available in NaCl.
-      LIST_TEST(DISABLED_FileIO_WillWriteWillSetLength)
       LIST_TEST(FileIO_RequestOSFileHandle)
       LIST_TEST(FileIO_RequestOSFileHandleWithOpenExclusive)
       LIST_TEST(FileIO_Mmap)
@@ -866,11 +864,9 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, FileRef) {
       LIST_TEST(FileRef_QueryAndTouchFile)
       LIST_TEST(FileRef_DeleteFileAndDirectory)
       LIST_TEST(FileRef_RenameFileAndDirectory)
-      // TODO(teravest): Add in-process support.
-      // LIST_TEST(FileRef_Query)
+      LIST_TEST(FileRef_Query)
       LIST_TEST(FileRef_FileNameEscaping)
-      // TODO(teravest): Add in-process support.
-      // LIST_TEST(FileRef_ReadDirectoryEntries)
+      LIST_TEST(FileRef_ReadDirectoryEntries)
   );
 }
 // OutOfProcessPPAPITest.FileRef times out fairly often.
@@ -1548,3 +1544,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FlashDRM) {
 
 TEST_PPAPI_IN_PROCESS(TalkPrivate)
 TEST_PPAPI_OUT_OF_PROCESS(TalkPrivate)
+
+#if defined(OS_CHROMEOS)
+TEST_PPAPI_OUT_OF_PROCESS(OutputProtectionPrivate)
+#endif

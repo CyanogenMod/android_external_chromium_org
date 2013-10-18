@@ -99,6 +99,19 @@ class TraceEventTestFixture : public testing::Test {
                    base::Unretained(flush_complete_event)));
   }
 
+  void FlushMonitoring() {
+    WaitableEvent flush_complete_event(false, false);
+    FlushMonitoring(&flush_complete_event);
+    flush_complete_event.Wait();
+  }
+
+  void FlushMonitoring(WaitableEvent* flush_complete_event) {
+    TraceLog::GetInstance()->FlushButLeaveBufferIntact(
+        base::Bind(&TraceEventTestFixture::OnTraceDataCollected,
+                   base::Unretained(static_cast<TraceEventTestFixture*>(this)),
+                   base::Unretained(flush_complete_event)));
+  }
+
   virtual void SetUp() OVERRIDE {
     const char* name = PlatformThread::GetName();
     old_thread_name_ = name ? strdup(name) : NULL;
@@ -1151,13 +1164,6 @@ TEST_F(TraceEventTestFixture, EventWatchNotification) {
   EndTraceAndFlush();
   EXPECT_EQ(event_watch_notification_, 1);
 
-  // Basic one occurrence before Set.
-  BeginTrace();
-  TRACE_EVENT_INSTANT0("cat", "event", TRACE_EVENT_SCOPE_THREAD);
-  TraceLog::GetInstance()->SetWatchEvent("cat", "event");
-  EndTraceAndFlush();
-  EXPECT_EQ(event_watch_notification_, 1);
-
   // Auto-reset after end trace.
   BeginTrace();
   TraceLog::GetInstance()->SetWatchEvent("cat", "event");
@@ -1283,14 +1289,16 @@ TEST_F(TraceEventTestFixture, StaticStringVsString) {
                  "arg2", TRACE_STR_COPY("argval"));
     size_t num_events = tracer->GetEventsSize();
     EXPECT_GT(num_events, 1u);
-    const TraceEvent& event1 = tracer->GetEventAt(num_events - 2);
-    const TraceEvent& event2 = tracer->GetEventAt(num_events - 1);
-    EXPECT_STREQ("name1", event1.name());
-    EXPECT_STREQ("name2", event2.name());
-    EXPECT_TRUE(event1.parameter_copy_storage() != NULL);
-    EXPECT_TRUE(event2.parameter_copy_storage() != NULL);
-    EXPECT_GT(event1.parameter_copy_storage()->size(), 0u);
-    EXPECT_GT(event2.parameter_copy_storage()->size(), 0u);
+    const TraceEvent* event1 = tracer->GetEventAt(0);
+    const TraceEvent* event2 = tracer->GetEventAt(1);
+    ASSERT_TRUE(event1);
+    ASSERT_TRUE(event2);
+    EXPECT_STREQ("name1", event1->name());
+    EXPECT_STREQ("name2", event2->name());
+    EXPECT_TRUE(event1->parameter_copy_storage() != NULL);
+    EXPECT_TRUE(event2->parameter_copy_storage() != NULL);
+    EXPECT_GT(event1->parameter_copy_storage()->size(), 0u);
+    EXPECT_GT(event2->parameter_copy_storage()->size(), 0u);
     EndTraceAndFlush();
   }
 
@@ -1307,12 +1315,14 @@ TEST_F(TraceEventTestFixture, StaticStringVsString) {
                  "arg2", TRACE_STR_COPY(str2));
     size_t num_events = tracer->GetEventsSize();
     EXPECT_GT(num_events, 1u);
-    const TraceEvent& event1 = tracer->GetEventAt(num_events - 2);
-    const TraceEvent& event2 = tracer->GetEventAt(num_events - 1);
-    EXPECT_STREQ("name1", event1.name());
-    EXPECT_STREQ("name2", event2.name());
-    EXPECT_TRUE(event1.parameter_copy_storage() == NULL);
-    EXPECT_TRUE(event2.parameter_copy_storage() == NULL);
+    const TraceEvent* event1 = tracer->GetEventAt(0);
+    const TraceEvent* event2 = tracer->GetEventAt(1);
+    ASSERT_TRUE(event1);
+    ASSERT_TRUE(event2);
+    EXPECT_STREQ("name1", event1->name());
+    EXPECT_STREQ("name2", event2->name());
+    EXPECT_TRUE(event1->parameter_copy_storage() == NULL);
+    EXPECT_TRUE(event2->parameter_copy_storage() == NULL);
     EndTraceAndFlush();
   }
 }
@@ -1765,16 +1775,67 @@ TEST_F(TraceEventTestFixture, TraceSamplingScope) {
   EndTraceAndFlush();
 }
 
+TEST_F(TraceEventTestFixture, TraceContinuousSampling) {
+  event_watch_notification_ = 0;
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("*"),
+      TraceLog::Options(TraceLog::MONITOR_SAMPLING));
+
+  WaitableEvent* sampled = new WaitableEvent(false, false);
+  TraceLog::GetInstance()->InstallWaitableEventForSamplingTesting(
+      sampled);
+
+  TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET(1, "category", "AAA");
+  sampled->Wait();
+  TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET(1, "category", "BBB");
+  sampled->Wait();
+
+  FlushMonitoring();
+
+  // Make sure we can get the profiled data.
+  EXPECT_TRUE(FindNamePhase("AAA", "P"));
+  EXPECT_TRUE(FindNamePhase("BBB", "P"));
+
+  Clear();
+  sampled->Wait();
+
+  TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET(1, "category", "CCC");
+  sampled->Wait();
+  TRACE_EVENT_SET_SAMPLING_STATE_FOR_BUCKET(1, "category", "DDD");
+  sampled->Wait();
+
+  FlushMonitoring();
+
+  // Make sure the profiled data is accumulated.
+  EXPECT_TRUE(FindNamePhase("AAA", "P"));
+  EXPECT_TRUE(FindNamePhase("BBB", "P"));
+  EXPECT_TRUE(FindNamePhase("CCC", "P"));
+  EXPECT_TRUE(FindNamePhase("DDD", "P"));
+
+  Clear();
+
+  TraceLog::GetInstance()->SetDisabled();
+
+  // Make sure disabling the continuous sampling thread clears
+  // the profiled data.
+  EXPECT_FALSE(FindNamePhase("AAA", "P"));
+  EXPECT_FALSE(FindNamePhase("BBB", "P"));
+  EXPECT_FALSE(FindNamePhase("CCC", "P"));
+  EXPECT_FALSE(FindNamePhase("DDD", "P"));
+
+  Clear();
+}
+
 class MyData : public base::debug::ConvertableToTraceFormat {
  public:
   MyData() {}
-  virtual ~MyData() {}
 
   virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
     out->append("{\"foo\":1}");
   }
 
  private:
+  virtual ~MyData() {}
   DISALLOW_COPY_AND_ASSIGN(MyData);
 };
 
@@ -1782,30 +1843,29 @@ TEST_F(TraceEventTestFixture, ConvertableTypes) {
   TraceLog::GetInstance()->SetEnabled(CategoryFilter("*"),
       TraceLog::RECORD_UNTIL_FULL);
 
-  scoped_ptr<MyData> data(new MyData());
-  scoped_ptr<MyData> data1(new MyData());
-  scoped_ptr<MyData> data2(new MyData());
-  TRACE_EVENT1("foo", "bar", "data",
-               data.PassAs<base::debug::ConvertableToTraceFormat>());
+  scoped_refptr<ConvertableToTraceFormat> data(new MyData());
+  scoped_refptr<ConvertableToTraceFormat> data1(new MyData());
+  scoped_refptr<ConvertableToTraceFormat> data2(new MyData());
+  TRACE_EVENT1("foo", "bar", "data", data);
   TRACE_EVENT2("foo", "baz",
-               "data1", data1.PassAs<base::debug::ConvertableToTraceFormat>(),
-               "data2", data2.PassAs<base::debug::ConvertableToTraceFormat>());
+               "data1", data1,
+               "data2", data2);
 
 
-  scoped_ptr<MyData> convertData1(new MyData());
-  scoped_ptr<MyData> convertData2(new MyData());
+  scoped_refptr<ConvertableToTraceFormat> convertData1(new MyData());
+  scoped_refptr<ConvertableToTraceFormat> convertData2(new MyData());
   TRACE_EVENT2(
       "foo",
       "string_first",
       "str",
       "string value 1",
       "convert",
-      convertData1.PassAs<base::debug::ConvertableToTraceFormat>());
+      convertData1);
   TRACE_EVENT2(
       "foo",
       "string_second",
       "convert",
-      convertData2.PassAs<base::debug::ConvertableToTraceFormat>(),
+      convertData2,
       "str",
       "string value 2");
   EndTraceAndFlush();
@@ -1947,7 +2007,117 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackWhileFull) {
   EXPECT_EQ("a snake", collected_events_[0]);
 }
 
-// TODO(dsinclair): Continuous Tracing unit test.
+TEST_F(TraceEventTestFixture, TraceBufferRingBufferGetReturnChunk) {
+  TraceLog::GetInstance()->SetEnabled(CategoryFilter("*"),
+                                      TraceLog::RECORD_CONTINUOUSLY);
+  TraceBuffer* buffer = TraceLog::GetInstance()->trace_buffer();
+  size_t capacity = buffer->Capacity();
+  size_t num_chunks = capacity / TraceBufferChunk::kTraceBufferChunkSize;
+  uint32 last_seq = 0;
+  size_t chunk_index;
+  EXPECT_EQ(0u, buffer->Size());
+
+  scoped_ptr<TraceBufferChunk*[]> chunks(new TraceBufferChunk*[num_chunks]);
+  for (size_t i = 0; i < num_chunks; ++i) {
+    chunks[i] = buffer->GetChunk(&chunk_index).release();
+    EXPECT_TRUE(chunks[i]);
+    EXPECT_EQ(i, chunk_index);
+    EXPECT_GT(chunks[i]->seq(), last_seq);
+    EXPECT_EQ((i + 1) * TraceBufferChunk::kTraceBufferChunkSize,
+              buffer->Size());
+    last_seq = chunks[i]->seq();
+  }
+
+  // Ring buffer is never full.
+  EXPECT_FALSE(buffer->IsFull());
+
+  // Return all chunks in original order.
+  for (size_t i = 0; i < num_chunks; ++i)
+    buffer->ReturnChunk(i, scoped_ptr<TraceBufferChunk>(chunks[i]));
+
+  // Should recycle the chunks in the returned order.
+  for (size_t i = 0; i < num_chunks; ++i) {
+    chunks[i] = buffer->GetChunk(&chunk_index).release();
+    EXPECT_TRUE(chunks[i]);
+    EXPECT_EQ(i, chunk_index);
+    EXPECT_GT(chunks[i]->seq(), last_seq);
+    last_seq = chunks[i]->seq();
+  }
+
+  // Return all chunks in reverse order.
+  for (size_t i = 0; i < num_chunks; ++i) {
+    buffer->ReturnChunk(
+        num_chunks - i - 1,
+        scoped_ptr<TraceBufferChunk>(chunks[num_chunks - i - 1]));
+  }
+
+  // Should recycle the chunks in the returned order.
+  for (size_t i = 0; i < num_chunks; ++i) {
+    chunks[i] = buffer->GetChunk(&chunk_index).release();
+    EXPECT_TRUE(chunks[i]);
+    EXPECT_EQ(num_chunks - i - 1, chunk_index);
+    EXPECT_GT(chunks[i]->seq(), last_seq);
+    last_seq = chunks[i]->seq();
+  }
+
+  for (size_t i = 0; i < num_chunks; ++i)
+    buffer->ReturnChunk(i, scoped_ptr<TraceBufferChunk>(chunks[i]));
+
+  TraceLog::GetInstance()->SetDisabled();
+}
+
+TEST_F(TraceEventTestFixture, TraceBufferRingBufferHalfIteration) {
+  TraceLog::GetInstance()->SetEnabled(CategoryFilter("*"),
+                                      TraceLog::RECORD_CONTINUOUSLY);
+  TraceBuffer* buffer = TraceLog::GetInstance()->trace_buffer();
+  size_t capacity = buffer->Capacity();
+  size_t num_chunks = capacity / TraceBufferChunk::kTraceBufferChunkSize;
+  size_t chunk_index;
+  EXPECT_EQ(0u, buffer->Size());
+  EXPECT_FALSE(buffer->NextChunk());
+
+  size_t half_chunks = num_chunks / 2;
+  scoped_ptr<TraceBufferChunk*[]> chunks(new TraceBufferChunk*[half_chunks]);
+
+  for (size_t i = 0; i < half_chunks; ++i) {
+    chunks[i] = buffer->GetChunk(&chunk_index).release();
+    EXPECT_TRUE(chunks[i]);
+    EXPECT_EQ(i, chunk_index);
+  }
+  for (size_t i = 0; i < half_chunks; ++i)
+    buffer->ReturnChunk(i, scoped_ptr<TraceBufferChunk>(chunks[i]));
+
+  for (size_t i = 0; i < half_chunks; ++i)
+    EXPECT_EQ(chunks[i], buffer->NextChunk());
+  EXPECT_FALSE(buffer->NextChunk());
+  TraceLog::GetInstance()->SetDisabled();
+}
+
+TEST_F(TraceEventTestFixture, TraceBufferRingBufferFullIteration) {
+  TraceLog::GetInstance()->SetEnabled(CategoryFilter("*"),
+                                      TraceLog::RECORD_CONTINUOUSLY);
+  TraceBuffer* buffer = TraceLog::GetInstance()->trace_buffer();
+  size_t capacity = buffer->Capacity();
+  size_t num_chunks = capacity / TraceBufferChunk::kTraceBufferChunkSize;
+  size_t chunk_index;
+  EXPECT_EQ(0u, buffer->Size());
+  EXPECT_FALSE(buffer->NextChunk());
+
+  scoped_ptr<TraceBufferChunk*[]> chunks(new TraceBufferChunk*[num_chunks]);
+
+  for (size_t i = 0; i < num_chunks; ++i) {
+    chunks[i] = buffer->GetChunk(&chunk_index).release();
+    EXPECT_TRUE(chunks[i]);
+    EXPECT_EQ(i, chunk_index);
+  }
+  for (size_t i = 0; i < num_chunks; ++i)
+    buffer->ReturnChunk(i, scoped_ptr<TraceBufferChunk>(chunks[i]));
+
+  for (size_t i = 0; i < num_chunks; ++i)
+    EXPECT_TRUE(chunks[i] == buffer->NextChunk());
+  EXPECT_FALSE(buffer->NextChunk());
+  TraceLog::GetInstance()->SetDisabled();
+}
 
 // Test the category filter.
 TEST_F(TraceEventTestFixture, CategoryFilter) {

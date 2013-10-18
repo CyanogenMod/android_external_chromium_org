@@ -5,6 +5,7 @@
 #ifndef WEBKIT_BROWSER_FILEAPI_COPY_OR_MOVE_OPERATION_DELEGATE_H_
 #define WEBKIT_BROWSER_FILEAPI_COPY_OR_MOVE_OPERATION_DELEGATE_H_
 
+#include <set>
 #include <stack>
 
 #include "base/memory/ref_counted.h"
@@ -55,6 +56,10 @@ class CopyOrMoveOperationDelegate
 
     void Run(const StatusCallback& callback);
 
+    // Requests cancelling. After the cancelling is done, |callback| passed to
+    // Run will be called.
+    void Cancel();
+
    private:
     // Reads the content from the |reader_|.
     void Read(const StatusCallback& callback);
@@ -73,6 +78,7 @@ class CopyOrMoveOperationDelegate
     int64 num_copied_bytes_;
     base::Time last_progress_callback_invocation_time_;
     base::TimeDelta min_progress_callback_invocation_span_;
+    bool cancel_requested_;
     base::WeakPtrFactory<StreamCopyHelper> weak_factory_;
     DISALLOW_COPY_AND_ASSIGN(StreamCopyHelper);
   };
@@ -97,6 +103,10 @@ class CopyOrMoveOperationDelegate
   virtual void PostProcessDirectory(const FileSystemURL& url,
                                     const StatusCallback& callback) OVERRIDE;
 
+
+ protected:
+  virtual void OnCancel() OVERRIDE;
+
  private:
   void DidCopyOrMoveFile(const FileSystemURL& src_url,
                          const FileSystemURL& dest_url,
@@ -112,6 +122,14 @@ class CopyOrMoveOperationDelegate
                           const FileSystemURL& dest_url,
                           const StatusCallback& callback,
                           base::PlatformFileError error);
+  void PostProcessDirectoryAfterGetMetadata(
+      const FileSystemURL& src_url,
+      const StatusCallback& callback,
+      base::PlatformFileError error,
+      const base::PlatformFileInfo& file_info);
+  void PostProcessDirectoryAfterTouchFile(const FileSystemURL& src_url,
+                                          const StatusCallback& callback,
+                                          base::PlatformFileError error);
   void DidRemoveSourceForMove(const StatusCallback& callback,
                               base::PlatformFileError error);
 

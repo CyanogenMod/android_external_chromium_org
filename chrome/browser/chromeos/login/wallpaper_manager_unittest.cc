@@ -19,11 +19,11 @@
 #include "chrome/browser/chromeos/login/user_manager_impl.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
-#include "chrome/browser/chromeos/settings/cros_settings_provider.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "chromeos/settings/cros_settings_provider.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -33,6 +33,7 @@ using namespace ash;
 namespace {
 
 const char kTestUser1[] = "test-user@example.com";
+const char kTestUser1Hash[] = "test-user@example.com-hash";
 
 const int kLargeWallpaperResourceId = IDR_AURA_WALLPAPER_DEFAULT_LARGE;
 const int kSmallWallpaperResourceId = IDR_AURA_WALLPAPER_DEFAULT_SMALL;
@@ -105,14 +106,13 @@ class WallpaperManagerTest : public test::AshTestBase {
 // Test for crbug.com/260755. If this test fails, it is probably because the
 // wallpaper of last logged in user is set as guest wallpaper.
 TEST_F(WallpaperManagerTest, GuestUserUseGuestWallpaper) {
-  UserManager::Get()->UserLoggedIn(kTestUser1, kTestUser1, false);
+  UserManager::Get()->UserLoggedIn(kTestUser1, kTestUser1Hash, false);
 
-  base::FilePath old_wallpaper_path = WallpaperManager::Get()->
-      GetOriginalWallpaperPathForUser(kTestUser1);
-
+  std::string relative_path =
+      base::FilePath(kTestUser1Hash).Append(FILE_PATH_LITERAL("DUMMY")).value();
   // Saves wallpaper info to local state for user |kTestUser1|.
   WallpaperInfo info = {
-      "DUMMY",
+      relative_path,
       WALLPAPER_LAYOUT_CENTER_CROPPED,
       User::CUSTOMIZED,
       base::Time::Now().LocalMidnight()

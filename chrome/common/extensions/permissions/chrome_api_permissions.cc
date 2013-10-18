@@ -4,14 +4,14 @@
 
 #include "chrome/common/extensions/permissions/chrome_api_permissions.h"
 
-#include "chrome/common/extensions/permissions/api_permission.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/bluetooth_permission.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission.h"
-#include "chrome/common/extensions/permissions/permission_message.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/extensions/permissions/socket_permission.h"
 #include "chrome/common/extensions/permissions/usb_device_permission.h"
+#include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/api_permission_set.h"
+#include "extensions/common/permissions/permission_message.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "grit/generated_resources.h"
 
 namespace extensions {
@@ -79,7 +79,6 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       IDS_EXTENSION_PROMPT_WARNING_GEOLOCATION,
       PermissionMessage::kGeolocation },
     { APIPermission::kNotification, "notifications" },
-    { APIPermission::kScreensaver, "screensaver" },
     { APIPermission::kUnlimitedStorage, "unlimitedStorage",
       APIPermissionInfo::kFlagCannotBeOptional },
 
@@ -172,6 +171,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kBookmarkManagerPrivate, "bookmarkManagerPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kCast, "cast",
+      APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kChromeosInfoPrivate, "chromeosInfoPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kCommandLinePrivate, "commandLinePrivate",
@@ -235,6 +236,8 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
       "enterprise.platformKeysPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
     { APIPermission::kWebrtcLoggingPrivate, "webrtcLoggingPrivate",
+      APIPermissionInfo::kFlagCannotBeOptional },
+    { APIPermission::kPrincipalsPrivate, "principalsPrivate",
       APIPermissionInfo::kFlagCannotBeOptional },
 
     // Full url access permissions.
@@ -341,6 +344,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
     { APIPermission::kPointerLock, "pointerLock" },
     { APIPermission::kFullscreen, "fullscreen" },
     { APIPermission::kAudio, "audio" },
+    { APIPermission::kWebRtc, "webrtc" },
   };
 
   std::vector<APIPermissionInfo*> permissions;

@@ -18,7 +18,7 @@
 #include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -65,6 +65,7 @@ WimaxConfigView::WimaxConfigView(NetworkConfigView* parent,
 }
 
 WimaxConfigView::~WimaxConfigView() {
+  RemoveAllChildViews(true);  // Destroy children before models
 }
 
 string16 WimaxConfigView::GetTitle() const {
@@ -100,7 +101,8 @@ void WimaxConfigView::UpdateErrorLabel() {
     const NetworkState* wimax = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
     if (wimax && wimax->connection_state() == shill::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(wimax->error());
+      error_msg = ash::network_connect::ErrorString(
+          wimax->error(), wimax->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);

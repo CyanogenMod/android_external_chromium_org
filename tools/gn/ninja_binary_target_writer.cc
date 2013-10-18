@@ -70,11 +70,25 @@ struct IncludeWriter {
   bool old_inhibit_quoting_;  // So we can put the PathOutput back.
 };
 
+Toolchain::ToolType GetToolTypeForTarget(const Target* target) {
+  switch (target->output_type()) {
+    case Target::STATIC_LIBRARY:
+      return Toolchain::TYPE_ALINK;
+    case Target::SHARED_LIBRARY:
+      return Toolchain::TYPE_SOLINK;
+    case Target::EXECUTABLE:
+      return Toolchain::TYPE_LINK;
+    default:
+      return Toolchain::TYPE_NONE;
+  }
+}
+
 }  // namespace
 
 NinjaBinaryTargetWriter::NinjaBinaryTargetWriter(const Target* target,
                                                  std::ostream& out)
-    : NinjaTargetWriter(target, out) {
+    : NinjaTargetWriter(target, out),
+      tool_type_(GetToolTypeForTarget(target)){
 }
 
 NinjaBinaryTargetWriter::~NinjaBinaryTargetWriter() {
@@ -88,7 +102,10 @@ void NinjaBinaryTargetWriter::Run() {
   std::vector<OutputFile> obj_files;
   WriteSources(&obj_files);
 
-  WriteLinkerStuff(obj_files);
+  if (target_->output_type() == Target::SOURCE_SET)
+    WriteSourceSetStamp(obj_files);
+  else
+    WriteLinkerStuff(obj_files);
 }
 
 void NinjaBinaryTargetWriter::WriteCompilerVars() {
@@ -98,9 +115,9 @@ void NinjaBinaryTargetWriter::WriteCompilerVars() {
                                              DefineWriter(), out_);
   out_ << std::endl;
 
-  // Includes.
+  // Include directories.
   out_ << "includes =";
-  RecursiveTargetConfigToStream<SourceDir>(target_, &ConfigValues::includes,
+  RecursiveTargetConfigToStream<SourceDir>(target_, &ConfigValues::include_dirs,
                                            IncludeWriter(path_output_, helper_),
                                            out_);
 
@@ -173,24 +190,13 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
     out_ << std::endl;
   }
 
-  EscapeOptions flag_options = GetFlagOptions();
-
-  // Linker flags. The linker flags will already be collected in all_ldflags
-  // for the target from all child targets, and configs, but they still need
-  // to be uniquified.
-  out_ << "ldflags =";
-  const OrderedSet<std::string> all_ldflags = target_->all_ldflags();
-  for (size_t i = 0; i < all_ldflags.size(); i++) {
-    out_ << " ";
-    EscapeStringToStream(out_, all_ldflags[i], flag_options);
-  }
+  WriteLinkerFlags();
 
   // Append manifest flag on Windows to reference our file.
   // HACK ERASEME BRETTW FIXME
   if (settings_->IsWin()) {
     out_ << " /MANIFEST /ManifestFile:";
     path_output_.WriteFile(out_, windows_manifest);
-    out_ << " /DEBUG /MACHINE:X86 /LIBPATH:\"C:\\Program Files (x86)\\Windows Kits\\8.0\\Lib\\win8\\um\\x86\" /DELAYLOAD:dbghelp.dll /DELAYLOAD:dwmapi.dll /DELAYLOAD:shell32.dll /DELAYLOAD:uxtheme.dll /safeseh /dynamicbase /ignore:4199 /ignore:4221 /nxcompat /SUBSYSTEM:CONSOLE /INCREMENTAL /FIXED:NO /DYNAMICBASE:NO wininet.lib dnsapi.lib version.lib msimg32.lib ws2_32.lib usp10.lib psapi.lib dbghelp.lib winmm.lib shlwapi.lib kernel32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib user32.lib uuid.lib odbc32.lib odbccp32.lib delayimp.lib /NXCOMPAT";
   }
   out_ << std::endl;
 
@@ -253,6 +259,44 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
   out_ << std::endl;
 }
 
+void NinjaBinaryTargetWriter::WriteLinkerFlags() {
+  out_ << "ldflags =";
+
+  // First the ldflags from the target and its config.
+  EscapeOptions flag_options = GetFlagOptions();
+  RecursiveTargetConfigStringsToStream(target_, &ConfigValues::ldflags,
+                                       flag_options, out_);
+
+  const Toolchain* toolchain = GetToolchain();
+  const Toolchain::Tool& tool = toolchain->GetTool(tool_type_);
+
+  // Followed by library search paths that have been recursively pushed
+  // through the dependency tree.
+  const OrderedSet<SourceDir> all_lib_dirs = target_->all_lib_dirs();
+  if (!all_lib_dirs.empty()) {
+    // Since we're passing these on the command line to the linker and not
+    // to Ninja, we need to do shell escaping.
+    PathOutput lib_path_output(path_output_.current_dir(), ESCAPE_NINJA_SHELL,
+                               true);
+    for (size_t i = 0; i < all_lib_dirs.size(); i++) {
+      out_ << " " << tool.lib_dir_prefix;
+      lib_path_output.WriteDir(out_, all_lib_dirs[i],
+                               PathOutput::DIR_NO_LAST_SLASH);
+    }
+  }
+
+  // Followed by libraries that have been recursively pushed through the
+  // dependency tree.
+  EscapeOptions lib_escape_opts;
+  lib_escape_opts.mode = ESCAPE_NINJA_SHELL;
+  const OrderedSet<std::string> all_libs = target_->all_libs();
+  for (size_t i = 0; i < all_libs.size(); i++) {
+    out_ << " " << tool.lib_prefix;
+    EscapeStringToStream(out_, all_libs[i], lib_escape_opts);
+    out_ << "";
+  }
+}
+
 void NinjaBinaryTargetWriter::WriteLinkCommand(
     const OutputFile& external_output_file,
     const OutputFile& internal_output_file,
@@ -264,72 +308,149 @@ void NinjaBinaryTargetWriter::WriteLinkCommand(
     path_output_.WriteFile(out_, external_output_file);
   }
   out_ << ": "
-       << helper_.GetRuleForTargetType(GetToolchain(), target_->output_type());
+       << helper_.GetRulePrefix(GetToolchain())
+       << Toolchain::ToolTypeToName(tool_type_);
+
+  std::set<OutputFile> extra_object_files;
+  std::vector<const Target*> linkable_deps;
+  std::vector<const Target*> non_linkable_deps;
+  GetDeps(&extra_object_files, &linkable_deps, &non_linkable_deps);
 
   // Object files.
   for (size_t i = 0; i < object_files.size(); i++) {
     out_ << " ";
     path_output_.WriteFile(out_, object_files[i]);
   }
-
-  // Library inputs (deps and inherited static libraries).
-  //
-  // Static libraries since they're just a collection of the object files so
-  // don't need libraries linked with them, but we still need to go through
-  // the list and find non-linkable data deps in the "deps" section. We'll
-  // collect all non-linkable deps and put it in the implicit deps below.
-  std::vector<const Target*> extra_data_deps;
-  const std::vector<const Target*>& deps = target_->deps();
-  const std::set<const Target*>& inherited = target_->inherited_libraries();
-  for (size_t i = 0; i < deps.size(); i++) {
-    if (inherited.find(deps[i]) != inherited.end())
-      continue;
-    if (target_->output_type() != Target::STATIC_LIBRARY &&
-        deps[i]->IsLinkable()) {
-      out_ << " ";
-      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(deps[i]));
-    } else {
-      extra_data_deps.push_back(deps[i]);
-    }
-  }
-  for (std::set<const Target*>::const_iterator i = inherited.begin();
-       i != inherited.end(); ++i) {
-    if (target_->output_type() == Target::STATIC_LIBRARY) {
-      extra_data_deps.push_back(*i);
-    } else {
-      out_ << " ";
-      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(*i));
-    }
-  }
-
-  // External link deps from GYP. This is indexed by a label with no toolchain.
-  typedef BuildSettings::AdditionalLibsMap LibsMap;
-  const LibsMap& libs = settings_->build_settings()->external_link_deps();
-  Label libs_key(target_->label().dir(), target_->label().name());
-  LibsMap::const_iterator libs_end = libs.upper_bound(libs_key);
-  for (LibsMap::const_iterator i = libs.lower_bound(libs_key);
-       i != libs_end; ++i) {
+  for (std::set<OutputFile>::iterator i = extra_object_files.begin();
+       i != extra_object_files.end(); ++i) {
     out_ << " ";
-    path_output_.WriteFile(out_, i->second);
+    path_output_.WriteFile(out_, *i);
+  }
+
+  // Libs.
+  for (size_t i = 0; i < linkable_deps.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(linkable_deps[i]));
   }
 
   // Append data dependencies as implicit dependencies.
+  WriteImplicitDependencies(non_linkable_deps);
+
+  out_ << std::endl;
+}
+
+void NinjaBinaryTargetWriter::WriteSourceSetStamp(
+    const std::vector<OutputFile>& object_files) {
+  // The stamp rule for source sets is generally not used, since targets that
+  // depend on this will reference the object files directly. However, writing
+  // this rule allows the user to type the name of the target and get a build
+  // which can be convenient for development.
+  out_ << "build ";
+  path_output_.WriteFile(out_, helper_.GetTargetOutputFile(target_));
+  out_ << ": "
+       << helper_.GetRulePrefix(target_->settings()->toolchain())
+       << "stamp";
+
+  std::set<OutputFile> extra_object_files;
+  std::vector<const Target*> linkable_deps;
+  std::vector<const Target*> non_linkable_deps;
+  GetDeps(&extra_object_files, &linkable_deps, &non_linkable_deps);
+
+  // The classifier should never put extra object files in a source set:
+  // any source sets that we depend on should appear in our non-linkable
+  // deps instead.
+  DCHECK(extra_object_files.empty());
+
+  for (size_t i = 0; i < object_files.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_, object_files[i]);
+  }
+
+  // Append data dependencies as implicit dependencies.
+  WriteImplicitDependencies(non_linkable_deps);
+
+  out_ << std::endl;
+}
+
+void NinjaBinaryTargetWriter::GetDeps(
+    std::set<OutputFile>* extra_object_files,
+    std::vector<const Target*>* linkable_deps,
+    std::vector<const Target*>* non_linkable_deps) const {
+  const std::vector<const Target*>& deps = target_->deps();
+  const std::set<const Target*>& inherited = target_->inherited_libraries();
+
+  // Normal deps.
+  for (size_t i = 0; i < deps.size(); i++) {
+    if (inherited.find(deps[i]) != inherited.end())
+      continue;  // Don't add dupes.
+    ClassifyDependency(deps[i], extra_object_files,
+                       linkable_deps, non_linkable_deps);
+  }
+
+  // Inherited libraries.
+  for (std::set<const Target*>::const_iterator i = inherited.begin();
+       i != inherited.end(); ++i) {
+    ClassifyDependency(*i, extra_object_files,
+                       linkable_deps, non_linkable_deps);
+  }
+
+  // Data deps.
   const std::vector<const Target*>& datadeps = target_->datadeps();
+  for (size_t i = 0; i < datadeps.size(); i++)
+    non_linkable_deps->push_back(datadeps[i]);
+}
+
+void NinjaBinaryTargetWriter::ClassifyDependency(
+    const Target* dep,
+    std::set<OutputFile>* extra_object_files,
+    std::vector<const Target*>* linkable_deps,
+    std::vector<const Target*>* non_linkable_deps) const {
+  // Only these types of outputs have libraries linked into them. Child deps of
+  // static libraries get pushed up the dependency tree until one of these is
+  // reached, and source sets don't link at all.
+  bool can_link_libs =
+      (target_->output_type() == Target::EXECUTABLE ||
+       target_->output_type() == Target::SHARED_LIBRARY);
+
+  if (dep->output_type() == Target::SOURCE_SET) {
+    if (target_->output_type() == Target::SOURCE_SET) {
+      // When a source set depends on another source set, add it as a data
+      // dependency so if the user says "ninja second_source_set" it will
+      // also compile the first (what you would expect) even though we'll
+      // never do anything with the first one's files.
+      non_linkable_deps->push_back(dep);
+    } else {
+      // Linking in a source set, copy its object files.
+      for (size_t i = 0; i < dep->sources().size(); i++) {
+        SourceFileType input_file_type = GetSourceFileType(
+            dep->sources()[i], dep->settings()->target_os());
+        if (input_file_type != SOURCE_UNKNOWN &&
+            input_file_type != SOURCE_H) {
+          // Note we need to specify the target as the source_set target
+          // itself, since this is used to prefix the object file name.
+          extra_object_files->insert(helper_.GetOutputFileForSource(
+              dep, dep->sources()[i], input_file_type));
+        }
+      }
+    }
+  } else if (can_link_libs && dep->IsLinkable()) {
+    linkable_deps->push_back(dep);
+  } else {
+    non_linkable_deps->push_back(dep);
+  }
+}
+
+void NinjaBinaryTargetWriter::WriteImplicitDependencies(
+    const std::vector<const Target*>& non_linkable_deps) {
   const std::vector<SourceFile>& data = target_->data();
-  if (!extra_data_deps.empty() || !datadeps.empty() || !data.empty()) {
+  if (!non_linkable_deps.empty() || !data.empty()) {
     out_ << " ||";
 
-    // Non-linkable deps in the deps section above.
-    for (size_t i = 0; i < extra_data_deps.size(); i++) {
+    // Non-linkable targets.
+    for (size_t i = 0; i < non_linkable_deps.size(); i++) {
       out_ << " ";
       path_output_.WriteFile(out_,
-                             helper_.GetTargetOutputFile(extra_data_deps[i]));
-    }
-
-    // Data deps.
-    for (size_t i = 0; i < datadeps.size(); i++) {
-      out_ << " ";
-      path_output_.WriteFile(out_, helper_.GetTargetOutputFile(datadeps[i]));
+                             helper_.GetTargetOutputFile(non_linkable_deps[i]));
     }
 
     // Data files.
@@ -339,6 +460,4 @@ void NinjaBinaryTargetWriter::WriteLinkCommand(
       path_output_.WriteFile(out_, data[i]);
     }
   }
-
-  out_ << std::endl;
 }

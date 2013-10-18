@@ -199,7 +199,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
         }
       }
 
-      WebScriptSource source(WebString::fromUTF8(params.code));
+      WebScriptSource source(WebString::fromUTF8(params.code), params.file_url);
       v8::HandleScope scope(v8::Isolate::GetCurrent());
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
@@ -240,7 +240,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
     } else {
       child_frame->document().insertUserStyleSheet(
           WebString::fromUTF8(params.code),
-          // Author level is consistent with WebView::addUserStyleSheet.
+          // Author level is consistent with WebView::injectStyleSheet.
           WebDocument::UserStyleAuthorLevel);
     }
   }

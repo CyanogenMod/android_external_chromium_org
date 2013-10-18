@@ -65,7 +65,9 @@
       "channel": "stable",
       "extension_types": ["extension"],
       "whitelist": [
-        "mppnpdlheglhdfmldimlhpnegondlapf"  // http://crbug.com/292856
+        // http://crbug.com/292856
+        "mppnpdlheglhdfmldimlhpnegondlapf",
+        "bepbmhgboaologfdajaanbcjmnhjmhfn"
       ]
     }
   ],
@@ -111,6 +113,18 @@
   "browsingData": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
+  },
+  "cast": {
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
+    "whitelist": [
+      "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
+    ]
   },
   "chromePrivate": {
     "channel": "stable",
@@ -561,6 +575,13 @@
     ],
     "location": "component"
   },
+  "principalsPrivate": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "whitelist": [
+      "dofmkfphhdaddeofjngcjphcegkbbooh"   // Chrome Login Proxy (prototype)
+    ]
+  },
   "privacy": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
@@ -730,7 +751,9 @@
       "channel": "stable",
       "extension_types": ["extension"],
       "whitelist": [
-        "mppnpdlheglhdfmldimlhpnegondlapf"  // http://crbug.com/292856
+        // http://crbug.com/292856
+        "mppnpdlheglhdfmldimlhpnegondlapf",
+        "bepbmhgboaologfdajaanbcjmnhjmhfn"
       ]
     }
   ],
@@ -754,8 +777,12 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
+  "webrtc": {
+    "channel": "trunk",
+    "extension_types": ["extension"]
+  },
   "webrtcLoggingPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension"],
     "whitelist": ["80B9DC58E5210749F052F5B4DB239C50CF72AEB6"]
   },

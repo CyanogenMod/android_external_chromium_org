@@ -15,8 +15,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -46,23 +45,32 @@ LOCAL_SRC_FILES := \
 	cc/base/region.cc \
 	cc/base/switches.cc \
 	cc/base/tiling_data.cc \
+	cc/debug/benchmark_instrumentation.cc \
 	cc/debug/debug_colors.cc \
 	cc/debug/debug_rect_history.cc \
 	cc/debug/fake_web_graphics_context_3d.cc \
 	cc/debug/frame_rate_counter.cc \
 	cc/debug/layer_tree_debug_state.cc \
+	cc/debug/micro_benchmark.cc \
+	cc/debug/micro_benchmark_controller.cc \
+	cc/debug/ordered_texture_map.cc \
 	cc/debug/overdraw_metrics.cc \
 	cc/debug/paint_time_counter.cc \
+	cc/debug/picture_record_benchmark.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
 	cc/debug/test_context_provider.cc \
+	cc/debug/test_texture.cc \
 	cc/debug/test_web_graphics_context_3d.cc \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
+	cc/debug/unittest_only_benchmark.cc \
 	cc/input/page_scale_animation.cc \
 	cc/input/top_controls_manager.cc \
 	cc/layers/content_layer.cc \
 	cc/layers/contents_scaling_layer.cc \
+	cc/layers/delegated_frame_provider.cc \
+	cc/layers/delegated_frame_resource_collection.cc \
 	cc/layers/delegated_renderer_layer.cc \
 	cc/layers/delegated_renderer_layer_impl.cc \
 	cc/layers/heads_up_display_layer.cc \
@@ -94,6 +102,8 @@ LOCAL_SRC_FILES := \
 	cc/layers/texture_layer_impl.cc \
 	cc/layers/tiled_layer.cc \
 	cc/layers/tiled_layer_impl.cc \
+	cc/layers/ui_resource_layer.cc \
+	cc/layers/ui_resource_layer_impl.cc \
 	cc/layers/video_frame_provider_client_impl.cc \
 	cc/layers/video_layer.cc \
 	cc/layers/video_layer_impl.cc \
@@ -250,7 +260,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -264,8 +273,6 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -302,8 +309,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -366,7 +371,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -380,8 +384,6 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -419,8 +421,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -485,8 +485,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_library_gyp \
-	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

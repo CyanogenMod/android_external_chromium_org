@@ -69,9 +69,12 @@ class FakeUserManager : public UserManager {
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
   virtual const User* FindLocallyManagedUser(
       const string16& display_name) const OVERRIDE;
+  virtual const User* FindLocallyManagedUserBySyncId(
+      const std::string& sync_id) const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetPrimaryUser() const OVERRIDE;
+  virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE {}
@@ -130,6 +133,8 @@ class FakeUserManager : public UserManager {
   virtual void NotifyLocalStateChanged() OVERRIDE {}
   virtual bool AreLocallyManagedUsersAllowed() const OVERRIDE;
   virtual base::FilePath GetUserProfileDir(const std::string& email) const
+      OVERRIDE;
+  virtual void RespectLocalePreference(Profile* profile, const User* user) const
       OVERRIDE;
 
   void set_owner_email(const std::string& owner_email) {

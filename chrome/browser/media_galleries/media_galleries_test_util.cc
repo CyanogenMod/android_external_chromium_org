@@ -4,6 +4,10 @@
 
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 #include "base/base_paths.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -12,11 +16,17 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/media_galleries/fileapi/picasa_finder.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_WIN)
+#include "base/test/test_reg_util_win.h"
+#include "base/win/registry.h"
+#endif
 
 scoped_refptr<extensions::Extension> AddMediaGalleriesApp(
     const std::string& name,
@@ -75,6 +85,33 @@ EnsureMediaDirectoriesExists::EnsureMediaDirectoriesExists()
 EnsureMediaDirectoriesExists::~EnsureMediaDirectoriesExists() {
 }
 
+base::FilePath EnsureMediaDirectoriesExists::GetFakeAppDataPath() const {
+  DCHECK(fake_dir_.IsValid());
+  return fake_dir_.path().AppendASCII("appdata");
+}
+
+#if defined(OS_WIN)
+base::FilePath EnsureMediaDirectoriesExists::GetFakeLocalAppDataPath() const {
+  DCHECK(fake_dir_.IsValid());
+  return fake_dir_.path().AppendASCII("localappdata");
+}
+
+void EnsureMediaDirectoriesExists::WriteCustomPicasaAppDataPathToRegistry(
+    const base::FilePath& path) {
+  base::win::RegKey key(HKEY_CURRENT_USER, picasa::kPicasaRegistryPath,
+                        KEY_SET_VALUE);
+  key.WriteValue(picasa::kPicasaRegistryAppDataKey, path.value().c_str());
+}
+#endif
+
+#if defined(OS_WIN) || defined(OS_MACOSX)
+base::FilePath
+EnsureMediaDirectoriesExists::GetFakePicasaFoldersRootPath() const {
+  DCHECK(fake_dir_.IsValid());
+  return fake_dir_.path().AppendASCII("picasa_folders");
+}
+#endif
+
 void EnsureMediaDirectoriesExists::Init() {
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   return;
@@ -83,18 +120,25 @@ void EnsureMediaDirectoriesExists::Init() {
   ASSERT_TRUE(fake_dir_.CreateUniqueTempDir());
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
-  // This is to make sure the tests don't think iTunes is installed (unless
-  // we control it specifically).
-  appdir_override_.reset(new base::ScopedPathOverride(
-      base::DIR_APP_DATA, fake_dir_.path().AppendASCII("itunes")));
+  // This is to control whether or not tests think iTunes and Picasa are
+  // installed.
+  app_data_override_.reset(new base::ScopedPathOverride(
+      base::DIR_APP_DATA, GetFakeAppDataPath()));
+#if defined(OS_WIN)
+  // Picasa on Windows is by default in the DIR_LOCAL_APP_DATA directory.
+  local_app_data_override_.reset(new base::ScopedPathOverride(
+      base::DIR_LOCAL_APP_DATA, GetFakeLocalAppDataPath()));
+  // Picasa also looks in the registry for an alternate path.
+  registry_override_.OverrideRegistry(HKEY_CURRENT_USER, L"hkcu_picasa");
+#endif
 #endif
 
   music_override_.reset(new base::ScopedPathOverride(
-    chrome::DIR_USER_MUSIC, fake_dir_.path().AppendASCII("music")));
+      chrome::DIR_USER_MUSIC, fake_dir_.path().AppendASCII("music")));
   pictures_override_.reset(new base::ScopedPathOverride(
-    chrome::DIR_USER_PICTURES, fake_dir_.path().AppendASCII("pictures")));
+      chrome::DIR_USER_PICTURES, fake_dir_.path().AppendASCII("pictures")));
   video_override_.reset(new base::ScopedPathOverride(
-    chrome::DIR_USER_VIDEOS, fake_dir_.path().AppendASCII("videos")));
+      chrome::DIR_USER_VIDEOS, fake_dir_.path().AppendASCII("videos")));
   num_galleries_ = 3;
 #endif
 }

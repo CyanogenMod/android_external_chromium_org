@@ -339,7 +339,7 @@ SlideMode.prototype.leave = function(zoomToRect, callback) {
 /**
  * Execute an action when the editor is not busy.
  *
- * @param {function} action Function to exectute.
+ * @param {function} action Function to execute.
  */
 SlideMode.prototype.executeWhenReady = function(action) {
   this.editor_.executeWhenReady(action);
@@ -560,7 +560,7 @@ SlideMode.prototype.onSplice_ = function(event) {
 
 /**
  * @param {number} direction -1 for left, 1 for right.
- * @return {number} Next index in the gived direction, with wrapping.
+ * @return {number} Next index in the given direction, with wrapping.
  * @private
  */
 SlideMode.prototype.getNextSelectedIndex_ = function(direction) {
@@ -747,8 +747,12 @@ SlideMode.prototype.commitItem_ = function(callback) {
 
   // If showing the video, then pause it. Note, that it may not be attached
   // to the media controls yet.
-  if (this.isShowingVideo_())
+  if (this.isShowingVideo_()) {
     this.imageView_.getVideo().pause();
+    // Force stop downloading, if uncached on Drive.
+    this.imageView_.getVideo().src = '';
+    this.imageView_.getVideo().load();
+  }
 
   this.editor_.closeSession(callback);
 };
@@ -797,7 +801,7 @@ SlideMode.prototype.onBeforeUnload = function() {
  * @private
  */
 SlideMode.prototype.onClick_ = function(event) {
-  if (!this.isShowingVideo_())
+  if (!this.isShowingVideo_() || !this.mediaControls_.getMedia())
     return;
   if (event.ctrlKey) {
     this.mediaControls_.toggleLoopedModeWithFeedback(true);
@@ -858,7 +862,7 @@ SlideMode.prototype.onKeyDown = function(event) {
 
   switch (keyID) {
     case 'U+0020':  // Space toggles the video playback.
-      if (this.isShowingVideo_())
+      if (this.isShowingVideo_() && this.mediaControls_.getMedia())
         this.mediaControls_.togglePlayStateWithFeedback();
       break;
 
@@ -946,7 +950,7 @@ SlideMode.prototype.saveCurrentImage_ = function(callback) {
         this.showSpinner_(false);
         this.flashSavedLabel_();
 
-        var e = new cr.Event('content');
+        var e = new Event('content');
         e.item = item;
         e.oldUrl = oldUrl;
         e.metadata = this.selectedImageMetadata_;

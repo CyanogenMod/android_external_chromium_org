@@ -68,14 +68,14 @@ bool PreReadExperimentIsActive() {
 void GetPreReadPopulationAndGroup(double* population, double* group) {
   // By default we use the metrics id for the user as stable pseudo-random
   // input to a hash.
-  base::string16 metrics_id;
+  std::string metrics_id;
   GoogleUpdateSettings::GetMetricsId(&metrics_id);
 
   // If this user has not metrics id, we fall back to a purely random value
   // per browser session.
   const size_t kLength = 16;
   std::string random_value(metrics_id.empty() ? base::RandBytesAsString(kLength)
-                                              : base::WideToUTF8(metrics_id));
+                                              : metrics_id);
 
   // To interpret the value as a random number we hash it and read the first 8
   // bytes of the hash as a unit-interval representing a die-toss for being in
@@ -154,8 +154,11 @@ HMODULE LoadChromeWithDirectory(string16* dir) {
 #if !defined(CHROME_MULTIPLE_DLL)
   const wchar_t* dll_name = installer::kChromeDll;
 #else
-  const wchar_t* dll_name = cmd_line.HasSwitch(switches::kProcessType) ?
-      installer::kChromeChildDll : installer::kChromeDll;
+  const wchar_t* dll_name =
+      cmd_line.HasSwitch(switches::kProcessType) &&
+              cmd_line.GetSwitchValueASCII(switches::kProcessType) != "service"
+          ? installer::kChromeChildDll
+          : installer::kChromeDll;
 #endif
   dir->append(dll_name);
 

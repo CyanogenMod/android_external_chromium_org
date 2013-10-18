@@ -6,7 +6,7 @@
 
 <polymer-element name="kb-shift-key"
     attributes="lowerCaseKeysetId upperCaseKeysetId"
-    class="shift dark" char="Shift" extends="kb-key">
+    class="shift dark" char="Shift" on-pointerout="out" extends="kb-key">
   <script>
     (function () {
 
@@ -26,6 +26,13 @@
       };
 
       /**
+       * The pointerdown event on shiftkey that may eventually trigger chording
+       * state. pointerId and eventTarget are the two fields that is used now.
+       * @type {PointerEvent}
+       */
+      var enterChordingEvent = undefined;
+
+      /**
        * Uses a closure to define one long press timer among all shift keys
        * regardless of the layout they are in.
        * @type {function}
@@ -41,7 +48,8 @@
       Polymer('kb-shift-key', {
         /**
          * Defines how capslock effects keyset transition. We always transition
-         * from the lowerCaseKeysetId to the upperCaseKeysetId if capslock is on.
+         * from the lowerCaseKeysetId to the upperCaseKeysetId if capslock is
+         * on.
          * @type {string}
          */
         lowerCaseKeysetId: 'lower',
@@ -51,12 +59,29 @@
           if (state == KEY_STATES.PRESSED) {
             state = KEY_STATES.TAPPED;
           } else if (state == KEY_STATES.CHORDING) {
-            // Resets shift state.
-            state = KEY_STATES.UNLOCKED;
-            // TODO(rsadam@): Only end chording if the key-up is on the same
-            // shift key that started the chording.
+            // Leaves chording only if the pointer that triggered it is
+            // released.
+            if (event.pointerId == enterChordingEvent.pointerId)
+              state = KEY_STATES.UNLOCKED;
+            else
+              return;
           }
-          this.super();
+          this.super([event]);
+        },
+
+        out: function(event) {
+          // Sliding off the shift key while chording is treated as a key-up.
+          // Note that we switch to a new keyset on shift keydown, and a finger
+          // movement on the new shift key will trigger this function being
+          // called on the old shift key. We should not end chording in that
+          // case.
+          if (state == KEY_STATES.CHORDING &&
+              event.pointerId == enterChordingEvent.pointerId &&
+              event.target != enterChordingEvent.target) {
+            state = KEY_STATES.UNLOCKED;
+            var detail = this.populateDetails('out');
+            this.fire("key-out", detail);
+          }
         },
 
         down: function(event) {
@@ -79,8 +104,9 @@
               console.error("Undefined shift key state: " + state);
               break;
           }
+          enterChordingEvent = event;
           // Trigger parent behaviour.
-          this.super();
+          this.super([event]);
           this.fire('enable-sel');
           // Populate double click transition details.
           var detail = {};
@@ -126,7 +152,7 @@
              case (KEY_STATES.PRESSED):
                state = KEY_STATES.CHORDING;
                // Disable longpress timer.
-               clearTimeout(this.shiftLongPressTimer);
+               clearTimeout(shiftLongPressTimer);
                break;
              default:
                break;
@@ -145,8 +171,8 @@
            return detail;
         },
 
-        populateDetails: function() {
-          var detail = this.super();
+        populateDetails: function(caller) {
+          var detail = this.super([caller]);
           switch(state) {
             case(KEY_STATES.LOCKED):
               detail.toKeyset = this.upperCaseKeysetId;
@@ -190,7 +216,16 @@
 
         get state() {
           return state;
-        }
+        },
+
+        get textKeyset() {
+          switch (state) {
+            case KEY_STATES.UNLOCKED:
+              return this.lowerCaseKeysetId;
+            default:
+              return this.upperCaseKeysetId;
+          }
+        },
       });
     })();
   </script>

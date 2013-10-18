@@ -20,9 +20,8 @@ import time
 
 import cmd_helper
 import constants
-import io_stats_parser
 try:
-  import pexpect
+  from pylib import pexpect
 except:
   pexpect = None
 
@@ -724,6 +723,17 @@ class AndroidCommands(object):
     start_line = m.group(0)
     return GetLogTimestamp(start_line, self.GetDeviceYear())
 
+  def BroadcastIntent(self, package, intent, *args):
+    """Send a broadcast intent.
+
+    Args:
+      package: Name of package containing the intent.
+      intent: Name of the intent.
+      args: Optional extra arguments for the intent.
+    """
+    cmd = 'am broadcast -a %s.%s %s' % (package, intent, ' '.join(args))
+    self.RunShellCommand(cmd)
+
   def GoHome(self):
     """Tell the device to return to the home screen. Blocks until completion."""
     self.RunShellCommand('am start -W '
@@ -1144,18 +1154,30 @@ class AndroidCommands(object):
     if logfile:
       logfile = NewLineNormalizer(logfile)
 
-    # Spawn logcat and syncronize with it.
+    # Spawn logcat and synchronize with it.
     for _ in range(4):
       self._logcat = pexpect.spawn(constants.ADB_PATH, args, timeout=10,
                                    logfile=logfile)
-      self.RunShellCommand('log startup_sync')
-      if self._logcat.expect(['startup_sync', pexpect.EOF,
-                              pexpect.TIMEOUT]) == 0:
+      if not clear or self.SyncLogCat():
         break
       self._logcat.close(force=True)
     else:
       logging.critical('Error reading from logcat: ' + str(self._logcat.match))
       sys.exit(1)
+
+  def SyncLogCat(self):
+    """Synchronize with logcat.
+
+    Synchronize with the monitored logcat so that WaitForLogMatch will only
+    consider new message that are received after this point in time.
+
+    Returns:
+      True if the synchronization succeeded.
+    """
+    assert self._logcat
+    tag = 'logcat_sync_%s' % time.time()
+    self.RunShellCommand('log ' + tag)
+    return self._logcat.expect([tag, pexpect.EOF, pexpect.TIMEOUT]) == 0
 
   def GetMonitoredLogCat(self):
     """Returns an "adb logcat" command as created by pexpected.spawn."""
@@ -1235,9 +1257,23 @@ class AndroidCommands(object):
       self._adb.SendCommand('logcat -c')
     logcat_command = 'adb %s logcat -v threadtime %s' % (self._adb._target_arg,
                                                          ' '.join(filters))
-    self._logcat_tmpoutfile = tempfile.TemporaryFile(bufsize=0)
+    self._logcat_tmpoutfile = tempfile.NamedTemporaryFile(bufsize=0)
     self.logcat_process = subprocess.Popen(logcat_command, shell=True,
                                            stdout=self._logcat_tmpoutfile)
+
+  def GetCurrentRecordedLogcat(self):
+    """Return the current content of the logcat being recorded.
+       Call this after StartRecordingLogcat() and before StopRecordingLogcat().
+       This can be useful to perform timed polling/parsing.
+    Returns:
+       Current logcat output as a single string, or None if
+       StopRecordingLogcat() was already called.
+    """
+    if not self._logcat_tmpoutfile:
+      return None
+
+    with open(self._logcat_tmpoutfile.name) as f:
+      return f.read()
 
   def StopRecordingLogcat(self):
     """Stops an existing logcat recording subprocess and returns output.
@@ -1258,6 +1294,7 @@ class AndroidCommands(object):
     self._logcat_tmpoutfile.seek(0)
     output = self._logcat_tmpoutfile.read()
     self._logcat_tmpoutfile.close()
+    self._logcat_tmpoutfile = None
     return output
 
   def SearchLogcatRecord(self, record, message, thread_id=None, proc_id=None,
@@ -1330,8 +1367,25 @@ class AndroidCommands(object):
       Dict of {num_reads, num_writes, read_ms, write_ms} or None if there
       was an error.
     """
+    IoStats = collections.namedtuple(
+        'IoStats',
+        ['device',
+         'num_reads_issued',
+         'num_reads_merged',
+         'num_sectors_read',
+         'ms_spent_reading',
+         'num_writes_completed',
+         'num_writes_merged',
+         'num_sectors_written',
+         'ms_spent_writing',
+         'num_ios_in_progress',
+         'ms_spent_doing_io',
+         'ms_spent_doing_io_weighted',
+        ])
+
     for line in self.GetFileContents('/proc/diskstats', log_result=False):
-      stats = io_stats_parser.ParseIoStatsLine(line)
+      fields = line.split()
+      stats = IoStats._make([fields[2]] + [int(f) for f in fields[3:]])
       if stats.device == 'mmcblk0':
         return {
             'num_reads': stats.num_reads_issued,
@@ -1510,6 +1564,15 @@ class AndroidCommands(object):
       os.makedirs(host_dir)
     device_file = '%s/screenshot.png' % self.GetExternalStorage()
     self.RunShellCommand('/system/bin/screencap -p %s' % device_file)
+    self.PullFileFromDevice(device_file, host_file)
+
+  def PullFileFromDevice(self, device_file, host_file):
+    """Download |device_file| on the device from to |host_file| on the host.
+
+    Args:
+      device_file: Absolute path to the file to retrieve from the device.
+      host_file: Absolute path to the file to store on the host.
+    """
     assert self._adb.Pull(device_file, host_file)
     assert os.path.exists(host_file)
 

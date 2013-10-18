@@ -11,12 +11,15 @@
 #include "base/barrier_closure.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/android/audio_decoder_job.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/video_decoder_job.h"
 #include "media/base/audio_timestamp_helper.h"
+#include "media/base/buffers.h"
 
 namespace {
 
@@ -59,11 +62,9 @@ bool MediaSourcePlayer::IsTypeSupported(
 MediaSourcePlayer::MediaSourcePlayer(
     int player_id,
     MediaPlayerManager* manager,
-    int demuxer_client_id,
-    DemuxerAndroid* demuxer)
+    scoped_ptr<DemuxerAndroid> demuxer)
     : MediaPlayerAndroid(player_id, manager),
-      demuxer_client_id_(demuxer_client_id),
-      demuxer_(demuxer),
+      demuxer_(demuxer.Pass()),
       pending_event_(NO_EVENT_PENDING),
       width_(0),
       height_(0),
@@ -82,12 +83,13 @@ MediaSourcePlayer::MediaSourcePlayer(
       reconfig_audio_decoder_(false),
       reconfig_video_decoder_(false),
       weak_this_(this),
-      drm_bridge_(NULL) {
-  demuxer_->AddDemuxerClient(demuxer_client_id_, this);
+      drm_bridge_(NULL),
+      is_waiting_for_key_(false) {
+  demuxer_->Initialize(this);
+  clock_.SetMaxTime(base::TimeDelta());
 }
 
 MediaSourcePlayer::~MediaSourcePlayer() {
-  demuxer_->RemoveDemuxerClient(demuxer_client_id_);
   Release();
 }
 
@@ -101,6 +103,11 @@ void MediaSourcePlayer::SetVideoSurface(gfx::ScopedJavaSurface surface) {
   }
 
   surface_ =  surface.Pass();
+
+  // If there is a pending surface change event, just wait for it to be
+  // processed.
+  if (IsEventPending(SURFACE_CHANGE_EVENT_PENDING))
+    return;
   SetPendingEvent(SURFACE_CHANGE_EVENT_PENDING);
 
   // Setting a new surface will require a new MediaCodec to be created.
@@ -162,7 +169,7 @@ void MediaSourcePlayer::Start() {
   playing_ = true;
 
   if (IsProtectedSurfaceRequired())
-    manager()->OnProtectedSurfaceRequested(demuxer_client_id_);
+    manager()->OnProtectedSurfaceRequested(player_id());
 
   StartInternal();
 }
@@ -228,6 +235,10 @@ void MediaSourcePlayer::SetVolume(double volume) {
 
 void MediaSourcePlayer::OnKeyAdded() {
   DVLOG(1) << __FUNCTION__;
+  if (!is_waiting_for_key_)
+    return;
+
+  is_waiting_for_key_ = false;
   if (playing_)
     StartInternal();
 }
@@ -253,6 +264,11 @@ void MediaSourcePlayer::StartInternal() {
   // If there are pending events, wait for them finish.
   if (pending_event_ != NO_EVENT_PENDING)
     return;
+
+  // When we start, we'll have new demuxed data coming in. This new data could
+  // be clear (not encrypted) or encrypted with different keys. So
+  // |is_waiting_for_key_| condition may not be true anymore.
+  is_waiting_for_key_ = false;
 
   // Create decoder jobs if they are not created
   ConfigureAudioDecoderJob();
@@ -320,9 +336,9 @@ void MediaSourcePlayer::OnDemuxerConfigsAvailable(
 void MediaSourcePlayer::OnDemuxerDataAvailable(const DemuxerData& data) {
   DVLOG(1) << __FUNCTION__ << "(" << data.type << ")";
   DCHECK_LT(0u, data.access_units.size());
-  if (data.type == DemuxerStream::AUDIO)
+  if (data.type == DemuxerStream::AUDIO && audio_decoder_job_)
     audio_decoder_job_->OnDataReceived(data);
-  else
+  else if (data.type == DemuxerStream::VIDEO && video_decoder_job_)
     video_decoder_job_->OnDataReceived(data);
 }
 
@@ -372,7 +388,16 @@ void MediaSourcePlayer::OnDemuxerSeekDone() {
   DVLOG(1) << __FUNCTION__;
 
   ClearPendingEvent(SEEK_EVENT_PENDING);
-  manager()->OnSeekComplete(player_id(), GetCurrentTime());
+  base::TimeDelta current_time = GetCurrentTime();
+  manager()->OnSeekComplete(player_id(), current_time);
+  // TODO(qinmin): Simplify the logic by using |start_presentation_timestamp_|
+  // to preroll media decoder jobs. Currently |start_presentation_timestamp_|
+  // is calculated from decoder output, while preroll relies on the access
+  // unit's timestamp. There are some differences between the two.
+  if (audio_decoder_job_)
+    audio_decoder_job_->set_preroll_timestamp(current_time);
+  if (video_decoder_job_)
+    video_decoder_job_->set_preroll_timestamp(current_time);
   ProcessPendingEvents();
 }
 
@@ -411,7 +436,7 @@ void MediaSourcePlayer::ProcessPendingEvents() {
   if (IsEventPending(SEEK_EVENT_PENDING)) {
     DVLOG(1) << __FUNCTION__ << " : Handling SEEK_EVENT";
     ClearDecodingData();
-    demuxer_->RequestDemuxerSeek(demuxer_client_id_, GetCurrentTime());
+    demuxer_->RequestDemuxerSeek(GetCurrentTime());
     return;
   }
 
@@ -419,7 +444,7 @@ void MediaSourcePlayer::ProcessPendingEvents() {
   if (IsEventPending(CONFIG_CHANGE_EVENT_PENDING)) {
     DVLOG(1) << __FUNCTION__ << " : Handling CONFIG_CHANGE_EVENT.";
     DCHECK(reconfig_audio_decoder_ || reconfig_video_decoder_);
-    demuxer_->RequestDemuxerConfigs(demuxer_client_id_);
+    demuxer_->RequestDemuxerConfigs();
     return;
   }
 
@@ -460,6 +485,22 @@ void MediaSourcePlayer::MediaDecoderCallback(
     bool is_audio, MediaCodecStatus status,
     const base::TimeDelta& presentation_timestamp, size_t audio_output_bytes) {
   DVLOG(1) << __FUNCTION__ << ": " << is_audio << ", " << status;
+  DCHECK(!is_waiting_for_key_);
+
+  // TODO(xhwang): Drop IntToString() when http://crbug.com/303899 is fixed.
+  if (is_audio) {
+    TRACE_EVENT_ASYNC_END1("media",
+                           "MediaSourcePlayer::DecodeMoreAudio",
+                           audio_decoder_job_.get(),
+                           "MediaCodecStatus",
+                           base::IntToString(status));
+  } else {
+    TRACE_EVENT_ASYNC_END1("media",
+                           "MediaSourcePlayer::DecodeMoreVideo",
+                           video_decoder_job_.get(),
+                           "MediaCodecStatus",
+                           base::IntToString(status));
+  }
 
   bool is_clock_manager = is_audio || !HasAudio();
 
@@ -482,8 +523,10 @@ void MediaSourcePlayer::MediaDecoderCallback(
     return;
   }
 
-  if (status == MEDIA_CODEC_OK && is_clock_manager)
+  if (status == MEDIA_CODEC_OK && is_clock_manager &&
+      presentation_timestamp != kNoTimestamp()) {
     UpdateTimestamps(presentation_timestamp, audio_output_bytes);
+  }
 
   if (!playing_) {
     if (is_clock_manager)
@@ -491,11 +534,26 @@ void MediaSourcePlayer::MediaDecoderCallback(
     return;
   }
 
-  if (status == MEDIA_CODEC_NO_KEY)
+  if (status == MEDIA_CODEC_NO_KEY) {
+    is_waiting_for_key_ = true;
+    return;
+  }
+
+  // If the status is MEDIA_CODEC_STOPPED, stop decoding new data. The player is
+  // in the middle of a seek or stop event and needs to wait for the IPCs to
+  // come.
+  if (status == MEDIA_CODEC_STOPPED)
     return;
 
-  if (status == MEDIA_CODEC_OK && is_clock_manager)
-    StartStarvationCallback(presentation_timestamp);
+  if (is_clock_manager) {
+    // If we have a valid timestamp, start the starvation callback. Otherwise,
+    // reset the |start_time_ticks_| so that the next frame will not suffer
+    // from the decoding delay caused by the current frame.
+    if (presentation_timestamp != kNoTimestamp())
+      StartStarvationCallback(presentation_timestamp);
+    else
+      start_time_ticks_ = base::TimeTicks::Now();
+  }
 
   if (is_audio) {
     DecodeMoreAudio();
@@ -513,6 +571,8 @@ void MediaSourcePlayer::DecodeMoreAudio() {
           start_time_ticks_, start_presentation_timestamp_, base::Bind(
               &MediaSourcePlayer::MediaDecoderCallback,
               weak_this_.GetWeakPtr(), true))) {
+    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreAudio",
+                             audio_decoder_job_.get());
     return;
   }
 
@@ -531,6 +591,8 @@ void MediaSourcePlayer::DecodeMoreVideo() {
           start_time_ticks_, start_presentation_timestamp_, base::Bind(
               &MediaSourcePlayer::MediaDecoderCallback,
               weak_this_.GetWeakPtr(), false))) {
+    TRACE_EVENT_ASYNC_BEGIN0("media", "MediaSourcePlayer::DecodeMoreVideo",
+                             video_decoder_job_.get());
     return;
   }
 
@@ -593,8 +655,7 @@ void MediaSourcePlayer::ConfigureAudioDecoderJob() {
       audio_codec_, sampling_rate_, num_channels_, &audio_extra_data_[0],
       audio_extra_data_.size(), media_crypto.obj(),
       base::Bind(&DemuxerAndroid::RequestDemuxerData,
-                 base::Unretained(demuxer_), demuxer_client_id_,
-                 DemuxerStream::AUDIO)));
+                 base::Unretained(demuxer_.get()), DemuxerStream::AUDIO)));
 
   if (audio_decoder_job_) {
     SetVolumeInternal();
@@ -630,8 +691,7 @@ void MediaSourcePlayer::ConfigureVideoDecoderJob() {
                               surface_.j_surface().obj(),
                               media_crypto.obj(),
                               base::Bind(&DemuxerAndroid::RequestDemuxerData,
-                                         base::Unretained(demuxer_),
-                                         demuxer_client_id_,
+                                         base::Unretained(demuxer_.get()),
                                          DemuxerStream::VIDEO)));
   if (video_decoder_job_)
     reconfig_video_decoder_ = false;

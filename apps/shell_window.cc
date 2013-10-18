@@ -4,9 +4,9 @@
 
 #include "apps/shell_window.h"
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window_geometry_cache.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -65,7 +65,8 @@ ShellWindow::CreateParams::CreateParams()
     state(ui::SHOW_STATE_DEFAULT),
     hidden(false),
     resizable(true),
-    focused(true) {}
+    focused(true),
+    always_on_top(false) {}
 
 ShellWindow::CreateParams::~CreateParams() {}
 
@@ -81,7 +82,8 @@ ShellWindow::ShellWindow(Profile* profile,
       delegate_(delegate),
       image_loader_ptr_factory_(this),
       fullscreen_for_window_api_(false),
-      fullscreen_for_tab_(false) {
+      fullscreen_for_tab_(false),
+      is_content_visible_(false) {
 }
 
 void ShellWindow::Init(const GURL& url,
@@ -183,9 +185,6 @@ void ShellWindow::Init(const GURL& url,
   // about it in case it has any setup to do to make the renderer appear
   // properly. In particular, on Windows, the view's clickthrough region needs
   // to be set.
-  registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
-                 content::Source<content::NavigationController>(
-                    &web_contents->GetController()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
                  content::Source<Profile>(profile_));
   // Close when the browser process is exiting.
@@ -286,8 +285,12 @@ void ShellWindow::RequestToLockMouse(WebContents* web_contents,
 
 void ShellWindow::OnNativeClose() {
   ShellWindowRegistry::Get(profile_)->RemoveShellWindow(this);
-  if (shell_window_contents_)
+  if (shell_window_contents_) {
+    WebContents* web_contents = shell_window_contents_->GetWebContents();
+    WebContentsModalDialogManager::FromWebContents(web_contents)->
+        SetDelegate(NULL);
     shell_window_contents_->NativeWindowClosed();
+  }
   delete this;
 }
 
@@ -295,6 +298,16 @@ void ShellWindow::OnNativeWindowChanged() {
   SaveWindowPosition();
   if (shell_window_contents_ && native_app_window_)
     shell_window_contents_->NativeWindowChanged(native_app_window_.get());
+
+  bool was_content_visible = is_content_visible_;
+  NativeAppWindow* window = GetBaseWindow();
+  if (window) {
+    is_content_visible_ = window->IsVisible() && !window->IsMinimized();
+    if (was_content_visible && !is_content_visible_)
+      shell_window_contents_->GetWebContents()->WasHidden();
+    else if (!was_content_visible && is_content_visible_)
+      shell_window_contents_->GetWebContents()->WasShown();
+  }
 }
 
 void ShellWindow::OnNativeWindowActivated() {
@@ -539,13 +552,6 @@ void ShellWindow::Observe(int type,
                           const content::NotificationSource& source,
                           const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED: {
-      // TODO(jianli): once http://crbug.com/123007 is fixed, we'll no longer
-      // need to make the native window (ShellWindowViews specially) update
-      // the clickthrough region for the new RVH.
-      native_app_window_->RenderViewHostChanged();
-      break;
-    }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
       const extensions::Extension* unloaded_extension =
           content::Details<extensions::UnloadedExtensionInfo>(

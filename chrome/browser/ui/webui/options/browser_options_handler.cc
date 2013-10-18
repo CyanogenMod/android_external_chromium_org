@@ -68,6 +68,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/autofill/core/common/password_generation_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -87,7 +88,7 @@
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 #if !defined(OS_CHROMEOS)
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
@@ -110,6 +111,10 @@
 #if defined(OS_WIN)
 #include "chrome/installer/util/auto_launch_util.h"
 #endif  // defined(OS_WIN)
+
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_notifications.h"
+#endif
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -138,6 +143,7 @@ bool ShouldShowMultiProfilesUserList(chrome::HostDesktopType desktop_type) {
 BrowserOptionsHandler::BrowserOptionsHandler()
     : page_initialized_(false),
       template_url_service_(NULL),
+      cloud_print_mdns_ui_enabled_(false),
       weak_ptr_factory_(this) {
 #if !defined(OS_MACOSX)
   default_browser_worker_ = new ShellIntegration::DefaultBrowserWorker(this);
@@ -157,6 +163,11 @@ BrowserOptionsHandler::BrowserOptionsHandler()
   cloud_print_connector_ui_enabled_ = true;
 #endif
 #endif  // defined(ENABLE_FULL_PRINTING)
+
+#if defined(ENABLE_MDNS)
+  cloud_print_mdns_ui_enabled_ = !CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisableDeviceDiscovery);
+#endif  // defined(ENABLE_MDNS)
 }
 
 BrowserOptionsHandler::~BrowserOptionsHandler() {
@@ -335,6 +346,8 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_VIRTUAL_KEYBOARD_DESCRIPTION },
     { "accessibilityAlwaysShowMenu",
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SHOULD_ALWAYS_SHOW_MENU },
+    { "enableContentProtectionAttestation",
+      IDS_OPTIONS_ENABLE_CONTENT_PROTECTION_ATTESTATION },
     { "factoryResetHeading", IDS_OPTIONS_FACTORY_RESET_HEADING },
     { "factoryResetTitle", IDS_OPTIONS_FACTORY_RESET },
     { "factoryResetRestart", IDS_OPTIONS_FACTORY_RESET_BUTTON },
@@ -456,6 +469,9 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   values->SetString("accessibilityLearnMoreURL",
                     chrome::kChromeAccessibilityHelpURL);
 
+  values->SetString("contentProtectionAttestationLearnMoreURL",
+                    chrome::kAttestationForContentProtectionLearnMoreURL);
+
   // Creates magnifierList.
   scoped_ptr<base::ListValue> magnifier_list(new base::ListValue);
 
@@ -498,15 +514,12 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
 #endif
 
 #if defined(ENABLE_MDNS)
-bool cloud_print_mdns_options_shown =
-    !CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableDeviceDiscovery);
-#else
-bool cloud_print_mdns_options_shown = false;
+values->SetBoolean("cloudPrintHideNotificationsCheckbox",
+                   !local_discovery::PrivetNotificationService::IsEnabled());
 #endif
 
 values->SetBoolean("cloudPrintShowMDnsOptions",
-                   cloud_print_mdns_options_shown);
+                   cloud_print_mdns_ui_enabled_);
 
 values->SetString("cloudPrintLearnMoreURL", chrome::kCloudPrintLearnMoreURL);
 
@@ -633,8 +646,7 @@ void BrowserOptionsHandler::RegisterMessages() {
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(ENABLE_MDNS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableDeviceDiscovery)) {
+  if (cloud_print_mdns_ui_enabled_) {
     web_ui()->RegisterMessageCallback(
         "showCloudPrintDevicesPage",
         base::Bind(&BrowserOptionsHandler::ShowCloudPrintDevicesPage,
@@ -752,11 +764,13 @@ void BrowserOptionsHandler::InitializePage() {
   SetupProxySettingsSection();
 
 #if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
-  if (cloud_print_connector_ui_enabled_) {
-    SetupCloudPrintConnectorSection();
-    RefreshCloudPrintStatusFromService();
-  } else {
-    RemoveCloudPrintConnectorSection();
+  if (!cloud_print_mdns_ui_enabled_) {
+    if (cloud_print_connector_ui_enabled_) {
+      SetupCloudPrintConnectorSection();
+      RefreshCloudPrintStatusFromService();
+    } else {
+      RemoveCloudPrintConnectorSection();
+    }
   }
 #endif
 
@@ -1434,8 +1448,7 @@ void BrowserOptionsHandler::SetupMetricsReportingSettingVisibility() {
 
 void BrowserOptionsHandler::SetupPasswordGenerationSettingVisibility() {
   base::FundamentalValue visible(
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnablePasswordGeneration));
+      autofill::password_generation::IsPasswordGenerationEnabled());
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.setPasswordGenerationSettingVisibility", visible);
 }
@@ -1521,16 +1534,22 @@ void BrowserOptionsHandler::SetupAutoOpenFileTypes() {
 
 void BrowserOptionsHandler::SetupProxySettingsSection() {
 #if !defined(OS_CHROMEOS)
-  // Disable the button if proxy settings are managed by a sysadmin or
-  // overridden by an extension.
+  // Disable the button if proxy settings are managed by a sysadmin, overridden
+  // by an extension, or the browser is running in Windows Ash (on Windows the
+  // proxy settings dialog will open on the Windows desktop and be invisible
+  // to a user in Ash).
+  bool is_win_ash = false;
+#if defined(OS_WIN)
+  is_win_ash = (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH);
+#endif
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   const PrefService::Preference* proxy_config =
       pref_service->FindPreference(prefs::kProxy);
   bool is_extension_controlled = (proxy_config &&
                                   proxy_config->IsExtensionControlled());
 
-  base::FundamentalValue disabled(proxy_config &&
-                                  !proxy_config->IsUserModifiable());
+  base::FundamentalValue disabled(is_win_ash || (proxy_config &&
+                                  !proxy_config->IsUserModifiable()));
   base::FundamentalValue extension_controlled(is_extension_controlled);
   web_ui()->CallJavascriptFunction("BrowserOptions.setupProxySettingsSection",
                                    disabled, extension_controlled);

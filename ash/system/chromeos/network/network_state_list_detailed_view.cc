@@ -95,27 +95,6 @@ views::View* CreateInfoBubbleLine(const base::string16& text_label,
   return view;
 }
 
-// A bubble that cannot be activated.
-class NonActivatableSettingsBubble : public views::BubbleDelegateView {
- public:
-  NonActivatableSettingsBubble(views::View* anchor, views::View* content)
-      : views::BubbleDelegateView(anchor, views::BubbleBorder::TOP_RIGHT) {
-    set_use_focusless(true);
-    set_parent_window(ash::Shell::GetContainer(
-        anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
-        ash::internal::kShellWindowId_SettingBubbleContainer));
-    SetLayoutManager(new views::FillLayout());
-    AddChildView(content);
-  }
-
-  virtual ~NonActivatableSettingsBubble() {}
-
-  virtual bool CanActivate() const OVERRIDE { return false; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NonActivatableSettingsBubble);
-};
-
 }  // namespace
 
 
@@ -133,6 +112,38 @@ struct NetworkInfo {
   gfx::ImageSkia image;
   bool disable;
   bool highlight;
+};
+
+//------------------------------------------------------------------------------
+
+// A bubble which displays network info.
+class NetworkStateListDetailedView::InfoBubble
+    : public views::BubbleDelegateView {
+ public:
+  InfoBubble(views::View* anchor,
+             views::View* content,
+             NetworkStateListDetailedView* detailed_view)
+      : views::BubbleDelegateView(anchor, views::BubbleBorder::TOP_RIGHT),
+        detailed_view_(detailed_view) {
+    set_use_focusless(true);
+    set_parent_window(ash::Shell::GetContainer(
+        anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
+        ash::internal::kShellWindowId_SettingBubbleContainer));
+    SetLayoutManager(new views::FillLayout());
+    AddChildView(content);
+  }
+
+  virtual ~InfoBubble() {
+    detailed_view_->OnInfoBubbleDestroyed();
+  }
+
+  virtual bool CanActivate() const OVERRIDE { return false; }
+
+ private:
+  // Not owned.
+  NetworkStateListDetailedView* detailed_view_;
+
+  DISALLOW_COPY_AND_ASSIGN(InfoBubble);
 };
 
 //------------------------------------------------------------------------------
@@ -269,7 +280,7 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
   } else if (sender == proxy_settings_) {
     delegate->ChangeProxySettings();
   } else if (sender == other_mobile_) {
-    delegate->ShowOtherCellular();
+    delegate->ShowOtherNetworkDialog(shill::kTypeCellular);
   } else if (sender == toggle_debug_preferred_networks_) {
     list_type_ = (list_type_ == LIST_TYPE_NETWORK)
         ? LIST_TYPE_DEBUG_PREFERRED : LIST_TYPE_NETWORK;
@@ -278,9 +289,9 @@ void NetworkStateListDetailedView::ButtonPressed(views::Button* sender,
         FROM_HERE,
         base::Bind(&NetworkStateListDetailedView::Init, AsWeakPtr()));
   } else if (sender == other_wifi_) {
-    delegate->ShowOtherWifi();
+    delegate->ShowOtherNetworkDialog(shill::kTypeWifi);
   } else if (sender == other_vpn_) {
-    delegate->ShowOtherVPN();
+    delegate->ShowOtherNetworkDialog(shill::kTypeVPN);
   } else {
     NOTREACHED();
   }
@@ -779,8 +790,8 @@ void NetworkStateListDetailedView::ToggleInfoBubble() {
   if (ResetInfoBubble())
     return;
 
-  info_bubble_ = new NonActivatableSettingsBubble(
-      info_icon_, CreateNetworkInfoView());
+  info_bubble_ = new InfoBubble(
+      info_icon_, CreateNetworkInfoView(), this);
   views::BubbleDelegateView::CreateBubble(info_bubble_)->Show();
 }
 
@@ -790,6 +801,10 @@ bool NetworkStateListDetailedView::ResetInfoBubble() {
   info_bubble_->GetWidget()->Close();
   info_bubble_ = NULL;
   return true;
+}
+
+void NetworkStateListDetailedView::OnInfoBubbleDestroyed() {
+  info_bubble_ = NULL;
 }
 
 views::View* NetworkStateListDetailedView::CreateNetworkInfoView() {

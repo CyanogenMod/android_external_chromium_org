@@ -18,9 +18,9 @@ $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_local_path := $(LO
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(PWD)/prebuilts/sdk/17/android.jar $(GYP_TARGET_DEPENDENCIES)
-	@echo "Gyp action: Generating JNI bindings from  $(PWD)/prebuilts/sdk/17/android.jar/java/util/HashSet.class ($@)"
-	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(PWD)/prebuilts/sdk/17/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0
+$(gyp_shared_intermediate_dir)/content/jni/HashSet_jni.h: $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(PWD)/prebuilts/sdk/18/android.jar $(GYP_TARGET_DEPENDENCIES)
+	@echo "Gyp action: Generating JNI bindings from  $(PWD)/prebuilts/sdk/18/android.jar/java/util/HashSet.class ($@)"
+	$(hide)cd $(gyp_local_path)/content; mkdir -p $(gyp_shared_intermediate_dir)/content/jni; ../base/android/jni_generator/jni_generator.py -j "$(PWD)/prebuilts/sdk/18/android.jar" --input_file java/util/HashSet.class --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0
 
 
 
@@ -83,7 +83,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -163,7 +162,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

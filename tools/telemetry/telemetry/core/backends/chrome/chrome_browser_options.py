@@ -17,9 +17,6 @@ def CreateChromeBrowserOptions(br_options):
       browser_type.startswith('cros')):
     return CrosBrowserOptions(br_options)
 
-  if browser_type.startswith('android'):
-    return AndroidBrowserOptions(br_options)
-
   return br_options
 
 
@@ -37,11 +34,6 @@ class CrosBrowserOptions(ChromeBrowserOptions):
 
   def __init__(self, br_options):
     super(CrosBrowserOptions, self).__init__(br_options)
+    # Create a browser with oobe property.
+    self.create_browser_with_oobe = False
     self.auto_login = True
-
-
-class AndroidBrowserOptions(ChromeBrowserOptions):
-  """Android-specific browser options."""
-
-  def __init__(self, br_options):
-    super(AndroidBrowserOptions, self).__init__(br_options)

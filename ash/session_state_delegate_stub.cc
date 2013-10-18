@@ -37,6 +37,10 @@ bool SessionStateDelegateStub::IsScreenLocked() const {
   return screen_locked_;
 }
 
+bool SessionStateDelegateStub::ShouldLockScreenBeforeSuspending() const {
+  return false;
+}
+
 void SessionStateDelegateStub::LockScreen() {
   shell::CreateLockScreen();
   screen_locked_ = true;
@@ -82,6 +86,12 @@ void SessionStateDelegateStub::AddSessionStateObserver(
 
 void SessionStateDelegateStub::RemoveSessionStateObserver(
     ash::SessionStateObserver* observer) {
+}
+
+bool SessionStateDelegateStub::TransferWindowToDesktopOfUser(
+    aura::Window* window,
+    ash::MultiProfileIndex index) const {
+  return false;
 }
 
 }  // namespace ash

@@ -20,6 +20,11 @@ namespace shill_stub_helper {
 
 namespace {
 
+const char kDevicePathEthernet[] = "/device/eth1";
+const char kDevicePathWifi[] = "/device/wifi1";
+const char kDevicePathCellular[] = "/device/cellular1";
+const char kDevicePathWimax[] = "/device/wimax1";
+
 const char kStubPortalledWifiName[] = "Portalled Wifi";
 const char kStubPortalledWifiPath[] = "portalled_wifi";
 
@@ -67,19 +72,17 @@ void SetupDefaultEnvironment() {
 
   profiles->AddProfile(kSharedProfilePath, std::string());
 
-  // Add a wifi device.
-  devices->AddDevice("stub_wifi_device1", shill::kTypeWifi, "/device/wifi1");
-
-  // Add a cellular device. Used in SMS stub.
   devices->AddDevice(
-      "stub_cellular_device1", shill::kTypeCellular, "/device/cellular1");
-  devices->SetDeviceProperty("stub_cellular_device1",
+      kDevicePathEthernet, shill::kTypeEthernet, "stub_eth_device1");
+  devices->AddDevice(kDevicePathWifi, shill::kTypeWifi, "stub_wifi_device1");
+
+  devices->AddDevice(
+      kDevicePathCellular, shill::kTypeCellular, "stub_cellular_device1");
+  devices->SetDeviceProperty(kDevicePathCellular,
                              shill::kCarrierProperty,
                              base::StringValue(shill::kCarrierSprint));
 
-  // Add a wimax device.
-  devices->AddDevice(
-      "stub_wimax_device1", shill::kTypeWimax, "/device/wimax1");
+  devices->AddDevice(kDevicePathWimax, shill::kTypeWimax, "stub_wimax_device1");
 
   const bool add_to_visible = true;
   const bool add_to_watchlist = true;
@@ -191,6 +194,18 @@ void SetupDefaultEnvironment() {
       "vpn2", shill::kProviderProperty, provider_properties);
 
   manager->SortManagerServices();
+}
+
+std::string DevicePathForType(const std::string& type) {
+  if (type == shill::kTypeEthernet)
+    return kDevicePathEthernet;
+  if (type == shill::kTypeWifi)
+    return kDevicePathWifi;
+  if (type == shill::kTypeCellular)
+    return kDevicePathCellular;
+  if (type == shill::kTypeWimax)
+    return kDevicePathWimax;
+  return "";
 }
 
 }  // namespace shill_stub_helper

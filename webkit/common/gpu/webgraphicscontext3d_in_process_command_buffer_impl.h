@@ -5,8 +5,6 @@
 #ifndef WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 #define WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_
 
-#if defined(ENABLE_GPU)
-
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -76,10 +74,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual uint32_t lastFlushID();
 
-  virtual int width();
-  virtual int height();
-
-  virtual void reshape(int width, int height);
   virtual void reshapeWithScaleFactor(int width, int height, float scaleFactor);
 
   virtual void prepareTexture();
@@ -585,7 +579,6 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   WGC3Denum context_lost_reason_;
 
   WebKit::WebGraphicsContext3D::Attributes attributes_;
-  int cached_width_, cached_height_;
 
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
@@ -596,5 +589,4 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 }  // namespace gpu
 }  // namespace webkit
 
-#endif  // defined(ENABLE_GPU)
 #endif  // WEBKIT_COMMON_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_COMMAND_BUFFER_IMPL_H_

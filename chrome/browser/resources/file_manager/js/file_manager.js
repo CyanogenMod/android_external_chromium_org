@@ -29,7 +29,22 @@ function FileManager() {
 FileManager.THUMBNAIL_SHOW_DELAY = 100;
 
 FileManager.prototype = {
-  __proto__: cr.EventTarget.prototype
+  __proto__: cr.EventTarget.prototype,
+  get directoryModel() {
+    return this.directoryModel_;
+  },
+  get navigationList() {
+    return this.navigationList_;
+  },
+  get document() {
+    return this.document_;
+  },
+  get fileTransferController() {
+    return this.fileTransferController_;
+  },
+  get backgroundPage() {
+    return this.backgroundPage_;
+  }
 };
 
 /**
@@ -72,7 +87,7 @@ DialogType.isModal = function(type) {
 
 /**
  * @param {string} type Dialog type.
- * @return {boolean} Whther the type is open dialog.
+ * @return {boolean} Whether the type is open dialog.
  */
 DialogType.isOpenDialog = function(type) {
   return type == DialogType.SELECT_OPEN_FILE ||
@@ -80,7 +95,7 @@ DialogType.isOpenDialog = function(type) {
 };
 
 /**
- * Bottom magrin of the list and tree for transparent preview panel.
+ * Bottom margin of the list and tree for transparent preview panel.
  * @const
  */
 var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
@@ -102,12 +117,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   var DOUBLE_CLICK_TIMEOUT = 200;
 
-  var removeChildren = function(element) {
-    element.textContent = '';
-  };
-
   /**
-   * Update the elemenst to display the information about remainig space for
+   * Update the element to display the information about remaining space for
    * the storage.
    * @param {!Element} spaceInnerBar Block element for a percentage bar
    *                                 representing the remaining space.
@@ -177,34 +188,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }.bind(this));
     }.bind(this));
 
-    // TODO(yoshiki): Now the integration is always enabled. Remove this code
-    // when the feature is launched successfully in M31. Until then, we keep it
-    // just in case.
-    this.enableExperimentalWebstoreIntegration_ = true;
+    // TODO(yoshiki): Remove the flag when the feature is launched.
+    this.enableExperimentalWebstoreIntegration_ = false;
+    group.add(function(done) {
+      chrome.commandLinePrivate.hasSwitch(
+          'file-manager-enable-webstore-integration', function(flag) {
+        this.enableExperimentalWebstoreIntegration_ = flag;
+        done();
+      }.bind(this));
+    }.bind(this));
 
     group.run(callback);
-  };
-
-  /**
-   * Request local file system, resolve roots and init_ after that.
-   * Warning, you can't use DOM nor any external scripts here, since it may not
-   * be loaded yet. Functions in util.* and metrics.* are available and can
-   * be used.
-   *
-   * @param {function()} callback Completion callback.
-   * @private
-   */
-  FileManager.prototype.initFileSystem_ = function(callback) {
-    util.installFileErrorToString();
-
-    metrics.startInterval('Load.FileSystem');
-    chrome.fileBrowserPrivate.requestFileSystem(
-      'compatible',
-      function(filesystem) {
-        metrics.recordInterval('Load.FileSystem');
-        this.filesystem_ = filesystem;
-        callback();
-      }.bind(this));
   };
 
   /**
@@ -259,34 +253,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     dm.addEventListener('rescan-completed',
                         this.refreshCurrentDirectoryMetadata_.bind(this));
 
-    /**
-     * If |item| in |parentView| is behind the preview panel, scrolls up the
-     * parent view and make the item visible.
-     *
-     * @param {HTMLElement} item Item to be visible in the parent.
-     * @param {HTMLElement} parentView View contains |selectedItem|.
-     */
-    var ensureItemNotBehindPreviewPanel = function(item, parentView) {
-      var itemRect = item.getBoundingClientRect();
-      if (!itemRect)
-        return;
-      var itemBottom = itemRect.bottom;
-
-      var previewPanel = this.dialogDom_.querySelector('.preview-panel');
-      var previewPanelRects = previewPanel.getBoundingClientRect();
-      var panelHeight = previewPanelRects ? previewPanelRects.height : 0;
-
-      var listRect = parentView.getBoundingClientRect();
-      if (!listRect)
-        return;
-      var listBottom = listRect.bottom - panelHeight;
-
-      if (itemBottom > listBottom) {
-        var scrollOffset = itemBottom - listBottom;
-        parentView.scrollTop += scrollOffset;
-      }
-    }.bind(this);
-
     var sm = this.directoryModel_.getFileListSelection();
     sm.addEventListener('change', function() {
       if (sm.selectedIndexes.length != 1)
@@ -296,7 +262,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       var selectedItem = view.getListItemByIndex(sm.selectedIndex);
       if (!selectedItem)
         return;
-      ensureItemNotBehindPreviewPanel(selectedItem, view);
+      this.ensureItemNotBehindPreviewPanel_(selectedItem, view);
     }.bind(this));
 
     this.directoryTree_.addEventListener('change', function() {
@@ -304,7 +270,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       if (!selectedSubTree)
         return;
       var selectedItem = selectedSubTree.rowElement;
-      ensureItemNotBehindPreviewPanel(selectedItem, this.directoryTree_);
+      this.ensureItemNotBehindPreviewPanel_(selectedItem, this.directoryTree_);
     }.bind(this));
 
     var stateChangeHandler =
@@ -346,6 +312,39 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
+   * If |item| in |parentView| is behind the preview panel, scrolls up the
+   * parent view and make the item visible. This should be called when:
+   *  - the selected item is changed.
+   *  - the visibility of the the preview panel is changed.
+   *
+   * @param {HTMLElement} item Item to be visible in the parent.
+   * @param {HTMLElement} parentView View contains |selectedItem|.
+   * @private
+   */
+  FileManager.prototype.ensureItemNotBehindPreviewPanel_ =
+      function(item, parentView) {
+    var itemRect = item.getBoundingClientRect();
+    if (!itemRect)
+      return;
+
+    var listRect = parentView.getBoundingClientRect();
+    if (!listRect)
+      return;
+
+    var previewPanel = this.dialogDom_.querySelector('.preview-panel');
+    var previewPanelRect = previewPanel.getBoundingClientRect();
+    var panelHeight = previewPanelRect ? previewPanelRect.height : 0;
+
+    var itemBottom = itemRect.bottom;
+    var listBottom = listRect.bottom - panelHeight;
+
+    if (itemBottom > listBottom) {
+      var scrollOffset = itemBottom - listBottom;
+      parentView.scrollTop += scrollOffset;
+    }
+  };
+
+  /**
    * @private
    */
   FileManager.prototype.initDateTimeFormatters_ = function() {
@@ -357,7 +356,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initDataTransferOperations_ = function() {
-    this.fileOperationManager_ = new FileOperationManagerWrapper.getInstance();
+    this.fileOperationManager_ = FileOperationManagerWrapper.getInstance(
+        this.backgroundPage_);
 
     this.butterBar_ = new ButterBar(
         this.dialogDom_, this.fileOperationManager_);
@@ -428,15 +428,22 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.refreshRemainingSpace_.bind(this,
                                          false /* Without loading caption. */));
     this.dialogDom_.querySelector('#gear-menu').menuItemSelector =
-      'menuitem, hr';
+        'menuitem, hr';
     cr.ui.decorate(this.gearButton_, cr.ui.MenuButton);
 
     if (this.dialogType == DialogType.FULL_PAGE) {
+      // This is to prevent the buttons from stealing focus on mouse down.
+      var preventFocus = function(event) {
+        event.preventDefault();
+      };
+
       var maximizeButton = this.dialogDom_.querySelector('#maximize-button');
       maximizeButton.addEventListener('click', this.onMaximize.bind(this));
+      maximizeButton.addEventListener('mousedown', preventFocus);
 
       var closeButton = this.dialogDom_.querySelector('#close-button');
       closeButton.addEventListener('click', this.onClose.bind(this));
+      closeButton.addEventListener('mousedown', preventFocus);
     }
 
     this.syncButton.checkable = true;
@@ -445,7 +452,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.thumbnailViewButton_.checkable = true;
 
     if (util.platform.runningInBrowser()) {
-      // Supresses the default context menu.
+      // Suppresses the default context menu.
       this.dialogDom_.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -478,104 +485,25 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initCommands_ = function() {
+    this.commandHandler = new CommandHandler(this);
+
+    // TODO(hirono): Move the following block to the UI part.
     var commandButtons = this.dialogDom_.querySelectorAll('button[command]');
     for (var j = 0; j < commandButtons.length; j++)
       CommandButton.decorate(commandButtons[j]);
 
-    // TODO(dzvorygin): Here we use this hack, since 'hidden' is standard
-    // attribute and we can't use it's setter as usual.
-    cr.ui.Command.prototype.setHidden = function(value) {
-      this.__lookupSetter__('hidden').call(this, value);
-    };
-
-    var doc = this.document_;
-    var handler = new CommandHandler(doc);
-
-    // Required to handle the command outside of the container, on the footer.
-    // TODO(mtomasz): Remove after fixing crbug.com/275235.
-    handler.registerCommand('newfolder', Commands.newFolderCommand, this,
-                            this.directoryModel_);
-
-    handler.registerCommand('newwindow', Commands.newWindowCommand, this,
-                            this.directoryModel_);
-
-    handler.registerCommand('change-default-app',
-                            Commands.changeDefaultAppCommand, this);
-
-    handler.registerCommand('unmount', Commands.unmountCommand, this);
-
-    handler.registerCommand('import-photos', Commands.importCommand,
-                            this.navigationList_);
-
-    handler.registerCommand('format', Commands.formatCommand, this,
-                            this.directoryModel_);
-
-    handler.registerCommand('delete', Commands.deleteFileCommand, this);
-
-    handler.registerCommand('rename', Commands.renameFileCommand, this);
-
-    handler.registerCommand('volume-help', Commands.volumeHelpCommand, this);
-
-    handler.registerCommand('drive-buy-more-space',
-                            Commands.driveBuySpaceCommand, this);
-
-    handler.registerCommand('drive-clear-local-cache',
-                            Commands.driveClearCacheCommand, this);
-
-    handler.registerCommand('drive-go-to-drive',
-                            Commands.driveGoToDriveCommand, this);
-
-    handler.registerCommand('paste', Commands.pasteFileCommand, doc,
-                            this.fileTransferController_);
-
-    handler.registerCommand('open-with', Commands.openWithCommand, this);
-
-    handler.registerCommand('toggle-pinned', Commands.togglePinnedCommand,
-                            this);
-
-    handler.registerCommand('zip-selection', Commands.zipSelectionCommand, this,
-                            this.directoryModel_);
-
-    handler.registerCommand('share', Commands.shareCommand, this);
-
-    handler.registerCommand('create-folder-shortcut',
-                            Commands.createFolderShortcutCommand, this);
-
-    handler.registerCommand('remove-folder-shortcut',
-                            Commands.removeFolderShortcutCommand, this);
-
-    handler.registerCommand('search', Commands.searchCommand, this,
-                            this.dialogDom_.querySelector('#search-box'));
-
-    // Register commands with CTRL-1..9 shortcuts for switching between
-    // volumes.
-    for (var i = 1; i <= 9; i++) {
-      handler.registerCommand('volume-switch-' + i,
-                              Commands.volumeSwitchCommand,
-                              this.navigationList_,
-                              i);
-    }
-
-    handler.registerCommand('zoom-in', Commands.zoomInCommand);
-    handler.registerCommand('zoom-out', Commands.zoomOutCommand);
-    handler.registerCommand('zoom-reset', Commands.zoomResetCommand);
-
-    handler.registerCommand('cut', Commands.defaultCommand, doc);
-    handler.registerCommand('copy', Commands.defaultCommand, doc);
-
     var inputs = this.dialogDom_.querySelectorAll(
         'input[type=text], input[type=search], textarea');
-
-    for (i = 0; i < inputs.length; i++) {
+    for (var i = 0; i < inputs.length; i++) {
       cr.ui.contextMenuHandler.setContextMenu(inputs[i], this.textContextMenu_);
       this.registerInputCommands_(inputs[i]);
     }
 
     cr.ui.contextMenuHandler.setContextMenu(this.renameInput_,
-        this.textContextMenu_);
+                                            this.textContextMenu_);
     this.registerInputCommands_(this.renameInput_);
-
-    doc.addEventListener('command', this.setNoHover_.bind(this, true));
+    this.document_.addEventListener('command',
+                                    this.setNoHover_.bind(this, true));
   };
 
   /**
@@ -585,7 +513,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.registerInputCommands_ = function(node) {
-    var defaultCommand = Commands.defaultCommand;
     CommandUtil.forceDefaultHandler(node, 'cut');
     CommandUtil.forceDefaultHandler(node, 'copy');
     CommandUtil.forceDefaultHandler(node, 'paste');
@@ -593,7 +520,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     node.addEventListener('keydown', function(e) {
       if (util.getKeyModifiers(e) + e.keyCode == '191') {
         // If this key event is propagated, this is handled search command,
-        // which calls 'preventDefault' mehtod.
+        // which calls 'preventDefault' method.
         e.stopPropagation();
       }
     });
@@ -606,15 +533,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.initializeCore = function() {
     this.initializeQueue_.add(this.initGeneral_.bind(this), [], 'initGeneral');
     this.initializeQueue_.add(this.initStrings_.bind(this), [], 'initStrings');
-    this.initializeQueue_.add(
-        this.initPreferences_.bind(this), ['initGeneral'], 'initPreferences');
-    this.initializeQueue_.add(
-        this.initVolumeManager_.bind(this),
-        ['initPreferences'], 'initVolumeManager');
-    this.initializeQueue_.add(
-        this.initFileSystem_.bind(this),
-        ['initGeneral', 'initPreferences', 'initVolumeManager'],
-        'initFileSystem');
+    this.initializeQueue_.add(this.initBackgroundPage_.bind(this),
+                              [], 'initBackgroundPage');
+    this.initializeQueue_.add(this.initPreferences_.bind(this),
+                              ['initGeneral'], 'initPreferences');
+    this.initializeQueue_.add(this.initVolumeManager_.bind(this),
+                              ['initGeneral', 'initBackgroundPage'],
+                              'initVolumeManager');
 
     this.initializeQueue_.run();
   };
@@ -627,11 +552,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         ['initGeneral', 'initStrings'],
         'initEssentialUI');
     this.initializeQueue_.add(this.initAdditionalUI_.bind(this),
-        ['initEssentialUI'], 'initAdditionalUI');
+        ['initEssentialUI', 'initBackgroundPage'], 'initAdditionalUI');
     this.initializeQueue_.add(
         this.initFileSystemUI_.bind(this),
-        ['initFileSystem', 'initAdditionalUI'],
-        'initFileSystemUI');
+        ['initAdditionalUI', 'initPreferences'], 'initFileSystemUI');
 
     // Run again just in case if all pending closures have completed and the
     // queue has stopped and monitor the completion.
@@ -646,6 +570,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initGeneral_ = function(callback) {
+    // Initialize the application state.
     if (window.appState) {
       this.params_ = window.appState.params || {};
       this.defaultPath = window.appState.defaultPath;
@@ -681,20 +606,41 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
+   * Initialize the background page.
+   * @param {function()} callback Completion callback.
+   * @private
+   */
+  FileManager.prototype.initBackgroundPage_ = function(callback) {
+    chrome.runtime.getBackgroundPage(function(backgroundPage) {
+      this.backgroundPage_ = backgroundPage;
+      callback();
+    }.bind(this));
+  };
+
+  /**
    * Initializes the VolumeManager instance.
    * @param {function()} callback Completion callback.
    * @private
    */
   FileManager.prototype.initVolumeManager_ = function(callback) {
-    VolumeManager.getInstance(function(volumeManager) {
-      this.volumeManager_ = volumeManager;
+    // Auto resolving to local path does not work for folders (e.g., dialog for
+    // loading unpacked extensions).
+    var noLocalPathResolution =
+      this.params_.type == DialogType.SELECT_FOLDER ||
+      this.params_.type == DialogType.SELECT_UPLOAD_FOLDER;
 
-      // Mount Drive if enabled.
-      // TODO(hidehiko): Mounting state of Drive file system should be
-      // handled by C++ backend side.
-      volumeManager.setDriveEnabled(this.isDriveEnabled());
-      callback();
-    }.bind(this));
+    // If this condition is false, VolumeManagerWrapper hides all drive
+    // related event and data, even if Drive is enabled on preference.
+    // In other words, even if Drive is disabled on preference but Files.app
+    // should show Drive when it is re-enabled, then the value should be set to
+    // true.
+    // Note that the Drive enabling preference change is listened by
+    // DriveIntegrationService, so here we don't need to take care about it.
+    var driveEnabled =
+        !noLocalPathResolution || !this.params_.shouldReturnLocalPath;
+    this.volumeManager_ = new VolumeManagerWrapper(
+        driveEnabled, this.backgroundPage_);
+    callback();
   };
 
   /**
@@ -730,7 +676,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
          DialogType.FULL_PAGE]);
 
     this.selectionHandler_ = null;
-    this.ctrlKeyPressed_ = false;
 
     this.metadataCache_ = MetadataCache.createFull();
 
@@ -799,6 +744,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.initAdditionalUI_ = function(callback) {
     this.initDialogs_();
+    this.ui_.initAdditionalUI();
 
     this.dialogDom_.addEventListener('drop', function(e) {
       // Prevent opening an URL by dropping it onto the page.
@@ -840,11 +786,38 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.previewPanel_.breadcrumbs.addEventListener(
          'pathclick', this.onBreadcrumbClick_.bind(this));
 
+    // Initialize progress center panel.
     this.progressCenterPanel_ = new ProgressCenterPanel(
-        dom.querySelector('#progress-center'));
+        dom.querySelector('#progress-center'),
+        this.backgroundPage_.progressCenter.requestCancel.bind(
+            this.backgroundPage_.progressCenter));
+    var initialItems = this.backgroundPage_.progressCenter.applicationItems;
+    for (var i = 0; i < initialItems.length; i++) {
+      this.progressCenterPanel_.updateItem(
+          initialItems[i],
+          this.backgroundPage_.progressCenter.getSummarizedItem());
+    }
+    this.backgroundPage_.progressCenter.addEventListener(
+        ProgressCenterEvent.ITEM_ADDED,
+        function(event) {
+          this.progressCenterPanel_.updateItem(
+              event.item,
+              this.backgroundPage_.progressCenter.getSummarizedItem());
+        }.bind(this));
+    this.backgroundPage_.progressCenter.addEventListener(
+        ProgressCenterEvent.ITEM_UPDATED,
+        function(event) {
+          this.progressCenterPanel_.updateItem(
+              event.item,
+              this.backgroundPage_.progressCenter.getSummarizedItem());
+        }.bind(this));
+    this.backgroundPage_.progressCenter.addEventListener(
+        ProgressCenterEvent.RESET,
+        function(event) {
+          this.progressCenterPanel_.reset();
+        }.bind(this));
 
     this.document_.addEventListener('keydown', this.onKeyDown_.bind(this));
-    this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
 
     // This capturing event is only used to distinguish focusing using
     // keyboard from focusing using mouse.
@@ -885,24 +858,30 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.dialogContainer_ = this.dialogDom_.querySelector('.dialog-container');
 
     this.syncButton = this.dialogDom_.querySelector('#drive-sync-settings');
-    this.syncButton.addEventListener('activate', this.onDrivePrefClick_.bind(
+    this.syncButton.addEventListener('click', this.onDrivePrefClick_.bind(
         this, 'cellularDisabled', false /* not inverted */));
 
     this.hostedButton = this.dialogDom_.querySelector('#drive-hosted-settings');
-    this.hostedButton.addEventListener('activate', this.onDrivePrefClick_.bind(
+    this.hostedButton.addEventListener('click', this.onDrivePrefClick_.bind(
         this, 'hostedFilesDisabled', true /* inverted */));
 
     this.detailViewButton_ =
         this.dialogDom_.querySelector('#detail-view');
-    this.detailViewButton_.addEventListener('activate',
+    this.detailViewButton_.addEventListener('click',
         this.onDetailViewButtonClick_.bind(this));
 
     this.thumbnailViewButton_ =
         this.dialogDom_.querySelector('#thumbnail-view');
-    this.thumbnailViewButton_.addEventListener('activate',
+    this.thumbnailViewButton_.addEventListener('click',
         this.onThumbnailViewButtonClick_.bind(this));
 
     cr.ui.ComboButton.decorate(this.taskItems_);
+    this.taskItems_.showMenu = function(shouldSetFocus) {
+      // Prevent the empty menu from opening.
+      if (!this.menu.length)
+        return;
+      cr.ui.ComboButton.prototype.showMenu.call(this, shouldSetFocus);
+    };
     this.taskItems_.addEventListener('select',
         this.onTaskItemClicked_.bind(this));
 
@@ -911,76 +890,30 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.filePopup_ = null;
 
-    this.searchBoxWrapper_ =
-        this.dialogDom_.querySelector('.search-box-wrapper');
-    this.searchBox_ = this.dialogDom_.querySelector('#search-box');
+    this.searchBoxWrapper_ = this.ui_.searchBox.element;
+    this.searchBox_ = this.ui_.searchBox.inputElement;
     this.searchBox_.addEventListener(
         'input', this.onSearchBoxUpdate_.bind(this));
-    this.searchBox_.addEventListener(
-        'keydown', this.onSearchBoxKeyDown_.bind(this));
-    this.searchTextMeasure_ = new TextMeasure(this.searchBox_);
-    this.searchIcon_ = this.dialogDom_.querySelector('#search-icon');
-    this.searchIcon_.addEventListener(
-        'click',
-        function() { this.searchBox_.focus(); }.bind(this));
-    this.searchClearButton_ =
-        this.dialogDom_.querySelector('#search-clear-button');
-    this.searchClearButton_.addEventListener(
-        'click',
-        function() {
-          this.searchBox_.value = '';
-          this.onSearchBoxUpdate_();
-        }.bind(this));
+    this.ui_.searchBox.clearButton.addEventListener(
+        'click', this.onSearchClearButtonClick_.bind(this));
+
     this.lastSearchQuery_ = '';
 
-    var autocompleteList = new cr.ui.AutocompleteList();
-    autocompleteList.id = 'autocomplete-list';
-    autocompleteList.autoExpands = true;
-    autocompleteList.requestSuggestions =
+    this.autocompleteList_ = this.ui_.searchBox.autocompleteList;
+    this.autocompleteList_.requestSuggestions =
         this.requestAutocompleteSuggestions_.bind(this);
-    // function(item) {}.bind(this) does not work here, as it's a constructor.
-    var self = this;
-    autocompleteList.itemConstructor = function(item) {
-      return self.createAutocompleteListItem_(item);
-    };
 
-    // Do nothing when a suggestion is selected.
-    autocompleteList.handleSelectedSuggestion = function(selectedItem) {};
     // Instead, open the suggested item when Enter key is pressed or
     // mouse-clicked.
-    autocompleteList.handleEnterKeydown = function(event) {
+    this.autocompleteList_.handleEnterKeydown = function(event) {
       this.openAutocompleteSuggestion_();
       this.lastAutocompleteQuery_ = '';
       this.autocompleteList_.suggestions = [];
     }.bind(this);
-    autocompleteList.addEventListener('mousedown', function(event) {
+    this.autocompleteList_.addEventListener('mousedown', function(event) {
       this.openAutocompleteSuggestion_();
       this.lastAutocompleteQuery_ = '';
       this.autocompleteList_.suggestions = [];
-    }.bind(this));
-    autocompleteList.addEventListener('mouseover', function(event) {
-      // Change the selection by a mouse over instead of just changing the
-      // color of moused over element with :hover in CSS. Here's why:
-      //
-      // 1) The user selects an item A with up/down keys (item A is highlighted)
-      // 2) Then the user moves the cursor to another item B
-      //
-      // If we just change the color of moused over element (item B), both
-      // the item A and B are highlighted. This is bad. We should change the
-      // selection so only the item B is highlighted.
-      if (event.target.itemInfo)
-        autocompleteList.selectedItem = event.target.itemInfo;
-    }.bind(this));
-
-    var container = this.document_.querySelector('.dialog-header');
-    container.appendChild(autocompleteList);
-    this.autocompleteList_ = autocompleteList;
-
-    this.searchBox_.addEventListener('focus', function(event) {
-      this.autocompleteList_.attachToInput(this.searchBox_);
-    }.bind(this));
-    this.searchBox_.addEventListener('blur', function(event) {
-      this.autocompleteList_.detach();
     }.bind(this));
 
     this.defaultActionMenuItem_ =
@@ -992,7 +925,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.driveBuyMoreStorageCommand_ =
         this.dialogDom_.querySelector('#drive-buy-more-space');
 
-    this.defaultActionMenuItem_.addEventListener('activate',
+    this.defaultActionMenuItem_.addEventListener('click',
         this.dispatchSelectionAction_.bind(this));
 
     this.initFileTypeFilter_();
@@ -1048,14 +981,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         this.onWatcherMetadataChanged_.bind(this));
 
     this.directoryModel_ = new DirectoryModel(
-        this.filesystem_.root,
         singleSelection,
         this.fileFilter_,
         this.fileWatcher_,
         this.metadataCache_,
         this.volumeManager_,
         showSpecialSearchRoots);
-    this.directoryModel_.start();
 
     this.folderShortcutsModel_ = new FolderShortcutsDataModel();
 
@@ -1094,6 +1025,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // This event is published by DragSelector because drag end event is not
     // published at the end of drag selection.
     this.table_.list.addEventListener('dragselectionend', dragEndBound);
+    this.grid_.addEventListener('dragselectionend', dragEndBound);
 
     // TODO(mtomasz, yoshiki): Create navigation list earlier, and here just
     // attach the directory model.
@@ -1145,20 +1077,21 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
                             this.volumeManager_,
                             this.directoryModel_);
     this.navigationList_.fileManager = this;
-    this.navigationList_.dataModel =
-        new NavigationListModel(this.filesystem_,
-                                this.directoryModel_.getRootsList(),
-                                this.folderShortcutsModel_);
+    this.navigationList_.dataModel = new NavigationListModel(
+        this.volumeManager_, this.folderShortcutsModel_);
   };
 
   /**
    * @private
    */
   FileManager.prototype.updateMiddleBarVisibility_ = function() {
-    var currentPath = this.directoryModel_.getCurrentDirPath();
+    var entry = this.directoryModel_.getCurrentDirEntry();
+    if (!entry)
+      return;
+
     var driveVolume = this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE);
     var visible =
-        DirectoryTreeUtil.isEligiblePathForDirectoryTree(currentPath) &&
+        DirectoryTreeUtil.isEligiblePathForDirectoryTree(entry.fullPath) &&
         driveVolume && !driveVolume.error;
     this.dialogDom_.
         querySelector('.dialog-middlebar-contents').hidden = !visible;
@@ -1200,7 +1133,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     else
       targetElement = this.currentList_;
 
-    if (targetElement.tabIndex != -1)
+    // Hack: if the tabIndex is disabled, we can assume a modal dialog is
+    // shown. Focus to a button on the dialog instead.
+    if (!targetElement.hasAttribute('tabIndex') || targetElement.tabIndex == -1)
+      targetElement = document.querySelector('button:not([tabIndex="-1"])');
+
+    if (targetElement)
       targetElement.focus();
   };
 
@@ -1347,7 +1285,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * images of new entries.
    * See also FileOperationManager.EventRouter.
    *
-   * @param {cr.Event} event An event for the entry change.
+   * @param {Event} event An event for the entry change.
    * @private
    */
   FileManager.prototype.onEntryChanged_ = function(event) {
@@ -1467,10 +1405,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     if (this.navigationList_)
       this.navigationList_.redraw();
 
-    // Hide the search box if there is not enough space.
-    this.searchBoxWrapper_.classList.toggle(
-        'too-short',
-        this.searchBoxWrapper_.clientWidth < 100);
+    this.ui_.searchBox.updateSizeRelatedStyle();
 
     this.previewPanel_.breadcrumbs.truncate();
   };
@@ -1489,6 +1424,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onPreviewPanelVisibilityChange_ = function() {
+    // This method may be called on initialization. Some object may not be
+    // initialized.
+
     var panelHeight = this.previewPanel_.visible ?
         this.previewPanel_.height : 0;
     if (this.grid_)
@@ -1497,6 +1435,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.table_.setBottomMarginForPanel(panelHeight);
     if (this.directoryTree_)
       this.directoryTree_.setBottomMarginForPanel(panelHeight);
+
+    // Make sure that the selected item is not behind the preview panel.
+    if (this.directoryModel_) {
+      var sm = this.directoryModel_.getFileListSelection();
+      var view = (this.listType_ == FileManager.ListType.DETAIL) ?
+          this.table_.list : this.grid_;
+      var selectedItem = view.getListItemByIndex(sm.selectedIndex);
+      if (!selectedItem)
+        return;
+      this.ensureItemNotBehindPreviewPanel_(selectedItem, view);
+    }
   };
 
   /**
@@ -1544,32 +1493,21 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       path = PathUtil.DEFAULT_DIRECTORY + '/' + path;
     }
 
-    if (PathUtil.getRootType(path) === RootType.DRIVE) {
-      if (!this.isDriveEnabled()) {
-        var leafName = path.substr(path.indexOf('/') + 1);
-        path = PathUtil.DEFAULT_DIRECTORY + '/' + leafName;
-        this.finishSetupCurrentDirectory_(path);
+    var tracker = this.directoryModel_.createDirectoryChangeTracker();
+    tracker.start();
+    this.volumeManager_.ensureInitialized(function() {
+      tracker.stop();
+      if (tracker.hasChanged)
         return;
-      }
 
-      var tracker = this.directoryModel_.createDirectoryChangeTracker();
-      var onVolumeManagerReady = function() {
-        this.volumeManager_.removeEventListener('ready', onVolumeManagerReady);
-        tracker.stop();
-        if (!tracker.hasChanged)
-          this.finishSetupCurrentDirectory_(path);
-      }.bind(this);
+      // If Drive is disabled but the path points to Drive's entry,
+      // fallback to DEFAULT_DIRECTORY.
+      if (PathUtil.isDriveBasedPath(path) &&
+          !this.volumeManager_.getVolumeInfo(RootDirectory.DRIVE))
+        path = PathUtil.DEFAULT_DIRECTORY + '/' + PathUtil.basename(path);
 
-      tracker.start();
-      if (this.volumeManager_.isReady()) {
-        onVolumeManagerReady();
-      } else {
-        // Wait until the VolumeManager gets ready.
-        this.volumeManager_.addEventListener('ready', onVolumeManagerReady);
-      }
-    } else {
       this.finishSetupCurrentDirectory_(path);
-    }
+    }.bind(this));
   };
 
   /**
@@ -1698,6 +1636,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.refreshCurrentDirectoryMetadata_ = function() {
     var entries = this.directoryModel_.getFileList().slice();
     var directoryEntry = this.directoryModel_.getCurrentDirEntry();
+    if (!directoryEntry)
+      return;
     // We don't pass callback here. When new metadata arrives, we have an
     // observer registered to update the UI.
 
@@ -1804,13 +1744,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * @return {boolean} True if the ctrl key is pressed now.
-   */
-  FileManager.prototype.isCtrlKeyPressed = function() {
-    return this.ctrlKeyPressed_;
-  };
-
-  /**
    * Overrides default handling for clicks on hyperlinks.
    * In a packaged apps links with targer='_blank' open in a new tab by
    * default, other links do not open at all.
@@ -1894,9 +1827,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       self.initDateTimeFormatters_();
       self.refreshCurrentDirectoryMetadata_();
 
-      var isDriveEnabled = self.isDriveEnabled();
-      self.volumeManager_.setDriveEnabled(isDriveEnabled);
-
       if (prefs.cellularDisabled)
         self.syncButton.setAttribute('checked', '');
       else
@@ -1917,10 +1847,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   FileManager.prototype.onDriveConnectionChanged_ = function() {
     var connection = this.volumeManager_.getDriveConnectionState();
-    this.updateCommands();
+    if (this.commandHandler)
+      this.commandHandler.updateAvailability();
     if (this.dialogContainer_)
       this.dialogContainer_.setAttribute('connection', connection.type);
     this.shareDialog_.hideWithResult(ShareDialog.Result.NETWORK_ERROR);
+    this.suggestAppsDialog.onDriveConnectionChanged(connection.type);
   };
 
   /**
@@ -1932,7 +1864,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.isDriveOnMeteredConnection = function() {
     var connection = this.volumeManager_.getDriveConnectionState();
-    return connection.type == VolumeManager.DriveConnectionType.METERED;
+    return connection.type == util.DriveConnectionType.METERED;
   };
 
   /**
@@ -1943,18 +1875,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.isDriveOffline = function() {
     var connection = this.volumeManager_.getDriveConnectionState();
-    return connection.type == VolumeManager.DriveConnectionType.OFFLINE;
-  };
-
-  FileManager.prototype.isDriveEnabled = function() {
-    // Auto resolving to local path does not work for folders (e.g., dialog for
-    // loading unpacked extensions).
-    var noLocalPathResolution =
-      this.params_.type == DialogType.SELECT_FOLDER ||
-      this.params_.type == DialogType.SELECT_UPLOAD_FOLDER;
-    if (noLocalPathResolution && this.params_.shouldReturnLocalPath)
-      return false;
-    return this.preferences_.driveEnabled;
+    return connection.type == util.DriveConnectionType.OFFLINE;
   };
 
   FileManager.prototype.isOnReadonlyDirectory = function() {
@@ -2049,8 +1970,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @return {?string} The full path of the current directory.
    */
   FileManager.prototype.getCurrentDirectory = function() {
-    return this.directoryModel_ &&
-        this.directoryModel_.getCurrentDirPath();
+    return this.directoryModel_ && this.directoryModel_.getCurrentDirPath();
   };
 
   /**
@@ -2059,7 +1979,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.getCurrentDirectoryURL = function() {
     return this.directoryModel_ &&
-        this.directoryModel_.getCurrentDirectoryURL();
+           this.directoryModel_.getCurrentDirectoryURL();
   };
 
   /**
@@ -2069,8 +1989,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    *     not set.
    */
   FileManager.prototype.getCurrentDirectoryEntry = function() {
-    return this.directoryModel_ &&
-        this.directoryModel_.getCurrentDirEntry();
+    return this.directoryModel_ && this.directoryModel_.getCurrentDirEntry();
   };
 
   /**
@@ -2244,9 +2163,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             this.alert.showHtml(filename, text, function() {});
           }.bind(this);
 
-          // TODO(yoshiki): Now the integration is always enabled. Remove this
-          // code when the feature is launched successfully in M31.
+          // TODO(yoshiki): Remove the flag when the feature is launched.
           if (!this.enableExperimentalWebstoreIntegration_) {
+            showAlert();
+            return;
+          }
+
+          if (this.isDriveOffline()) {
             showAlert();
             return;
           }
@@ -2356,17 +2279,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Updates search box value when directory gets changed.
-   * @private
-   */
-  FileManager.prototype.updateSearchBoxOnDirChange_ = function() {
-    if (!this.searchBox_.disabled) {
-      this.searchBox_.value = '';
-      this.updateSearchBoxStyles_();
-    }
-  };
-
-  /**
    * Update the gear menu.
    * @private
    */
@@ -2420,12 +2332,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   /**
    * Update the UI when the current directory changes.
    *
-   * @param {cr.Event} event The directory-changed event.
+   * @param {Event} event The directory-changed event.
    * @private
    */
   FileManager.prototype.onDirectoryChanged_ = function(event) {
     this.selectionHandler_.onFileSelectionChanged();
-    this.updateSearchBoxOnDirChange_();
+    this.ui_.searchBox.clear();
     util.updateAppState(this.getCurrentDirectory());
 
     // If the current directory is moved from the device's volume, do not
@@ -2435,25 +2347,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             PathUtil.getRootPath(event.newDirEntry.fullPath))
       this.closeOnUnmount_ = false;
 
-    this.updateCommands();
+    if (this.commandHandler)
+      this.commandHandler.updateAvailability();
     this.updateUnformattedDriveStatus_();
     this.updateTitle_();
     this.updateGearMenu_();
     this.previewPanel_.currentPath_ = this.getCurrentDirectory();
-  };
-
-  /**
-   * Updates commands' states by emiting canExecute events. Should be used
-   * only if there is need to reevaluate states without an user action, eg.
-   * external events.
-   */
-  FileManager.prototype.updateCommands = function() {
-    var commands = this.dialogDom_.querySelectorAll('command');
-    for (var i = 0; i < commands.length; i++) {
-      // Commands may not have been decorated yet.
-      if (commands[i].canExecuteChange)
-        commands[i].canExecuteChange();
-    }
   };
 
   // TODO(haruki): Rename this method. "Drive" here does not refer
@@ -2466,7 +2365,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.dialogDom_.setAttribute('unformatted', '');
 
       var errorNode = this.dialogDom_.querySelector('#format-panel > .error');
-      if (volumeInfo.error == VolumeManager.Error.UNSUPPORTED_FILESYSTEM) {
+      if (volumeInfo.error == util.VolumeError.UNSUPPORTED_FILESYSTEM) {
         errorNode.textContent = str('UNSUPPORTED_FILESYSTEM_WARNING');
       } else {
         errorNode.textContent = str('UNKNOWN_FILESYSTEM_WARNING');
@@ -2474,7 +2373,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
       // Update 'canExecute' for format command so the format button's disabled
       // property is properly set.
-      this.updateCommands();
+      if (this.commandHandler)
+        this.commandHandler.updateAvailability();
     } else {
       this.dialogDom_.removeAttribute('unformatted');
     }
@@ -2500,6 +2400,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.onUnload_ = function() {
     if (this.directoryModel_)
       this.directoryModel_.dispose();
+    if (this.volumeManager_)
+      this.volumeManager_.dispose();
     if (this.filePopup_ &&
         this.filePopup_.contentWindow &&
         this.filePopup_.contentWindow.unload)
@@ -2701,12 +2603,13 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onScanStarted_ = function() {
-    if (this.scanInProgress_ && !this.scanUpdatedAtLeastOnceOrCompleted_) {
+    if (this.scanInProgress_) {
       this.table_.list.endBatchUpdates();
       this.grid_.endBatchUpdates();
     }
 
-    this.updateCommands();
+    if (this.commandHandler)
+      this.commandHandler.updateAvailability();
     this.table_.list.startBatchUpdates();
     this.grid_.startBatchUpdates();
     this.scanInProgress_ = true;
@@ -2738,25 +2641,28 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    this.updateCommands();
+    if (this.commandHandler)
+      this.commandHandler.updateAvailability();
     this.hideSpinnerLater_();
     this.refreshCurrentDirectoryMetadata_();
+
+    if (this.scanUpdatedTimer_) {
+      clearTimeout(this.scanUpdatedTimer_);
+      this.scanUpdatedTimer_ = null;
+    }
 
     // To avoid flickering postpone updating the ui by a small amount of time.
     // There is a high chance, that metadata will be received within 50 ms.
     this.scanCompletedTimer_ = setTimeout(function() {
       // Check if batch updates are already finished by onScanUpdated_().
-      if (this.scanUpdatedAtLeastOnceOrCompleted_)
-        return;
-      this.scanUpdatedAtLeastOnceOrCompleted_ = true;
-      this.scanInProgress_ = false;
-      if (this.scanUpdatedTimer_) {
-        clearTimeout(this.scanUpdatedTimer_);
-        this.scanUpdatedTimer_ = null;
+      if (!this.scanUpdatedAtLeastOnceOrCompleted_) {
+        this.scanUpdatedAtLeastOnceOrCompleted_ = true;
+        this.updateMiddleBarVisibility_();
       }
+
+      this.scanInProgress_ = false;
       this.table_.list.endBatchUpdates();
       this.grid_.endBatchUpdates();
-      this.updateMiddleBarVisibility_();
       this.scanCompletedTimer_ = null;
     }.bind(this), 50);
   };
@@ -2770,26 +2676,26 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    // We need to hide the spinner only once.
-    if (this.scanUpdatedAtLeastOnceOrCompleted_ || this.scanUpdatedTimer_)
+    if (this.scanUpdatedTimer_ || this.scanCompletedTimer_)
       return;
 
     // Show contents incrementally by finishing batch updated, but only after
     // 200ms elapsed, to avoid flickering when it is not necessary.
     this.scanUpdatedTimer_ = setTimeout(function() {
       // We need to hide the spinner only once.
-      if (this.scanUpdatedAtLeastOnceOrCompleted_)
-        return;
-      if (this.scanCompletedTimer_) {
-        clearTimeout(this.scanCompletedTimer_);
-        this.scanCompletedTimer_ = null;
+      if (!this.scanUpdatedAtLeastOnceOrCompleted_) {
+        this.scanUpdatedAtLeastOnceOrCompleted_ = true;
+        this.hideSpinnerLater_();
+        this.updateMiddleBarVisibility_();
       }
-      this.scanUpdatedAtLeastOnceOrCompleted_ = true;
-      this.scanInProgress_ = false;
-      this.hideSpinnerLater_();
-      this.table_.list.endBatchUpdates();
-      this.grid_.endBatchUpdates();
-      this.updateMiddleBarVisibility_();
+
+      // Update the UI.
+      if (this.scanInProgress_) {
+        this.table_.list.endBatchUpdates();
+        this.grid_.endBatchUpdates();
+        this.table_.list.startBatchUpdates();
+        this.grid_.startBatchUpdates();
+      }
       this.scanUpdatedTimer_ = null;
     }.bind(this), 200);
   };
@@ -2803,7 +2709,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    this.updateCommands();
+    if (this.commandHandler)
+      this.commandHandler.updateAvailability();
     this.hideSpinnerLater_();
     if (this.scanCompletedTimer_) {
       clearTimeout(this.scanCompletedTimer_);
@@ -2816,11 +2723,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // Finish unfinished batch updates.
     if (!this.scanUpdatedAtLeastOnceOrCompleted_) {
       this.scanUpdatedAtLeastOnceOrCompleted_ = true;
-      this.scanInProgress_ = false;
-      this.table_.list.endBatchUpdates();
-      this.grid_.endBatchUpdates();
       this.updateMiddleBarVisibility_();
     }
+
+    this.scanInProgress_ = false;
+    this.table_.list.endBatchUpdates();
+    this.grid_.endBatchUpdates();
   };
 
   /**
@@ -2941,10 +2849,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }
 
     switch (util.getKeyModifiers(event) + event.keyCode) {
-      case 'Ctrl-17':  // Ctrl => Show hidden setting
-        this.setCtrlKeyPressed_(true);
-        return;
-
       case 'Ctrl-190':  // Ctrl-. => Toggle filter files.
         this.fileFilter_.setFilterHidden(
             !this.fileFilter_.isFilterHiddenOn());
@@ -2966,24 +2870,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           this.cancelButton_.click();
         }
         break;
-    }
-  };
-
-  /**
-   * KeyUp event handler for the document.
-   * @param {Event} event Key event.
-   * @private
-   */
-  FileManager.prototype.onKeyUp_ = function(event) {
-    if (event.srcElement === this.renameInput_) {
-      // Ignore keydown handler in the rename input box.
-      return;
-    }
-
-    switch (util.getKeyModifiers(event) + event.keyCode) {
-      case '17':  // Ctrl => Hide hidden setting
-        this.setCtrlKeyPressed_(false);
-        return;
     }
   };
 
@@ -3482,7 +3368,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.onSearchBoxUpdate_ = function(event) {
     var searchString = this.searchBox_.value;
 
-    this.updateSearchBoxStyles_();
     if (this.isOnDrive()) {
       // When the search text is changed, finishes the search and showes back
       // the last directory by passing an empty string to
@@ -3501,37 +3386,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Handles special keys such as Escape on the search box.
-   *
-   * @param {Event} event The keydown event.
+   * Handle the search clear button click.
    * @private
    */
-  FileManager.prototype.onSearchBoxKeyDown_ = function(event) {
-    // Handle only Esc key now.
-    if (event.keyCode != 27) return;
-    if (this.searchBox_.value) return;
-    var currentList = this.listType_ == FileManager.ListType.DETAIL ?
-        this.table_.list : this.grid_;
-    currentList.focus();
-    if (currentList.dataModel.length != 0 &&
-        currentList.selectionModel.selectedIndex == -1) {
-      currentList.selectionModel.selectedIndex = 0;
-    }
-  };
-
-  /**
-   * Updates search box's CSS classes.
-   * These classes are refered from CSS.
-   *
-   * @private
-   */
-  FileManager.prototype.updateSearchBoxStyles_ = function() {
-    var TEXT_BOX_PADDING = 16; // in px.
-    this.searchBoxWrapper_.classList.toggle('has-text',
-                                            !!this.searchBox_.value);
-    var width = this.searchTextMeasure_.getWidth(this.searchBox_.value) +
-                TEXT_BOX_PADDING;
-    this.searchBox_.style.width = width + 'px';
+  FileManager.prototype.onSearchClearButtonClick_ = function() {
+    this.ui_.searchBox.clear();
+    this.onSearchBoxUpdate_();
   };
 
   /**
@@ -3646,39 +3506,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Creates a ListItem element for autocomple.
-   *
-   * @param {Object} item An object representing a suggestion.
-   * @return {HTMLElement} Element containing the autocomplete suggestions.
-   * @private
-   */
-  FileManager.prototype.createAutocompleteListItem_ = function(item) {
-    var li = new cr.ui.ListItem();
-    li.itemInfo = item;
-
-    var icon = this.document_.createElement('div');
-    icon.className = 'detail-icon';
-
-    var text = this.document_.createElement('div');
-    text.className = 'detail-text';
-
-    if (item.isHeaderItem) {
-      icon.setAttribute('search-icon');
-      text.innerHTML =
-          strf('SEARCH_DRIVE_HTML', util.htmlEscape(item.searchQuery));
-    } else {
-      var iconType = FileType.getIcon(item.entry);
-      icon.setAttribute('file-type-icon', iconType);
-      // highlightedBaseName is a piece of HTML with meta characters properly
-      // escaped. See the comment at fileBrowserPrivate.searchDriveMetadata().
-      text.innerHTML = item.highlightedBaseName;
-    }
-    li.appendChild(icon);
-    li.appendChild(text);
-    return li;
-  };
-
-  /**
    * Opens the currently selected suggestion item.
    * @private
    */
@@ -3730,7 +3557,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
                                                    onDirectoryChanged);
           self.directoryModel_.selectEntry(entry.name);
           openIt();
-        }
+        };
         // changeDirectory() returns immediately. We should wait until the
         // directory scan is complete.
         self.directoryModel_.addEventListener('scan-completed',
@@ -3907,19 +3734,5 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.preferences_ = prefs;
       callback(prefs);
     }.bind(this));
-  };
-
-  /**
-   * Set the flag expressing whether the ctrl key is pressed or not.
-   * @param {boolean} flag New value of the flag
-   * @private
-   */
-  FileManager.prototype.setCtrlKeyPressed_ = function(flag) {
-    this.ctrlKeyPressed_ = flag;
-    // Before the DOM is constructed, the key event can be handled.
-    var cacheClearCommand =
-        this.document_.querySelector('#drive-clear-local-cache');
-    if (cacheClearCommand)
-      cacheClearCommand.canExecuteChange();
   };
 })();

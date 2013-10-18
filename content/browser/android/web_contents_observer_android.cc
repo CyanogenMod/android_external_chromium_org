@@ -22,7 +22,6 @@ using base::android::AttachCurrentThread;
 using base::android::ScopedJavaLocalRef;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ConvertUTF16ToJavaString;
-using base::android::HasClass;
 
 namespace content {
 
@@ -204,6 +203,15 @@ void WebContentsObserverAndroid::DidFinishLoad(
       env, obj.obj(), frame_id, jstring_url.obj(), is_main_frame);
 }
 
+void WebContentsObserverAndroid::NavigationEntryCommitted(
+    const LoadCommittedDetails& load_details) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_navigationEntryCommitted(env, obj.obj());
+}
+
 void WebContentsObserverAndroid::DidChangeVisibleSSLState() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
@@ -252,10 +260,6 @@ void WebContentsObserverAndroid::DidFailLoadInternal(
 }
 
 bool RegisterWebContentsObserverAndroid(JNIEnv* env) {
-  if (!HasClass(env, kWebContentsObserverAndroidClassPath)) {
-    DLOG(ERROR) << "Unable to find class WebContentsObserverAndroid!";
-    return false;
-  }
   return RegisterNativesImpl(env);
 }
 }  // namespace content

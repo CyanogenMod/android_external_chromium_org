@@ -4,13 +4,14 @@
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_strings.h"
 
+#include "base/sys_info.h"
 #include "chrome/browser/chromeos/file_manager/open_with_browser.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
+#include "chromeos/system/statistics_provider.h"
 #include "grit/app_locale_settings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 namespace extensions {
 
@@ -489,6 +490,7 @@ bool FileBrowserPrivateGetStringsFunction::RunImpl() {
   SET_STRING("CHANGE_DEFAULT_CAPTION", IDS_FILE_BROWSER_CHANGE_DEFAULT_CAPTION);
   SET_STRING("DEFAULT_ACTION_LABEL", IDS_FILE_BROWSER_DEFAULT_ACTION_LABEL);
 
+  SET_STRING("VIEW_TYPE_LABEL", IDS_FILE_BROWSER_VIEW_TYPE_LABEL);
   SET_STRING("DETAIL_VIEW_TOOLTIP", IDS_FILE_BROWSER_DETAIL_VIEW_TOOLTIP);
   SET_STRING("THUMBNAIL_VIEW_TOOLTIP", IDS_FILE_BROWSER_THUMBNAIL_VIEW_TOOLTIP);
   SET_STRING("GEAR_BUTTON_TOOLTIP", IDS_FILE_BROWSER_GEAR_BUTTON_TOOLTIP);
@@ -516,14 +518,8 @@ bool FileBrowserPrivateGetStringsFunction::RunImpl() {
 
   webui::SetFontAndTextDirection(dict);
 
-  std::string board;
-  chromeos::system::StatisticsProvider* provider =
-      chromeos::system::StatisticsProvider::GetInstance();
-  if (!provider->GetMachineStatistic(chromeos::system::kMachineInfoBoard,
-                                     &board)) {
-    board = "unknown";
-  }
-  dict->SetString(chromeos::system::kMachineInfoBoard, board);
+  dict->SetString("CHROMEOS_RELEASE_BOARD",
+                  base::SysInfo::GetLsbReleaseBoard());
 
   dict->SetString("UI_LOCALE", extension_l10n_util::CurrentLocaleOrDefault());
 

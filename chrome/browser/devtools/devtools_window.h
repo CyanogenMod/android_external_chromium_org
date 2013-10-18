@@ -166,6 +166,9 @@ class DevToolsWindow : private content::NotificationObserver,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
+  virtual void BeforeUnloadFired(content::WebContents* tab,
+                                 bool proceed,
+                                 bool* proceed_to_fire_unload) OVERRIDE;
   virtual bool PreHandleKeyboardEvent(
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event,
@@ -188,7 +191,9 @@ class DevToolsWindow : private content::NotificationObserver,
 
   // DevToolsEmbedderMessageDispatcher::Delegate overrides:
   virtual void ActivateWindow() OVERRIDE;
+  virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void CloseWindow() OVERRIDE;
+  virtual void SetWindowBounds(int x, int y, int width, int height) OVERRIDE;
   virtual void MoveWindow(int x, int y) OVERRIDE;
   virtual void SetDockSide(const std::string& side) OVERRIDE;
   virtual void OpenInNewTab(const std::string& url) OVERRIDE;
@@ -231,7 +236,6 @@ class DevToolsWindow : private content::NotificationObserver,
   BrowserWindow* GetInspectedBrowserWindow();
   bool IsInspectedBrowserPopup();
   void UpdateFrontendDockSide();
-  void Hide();
   void ScheduleAction(DevToolsToggleAction action);
   void DoAction();
   void UpdateTheme();
@@ -258,7 +262,6 @@ class DevToolsWindow : private content::NotificationObserver,
   DevToolsToggleAction action_on_load_;
   content::NotificationRegistrar registrar_;
   scoped_ptr<content::DevToolsClientHost> frontend_host_;
-  base::WeakPtrFactory<DevToolsWindow> weak_factory_;
   scoped_ptr<DevToolsFileHelper> file_helper_;
   scoped_refptr<DevToolsFileSystemIndexer> file_system_indexer_;
   typedef std::map<
@@ -271,6 +274,7 @@ class DevToolsWindow : private content::NotificationObserver,
   DevToolsDockSide dock_side_before_minimized_;
 
   scoped_ptr<DevToolsEmbedderMessageDispatcher> embedder_message_dispatcher_;
+  base::WeakPtrFactory<DevToolsWindow> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsWindow);
 };
 

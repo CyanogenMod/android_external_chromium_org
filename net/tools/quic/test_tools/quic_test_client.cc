@@ -9,7 +9,7 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/proof_verifier.h"
-#include "net/tools/flip_server/balsa_headers.h"
+#include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 #include "net/tools/quic/test_tools/http_message_test_utils.h"
@@ -98,7 +98,7 @@ class QuicEpollClient : public QuicClient {
   QuicEpollClient(IPEndPoint server_address,
              const string& server_hostname,
              const QuicVersion version)
-      : Super(server_address, server_hostname, version) {
+      : Super(server_address, server_hostname, version, false) {
   }
 
   QuicEpollClient(IPEndPoint server_address,

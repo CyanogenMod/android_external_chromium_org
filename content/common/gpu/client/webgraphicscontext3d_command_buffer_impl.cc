@@ -36,7 +36,6 @@
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/mailbox.h"
-#include "gpu/ipc/command_buffer_proxy.h"
 #include "third_party/skia/include/core/SkTypes.h"
 #include "webkit/common/gpu/gl_bindings_skia_cmd_buffer.h"
 
@@ -232,8 +231,6 @@ WebGraphicsContext3DCommandBufferImpl::WebGraphicsContext3DCommandBufferImpl(
       error_message_callback_(0),
       swapbuffers_complete_callback_(0),
       gpu_preference_(gfx::PreferIntegratedGpu),
-      cached_width_(0),
-      cached_height_(0),
       weak_ptr_factory_(this),
       initialized_(false),
       gl_(NULL),
@@ -471,7 +468,7 @@ bool WebGraphicsContext3DCommandBufferImpl::CreateContext(
       share_group,
       transfer_buffer_.get(),
       bind_generates_resources_,
-      NULL));
+      command_buffer_.get()));
   gl_ = real_gl_.get();
 
   if (attributes_.shareResources) {
@@ -509,14 +506,6 @@ bool WebGraphicsContext3DCommandBufferImpl::makeContextCurrent() {
 
 uint32_t WebGraphicsContext3DCommandBufferImpl::lastFlushID() {
   return flush_id_;
-}
-
-int WebGraphicsContext3DCommandBufferImpl::width() {
-  return cached_width_;
-}
-
-int WebGraphicsContext3DCommandBufferImpl::height() {
-  return cached_height_;
 }
 
 DELEGATE_TO_GL_R(insertSyncPoint, InsertSyncPointCHROMIUM, unsigned int)
@@ -598,17 +587,7 @@ void WebGraphicsContext3DCommandBufferImpl::postSubBufferCHROMIUM(
       weak_ptr_factory_.GetWeakPtr()));
 }
 
-void WebGraphicsContext3DCommandBufferImpl::reshape(int width, int height) {
-  reshapeWithScaleFactor(width, height, 1.f);
-}
-
-void WebGraphicsContext3DCommandBufferImpl::reshapeWithScaleFactor(
-    int width, int height, float scale_factor) {
-  cached_width_ = width;
-  cached_height_ = height;
-
-  gl_->ResizeCHROMIUM(width, height, scale_factor);
-}
+DELEGATE_TO_GL_3(reshapeWithScaleFactor, ResizeCHROMIUM, int, int, float)
 
 void WebGraphicsContext3DCommandBufferImpl::synthesizeGLError(
     WGC3Denum error) {
@@ -1488,15 +1467,7 @@ void WebGraphicsContext3DCommandBufferImpl::loseContextCHROMIUM(
   gl_->Flush();
 }
 
-void WebGraphicsContext3DCommandBufferImpl::genMailboxCHROMIUM(
-    WGC3Dbyte* name) {
-  std::vector<gpu::Mailbox> names;
-  if (command_buffer_->GenerateMailboxNames(1, &names))
-    memcpy(name, names[0].name, GL_MAILBOX_SIZE_CHROMIUM);
-  else
-    synthesizeGLError(GL_OUT_OF_MEMORY);
-}
-
+DELEGATE_TO_GL_1(genMailboxCHROMIUM, GenMailboxCHROMIUM, WGC3Dbyte*)
 DELEGATE_TO_GL_2(produceTextureCHROMIUM, ProduceTextureCHROMIUM,
                  WGC3Denum, const WGC3Dbyte*)
 DELEGATE_TO_GL_2(consumeTextureCHROMIUM, ConsumeTextureCHROMIUM,

@@ -463,6 +463,32 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_ThirtyFourTabs) {
   }
 }
 
+// Test for crbug.com/297289.  Ensure that modal dialogs are closed when a
+// cross-process navigation is ready to commit.
+IN_PROC_BROWSER_TEST_F(BrowserTest, CrossProcessNavCancelsDialogs) {
+  ASSERT_TRUE(test_server()->Start());
+  host_resolver()->AddRule("www.example.com", "127.0.0.1");
+  GURL url(test_server()->GetURL("empty.html"));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
+  contents->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
+      string16(),
+      ASCIIToUTF16("alert('Dialog showing!');"));
+  AppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
+  EXPECT_TRUE(alert->IsValid());
+  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+  EXPECT_TRUE(dialog_queue->HasActiveDialog());
+
+  // A cross-site navigation should force the dialog to close.
+  GURL url2("http://www.example.com/empty.html");
+  ui_test_utils::NavigateToURL(browser(), url2);
+  EXPECT_FALSE(dialog_queue->HasActiveDialog());
+
+  // Make sure input events still work in the renderer process.
+  EXPECT_FALSE(contents->GetRenderProcessHost()->IgnoreInputEvents());
+}
+
 // Test for crbug.com/22004.  Reloading a page with a before unload handler and
 // then canceling the dialog should not leave the throbber spinning.
 IN_PROC_BROWSER_TEST_F(BrowserTest, ReloadThenCancelBeforeUnload) {
@@ -1334,9 +1360,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
   const Extension* extension_app = GetExtension();
 
   // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
-  WebContents* app_window = chrome::OpenApplication(
-      chrome::AppLaunchParams(browser()->profile(), extension_app,
-                              extension_misc::LAUNCH_WINDOW, NEW_WINDOW));
+  WebContents* app_window = OpenApplication(
+      AppLaunchParams(browser()->profile(), extension_app,
+                      extension_misc::LAUNCH_WINDOW, NEW_WINDOW));
   ASSERT_TRUE(app_window);
 
   // Apps launched in a window from the NTP have an extensions tab helper but
@@ -1592,12 +1618,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
         new content::MessageLoopRunner);
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->AddZoomLevelChangedCallback(callback);
+    scoped_ptr<content::HostZoomMap::Subscription> sub =
+        content::HostZoomMap::GetForBrowserContext(
+            browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_IN);
     loop_runner->Run();
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->RemoveZoomLevelChangedCallback(callback);
+    sub.reset();
     EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 110);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
@@ -1608,12 +1634,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
         new content::MessageLoopRunner);
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->AddZoomLevelChangedCallback(callback);
+    scoped_ptr<content::HostZoomMap::Subscription> sub =
+        content::HostZoomMap::GetForBrowserContext(
+            browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_RESET);
     loop_runner->Run();
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->RemoveZoomLevelChangedCallback(callback);
+    sub.reset();
     EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 100);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
@@ -1624,12 +1650,12 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_PageZoom) {
         new content::MessageLoopRunner);
     content::HostZoomMap::ZoomLevelChangedCallback callback(
         base::Bind(&OnZoomLevelChanged, loop_runner->QuitClosure()));
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->AddZoomLevelChangedCallback(callback);
+    scoped_ptr<content::HostZoomMap::Subscription> sub =
+        content::HostZoomMap::GetForBrowserContext(
+            browser()->profile())->AddZoomLevelChangedCallback(callback);
     chrome::Zoom(browser(), content::PAGE_ZOOM_OUT);
     loop_runner->Run();
-    content::HostZoomMap::GetForBrowserContext(
-        browser()->profile())->RemoveZoomLevelChangedCallback(callback);
+    sub.reset();
     EXPECT_EQ(contents->GetZoomPercent(&enable_plus, &enable_minus), 90);
     EXPECT_TRUE(enable_plus);
     EXPECT_TRUE(enable_minus);
@@ -2205,10 +2231,7 @@ class ClickModifierTest : public InProcessBrowserTest {
           browser->tab_strip_model()->GetActiveWebContents();
       content::TestNavigationObserver same_tab_observer(web_contents);
       SimulateMouseClick(web_contents, modifiers, button);
-      base::RunLoop run_loop;
-      same_tab_observer.WaitForObservation(
-          base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-          content::GetQuitTaskForRunLoop(&run_loop));
+      same_tab_observer.Wait();
       EXPECT_EQ(1u, chrome::GetBrowserCount(browser->profile(),
                                             browser->host_desktop_type()));
       EXPECT_EQ(1, browser->tab_strip_model()->count());

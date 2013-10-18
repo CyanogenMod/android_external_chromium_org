@@ -32,12 +32,11 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/geolocation_permission_context.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/common/media_stream_request.h"
@@ -65,6 +64,9 @@ class BrowserPluginGuest::PermissionRequest :
     public base::RefCounted<BrowserPluginGuest::PermissionRequest> {
  public:
   virtual void Respond(bool should_allow, const std::string& user_input) = 0;
+  virtual bool AllowedByDefault() const {
+      return false;
+  }
  protected:
   PermissionRequest() {
     RecordAction(UserMetricsAction("BrowserPlugin.Guest.PermissionRequest"));
@@ -248,8 +250,6 @@ class BrowserPluginGuest::PointerLockRequest : public PermissionRequest {
 };
 
 namespace {
-const size_t kNumMaxOutstandingPermissionRequests = 1024;
-
 std::string WindowOpenDispositionToString(
   WindowOpenDisposition window_open_disposition) {
   switch (window_open_disposition) {
@@ -304,28 +304,34 @@ static std::string RetrieveDownloadURLFromRequestId(
 
 }  // namespace
 
-class BrowserPluginGuest::EmbedderRenderViewHostObserver
-    : public RenderViewHostObserver {
+class BrowserPluginGuest::EmbedderWebContentsObserver
+    : public WebContentsObserver {
  public:
-  explicit EmbedderRenderViewHostObserver(BrowserPluginGuest* guest)
-      : RenderViewHostObserver(
-          guest->embedder_web_contents()->GetRenderViewHost()),
+  explicit EmbedderWebContentsObserver(BrowserPluginGuest* guest)
+      : WebContentsObserver(guest->embedder_web_contents()),
         browser_plugin_guest_(guest) {
   }
 
-  virtual ~EmbedderRenderViewHostObserver() {
+  virtual ~EmbedderWebContentsObserver() {
   }
 
-  // RenderViewHostObserver:
-  virtual void RenderViewHostDestroyed(
-      RenderViewHost* render_view_host) OVERRIDE {
+  // WebContentsObserver:
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
     browser_plugin_guest_->EmbedderDestroyed();
+  }
+
+  virtual void WasShown() OVERRIDE {
+    browser_plugin_guest_->EmbedderVisibilityChanged(true);
+  }
+
+  virtual void WasHidden() OVERRIDE {
+    browser_plugin_guest_->EmbedderVisibilityChanged(false);
   }
 
  private:
   BrowserPluginGuest* browser_plugin_guest_;
 
-  DISALLOW_COPY_AND_ASSIGN(EmbedderRenderViewHostObserver);
+  DISALLOW_COPY_AND_ASSIGN(EmbedderWebContentsObserver);
 };
 
 BrowserPluginGuest::BrowserPluginGuest(
@@ -432,8 +438,11 @@ int BrowserPluginGuest::RequestPermission(
                   request_id);
   // If BrowserPluginGuestDelegate hasn't handled the permission then we simply
   // reject it immediately.
-  if (!delegate_->RequestPermission(permission_type, request_info, callback))
-    callback.Run(false, "");
+  if (!delegate_->RequestPermission(
+      permission_type, request_info, callback, request->AllowedByDefault())) {
+    callback.Run(request->AllowedByDefault(), "");
+    return browser_plugin::kInvalidPermissionRequestID;
+  }
 
   return request_id;
 }
@@ -573,14 +582,7 @@ void BrowserPluginGuest::Initialize(
   // Disable "client blocked" error page for browser plugin.
   renderer_prefs->disable_client_blocked_error_page = true;
 
-  // Listen to embedder visibility changes so that the guest is in a 'shown'
-  // state if both the embedder is visible and the BrowserPlugin is marked as
-  // visible.
-  notification_registrar_.Add(
-      this, NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-      Source<WebContents>(embedder_web_contents_));
-
-  embedder_rvh_observer_.reset(new EmbedderRenderViewHostObserver(this));
+  embedder_web_contents_observer_.reset(new EmbedderWebContentsObserver(this));
 
   OnSetSize(instance_id_, params.auto_size_params, params.resize_guest_params);
 
@@ -593,8 +595,10 @@ void BrowserPluginGuest::Initialize(
       new BrowserPluginMsg_GuestContentWindowReady(instance_id_,
                                                    guest_routing_id));
 
-  if (!params.src.empty())
+  if (!params.src.empty()) {
+    // params.src will be validated in BrowserPluginGuest::OnNavigateGuest.
     OnNavigateGuest(instance_id_, params.src);
+  }
 
   has_render_view_ = true;
 
@@ -687,20 +691,9 @@ gfx::Rect BrowserPluginGuest::ToGuestRect(const gfx::Rect& bounds) {
   return guest_rect;
 }
 
-void BrowserPluginGuest::Observe(int type,
-                                 const NotificationSource& source,
-                                 const NotificationDetails& details) {
-  switch (type) {
-    case NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED: {
-      DCHECK_EQ(Source<WebContents>(source).ptr(), embedder_web_contents_);
-      embedder_visible_ = *Details<bool>(details).ptr();
-      UpdateVisibility();
-      break;
-    }
-    default:
-      NOTREACHED() << "Unexpected notification sent.";
-      break;
-  }
+void BrowserPluginGuest::EmbedderVisibilityChanged(bool visible) {
+  embedder_visible_ = visible;
+  UpdateVisibility();
 }
 
 void BrowserPluginGuest::AddNewContents(WebContents* source,
@@ -720,12 +713,6 @@ void BrowserPluginGuest::CanDownload(
     int request_id,
     const std::string& request_method,
     const base::Callback<void(bool)>& callback) {
-  if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {
-    // Deny the download request.
-    callback.Run(false);
-    return;
-  }
-
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&RetrieveDownloadURLFromRequestId,
@@ -988,12 +975,6 @@ void BrowserPluginGuest::AskEmbedderForGeolocationPermission(
     int bridge_id,
     const GURL& requesting_frame,
     const GeolocationCallback& callback) {
-  if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {
-    // Deny the geolocation request.
-    callback.Run(false);
-    return;
-  }
-
   base::DictionaryValue request_info;
   request_info.Set(browser_plugin::kURL,
                    base::Value::CreateStringValue(requesting_frame.spec()));
@@ -1330,9 +1311,7 @@ void BrowserPluginGuest::OnHandleInputEvent(
 void BrowserPluginGuest::OnLockMouse(bool user_gesture,
                                      bool last_unlocked_by_target,
                                      bool privileged) {
-  if (pending_lock_request_ ||
-      (permission_request_map_.size() >=
-          kNumMaxOutstandingPermissionRequests)) {
+  if (pending_lock_request_) {
     // Immediately reject the lock because only one pointerLock may be active
     // at a time.
     Send(new ViewMsg_LockMouse_ACK(routing_id(), false));
@@ -1369,32 +1348,38 @@ void BrowserPluginGuest::OnNavigateGuest(
   // non-empty page, the action is considered no-op. This empty src navigation
   // should never be sent to BrowserPluginGuest (browser process).
   DCHECK(!src.empty());
-  if (!src.empty()) {
-    // Do not allow navigating a guest to schemes other than known safe schemes.
-    // This will block the embedder trying to load unwanted schemes, e.g.
-    // chrome://settings.
-    bool scheme_is_blocked =
-        (!ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
-            url.scheme()) &&
-        !ChildProcessSecurityPolicyImpl::GetInstance()->IsPseudoScheme(
-            url.scheme())) ||
-        url.SchemeIs(kJavaScriptScheme);
-    if (scheme_is_blocked || !url.is_valid()) {
-      if (delegate_) {
-        std::string error_type;
-        RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::", &error_type);
-        delegate_->LoadAbort(true /* is_top_level */, url, error_type);
-      }
-      return;
-    }
+  if (src.empty())
+    return;
 
-    // As guests do not swap processes on navigation, only navigations to
-    // normal web URLs are supported.  No protocol handlers are installed for
-    // other schemes (e.g., WebUI or extensions), and no permissions or bindings
-    // can be granted to the guest process.
-    LoadURLWithParams(GetWebContents(), url, Referrer(),
-                      PAGE_TRANSITION_AUTO_TOPLEVEL);
+  // Do not allow navigating a guest to schemes other than known safe schemes.
+  // This will block the embedder trying to load unwanted schemes, e.g.
+  // chrome://settings.
+  bool scheme_is_blocked =
+      (!ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
+          url.scheme()) &&
+      !ChildProcessSecurityPolicyImpl::GetInstance()->IsPseudoScheme(
+          url.scheme())) ||
+      url.SchemeIs(kJavaScriptScheme);
+  if (scheme_is_blocked || !url.is_valid()) {
+    if (delegate_) {
+      std::string error_type;
+      RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::", &error_type);
+      delegate_->LoadAbort(true /* is_top_level */, url, error_type);
+    }
+    return;
   }
+
+  GURL validated_url(url);
+  RenderViewHost::FilterURL(
+      GetWebContents()->GetRenderProcessHost(),
+      false,
+      &validated_url);
+  // As guests do not swap processes on navigation, only navigations to
+  // normal web URLs are supported.  No protocol handlers are installed for
+  // other schemes (e.g., WebUI or extensions), and no permissions or bindings
+  // can be granted to the guest process.
+  LoadURLWithParams(GetWebContents(), validated_url, Referrer(),
+                    PAGE_TRANSITION_AUTO_TOPLEVEL);
 }
 
 void BrowserPluginGuest::OnPluginDestroyed(int instance_id) {
@@ -1607,12 +1592,6 @@ void BrowserPluginGuest::RequestMediaAccessPermission(
     WebContents* web_contents,
     const MediaStreamRequest& request,
     const MediaResponseCallback& callback) {
-  if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {
-    // Deny the media request.
-    callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
-    return;
-  }
-
   base::DictionaryValue request_info;
   request_info.Set(
       browser_plugin::kURL,
@@ -1632,11 +1611,6 @@ void BrowserPluginGuest::RunJavaScriptDialog(
     const string16& default_prompt_text,
     const DialogClosedCallback& callback,
     bool* did_suppress_message) {
-  if (permission_request_map_.size() >= kNumMaxOutstandingPermissionRequests) {
-    // Cancel the dialog.
-    callback.Run(false, string16());
-    return;
-  }
   base::DictionaryValue request_info;
   request_info.Set(
       browser_plugin::kDefaultPromptText,

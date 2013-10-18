@@ -277,10 +277,12 @@ SafeBrowsingService::database_manager() const {
 }
 
 SafeBrowsingProtocolManager* SafeBrowsingService::protocol_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return protocol_manager_;
 }
 
 SafeBrowsingPingManager* SafeBrowsingService::ping_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return ping_manager_;
 }
 
@@ -333,7 +335,8 @@ void SafeBrowsingService::DestroyURLRequestContextOnIOThread() {
   url_request_context_.reset();
 }
 
-void SafeBrowsingService::StartOnIOThread() {
+void SafeBrowsingService::StartOnIOThread(
+    net::URLRequestContextGetter* url_request_context_getter) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (enabled_)
     return;
@@ -372,13 +375,13 @@ void SafeBrowsingService::StartOnIOThread() {
 
   DCHECK(!protocol_manager_);
   protocol_manager_ = SafeBrowsingProtocolManager::Create(
-      database_manager_.get(), url_request_context_getter_.get(), config);
+      database_manager_.get(), url_request_context_getter, config);
   protocol_manager_->Initialize();
 #endif
 
   DCHECK(!ping_manager_);
   ping_manager_ = SafeBrowsingPingManager::Create(
-      url_request_context_getter_.get(), config);
+      url_request_context_getter, config);
 }
 
 void SafeBrowsingService::StopOnIOThread(bool shutdown) {
@@ -409,7 +412,8 @@ void SafeBrowsingService::Start() {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&SafeBrowsingService::StartOnIOThread, this));
+      base::Bind(&SafeBrowsingService::StartOnIOThread, this,
+                 url_request_context_getter_));
 }
 
 void SafeBrowsingService::Stop(bool shutdown) {

@@ -206,10 +206,6 @@ skia::RefPtr<SkPicture> Layer::GetPicture() const {
   return skia::RefPtr<SkPicture>();
 }
 
-bool Layer::CanClipSelf() const {
-  return false;
-}
-
 void Layer::SetParent(Layer* layer) {
   DCHECK(!layer || !layer->HasAncestor(this));
 
@@ -475,6 +471,10 @@ void Layer::SetFilters(const FilterOperations& filters) {
   SetNeedsCommit();
   if (!filters.IsEmpty() && layer_tree_host_)
     layer_tree_host_->set_needs_filter_context();
+}
+
+bool Layer::FilterIsAnimating() const {
+  return layer_animation_controller_->IsAnimatingProperty(Animation::Filter);
 }
 
 void Layer::SetBackgroundFilters(const FilterOperations& filters) {
@@ -807,7 +807,9 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetForceRenderSurface(force_render_surface_);
   layer->SetDrawsContent(DrawsContent());
   layer->SetHideLayerAndSubtree(hide_layer_and_subtree_);
-  layer->SetFilters(filters());
+  if (!layer->FilterIsAnimatingOnImplOnly() && !FilterIsAnimating())
+    layer->SetFilters(filters_);
+  DCHECK(!(FilterIsAnimating() && layer->FilterIsAnimatingOnImplOnly()));
   layer->SetBackgroundFilters(background_filters());
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
@@ -966,19 +968,19 @@ void Layer::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
 }
 
+// On<Property>Animated is called due to an ongoing accelerated animation.
+// Since this animation is also being run on the compositor thread, there
+// is no need to request a commit to push this value over, so the value is
+// set directly rather than by calling Set<Property>.
+void Layer::OnFilterAnimated(const FilterOperations& filters) {
+  filters_ = filters;
+}
+
 void Layer::OnOpacityAnimated(float opacity) {
-  // This is called due to an ongoing accelerated animation. Since this
-  // animation is also being run on the impl thread, there is no need to request
-  // a commit to push this value over, so set the value directly rather than
-  // calling SetOpacity.
   opacity_ = opacity;
 }
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
-  // This is called due to an ongoing accelerated animation. Since this
-  // animation is also being run on the impl thread, there is no need to request
-  // a commit to push this value over, so set this value directly rather than
-  // calling SetTransform.
   transform_ = transform;
 }
 
@@ -1082,6 +1084,10 @@ void Layer::RemoveFromClipTree() {
     clip_parent_->RemoveClipChild(this);
 
   clip_parent_ = NULL;
+}
+
+void Layer::RunMicroBenchmark(MicroBenchmark* benchmark) {
+  benchmark->RunOnLayer(this);
 }
 
 }  // namespace cc

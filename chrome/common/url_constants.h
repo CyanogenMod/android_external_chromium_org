@@ -24,6 +24,7 @@ extern const char kAboutVersionURL[];
 // components below.
 extern const char kChromeUIAboutURL[];
 extern const char kChromeUIAppsURL[];
+extern const char kChromeUIAppListStartPageURL[];
 extern const char kChromeUIBookmarksURL[];
 extern const char kChromeUICertificateViewerURL[];
 extern const char kChromeUIChromeURLsURL[];
@@ -78,6 +79,7 @@ extern const char kChromeUITaskManagerURL[];
 extern const char kChromeUITermsURL[];
 extern const char kChromeUIThemeURL[];
 extern const char kChromeUIThumbnailURL[];
+extern const char kChromeUIThumbnailListURL[];
 extern const char kChromeUIUberURL[];
 extern const char kChromeUIUberFrameURL[];
 extern const char kChromeUIUserActionsURL[];
@@ -135,6 +137,7 @@ extern const char kChromeUIAboutHost[];
 extern const char kChromeUIAboutPageFrameHost[];
 extern const char kChromeUIBlankHost[];
 extern const char kChromeUIAppLauncherPageHost[];
+extern const char kChromeUIAppListStartPageHost[];
 extern const char kChromeUIBookmarksHost[];
 extern const char kChromeUICacheHost[];
 extern const char kChromeUICertificateViewerHost[];
@@ -155,6 +158,7 @@ extern const char kChromeUIDNSHost[];
 extern const char kChromeUIDownloadsHost[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIEditSearchEngineDialogHost[];
+extern const char kChromeUIEnhancedBookmarksHost[];
 extern const char kChromeUIExtensionIconHost[];
 extern const char kChromeUIExtensionInfoHost[];
 extern const char kChromeUIExtensionsFrameHost[];
@@ -212,6 +216,7 @@ extern const char kChromeUITermsHost[];
 extern const char kChromeUIThemeHost[];
 extern const char kChromeUIThumbnailHost[];
 extern const char kChromeUIThumbnailHost2[];
+extern const char kChromeUIThumbnailListHost[];
 extern const char kChromeUITouchIconHost[];
 extern const char kChromeUITranslateInternalsHost[];
 extern const char kChromeUIUberFrameHost[];
@@ -257,6 +262,7 @@ extern const char kChromeUIRotateHost[];
 extern const char kChromeUISimUnlockHost[];
 extern const char kChromeUISlideshowHost[];
 extern const char kChromeUISlowHost[];
+extern const char kChromeUISlowTraceHost[];
 extern const char kChromeUISystemInfoHost[];
 extern const char kChromeUIUserImageHost[];
 
@@ -329,11 +335,20 @@ extern const char kChromeHelpViaWebUIURL[];
 extern const char kChromeAccessibilityHelpURL[];
 #endif
 
+#if defined (ENABLE_ONE_CLICK_SIGNIN)
 // "Learn more" URL for the one click signin infobar.
 extern const char kChromeSyncLearnMoreURL[];
 
+// "Learn more" URL for the "Sign in with a different account" confirmation
+// dialog.
+extern const char kChromeSyncMergeTroubleshootingURL[];
+#endif
+
 // "Learn more" URL for the enterprise sign-in confirmation dialog.
 extern const char kChromeEnterpriseSignInLearnMoreURL[];
+
+// "Learn more" URL for resetting profile preferences.
+extern const char kResetProfileSettingsLearnMoreURL[];
 
 // Management URL for the supervised users.
 extern const char kSupervisedUserManagementURL[];
@@ -365,6 +380,12 @@ extern const char kPrivacyLearnMoreURL[];
 
 // "Learn more" URL for the "Do not track" setting in the privacy section.
 extern const char kDoNotTrackLearnMoreURL[];
+
+#if defined(OS_CHROMEOS)
+// "Learn more" URL for the attestation of content protection dialog / setting.
+// This URL is currently ChromeOS only.
+extern const char kAttestationForContentProtectionLearnMoreURL[];
+#endif
 
 // The URL for the Chromium project used in the About dialog.
 extern const char kChromiumProjectURL[];

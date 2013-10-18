@@ -20,11 +20,14 @@ graph data.
 with the step results previously saved. The buildbot will then process the graph
 data accordingly.
 
+
 The JSON steps file contains a dictionary in the format:
-{
-  "step_name_foo": "script_to_execute foo",
-  "step_name_bar": "script_to_execute bar"
-}
+[
+  ["step_name_foo", "script_to_execute foo"],
+  ["step_name_bar", "script_to_execute bar"]
+]
+
+This preserves the order in which the steps are executed.
 
 The JSON flaky steps file contains a list with step names which results should
 be ignored:
@@ -42,12 +45,12 @@ options:
 
 import datetime
 import logging
-import pexpect
 import pickle
 import os
 import sys
 
 from pylib import constants
+from pylib import pexpect
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
 
@@ -115,9 +118,12 @@ class TestRunner(base_test_runner.BaseTestRunner):
     timeout = 1800
     if self._options.no_timeout:
       timeout = None
+    full_cmd = cmd
+    if self._options.dry_run:
+      full_cmd = 'echo %s' % cmd
 
     output, exit_code = pexpect.run(
-        cmd, cwd=os.path.abspath(constants.DIR_SOURCE_ROOT),
+        full_cmd, cwd=os.path.abspath(constants.DIR_SOURCE_ROOT),
         withexitstatus=True, logfile=sys.stdout, timeout=timeout,
         env=os.environ)
     end_time = datetime.datetime.now()
@@ -130,8 +136,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if exit_code == 0:
       result_type = base_test_result.ResultType.PASS
     if test_name in self._flaky_tests:
+      # The exit_code is used at the second stage when printing the
+      # test output. If the test is flaky, force to "0" to get that step green
+      # whilst still gathering data to the perf dashboards.
+      # The result_type is used by the test_dispatcher to retry the test.
       exit_code = 0
-      result_type = base_test_result.ResultType.PASS
 
     persisted_result = {
         'name': test_name,

@@ -22,6 +22,7 @@
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_delegate.h"
 #include "ui/views/widget/root_view.h"
+#include "ui/views/window/dialog_delegate.h"
 #include "ui/views/window/native_frame_view.h"
 
 #if defined(USE_AURA)
@@ -35,6 +36,10 @@
 #endif
 #elif defined(OS_WIN)
 #include "ui/views/widget/native_widget_win.h"
+#endif
+
+#if defined(OS_WIN)
+#include "ui/views/win/hwnd_util.h"
 #endif
 
 namespace views {
@@ -614,6 +619,7 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     widget->IsActive();
     widget->DisableInactiveRendering();
     widget->SetAlwaysOnTop(true);
+    widget->IsAlwaysOnTop();
     widget->Maximize();
     widget->Minimize();
     widget->Restore();
@@ -637,7 +643,6 @@ class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
     widget->SetCapture(widget->GetRootView());
     widget->ReleaseCapture();
     widget->HasCapture();
-    widget->TooltipTextChanged(widget->GetRootView());
     widget->GetWorkAreaBoundsInScreen();
     // These three crash with NativeWidgetWin, so I'm assuming we don't need
     // them to work for the other NativeWidget impls.
@@ -1871,6 +1876,282 @@ TEST_F(WidgetTest, GetAllChildWidgets) {
   EXPECT_EQ(expected.size(), widgets.size());
   EXPECT_TRUE(std::equal(expected.begin(), expected.end(), widgets.begin()));
 }
+
+// Used by DestroyChildWidgetsInOrder. On destruction adds the supplied name to
+// a vector.
+class DestroyedTrackingView : public View {
+ public:
+  DestroyedTrackingView(const std::string& name,
+                        std::vector<std::string>* add_to)
+      : name_(name),
+        add_to_(add_to) {
+  }
+
+  virtual ~DestroyedTrackingView() {
+    add_to_->push_back(name_);
+  }
+
+ private:
+  const std::string name_;
+  std::vector<std::string>* add_to_;
+
+  DISALLOW_COPY_AND_ASSIGN(DestroyedTrackingView);
+};
+
+class WidgetChildDestructionTest : public WidgetTest {
+ public:
+  WidgetChildDestructionTest() {}
+
+  // Creates a top level and a child, destroys the child and verifies the views
+  // of the child are destroyed before the views of the parent.
+  void RunDestroyChildWidgetsTest(bool top_level_has_desktop_native_widget_aura,
+                                  bool child_has_desktop_native_widget_aura) {
+    // When a View is destroyed its name is added here.
+    std::vector<std::string> destroyed;
+
+    Widget* top_level = new Widget;
+    Widget::InitParams params =
+        CreateParams(views::Widget::InitParams::TYPE_WINDOW);
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+    if (top_level_has_desktop_native_widget_aura)
+      params.native_widget = new DesktopNativeWidgetAura(top_level);
+#endif
+    top_level->Init(params);
+    top_level->GetRootView()->AddChildView(
+        new DestroyedTrackingView("parent", &destroyed));
+    top_level->Show();
+
+    Widget* child = new Widget;
+    Widget::InitParams child_params =
+        CreateParams(views::Widget::InitParams::TYPE_POPUP);
+    child_params.parent = top_level->GetNativeView();
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+    if (child_has_desktop_native_widget_aura)
+      child_params.native_widget = new DesktopNativeWidgetAura(child);
+#endif
+    child->Init(child_params);
+    child->GetRootView()->AddChildView(
+        new DestroyedTrackingView("child", &destroyed));
+    child->Show();
+
+    // Should trigger destruction of the child too.
+    top_level->native_widget_private()->CloseNow();
+
+    // Child should be destroyed first.
+    ASSERT_EQ(2u, destroyed.size());
+    EXPECT_EQ("child", destroyed[0]);
+    EXPECT_EQ("parent", destroyed[1]);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(WidgetChildDestructionTest);
+};
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+// See description of RunDestroyChildWidgetsTest(). Parent uses
+// DesktopNativeWidgetAura.
+TEST_F(WidgetChildDestructionTest,
+       DestroyChildWidgetsInOrderWithDesktopNativeWidget) {
+  RunDestroyChildWidgetsTest(true, false);
+}
+
+// TODO: test fails on linux as destroying parent X widget does not
+// automatically destroy transients. http://crbug.com/300020 .
+#if !defined(OS_LINUX)
+// See description of RunDestroyChildWidgetsTest(). Both parent and child use
+// DesktopNativeWidgetAura.
+TEST_F(WidgetChildDestructionTest,
+       DestroyChildWidgetsInOrderWithDesktopNativeWidgetForBoth) {
+  RunDestroyChildWidgetsTest(true, true);
+}
+#endif
+#endif
+
+// See description of RunDestroyChildWidgetsTest().
+TEST_F(WidgetChildDestructionTest, DestroyChildWidgetsInOrder) {
+  RunDestroyChildWidgetsTest(false, false);
+}
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+// Provides functionality to create a window modal dialog.
+class ModalDialogDelegate : public DialogDelegateView {
+ public:
+  ModalDialogDelegate() {}
+  virtual ~ModalDialogDelegate() {}
+
+  // WidgetDelegate overrides.
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+    return ui::MODAL_TYPE_WINDOW;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
+};
+
+// This test verifies that whether mouse events when a modal dialog is
+// displayed are eaten or recieved by the dialog.
+TEST_F(WidgetTest, WindowMouseModalityTest) {
+  // Create a top level widget.
+  Widget top_level_widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.show_state = ui::SHOW_STATE_NORMAL;
+  gfx::Rect initial_bounds(0, 0, 500, 500);
+  init_params.bounds = initial_bounds;
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new DesktopNativeWidgetAura(&top_level_widget);
+  top_level_widget.Init(init_params);
+  top_level_widget.Show();
+  EXPECT_TRUE(top_level_widget.IsVisible());
+
+  // Create a view and validate that a mouse moves makes it to the view.
+  EventCountView* widget_view = new EventCountView();
+  widget_view->SetBounds(0, 0, 10, 10);
+  top_level_widget.GetRootView()->AddChildView(widget_view);
+
+  gfx::Point cursor_location_main(5, 5);
+  ui::MouseEvent move_main(ui::ET_MOUSE_MOVED,
+                           cursor_location_main,
+                           cursor_location_main,
+                           ui::EF_NONE);
+  top_level_widget.GetNativeView()->GetRootWindow()->
+      AsRootWindowHostDelegate()->OnHostMouseEvent(&move_main);
+
+  EXPECT_EQ(1, widget_view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  widget_view->ResetCounts();
+
+  // Create a modal dialog and validate that a mouse down message makes it to
+  // the main view within the dialog.
+
+  // This instance will be destroyed when the dialog is destroyed.
+  ModalDialogDelegate* dialog_delegate = new ModalDialogDelegate;
+
+  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
+      dialog_delegate, NULL, top_level_widget.GetNativeWindow());
+  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
+  EventCountView* dialog_widget_view = new EventCountView();
+  dialog_widget_view->SetBounds(0, 0, 50, 50);
+  modal_dialog_widget->GetRootView()->AddChildView(dialog_widget_view);
+  modal_dialog_widget->Show();
+  EXPECT_TRUE(modal_dialog_widget->IsVisible());
+
+  gfx::Point cursor_location_dialog(100, 100);
+  ui::MouseEvent mouse_down_dialog(ui::ET_MOUSE_PRESSED,
+                                   cursor_location_dialog,
+                                   cursor_location_dialog,
+                                   ui::EF_NONE);
+  top_level_widget.GetNativeView()->GetRootWindow()->
+      AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_dialog);
+  EXPECT_EQ(1, dialog_widget_view->GetEventCount(ui::ET_MOUSE_PRESSED));
+
+  // Send a mouse move message to the main window. It should not be received by
+  // the main window as the modal dialog is still active.
+  gfx::Point cursor_location_main2(6, 6);
+  ui::MouseEvent mouse_down_main(ui::ET_MOUSE_MOVED,
+                                 cursor_location_main2,
+                                 cursor_location_main2,
+                                 ui::EF_NONE);
+  top_level_widget.GetNativeView()->GetRootWindow()->
+      AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_main);
+  EXPECT_EQ(0, widget_view->GetEventCount(ui::ET_MOUSE_MOVED));
+
+  modal_dialog_widget->CloseNow();
+  top_level_widget.CloseNow();
+}
+
+#if defined(OS_WIN)
+
+// Provides functionality to test widget activation via an activation flag
+// which can be set by an accessor.
+class ModalWindowTestWidgetDelegate : public WidgetDelegate {
+ public:
+  ModalWindowTestWidgetDelegate()
+      : widget_(NULL),
+        can_activate_(true) {}
+
+  virtual ~ModalWindowTestWidgetDelegate() {}
+
+  // Overridden from WidgetDelegate:
+  virtual void DeleteDelegate() OVERRIDE {
+    delete this;
+  }
+  virtual Widget* GetWidget() OVERRIDE {
+    return widget_;
+  }
+  virtual const Widget* GetWidget() const OVERRIDE {
+    return widget_;
+  }
+  virtual bool CanActivate() const OVERRIDE {
+    return can_activate_;
+  }
+  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
+    return true;
+  }
+
+  void set_can_activate(bool can_activate) {
+    can_activate_ = can_activate;
+  }
+
+  void set_widget(Widget* widget) {
+    widget_ = widget;
+  }
+
+ private:
+  Widget* widget_;
+  bool can_activate_;
+
+  DISALLOW_COPY_AND_ASSIGN(ModalWindowTestWidgetDelegate);
+};
+
+// Tests whether we can activate the top level widget when a modal dialog is
+// active.
+TEST_F(WidgetTest, WindowModalityActivationTest) {
+  // Destroyed when the top level widget created below is destroyed.
+  ModalWindowTestWidgetDelegate* widget_delegate =
+      new ModalWindowTestWidgetDelegate;
+  // Create a top level widget.
+  Widget top_level_widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.show_state = ui::SHOW_STATE_NORMAL;
+  gfx::Rect initial_bounds(0, 0, 500, 500);
+  init_params.bounds = initial_bounds;
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new DesktopNativeWidgetAura(&top_level_widget);
+  init_params.delegate = widget_delegate;
+  top_level_widget.Init(init_params);
+  widget_delegate->set_widget(&top_level_widget);
+  top_level_widget.Show();
+  EXPECT_TRUE(top_level_widget.IsVisible());
+
+  HWND win32_window = views::HWNDForWidget(&top_level_widget);
+  EXPECT_TRUE(::IsWindow(win32_window));
+
+  // This instance will be destroyed when the dialog is destroyed.
+  ModalDialogDelegate* dialog_delegate = new ModalDialogDelegate;
+
+  // We should be able to activate the window even if the WidgetDelegate
+  // says no, when a modal dialog is active.
+  widget_delegate->set_can_activate(false);
+
+  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
+      dialog_delegate, NULL, top_level_widget.GetNativeWindow());
+  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
+  modal_dialog_widget->Show();
+  EXPECT_TRUE(modal_dialog_widget->IsVisible());
+
+  LRESULT activate_result = ::SendMessage(
+      win32_window,
+      WM_MOUSEACTIVATE,
+      reinterpret_cast<WPARAM>(win32_window),
+      MAKELPARAM(WM_LBUTTONDOWN, HTCLIENT));
+  EXPECT_EQ(activate_result, MA_ACTIVATE);
+
+  modal_dialog_widget->CloseNow();
+  top_level_widget.CloseNow();
+}
+#endif
+#endif
 
 }  // namespace test
 }  // namespace views

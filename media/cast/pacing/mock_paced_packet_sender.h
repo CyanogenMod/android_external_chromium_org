@@ -13,11 +13,12 @@ namespace cast {
 
 class MockPacedPacketSender : public PacedPacketSender {
  public:
-  MOCK_METHOD2(SendPacket,
-               bool(const std::vector<uint8>& packet, int num_of_packets));
-  MOCK_METHOD2(ResendPacket,
-               bool(const std::vector<uint8>& packet, int num_of_packets));
-  MOCK_METHOD1(SendRtcpPacket, bool(const std::vector<uint8>& packet));
+  MockPacedPacketSender();
+  virtual ~MockPacedPacketSender();
+
+  MOCK_METHOD1(SendPackets, bool(const PacketList& packets));
+  MOCK_METHOD1(ResendPackets, bool(const PacketList& packets));
+  MOCK_METHOD1(SendRtcpPacket, bool(const Packet& packet));
 };
 
 }  // namespace cast

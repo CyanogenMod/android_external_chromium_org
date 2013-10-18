@@ -284,6 +284,11 @@ void PrerenderContents::StartPrerendering(
   child_id_ = GetRenderViewHost()->GetProcess()->GetID();
   route_id_ = GetRenderViewHost()->GetRoutingID();
 
+  // For Local Predictor based prerendering, log transactions to see if we could
+  // merge session storage namespaces in the event of a mismatch.
+  if (origin_ == ORIGIN_LOCAL_PREDICTOR)
+    session_storage_namespace->AddTransactionLogProcessId(child_id_);
+
   // Register this with the ResourceDispatcherHost as a prerender
   // RenderViewHost. This must be done before the Navigate message to catch all
   // resource requests, but as it is on the same thread as the Navigate message
@@ -614,6 +619,11 @@ void PrerenderContents::Destroy(FinalStatus final_status) {
   prerender_manager_->AddToHistory(this);
   prerender_manager_->MoveEntryToPendingDelete(this, final_status);
 
+  // Note that if this PrerenderContents was made into a MatchComplete
+  // replacement by MoveEntryToPendingDelete, NotifyPrerenderStop will
+  // not reach the PrerenderHandle. Rather
+  // OnPrerenderCreatedMatchCompleteReplacement will propogate that
+  // information to the referer.
   if (!prerender_manager_->IsControlGroup(experiment_id()) &&
       (prerendering_has_started() ||
        match_complete_status() == MATCH_COMPLETE_REPLACEMENT)) {
@@ -663,6 +673,10 @@ WebContents* PrerenderContents::ReleasePrerenderContents() {
   prerender_contents_->SetDelegate(NULL);
   render_view_host_observer_.reset();
   content::WebContentsObserver::Observe(NULL);
+  SessionStorageNamespace* session_storage_namespace =
+      GetSessionStorageNamespace();
+  if (session_storage_namespace && origin_ == ORIGIN_LOCAL_PREDICTOR)
+    session_storage_namespace->RemoveTransactionLogProcessId(child_id_);
   return prerender_contents_.release();
 }
 
@@ -705,6 +719,13 @@ bool PrerenderContents::IsCrossSiteNavigationPending() const {
     return false;
   return (prerender_contents_->GetSiteInstance() !=
           prerender_contents_->GetPendingSiteInstance());
+}
+
+SessionStorageNamespace* PrerenderContents::GetSessionStorageNamespace() const {
+  if (!prerender_contents())
+    return NULL;
+  return prerender_contents()->GetController().
+      GetDefaultSessionStorageNamespace();
 }
 
 

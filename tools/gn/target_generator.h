@@ -67,14 +67,15 @@ class TargetGenerator {
   void FillDependentConfigs();  // Includes all types of dependent configs.
   void FillData();
   void FillDependencies();  // Includes data dependencies.
+  void FillGypFile();
   void FillHardDep();
 
   // Reads configs/deps from the given var name, and uses the given setting on
   // the target to save them.
   void FillGenericConfigs(const char* var_name,
-                          void (Target::*setter)(std::vector<const Config*>*));
+                          std::vector<const Config*>& (Target::*accessor)());
   void FillGenericDeps(const char* var_name,
-                       void (Target::*setter)(std::vector<const Target*>*));
+                       std::vector<const Target*>& (Target::*accessor)());
 
   void FillForwardDependentConfigs();
 

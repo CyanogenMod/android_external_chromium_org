@@ -23,10 +23,6 @@
         '<(grit_out_dir)',
       ],
       'sources': [
-        'app_launch_for_metro_restart_win.cc',
-        'app_launch_for_metro_restart_win.h',
-        'app_launcher.cc',
-        'app_launcher.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -54,12 +50,9 @@
         'app_window_contents.h',
         'apps_client.cc',
         'apps_client.h',
-        'field_trial_names.cc',
-        'field_trial_names.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',
-        'native_app_window.h',
         'pref_names.cc',
         'pref_names.h',
         'prefs.cc',
@@ -76,6 +69,9 @@
         'shell_window_registry.h',
         'switches.cc',
         'switches.h',
+        'ui/native_app_window.h',
+        'ui/views/shell_window_frame_view.cc',
+        'ui/views/shell_window_frame_view.h',
       ],
       'conditions': [
         ['chromeos==1',
@@ -92,9 +88,58 @@
             ],
           }
         ],
+        ['toolkit_views==1', {
+          'dependencies': [
+            '../ui/base/strings/ui_strings.gyp:ui_strings',
+            '../ui/views/views.gyp:views',
+          ],
+        }, {  # toolkit_views==0
+          'sources/': [
+            ['exclude', 'ui/views/'],
+          ],
+        }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     },
-  ],
+  ],  # targets
+  'conditions': [
+    ['chromeos==1', {
+      'targets': [
+        {
+          'target_name': 'app_shell',
+          'type': 'executable',
+          'defines!': ['CONTENT_IMPLEMENTATION'],
+          'variables': {
+            'chromium_code': 1,
+          },
+          'dependencies': [
+            'apps',
+            '../base/base.gyp:base',
+            '../content/content.gyp:content',
+            '../content/content.gyp:content_shell_lib',
+            '../skia/skia.gyp:skia',
+            '../ui/shell/shell.gyp:shell',
+            '../ui/views/views.gyp:views',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'shell/app_shell_browser_main_parts.cc',
+            'shell/app_shell_browser_main_parts.h',
+            'shell/app_shell_content_browser_client.cc',
+            'shell/app_shell_content_browser_client.h',
+            'shell/app_shell_content_client.cc',
+            'shell/app_shell_content_client.h',
+            'shell/app_shell_main_delegate.cc',
+            'shell/app_shell_main_delegate.h',
+            'shell/app_shell_main.cc',
+            'shell/web_view_window.cc',
+            'shell/web_view_window.cc',
+          ],
+        },
+      ],  # targets
+    }],  # chromeos==1
+  ],  # conditions
 }

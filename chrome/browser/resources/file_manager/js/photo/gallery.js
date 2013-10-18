@@ -31,8 +31,8 @@ function unload(opt_exiting) { Gallery.instance.onUnload(opt_exiting) }
  *     {string} readonlyDirName Directory name for readonly warning or null.
  *     {DirEntry} saveDirEntry Directory to save to.
  *     {function(string)} displayStringFunction.
- * @param {VolumeManager} volumeManager The VolumeManager instance of the
- *      system.
+ * @param {VolumeManagerWrapper} volumeManager The VolumeManager instance of
+ *      the system.
  * @class
  * @constructor
  */
@@ -60,7 +60,7 @@ Gallery.prototype.__proto__ = cr.EventTarget.prototype;
  * Create and initialize a Gallery object based on a context.
  *
  * @param {Object} context Gallery context.
- * @param {VolumeManager} volumeManager VolumeManager of the system.
+ * @param {VolumeManagerWrapper} volumeManager VolumeManager of the system.
  * @param {Array.<string>} urls Array of urls.
  * @param {Array.<string>} selectedUrls Array of selected urls.
  */
@@ -96,7 +96,7 @@ Gallery.MOSAIC_BACKGROUND_INIT_DELAY = 1000;
  * @const
  * @type {string}
  */
-Gallery.METADATA_TYPE = 'thumbnail|filesystem|media|streaming';
+Gallery.METADATA_TYPE = 'thumbnail|filesystem|media|streaming|drive';
 
 /**
  * Initialize listeners.
@@ -112,7 +112,7 @@ Gallery.prototype.initListeners_ = function() {
 
   // Search results may contain files from different subdirectories so
   // the observer is not going to work.
-  if (!this.context_.searchResults) {
+  if (!this.context_.searchResults && this.context_.curDirEntry) {
     this.thumbnailObserverId_ = this.metadataCache_.addObserver(
         this.context_.curDirEntry,
         MetadataCache.CHILDREN,
@@ -171,15 +171,21 @@ Gallery.prototype.initDom_ = function() {
   util.createChild(backButton);
   backButton.addEventListener('click', this.onBack_.bind(this));
 
+  var preventDefault = function(event) { event.preventDefault(); };
+
   var maximizeButton = util.createChild(this.header_,
                                         'maximize-button tool dimmable',
                                         'button');
+  maximizeButton.tabIndex = -1;
   maximizeButton.addEventListener('click', this.onMaximize_.bind(this));
+  maximizeButton.addEventListener('mousedown', preventDefault);
 
   var closeButton = util.createChild(this.header_,
                                      'close-button tool dimmable',
                                      'button');
+  closeButton.tabIndex = -1;
   closeButton.addEventListener('click', this.onClose_.bind(this));
+  closeButton.addEventListener('mousedown', preventDefault);
 
   this.filenameSpacer_ = util.createChild(this.toolbar_, 'filename-spacer');
   this.filenameEdit_ = util.createChild(this.filenameSpacer_,
@@ -631,7 +637,7 @@ Gallery.prototype.updateSelectionAndState_ = function() {
     var fullName = item.getFileName();
     window.top.document.title = fullName;
     displayName = ImageUtil.getFileNameFromFullName(fullName);
-  } else if (selectedItems.length > 1) {
+  } else if (selectedItems.length > 1 && this.context_.curDirEntry) {
     // If the Gallery was opened on search results the search query will not be
     // recorded in the app state and the relaunch will just open the gallery
     // in the curDirEntry directory.
@@ -705,7 +711,7 @@ Gallery.prototype.onFilenameEditBlur_ = function(event) {
   }.bind(this);
 
   var onSuccess = function() {
-    var e = new cr.Event('content');
+    var e = new Event('content');
     e.item = item;
     e.oldUrl = oldUrl;
     e.metadata = null;  // Metadata unchanged.
@@ -862,4 +868,3 @@ Gallery.prototype.updateButtons_ = function() {
         this.displayStringFunction_(oppositeMode.getTitle());
   }
 };
-

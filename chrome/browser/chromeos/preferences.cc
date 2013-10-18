@@ -6,7 +6,6 @@
 
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/histogram.h"
@@ -15,6 +14,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
@@ -23,7 +23,6 @@
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/feedback/tracing_manager.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -33,6 +32,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/ime/xkeyboard.h"
+#include "chromeos/system/statistics_provider.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "ui/events/event_constants.h"
@@ -85,7 +85,7 @@ void Preferences::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   std::string hardware_keyboard_id;
   // TODO(yusukes): Remove the runtime hack.
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     input_method::InputMethodManager* manager =
         input_method::InputMethodManager::Get();
     if (manager) {
@@ -158,6 +158,10 @@ void Preferences::RegisterProfilePrefs(
       prefs::kScreenMagnifierScale,
       std::numeric_limits<double>::min(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kAutoclickEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kShouldAlwaysShowAccessibilityMenu,
       false,
@@ -591,10 +595,6 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
 
   if (section == std::string(language_prefs::kGeneralSectionName) &&
       name == std::string(language_prefs::kPreloadEnginesConfigName)) {
-    // TODO(nona): Remove this function after few milestones are passed.
-    //             (http://crbug.com/236747)
-    if (input_method_manager_->MigrateOldInputMethods(&split_values))
-      preload_engines_.SetValue(JoinString(split_values, ','));
     input_method_manager_->EnableInputMethods(split_values);
     return;
   }
@@ -627,7 +627,7 @@ void Preferences::SetInputMethodList() {
 
 void Preferences::UpdateAutoRepeatRate() {
   // Avoid setting repeat rate on desktop dev environment.
-  if (!base::chromeos::IsRunningOnChromeOS())
+  if (!base::SysInfo::IsRunningOnChromeOS())
     return;
 
   input_method::AutoRepeatRate rate;

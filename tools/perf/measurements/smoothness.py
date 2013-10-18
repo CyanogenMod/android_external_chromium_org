@@ -1,11 +1,10 @@
 # Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import logging
 
-from metrics import loading
 from metrics import smoothness
-from metrics.gpu_rendering_stats import GpuRenderingStats
+from metrics.rendering_stats import RenderingStats
+from telemetry.page import page_test
 from telemetry.page import page_measurement
 
 
@@ -20,28 +19,32 @@ class MissingDisplayFrameRate(page_measurement.MeasurementFailure):
         'Missing display frame rate metrics: ' + name)
 
 
-class MissingTimelineMarker(page_measurement.MeasurementFailure):
-  def __init__(self, name):
-    super(MissingTimelineMarker, self).__init__(
-        'Timeline marker not found: ' + name)
+class NoSupportedActionException(page_measurement.MeasurementFailure):
+  def __init__(self):
+    super(NoSupportedActionException, self).__init__(
+        'None of the actions is supported by smoothness measurement')
+
+
+def GetTimelineMarkerLabelsFromAction(compound_action):
+  timeline_marker_labels = []
+  if not isinstance(compound_action, list):
+    compound_action = [compound_action]
+  for action in compound_action:
+    if action.GetTimelineMarkerLabel():
+      timeline_marker_labels.append(action.GetTimelineMarkerLabel())
+  if not timeline_marker_labels:
+    raise NoSupportedActionException()
+  return timeline_marker_labels
 
 
 class Smoothness(page_measurement.PageMeasurement):
   def __init__(self):
     super(Smoothness, self).__init__('smoothness')
-    self.force_enable_threaded_compositing = False
     self._metrics = None
     self._trace_result = None
 
-  def AddCommandLineOptions(self, parser):
-    parser.add_option('--report-all-results', dest='report_all_results',
-                      action='store_true',
-                      help='Reports all data collected, not just FPS')
-
   def CustomizeBrowserOptions(self, options):
     smoothness.SmoothnessMetrics.CustomizeBrowserOptions(options)
-    if self.force_enable_threaded_compositing:
-      options.AppendExtraBrowserArgs('--enable-threaded-compositing')
 
   def CanRunForPage(self, page):
     return hasattr(page, 'smoothness')
@@ -57,53 +60,45 @@ class Smoothness(page_measurement.PageMeasurement):
       self._metrics.BindToAction(action)
     else:
       self._metrics.Start()
+      tab.ExecuteJavaScript(
+          'console.time("' + smoothness.RENDER_PROCESS_MARKER + '")')
 
   def DidRunAction(self, page, tab, action):
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StopRawDisplayFrameRateMeasurement()
     if not action.CanBeBound():
+      tab.ExecuteJavaScript(
+          'console.timeEnd("' + smoothness.RENDER_PROCESS_MARKER + '")')
       self._metrics.Stop()
     self._trace_result = tab.browser.StopTracing()
-
-  def FindTimelineMarker(self, timeline, name):
-    events = [s for
-              s in timeline.GetAllEventsOfName(name)
-              if s.parent_slice == None]
-    if len(events) != 1:
-      raise MissingTimelineMarker(name)
-    return events[0]
 
   def MeasurePage(self, page, tab, results):
     rendering_stats_deltas = self._metrics.deltas
 
-    if not (rendering_stats_deltas['numFramesSentToScreen'] > 0):
+    # TODO(ernstm): remove numFramesSentToScreen when RenderingStats
+    # cleanup CL was picked up by the reference build.
+    if 'frameCount' in rendering_stats_deltas:
+      frame_count = rendering_stats_deltas.get('frameCount', 0)
+    else:
+      frame_count = rendering_stats_deltas.get('numFramesSentToScreen', 0)
+
+    if not (frame_count > 0):
       raise DidNotScrollException()
 
-    loading.LoadingMetric().AddResults(tab, results)
-
-    smoothness.CalcFirstPaintTimeResults(results, tab)
-
     timeline = self._trace_result.AsTimelineModel()
-    smoothness_marker = self.FindTimelineMarker(timeline,
-        smoothness.TIMELINE_MARKER)
-    # TODO(dominikg): remove try..except once CL 23532057 has been rolled to the
-    # reference builds?
-    try:
-      gesture_marker = self.FindTimelineMarker(timeline,
-          smoothness.SYNTHETIC_GESTURE_MARKER)
-    except MissingTimelineMarker:
-      logging.warning(
-        'No gesture marker found in timeline; using smoothness marker instead.')
-      gesture_marker = smoothness_marker
-    benchmark_stats = GpuRenderingStats(smoothness_marker,
-                                        gesture_marker,
-                                        rendering_stats_deltas,
-                                        self._metrics.is_using_gpu_benchmarking)
-    smoothness.CalcResults(benchmark_stats, results)
+    render_process_marker = smoothness.FindTimelineMarkers(
+        timeline, smoothness.RENDER_PROCESS_MARKER)
+    compound_action = page_test.GetCompoundActionFromPage(
+        page, self._action_name_to_run)
+    timeline_marker_labels = GetTimelineMarkerLabelsFromAction(compound_action)
+    timeline_markers = smoothness.FindTimelineMarkers(timeline,
+        timeline_marker_labels)
 
-    if self.options.report_all_results:
-      for k, v in rendering_stats_deltas.iteritems():
-        results.Add(k, '', v)
+    benchmark_stats = RenderingStats(render_process_marker,
+                                     timeline_markers,
+                                     rendering_stats_deltas,
+                                     self._metrics.is_using_gpu_benchmarking)
+    smoothness.CalcResults(benchmark_stats, results)
 
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       for r in tab.browser.platform.GetRawDisplayFrameRateMeasurements():

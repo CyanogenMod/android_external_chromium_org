@@ -71,6 +71,9 @@ const char kAppId[]                         = "app-id";
 // mode.
 const char kApp[]                           = "app";
 
+// Specifies an URL to use for app list start page.
+const char kAppListStartPageURL[]           = "app-list-start-page-url";
+
 // Flag to enable apps_devtool app.
 const char kAppsDevtool[]                   = "apps-devtool";
 
@@ -242,6 +245,12 @@ const char kCrashOnHangThreads[]            = "crash-on-hang-threads";
 const char kCreateBrowserOnStartupForTests[] =
     "create-browser-on-startup-for-tests";
 
+#if defined(OS_ANDROID) || defined(OS_IOS)
+// If set, the data reduction proxy will only be enabled if a request for this
+// URL is successful.
+const char kDataReductionProxyProbeURL[]    = "data-reduction-proxy-probe-url";
+#endif
+
 // Enables a frame context menu item that toggles the frame in and out of glass
 // mode (Windows Vista and up only).
 const char kDebugEnableFrameToggle[]        = "debug-enable-frame-toggle";
@@ -290,6 +299,10 @@ const char kDisableBackgroundMode[]         = "disable-background-mode";
 // measurements.
 const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 
+// Disables running all beforeunload handlers before closing any browser windows
+// on shutdown.
+const char kDisableBatchedShutdown[]        = "disable-batched-shutdown";
+
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
@@ -306,6 +319,11 @@ const char kDisableClientSidePhishingDetection[] =
 
 // Disables pushing cloud policy to Chrome using an invalidation service.
 const char kDisableCloudPolicyPush[]        = "disable-cloud-policy-push";
+
+// Disable default component extensions with background pages - useful for
+// performance tests where these pages may interfere with perf results.
+const char kDisableComponentExtensionsWithBackgroundPages[] =
+    "disable-component-extensions-with-background-pages";
 
 const char kDisableComponentUpdate[]        = "disable-component-update";
 
@@ -552,15 +570,11 @@ const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
 // GAIA login page, an info bar can help the user login.
 const char kEnableAutologin[]               = "enable-autologin";
 
-// Enables running all beforeunload handlers before closing any browser windows
-// on shutdown.
-const char kEnableBatchedShutdown[]         = "enable-batched-shutdown";
-
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
-// Enables pushing cloud policy to Chrome using an invalidation service.
-const char kEnableCloudPolicyPush[]         = "enable-cloud-policy-push";
+// Enables client hints, which adds hints about browser state to HTTP requests.
+const char kEnableClientHints[]             = "enable-client-hints";
 
 // This applies only when the process type is "service". Enables the Cloud
 // Print Proxy component within the service process.
@@ -619,6 +633,9 @@ const char kEnableGoogleNowIntegration[]    = "enable-google-now-integration";
 // Enable HTTP/2 draft 04. This is a temporary testing flag.
 const char kEnableHttp2Draft04[]            = "enable-http2-draft-04";
 
+// Enables the inline sign in flow on Chrome desktop.
+const char kEnableInlineSignin[]            = "enable-inline-signin";
+
 // Enable Instant extended API. On mobile, this merely enables query extraction,
 // not the rest of the instant-extended functionality.
 const char kEnableInstantExtendedAPI[]      = "enable-instant-extended-api";
@@ -662,8 +679,8 @@ const char kEnableNaCl[]                    = "enable-nacl";
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[]         = "enable-net-benchmarking";
 
-// Enables NPN and SPDY. In case server supports SPDY, browser will use SPDY.
-const char kEnableNpn[]                     = "enable-npn";
+// Enables |NetworkTimeService| to convert local time to network time.
+const char kEnableNetworkTime[]             = "enable-network-time";
 
 // Enables NPN with HTTP. It means NPN is enabled but SPDY won't be used.
 // HTTP is still used for all requests.
@@ -676,10 +693,6 @@ const char kEnableOmniboxAutoCompletionForIme[] =
 
 // Enables panels (always on-top docked pop-up windows).
 const char kEnablePanels[]                  = "enable-panels";
-
-// Enables password generation when we detect that the user is going through
-// account creation.
-const char kEnablePasswordGeneration[]      = "enable-password-generation";
 
 // Enables searching for people from the apps list search box.
 const char kEnablePeopleSearch[]            = "enable-people-search";
@@ -730,6 +743,10 @@ const char kEnableStickyKeys[]              = "enable-sticky-keys";
 // Disables support of sticky keys.
 const char kDisableStickyKeys[]              = "disable-sticky-keys";
 
+// Enable SPDY/2. This is a temporary testing flag. See
+// http://crbug.com/303957 .
+const char kEnableSpdy2[]                   = "enable-spdy2";
+
 // Disable SPDY/3.1. This is a temporary testing flag.
 const char kDisableSpdy31[]                 = "disable-spdy31";
 
@@ -749,12 +766,18 @@ const char kEnableSpellingServiceFeedback[] =
 // Enables the stacked tabstrip.
 const char kEnableStackedTabStrip[]         = "enable-stacked-tab-strip";
 
+// Enables an experimental hosted app experience.
+const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
+
 // Enables experimental suggestions pane in New Tab page.
 const char kEnableSuggestionsTabPage[]      = "enable-suggestions-ntp";
 
 // Enables synced notifications.
 const char kEnableSyncSyncedNotifications[] =
     "enable-sync-synced-notifications";
+
+// Enables synced articles.
+const char kEnableSyncArticles[] = "enable-sync-articles";
 
 // Enables context menu for selecting groups of tabs.
 const char kEnableTabGroupsContextMenu[]    = "enable-tab-groups-context-menu";
@@ -843,6 +866,11 @@ const char kForceAppMode[]                  = "force-app-mode";
 // whether or not it's actually the First Run (this overrides kNoFirstRun and
 // kCancelFirstRun).
 const char kForceFirstRun[]                 = "force-first-run";
+
+// Forces additional Chrome Variation Ids that will be sent in
+// X-Chrome-Variations header, specified as a comma-separated list of numeric
+// experiment ids.
+const char kForceVariationIds[]             = "force-variation-ids";
 
 // Tries to load cloud policy for every signed in user, regardless of whether
 // they are a dasher user or not. Used to allow any GAIA account to be used for
@@ -1216,9 +1244,6 @@ const char kRecordMode[]                    = "record-mode";
 // Uses custom front-end URL for the remote debugging.
 const char kRemoteDebuggingFrontend[]       = "remote-debugging-frontend";
 
-// Enables remote debugging of Chrome for Android via raw USB.
-const char kRemoteDebuggingRawUSB[]       = "remote-debugging-raw-usb";
-
 // Enables print preview in the renderer. This flag is generated internally by
 // Chrome and does nothing when directly passed to the browser.
 const char kRendererPrintPreview[]          = "renderer-print-preview";
@@ -1286,6 +1311,9 @@ const char kSetToken[]                      = "set-token";
 // If true the app list will be shown.
 const char kShowAppList[]                   = "show-app-list";
 
+// If true the app list will show the start page webui.
+const char kShowAppListStartPage[]          = "show-app-list-start-page";
+
 // See kHideIcons.
 const char kShowIcons[]                     = "show-icons";
 
@@ -1319,6 +1347,9 @@ const char kSimulateOutdated[]               = "simulate-outdated";
 
 // Origin for which SpdyProxy authentication is supported.
 const char kSpdyProxyAuthOrigin[]           = "spdy-proxy-auth-origin";
+
+// Authentication string for the data reduction proxy.
+const char kSpdyProxyAuthValue[]            = "spdy-proxy-auth-value";
 
 // Speculative resource prefetching.
 const char kSpeculativeResourcePrefetching[] =
@@ -1432,9 +1463,6 @@ const char kTrackActiveVisitTime[]          = "track-active-visit-time";
 // Overrides the default server used for Google Translate.
 const char kTranslateScriptURL[]            = "translate-script-url";
 
-// Overrides security-origin with which Translate runs in an isolated world.
-const char kTranslateSecurityOrigin[]       = "translate-security-origin";
-
 // Disables same-origin check on HTTP resources pushed via a SPDY proxy.
 // The value is the host:port of the trusted proxy.
 const char kTrustedSpdyProxy[]              = "trusted-spdy-proxy";
@@ -1537,10 +1565,13 @@ const char kEnableTranslate[]               = "enable-translate";
 
 // Uses the tablet specific UI components when available.
 const char kTabletUI[]                      = "tablet-ui";
+
+// Enables support for playing videos on Chromecast devices.
+const char kEnableCast[]                    = "enable-cast";
+
 #endif
 
 #if defined(USE_ASH)
-const char kAshDisableTabScrubbing[]        = "ash-disable-tab-scrubbing";
 const char kOpenAsh[]                       = "open-ash";
 #endif
 

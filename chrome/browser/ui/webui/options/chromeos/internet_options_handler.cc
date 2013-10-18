@@ -62,8 +62,8 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
 #include "chromeos/network/network_util.h"
-#include "chromeos/network/onc/onc_constants.h"
 #include "chromeos/network/shill_property_util.h"
+#include "components/onc/onc_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
@@ -78,11 +78,11 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
-#include "ui/webui/web_ui_util.h"
 
 namespace chromeos {
 namespace options {
@@ -412,6 +412,22 @@ std::string ProviderTypeString(
   return l10n_util::GetStringUTF8(id);
 }
 
+bool HasPolicyForFavorite(const FavoriteState* favorite,
+                          const PrefService* profile_prefs) {
+  return onc::HasPolicyForFavoriteNetwork(
+      profile_prefs, g_browser_process->local_state(), *favorite);
+}
+
+bool HasPolicyForNetwork(const NetworkState* network,
+                         const PrefService* profile_prefs) {
+  const FavoriteState* favorite =
+      NetworkHandler::Get()->network_state_handler()->GetFavoriteState(
+          network->path());
+  if (!favorite)
+    return false;
+  return HasPolicyForFavorite(favorite, profile_prefs);
+}
+
 void SetCommonNetworkInfo(const ManagedState* state,
                           const gfx::ImageSkia& icon,
                           ui::ScaleFactor icon_scale_factor,
@@ -435,14 +451,16 @@ void SetCommonNetworkInfo(const ManagedState* state,
 // transferred to the caller.
 base::DictionaryValue* BuildNetworkDictionary(
     const NetworkState* network,
-    ui::ScaleFactor icon_scale_factor) {
+    ui::ScaleFactor icon_scale_factor,
+    const PrefService* profile_prefs) {
   scoped_ptr<base::DictionaryValue> network_info(new base::DictionaryValue());
   network_info->SetBoolean(kNetworkInfoKeyConnectable, network->connectable());
   network_info->SetBoolean(kNetworkInfoKeyConnected,
                            network->IsConnectedState());
   network_info->SetBoolean(kNetworkInfoKeyConnecting,
                            network->IsConnectingState());
-  network_info->SetBoolean(kNetworkInfoKeyPolicyManaged, network->IsManaged());
+  network_info->SetBoolean(kNetworkInfoKeyPolicyManaged,
+                           HasPolicyForNetwork(network, profile_prefs));
 
   gfx::ImageSkia icon = ash::network_icon::GetImageForNetwork(
       network, ash::network_icon::ICON_TYPE_LIST);
@@ -452,12 +470,14 @@ base::DictionaryValue* BuildNetworkDictionary(
 
 base::DictionaryValue* BuildFavoriteDictionary(
     const FavoriteState* favorite,
-    ui::ScaleFactor icon_scale_factor) {
+    ui::ScaleFactor icon_scale_factor,
+    const PrefService* profile_prefs) {
   scoped_ptr<base::DictionaryValue> network_info(new base::DictionaryValue());
   network_info->SetBoolean(kNetworkInfoKeyConnectable, false);
   network_info->SetBoolean(kNetworkInfoKeyConnected, false);
   network_info->SetBoolean(kNetworkInfoKeyConnecting, false);
-  network_info->SetBoolean(kNetworkInfoKeyPolicyManaged, favorite->IsManaged());
+  network_info->SetBoolean(kNetworkInfoKeyPolicyManaged,
+                           HasPolicyForFavorite(favorite, profile_prefs));
 
   gfx::ImageSkia icon = ash::network_icon::GetImageForDisconnectedNetwork(
       ash::network_icon::ICON_TYPE_LIST, favorite->type());
@@ -615,7 +635,7 @@ void PopulateVPNDetails(const NetworkState* vpn,
   }
   dictionary->SetString(kTagUsername, username);
 
-  onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
+  ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
       onc::FindPolicyForActiveUser(vpn->guid(), &onc_source);
 
@@ -623,7 +643,8 @@ void PopulateVPNDetails(const NetworkState* vpn,
   hostname_ui_data.ParseOncProperty(
       onc_source,
       onc,
-      base::StringPrintf("%s.%s", onc::network_config::kVPN, onc::vpn::kHost));
+      base::StringPrintf("%s.%s", ::onc::network_config::kVPN,
+                         ::onc::vpn::kHost));
   std::string provider_host;
   provider_properties->GetStringWithoutPathExpansion(
       shill::kHostProperty, &provider_host);
@@ -1469,7 +1490,7 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
 
   details_path_ = service_path;
 
-  onc::ONCSource onc_source = onc::ONC_SOURCE_NONE;
+  ::onc::ONCSource onc_source = ::onc::ONC_SOURCE_NONE;
   const base::DictionaryValue* onc =
       onc::FindPolicyForActiveUser(network->guid(), &onc_source);
   const NetworkPropertyUIData property_ui_data(onc_source);
@@ -1533,11 +1554,9 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   // Only show proxy for remembered networks.
   dictionary.SetBoolean(kTagShowProxy, !network->profile_path().empty());
 
-  // Enable static ip config for ethernet. For wifi, enable if flag is set.
+  // Enable static ip config for Ethernet or WiFi.
   bool staticIPConfig = network->Matches(NetworkTypePattern::Ethernet()) ||
-                        (type == shill::kTypeWifi &&
-                         CommandLine::ForCurrentProcess()->HasSwitch(
-                             chromeos::switches::kEnableStaticIPConfig));
+                        type == shill::kTypeWifi;
   dictionary.SetBoolean(kTagShowStaticIPConfig, staticIPConfig);
 
   dictionary.SetBoolean(kTagShowPreferred, !network->profile_path().empty());
@@ -1554,13 +1573,13 @@ void InternetOptionsHandler::PopulateDictionaryDetailsCallback(
   if (type == shill::kTypeWifi) {
     onc_path_to_auto_connect = base::StringPrintf(
         "%s.%s",
-        onc::network_config::kWiFi,
-        onc::wifi::kAutoConnect);
+        ::onc::network_config::kWiFi,
+        ::onc::wifi::kAutoConnect);
   } else if (type == shill::kTypeVPN) {
     onc_path_to_auto_connect = base::StringPrintf(
         "%s.%s",
-        onc::network_config::kVPN,
-        onc::vpn::kAutoConnect);
+        ::onc::network_config::kVPN,
+        ::onc::vpn::kAutoConnect);
   }
   if (!onc_path_to_auto_connect.empty()) {
     auto_connect_ui_data.ParseOncProperty(
@@ -1591,8 +1610,9 @@ void PopulateConnectionDetails(const NetworkState* network,
   dictionary->SetString(kTagConnectionState,
                         ConnectionStateString(network->connection_state()));
   dictionary->SetString(kTagNetworkName, network->name());
-  dictionary->SetString(kTagErrorState,
-                        ash::network_connect::ErrorString(network->error()));
+  dictionary->SetString(
+      kTagErrorState,
+      ash::network_connect::ErrorString(network->error(), network->path()));
 
   dictionary->SetBoolean(kTagRemembered, !network->profile_path().empty());
   bool shared = !network->IsPrivate();
@@ -1620,13 +1640,8 @@ void PopulateWifiDetails(const NetworkState* wifi,
                          base::DictionaryValue* dictionary) {
   dictionary->SetString(kTagSsid, wifi->name());
   dictionary->SetInteger(kTagStrength, wifi->signal_strength());
-
-  std::string security, eap_method;
-  shill_properties.GetStringWithoutPathExpansion(
-      shill::kSecurityProperty, &security);
-  shill_properties.GetStringWithoutPathExpansion(
-      shill::kEapMethodProperty, &eap_method);
-  dictionary->SetString(kTagEncryption, EncryptionString(security, eap_method));
+  dictionary->SetString(kTagEncryption,
+                        EncryptionString(wifi->security(), wifi->eap_method()));
   CopyStringFromDictionary(shill_properties, shill::kWifiBSsid,
                            kTagBssid, dictionary);
   CopyIntegerFromDictionary(shill_properties, shill::kWifiFrequency,
@@ -1929,7 +1944,9 @@ base::ListValue* InternetOptionsHandler::GetWiredList() {
   if (!network)
     return list;
   list->Append(
-      BuildNetworkDictionary(network, web_ui()->GetDeviceScaleFactor()));
+      BuildNetworkDictionary(network,
+                             web_ui()->GetDeviceScaleFactor(),
+                             Profile::FromWebUI(web_ui())->GetPrefs()));
   return list;
 }
 
@@ -1942,7 +1959,9 @@ base::ListValue* InternetOptionsHandler::GetWirelessList() {
   for (NetworkStateHandler::NetworkStateList::const_iterator iter =
            networks.begin(); iter != networks.end(); ++iter) {
     list->Append(
-        BuildNetworkDictionary(*iter, web_ui()->GetDeviceScaleFactor()));
+        BuildNetworkDictionary(*iter,
+                               web_ui()->GetDeviceScaleFactor(),
+                               Profile::FromWebUI(web_ui())->GetPrefs()));
   }
 
   return list;
@@ -1957,7 +1976,9 @@ base::ListValue* InternetOptionsHandler::GetVPNList() {
   for (NetworkStateHandler::NetworkStateList::const_iterator iter =
            networks.begin(); iter != networks.end(); ++iter) {
     list->Append(
-        BuildNetworkDictionary(*iter, web_ui()->GetDeviceScaleFactor()));
+        BuildNetworkDictionary(*iter,
+                               web_ui()->GetDeviceScaleFactor(),
+                               Profile::FromWebUI(web_ui())->GetPrefs()));
   }
 
   return list;
@@ -1975,7 +1996,9 @@ base::ListValue* InternetOptionsHandler::GetRememberedList() {
         favorite->type() != shill::kTypeVPN)
       continue;
     list->Append(
-        BuildFavoriteDictionary(favorite, web_ui()->GetDeviceScaleFactor()));
+        BuildFavoriteDictionary(favorite,
+                                web_ui()->GetDeviceScaleFactor(),
+                                Profile::FromWebUI(web_ui())->GetPrefs()));
   }
 
   return list;

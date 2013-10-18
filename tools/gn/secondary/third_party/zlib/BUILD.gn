@@ -3,11 +3,17 @@
 # found in the LICENSE file.
 
 config("zlib_config") {
-  includes = [ "." ]
+  include_dirs = [ "." ]
 }
 
-static_library("chrome_zlib") {
+static_library("zlib") {
   external = true
+
+  if (!is_win) {
+    # Don't stomp on "libzlib" on other platforms.
+    output_name = "chrome_zlib"
+  }
+
   sources = [
     "adler32.c",
     "compress.c",
@@ -37,6 +43,9 @@ static_library("chrome_zlib") {
     "zutil.c",
     "zutil.h",
   ]
+
+  configs -= "//build/config/compiler:chromium_code"
+  configs += "//build/config/compiler:no_chromium_code"
 
   direct_dependent_configs = [ ":zlib_config" ]
 }
@@ -70,8 +79,10 @@ static_library("minizip") {
     cflags = [ "-Wno-parentheses-equality" ]
   }
 
-  deps = [ ":chrome_zlib" ]
+  deps = [ ":zlib" ]
 
+  configs -= "//build/config/compiler:chromium_code"
+  configs += "//build/config/compiler:no_chromium_code"
   direct_dependent_configs = [ ":zlib_config" ]
 }
 

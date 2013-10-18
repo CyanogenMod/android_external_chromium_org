@@ -18,7 +18,7 @@
 #include "net/quic/quic_config.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_client_session.h"
 #include "net/tools/quic/quic_reliable_client_stream.h"
 
@@ -34,10 +34,13 @@ namespace test {
 class QuicClientPeer;
 }  // namespace test
 
-class QuicClient : public EpollCallbackInterface {
+class QuicClient : public EpollCallbackInterface,
+                   public ReliableQuicStream::Visitor {
  public:
-  QuicClient(IPEndPoint server_address, const std::string& server_hostname,
-             const QuicVersion version);
+  QuicClient(IPEndPoint server_address,
+             const string& server_hostname,
+             const QuicVersion version,
+             bool print_response);
   QuicClient(IPEndPoint server_address,
              const std::string& server_hostname,
              const QuicConfig& config,
@@ -95,6 +98,9 @@ class QuicClient : public EpollCallbackInterface {
   // the client from the SelectServer.
   virtual void OnUnregistration(int fd, bool replaced) OVERRIDE {}
   virtual void OnShutdown(EpollServer* eps, int fd) OVERRIDE {}
+
+  // ReliableQuicStream::Visitor
+  virtual void OnClose(ReliableQuicStream* stream) OVERRIDE;
 
   QuicPacketCreator::Options* options();
 
@@ -189,6 +195,10 @@ class QuicClient : public EpollCallbackInterface {
 
   // Which QUIC version does this client talk?
   QuicVersion version_;
+
+  // If true, then the contents of each response will be printed to stdout
+  // when the stream is closed (in OnClose).
+  bool print_response_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClient);
 };

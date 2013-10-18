@@ -47,7 +47,7 @@ class TtyTest : public ::testing::Test {
 
 TEST_F(TtyTest, InvalidIoctl) {
   // 123 is not a valid ioctl request.
-  EXPECT_EQ(EINVAL, dev_tty_->Ioctl(123, NULL));
+  EXPECT_EQ(EINVAL, dev_tty_->Ioctl(123));
 }
 
 TEST_F(TtyTest, TtyInput) {
@@ -69,19 +69,19 @@ TEST_F(TtyTest, TtyInput) {
   memset(backup_buffer, 'a', 100);
 
   // Now we actually send the data
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCNACLINPUT,
-                               reinterpret_cast<char*>(&packaged_message)));
+  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCNACLINPUT, &packaged_message));
 
   // We read a small chunk first to ensure it doesn't give us
   // more than we ask for.
-  EXPECT_EQ(0, dev_tty_->Read(0, buffer, 5, &bytes_read));
+  HandleAttr attrs;
+  EXPECT_EQ(0, dev_tty_->Read(attrs, buffer, 5, &bytes_read));
   EXPECT_EQ(bytes_read, 5);
   EXPECT_EQ(0, memcmp(message.data(), buffer, 5));
   EXPECT_EQ(0, memcmp(buffer + 5, backup_buffer + 5, 95));
 
   // Now we ask for more data than is left in the tty, to ensure
   // it doesn't give us more than is there.
-  EXPECT_EQ(0, dev_tty_->Read(0, buffer + 5, 95, &bytes_read));
+  EXPECT_EQ(0, dev_tty_->Read(attrs, buffer + 5, 95, &bytes_read));
   EXPECT_EQ(bytes_read, message.size() - 5);
   EXPECT_EQ(0, memcmp(message.data(), buffer, message.size()));
   EXPECT_EQ(0, memcmp(buffer + message.size(),
@@ -106,7 +106,8 @@ TEST_F(TtyTest, TtyOutput) {
   int bytes_written = 10;
   const char* message = "hello\n";
   int message_len = strlen(message);
-  EXPECT_EQ(EIO, dev_tty_->Write(0, message, message_len, &bytes_written));
+  HandleAttr attrs;
+  EXPECT_EQ(EIO, dev_tty_->Write(attrs, message, message_len, &bytes_written));
 
   // Setup output handler with user_data to record calls.
   user_data_t user_data;
@@ -117,21 +118,27 @@ TEST_F(TtyTest, TtyOutput) {
   handler.handler = output_handler;
   handler.user_data = &user_data;
 
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCNACLOUTPUT,
-                               reinterpret_cast<char*>(&handler)));
+  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCNACLOUTPUT, &handler));
 
-  EXPECT_EQ(0, dev_tty_->Write(0, message, message_len, &bytes_written));
+  EXPECT_EQ(0, dev_tty_->Write(attrs, message, message_len, &bytes_written));
   EXPECT_EQ(message_len, bytes_written);
   EXPECT_EQ(message_len, user_data.output_count);
   EXPECT_EQ(0, strncmp(user_data.output_buf, message, message_len));
 }
 
+static int ki_ioctl_wrapper(int fd, int request, ...) {
+  va_list ap;
+  va_start(ap, request);
+  int rtn = ki_ioctl(fd, request, ap);
+  va_end(ap);
+  return rtn;
+}
+
 static int TtyWrite(int fd, const char* string) {
   struct tioc_nacl_input_string input;
-  input.buffer =string;
+  input.buffer = string;
   input.length = strlen(input.buffer);
-  char* ioctl_arg = reinterpret_cast<char*>(&input);
-  return ki_ioctl(fd, TIOCNACLINPUT, ioctl_arg);
+  return ki_ioctl_wrapper(fd, TIOCNACLINPUT, &input);
 }
 
 // Returns:
@@ -242,8 +249,7 @@ void sighandler(int sig) {
 TEST_F(TtyTest, WindowSize) {
   // Get current window size
   struct winsize old_winsize = { 0 };
-  ASSERT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ,
-                               reinterpret_cast<char*>(&old_winsize)));
+  ASSERT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ, &old_winsize));
 
   // Install signal handler
   sighandler_t new_handler = sighandler;
@@ -254,8 +260,7 @@ TEST_F(TtyTest, WindowSize) {
   struct winsize winsize;
   winsize.ws_col = 100;
   winsize.ws_row = 200;
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ,
-                               reinterpret_cast<char*>(&winsize)));
+  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ, &winsize));
   EXPECT_EQ(g_recieved_signal, SIGWINCH);
 
   // Restore old signal handler
@@ -264,14 +269,12 @@ TEST_F(TtyTest, WindowSize) {
   // Verify new window size can be queried correctly.
   winsize.ws_col = 0;
   winsize.ws_row = 0;
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ,
-                               reinterpret_cast<char*>(&winsize)));
+  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ, &winsize));
   EXPECT_EQ(winsize.ws_col, 100);
   EXPECT_EQ(winsize.ws_row, 200);
 
   // Restore original windows size.
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ,
-                               reinterpret_cast<char*>(&old_winsize)));
+  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ, &old_winsize));
 }
 
 /*
@@ -284,7 +287,7 @@ static void* resize_thread_main(void* arg) {
   struct winsize winsize;
   winsize.ws_col = 100;
   winsize.ws_row = 200;
-  ki_ioctl(*tty_fd, TIOCSWINSZ, reinterpret_cast<char*>(&winsize));
+  ki_ioctl_wrapper(*tty_fd, TIOCSWINSZ, &winsize);
   return NULL;
 }
 

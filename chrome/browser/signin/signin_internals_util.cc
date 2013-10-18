@@ -20,31 +20,6 @@ namespace signin_internals_util {
 
 const char kSigninPrefPrefix[] = "google.services.signin.";
 const char kTokenPrefPrefix[] = "google.services.signin.tokens.";
-const char kOperationsBaseToken[] = "OperationsBase";
-const char kUserPolicySigninServiceToken[] = "UserCloudPolicyManagerToken";
-const char kProfileDownloaderToken[] = "ProfileDownloader";
-
-// TODO(vishwath): These two services need their information plumbed to
-// about:signin-internals.
-const char kObfuscatedGaiaIdFetcherToken[] = "ObfuscatedGaiaIdFetcher";
-const char kOAuth2MintTokenFlowToken[] = "OAuth2MintTokenFlow";
-
-const char kSIDToken[] = "SID";
-const char kLSIDToken[] = "LSID";
-
-const char* kTokenPrefsArray[] = {
-  GaiaConstants::kSyncService,
-  GaiaConstants::kGaiaOAuth2LoginRefreshToken,
-  kSIDToken,
-  kLSIDToken,
-  kOperationsBaseToken,
-  kUserPolicySigninServiceToken,
-  kProfileDownloaderToken,
-  kObfuscatedGaiaIdFetcherToken,
-  kOAuth2MintTokenFlowToken
-};
-
-const size_t kNumTokenPrefs = arraysize(kTokenPrefsArray);
 
 TokenInfo::TokenInfo(const std::string& truncated_token,
                      const std::string& status,
@@ -97,6 +72,8 @@ std::string SigninStatusFieldToString(TimedSigninStatusField field) {
     ENUM_CASE(CLIENT_LOGIN_STATUS);
     ENUM_CASE(OAUTH_LOGIN_STATUS);
     ENUM_CASE(GET_USER_INFO_STATUS);
+    ENUM_CASE(UBER_TOKEN_STATUS);
+    ENUM_CASE(MERGE_SESSION_STATUS);
     case TIMED_FIELDS_END:
       NOTREACHED();
       return std::string();
@@ -210,6 +187,12 @@ TimedSigninStatusValue SigninStatusFieldToLabel(
     case GET_USER_INFO_STATUS:
       return TimedSigninStatusValue("Last OnGetUserInfo Status",
                                     "Last OnGetUserInfo Time");
+    case UBER_TOKEN_STATUS:
+      return TimedSigninStatusValue("Last OnUberToken Status",
+                                    "Last OnUberToken Time");
+    case MERGE_SESSION_STATUS:
+      return TimedSigninStatusValue("Last OnMergeSession Status",
+                                    "Last OnMergeSession Time");
     case TIMED_FIELDS_END:
       NOTREACHED();
       return TimedSigninStatusValue("Error", std::string());

@@ -16,11 +16,11 @@ Scheduler::Scheduler(SchedulerClient* client,
                      const SchedulerSettings& scheduler_settings)
     : settings_(scheduler_settings),
       client_(client),
-      weak_factory_(this),
       last_set_needs_begin_frame_(false),
       state_machine_(scheduler_settings),
       inside_process_scheduled_actions_(false),
-      inside_action_(SchedulerStateMachine::ACTION_NONE) {
+      inside_action_(SchedulerStateMachine::ACTION_NONE),
+      weak_factory_(this) {
   DCHECK(client_);
   DCHECK(!state_machine_.BeginFrameNeededByImplThread());
 }
@@ -157,7 +157,7 @@ void Scheduler::SetupNextBeginFrameIfNeeded() {
   // aren't expecting any more BeginFrames. This should only be needed by the
   // synchronous compositor when BeginFrameNeededByImplThread is false.
   if (state_machine_.ShouldPollForAnticipatedDrawTriggers()) {
-    DCHECK(settings_.using_synchronous_renderer_compositor);
+    DCHECK(!state_machine_.SupportsProactiveBeginFrame());
     DCHECK(!needs_begin_frame);
     if (poll_for_draw_triggers_closure_.IsCancelled()) {
       poll_for_draw_triggers_closure_.Reset(

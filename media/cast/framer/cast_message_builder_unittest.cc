@@ -15,7 +15,7 @@ namespace cast {
 static const uint32 kSsrc = 0x1234;
 static const uint32 kShortTimeIncrementMs = 10;
 static const uint32 kLongTimeIncrementMs = 40;
-static const int64 kStartMillisecond = 123456789;
+static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
 
 typedef std::map<uint8, int> MissingPacketsMap;
 
@@ -38,8 +38,16 @@ class NackFeedbackVerification : public RtpPayloadFeedback {
     // Keep track of the number of missing packets per frame.
     missing_packets_.clear();
     while (frame_it != cast_feedback.missing_frames_and_packets_.end()) {
+      // Check for complete frame lost.
+      if ((frame_it->second.size() == 1) &&
+          (*frame_it->second.begin() == kRtcpCastAllPacketsLost)) {
+        missing_packets_.insert(
+          std::make_pair(frame_it->first, kRtcpCastAllPacketsLost));
+      } else {
       missing_packets_.insert(
-          std::make_pair(frame_it->first, frame_it->second.size()));
+          std::make_pair(frame_it->first,
+                         static_cast<int>(frame_it->second.size())));
+      }
       ++frame_it;
     }
     triggered_ = true;
@@ -71,7 +79,8 @@ class NackFeedbackVerification : public RtpPayloadFeedback {
 class CastMessageBuilderTest : public ::testing::Test {
  protected:
   CastMessageBuilderTest()
-      : cast_msg_builder_(new CastMessageBuilder(&feedback_,
+      : cast_msg_builder_(new CastMessageBuilder(&testing_clock_,
+                                                 &feedback_,
                                                  &frame_id_map_,
                                                  kSsrc,
                                                  true,
@@ -80,10 +89,9 @@ class CastMessageBuilderTest : public ::testing::Test {
     rtp_header_.is_key_frame = false;
     testing_clock_.Advance(
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
-    cast_msg_builder_->set_clock(&testing_clock_);
   }
 
-  ~CastMessageBuilderTest() {}
+  virtual ~CastMessageBuilderTest() {}
 
   void SetFrameId(uint8 frame_id) {
     rtp_header_.frame_id = frame_id;
@@ -117,7 +125,8 @@ class CastMessageBuilderTest : public ::testing::Test {
   }
 
   void SetDecoderSlowerThanMaxFrameRate(int max_unacked_frames) {
-    cast_msg_builder_.reset(new CastMessageBuilder(&feedback_,
+    cast_msg_builder_.reset(new CastMessageBuilder(&testing_clock_,
+                                                   &feedback_,
                                                    &frame_id_map_,
                                                    kSsrc,
                                                    false,
@@ -168,7 +177,6 @@ TEST_F(CastMessageBuilderTest, OneFrameNackList) {
 }
 
 TEST_F(CastMessageBuilderTest, CompleteFrameMissing) {
-  // TODO(mikhal): Add indication.
   SetFrameId(0);
   SetPacketId(2);
   SetMaxPacketId(5);
@@ -179,6 +187,8 @@ TEST_F(CastMessageBuilderTest, CompleteFrameMissing) {
   SetPacketId(2);
   SetMaxPacketId(5);
   InsertPacket();
+  EXPECT_TRUE(feedback_.triggered());
+  EXPECT_EQ(kRtcpCastAllPacketsLost, feedback_.num_missing_packets(1));
 }
 
 TEST_F(CastMessageBuilderTest, FastForwardAck) {

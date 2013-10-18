@@ -8,12 +8,12 @@
 #import <Cocoa/Cocoa.h>
 #include <vector>
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
+#include "apps/ui/native_app_window.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "extensions/common/draggable_region.h"
 #include "ui/gfx/rect.h"
 
@@ -41,7 +41,8 @@ class SkRegion;
 @end
 
 // Cocoa bridge to AppWindow.
-class NativeAppWindowCocoa : public apps::NativeAppWindow {
+class NativeAppWindowCocoa : public apps::NativeAppWindow,
+                             public content::WebContentsObserver {
  public:
   NativeAppWindowCocoa(apps::ShellWindow* shell_window,
                        const apps::ShellWindow::CreateParams& params);
@@ -77,7 +78,12 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow {
   // Called when the window is defocused.
   void WindowDidResignKey();
 
-  // Called when the window is resized.
+  // Called when the window finishes resizing, i.e. after zoom/unzoom, after
+  // entering/leaving fullscreen, and after a user is done resizing.
+  void WindowDidFinishResize();
+
+  // Called when the window is resized. This is called repeatedly during a
+  // zoom/unzoom, and while a user is resizing.
   void WindowDidResize();
 
   // Called when the window is moved.
@@ -115,10 +121,17 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow {
   virtual void UpdateInputRegion(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
+  virtual SkRegion* GetDraggableRegion() OVERRIDE;
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void RenderViewHostChanged() OVERRIDE;
+  virtual bool IsFrameless() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
+  virtual bool IsVisible() const OVERRIDE;
+
+  // WebContentsObserver implementation.
+  virtual void RenderViewHostChanged(
+      content::RenderViewHost* old_host,
+      content::RenderViewHost* new_host) OVERRIDE;
 
   // These are used to simulate Mac-style hide/show. Since windows can be hidden
   // and shown using the app.window API, this sets is_hidden_with_app_ to
@@ -126,14 +139,16 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow {
   virtual void ShowWithApp() OVERRIDE;
   virtual void HideWithApp() OVERRIDE;
 
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+
   // WebContentsModalDialogHost implementation.
   virtual gfx::NativeView GetHostView() const OVERRIDE;
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
   virtual gfx::Size GetMaximumDialogSize() OVERRIDE;
   virtual void AddObserver(
-      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::ModalDialogHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
-      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::ModalDialogHostObserver* observer) OVERRIDE;
 
  private:
   virtual ~NativeAppWindowCocoa();
@@ -185,7 +200,8 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow {
 
   gfx::Size min_size_;
   gfx::Size max_size_;
-  bool resizable_;
+  bool shows_resize_controls_;
+  bool shows_fullscreen_controls_;
 
   base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention

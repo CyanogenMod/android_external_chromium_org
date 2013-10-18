@@ -46,7 +46,6 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       stacking_order_changed_(false),
       double_sided_(true),
       layer_property_changed_(false),
-      layer_surface_property_changed_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
       opacity_(1.0),
@@ -472,10 +471,6 @@ skia::RefPtr<SkPicture> LayerImpl::GetPicture() {
   return skia::RefPtr<SkPicture>();
 }
 
-bool LayerImpl::CanClipSelf() const {
-  return false;
-}
-
 bool LayerImpl::AreVisibleResourcesReady() const {
   return true;
 }
@@ -613,30 +608,6 @@ void LayerImpl::SetStackingOrderChanged(bool stacking_order_changed) {
   }
 }
 
-bool LayerImpl::LayerSurfacePropertyChanged() const {
-  if (layer_surface_property_changed_)
-    return true;
-
-  // If this layer's surface property hasn't changed, we want to see if
-  // some layer above us has changed this property. This is done for the
-  // case when such parent layer does not draw content, and therefore will
-  // not be traversed by the damage tracker. We need to make sure that
-  // property change on such layer will be caught by its descendants.
-  LayerImpl* current = this->parent_;
-  while (current && !current->draw_properties_.render_surface) {
-    if (current->layer_surface_property_changed_)
-      return true;
-    current = current->parent_;
-  }
-
-  return false;
-}
-
-void LayerImpl::NoteLayerSurfacePropertyChanged() {
-  layer_surface_property_changed_ = true;
-  layer_tree_impl()->set_needs_update_draw_properties();
-}
-
 void LayerImpl::NoteLayerPropertyChanged() {
   layer_property_changed_ = true;
   layer_tree_impl()->set_needs_update_draw_properties();
@@ -659,7 +630,6 @@ const char* LayerImpl::LayerTypeAsString() const {
 
 void LayerImpl::ResetAllChangeTrackingForSubtree() {
   layer_property_changed_ = false;
-  layer_surface_property_changed_ = false;
 
   update_rect_ = gfx::RectF();
 
@@ -680,6 +650,10 @@ void LayerImpl::ResetAllChangeTrackingForSubtree() {
 
 bool LayerImpl::LayerIsAlwaysDamaged() const {
   return false;
+}
+
+void LayerImpl::OnFilterAnimated(const FilterOperations& filters) {
+  SetFilters(filters);
 }
 
 void LayerImpl::OnOpacityAnimated(float opacity) {
@@ -821,6 +795,16 @@ void LayerImpl::SetFilters(const FilterOperations& filters) {
   NoteLayerPropertyChangedForSubtree();
 }
 
+bool LayerImpl::FilterIsAnimating() const {
+  return layer_animation_controller_->IsAnimatingProperty(Animation::Filter);
+}
+
+bool LayerImpl::FilterIsAnimatingOnImplOnly() const {
+  Animation* filter_animation =
+      layer_animation_controller_->GetAnimation(Animation::Filter);
+  return filter_animation && filter_animation->is_impl_only();
+}
+
 void LayerImpl::SetBackgroundFilters(
     const FilterOperations& filters) {
   if (background_filters_ == filters)
@@ -851,7 +835,7 @@ void LayerImpl::SetOpacity(float opacity) {
     return;
 
   opacity_ = opacity;
-  NoteLayerSurfacePropertyChanged();
+  NoteLayerPropertyChangedForSubtree();
 }
 
 bool LayerImpl::OpacityIsAnimating() const {
@@ -895,7 +879,7 @@ void LayerImpl::SetTransform(const gfx::Transform& transform) {
     return;
 
   transform_ = transform;
-  NoteLayerSurfacePropertyChanged();
+  NoteLayerPropertyChangedForSubtree();
 }
 
 bool LayerImpl::TransformIsAnimating() const {
@@ -994,6 +978,11 @@ void LayerImpl::SetScrollOffsetDelegate(
     scroll_offset_delegate_->SetMaxScrollOffset(max_scroll_offset_);
     scroll_offset_delegate_->SetTotalScrollOffset(total_offset);
   }
+}
+
+bool LayerImpl::IsExternalFlingActive() const {
+  return scroll_offset_delegate_ &&
+         scroll_offset_delegate_->IsExternalFlingActive();
 }
 
 void LayerImpl::SetScrollOffset(gfx::Vector2d scroll_offset) {
@@ -1309,6 +1298,9 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
 
   if (clip_parent_)
     state->SetInteger("clip_parent", clip_parent_->id());
+
+  state->SetBoolean("can_use_lcd_text", can_use_lcd_text());
+  state->SetBoolean("contents_opaque", contents_opaque());
 }
 
 size_t LayerImpl::GPUMemoryUsageInBytes() const { return 0; }

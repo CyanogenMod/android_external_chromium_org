@@ -25,8 +25,8 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/sys_info.h"
-#include "base/test/perftimer.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/metrics_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -77,6 +77,9 @@ void SetupProgressiveScanFieldTrial() {
   group_to_char[trial->AppendGroup("50Percent_4MinMax", 0)] = "2";
   group_to_char[trial->AppendGroup("50Percent_8MinMax", 0)] = "3";
   group_to_char[trial->AppendGroup("100Percent_8MinMax", 0)] = "4";
+  group_to_char[trial->AppendGroup("100Percent_1MinSeen_A", 0)] = "5";
+  group_to_char[trial->AppendGroup("100Percent_1MinSeen_B", 0)] = "6";
+  group_to_char[trial->AppendGroup("100Percent_1Min_4Max", 0)] = "7";
 
   // Announce the experiment to any listeners (especially important is the UMA
   // software, which will append the group names to UMA statistics).
@@ -94,68 +97,6 @@ void SetupProgressiveScanFieldTrial() {
   } else {
     LOG(ERROR) << "Couldn't write to " << group_file_path.value();
   }
-}
-
-// Finds out if we're on a 2GB Parrot.
-//
-// This code reads and parses /etc/lsb-release. There are at least four other
-// places that open and parse /etc/lsb-release, and I wish I could fix the
-// mess.  At least this code is temporary.
-
-bool Is2GBParrot() {
-  base::FilePath path("/etc/lsb-release");
-  std::string contents;
-  if (!base::ReadFileToString(path, &contents))
-    return false;
-  if (contents.find("CHROMEOS_RELEASE_BOARD=parrot") == std::string::npos)
-    return false;
-  // There are 2GB and 4GB models.
-  return base::SysInfo::AmountOfPhysicalMemory() <= 2LL * 1024 * 1024 * 1024;
-}
-
-// Sets up field trial for measuring swap and CPU metrics after tab switch
-// and scroll events. crbug.com/253994
-void SetupSwapJankFieldTrial() {
-  const char name_of_experiment[] = "SwapJank64vs32Parrot";
-
-  // Determine if this is a 32 or 64 bit build of Chrome.
-  bool is_chrome_64 = sizeof(void*) == 8;
-
-  // Determine if this is a 32 or 64 bit kernel.
-  bool is_kernel_64 = base::SysInfo::OperatingSystemArchitecture() == "x86_64";
-
-  // A 32 bit kernel requires 32 bit Chrome.
-  DCHECK(is_kernel_64 || !is_chrome_64);
-
-  // Find out if we're on a 2GB Parrot.
-  bool is_parrot = Is2GBParrot();
-
-  // All groups are either on or off.
-  const base::FieldTrial::Probability kTotalProbability = 1;
-  scoped_refptr<base::FieldTrial> trial =
-      base::FieldTrialList::FactoryGetFieldTrial(
-          name_of_experiment, kTotalProbability, "default", 2013, 12, 31,
-          base::FieldTrial::SESSION_RANDOMIZED, NULL);
-
-  // Assign probability of 1 to this Chrome's group.  Assign 0 to all other
-  // choices.
-  trial->AppendGroup("kernel_64_chrome_64",
-                     is_parrot && is_kernel_64 && is_chrome_64 ?
-                     kTotalProbability : 0);
-  trial->AppendGroup("kernel_64_chrome_32",
-                     is_parrot && is_kernel_64 && !is_chrome_64 ?
-                     kTotalProbability : 0);
-  trial->AppendGroup("kernel_32_chrome_32",
-                     is_parrot && !is_kernel_64 && !is_chrome_64 ?
-                     kTotalProbability : 0);
-  trial->AppendGroup("not_parrot",
-                     !is_parrot ? kTotalProbability : 0);
-
-  // Announce the experiment to any listeners (especially important is the UMA
-  // software, which will append the group names to UMA statistics).
-  trial->group();
-  DVLOG(1) << "Configured in group '" << trial->group_name() << "' for "
-           << name_of_experiment << " field trial";
 }
 
 }  // namespace
@@ -393,7 +334,7 @@ void ExternalMetrics::CollectEvents() {
 }
 
 void ExternalMetrics::CollectEventsAndReschedule() {
-  PerfTimer timer;
+  base::ElapsedTimer timer;
   CollectEvents();
   UMA_HISTOGRAM_TIMES("UMA.CollectExternalEventsTime", timer.Elapsed());
   ScheduleCollector();
@@ -413,7 +354,6 @@ void ExternalMetrics::SetupFieldTrialsOnFileThread() {
   // Field trials that do not read from files can be initialized in
   // ExternalMetrics::Start() above.
   SetupProgressiveScanFieldTrial();
-  SetupSwapJankFieldTrial();
 
   ScheduleCollector();
 }

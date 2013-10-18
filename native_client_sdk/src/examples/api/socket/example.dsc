@@ -4,14 +4,13 @@
     {
       'NAME' : 'socket',
       'TYPE' : 'main',
-      'SOURCES' : ['socket.cc'],
+      'SOURCES' : ['socket.cc', 'echo_server.cc', 'echo_server.h'],
       'LIBS': ['ppapi_cpp', 'ppapi']
     }
   ],
   'DATA': [
     'example.js',
   ],
-  'PRE': '''\nCHROME_ARGS = --allow-nacl-socket-api=localhost\n''',
   'DEST': 'examples/api',
   'NAME': 'socket',
   'TITLE': 'socket',

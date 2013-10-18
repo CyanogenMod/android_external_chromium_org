@@ -31,6 +31,7 @@ Patches:
 
   * Add the SSL_PeerCertificateChain function
     patches/peercertchain.patch
+    patches/peercertchain2.patch
     https://bugzilla.mozilla.org/show_bug.cgi?id=731485
 
   * Add support for client auth with native crypto APIs on Mac and Windows
@@ -123,6 +124,16 @@ Patches:
   * Don't advertise TLS 1.2-only cipher suites in a TLS 1.1 ClientHello.
     https://bugzilla.mozilla.org/show_bug.cgi?id=919677
     patches/ciphersuiteversion.patch
+
+  * Don't use record versions greater than 0x0301 in resumption ClientHello
+    records either.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=923696
+    https://code.google.com/p/chromium/issues/detail?id=303398
+    patches/resumeclienthelloversion.patch
+
+  * Make SSL False Start work with asynchronous certificate validation.
+    https://bugzilla.mozilla.org/show_bug.cgi?id=713933
+    patches/canfalsestart.patch
 
 Apply the patches to NSS by running the patches/applypatches.sh script.  Read
 the comments at the top of patches/applypatches.sh for instructions.

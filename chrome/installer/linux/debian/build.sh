@@ -48,22 +48,34 @@ prep_staging_debian() {
 
 # Put the package contents in the staging area.
 stage_install_debian() {
+  # Always use a different name for /usr/bin symlink depending on channel.
+  # First, to avoid file collisions. Second, to make it possible to
+  # use update-alternatives for /usr/bin/google-chrome.
+  local USR_BIN_SYMLINK_NAME="${PACKAGE}-${CHANNEL}"
+
   if [ "$CHANNEL" != "stable" ]; then
-    # Avoid file collisions between channels.
-    local PACKAGE="${PACKAGE}-${CHANNEL}"
-    local INSTALLDIR="${INSTALLDIR}-${CHANNEL}"
-
-    # Make it possible to distinguish between menu entries
-    # for different channels.
-    local MENUNAME="${MENUNAME} (${CHANNEL})"
-
     # This would ideally be compiled into the app, but that's a bit too
     # intrusive of a change for these limited use channels, so we'll just hack
     # it into the wrapper script. The user can still override since it seems to
     # work to specify --user-data-dir multiple times on the command line, with
     # the last occurrence winning.
-    local SXS_USER_DATA_DIR="\${XDG_CONFIG_HOME:-\${HOME}/.config}/${PACKAGE}"
+    local SXS_USER_DATA_DIR="\${XDG_CONFIG_HOME:-\${HOME}/.config}/${PACKAGE}-${CHANNEL}"
     local DEFAULT_FLAGS="--user-data-dir=\"${SXS_USER_DATA_DIR}\""
+
+    # Avoid file collisions between channels.
+    # TODO(phajdan.jr): Do that for all packages for SxS,
+    # http://crbug.com/38598 .
+    # We can't do this for now for all packages because of
+    # http://crbug.com/295103 , and ultimately http://crbug.com/22703 .
+    # Also see https://groups.google.com/a/chromium.org/d/msg/chromium-dev/DBEqOORaRiw/pE0bNI6h0kcJ .
+    if [ "$CHANNEL" = "trunk" ] || [ "$CHANNEL" = "asan" ]; then
+      local PACKAGE="${PACKAGE}-${CHANNEL}"
+      local INSTALLDIR="${INSTALLDIR}-${CHANNEL}"
+    fi
+
+    # Make it possible to distinguish between menu entries
+    # for different channels.
+    local MENUNAME="${MENUNAME} (${CHANNEL})"
   fi
   prep_staging_debian
   stage_install_common

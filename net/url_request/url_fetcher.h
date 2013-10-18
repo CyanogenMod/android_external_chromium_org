@@ -10,6 +10,7 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "base/task_runner.h"
 #include "net/base/net_export.h"
@@ -27,6 +28,7 @@ class HostPortPair;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
 class URLFetcherDelegate;
+class URLFetcherResponseWriter;
 class URLRequestContextGetter;
 class URLRequestStatus;
 typedef std::vector<std::string> ResponseCookies;
@@ -239,6 +241,11 @@ class NET_EXPORT URLFetcher {
   virtual void SaveResponseToTemporaryFile(
       scoped_refptr<base::TaskRunner> file_task_runner) = 0;
 
+  // By default, the response is saved in a string. Call this method to use the
+  // specified writer to save the response. Must be called before Start().
+  virtual void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) = 0;
+
   // Retrieve the response headers from the request.  Must only be called after
   // the OnURLFetchComplete callback has run.
   virtual HttpResponseHeaders* GetResponseHeaders() const = 0;
@@ -272,11 +279,6 @@ class NET_EXPORT URLFetcher {
 
   // Cookies recieved.
   virtual const ResponseCookies& GetCookies() const = 0;
-
-  // Return true if any file system operation failed.  If so, set |error_code|
-  // to the net error code. File system errors are only possible if user called
-  // SaveResponseToTemporaryFile().
-  virtual bool FileErrorOccurred(int* out_error_code) const = 0;
 
   // Reports that the received content was malformed.
   virtual void ReceivedContentWasMalformed() = 0;

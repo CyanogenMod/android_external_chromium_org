@@ -34,7 +34,6 @@ class AnalysisCanvas;
 namespace cc {
 
 class ContentLayerClient;
-class RenderingStatsInstrumentation;
 
 class CC_EXPORT Picture
     : public base::RefCountedThreadSafe<Picture> {
@@ -60,21 +59,19 @@ class CC_EXPORT Picture
   // Record a paint operation. To be able to safely use this SkPicture for
   // playback on a different thread this can only be called once.
   void Record(ContentLayerClient* client,
-              const SkTileGridPicture::TileGridInfo& tile_grid_info,
-              RenderingStatsInstrumentation* stats_instrumentation);
+              const SkTileGridPicture::TileGridInfo& tile_grid_info);
 
   // Gather pixel refs from recording.
-  void GatherPixelRefs(const SkTileGridPicture::TileGridInfo& tile_grid_info,
-                       RenderingStatsInstrumentation* stats_instrumentation);
+  void GatherPixelRefs(const SkTileGridPicture::TileGridInfo& tile_grid_info);
 
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
 
   // Apply this contents scale and raster the content rect into the canvas.
-  void Raster(SkCanvas* canvas,
-              SkDrawPictureCallback* callback,
-              gfx::Rect content_rect,
-              float contents_scale);
+  int Raster(SkCanvas* canvas,
+             SkDrawPictureCallback* callback,
+             gfx::Rect content_rect,
+             float contents_scale);
 
   // Draw the picture directly into the given canvas, without applying any
   // clip/scale/layer transformations.
@@ -144,9 +141,9 @@ class CC_EXPORT Picture
   gfx::Point max_pixel_cell_;
   gfx::Size cell_size_;
 
-  scoped_ptr<base::debug::ConvertableToTraceFormat>
+  scoped_refptr<base::debug::ConvertableToTraceFormat>
     AsTraceableRasterData(gfx::Rect rect, float scale) const;
-  scoped_ptr<base::debug::ConvertableToTraceFormat>
+  scoped_refptr<base::debug::ConvertableToTraceFormat>
     AsTraceableRecordData() const;
 
   friend class base::RefCountedThreadSafe<Picture>;

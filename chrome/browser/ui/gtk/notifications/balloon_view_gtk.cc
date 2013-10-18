@@ -54,10 +54,6 @@ const int kBottomMargin = 1;
 const int kLeftMargin = 1;
 const int kRightMargin = 1;
 
-// How many pixels of overlap there is between the shelf top and the
-// balloon bottom.
-const int kShelfBorderTopOverlap = 0;
-
 // Properties of the origin label.
 const int kLeftLabelMargin = 8;
 
@@ -103,9 +99,9 @@ BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
       shelf_(NULL),
       hbox_(NULL),
       html_container_(NULL),
-      weak_factory_(this),
       menu_showing_(false),
-      pending_close_(false) {}
+      pending_close_(false),
+      weak_factory_(this) {}
 
 BalloonViewImpl::~BalloonViewImpl() {
   if (frame_container_) {

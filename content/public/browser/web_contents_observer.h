@@ -16,6 +16,7 @@
 
 namespace content {
 
+class NavigationEntry;
 class RenderViewHost;
 class WebContents;
 class WebContentsImpl;
@@ -70,7 +71,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // another one, possibly changing processes. The RenderViewHost that has
   // been replaced is in |old_render_view_host|, which is NULL if the old RVH
   // was shut down.
-  virtual void RenderViewHostSwapped(RenderViewHost* old_render_view_host) {}
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) {}
 
   // This method is invoked after the WebContents decided which RenderViewHost
   // to use for the next navigation, but before the navigation starts.
@@ -145,8 +147,13 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
       const LoadCommittedDetails& details,
       const FrameNavigateParams& params) {}
 
-  // This method is invoked once the window.document object was created.
+  // This method is invoked once the window.document object of the main frame
+  // was created.
   virtual void DocumentAvailableInMainFrame() {}
+
+  // This method is invoked once the onload handler of the main frame has
+  // completed.
+  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) {}
 
   // This method is invoked when the document in the given frame finished
   // loading. At this point, scripts marked as defer were executed, and
@@ -226,8 +233,14 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // configured to ignore UI events, and an UI event took place.
   virtual void DidGetIgnoredUIEvent() {}
 
-  // This method is invoked every time the WebContents becomes visible.
+  // These methods are invoked every time the WebContents changes visibility.
   virtual void WasShown() {}
+  virtual void WasHidden() {}
+
+  // This methods is invoked when the title of the WebContents is set. If the
+  // title was explicitly set, |explicit_set| is true, otherwise the title was
+  // synthesized and |explicit_set| is false.
+  virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) {}
 
   virtual void AppCacheAccessed(const GURL& manifest_url,
                                 bool blocked_by_policy) {}

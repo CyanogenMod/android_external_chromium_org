@@ -26,7 +26,6 @@ class CC_EXPORT LayerTreeSettings {
   bool using_synchronous_renderer_compositor;
   bool per_tile_painting_enabled;
   bool partial_swap_enabled;
-  bool cache_render_pass_contents;
   bool accelerated_animation_enabled;
   bool background_color_instead_of_checkerboard;
   bool show_overdraw_in_tracing;
@@ -69,6 +68,8 @@ class CC_EXPORT LayerTreeSettings {
   bool use_map_image;
   bool ignore_root_layer_flings;
   bool use_rgba_4444_textures;
+  bool always_overscroll;
+  bool touch_hit_testing;
 
   LayerTreeDebugState initial_debug_state;
 };

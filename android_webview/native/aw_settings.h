@@ -12,12 +12,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
 
+struct WebPreferences;
+
 namespace android_webview {
 
 class AwRenderViewHostExt;
 
 class AwSettings : public content::WebContentsObserver {
  public:
+  static AwSettings* FromWebContents(content::WebContents* web_contents);
+
   AwSettings(JNIEnv* env, jobject obj, jint web_contents);
   virtual ~AwSettings();
 
@@ -31,9 +35,14 @@ class AwSettings : public content::WebContentsObserver {
   void UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj);
   void UpdateFormDataPreferencesLocked(JNIEnv* env, jobject obj);
 
+  void PopulateWebPreferences(WebPreferences* web_prefs);
+
  private:
   AwRenderViewHostExt* GetAwRenderViewHostExt();
   void UpdateEverything();
+
+  // Fixed WebPreferences for Android WebView.
+  static void PopulateFixedPreferences(WebPreferences* web_prefs);
 
   // WebContentsObserver overrides:
   virtual void RenderViewCreated(

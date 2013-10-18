@@ -82,6 +82,8 @@ class WebglConformance(test_module.Test):
     group.add_option('--webgl-conformance-version',
         help='Version of the WebGL conformance tests to run.',
         default='1.0.1')
+    group.add_option('--gtest_output',
+        help='Ignored argument for compatibility with runtest.py harness')
     parser.add_option_group(group)
 
   def CreatePageSet(self, options):
@@ -99,7 +101,10 @@ class WebglConformance(test_module.Test):
 
     for test in tests:
       pages.append({
-        'url': 'file:///' + test,
+        'name': 'WebglConformance.%s' %
+            test.replace('/', '_').replace('-', '_').
+            replace('\\', '_').rpartition('.')[0].replace('.', '_'),
+        'url': 'file://' + test,
         'script_to_evaluate_on_commit': conformance_harness_script,
         'navigate_steps': [
           {'action': 'navigate'},

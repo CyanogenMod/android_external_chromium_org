@@ -131,15 +131,6 @@
     }
   }
 
-  void BufferDataImmediate(GLenum target, GLsizeiptr size, GLenum usage) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::BufferDataImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::BufferDataImmediate>(s);
-    if (c) {
-      c->Init(target, size, usage);
-    }
-  }
-
   void BufferSubData(
       GLenum target, GLintptr offset, GLsizeiptr size, uint32 data_shm_id,
       uint32 data_shm_offset) {
@@ -222,17 +213,6 @@
       c->Init(
           target, level, internalformat, width, height, border, imageSize,
           data_shm_id, data_shm_offset);
-    }
-  }
-
-  void CompressedTexImage2DImmediate(
-      GLenum target, GLint level, GLenum internalformat, GLsizei width,
-      GLsizei height, GLint border, GLsizei imageSize) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::CompressedTexImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::CompressedTexImage2DImmediate>(s);  // NOLINT
-    if (c) {
-      c->Init(target, level, internalformat, width, height, border, imageSize);
     }
   }
 
@@ -985,15 +965,6 @@
     }
   }
 
-  void ShaderSourceImmediate(GLuint shader, uint32 data_size) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::ShaderSourceImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::ShaderSourceImmediate>(s);
-    if (c) {
-      c->Init(shader, data_size);
-    }
-  }
-
   void ShaderSourceBucket(GLuint shader, uint32 data_bucket_id) {
     gles2::cmds::ShaderSourceBucket* c =
         GetCmdSpace<gles2::cmds::ShaderSourceBucket>();
@@ -1057,18 +1028,6 @@
       c->Init(
           target, level, internalformat, width, height, border, format, type,
           pixels_shm_id, pixels_shm_offset);
-    }
-  }
-
-  void TexImage2DImmediate(
-      GLenum target, GLint level, GLint internalformat, GLsizei width,
-      GLsizei height, GLint border, GLenum format, GLenum type) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::TexImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::TexImage2DImmediate>(s);
-    if (c) {
-      c->Init(
-          target, level, internalformat, width, height, border, format, type);
     }
   }
 
@@ -1137,19 +1096,6 @@
       c->Init(
           target, level, xoffset, yoffset, width, height, format, type,
           pixels_shm_id, pixels_shm_offset, internal);
-    }
-  }
-
-  void TexSubImage2DImmediate(
-      GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
-      GLsizei height, GLenum format, GLenum type, GLboolean internal) {
-    const uint32 s = 0;  // TODO(gman): compute correct size
-    gles2::cmds::TexSubImage2DImmediate* c =
-        GetImmediateCmdSpaceTotalSize<gles2::cmds::TexSubImage2DImmediate>(s);
-    if (c) {
-      c->Init(
-          target, level, xoffset, yoffset, width, height, format, type,
-          internal);
     }
   }
 
@@ -1908,14 +1854,6 @@
         GetCmdSpace<gles2::cmds::VertexAttribDivisorANGLE>();
     if (c) {
       c->Init(index, divisor);
-    }
-  }
-
-  void GenMailboxCHROMIUM(GLuint bucket_id) {
-    gles2::cmds::GenMailboxCHROMIUM* c =
-        GetCmdSpace<gles2::cmds::GenMailboxCHROMIUM>();
-    if (c) {
-      c->Init(bucket_id);
     }
   }
 

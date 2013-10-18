@@ -36,7 +36,8 @@ class RndisForwarderWithRoot(object):
     """Args:
          adb: an instance of AdbCommands
     """
-    assert adb.IsRootEnabled(), 'Root must be enabled to use RNDIS forwarding.'
+    is_root_enabled = adb.Adb().EnableAdbRoot()
+    assert is_root_enabled, 'RNDIS forwarding could not enable root'
     self._adb = adb.Adb()
 
     self._host_port = 80
@@ -234,7 +235,7 @@ doit &
     assert host_address, ('Interface %(iface)s was not configured.\n'
       'To configure it automatically, add to /etc/network/interfaces:\n'
       'auto %(iface)s\n'
-      'iface %(iface)s\n'
+      'iface %(iface)s inet static\n'
       '  address 192.168.<unique>.1\n'
       '  netmask 255.255.255.0' % {'iface': host_iface})
 

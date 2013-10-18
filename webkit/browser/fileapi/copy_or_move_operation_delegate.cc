@@ -25,8 +25,12 @@ class CopyOrMoveOperationDelegate::CopyOrMoveImpl {
   virtual ~CopyOrMoveImpl() {}
   virtual void Run(
       const CopyOrMoveOperationDelegate::StatusCallback& callback) = 0;
+  virtual void Cancel() = 0;
+
  protected:
   CopyOrMoveImpl() {}
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(CopyOrMoveImpl);
 };
 
@@ -63,6 +67,12 @@ class CopyOrMoveOnSameFileSystemImpl
     }
   }
 
+  virtual void Cancel() OVERRIDE {
+    // We can do nothing for the copy/move operation on a local file system.
+    // Assuming the operation is quickly done, it should be ok to just wait
+    // for the completion.
+  }
+
  private:
   FileSystemOperationRunner* operation_runner_;
   CopyOrMoveOperationDelegate::OperationType operation_type_;
@@ -96,6 +106,7 @@ class SnapshotCopyOrMoveImpl
         option_(option),
         validator_factory_(validator_factory),
         file_progress_callback_(file_progress_callback),
+        cancel_requested_(false),
         weak_factory_(this) {
   }
 
@@ -108,6 +119,10 @@ class SnapshotCopyOrMoveImpl
                    weak_factory_.GetWeakPtr(), callback));
   }
 
+  virtual void Cancel() OVERRIDE {
+    cancel_requested_ = true;
+  }
+
  private:
   void RunAfterCreateSnapshot(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
@@ -115,6 +130,9 @@ class SnapshotCopyOrMoveImpl
       const base::PlatformFileInfo& file_info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
@@ -145,6 +163,9 @@ class SnapshotCopyOrMoveImpl
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref,
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
@@ -163,12 +184,37 @@ class SnapshotCopyOrMoveImpl
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref,
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
     }
 
     file_progress_callback_.Run(file_info.size);
+
+    if (option_ == FileSystemOperation::OPTION_NONE) {
+      RunAfterTouchFile(callback, base::PLATFORM_FILE_OK);
+      return;
+    }
+
+    operation_runner_->TouchFile(
+        dest_url_, base::Time::Now() /* last_access */,
+        file_info.last_modified,
+        base::Bind(&SnapshotCopyOrMoveImpl::RunAfterTouchFile,
+                   weak_factory_.GetWeakPtr(), callback));
+  }
+
+  void RunAfterTouchFile(
+      const CopyOrMoveOperationDelegate::StatusCallback& callback,
+      base::PlatformFileError error) {
+    // Even if TouchFile is failed, just ignore it.
+
+    if (cancel_requested_) {
+      callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
+      return;
+    }
 
     // |validator_| is NULL when the destination filesystem does not do
     // validation.
@@ -186,6 +232,11 @@ class SnapshotCopyOrMoveImpl
   void RunAfterPostWriteValidation(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error) {
+    if (cancel_requested_) {
+      callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
+      return;
+    }
+
     if (error != base::PLATFORM_FILE_OK) {
       // Failed to validate. Remove the destination file.
       operation_runner_->Remove(
@@ -212,6 +263,9 @@ class SnapshotCopyOrMoveImpl
   void RunAfterRemoveSourceForMove(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error == base::PLATFORM_FILE_ERROR_NOT_FOUND)
       error = base::PLATFORM_FILE_OK;
     callback.Run(error);
@@ -255,6 +309,9 @@ class SnapshotCopyOrMoveImpl
       const base::PlatformFileInfo& file_info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
@@ -283,12 +340,11 @@ class SnapshotCopyOrMoveImpl
   FileSystemURL src_url_;
   FileSystemURL dest_url_;
 
-  // TODO(hidehiko): Implement the option's behavior.
   CopyOrMoveOperationDelegate::CopyOrMoveOption option_;
   CopyOrMoveFileValidatorFactory* validator_factory_;
   scoped_ptr<CopyOrMoveFileValidator> validator_;
   FileSystemOperation::CopyFileProgressCallback file_progress_callback_;
-
+  bool cancel_requested_;
   base::WeakPtrFactory<SnapshotCopyOrMoveImpl> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(SnapshotCopyOrMoveImpl);
 };
@@ -311,6 +367,7 @@ class StreamCopyOrMoveImpl
       CopyOrMoveOperationDelegate::OperationType operation_type,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
+      CopyOrMoveOperationDelegate::CopyOrMoveOption option,
       scoped_ptr<webkit_blob::FileStreamReader> reader,
       scoped_ptr<FileStreamWriter> writer,
       const FileSystemOperation::CopyFileProgressCallback&
@@ -319,9 +376,11 @@ class StreamCopyOrMoveImpl
         operation_type_(operation_type),
         src_url_(src_url),
         dest_url_(dest_url),
+        option_(option),
         reader_(reader.Pass()),
         writer_(writer.Pass()),
         file_progress_callback_(file_progress_callback),
+        cancel_requested_(false),
         weak_factory_(this) {
   }
 
@@ -336,15 +395,25 @@ class StreamCopyOrMoveImpl
                    weak_factory_.GetWeakPtr(), callback));
   }
 
+  virtual void Cancel() OVERRIDE {
+    cancel_requested_ = true;
+    if (copy_helper_)
+      copy_helper_->Cancel();
+  }
+
  private:
   void RunAfterGetMetadataForSource(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error,
       const base::PlatformFileInfo& file_info) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
     }
+
     if (file_info.is_directory) {
       // If not a directory, failed with appropriate error code.
       callback.Run(base::PLATFORM_FILE_ERROR_NOT_A_FILE);
@@ -355,12 +424,17 @@ class StreamCopyOrMoveImpl
     operation_runner_->CreateFile(
         dest_url_, false /* exclusive */,
         base::Bind(&StreamCopyOrMoveImpl::RunAfterCreateFileForDestination,
-                   weak_factory_.GetWeakPtr(), callback));
+                   weak_factory_.GetWeakPtr(),
+                   callback, file_info.last_modified));
   }
 
   void RunAfterCreateFileForDestination(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
+      const base::Time& last_modified,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
       return;
@@ -376,14 +450,38 @@ class StreamCopyOrMoveImpl
                 kMinProgressCallbackInvocationSpanInMilliseconds)));
     copy_helper_->Run(
         base::Bind(&StreamCopyOrMoveImpl::RunAfterStreamCopy,
-                   weak_factory_.GetWeakPtr(), callback));
+                   weak_factory_.GetWeakPtr(), callback, last_modified));
   }
 
   void RunAfterStreamCopy(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
+      const base::Time& last_modified,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
+
     if (error != base::PLATFORM_FILE_OK) {
       callback.Run(error);
+      return;
+    }
+
+    if (option_ == FileSystemOperation::OPTION_NONE) {
+      RunAfterTouchFile(callback, base::PLATFORM_FILE_OK);
+      return;
+    }
+
+    operation_runner_->TouchFile(
+        dest_url_, base::Time::Now() /* last_access */, last_modified,
+        base::Bind(&StreamCopyOrMoveImpl::RunAfterTouchFile,
+                   weak_factory_.GetWeakPtr(), callback));
+  }
+
+  void RunAfterTouchFile(
+      const CopyOrMoveOperationDelegate::StatusCallback& callback,
+      base::PlatformFileError error) {
+    // Even if TouchFile is failed, just ignore it.
+    if (cancel_requested_) {
+      callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
       return;
     }
 
@@ -404,6 +502,8 @@ class StreamCopyOrMoveImpl
   void RunAfterRemoveForMove(
       const CopyOrMoveOperationDelegate::StatusCallback& callback,
       base::PlatformFileError error) {
+    if (cancel_requested_)
+      error = base::PLATFORM_FILE_ERROR_ABORT;
     if (error == base::PLATFORM_FILE_ERROR_NOT_FOUND)
       error = base::PLATFORM_FILE_OK;
     callback.Run(error);
@@ -413,11 +513,12 @@ class StreamCopyOrMoveImpl
   CopyOrMoveOperationDelegate::OperationType operation_type_;
   FileSystemURL src_url_;
   FileSystemURL dest_url_;
+  CopyOrMoveOperationDelegate::CopyOrMoveOption option_;
   scoped_ptr<webkit_blob::FileStreamReader> reader_;
   scoped_ptr<FileStreamWriter> writer_;
   FileSystemOperation::CopyFileProgressCallback file_progress_callback_;
   scoped_ptr<CopyOrMoveOperationDelegate::StreamCopyHelper> copy_helper_;
-
+  bool cancel_requested_;
   base::WeakPtrFactory<StreamCopyOrMoveImpl> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(StreamCopyOrMoveImpl);
 };
@@ -438,6 +539,7 @@ CopyOrMoveOperationDelegate::StreamCopyHelper::StreamCopyHelper(
       num_copied_bytes_(0),
       min_progress_callback_invocation_span_(
           min_progress_callback_invocation_span),
+      cancel_requested_(false),
       weak_factory_(this) {
 }
 
@@ -449,6 +551,10 @@ void CopyOrMoveOperationDelegate::StreamCopyHelper::Run(
   file_progress_callback_.Run(0);
   last_progress_callback_invocation_time_ = base::Time::Now();
   Read(callback);
+}
+
+void CopyOrMoveOperationDelegate::StreamCopyHelper::Cancel() {
+  cancel_requested_ = true;
 }
 
 void CopyOrMoveOperationDelegate::StreamCopyHelper::Read(
@@ -463,6 +569,11 @@ void CopyOrMoveOperationDelegate::StreamCopyHelper::Read(
 
 void CopyOrMoveOperationDelegate::StreamCopyHelper::DidRead(
     const StatusCallback& callback, int result) {
+  if (cancel_requested_) {
+    callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
+    return;
+  }
+
   if (result < 0) {
     callback.Run(NetErrorToPlatformFileError(result));
     return;
@@ -494,6 +605,11 @@ void CopyOrMoveOperationDelegate::StreamCopyHelper::DidWrite(
     const StatusCallback& callback,
     scoped_refptr<net::DrainableIOBuffer> buffer,
     int result) {
+  if (cancel_requested_) {
+    callback.Run(base::PLATFORM_FILE_ERROR_ABORT);
+    return;
+  }
+
   if (result < 0) {
     callback.Run(NetErrorToPlatformFileError(result));
     return;
@@ -602,7 +718,7 @@ void CopyOrMoveOperationDelegate::ProcessFile(
           file_system_context()->CreateFileStreamWriter(dest_url, 0);
       if (reader && writer) {
         impl = new StreamCopyOrMoveImpl(
-            operation_runner(), operation_type_, src_url, dest_url,
+            operation_runner(), operation_type_, src_url, dest_url, option_,
             reader.Pass(), writer.Pass(),
             base::Bind(&CopyOrMoveOperationDelegate::OnCopyFileProgress,
                        weak_factory_.GetWeakPtr(), src_url));
@@ -652,19 +768,24 @@ void CopyOrMoveOperationDelegate::ProcessDirectory(
 void CopyOrMoveOperationDelegate::PostProcessDirectory(
     const FileSystemURL& src_url,
     const StatusCallback& callback) {
-  if (operation_type_ == OPERATION_COPY) {
-    callback.Run(base::PLATFORM_FILE_OK);
+  if (option_ == FileSystemOperation::OPTION_NONE) {
+    PostProcessDirectoryAfterTouchFile(
+        src_url, callback, base::PLATFORM_FILE_OK);
     return;
   }
 
-  DCHECK_EQ(OPERATION_MOVE, operation_type_);
+  operation_runner()->GetMetadata(
+      src_url,
+      base::Bind(
+          &CopyOrMoveOperationDelegate::PostProcessDirectoryAfterGetMetadata,
+          weak_factory_.GetWeakPtr(), src_url, callback));
+}
 
-  // All files and subdirectories in the directory should be moved here,
-  // so remove the source directory for finalizing move operation.
-  operation_runner()->Remove(
-      src_url, false /* recursive */,
-      base::Bind(&CopyOrMoveOperationDelegate::DidRemoveSourceForMove,
-                 weak_factory_.GetWeakPtr(), callback));
+void CopyOrMoveOperationDelegate::OnCancel() {
+  // Request to cancel all running Copy/Move file.
+  for (std::set<CopyOrMoveImpl*>::iterator iter = running_copy_set_.begin();
+       iter != running_copy_set_.end(); ++iter)
+    (*iter)->Cancel();
 }
 
 void CopyOrMoveOperationDelegate::DidCopyOrMoveFile(
@@ -725,6 +846,47 @@ void CopyOrMoveOperationDelegate::DidCreateDirectory(
   }
 
   callback.Run(error);
+}
+
+void CopyOrMoveOperationDelegate::PostProcessDirectoryAfterGetMetadata(
+    const FileSystemURL& src_url,
+    const StatusCallback& callback,
+    base::PlatformFileError error,
+    const base::PlatformFileInfo& file_info) {
+  if (error != base::PLATFORM_FILE_OK) {
+    // Ignore the error, and run post process which should run after TouchFile.
+    PostProcessDirectoryAfterTouchFile(
+        src_url, callback, base::PLATFORM_FILE_OK);
+    return;
+  }
+
+  operation_runner()->TouchFile(
+      CreateDestURL(src_url), base::Time::Now() /* last access */,
+      file_info.last_modified,
+      base::Bind(
+          &CopyOrMoveOperationDelegate::PostProcessDirectoryAfterTouchFile,
+          weak_factory_.GetWeakPtr(), src_url, callback));
+}
+
+void CopyOrMoveOperationDelegate::PostProcessDirectoryAfterTouchFile(
+    const FileSystemURL& src_url,
+    const StatusCallback& callback,
+    base::PlatformFileError error) {
+  // Even if the TouchFile is failed, just ignore it.
+
+  if (operation_type_ == OPERATION_COPY) {
+    callback.Run(base::PLATFORM_FILE_OK);
+    return;
+  }
+
+  DCHECK_EQ(OPERATION_MOVE, operation_type_);
+
+  // All files and subdirectories in the directory should be moved here,
+  // so remove the source directory for finalizing move operation.
+  operation_runner()->Remove(
+      src_url, false /* recursive */,
+      base::Bind(&CopyOrMoveOperationDelegate::DidRemoveSourceForMove,
+                 weak_factory_.GetWeakPtr(), callback));
 }
 
 void CopyOrMoveOperationDelegate::DidRemoveSourceForMove(

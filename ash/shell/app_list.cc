@@ -14,6 +14,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
@@ -44,7 +45,9 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     LAST_TYPE,
   };
 
-  explicit WindowTypeLauncherItem(Type type) : type_(type) {
+  explicit WindowTypeLauncherItem(const std::string& id, Type type)
+      : app_list::AppListItemModel(id),
+        type_(type) {
     std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
     SetTitleAndFullName(title, title);
@@ -99,7 +102,7 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     }
   }
 
-  static void Activate(Type type, int event_flags) {
+  static void ActivateItem(Type type, int event_flags) {
      switch (type) {
       case TOPLEVEL_WINDOW: {
         ToplevelWindow::CreateParams params;
@@ -122,7 +125,8 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
       case EXAMPLES_WINDOW: {
         views::examples::ShowExamplesWindowWithContent(
             views::examples::DO_NOTHING_ON_CLOSE,
-            ash::Shell::GetInstance()->browser_context());
+            ash::Shell::GetInstance()->browser_context(),
+            NULL);
         break;
       }
       default:
@@ -130,8 +134,9 @@ class WindowTypeLauncherItem : public app_list::AppListItemModel {
     }
   }
 
-  void Activate(int event_flags) {
-    Activate(type_, event_flags);
+  // AppListItemModel
+  virtual void Activate(int event_flags) OVERRIDE {
+    ActivateItem(type_, event_flags);
   }
 
  private:
@@ -196,7 +201,8 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
          ++i) {
       WindowTypeLauncherItem::Type type =
           static_cast<WindowTypeLauncherItem::Type>(i);
-      apps->Add(new WindowTypeLauncherItem(type));
+      std::string id = base::StringPrintf("%d", i);
+      apps->Add(new WindowTypeLauncherItem(id, type));
     }
   }
 
@@ -240,16 +246,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
       const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE {
   }
 
-  virtual void ActivateAppListItem(app_list::AppListItemModel* item,
-                                   int event_flags) OVERRIDE {
-    static_cast<WindowTypeLauncherItem*>(item)->Activate(event_flags);
-  }
-
   virtual void OpenSearchResult(app_list::SearchResult* result,
                                 int event_flags) OVERRIDE {
     const ExampleSearchResult* example_result =
         static_cast<const ExampleSearchResult*>(result);
-    WindowTypeLauncherItem::Activate(example_result->type(), event_flags);
+    WindowTypeLauncherItem::ActivateItem(example_result->type(), event_flags);
   }
 
   virtual void InvokeSearchResultAction(app_list::SearchResult* result,
@@ -315,6 +316,10 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE {
     // Nothing needs to be done.
+  }
+
+  virtual content::WebContents* GetStartPageContents() OVERRIDE {
+    return NULL;
   }
 
   app_list::AppListModel* model_;

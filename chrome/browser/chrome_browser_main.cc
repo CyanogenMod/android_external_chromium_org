@@ -69,6 +69,7 @@
 #include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/browser/metrics/tracking_synchronizer.h"
+#include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
 #include "chrome/browser/nacl_host/nacl_browser_delegate_impl.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
@@ -152,8 +153,8 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
 #endif
 
 // TODO(port): several win-only methods have been pulled out of this, but
@@ -192,6 +193,10 @@
 
 #if defined(TOOLKIT_VIEWS)
 #include "ui/views/focus/accelerator_handler.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
 #endif
 
 using content::BrowserThread;
@@ -597,7 +602,16 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
     CHECK(result) << "Invalid --" << switches::kForceFieldTrials
                   << " list specified.";
   }
-
+  if (command_line->HasSwitch(switches::kForceVariationIds)) {
+    // Create default variation ids which will always be included in the
+    // X-Chrome-Variations request header.
+    chrome_variations::VariationsHttpHeaderProvider* provider =
+        chrome_variations::VariationsHttpHeaderProvider::GetInstance();
+    bool result = provider->SetDefaultVariationIds(
+        command_line->GetSwitchValueASCII(switches::kForceVariationIds));
+    CHECK(result) << "Invalid --" << switches::kForceVariationIds
+                  << " list specified.";
+  }
   chrome_variations::VariationsService* variations_service =
       browser_process_->variations_service();
   if (variations_service)
@@ -1466,6 +1480,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate))
     RegisterComponentsForUpdate(parsed_command_line());
 
+#if defined(USE_AURA)
+  // Env creates the compositor. Aura widgets need the compositor to be created
+  // before they can be initialized by the browser.
+  aura::Env::CreateInstance();
+#endif
+
   if (browser_creator_->Start(parsed_command_line(), base::FilePath(),
                               profile_, last_opened_profiles, &result_code)) {
 #if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
@@ -1525,6 +1545,8 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   browser_creator_.reset();
 #endif  // !defined(OS_ANDROID)
 
+  performance_monitor::PerformanceMonitor::GetInstance()->Initialize();
+
   PostBrowserStart();
 
   if (parameters().ui_task) {
@@ -1575,10 +1597,7 @@ bool ChromeBrowserMainParts::MainMessageLoopRun(int* result_code) {
   base::RunLoop run_loop;
 #endif
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kPerformanceMonitorGathering)) {
-    performance_monitor::PerformanceMonitor::GetInstance()->Start();
-  }
+  performance_monitor::PerformanceMonitor::GetInstance()->StartGatherCycle();
 
   run_loop.Run();
 

@@ -45,6 +45,7 @@ const char kFileHandlers[] = "file_handlers";
 const char kFileHandlerExtensions[] = "extensions";
 const char kFileHandlerTitle[] = "title";
 const char kFileHandlerTypes[] = "types";
+const char kGlobal[] = "global";
 const char kHomepageURL[] = "homepage_url";
 const char kIcons[] = "icons";
 const char kId[] = "id";
@@ -148,7 +149,11 @@ const char kUrlHandlers[] = "url_handlers";
 const char kUrlHandlerTitle[] = "title";
 const char kVersion[] = "version";
 const char kWebAccessibleResources[] = "web_accessible_resources";
+const char kWebRtc[] = "webrtc";
 const char kWebURLs[] = "app.urls";
+const char kWebview[] = "webview";
+const char kWebviewAccessibleResources[] = "accessible_resources";
+const char kWebviewPrivilegedPartitions[] = "privileged_partitions";
 
 }  // namespace manifest_keys
 
@@ -580,6 +585,16 @@ const char kInvalidWebAccessibleResourcesList[] =
     "Invalid value for 'web_accessible_resources'.";
 const char kInvalidWebAccessibleResource[] =
     "Invalid value for 'web_accessible_resources[*]'.";
+const char kInvalidWebview[] =
+    "Invalid value for 'webview'.";
+const char kInvalidWebviewAccessibleResourcesList[] =
+    "Invalid value for'webview.accessible_resources'.";
+const char kInvalidWebviewAccessibleResource[] =
+    "Invalid value for 'webview.accessible_resources[*]'.";
+const char kInvalidWebviewPrivilegedPartitionList[] =
+    "Invalid value for 'webview.privileged_partitions'.";
+const char kInvalidWebviewPrivilegedPartition[] =
+    "Invalid value for 'webview.privileged_partitions[*]'.";
 const char kInvalidWebURL[] =
     "Invalid value for 'app.urls[*]': *";
 const char kInvalidWebURLs[] =

@@ -177,6 +177,8 @@ const base::FilePath::CharType kNewTabThumbnailsFilename[] =
 const base::FilePath::CharType kOBCertFilename[] = FPL("Origin Bound Certs");
 const base::FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
 const base::FilePath::CharType kReadmeFilename[] = FPL("README");
+const base::FilePath::CharType kResetPromptMementoFilename[] =
+    FPL("Reset Prompt Memento");
 const base::FilePath::CharType kSafeBrowsingBaseFilename[] =
     FPL("Safe Browsing");
 const base::FilePath::CharType kServiceStateFileName[] = FPL("Service State");
@@ -217,8 +219,6 @@ const wchar_t kUserDataDirname[] = L"User Data";
 #endif
 
 const bool kRecordModeEnabled = true;
-
-const char* const kUnknownLanguageCode = "und";
 
 const int kJavaScriptMessageExpectedDelay = 1000;
 

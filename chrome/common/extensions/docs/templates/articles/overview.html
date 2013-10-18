@@ -33,7 +33,7 @@ and <a href="tabs.html">tabs</a>.
 <h3 id="extension-ui">Extension UIs</h3>
 
 <p>
-Many extensions&mdash;but not packaged apps&mdash;add
+Many extensions&mdash;but not Chrome Apps&mdash;add
 UI to Google Chrome in the form of
 <a href="browserAction.html">browser actions</a>
 or <a href="pageAction.html">page actions</a>.
@@ -65,19 +65,19 @@ depending on the page.
 
 <tr>
   <td>
-    This <a href="samples.html#gmail">mail extension</a>
+    This <a href="samples.html#google-mail-checker">Google Mail Checker extension</a>
     uses a <em>browser action</em>
     (icon in the toolbar).
   </td>
   <td>
-    This <a href="samples.html#mappy">map extension</a>
+    This <a href="samples.html#mappy">Mappy extension</a>
     uses a <em>page action</em>
     (icon in the address bar)
     and <em>content script</em>
     (code injected into a web page).
   </td>
   <td>
-    This <a href="samples.html#news">news extension</a>
+    This <a href="samples.html#news-reader">News Reader extension</a>
     features a browser action that,
     when clicked,
     shows a <em>popup</em>.
@@ -86,7 +86,7 @@ depending on the page.
 </table>
 
 <p>
-Extensions (and packaged apps) can also present a UI in other ways,
+Extensions (and Chrome Apps) can also present a UI in other ways,
 such as adding to the Chrome context menu,
 providing an options page,
 or using a content script that changes how pages look.
@@ -196,7 +196,7 @@ Here's a typical manifest file for a browser action
 that uses information from google.com:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 {
   "name": "My Extension",
   "version": "2.1",
@@ -451,10 +451,10 @@ you might write code like this:
 </p>
 
 <pre>
-   <b>//THIS CODE DOESN'T WORK</b>
-<span class="linenumber">1: </span>var tab = chrome.tabs.query({'active': true}); <b>//WRONG!!!</b>
-<span class="linenumber">2: </span>chrome.tabs.update(tab.id, {url:newUrl});
-<span class="linenumber">3: </span>someOtherFunction();
+<b>//THIS CODE DOESN'T WORK</b>
+var tab = chrome.tabs.query({'active': true}); <b>//WRONG!!!</b>
+chrome.tabs.update(tab.id, {url:newUrl});
+someOtherFunction();
 </pre>
 
 <p>
@@ -483,11 +483,11 @@ and calls <code>update()</code>.
 </p>
 
 <pre>
-   <b>//THIS CODE WORKS</b>
-<span class="linenumber">1: </span>chrome.tabs.query({'active': true}, <b>function(tabs) {</b>
-<span class="linenumber">2: </span>  chrome.tabs.update(tabs[0].id, {url: newUrl});
-<span class="linenumber">3: </span><b>}</b>);
-<span class="linenumber">4: </span>someOtherFunction();
+<b>//THIS CODE WORKS</b>
+chrome.tabs.query({'active': true}, <b>function(tabs) {</b>
+  chrome.tabs.update(tabs[0].id, {url: newUrl});
+<b>}</b>);
+someOtherFunction();
 </pre>
 
 <p>

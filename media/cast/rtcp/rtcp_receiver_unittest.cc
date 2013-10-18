@@ -37,7 +37,7 @@ class SenderFeedbackCastVerification : public RtcpSenderFeedback {
     EXPECT_EQ(cast_feedback.media_ssrc_, kSenderSsrc);
     EXPECT_EQ(cast_feedback.ack_frame_id_, kAckFrameId);
 
-    std::map<uint8, std::set<uint16> >::const_iterator frame_it =
+    MissingFramesAndPacketsMap::const_iterator frame_it =
         cast_feedback.missing_frames_and_packets_.begin();
 
     EXPECT_TRUE(frame_it != cast_feedback.missing_frames_and_packets_.end());
@@ -47,7 +47,7 @@ class SenderFeedbackCastVerification : public RtcpSenderFeedback {
     EXPECT_TRUE(frame_it != cast_feedback.missing_frames_and_packets_.end());
     EXPECT_EQ(kFrameIdWithLostPackets, frame_it->first);
     EXPECT_EQ(3UL, frame_it->second.size());
-    std::set<uint16>::const_iterator packet_it = frame_it->second.begin();
+    PacketIdSet::const_iterator packet_it = frame_it->second.begin();
     EXPECT_EQ(kLostPacketId1, *packet_it);
     ++packet_it;
     EXPECT_EQ(kLostPacketId2, *packet_it);
@@ -74,9 +74,9 @@ class RtcpReceiverTest : public ::testing::Test {
                                         kSourceSsrc)) {
   }
 
-  ~RtcpReceiverTest() {}
+  virtual ~RtcpReceiverTest() {}
 
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     EXPECT_CALL(mock_receiver_feedback_, OnReceivedSenderReport(_)).Times(0);
     EXPECT_CALL(mock_receiver_feedback_,
                 OnReceiverReferenceTimeReport(_)).Times(0);

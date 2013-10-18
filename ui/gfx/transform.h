@@ -14,6 +14,7 @@
 
 namespace gfx {
 
+class BoxF;
 class RectF;
 class Point;
 class Point3F;
@@ -21,7 +22,7 @@ class Vector3dF;
 
 // 4x4 transformation matrix. Transform is cheap and explicitly allows
 // copy/assign.
-class UI_EXPORT Transform {
+class GFX_EXPORT Transform {
  public:
 
   enum SkipInitialization {
@@ -180,12 +181,10 @@ class UI_EXPORT Transform {
   // this function if the transform does not represent only a 2d translation.
   Vector2dF To2dTranslation() const;
 
-  // Applies the transformation on the point. Returns true if the point is
-  // transformed successfully.
+  // Applies the transformation to the point.
   void TransformPoint(Point3F* point) const;
 
-  // Applies the transformation on the point. Returns true if the point is
-  // transformed successfully. Rounds the result to the nearest point.
+  // Applies the transformation to the point.
   void TransformPoint(Point* point) const;
 
   // Applies the reverse transformation on the point. Returns true if the
@@ -196,16 +195,27 @@ class UI_EXPORT Transform {
   // transformation can be inverted. Rounds the result to the nearest point.
   bool TransformPointReverse(Point* point) const;
 
-  // Applies transformation on the rectangle. Returns true if the transformed
-  // rectangle was axis aligned. If it returns false, rect will be the
-  // smallest axis aligned bounding box containing the transformed rect.
+  // Applies transformation on the given rect. After the function completes,
+  // |rect| will be the smallest axis aligned bounding rect containing the
+  // transformed rect.
   void TransformRect(RectF* rect) const;
 
-  // Applies the reverse transformation on the rectangle. Returns true if
-  // the transformed rectangle was axis aligned. If it returns false,
-  // rect will be the smallest axis aligned bounding box containing the
-  // transformed rect.
+  // Applies the reverse transformation on the given rect. After the function
+  // completes, |rect| will be the smallest axis aligned bounding rect
+  // containing the transformed rect. Returns false if the matrix cannot be
+  // inverted.
   bool TransformRectReverse(RectF* rect) const;
+
+  // Applies transformation on the given box. After the function completes,
+  // |box| will be the smallest axis aligned bounding box containing the
+  // transformed box.
+  void TransformBox(BoxF* box) const;
+
+  // Applies the reverse transformation on the given box. After the function
+  // completes, |box| will be the smallest axis aligned bounding box
+  // containing the transformed box. Returns false if the matrix cannot be
+  // inverted.
+  bool TransformBoxReverse(BoxF* box) const;
 
   // Decomposes |this| and |from|, interpolates the decomposed values, and
   // sets |this| to the reconstituted result. Returns false if either matrix

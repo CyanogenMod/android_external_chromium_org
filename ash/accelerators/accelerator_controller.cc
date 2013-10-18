@@ -24,6 +24,7 @@
 #include "ash/launcher/launcher_model.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/multi_profile_uma.h"
 #include "ash/root_window_controller.h"
 #include "ash/rotator/screen_rotation.h"
 #include "ash/screenshot_delegate.h"
@@ -32,7 +33,7 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
-#include "ash/system/brightness/brightness_control_delegate.h"
+#include "ash/system/brightness_control_delegate.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_control_delegate.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray.h"
@@ -70,7 +71,7 @@
 #if defined(OS_CHROMEOS)
 #include "ash/session_state_delegate.h"
 #include "ash/system/chromeos/keyboard_brightness_controller.h"
-#include "base/chromeos/chromeos_version.h"
+#include "base/sys_info.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace ash {
@@ -87,18 +88,13 @@ bool DebugShortcutsEnabled() {
 #endif
 }
 
-bool OverviewEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAshEnableOverviewMode);
-}
-
 void HandleCycleBackwardMRU(const ui::Accelerator& accelerator) {
   Shell* shell = Shell::GetInstance();
 
   if (accelerator.key_code() == ui::VKEY_TAB)
     shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_PREVWINDOW_TAB);
 
-  if (OverviewEnabled()) {
+  if (switches::UseOverviewMode()) {
     shell->window_selector_controller()->HandleCycleWindow(
         WindowSelector::BACKWARD);
     return;
@@ -113,7 +109,7 @@ void HandleCycleForwardMRU(const ui::Accelerator& accelerator) {
   if (accelerator.key_code() == ui::VKEY_TAB)
     shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEXTWINDOW_TAB);
 
-  if (OverviewEnabled()) {
+  if (switches::UseOverviewMode()) {
     shell->window_selector_controller()->HandleCycleWindow(
         WindowSelector::FORWARD);
     return;
@@ -127,7 +123,7 @@ void HandleCycleLinear(const ui::Accelerator& accelerator) {
 
   // TODO(jamescook): When overview becomes the default the AcceleratorAction
   // should be renamed from CYCLE_LINEAR to TOGGLE_OVERVIEW.
-  if (OverviewEnabled()) {
+  if (switches::UseOverviewMode()) {
     shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_OVERVIEW_F5);
     shell->window_selector_controller()->ToggleOverview();
     return;
@@ -173,8 +169,8 @@ bool HandleLock() {
   return true;
 }
 
-bool HandleFileManager(bool as_dialog) {
-  Shell::GetInstance()->delegate()->OpenFileManager(as_dialog);
+bool HandleFileManager() {
+  Shell::GetInstance()->delegate()->OpenFileManager();
   return true;
 }
 
@@ -190,13 +186,14 @@ bool HandleToggleSpokenFeedback() {
 }
 
 bool SwitchToNextUser() {
-  if (!Shell::GetInstance()->delegate()->IsMultiProfilesEnabled() ||
-      !ash::switches::ShowMultiProfileShelfMenu())
+  if (!Shell::GetInstance()->delegate()->IsMultiProfilesEnabled())
     return false;
   ash::SessionStateDelegate* delegate =
       ash::Shell::GetInstance()->session_state_delegate();
   if (delegate->NumberOfLoggedInUsers() <= 1)
     return false;
+  MultiProfileUMA::RecordSwitchActiveUser(
+      MultiProfileUMA::SWITCH_ACTIVE_USER_BY_ACCELERATOR);
   delegate->SwitchActiveUserToNext();
   return true;
 }
@@ -571,10 +568,8 @@ bool AcceleratorController::PerformAction(int action,
       if (key_code == ui::VKEY_L)
         shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_LOCK_SCREEN_L);
       return HandleLock();
-    case OPEN_FILE_DIALOG:
-      return HandleFileManager(true /* as_dialog */);
     case OPEN_FILE_MANAGER:
-      return HandleFileManager(false /* as_dialog */);
+      return HandleFileManager();
     case OPEN_CROSH:
       return HandleCrosh();
     case SILENCE_SPOKEN_FEEDBACK:
@@ -826,16 +821,16 @@ bool AcceleratorController::PerformAction(int action,
       return true;
     case WINDOW_SNAP_LEFT:
     case WINDOW_SNAP_RIGHT: {
-      aura::Window* window = wm::GetActiveWindow();
+      wm::WindowState* window_state = wm::GetActiveWindowState();
       // Disable window docking shortcut key for full screen window due to
       // http://crbug.com/135487.
-      if (!window ||
-          window->type() != aura::client::WINDOW_TYPE_NORMAL ||
-          wm::GetWindowState(window)->IsFullscreen()) {
+      if (!window_state ||
+          window_state->window()->type() != aura::client::WINDOW_TYPE_NORMAL ||
+          window_state->IsFullscreen()) {
         break;
       }
 
-      internal::SnapSizer::SnapWindow(window,
+      internal::SnapSizer::SnapWindow(window_state,
           action == WINDOW_SNAP_LEFT ? internal::SnapSizer::LEFT_EDGE :
                                        internal::SnapSizer::RIGHT_EDGE);
       return true;
@@ -901,7 +896,7 @@ bool AcceleratorController::PerformAction(int action,
     case POWER_PRESSED:  // fallthrough
     case POWER_RELEASED:
 #if defined(OS_CHROMEOS)
-      if (!base::chromeos::IsRunningOnChromeOS()) {
+      if (!base::SysInfo::IsRunningOnChromeOS()) {
         // There is no powerd in linux desktop, so call the
         // PowerButtonController here.
         Shell::GetInstance()->power_button_controller()->

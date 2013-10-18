@@ -38,10 +38,11 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_http_auth_handler_base.cc \
 	android_webview/browser/aw_javascript_dialog_manager.cc \
 	android_webview/browser/aw_login_delegate.cc \
+	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_quota_manager_bridge.cc \
 	android_webview/browser/aw_quota_permission_context.cc \
-	android_webview/browser/aw_pref_store.cc \
 	android_webview/browser/aw_request_interceptor.cc \
+	android_webview/browser/aw_web_preferences_populater.cc \
 	android_webview/browser/find_helper.cc \
 	android_webview/browser/gpu_memory_buffer_factory_impl.cc \
 	android_webview/browser/icon_helper.cc \
@@ -114,7 +115,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -224,7 +224,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

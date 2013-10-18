@@ -5,21 +5,20 @@
 #ifndef CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
 #define CONTENT_RENDERER_PEPPER_PEPPER_FILE_IO_HOST_H_
 
-#include <set>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_platform_file.h"
+#include "ppapi/c/pp_file_info.h"
+#include "ppapi/c/pp_time.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/shared_impl/file_io_state_manager.h"
-#include "ppapi/thunk/ppb_file_ref_api.h"
 #include "url/gurl.h"
 #include "webkit/common/quota/quota_types.h"
 
@@ -51,8 +50,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
 
   void OnAsyncFileOpened(
       base::PlatformFileError error_code,
-      IPC::PlatformFileForTransit file_for_transit,
-      int message_id);
+      IPC::PlatformFileForTransit file_for_transit);
 
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         PP_Resource file_ref_resource,
@@ -70,14 +68,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   // Private API.
   int32_t OnHostMsgRequestOSFileHandle(
       ppapi::host::HostMessageContext* context);
-  // Trusted API.
-  int32_t OnHostMsgGetOSFileDescriptor(
-      ppapi::host::HostMessageContext* context);
-  int32_t OnHostMsgWillWrite(ppapi::host::HostMessageContext* context,
-                             int64_t offset,
-                             int32_t bytes_to_write);
-  int32_t OnHostMsgWillSetLength(ppapi::host::HostMessageContext* context,
-                                 int64_t length);
 
   // Callback handlers. These mostly convert the PlatformFileError to the
   // PP_Error code and send back the reply. Note that the argument
@@ -125,18 +115,14 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   // of type PP_FILESYSTEMTYPE_LOCAL{PERSISTENT,TEMPORARY} is opened.
   scoped_ptr<QuotaFileIO> quota_file_io_;
 
-  bool is_running_in_process_;
-
   int32_t open_flags_;
 
   ppapi::FileIOStateManager state_manager_;
 
   int routing_id_;
 
-  typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
-      AsyncOpenFileCallback;
-
-  IDMap<AsyncOpenFileCallback> pending_async_open_files_;
+  base::Callback<void(base::PlatformFileError, base::PassPlatformFile)>
+      pending_open_callback_;
 
   base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
 

@@ -101,9 +101,14 @@ else  # TOOLCHAIN is valid...
 #
 # The SDK provides two sets of libraries, Debug and Release.  Debug libraries
 # are compiled without optimizations to make debugging easier.  By default
-# this will build a Release configuration.
+# this will build a Release configuration. When debugging via "make debug",
+# build the debug configuration by default instead.
 #
+ifneq (,$(findstring debug,$(MAKECMDGOALS)))
+CONFIG ?= Debug
+else
 CONFIG ?= Release
+endif
 
 
 #
@@ -289,6 +294,8 @@ endif
 #
 ifeq ($(CONFIG),Release)
 POSIX_FLAGS ?= -g -O2 -pthread -MMD -DNDEBUG
+NACL_LDFLAGS ?= -O2
+PNACL_LDFLAGS ?= -O2
 else
 POSIX_FLAGS ?= -g -O0 -pthread -MMD -DNACL_SDK_DEBUG
 endif
@@ -299,7 +306,7 @@ endif
 
 NACL_CFLAGS ?= -Wno-long-long -Werror
 NACL_CXXFLAGS ?= -Wno-long-long -Werror
-NACL_LDFLAGS ?= -Wl,-as-needed
+NACL_LDFLAGS += -Wl,-as-needed
 
 #
 # Default Paths

@@ -58,16 +58,18 @@ function verify(condition, message) {
 
 /**
  * Builds a request to the notification server.
+ * @param {string} method Request method.
  * @param {string} handlerName Server handler to send the request to.
- * @param {string} contentType Value for the Content-type header.
+ * @param {string=} contentType Value for the Content-type header.
  * @return {XMLHttpRequest} Server request.
  */
-function buildServerRequest(handlerName, contentType) {
+function buildServerRequest(method, handlerName, contentType) {
   var request = new XMLHttpRequest();
 
   request.responseType = 'text';
-  request.open('POST', NOTIFICATION_CARDS_URL + '/' + handlerName, true);
-  request.setRequestHeader('Content-type', contentType);
+  request.open(method, NOTIFICATION_CARDS_URL + '/' + handlerName, true);
+  if (contentType)
+    request.setRequestHeader('Content-type', contentType);
 
   return request;
 }
@@ -118,17 +120,18 @@ function sendErrorReport(error) {
   if (error.canSendMessageToServer)
     errorText = errorText + ': ' + error.message;
 
-  var requestParameters =
-      'error=' + encodeURIComponent(errorText) +
-      '&script=' + encodeURIComponent(file) +
-      '&line=' + encodeURIComponent(line) +
-      '&trace=' + encodeURIComponent(filteredStack);
-  var request = buildServerRequest('jserror',
-                                   'application/x-www-form-urlencoded');
+  var errorObject = {
+    message: errorText,
+    file: file,
+    line: line,
+    trace: filteredStack
+  };
+
+  var request = buildServerRequest('POST', 'jserrors', 'application/json');
   request.onloadend = function(event) {
     console.log('sendErrorReport status: ' + request.status);
   };
-  request.send(requestParameters);
+  request.send(JSON.stringify(errorObject));
 }
 
 // Limiting 1 error report per background page load.
@@ -393,7 +396,7 @@ function buildTaskManager(areConflicting) {
   /**
    * Queue of scheduled tasks. The first element, if present, corresponds to the
    * currently running task.
-   * @type {Array.<Object.<string, function(function())>>}
+   * @type {Array.<Object.<string, function()>>}
    */
   var queue = [];
 
@@ -427,7 +430,7 @@ function buildTaskManager(areConflicting) {
     var entry = queue[0];
     console.log('Starting task ' + entry.name);
 
-    entry.task(function() {});  // TODO(vadimt): Don't pass parameter.
+    entry.task();
 
     verify(isInTask, 'startFirst: not in task at exit');
     isInTask = false;
@@ -457,8 +460,7 @@ function buildTaskManager(areConflicting) {
    * If any task in the queue is not compatible with the task, ignores the new
    * task. Otherwise, stores the task for future execution.
    * @param {string} taskName Name of the task.
-   * @param {function(function())} task Function to run. Takes a callback
-   *     parameter. Call this callback on completion.
+   * @param {function()} task Function to run.
    */
   function add(taskName, task) {
     wrapper.checkInWrappedCallback();
@@ -534,8 +536,7 @@ function buildTaskManager(areConflicting) {
   });
 
   return {
-    add: add,
-    debugSetStepName: function() {}  // TODO(vadimt): remove
+    add: add
   };
 }
 

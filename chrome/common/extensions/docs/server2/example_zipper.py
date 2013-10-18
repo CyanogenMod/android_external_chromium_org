@@ -11,7 +11,8 @@ class ExampleZipper(object):
   def __init__(self, compiled_fs_factory, file_system, base_path):
     self._base_path = base_path.rstrip('/')
     self._file_system = file_system
-    self._zip_cache = compiled_fs_factory.Create(self._MakeZipFile,
+    self._zip_cache = compiled_fs_factory.Create(file_system,
+                                                 self._MakeZipFile,
                                                  ExampleZipper)
 
   def _MakeZipFile(self, base_dir, files):
@@ -22,7 +23,8 @@ class ExampleZipper(object):
     try:
       for file_name in files:
         file_path = '%s%s' % (base_dir, file_name)
-        file_contents = self._file_system.ReadSingle(file_path, binary=True)
+        file_contents = self._file_system.ReadSingle(
+            file_path, binary=True).Get()
         if isinstance(file_contents, unicode):
           # Data is sometimes already cached as unicode.
           file_contents = file_contents.encode('utf8')
@@ -41,4 +43,4 @@ class ExampleZipper(object):
     Paths within the zip file are given relative to and including |path|.
     '''
     return self._zip_cache.GetFromFileListing(
-        '%s/%s' % (self._base_path, path.strip('/')))
+        '%s/%s' % (self._base_path, path.strip('/'))).Get()

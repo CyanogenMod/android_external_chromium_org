@@ -65,6 +65,21 @@ PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
       weak_factory_(this) {
 }
 
+PepperFileSystemBrowserHost::PepperFileSystemBrowserHost(BrowserPpapiHost* host,
+                                                         PP_Instance instance,
+                                                         PP_Resource resource,
+                                                         const GURL& root_url,
+                                                         PP_FileSystemType type)
+    : ResourceHost(host->GetPpapiHost(), instance, resource),
+      browser_ppapi_host_(host),
+      type_(type),
+      opened_(true),
+      root_url_(root_url),
+      fs_context_(NULL),
+      called_open_(true),
+      weak_factory_(this) {
+}
+
 PepperFileSystemBrowserHost::~PepperFileSystemBrowserHost() {
   // TODO(teravest): Create a FileSystemOperationRunner
   // per-PepperFileSystemBrowserHost, force users of this FileSystem to use it,
@@ -139,7 +154,7 @@ void PepperFileSystemBrowserHost::GotFileSystemContext(
     scoped_refptr<fileapi::FileSystemContext> fs_context) {
   if (!fs_context.get()) {
     OpenFileSystemComplete(
-        reply_context, base::PLATFORM_FILE_ERROR_FAILED, std::string(), GURL());
+        reply_context, GURL(), std::string(), base::PLATFORM_FILE_ERROR_FAILED);
     return;
   }
   GURL origin = browser_ppapi_host_->GetDocumentURLForInstance(
@@ -166,9 +181,9 @@ void PepperFileSystemBrowserHost::GotIsolatedFileSystemContext(
 
 void PepperFileSystemBrowserHost::OpenFileSystemComplete(
     ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFileError error,
+    const GURL& root,
     const std::string& /* unused */,
-    const GURL& root) {
+    base::PlatformFileError error) {
   int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
   if (pp_error == PP_OK) {
     opened_ = true;
@@ -181,6 +196,9 @@ void PepperFileSystemBrowserHost::OpenFileSystemComplete(
 int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
     ppapi::host::HostMessageContext* context,
     const std::string& fsid) {
+  // Do not allow multiple opens.
+  if (called_open_)
+    return PP_ERROR_INPROGRESS;
   called_open_ = true;
   // Do a sanity check.
   if (!LooksLikeAGuid(fsid))

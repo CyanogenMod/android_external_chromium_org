@@ -15,6 +15,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "net/base/linked_hash_map.h"
+#include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_protocol.h"
 
 NET_EXPORT_PRIVATE extern bool FLAGS_track_retransmission_history;
@@ -78,8 +79,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Processes the ReceivedPacketInfo data from the incoming ack.
   void OnIncomingAck(const ReceivedPacketInfo& received_info,
-                     bool is_truncated_ack,
-                     SequenceNumberSet* acked_packets);
+                     bool is_truncated_ack);
 
   // Discards any information for the packet corresponding to |sequence_number|.
   // If this packet has been retransmitted, information on those packets
@@ -186,12 +186,10 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Process the incoming ack looking for newly ack'd data packets.
   void HandleAckForSentPackets(const ReceivedPacketInfo& received_info,
-                               bool is_truncated_ack,
-                               SequenceNumberSet* acked_packets);
+                               bool is_truncated_ack);
 
   // Process the incoming ack looking for newly ack'd FEC packets.
-  void HandleAckForSentFecPackets(const ReceivedPacketInfo& received_info,
-                                  SequenceNumberSet* acked_packets);
+  void HandleAckForSentFecPackets(const ReceivedPacketInfo& received_info);
 
   // Marks |sequence_number| as having been seen by the peer.  Returns an
   // iterator to the next remaining unacked packet.
@@ -245,6 +243,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool is_server_;
 
   HelperInterface* helper_;
+
+  // An AckNotifier can register to be informed when ACKs have been received for
+  // all packets that a given block of data was sent in. The AckNotifierManager
+  // maintains the currently active notifiers.
+  AckNotifierManager ack_notifier_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSentPacketManager);
 };

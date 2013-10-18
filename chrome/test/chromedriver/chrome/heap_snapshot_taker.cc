@@ -11,7 +11,7 @@
 #include "chrome/test/chromedriver/chrome/status.h"
 
 HeapSnapshotTaker::HeapSnapshotTaker(DevToolsClient* client)
-    : client_(client), snapshot_uid_(-1), finished_(false) {
+    : client_(client), snapshot_uid_(-1) {
   client_->AddListener(this);
 }
 
@@ -19,29 +19,31 @@ HeapSnapshotTaker::~HeapSnapshotTaker() {}
 
 Status HeapSnapshotTaker::TakeSnapshot(scoped_ptr<base::Value>* snapshot) {
   Status status1 = TakeSnapshotInternal();
-  Status status2(kOk);
+  base::DictionaryValue params;
+  Status status2 = client_->SendCommand("Debugger.disable", params);
+  Status status3(kOk);
   if (snapshot_uid_ != -1) {  // Clear the snapshot cached in chrome.
-    base::DictionaryValue params;
-    status2 = client_->SendCommand("HeapProfiler.clearProfiles", params);
+    status3 = client_->SendCommand("HeapProfiler.clearProfiles", params);
   }
 
-  Status status3(kOk);
-  if (status1.IsOk() && status2.IsOk()) {
+  Status status4(kOk);
+  if (status1.IsOk() && status2.IsOk() && status3.IsOk()) {
     scoped_ptr<base::Value> value(base::JSONReader::Read(snapshot_));
     if (!value)
-      status3 = Status(kUnknownError, "heap snapshot not in JSON format");
+      status4 = Status(kUnknownError, "heap snapshot not in JSON format");
     else
       *snapshot = value.Pass();
   }
   snapshot_uid_ = -1;
-  finished_ = false;
   snapshot_.clear();
   if (status1.IsError())
     return status1;
   else if (status2.IsError())
     return status2;
-  else
+  else if (status3.IsError())
     return status3;
+  else
+    return status4;
 }
 
 Status HeapSnapshotTaker::TakeSnapshotInternal() {
@@ -49,32 +51,28 @@ Status HeapSnapshotTaker::TakeSnapshotInternal() {
     return Status(kUnknownError, "unexpected heap snapshot was triggered");
 
   base::DictionaryValue params;
-  Status status = client_->SendCommand("HeapProfiler.collectGarbage", params);
-  if (status.IsError())
-    return status;
-
-  status = client_->SendCommand("HeapProfiler.takeHeapSnapshot", params);
-  if (status.IsError())
-    return status;
+  const char* kMethods[] = {
+      "Debugger.enable",
+      "HeapProfiler.collectGarbage",
+      "HeapProfiler.takeHeapSnapshot"
+  };
+  for (size_t i = 0; i < arraysize(kMethods); ++i) {
+    Status status = client_->SendCommand(kMethods[i], params);
+    if (status.IsError())
+      return status;
+  }
 
   if (snapshot_uid_ == -1)
     return Status(kUnknownError, "failed to receive snapshot uid");
 
   base::DictionaryValue uid_params;
   uid_params.SetInteger("uid", snapshot_uid_);
-  status = client_->SendCommand("HeapProfiler.getHeapSnapshot", uid_params);
+  Status status = client_->SendCommand(
+      "HeapProfiler.getHeapSnapshot", uid_params);
   if (status.IsError())
     return status;
 
-  if (!finished_)
-    return Status(kUnknownError, "failed to retrieve all heap snapshot data");
-
   return Status(kOk);
-}
-
-Status HeapSnapshotTaker::OnConnected(DevToolsClient* client) {
-  base::DictionaryValue params;
-  return client_->SendCommand("Debugger.enable", params);
 }
 
 Status HeapSnapshotTaker::OnEvent(DevToolsClient* client,
@@ -102,17 +100,6 @@ Status HeapSnapshotTaker::OnEvent(DevToolsClient* client,
       snapshot_.append(chunk);
     } else {
       LOG(WARNING) << "expect chunk event uid " << snapshot_uid_
-                   << ", but got " << uid;
-    }
-  } else if (method == "HeapProfiler.finishHeapSnapshot") {
-    int uid = -1;
-    if (!params.GetInteger("uid", &uid)) {
-      return Status(kUnknownError,
-                    "HeapProfiler.finishHeapSnapshot has no 'uid'");
-    } else if (uid == snapshot_uid_) {
-      finished_ = true;
-    } else {
-      LOG(WARNING) << "expect finish event uid " << snapshot_uid_
                    << ", but got " << uid;
     }
   }

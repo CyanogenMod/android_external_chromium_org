@@ -188,7 +188,7 @@ body {
 
 /* Directory tree at the left. */
 .dialog-navigation-list {
-  -webkit-border-end: 1px solid rgb(225, 225, 225);
+  -webkit-border-end: 1px solid rgba(20, 20, 22, 0.1);
   -webkit-box-flex: 0;
   -webkit-box-orient: vertical;
   background-color: #f1f1f1;
@@ -222,7 +222,8 @@ body {
 
 .dialog-navigation-list-footer {
   -webkit-box-flex: 0;
-  display: -webkit-box;
+  display: -webkit-flex;
+  flex-direction: column;
 }
 
 /* A vertical splitter between the roots list and the file list. It is actually
@@ -272,21 +273,6 @@ div.splitter {
   padding-left: 11px;
 }
 
-/* TODO(yoshiki): Animation is temporary disabled for volumes. Add animation
-   back. crbug.com/276132. */
-#navigation-list li.root-item.fadein {
-  -webkit-animation: fadeIn 150ms ease-in-out;
-}
-
-/* This selector is used by JavaScript. "fadeout" class will be dinamically
-   added to elements.
-   Must keep the class name 'fadeout' and the animation name 'fadeOut' in sync
-   with JavaScript. */
-#navigation-list li.root-item.fadeout {
-  -webkit-animation: fadeOut 150ms ease-in-out 0 1 normal both;
-  opacity: 0;
-}
-
 #navigation-list li.root-item > .root-label {
   -webkit-box-flex: 1;
   margin: 0 2px;
@@ -303,9 +289,9 @@ div.splitter {
 }
 
 #middlebar-header {
+  -webkit-border-end: 1px solid rgba(20, 20, 22, 0.1);
   -webkit-box-sizing: border-box;
   -webkit-padding-start: 20px;
-  border-right: 1px solid rgb(212, 212, 212);
   color: rgb(100, 100, 100);
   height: 47px;
   line-height: 40px;
@@ -316,7 +302,7 @@ div.splitter {
 }
 
 #directory-tree {
-  border-right: 1px solid rgb(212, 212, 212);
+  -webkit-border-end: 1px solid rgba(20, 20, 22, 0.1);
   bottom: 0;
   left: 0;
   overflow-x: hidden;
@@ -343,6 +329,7 @@ div.splitter {
   height: 37px;
   left: 3px;
   margin: -13px;
+  right: 3px;
   top: 0;
   vertical-align: middle;
   width: 37px;
@@ -435,35 +422,118 @@ div.splitter {
   -webkit-app-region: drag;
   -webkit-box-align: center;
   -webkit-box-orient: horizontal;
-  display: -webkit-box;
+  display: flex;
   height: 48px;
   margin: 0;
   transition: all 180ms ease;
 }
 
-.search-box-wrapper {
-  -webkit-align-items: center;
-  -webkit-box-flex: 1;
-  display: -webkit-flex;
-  height: 100%;
+/* Search box */
+
+#search-box {
+  display: flex;
+  flex: auto;
 }
 
-.search-box-wrapper.too-short {
+#search-box.too-short {
   visibility: hidden;
 }
 
-.dialog-header #search-box,
-.dialog-header #autocomplete-list,
-.dialog-header #search-icon,
-.dialog-header #search-clear-button {
+#search-box .icon {
   -webkit-app-region: no-drag;
+  -webkit-padding-end: 0;
+  -webkit-padding-start: 10px;
+  background: transparent -webkit-image-set(
+      url(../images/files/ui/search_icon_inactive.png) 1x,
+      url(../images/files/ui/2x/search_icon_inactive.png) 2x)
+      no-repeat center;
+  flex: none;
+  height: 32px;
+  padding-bottom: 8px;
+  padding-top: 8px;
+  width: 32px;
+}
+
+#search-box .icon:hover,
+#search-box.has-cursor .icon,
+#search-box.has-text .icon {
+  background-image: -webkit-image-set(
+      url(../images/files/ui/search_icon_active.png) 1x,
+      url(../images/files/ui/2x/search_icon_active.png) 2x);
+}
+
+#search-box .full-size {
+  flex: 1 0 0;
+}
+
+#search-box input {
+  -webkit-app-region: no-drag;
+  background-color: #fff;
+  border-style: none;
+  color: #333;
+  cursor: default;
+  display: block;
+  height: 48px;
+  line-height: 1em;
+  margin: 0;
+  max-width: 100%;
+  outline: none;
+  padding: 0;
+}
+
+#search-box input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+#search-box.has-cursor input,
+#search-box.has-text input {
+  cursor: text;
+}
+
+#search-box .clear {
+  -webkit-app-region: no-drag;
+  -webkit-margin-end: 30px;
+  align-self: center;
+  background: -webkit-image-set(
+      url(../images/files/ui/search_clear.png) 1x,
+      url(../images/files/ui/2x/search_clear.png) 2x)
+      no-repeat center;
+  border: none;
+  display: none;
+  flex: none;
+  height: 12px;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+  width: 12px;
+}
+
+#search-box.has-text .clear {
+  display: block;
+}
+
+#search-box .clear:hover {
+  background-image: -webkit-image-set(
+      url(../images/files/ui/search_clear_hover.png) 1x,
+      url(../images/files/ui/2x/search_clear_hover.png) 2x);
+}
+
+#search-box .clear:active {
+  background-image: -webkit-image-set(
+      url(../images/files/ui/search_clear_pressed.png) 1x,
+      url(../images/files/ui/2x/search_clear_pressed.png) 2x);
+}
+
+.topbutton-bar {
+  flex: none;
 }
 
 /* Container for the detail and thumbnail list views. */
 .dialog-body {
   -webkit-box-flex: 1;
   -webkit-transition: all 180ms ease;
-  border-top: 1px solid rgb(225, 225, 225);
+  border-top: 1px solid rgba(20, 20, 22, 0.1);
   position: relative;
 }
 
@@ -600,103 +670,12 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   width: 25px;
 }
 
-#search-box,
 #filename-input-box input {
   border: 1px solid #c8c8c8;
   border-radius: 1px;
   box-sizing: border-box;
   height: 31px;  /* border-box */
   margin-right: 30px;
-}
-
-#search-box {
-  -webkit-margin-end: 0;
-  -webkit-padding-after: 2px;
-  -webkit-padding-before: 1px;
-  -webkit-padding-end: 24px;
-  -webkit-padding-start: 23px;
-  background-color: #fff;
-  background-position: 4px 5.5px;
-  background-repeat: no-repeat;
-  border-style: none;
-  color: #333;
-  display: block;
-  height: 48px;
-  line-height: 1em;
-  max-width: 100%;
-  outline: none;
-  padding: 0;
-  pointer-events: none;
-  position: relative;
-  transition: width 0;
-  width: 0; /* Overrided by script */
-}
-
-#search-box:focus,
-#search-box:active,
-.has-text #search-box {
-  pointer-events: auto;
-}
-
-#search-box::-webkit-search-cancel-button {
-  -webkit-appearance: none;
-  right: 2px;
-}
-
-#search-icon {
-  -webkit-flex-shrink: 0;
-  -webkit-margin-end: 3px;
-  -webkit-margin-start: 10px;
-  -webkit-order: -1;
-  background-image: -webkit-image-set(
-    url('../images/files/ui/search_icon_inactive.png') 1x,
-    url('../images/files/ui/2x/search_icon_inactive.png') 2x);
-  background-position: center;
-  background-repeat: no-repeat;
-  height: 32px;
-  width: 32px;
-}
-
-#search-icon:hover,
-#search-box:active + #search-icon,
-#search-box:focus + #search-icon,
-.has-text #search-icon {
-  background: -webkit-image-set(
-    url('../images/files/ui/search_icon_active.png') 1x,
-    url('../images/files/ui/2x/search_icon_active.png') 2x);
-}
-
-#search-clear-button {
-  -webkit-margin-end: 30px;
-  -webkit-margin-start: 10px;
-  background-image: -webkit-image-set(
-    url('../images/files/ui/search_clear.png') 1x,
-    url('../images/files/ui/2x/search_clear.png') 2x);
-  background-position: center;
-  background-repeat: no-repeat;
-  display: none;
-  height: 12px;
-  width: 12px;
-}
-
-.search-box-wrapper.has-text + #search-clear-button {
-  display: block;
-}
-
-.search-box-wrapper.too-short + #search-clear-button {
-  display: none;
-}
-
-#search-clear-button:hover {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/search_clear_hover.png') 1x,
-    url('../images/files/ui/2x/search_clear_hover.png') 2x);
-}
-
-#search-clear-button:active {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/search_clear_pressed.png') 1x,
-    url('../images/files/ui/2x/search_clear_pressed.png') 2x);
 }
 
 .filelist-panel {
@@ -724,7 +703,7 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   padding-bottom: 0;  /* For the preview panel. Will be overridden by JS. */
 }
 
-.main-panel #detail-table > list > .drag-selection-border {
+#file-list .drag-selection-border {
   -webkit-box-sizing: border-box;
   background-color: rgba(255, 255, 255, 0.3);
   border: 2px solid rgba(255, 255, 255, 0.6);
@@ -734,16 +713,15 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
 }
 
 .spinner {
-  background-image: url('../images/common/spinner.svg');
-  background-size: 100%;
-  height: 22px;
+  background: 100% url(../images/common/spinner.svg);
+  height: 16px;
   left: 50%;
-  margin-left: -11px;
-  margin-top: -11px;
+  margin-left: -8px;
+  margin-top: -8px;
   opacity: 0.5;
   position: absolute;
   top: 50%;
-  width: 22px;
+  width: 16px;
 }
 
 #spinner-container,
@@ -760,12 +738,11 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
 }
 
 #spinner-with-text {
-  background-image: url('../images/common/spinner.svg');
-  background-repeat: no-repeat;
+  background: no-repeat url(../images/common/spinner.svg);
   font-size: 16px;
-  height: 22px;
-  min-width: 22px;
-  opacity: 0.6;
+  height: 16px;
+  line-height: 16px;
+  min-width: 16px;
   padding-left: 26px;
   position: relative;
   z-index: 10;
@@ -882,18 +859,18 @@ body[type='full-page'] .detail-name .detail-icon {
 /* Styles specific for the grid view. */
 
 .thumbnail-grid .thumbnail-item {
-  -webkit-margin-start: 8px;
+  -webkit-margin-start: 21px;
   border: 3px solid transparent;  /* Selection will make the border visible. */
-  margin-top: 7px;
+  margin-top: 20px;
   position: relative;
 }
 
 .thumbnail-grid .thumbnail-frame {
   background-color: rgb(245, 245, 245);
-  height: 180px;
+  height: 120px;
   overflow: hidden;
   position: relative;
-  width: 240px;
+  width: 160px;
 }
 
 .thumbnail-grid .thumbnail-item[selected] .thumbnail-frame,
@@ -910,22 +887,6 @@ body[type='full-page'] .detail-name .detail-icon {
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   height: 30px;
-}
-
-/* In the full page mode we can afford to show thumbnails as large as 320x240
-   with no downscaling. */
-body[type='full-page'] .thumbnail-grid .thumbnail-item {
-  -webkit-margin-start: 21px;
-  margin-top: 20px;
-}
-
-body[type='full-page'] .thumbnail-grid .thumbnail-frame {
-  height: 240px;
-  width: 320px;
-}
-
-body[type='full-page'] .thumbnail-grid .thumbnail-bottom {
-  height: 34px;
 }
 
 /* Padding counterweights negative margins of items, thus eliminating scroll
@@ -1049,7 +1010,7 @@ input.rename {
   -webkit-transition: background-color 150ms ease;
   background: linear-gradient(
       to bottom, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 1));
-  border-top: 1px solid rgb(225, 225, 225);
+  border-top: 1px solid rgba(20, 20, 22, 0.1);
   bottom: 0;
   display: -webkit-box;
   height: 51px;
@@ -1144,15 +1105,6 @@ input.rename {
   }
   to {
     opacity: 1;
-  }
-}
-
-@-webkit-keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
   }
 }
 
@@ -1339,15 +1291,21 @@ input.rename {
 }
 
 #delete-button {
-  background-image: -webkit-image-set(
-    url('../images/files/ui/onbutton_trash.png') 1x,
-    url('../images/files/ui/2x/onbutton_trash.png') 2x);
-  background-position: center;
-  background-repeat: no-repeat;
-  display: -webkit-box;
   min-width: 21px;  /* overrride */
   padding: 0;  /* overrride */
   width: 21px;
+}
+
+#delete-button::before {
+  /* Background image should be specified in the before pseudo element because
+   * border image fill is specified to delete-button. */
+  background: -webkit-image-set(
+    url(../images/files/ui/onbutton_trash.png) 1x,
+    url(../images/files/ui/2x/onbutton_trash.png) 2x) no-repeat center;
+  content: '';
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 #delete-button[disabled] {
@@ -1360,6 +1318,7 @@ input.rename {
 }
 
 #share-button {
+  display: block;
   min-width: 0;  /* overrride */
 }
 
@@ -1730,7 +1689,7 @@ button:focus {
   outline-color: rgb(77, 144, 254);
 }
 
-#new-folder {
+#new-folder-button {
   margin-right: 30px;
 }
 
@@ -1748,7 +1707,6 @@ list.autocomplete-suggestions {
   -webkit-margin-before: -7px;
   -webkit-margin-start: -38px;
   background-color: rgb(250, 250, 250);
-  border: 1px solid rgb(255, 255, 255);
   border-radius: 3px;
   box-shadow: 0 1px 4px 0 rgba(0, 0, 0, .5);
   box-sizing: border-box;  /* To match the width with the search box's. */
@@ -1970,29 +1928,179 @@ menuitem#thumbnail-view[lead]:not([disabled]) {
 /* Progress center */
 
 #progress-center {
-  background-color: #ddd;
+  background: transparent;
+  border-top: 1px solid transparent;
   display: -webkit-flex;
   flex-direction: column;
+  /* TODO(hirono): Set the height by scripts. */
+  height: 53px;
+  overflow: hidden;
+  position: relative;
+  transition: height 300ms ease-out,
+              background 300ms linear,
+              border 300ms linear;
   width: 100%;
 }
 
-.progress-center-item {
-  border-bottom: 1px solid #ccc;
-  padding: 8px 9px 8px 8px;
+#progress-center.opened {
+  /* TODO(hirono): Set the height by scripts. */
+  height: 300px;
 }
 
-.progress-center-item-label {
+#progress-center-open-view,
+#progress-center-close-view {
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+#progress-center-open-view {
+  background: #ebebeb;
+  border-top: 1px solid #d8d8d8;
+  opacity: 1;
+  padding-top: 42px;
+  transition: opacity 300ms linear;
+}
+
+#progress-center:not(.opened) #progress-center-open-view {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#progress-center li {
+  -webkit-padding-end: 10px;
+  -webkit-padding-start: 20px;
   display: block;
-  margin-bottom: 4px;
+  flex: none;
+  height: 33px;
+  margin-bottom: 20px;
 }
 
-.progress-center-item-progress-frame {
-  border: 1px solid #aaa;
-  height: 8px;
-  width: 100%;
+#progress-center label {
+  color: #777;
+  display: block;
+  height: 17px;
+  opacity: 1;
+  white-space: nowrap;
 }
 
-.progress-center-item-progress-bar {
-  background-color: #aaa;
+#progress-center li.error label {
+  color: rgb(204, 102, 102);
+}
+
+#progress-center .progress-frame {
+  align-items: center;
+  display: flex;
+  margin-top: 4px;
+}
+
+#progress-center li.error .progress-bar,
+#progress-center li.canceled .progress-bar {
+  visibility: hidden;
+}
+
+#progress-center .progress-bar {
+  -webkit-margin-end: 24px;
+  background: #d8d8d8;
+  border-radius: 3px;
+  flex: 1 0 0;
+  height: 6px;
+  opacity: 1;
+  overflow: hidden;
+}
+
+#progress-center.opened li.closed-item .progress-bar {
+  opacity: 0;
+}
+
+#progress-center .progress-track {
+  background: #787878;
   height: 100%;
+  transition: width 300ms linear;
+}
+
+#progress-center button {
+  background: orange;
+  border: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+  height: 12px;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+  width: 12px;
+  z-index: 0;
+}
+
+#progress-center button.toggle {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_opened.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_opened.png) 2x)
+      no-repeat;
+  bottom: 0;
+  position: relative;
+  transition: bottom 300ms ease-out;
+  z-index: 1;
+}
+
+#progress-center button.toggle:hover {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_opened_hover.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_opened_hover.png) 2x)
+      no-repeat;
+}
+
+#progress-center button.toggle:active {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_opened_pressed.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_opened_pressed.png) 2x)
+      no-repeat;
+}
+
+/*
+ * If the progress center only one item,
+ * toggle button turned into cancel button the item.
+ */
+#progress-center-close-view.single button.toggle,
+#progress-center button.cancel {
+  background: -webkit-image-set(
+      url(../images/files/ui/close_bar.png) 1x,
+      url(../images/files/ui/2x/close_bar.png) 2x)
+      no-repeat;
+}
+
+#progress-center-close-view.single li:not(.cancelable) button.toggle,
+#progress-center li:not(.cancelable) button.cancel {
+  visibility: hidden;
+}
+
+#progress-center.opened button.toggle {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_closed.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_closed.png) 2x)
+      no-repeat;
+  /*
+   * This offset is for aliginig the position of toggle button in both open and
+   * close view. The value euals to:
+   *     label height 17px + label bottom margin 4px -
+   *     top border width 1px - required margin in the open view 10px.
+   */
+  bottom: 10px;
+}
+
+#progress-center.opened button.toggle:hover {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_closed_hover.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_closed_hover.png) 2x)
+      no-repeat;
+}
+
+#progress-center.opened button.toggle:active {
+  background: -webkit-image-set(
+      url(../images/files/ui/process_drawer_button_closed_pressed.png) 1x,
+      url(../images/files/ui/2x/process_drawer_button_closed_pressed.png) 2x)
+      no-repeat;
 }

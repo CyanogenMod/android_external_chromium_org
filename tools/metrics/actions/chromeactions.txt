@@ -1039,6 +1039,8 @@
 0x2df1e564b9b0952f	Launcher_ClickOnApplistButton
 0x384a6609143bbcae	LoadURL
 0xe009e92f3909009c	LoadURLFromKeyword
+0x5c9174370534d67c	LocalDiscoveryNotificationsDisabled_Settings_Disable
+0xf4495a1060f7a361	LocalDiscoveryNotificationsDisabled_Settings_Enable
 0x795fc04747be6afa	LockScreen
 0x733f4fb7447b7323	Login.CreateAccount
 0xb9cc6258dfd41f37	Login_DemoUserLoginSuccess
@@ -1256,6 +1258,7 @@
 0x98ccc71c44973ca0	Options_CheckCertRevocation_Disable
 0xc6599b9ffadec866	Options_CheckCertRevocation_Enable
 0x67aa79d60894f3d7	Options_ClearData
+0x4f27f3cc73dfa3ce	Options_CloudPrintDevicesPage
 0x2d5b58850046ac0a	Options_ContentSettings
 0xe2fd858f8395432f	Options_CustomFrame_Disable
 0x531823c36ca21da2	Options_CustomFrame_Enable
@@ -1433,8 +1436,12 @@
 0x9b869c510c75c582	PageUp
 0x9ba3ff80fde405cd	PasswordManager_Disabled
 0x6cc1116fbd900ebf	PasswordManager_Enabled
+0xc21075c3ec75e973	PasswordManager_RemovePasswordException
+0xa7613e3a71f2d755	PasswordManager_RemoveSavedPassword
 0x36bb6559696dc912	Paste
 0x5d0e6942f354a06c	PasteAndMatchStyle
+0x01c52e891f36d4fe	PlatformVerificationAccepted
+0x1929087478be7017	PlatformVerificationRejected
 0xca471265efb33961	PluginContextMenu_RotateClockwise
 0xa260d9dde6e550c4	PluginContextMenu_RotateCounterclockwise
 0xd0aab07db234653a	Plugin_200ForByteRange
@@ -1530,6 +1537,7 @@
 0x2d9491c68a4ec635	SelectTab5
 0x8fa9d8e88271c82d	SelectTab6
 0xdaa611aa645914e5	SelectTab7
+0x7eb3241cff786567	SettingsResetBubble.Show
 0xbc7eb334ae9f29d0	ShowAccessibilitySettings
 0x1da022468e27685c	ShowAppLauncherPage
 0x0d1d6961dd313b79	ShowAppMenu
@@ -1640,6 +1648,9 @@
 0x462194a5096cab5e	WebView.ClearData
 0x1058b3af68275a1d	WebView.ExecuteScript
 0xbe313bfe6325dad0	WebView.Go
+0x8d7ae1bf68c5a2fe	WebView.Guest.PluginLoadAllowed
+0x26c605f6aa82b885	WebView.Guest.PluginLoadDenied
+0xdc50ad37450d2f2d	WebView.Guest.PluginLoadRequest
 0x749d2199e73fa34c	WebView.Guest.Terminate
 0xdeb501c069a2ff19	WebView.Reload
 0xdc14030aa71d5472	WebView.Stop
@@ -1649,6 +1660,8 @@
 0xddc2a5698e145d16	WebsiteSettings_Opened
 0x75af94f65efafada	Win8DesktopRestart
 0x8f88175ece0f933b	Win8MetroRestart
+0x831a2e98aa899122	WindowSelector_Overview
+0x5f6808f9852ea6b0	WindowSelector_Selection
 0x554103fbf5582ee0	ZoomMinus
 0x82d278b1f2e78bcd	ZoomMinus_AtMinimum
 0x4344cd22d03f6800	ZoomNormal
@@ -1663,3 +1676,6 @@
 0xf4c75cafe4330950	mceSave
 0xfb7010f719b412c4	mceSetStyleInfo
 0x7174576438022591	styleWithCSS
+0xe302ba33f0b1d69e	webapps.AddShortcut.AppShortcut
+0x4ba515be980efd9c	webapps.AddShortcut.AppShortcutApple
+0xcc8255164f6f088c	webapps.AddShortcut.Bookmark

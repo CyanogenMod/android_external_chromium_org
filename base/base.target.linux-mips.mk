@@ -227,6 +227,7 @@ LOCAL_SRC_FILES := \
 	base/time/tick_clock.cc \
 	base/time/time.cc \
 	base/time/time_posix.cc \
+	base/timer/elapsed_timer.cc \
 	base/timer/hi_res_timer_manager_posix.cc \
 	base/timer/timer.cc \
 	base/tracked_objects.cc \
@@ -280,7 +281,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -363,7 +363,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

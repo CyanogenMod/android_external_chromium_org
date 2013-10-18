@@ -11,8 +11,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
 #include "chrome/browser/ui/chrome_style.h"
-#include "chrome/browser/ui/chrome_style.h"
-#include "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_account_chooser.h"
 #import "chrome/browser/ui/cocoa/autofill/autofill_details_container.h"
 #include "chrome/browser/ui/cocoa/autofill/autofill_dialog_constants.h"
@@ -46,6 +44,9 @@ AutofillDialogCocoa::AutofillDialogCocoa(AutofillDialogViewDelegate* delegate)
 }
 
 AutofillDialogCocoa::~AutofillDialogCocoa() {
+  // Cancel potential relayout requests, since the AutofillDialogController
+  // is about to go away, but relayout requests assume it will still exist.
+  [sheet_delegate_ cancelRelayout];
 }
 
 void AutofillDialogCocoa::Show() {
@@ -80,11 +81,9 @@ void AutofillDialogCocoa::CloseNow() {
 }
 
 void AutofillDialogCocoa::UpdatesStarted() {
-  // TODO(estade): implement if it makes sense to.
 }
 
 void AutofillDialogCocoa::UpdatesFinished() {
-  // TODO(estade): implement if it makes sense to.
 }
 
 void AutofillDialogCocoa::UpdateAccountChooser() {
@@ -150,12 +149,16 @@ void AutofillDialogCocoa::ModelChanged() {
   [sheet_delegate_ modelChanged];
 }
 
-void AutofillDialogCocoa::OnSignInResize(const gfx::Size& pref_size) {
-  // TODO(groby): Implement Mac support for this.
+void AutofillDialogCocoa::UpdateErrorBubble() {
+  [sheet_delegate_ updateErrorBubble];
 }
 
 TestableAutofillDialogView* AutofillDialogCocoa::GetTestableView() {
   return this;
+}
+
+void AutofillDialogCocoa::OnSignInResize(const gfx::Size& pref_size) {
+  // TODO(groby): Implement Mac support for this.
 }
 
 void AutofillDialogCocoa::SubmitForTesting() {
@@ -306,7 +309,8 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     // animation looks odd. However, replacing the contentView for constrained
     // windows does not work - it does custom rendering.
     base::scoped_nsobject<NSView> flippedContentView(
-        [[FlippedView alloc] initWithFrame:NSZeroRect]);
+        [[FlippedView alloc] initWithFrame:
+            [[[self window] contentView] frame]]);
     [flippedContentView setSubviews:
         @[accountChooser_,
           titleTextField_,
@@ -335,11 +339,18 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 }
 
 - (void)onContentViewFrameDidChange:(NSNotification*)notification {
-  [self performLayout];
+  [self requestRelayout];
+}
+
+- (void)cancelRelayout {
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                           selector:@selector(performLayout)
+                                             object:nil];
 }
 
 - (void)requestRelayout {
-  [self performLayout];
+  [self cancelRelayout];
+  [self performSelector:@selector(performLayout) withObject:nil afterDelay:0.0];
 }
 
 - (NSSize)preferredSize {
@@ -352,7 +363,6 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
   NSSize size = NSMakeSize(
       std::max(contentSize.width, headerSize.width),
       contentSize.height + headerSize.height + autofill::kDetailTopPadding);
-  size.width += 2 * chrome_style::kHorizontalPadding;
   size.height += chrome_style::kClientBottomPadding +
                  chrome_style::kTitleTopPadding;
 
@@ -382,17 +392,22 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 - (void)performLayout {
   NSRect contentRect = NSZeroRect;
   contentRect.size = [self preferredSize];
-  NSRect clientRect = NSInsetRect(
-      contentRect, chrome_style::kHorizontalPadding, 0);
+  NSRect clientRect = contentRect;
   clientRect.origin.y = chrome_style::kClientBottomPadding;
   clientRect.size.height -= chrome_style::kTitleTopPadding +
                             chrome_style::kClientBottomPadding;
+
+  [titleTextField_ setStringValue:
+      base::SysUTF16ToNSString(autofillDialog_->delegate()->DialogTitle())];
+  [titleTextField_ sizeToFit];
 
   NSRect headerRect, mainRect, titleRect, dummyRect;
   NSDivideRect(clientRect, &headerRect, &mainRect,
                kAccountChooserHeight, NSMinYEdge);
   NSDivideRect(mainRect, &dummyRect, &mainRect,
                autofill::kDetailTopPadding, NSMinYEdge);
+  headerRect = NSInsetRect(
+      headerRect, chrome_style::kHorizontalPadding, 0);
   NSDivideRect(headerRect, &titleRect, &headerRect,
                NSWidth([titleTextField_ frame]), NSMinXEdge);
 
@@ -450,6 +465,8 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
              name:NSWindowDidMoveNotification
            object:[self window]];
 
+  [self updateAccountChooser];
+  [self updateNotificationArea];
   [self requestRelayout];
 }
 
@@ -496,18 +513,20 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 
 - (void)updateSection:(autofill::DialogSection)section {
   [[mainContainer_ sectionForId:section] update];
+  [mainContainer_ updateSaveInChrome];
 }
 
 - (void)fillSection:(autofill::DialogSection)section
            forInput:(const autofill::DetailInput&)input {
   [[mainContainer_ sectionForId:section] fillForInput:input];
+  [mainContainer_ updateSaveInChrome];
 }
 
 - (content::NavigationController*)showSignIn {
   [signInContainer_ loadSignInPage];
   [[mainContainer_ view] setHidden:YES];
   [[signInContainer_ view] setHidden:NO];
-  [self performLayout];
+  [self requestRelayout];
 
   return [signInContainer_ navigationController];
 }
@@ -524,11 +543,15 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 - (void)hideSignIn {
   [[signInContainer_ view] setHidden:YES];
   [[mainContainer_ view] setHidden:NO];
-  [self performLayout];
+  [self requestRelayout];
 }
 
 - (void)modelChanged {
   [mainContainer_ modelChanged];
+}
+
+- (void)updateErrorBubble {
+  [mainContainer_ updateErrorBubble];
 }
 
 @end

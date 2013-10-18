@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
 #include "grit/keyboard_resources.h"
 #include "grit/keyboard_resources_map.h"
@@ -130,6 +131,21 @@ bool SendKeyEvent(const std::string type,
       SendProcessKeyEvent(ui::ET_KEY_RELEASED, root_window);
     }
   } else {
+    if (event_type == ui::ET_KEY_RELEASED) {
+      // The number of key press events seen since the last backspace.
+      static int keys_seen = 0;
+      if (code == ui::VKEY_BACK) {
+        // Log the rough lengths of characters typed between backspaces. This
+        // metric will be used to determine the error rate for the keyboard.
+        UMA_HISTOGRAM_CUSTOM_COUNTS(
+            "VirtualKeyboard.KeystrokesBetweenBackspaces",
+            keys_seen, 1, 1000, 50);
+        keys_seen = 0;
+      } else {
+        ++keys_seen;
+      }
+    }
+
     ui::KeyEvent event(event_type, code, flags, false);
     root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
   }
@@ -160,10 +176,27 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/elements/kb-keyset.html", IDR_KEYBOARD_ELEMENTS_KEYSET},
     {"keyboard/elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW},
     {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
+    {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},
+    {"keyboard/images/back.svg", IDR_KEYBOARD_IMAGES_BACK},
+    {"keyboard/images/brightness-down.svg",
+        IDR_KEYBOARD_IMAGES_BRIGHTNESS_DOWN},
+    {"keyboard/images/brightness-up.svg", IDR_KEYBOARD_IMAGES_BRIGHTNESS_UP},
+    {"keyboard/images/change-window.svg", IDR_KEYBOARD_IMAGES_CHANGE_WINDOW},
+    {"keyboard/images/down.svg", IDR_KEYBOARD_IMAGES_DOWN},
+    {"keyboard/images/forward.svg", IDR_KEYBOARD_IMAGES_FORWARD},
+    {"keyboard/images/fullscreen.svg", IDR_KEYBOARD_IMAGES_FULLSCREEN},
     {"keyboard/images/keyboard.svg", IDR_KEYBOARD_IMAGES_KEYBOARD},
+    {"keyboard/images/left.svg", IDR_KEYBOARD_IMAGES_LEFT},
     {"keyboard/images/microphone.svg", IDR_KEYBOARD_IMAGES_MICROPHONE},
     {"keyboard/images/microphone-green.svg",
         IDR_KEYBOARD_IMAGES_MICROPHONE_GREEN},
+    {"keyboard/images/mute.svg", IDR_KEYBOARD_IMAGES_MUTE},
+    {"keyboard/images/reload.svg", IDR_KEYBOARD_IMAGES_RELOAD},
+    {"keyboard/images/right.svg", IDR_KEYBOARD_IMAGES_RIGHT},
+    {"keyboard/images/shutdown.svg", IDR_KEYBOARD_IMAGES_SHUTDOWN},
+    {"keyboard/images/up.svg", IDR_KEYBOARD_IMAGES_UP},
+    {"keyboard/images/volume-down.svg", IDR_KEYBOARD_IMAGES_VOLUME_DOWN},
+    {"keyboard/images/volume-up.svg", IDR_KEYBOARD_IMAGES_VOLUME_UP},
     {"keyboard/index.html", IDR_KEYBOARD_INDEX},
     {"keyboard/layouts/dvorak.html", IDR_KEYBOARD_LAYOUTS_DVORAK},
     {"keyboard/layouts/latin-accents.js", IDR_KEYBOARD_LAYOUTS_LATIN_ACCENTS},
@@ -171,6 +204,7 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/layouts/qwerty.html", IDR_KEYBOARD_LAYOUTS_QWERTY},
     {"keyboard/layouts/symbol-altkeys.js",
         IDR_KEYBOARD_LAYOUTS_SYMBOL_ALTKEYS},
+    {"keyboard/layouts/system-qwerty.html", IDR_KEYBOARD_LAYOUTS_SYSTEM_QWERTY},
     {"keyboard/layouts/spacebar-row.html", IDR_KEYBOARD_SPACEBAR_ROW},
     {"keyboard/main.js", IDR_KEYBOARD_MAIN_JS},
     {"keyboard/manifest.json", IDR_KEYBOARD_MANIFEST},
@@ -181,6 +215,13 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
   static const size_t kKeyboardResourcesSize = arraysize(kKeyboardResources);
   *size = kKeyboardResourcesSize;
   return kKeyboardResources;
+}
+
+void LogKeyboardControlEvent(KeyboardControlEvent event) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "VirtualKeyboard.KeyboardControlEvent",
+      event,
+      keyboard::KEYBOARD_CONTROL_MAX);
 }
 
 }  // namespace keyboard

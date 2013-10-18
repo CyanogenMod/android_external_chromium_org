@@ -1788,7 +1788,7 @@ Mosaic.Tile.prototype.init = function(metadata, onImageMeasured) {
                       ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
       priority);
 
-  // If no hidpi embedde thumbnail available, then use the low resolution
+  // If no hidpi embedded thumbnail available, then use the low resolution
   // for preloading.
   if (!hidpiEmbedded) {
     this.thumbnailPreloader_ = new ThumbnailLoader(
@@ -1818,13 +1818,17 @@ Mosaic.Tile.prototype.init = function(metadata, onImageMeasured) {
     onImageMeasured();
   }.bind(this);
 
-  // Dimensions are always acquired from the metadata. If it is not available,
-  // then the image will not be displayed.
+  // Dimensions are always acquired from the metadata. For local files, it is
+  // extracted from headers. For Drive files, it is received via the Drive API.
+  // If the dimensions are not available, then the fallback dimensions will be
+  // used (same as for the generic icon).
   if (metadata.media && metadata.media.width) {
     setDimensions(metadata.media.width, metadata.media.height);
+  } else if (metadata.drive && metadata.drive.imageWidth &&
+             metadata.drive.imageHeight) {
+    setDimensions(metadata.drive.imageWidth, metadata.drive.imageHeight);
   } else {
-    // No dimensions in metadata, then display the generic icon instead.
-    // TODO(mtomasz): Display a gneric icon instead of a black rectangle.
+    // No dimensions in metadata, then use the generic dimensions.
     setDimensions(Mosaic.Tile.GENERIC_ICON_SIZE,
                   Mosaic.Tile.GENERIC_ICON_SIZE);
   }
@@ -1856,8 +1860,8 @@ Mosaic.Tile.prototype.load = function(loadMode, onImageLoaded) {
         this.wrapper_.classList.add('animated');
       else
         this.wrapper_.classList.remove('animated');
-      loader.attachImage(this.wrapper_, ThumbnailLoader.FillMode.OVER_FILL);
     }
+    loader.attachImage(this.wrapper_, ThumbnailLoader.FillMode.OVER_FILL);
     onImageLoaded(success);
     switch (mode) {
       case Mosaic.Tile.LoadMode.LOW_DPI:

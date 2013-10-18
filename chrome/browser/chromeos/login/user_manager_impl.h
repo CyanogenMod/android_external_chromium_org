@@ -41,6 +41,8 @@ class MultiProfileUserController;
 class RemoveUserDelegate;
 class SessionLengthLimiter;
 
+struct UpdateUserAccountDataCallbackData;
+
 // Implementation of the UserManager.
 class UserManagerImpl
     : public UserManager,
@@ -73,11 +75,14 @@ class UserManagerImpl
   virtual const User* FindUser(const std::string& email) const OVERRIDE;
   virtual const User* FindLocallyManagedUser(
       const string16& display_name) const OVERRIDE;
+  virtual const User* FindLocallyManagedUserBySyncId(
+      const std::string& sync_id) const OVERRIDE;
   virtual const User* GetLoggedInUser() const OVERRIDE;
   virtual User* GetLoggedInUser() OVERRIDE;
   virtual const User* GetActiveUser() const OVERRIDE;
   virtual User* GetActiveUser() OVERRIDE;
   virtual const User* GetPrimaryUser() const OVERRIDE;
+  virtual User* GetUserByProfile(Profile* profile) const OVERRIDE;
   virtual void SaveUserOAuthStatus(
       const std::string& username,
       User::OAuthTokenStatus oauth_token_status) OVERRIDE;
@@ -159,8 +164,8 @@ class UserManagerImpl
   virtual void OnPolicyUpdated(const std::string& user_id) OVERRIDE;
   virtual void OnDeviceLocalAccountsChanged() OVERRIDE;
 
-  // Wait untill we have sufficient information on user locale and apply it.
-  void RespectLocalePreference(Profile* profile, const User* user) const;
+  virtual void RespectLocalePreference(Profile* profile, const User* user) const
+      OVERRIDE;
 
  private:
   friend class UserManager;
@@ -277,6 +282,9 @@ class UserManagerImpl
   // Notifies observers that active user has changed.
   void NotifyActiveUserChanged(const User* active_user);
 
+  // Notifies observers that another user was added to the session.
+  void NotifyUserAddedToSession(const User* added_user);
+
   // Notifies observers that active user_id hash has changed.
   void NotifyActiveUserHashChanged(const std::string& hash);
 
@@ -317,8 +325,16 @@ class UserManagerImpl
                                  const string16& display_name,
                                  const std::string* locale);
 
-  // Returns NULL if User is not created.
-  User* GetUserByProfile(Profile* profile) const;
+  // Account locale needs to be translated to device locale.
+  // This might be called as callback after FILE thread translates locale.
+  void UpdateUserAccountDataImplCallback(
+      const std::string& username,
+      const string16& display_name,
+      const std::string* resolved_account_locale);
+
+  // Decorator to the previous function.
+  void UpdateUserAccountDataImplCallbackDecorator(
+      const scoped_ptr<UpdateUserAccountDataCallbackData>& data);
 
   Profile* GetProfileByUser(const User* user) const;
 

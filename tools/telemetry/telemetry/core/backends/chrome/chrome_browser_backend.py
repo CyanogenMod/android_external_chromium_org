@@ -82,6 +82,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     args.append('--disable-background-networking')
     args.append('--metrics-recording-only')
     args.append('--no-first-run')
+    args.append('--no-default-browser-check')
     args.append('--no-proxy-server')
     if self.browser_options.wpr_mode != wpr_modes.WPR_OFF:
       args.extend(wpr_server.GetChromeFlags(
@@ -107,6 +108,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
     if self.browser_options.no_proxy_server:
       args.append('--no-proxy-server')
+
+    if self.browser_options.disable_component_extensions_with_background_pages:
+      args.append('--disable-component-extensions-with-background-pages')
 
     return args
 
@@ -137,13 +141,27 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
         if not e.extension_id in self._extension_dict_backend:
           return False
         extension_object = self._extension_dict_backend[e.extension_id]
-        res = extension_object.EvaluateJavaScript(
-            extension_ready_js % e.extension_id)
+        try:
+          res = extension_object.EvaluateJavaScript(
+              extension_ready_js % e.extension_id)
+        except exceptions.EvaluateException:
+          # If the inspected page is not ready, we will get an error
+          # when we evaluate a JS expression, but we can just keep polling
+          # until the page is ready (crbug.com/251913).
+          res = None
+
+        # TODO(tengs): We don't have full support for getting the Chrome
+        # version before launch, so for now we use a generic workaround to
+        # check for an extension binding bug in old versions of Chrome.
+        # See crbug.com/263162 for details.
+        if res and extension_object.EvaluateJavaScript(
+            'chrome.runtime == null'):
+          extension_object.Reload()
         if not res:
           return False
       return True
     if wait_for_extensions and self._supports_extensions:
-      util.WaitFor(AllExtensionsLoaded, timeout=30)
+      util.WaitFor(AllExtensionsLoaded, timeout=60)
 
   def _PostBrowserStartupInitialization(self):
     # Detect version information.
@@ -165,9 +183,10 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
       if branch_number_match:
         self._chrome_branch_number = int(branch_number_match.group(1))
-      else:
-        # Content Shell returns '' for Browser, for now we have to
-        # fall-back and assume branch 1025.
+
+      if not self._chrome_branch_number:
+        # Content Shell returns '' for Browser, WebViewShell returns '0'.
+        # For now we have to fall-back and assume branch 1025.
         self._chrome_branch_number = 1025
       return
 
@@ -176,7 +195,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     self._chrome_branch_number = 1025
 
   def Request(self, path, timeout=None, throw_network_exception=False):
-    url = 'http://localhost:%i/json' % self._port
+    url = 'http://127.0.0.1:%i/json' % self._port
     if path:
       url += '/' + path
     try:
@@ -243,9 +262,6 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if self._tracing_backend:
       self._tracing_backend.Close()
       self._tracing_backend = None
-    if self._system_info_backend:
-      self._system_info_backend.Close()
-      self._system_info_backend = None
 
   @property
   def supports_system_info(self):

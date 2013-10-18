@@ -6,6 +6,7 @@
 #define UI_KEYBOARD_KEYBOARD_CONTROLLER_H_
 
 #include "base/basictypes.h"
+#include "base/event_types.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "ui/aura/window_observer.h"
@@ -34,18 +35,27 @@ class KeyboardLayoutManager;
 class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
                                            public aura::WindowObserver {
  public:
+  // Different ways to hide the keyboard.
+  enum HideReason {
+    // System initiated.
+    HIDE_REASON_AUTOMATIC,
+    // User initiated.
+    HIDE_REASON_MANUAL,
+  };
+
   // Takes ownership of |proxy|.
   explicit KeyboardController(KeyboardControllerProxy* proxy);
   virtual ~KeyboardController();
 
-  // Returns the container for the keyboard, which is then owned by the caller.
-  // It is the responsibility of the caller to Show() the returned window.
+  // Returns the container for the keyboard, which is owned by
+  // KeyboardController.
   aura::Window* GetContainerWindow();
 
   // Hides virtual keyboard and notifies observer bounds change.
   // This function should be called with a delay to avoid layout flicker
-  // when the focus of input field quickly change.
-  void HideKeyboard();
+  // when the focus of input field quickly change. |automatic| is true when the
+  // call is made by the system rather than initiated by the user.
+  void HideKeyboard(HideReason reason);
 
   // Management of the observer list.
   virtual void AddObserver(KeyboardControllerObserver* observer);
@@ -58,9 +68,17 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // aura::WindowObserver overrides
   virtual void OnWindowHierarchyChanged(
       const HierarchyChangeParams& params) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // InputMethodObserver overrides
+  virtual void OnTextInputTypeChanged(
+      const ui::TextInputClient* client) OVERRIDE {}
+  virtual void OnFocus() OVERRIDE {}
+  virtual void OnBlur() OVERRIDE {}
+  virtual void OnUntranslatedIMEMessage(
+      const base::NativeEvent& event) OVERRIDE {}
+  virtual void OnCaretBoundsChanged(
+      const ui::TextInputClient* client) OVERRIDE {}
+  virtual void OnInputLocaleChanged() OVERRIDE {}
   virtual void OnTextInputStateChanged(
       const ui::TextInputClient* client) OVERRIDE;
   virtual void OnInputMethodDestroyed(
@@ -70,12 +88,13 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   bool WillHideKeyboard() const;
 
   scoped_ptr<KeyboardControllerProxy> proxy_;
-  aura::Window* container_;
+  scoped_ptr<aura::Window> container_;
   ui::InputMethod* input_method_;
   bool keyboard_visible_;
-  base::WeakPtrFactory<KeyboardController> weak_factory_;
 
   ObserverList<KeyboardControllerObserver> observer_list_;
+
+  base::WeakPtrFactory<KeyboardController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardController);
 };

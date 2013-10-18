@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
@@ -37,10 +38,6 @@
 #include "webkit/common/gpu/context_provider_in_process.h"
 #include "webkit/common/gpu/grcontext_for_webgraphicscontext3d.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
-
-#if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
-#endif
 
 namespace {
 
@@ -141,26 +138,34 @@ void DefaultContextFactory::RemoveReflector(
 }
 
 scoped_refptr<cc::ContextProvider>
-DefaultContextFactory::OffscreenContextProviderForMainThread() {
-  if (!offscreen_contexts_main_thread_.get() ||
-      !offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_main_thread_ =
+DefaultContextFactory::OffscreenCompositorContextProvider() {
+  if (!offscreen_compositor_contexts_.get() ||
+      !offscreen_compositor_contexts_->DestroyedOnMainThread()) {
+    offscreen_compositor_contexts_ =
         webkit::gpu::ContextProviderInProcess::CreateOffscreen();
-    if (offscreen_contexts_main_thread_.get() &&
-        !offscreen_contexts_main_thread_->BindToCurrentThread())
-      offscreen_contexts_main_thread_ = NULL;
   }
-  return offscreen_contexts_main_thread_;
+  return offscreen_compositor_contexts_;
 }
 
 scoped_refptr<cc::ContextProvider>
-DefaultContextFactory::OffscreenContextProviderForCompositorThread() {
-  if (!offscreen_contexts_compositor_thread_.get() ||
-      !offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_compositor_thread_ =
+DefaultContextFactory::SharedMainThreadContextProvider() {
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->DestroyedOnMainThread())
+    return shared_main_thread_contexts_;
+
+  if (ui::Compositor::WasInitializedWithThread()) {
+    shared_main_thread_contexts_ =
         webkit::gpu::ContextProviderInProcess::CreateOffscreen();
+  } else {
+    shared_main_thread_contexts_ =
+        static_cast<webkit::gpu::ContextProviderInProcess*>(
+            OffscreenCompositorContextProvider().get());
   }
-  return offscreen_contexts_compositor_thread_;
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->BindToCurrentThread())
+    shared_main_thread_contexts_ = NULL;
+
+  return shared_main_thread_contexts_;
 }
 
 void DefaultContextFactory::RemoveCompositor(Compositor* compositor) {
@@ -188,22 +193,31 @@ void TestContextFactory::RemoveReflector(scoped_refptr<Reflector> reflector) {
 }
 
 scoped_refptr<cc::ContextProvider>
-TestContextFactory::OffscreenContextProviderForMainThread() {
-  if (!offscreen_contexts_main_thread_.get() ||
-      offscreen_contexts_main_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_main_thread_ = cc::TestContextProvider::Create();
-    CHECK(offscreen_contexts_main_thread_->BindToCurrentThread());
-  }
-  return offscreen_contexts_main_thread_;
+TestContextFactory::OffscreenCompositorContextProvider() {
+  if (!offscreen_compositor_contexts_.get() ||
+      offscreen_compositor_contexts_->DestroyedOnMainThread())
+    offscreen_compositor_contexts_ = cc::TestContextProvider::Create();
+  return offscreen_compositor_contexts_;
 }
 
 scoped_refptr<cc::ContextProvider>
-TestContextFactory::OffscreenContextProviderForCompositorThread() {
-  if (!offscreen_contexts_compositor_thread_.get() ||
-      offscreen_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    offscreen_contexts_compositor_thread_ = cc::TestContextProvider::Create();
+TestContextFactory::SharedMainThreadContextProvider() {
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->DestroyedOnMainThread())
+    return shared_main_thread_contexts_;
+
+  if (ui::Compositor::WasInitializedWithThread()) {
+    shared_main_thread_contexts_ = cc::TestContextProvider::Create();
+  } else {
+    shared_main_thread_contexts_ =
+        static_cast<cc::TestContextProvider*>(
+            OffscreenCompositorContextProvider().get());
   }
-  return offscreen_contexts_compositor_thread_;
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->BindToCurrentThread())
+    shared_main_thread_contexts_ = NULL;
+
+  return shared_main_thread_contexts_;
 }
 
 void TestContextFactory::RemoveCompositor(Compositor* compositor) {
@@ -460,7 +474,7 @@ void Compositor::InitializeContextFactoryForTests(bool allow_test_contexts) {
 #if defined(OS_CHROMEOS)
   // If the test is running on the chromeos envrionment (such as
   // device or vm bots), always use real contexts.
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     use_test_contexts = false;
 #endif
 
@@ -493,18 +507,7 @@ void Compositor::Initialize() {
 #endif
   if (use_thread) {
     g_compositor_thread = new base::Thread("Browser Compositor");
-#if defined(OS_POSIX)
-    // Workaround for crbug.com/293736
-    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
-    // compositor scheduling) work incorrectly across system time changes (e.g.
-    // tlsdate). So instead, use an IO loop, which uses libevent, that uses
-    // monotonic time (immune to these problems).
-    base::Thread::Options options;
-    options.message_loop_type = base::MessageLoop::TYPE_IO;
-    g_compositor_thread->StartWithOptions(options);
-#else
     g_compositor_thread->Start();
-#endif
   }
 
   DCHECK(!g_compositor_initialized) << "Compositor initialized twice.";
@@ -513,6 +516,7 @@ void Compositor::Initialize() {
 
 // static
 bool Compositor::WasInitializedWithThread() {
+  DCHECK(g_compositor_initialized);
   return !!g_compositor_thread;
 }
 
@@ -736,15 +740,8 @@ void Compositor::ScheduleComposite() {
     ScheduleDraw();
 }
 
-scoped_refptr<cc::ContextProvider>
-Compositor::OffscreenContextProviderForMainThread() {
-  return ContextFactory::GetInstance()->OffscreenContextProviderForMainThread();
-}
-
-scoped_refptr<cc::ContextProvider>
-Compositor::OffscreenContextProviderForCompositorThread() {
-  return ContextFactory::GetInstance()->
-      OffscreenContextProviderForCompositorThread();
+scoped_refptr<cc::ContextProvider> Compositor::OffscreenContextProvider() {
+  return ContextFactory::GetInstance()->OffscreenCompositorContextProvider();
 }
 
 const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {

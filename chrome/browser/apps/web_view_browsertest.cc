@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "apps/native_app_window.h"
+#include "apps/ui/native_app_window.h"
+#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
@@ -42,6 +43,15 @@ const char kEmptyResponsePath[] = "/close-socket";
 const char kRedirectResponsePath[] = "/server-redirect";
 const char kRedirectResponseFullPath[] =
     "/extensions/platform_apps/web_view/shim/guest_redirect.html";
+
+// Platform-specific filename relative to the chrome executable.
+#if defined(OS_WIN)
+const wchar_t library_name[] = L"ppapi_tests.dll";
+#elif defined(OS_MACOSX)
+const char library_name[] = "ppapi_tests.plugin";
+#elif defined(OS_POSIX)
+const char library_name[] = "libppapi_tests.so";
+#endif
 
 class EmptyHttpResponse : public net::test_server::HttpResponse {
  public:
@@ -220,17 +230,14 @@ class MockDownloadWebContentsDelegate : public content::WebContentsDelegate {
 class WebViewTest : public extensions::PlatformAppBrowserTest {
  protected:
   virtual void SetUp() OVERRIDE {
-    const testing::TestInfo* const test_info =
-        testing::UnitTest::GetInstance()->current_test_info();
-
-    // SpeechRecognition test specific SetUp.
-    if (!strcmp(test_info->name(), "SpeechRecognition")) {
+    if (UsesFakeSpeech()) {
+      // SpeechRecognition test specific SetUp.
       fake_speech_recognition_manager_.reset(
           new content::FakeSpeechRecognitionManager());
       fake_speech_recognition_manager_->set_should_send_fake_response(true);
       // Inject the fake manager factory so that the test result is returned to
       // the web page.
-      content::SpeechRecognitionManager::SetManagerForTests(
+      content::SpeechRecognitionManager::SetManagerForTesting(
           fake_speech_recognition_manager_.get());
     }
 
@@ -241,11 +248,10 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    // SpeechRecognition test specific TearDown.
-    const testing::TestInfo* const test_info =
-        testing::UnitTest::GetInstance()->current_test_info();
-    if (!strcmp(test_info->name(), "SpeechRecognition"))
-      content::SpeechRecognitionManager::SetManagerForTests(NULL);
+    if (UsesFakeSpeech()) {
+      // SpeechRecognition test specific TearDown.
+      content::SpeechRecognitionManager::SetManagerForTesting(NULL);
+    }
 
     extensions::PlatformAppBrowserTest::TearDown();
   }
@@ -567,6 +573,16 @@ class WebViewTest : public extensions::PlatformAppBrowserTest {
   }
 
  private:
+  bool UsesFakeSpeech() {
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
+
+    // SpeechRecognition test specific SetUp.
+    return !strcmp(test_info->name(), "SpeechRecognition") ||
+           !strcmp(test_info->name(),
+                   "SpeechRecognitionAPI_HasPermissionAllow");
+  }
+
   scoped_ptr<content::FakeSpeechRecognitionManager>
       fake_speech_recognition_manager_;
 };
@@ -581,6 +597,12 @@ IN_PROC_BROWSER_TEST_F(WebViewTest,
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
+#if defined(OS_WIN)
+  // Flaky on XP bot http://crbug.com/299507
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
+
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
       << message_;
 }
@@ -589,6 +611,11 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSize) {
 // This test ensures <webview> doesn't crash in SW rendering when autosize is
 // turned on.
 IN_PROC_BROWSER_TEST_F(WebViewTest, AutoSizeSW) {
+#if defined(OS_WIN)
+  // Flaky on XP bot http://crbug.com/299507
+  if (base::win::GetVersion() <= base::win::VERSION_XP)
+    return;
+#endif
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
       << message_;
 }
@@ -641,6 +668,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestAPIMethodExistence) {
 // object, on the webview element, and hanging directly off webview.
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestWebRequestAPIExistence) {
   TestHelper("testWebRequestAPIExistence",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestChromeExtensionURL) {
+  TestHelper("testChromeExtensionURL",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
@@ -831,6 +865,14 @@ IN_PROC_BROWSER_TEST_F(WebViewTest,
 
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestLoadStartLoadRedirect) {
   TestHelper("testLoadStartLoadRedirect",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest,
+                       Shim_TestLoadAbortChromeExtensionURLWrongPartition) {
+  TestHelper("testLoadAbortChromeExtensionURLWrongPartition",
              "DoneShimTest.PASSED",
              "DoneShimTest.FAILED",
              "web_view/shim");
@@ -1536,7 +1578,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognition) {
   EXPECT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, TearDownTest) {
+// Flaky on Windows. http://crbug.com/303966
+#if defined(OS_WIN)
+#define MAYBE_TearDownTest DISABLED_TearDownTest
+#else
+#define MAYBE_TearDownTest TearDownTest
+#endif
+IN_PROC_BROWSER_TEST_F(WebViewTest, MAYBE_TearDownTest) {
   ExtensionTestMessageListener first_loaded_listener("guest-loaded", false);
   const extensions::Extension* extension =
       LoadAndLaunchPlatformApp("web_view/teardown");
@@ -1615,7 +1663,7 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationAPICancelGeolocation) {
         "platform_apps/web_view/geolocation/cancel_request")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewTest, GeolocationRequestGone) {
+IN_PROC_BROWSER_TEST_F(WebViewTest, DISABLED_GeolocationRequestGone) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
   ASSERT_TRUE(RunPlatformAppTest(
         "platform_apps/web_view/geolocation/geolocation_request_gone"))
@@ -1712,6 +1760,27 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, SetPropertyOnDocumentInteractive) {
                   << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognitionAPI_HasPermissionAllow) {
+  ASSERT_TRUE(
+      RunPlatformAppTestWithArg("platform_apps/web_view/speech_recognition_api",
+                                "allowTest"))
+          << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognitionAPI_HasPermissionDeny) {
+  ASSERT_TRUE(
+      RunPlatformAppTestWithArg("platform_apps/web_view/speech_recognition_api",
+                                "denyTest"))
+          << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewTest, SpeechRecognitionAPI_NoPermission) {
+  ASSERT_TRUE(
+      RunPlatformAppTestWithArg("platform_apps/web_view/common",
+                                "speech_recognition_api_no_permission"))
+          << message_;
+}
+
 // Tests overriding user agent.
 IN_PROC_BROWSER_TEST_F(WebViewTest, UserAgent) {
   ASSERT_TRUE(StartEmbeddedTestServer());  // For serving guest pages.
@@ -1765,3 +1834,32 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestPromptDialog) {
              "DoneDialogTest.FAILED",
              "web_view/dialog");
 }
+
+#if defined(ENABLE_PLUGINS)
+class WebViewPluginTest : public WebViewTest {
+ protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    WebViewTest::SetUpCommandLine(command_line);
+
+    // Append the switch to register the pepper plugin.
+    // library name = <out dir>/<test_name>.<library_extension>
+    // MIME type = application/x-ppapi-<test_name>
+    base::FilePath plugin_dir;
+    EXPECT_TRUE(PathService::Get(base::DIR_MODULE, &plugin_dir));
+
+    base::FilePath plugin_lib = plugin_dir.Append(library_name);
+    EXPECT_TRUE(base::PathExists(plugin_lib));
+    base::FilePath::StringType pepper_plugin = plugin_lib.value();
+    pepper_plugin.append(FILE_PATH_LITERAL(";application/x-ppapi-tests"));
+    command_line->AppendSwitchNative(switches::kRegisterPepperPlugins,
+                                     pepper_plugin);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(WebViewPluginTest, TestLoadPluginEvent) {
+  TestHelper("testPluginLoadPermission",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+#endif  // defined(ENABLE_PLUGINS)

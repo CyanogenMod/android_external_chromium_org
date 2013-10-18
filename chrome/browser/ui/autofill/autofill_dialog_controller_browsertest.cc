@@ -80,12 +80,12 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
                                scoped_refptr<content::MessageLoopRunner> runner)
       : AutofillDialogControllerImpl(contents,
                                      form_data,
-                                     GURL(),
+                                     form_data.origin,
                                      base::Bind(&MockCallback)),
         metric_logger_(metric_logger),
         mock_wallet_client_(
             Profile::FromBrowserContext(contents->GetBrowserContext())->
-                GetRequestContext(), this),
+                GetRequestContext(), this, form_data.origin),
         message_loop_runner_(runner),
         use_validation_(false),
         weak_ptr_factory_(this) {}
@@ -107,14 +107,12 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
         section, type, value);
   }
 
-  virtual ValidityData InputsAreValid(
+  virtual ValidityMessages InputsAreValid(
       DialogSection section,
-      const DetailOutputMap& inputs,
-      ValidationType validation_type) OVERRIDE {
+      const DetailOutputMap& inputs) OVERRIDE {
     if (!use_validation_)
-      return ValidityData();
-    return AutofillDialogControllerImpl::InputsAreValid(
-        section, inputs, validation_type);
+      return ValidityMessages();
+    return AutofillDialogControllerImpl::InputsAreValid(section, inputs);
   }
 
   // Saving to Chrome is tested in AutofillDialogControllerImpl unit tests.
@@ -473,9 +471,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
 // expected when Autofill is used to fill text inputs.
 //
 // Flaky on Win7, WinXP, and Win Aura.  http://crbug.com/270314.
-// TODO(groby): Enable this test on mac once AutofillDialogCocoa handles
-// comboboxes for GetTextContentsForInput. http://crbug.com/270205
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_WIN)
 #define MAYBE_FillComboboxFromAutofill DISABLED_FillComboboxFromAutofill
 #else
 #define MAYBE_FillComboboxFromAutofill FillComboboxFromAutofill
@@ -563,9 +559,36 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   }
 }
 
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, ShouldShowErrorBubble) {
+  EXPECT_TRUE(controller()->ShouldShowErrorBubble());
+
+  CreditCard card(test::GetCreditCard());
+  ASSERT_FALSE(card.IsVerified());
+  controller()->GetTestingManager()->AddTestingCreditCard(&card);
+
+  const DetailInputs& cc_inputs =
+      controller()->RequestedFieldsForSection(SECTION_CC);
+  const DetailInput& cc_number_input = cc_inputs[0];
+  ASSERT_EQ(CREDIT_CARD_NUMBER, cc_number_input.type);
+
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  view->SetTextContentsOfInput(
+      cc_number_input,
+      card.GetRawInfo(CREDIT_CARD_NUMBER).substr(0, 1));
+
+  view->ActivateInput(cc_number_input);
+  EXPECT_FALSE(controller()->ShouldShowErrorBubble());
+
+  controller()->FocusMoved();
+  EXPECT_TRUE(controller()->ShouldShowErrorBubble());
+}
+
 // Tests that credit card number is disabled while editing a Wallet instrument.
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, WalletCreditCardDisabled) {
-  controller()->OnUserNameFetchSuccess("user@example.com");
+  std::vector<std::string> usernames;
+  usernames.push_back("user@example.com");
+  controller()->OnUserNameFetchSuccess(usernames);
+  controller()->OnDidFetchWalletCookieValue(std::string());
 
   scoped_ptr<wallet::WalletItems> wallet_items =
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED);
@@ -732,7 +755,10 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
   EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
 
   // Set up some Wallet state.
-  controller()->OnUserNameFetchSuccess("user@example.com");
+  std::vector<std::string> usernames;
+  usernames.push_back("user@example.com");
+  controller()->OnUserNameFetchSuccess(usernames);
+  controller()->OnDidFetchWalletCookieValue(std::string());
   controller()->OnDidGetWalletItems(
       wallet::GetTestWalletItems(wallet::AMEX_DISALLOWED));
 

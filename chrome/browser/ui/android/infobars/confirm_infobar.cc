@@ -43,20 +43,34 @@ base::android::ScopedJavaLocalRef<jobject> ConfirmInfoBar::CreateRenderInfoBar(
   base::android::ScopedJavaLocalRef<jstring> message_text =
       base::android::ConvertUTF16ToJavaString(
           env, delegate_->GetMessageText());
+  base::android::ScopedJavaLocalRef<jstring> link_text =
+      base::android::ConvertUTF16ToJavaString(
+          env, delegate_->GetLinkText());
 
   return Java_ConfirmInfoBarDelegate_showConfirmInfoBar(
       env, java_confirm_delegate_.obj(), reinterpret_cast<jint>(this),
-      GetEnumeratedIconId(), message_text.obj(), ok_button_text.obj(),
-      cancel_button_text.obj());
+      GetEnumeratedIconId(), message_text.obj(), link_text.obj(),
+      ok_button_text.obj(), cancel_button_text.obj());
+}
+
+void ConfirmInfoBar::OnLinkClicked(JNIEnv* env, jobject obj) {
+  DCHECK(delegate_);
+  if (!owner())
+      return; // We're closing; don't call anything, it might access the owner.
+
+  if (delegate_->LinkClicked(NEW_FOREGROUND_TAB))
+    RemoveSelf();
 }
 
 void ConfirmInfoBar::ProcessButton(int action,
                                    const std::string& action_value) {
+  if (!owner())
+    return; // We're closing; don't call anything, it might access the owner.
   DCHECK((action == InfoBarAndroid::ACTION_OK) ||
       (action == InfoBarAndroid::ACTION_CANCEL));
   if ((action == InfoBarAndroid::ACTION_OK) ?
       delegate_->Accept() : delegate_->Cancel())
-    CloseInfoBar();
+    RemoveSelf();
 }
 
 string16 ConfirmInfoBar::GetTextFor(

@@ -5,7 +5,7 @@
 'use strict';
 
 /**
- * Namespace for URL constnats.
+ * Namespace for URL constants.
  */
 var urlConstants = {};
 
@@ -56,7 +56,8 @@ urlConstants.GOOGLE_DRIVE_HELP =
  * @const {string}
  */
 urlConstants.GOOGLE_DRIVE_REDEEM =
-    'http://www.google.com/intl/en/chrome/devices/goodies.html';
+    'http://www.google.com/intl/en/chrome/devices/goodies.html' +
+    '?utm_source=filesapp&utm_medium=banner&utm_campaign=gsg';
 
 /**
  * Location of Google Drive root.

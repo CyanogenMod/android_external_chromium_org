@@ -33,7 +33,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "ash/display/output_configurator_animation.h"
-#include "base/chromeos/chromeos_version.h"
+#include "base/sys_info.h"
 #include "chromeos/display/output_configurator.h"
 #endif
 
@@ -149,7 +149,7 @@ DisplayManager::DisplayManager()
       change_display_upon_host_resize_(false),
       software_mirroring_enabled_(false) {
 #if defined(OS_CHROMEOS)
-  change_display_upon_host_resize_ = !base::chromeos::IsRunningOnChromeOS();
+  change_display_upon_host_resize_ = !base::SysInfo::IsRunningOnChromeOS();
 #endif
 }
 
@@ -177,7 +177,7 @@ std::vector<float> DisplayManager::GetScalesForDisplay(
       ret.assign(kUIScalesFor1280,
                  kUIScalesFor1280 + arraysize(kUIScalesFor1280));
 #if defined(OS_CHROMEOS)
-      if (base::chromeos::IsRunningOnChromeOS())
+      if (base::SysInfo::IsRunningOnChromeOS())
         NOTREACHED() << "Unknown resolution:" << info.ToString();
 #endif
   }
@@ -267,11 +267,11 @@ DisplayLayout DisplayManager::GetCurrentDisplayLayout() {
 
 DisplayIdPair DisplayManager::GetCurrentDisplayIdPair() const {
   if (IsMirrored()) {
+    DCHECK_LE(2u, num_connected_displays());
     int64 mirrored_id = mirrored_display().id();
-    return displays_[0].id() == mirrored_id ?
-        std::make_pair(displays_[1].id(), mirrored_id) :
-        std::make_pair(displays_[0].id(), mirrored_id);
+    return std::make_pair(displays_[0].id(), mirrored_id);
   } else {
+    CHECK_LE(2u, displays_.size());
     int64 id_at_zero = displays_[0].id();
     if (id_at_zero == gfx::Display::InternalDisplayId() ||
         id_at_zero == first_display_id()) {
@@ -388,7 +388,7 @@ void DisplayManager::SetDisplayResolution(int64 display_id,
     resolutions_[display_id] = resolution;
   }
 #if defined(OS_CHROMEOS) && defined(USE_X11)
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     Shell::GetInstance()->output_configurator()->ScheduleConfigureOutputs();
 #endif
 }
@@ -544,8 +544,12 @@ void DisplayManager::UpdateDisplays(
   // resolution. This is necessary in order for scaling to work while
   // mirrored.
   int64 mirrored_display_id = gfx::Display::kInvalidDisplayID;
-  if (software_mirroring_enabled_ && new_display_info_list.size() == 2)
-    mirrored_display_id = new_display_info_list[1].id();
+  if (software_mirroring_enabled_ && new_display_info_list.size() == 2) {
+    bool zero_is_source =
+        first_display_id_ == new_display_info_list[0].id() ||
+        gfx::Display::InternalDisplayId() == new_display_info_list[0].id();
+    mirrored_display_id = new_display_info_list[zero_is_source ? 1 : 0].id();
+  }
 
   while (curr_iter != displays_.end() ||
          new_info_iter != new_display_info_list.end()) {
@@ -677,7 +681,7 @@ void DisplayManager::UpdateDisplays(
     delegate_->PostDisplayConfigurationChange();
 
 #if defined(USE_X11) && defined(OS_CHROMEOS)
-  if (!changed_display_indices.empty() && base::chromeos::IsRunningOnChromeOS())
+  if (!changed_display_indices.empty() && base::SysInfo::IsRunningOnChromeOS())
     ui::ClearX11DefaultRootWindow();
 #endif
 }
@@ -736,7 +740,7 @@ void DisplayManager::SetMirrorMode(bool mirrored) {
     return;
 
 #if defined(OS_CHROMEOS)
-  if (base::chromeos::IsRunningOnChromeOS()) {
+  if (base::SysInfo::IsRunningOnChromeOS()) {
     chromeos::OutputState new_state = mirrored ?
         chromeos::STATE_DUAL_MIRROR : chromeos::STATE_DUAL_EXTENDED;
     Shell::GetInstance()->output_configurator()->SetDisplayMode(new_state);

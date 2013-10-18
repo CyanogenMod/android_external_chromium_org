@@ -16,6 +16,7 @@
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
@@ -219,6 +220,7 @@ void InterstitialPageImpl::Show() {
 
   DCHECK(!render_view_host_);
   render_view_host_ = static_cast<RenderViewHostImpl*>(CreateRenderViewHost());
+  render_view_host_->AttachToFrameTree();
   CreateWebContentsView();
 
   std::string data_url = "data:text/html;charset=utf-8," +
@@ -270,9 +272,10 @@ void InterstitialPageImpl::Hide() {
                  weak_ptr_factory_.GetWeakPtr(),
                  render_view_host_));
   render_view_host_ = NULL;
+  frame_tree_.SwapMainFrame(NULL);
   web_contents_->DetachInterstitialPage();
   // Let's revert to the original title if necessary.
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (!new_navigation_ && should_revert_web_contents_title_) {
     entry->SetTitle(original_web_contents_title_);
     web_contents_->NotifyNavigationStateChanged(INVALIDATE_TYPE_TITLE);
@@ -395,12 +398,12 @@ void InterstitialPageImpl::DidNavigate(
   }
 
   // Notify the tab we are not loading so the throbber is stopped. It also
-  // causes a NOTIFY_LOAD_STOP notification, that the AutomationProvider (used
-  // by the UI tests) expects to consider a navigation as complete. Without
-  // this, navigating in a UI test to a URL that triggers an interstitial would
-  // hang.
+  // causes a WebContentsObserver::DidStopLoading callback that the
+  // AutomationProvider (used by the UI tests) expects to consider a navigation
+  // as complete. Without this, navigating in a UI test to a URL that triggers
+  // an interstitial would hang.
   web_contents_was_loading_ = web_contents_->IsLoading();
-  web_contents_->SetIsLoading(false, NULL);
+  web_contents_->SetIsLoading(web_contents_->GetRenderViewHost(), false, NULL);
 }
 
 void InterstitialPageImpl::UpdateTitle(
@@ -412,7 +415,7 @@ void InterstitialPageImpl::UpdateTitle(
     return;
 
   DCHECK(render_view_host == render_view_host_);
-  NavigationEntry* entry = web_contents_->GetController().GetActiveEntry();
+  NavigationEntry* entry = web_contents_->GetController().GetVisibleEntry();
   if (!entry) {
     // Crash reports from the field indicate this can be NULL.
     // This is unexpected as InterstitialPages constructed with the
@@ -497,14 +500,14 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   session_storage_namespace_ =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
-  RenderViewHostImpl* render_view_host =
-      new RenderViewHostImpl(site_instance.get(),
-                             this,
-                             this,
-                             MSG_ROUTING_NONE,
-                             MSG_ROUTING_NONE,
-                             false,
-                             false);
+  RenderViewHost* render_view_host =
+      RenderViewHostFactory::Create(site_instance.get(),
+                                    this,
+                                    this,
+                                    MSG_ROUTING_NONE,
+                                    MSG_ROUTING_NONE,
+                                    false,
+                                    false);
   web_contents_->RenderViewForInterstitialPageCreated(render_view_host);
   return render_view_host;
 }
@@ -546,7 +549,7 @@ void InterstitialPageImpl::Proceed() {
 
   // Resumes the throbber, if applicable.
   if (web_contents_was_loading_)
-    web_contents_->SetIsLoading(true, NULL);
+    web_contents_->SetIsLoading(web_contents_->GetRenderViewHost(), true, NULL);
 
   // If this is a new navigation, the old page is going away, so we cancel any
   // blocked requests for it.  If it is not a new navigation, then it means the
@@ -708,6 +711,10 @@ void InterstitialPageImpl::ShowCreatedFullscreenWidget(int route_id) {
 SessionStorageNamespace* InterstitialPageImpl::GetSessionStorageNamespace(
     SiteInstance* instance) {
   return session_storage_namespace_.get();
+}
+
+FrameTree* InterstitialPageImpl::GetFrameTree() {
+  return &frame_tree_;
 }
 
 void InterstitialPageImpl::Disable() {

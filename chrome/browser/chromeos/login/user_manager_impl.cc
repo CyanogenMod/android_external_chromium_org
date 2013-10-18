@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -21,6 +20,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
+#include "base/threading/worker_pool.h"
 #include "base/values.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
@@ -39,7 +40,6 @@
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/session_length_limiter.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
@@ -55,16 +55,31 @@
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "policy/policy_constants.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/views/corewm/corewm_switches.h"
 
 using content::BrowserThread;
 
 namespace chromeos {
+
+struct UpdateUserAccountDataCallbackData {
+  UpdateUserAccountDataCallbackData(const std::string& username,
+                                    const string16& display_name,
+                                    const std::string& raw_locale)
+      : username_(username),
+        display_name_(display_name),
+        raw_locale_(raw_locale) {}
+  std::string username_;
+  string16 display_name_;
+  std::string raw_locale_;
+  std::string resolved_locale_;
+};
 
 namespace {
 
@@ -194,6 +209,27 @@ void ParseUserList(const ListValue& users_list,
     }
     users_vector->push_back(email);
   }
+}
+
+class UserHashMatcher {
+ public:
+  explicit UserHashMatcher(const std::string& h) : username_hash(h) {}
+  bool operator()(const User* user) const {
+    return user->username_hash() == username_hash;
+  }
+
+ private:
+  const std::string& username_hash;
+};
+
+// Runs on SequencedWorkerPool thread.
+static void UpdateUserAccountDataImplCheckAndResolveLocale(
+    std::string* raw_account_locale,
+    std::string* resolved_account_locale) {
+  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Ignore result
+  l10n_util::CheckAndResolveLocale(*raw_account_locale,
+                                   resolved_account_locale);
 }
 
 }  // namespace
@@ -359,14 +395,19 @@ void UserManagerImpl::UserLoggedIn(const std::string& email,
     is_current_user_new_ = false;
     // Set active user wallpaper back.
     WallpaperManager::Get()->SetUserWallpaper(active_user_->email());
+    NotifyUserAddedToSession(user);
     return;
   }
 
+  policy::DeviceLocalAccount::Type device_local_account_type;
   if (email == UserManager::kGuestUserName) {
     GuestUserLoggedIn();
   } else if (email == UserManager::kRetailModeUserName) {
     RetailModeUserLoggedIn();
-  } else if (policy::IsKioskAppUser(email)) {
+  } else if (policy::IsDeviceLocalAccountUser(email,
+                                              &device_local_account_type) &&
+             device_local_account_type ==
+                 policy::DeviceLocalAccount::TYPE_KIOSK_APP) {
     KioskAppLoggedIn(email);
   } else {
     EnsureUsersLoaded();
@@ -401,14 +442,20 @@ void UserManagerImpl::UserLoggedIn(const std::string& email,
   logged_in_users_.insert(logged_in_users_.begin(), active_user_);
   SetLRUUser(active_user_);
 
-  if (!primary_user_)
+  if (!primary_user_) {
     primary_user_ = active_user_;
+    if (primary_user_->GetType() == User::USER_TYPE_REGULAR)
+      SendRegularUserLoginMetrics(email);
+  }
 
   UMA_HISTOGRAM_ENUMERATION("UserManager.LoginUserType",
                             active_user_->GetType(), User::NUM_USER_TYPES);
 
-  if (active_user_->GetType() == User::USER_TYPE_REGULAR)
-    SendRegularUserLoginMetrics(email);
+  if (IsMultipleProfilesAllowed()) {
+    UMA_HISTOGRAM_COUNTS_100("MultiProfile.UserCount",
+                             GetLoggedInUsers().size());
+  }
+
   g_browser_process->local_state()->SetString(kLastLoggedInRegularUser,
     (active_user_->GetType() == User::USER_TYPE_REGULAR) ? email : "");
 
@@ -644,6 +691,19 @@ const User* UserManagerImpl::FindLocallyManagedUser(
   return NULL;
 }
 
+const User* UserManagerImpl::FindLocallyManagedUserBySyncId(
+    const std::string& sync_id) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  const UserList& users = GetUsers();
+  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+    if (((*it)->GetType() == User::USER_TYPE_LOCALLY_MANAGED) &&
+        (GetManagedUserSyncId((*it)->email()) == sync_id)) {
+      return *it;
+    }
+  }
+  return NULL;
+}
+
 const User* UserManagerImpl::GetLoggedInUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return active_user_;
@@ -667,6 +727,22 @@ User* UserManagerImpl::GetActiveUser() {
 const User* UserManagerImpl::GetPrimaryUser() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return primary_user_;
+}
+
+User* UserManagerImpl::GetUserByProfile(Profile* profile) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (ProfileHelper::IsSigninProfile(profile))
+    return NULL;
+
+  if (IsMultipleProfilesAllowed()) {
+    const std::string username_hash =
+        ProfileHelper::GetUserIdHashFromProfile(profile);
+    const UserList& users = GetUsers();
+    const UserList::const_iterator pos = std::find_if(
+        users.begin(), users.end(), UserHashMatcher(username_hash));
+    return (pos != users.end()) ? *pos : NULL;
+  }
+  return active_user_;
 }
 
 void UserManagerImpl::SaveUserOAuthStatus(
@@ -724,9 +800,12 @@ void UserManagerImpl::UpdateUserAccountData(const std::string& username,
   UpdateUserAccountDataImpl(username, display_name, &locale);
 }
 
-void UserManagerImpl::UpdateUserAccountDataImpl(const std::string& username,
-                                                const string16& display_name,
-                                                const std::string* locale) {
+// "second part" of UpdateUserAccountDataImpl is sometimes called as
+// callback after IO thread has resolved locale.
+void UserManagerImpl::UpdateUserAccountDataImplCallback(
+    const std::string& username,
+    const string16& display_name,
+    const std::string* resolved_account_locale) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   User* user = FindUserAndModify(username);
@@ -735,10 +814,8 @@ void UserManagerImpl::UpdateUserAccountDataImpl(const std::string& username,
 
   // locale is not NULL if User Account has been downloaded
   // (i.e. it is UpdateUserAccountData(), not SaveUserDisplayName() )
-  if (locale != NULL) {
-    user->SetAccountLocale(*locale);
-    RespectLocalePreference(GetProfileByUser(user), user);
-  }
+  if (resolved_account_locale != NULL)
+    user->SetAccountLocale(*resolved_account_locale);
 
   if (display_name.empty())
     return;
@@ -773,6 +850,41 @@ void UserManagerImpl::UpdateUserAccountDataImpl(const std::string& username,
           it.key(),
           new base::StringValue(display_name));
     }
+  }
+}
+
+// Proxy for the previous call.
+void UserManagerImpl::UpdateUserAccountDataImplCallbackDecorator(
+    const scoped_ptr<UpdateUserAccountDataCallbackData>& data) {
+  UpdateUserAccountDataImplCallback(
+      data->username_, data->display_name_, &(data->resolved_locale_));
+}
+
+void UserManagerImpl::UpdateUserAccountDataImpl(const std::string& username,
+                                                const string16& display_name,
+                                                const std::string* locale) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // locale is not NULL if User Account has been downloaded
+  // (i.e. it is UpdateUserAccountData(), not SaveUserDisplayName() )
+  if ((locale != NULL) && (!locale->empty()) &&
+      (*locale != g_browser_process->GetApplicationLocale())) {
+    scoped_ptr<UpdateUserAccountDataCallbackData> data(
+        new UpdateUserAccountDataCallbackData(username, display_name, *locale));
+
+    base::Closure resolver(
+        base::Bind(&UpdateUserAccountDataImplCheckAndResolveLocale,
+                   base::Unretained(&(data->raw_locale_)),
+                   base::Unretained(&(data->resolved_locale_))));
+    BrowserThread::PostBlockingPoolTaskAndReply(
+        FROM_HERE,
+        resolver,
+        base::Bind(&chromeos::UserManagerImpl::
+                        UpdateUserAccountDataImplCallbackDecorator,
+                   base::Unretained(this),
+                   base::Passed(&data)));
+  } else {
+    UpdateUserAccountDataImplCallback(username, display_name, locale);
   }
 }
 
@@ -869,33 +981,6 @@ void UserManagerImpl::RespectLocalePreference(Profile* profile,
   chromeos::LanguageSwitchMenu::SwitchLanguage(pref_locale);
 }
 
-class UserHashMatcher {
- public:
-  explicit UserHashMatcher(const std::string& h) : username_hash(h) {}
-  bool operator()(const User* user) const {
-    return user->username_hash() == username_hash;
-  }
-
- private:
-  const std::string& username_hash;
-};
-
-// Returns NULL if user is not created
-User* UserManagerImpl::GetUserByProfile(Profile* profile) const {
-  if (ProfileHelper::IsSigninProfile(profile))
-    return NULL;
-
-  if (IsMultipleProfilesAllowed()) {
-    const std::string username_hash =
-        ProfileHelper::GetUserIdHashFromProfile(profile);
-    const UserList& users = GetUsers();
-    const UserList::const_iterator pos = std::find_if(
-        users.begin(), users.end(), UserHashMatcher(username_hash));
-    return (pos != users.end()) ? *pos : NULL;
-  }
-  return active_user_;
-}
-
 Profile* UserManagerImpl::GetProfileByUser(const User* user) const {
   if (IsMultipleProfilesAllowed())
     return ProfileHelper::GetProfileByUserIdHash(user->username_hash());
@@ -934,11 +1019,9 @@ void UserManagerImpl::Observe(int type,
     case chrome::NOTIFICATION_PROFILE_CREATED: {
       Profile* profile = content::Source<Profile>(source).ptr();
       User* user = GetUserByProfile(profile);
-      if (user != NULL) {
+      if (user != NULL)
         user->set_profile_is_created();
-        if (user == active_user_)
-          RespectLocalePreference(profile, user);
-      }
+
       break;
     }
     default:
@@ -1045,7 +1128,7 @@ bool UserManagerImpl::UserSessionsRestored() const {
 
 bool UserManagerImpl::HasBrowserRestarted() const {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  return base::chromeos::IsRunningOnChromeOS() &&
+  return base::SysInfo::IsRunningOnChromeOS() &&
          command_line->HasSwitch(switches::kLoginUser) &&
          !command_line->HasSwitch(switches::kLoginPassword);
 }
@@ -1383,7 +1466,11 @@ void UserManagerImpl::PublicAccountUserLoggedIn(User* user) {
 
 void UserManagerImpl::KioskAppLoggedIn(const std::string& username) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(policy::IsKioskAppUser(username));
+  policy::DeviceLocalAccount::Type device_local_account_type;
+  DCHECK(policy::IsDeviceLocalAccountUser(username,
+                                          &device_local_account_type));
+  DCHECK_EQ(policy::DeviceLocalAccount::TYPE_KIOSK_APP,
+            device_local_account_type);
 
   active_user_ = User::CreateKioskAppUser(username);
   active_user_->SetStubImage(User::kInvalidImageIndex, false);
@@ -1835,6 +1922,13 @@ void UserManagerImpl::NotifyActiveUserChanged(const User* active_user) {
   FOR_EACH_OBSERVER(UserManager::UserSessionStateObserver,
                     session_state_observer_list_,
                     ActiveUserChanged(active_user));
+}
+
+void UserManagerImpl::NotifyUserAddedToSession(const User* added_user) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  FOR_EACH_OBSERVER(UserManager::UserSessionStateObserver,
+                    session_state_observer_list_,
+                    UserAddedToSession(added_user));
 }
 
 void UserManagerImpl::NotifyActiveUserHashChanged(const std::string& hash) {

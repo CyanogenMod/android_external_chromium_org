@@ -51,7 +51,6 @@
 #include "url/gurl.h"
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
 #include "chrome/browser/browser_process.h"
 #endif
 
@@ -103,17 +102,15 @@ OmniboxState::~OmniboxState() {}
 // application language, and set the input type accordingly.
 ui::TextInputType DetermineTextInputType() {
 #if defined(OS_WIN)
-  if (base::win::IsTSFAwareRequired()) {
-    DCHECK(g_browser_process);
-    const std::string& locale = g_browser_process->GetApplicationLocale();
-    const std::string& language = locale.substr(0, 2);
-    // Assume CJK + Thai users are using an IME.
-    if (language == "ja" ||
-        language == "ko" ||
-        language == "th" ||
-        language == "zh")
-      return ui::TEXT_INPUT_TYPE_SEARCH;
-  }
+  DCHECK(g_browser_process);
+  const std::string& locale = g_browser_process->GetApplicationLocale();
+  const std::string& language = locale.substr(0, 2);
+  // Assume CJK + Thai users are using an IME.
+  if (language == "ja" ||
+      language == "ko" ||
+      language == "th" ||
+      language == "zh")
+    return ui::TEXT_INPUT_TYPE_SEARCH;
 #endif
   return ui::TEXT_INPUT_TYPE_URL;
 }
@@ -260,10 +257,12 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
   if (event.IsUnicodeKeyCode())
     return views::Textfield::OnKeyPressed(event);
 
+  const bool shift = event.IsShiftDown();
+  const bool control = event.IsControlDown();
+  const bool alt = event.IsAltDown() || event.IsAltGrDown();
   switch (event.key_code()) {
     case ui::VKEY_RETURN:
-      model()->AcceptInput(event.IsAltDown() ? NEW_FOREGROUND_TAB : CURRENT_TAB,
-                           false);
+      model()->AcceptInput(alt ? NEW_FOREGROUND_TAB : CURRENT_TAB, false);
       return true;
     case ui::VKEY_ESCAPE:
       return model()->OnEscapeKeyPressed();
@@ -271,7 +270,7 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
       model()->OnControlKeyChanged(true);
       break;
     case ui::VKEY_DELETE:
-      if (event.IsShiftDown() && model()->popup_model()->IsOpen())
+      if (shift && model()->popup_model()->IsOpen())
         model()->popup_model()->TryDeletingCurrentItem();
       break;
     case ui::VKEY_UP:
@@ -281,21 +280,17 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
       model()->OnUpOrDownKeyPressed(1);
       return true;
     case ui::VKEY_PRIOR:
-      if (event.IsControlDown() || event.IsAltDown() ||
-          event.IsShiftDown()) {
+      if (control || alt || shift)
         return false;
-      }
       model()->OnUpOrDownKeyPressed(-1 * model()->result().size());
       return true;
     case ui::VKEY_NEXT:
-      if (event.IsControlDown() || event.IsAltDown() ||
-          event.IsShiftDown()) {
+      if (control || alt || shift)
         return false;
-      }
       model()->OnUpOrDownKeyPressed(model()->result().size());
       return true;
     case ui::VKEY_V:
-      if (event.IsControlDown() && !read_only()) {
+      if (control && !alt && !read_only()) {
         OnBeforePossibleChange();
         OnPaste();
         OnAfterPossibleChange();
@@ -306,12 +301,7 @@ bool OmniboxViewViews::OnKeyPressed(const ui::KeyEvent& event) {
       break;
   }
 
-  bool handled = views::Textfield::OnKeyPressed(event);
-#if !defined(OS_WIN) || defined(USE_AURA)
-  // TODO(msw): Avoid this complexity, consolidate cross-platform behavior.
-  handled |= SkipDefaultKeyEventProcessing(event);
-#endif
-  return handled;
+  return views::Textfield::OnKeyPressed(event) || HandleEarlyTabActions(event);
 }
 
 bool OmniboxViewViews::OnKeyReleased(const ui::KeyEvent& event) {
@@ -323,8 +313,17 @@ bool OmniboxViewViews::OnKeyReleased(const ui::KeyEvent& event) {
 
 bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
     const ui::KeyEvent& event) {
-  // Handle keyword hint tab-to-search and tabbing through dropdown results.
+  if (views::FocusManager::IsTabTraversalKeyEvent(event) &&
+      ((model()->is_keyword_hint() && !event.IsShiftDown()) ||
+       model()->popup_model()->IsOpen())) {
+    return true;
+  }
+  return Textfield::SkipDefaultKeyEventProcessing(event);
+}
+
+bool OmniboxViewViews::HandleEarlyTabActions(const ui::KeyEvent& event) {
   // This must run before acclerator handling invokes a focus change on tab.
+  // Note the parallel with SkipDefaultKeyEventProcessing above.
   if (views::FocusManager::IsTabTraversalKeyEvent(event)) {
     if (model()->is_keyword_hint() && !event.IsShiftDown()) {
       model()->AcceptKeyword(ENTERED_KEYWORD_MODE_VIA_TAB);
@@ -342,7 +341,7 @@ bool OmniboxViewViews::SkipDefaultKeyEventProcessing(
     }
   }
 
-  return Textfield::SkipDefaultKeyEventProcessing(event);
+  return false;
 }
 
 void OmniboxViewViews::OnFocus() {
@@ -379,7 +378,6 @@ void OmniboxViewViews::OnBlur() {
 
   // Tell the model to reset itself.
   model()->OnKillFocus();
-  controller()->OnKillFocus();
 
   // Make sure the beginning of the text is visible.
   SelectRange(gfx::Range(0));
@@ -735,7 +733,7 @@ void OmniboxViewViews::OnAfterUserAction(views::Textfield* sender) {
 void OmniboxViewViews::OnAfterCutOrCopy() {
   ui::Clipboard* cb = ui::Clipboard::GetForCurrentThread();
   string16 selected_text;
-  cb->ReadText(ui::Clipboard::BUFFER_STANDARD, &selected_text);
+  cb->ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE, &selected_text);
   GURL url;
   bool write_url;
   model()->AdjustTextForCopy(GetSelectedRange().GetMin(), IsSelectAll(),
@@ -743,10 +741,10 @@ void OmniboxViewViews::OnAfterCutOrCopy() {
   if (write_url) {
     BookmarkNodeData data;
     data.ReadFromTuple(url, selected_text);
-    data.WriteToClipboard();
+    data.WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
   } else {
     ui::ScopedClipboardWriter scoped_clipboard_writer(
-        ui::Clipboard::GetForCurrentThread(), ui::Clipboard::BUFFER_STANDARD);
+        ui::Clipboard::GetForCurrentThread(), ui::CLIPBOARD_TYPE_COPY_PASTE);
     scoped_clipboard_writer.WriteText(selected_text);
   }
 }

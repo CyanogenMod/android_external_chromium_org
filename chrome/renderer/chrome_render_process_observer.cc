@@ -269,14 +269,23 @@ ChromeRenderProcessObserver::ChromeRenderProcessObserver(
 
 #if defined(ENABLE_AUTOFILL_DIALOG)
 #if defined(OS_MACOSX)
-  bool enableAutofill = command_line.HasSwitch(
+  // Interactive autocomplete is on by default for Dev/Canary, off by default
+  // for Beta/Stable.
+  bool enable_autofill = command_line.HasSwitch(
       autofill::switches::kEnableInteractiveAutocomplete);
+
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel != chrome::VersionInfo::CHANNEL_BETA &&
+      channel != chrome::VersionInfo::CHANNEL_STABLE) {
+    enable_autofill = !command_line.HasSwitch(
+        autofill::switches::kDisableInteractiveAutocomplete);
+  }
 #else
-  bool enableAutofill = !command_line.HasSwitch(
+  bool enable_autofill = !command_line.HasSwitch(
       autofill::switches::kDisableInteractiveAutocomplete);
 #endif
   WebRuntimeFeatures::enableRequestAutocomplete(
-      enableAutofill ||
+      enable_autofill ||
       command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures));
 #endif
 
@@ -358,6 +367,9 @@ void ChromeRenderProcessObserver::WebKitInitialized() {
   WebSecurityPolicy::registerURLSchemeAsNoAccess(native_scheme);
   WebSecurityPolicy::registerURLSchemeAsNotAllowingJavascriptURLs(
       native_scheme);
+
+  if (base::FieldTrialList::FindFullName("DateExtensionEnabled") == "Disabled")
+    WebRuntimeFeatures::enableDateExtension(false);
 }
 
 void ChromeRenderProcessObserver::OnRenderProcessShutdown() {

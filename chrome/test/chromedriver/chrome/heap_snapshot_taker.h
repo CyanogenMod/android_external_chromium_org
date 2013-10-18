@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/test/chromedriver/chrome/devtools_event_listener.h"
@@ -28,7 +29,6 @@ class HeapSnapshotTaker: public DevToolsEventListener {
   Status TakeSnapshot(scoped_ptr<base::Value>* snapshot);
 
   // Overridden from DevToolsEventListener:
-  virtual Status OnConnected(DevToolsClient* client) OVERRIDE;
   virtual Status OnEvent(DevToolsClient* client,
                          const std::string& method,
                          const base::DictionaryValue& params) OVERRIDE;
@@ -38,7 +38,6 @@ class HeapSnapshotTaker: public DevToolsEventListener {
 
   DevToolsClient* client_;
   int snapshot_uid_;
-  bool finished_;
   std::string snapshot_;
 
   DISALLOW_COPY_AND_ASSIGN(HeapSnapshotTaker);

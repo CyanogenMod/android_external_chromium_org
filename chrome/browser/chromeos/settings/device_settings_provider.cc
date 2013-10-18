@@ -17,7 +17,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/cloud/cloud_policy_constants.h"
@@ -31,6 +30,7 @@
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/shill_property_util.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using google::protobuf::RepeatedField;
@@ -742,11 +742,14 @@ void DeviceSettingsProvider::DecodeGenericPolicies(
       kDeviceAttestationEnabled,
       policy.attestation_settings().attestation_enabled());
 
-  new_values_cache->SetBoolean(
-      kAttestationForContentProtectionEnabled,
-      policy.has_attestation_settings() &&
-      policy.attestation_settings().has_content_protection_enabled() &&
-      policy.attestation_settings().content_protection_enabled());
+  if (policy.has_attestation_settings() &&
+      policy.attestation_settings().has_content_protection_enabled()) {
+    new_values_cache->SetBoolean(
+        kAttestationForContentProtectionEnabled,
+        policy.attestation_settings().content_protection_enabled());
+  } else {
+    new_values_cache->SetBoolean(kAttestationForContentProtectionEnabled, true);
+  }
 }
 
 void DeviceSettingsProvider::UpdateValuesCache(

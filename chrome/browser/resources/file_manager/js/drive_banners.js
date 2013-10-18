@@ -9,7 +9,7 @@
  *  - WelcomeBanner
  *  - AuthFailBanner
  * @param {DirectoryModel} directoryModel The model.
- * @param {VolumeManager} volumeManager The manager.
+ * @param {VolumeManagerWrapper} volumeManager The manager.
  * @param {DOMDocument} document HTML document.
  * @param {boolean} showOffers True if we should show offer banners.
  * @constructor
@@ -33,8 +33,8 @@ function FileListBannerController(
       this.onDirectoryChanged_.bind(this));
 
   this.unmountedPanel_ = this.document_.querySelector('#unmounted-panel');
-  this.volumeManager_.addEventListener('drive-status-changed',
-        this.updateDriveUnmountedPanel_.bind(this));
+  this.volumeManager_.volumeInfoList.addEventListener(
+      'splice', this.onVolumeInfoListSplice_.bind(this));
   this.volumeManager_.addEventListener('drive-connection-changed',
         this.onDriveConnectionChanged_.bind(this));
 
@@ -66,7 +66,7 @@ function FileListBannerController(
 FileListBannerController.prototype.__proto__ = cr.EventTarget.prototype;
 
 /**
- * Key in localStorage to keep numer of times the Drive Welcome
+ * Key in localStorage to keep number of times the Drive Welcome
  * banner has shown.
  */
 var WELCOME_HEADER_COUNTER_KEY = 'driveWelcomeHeaderCounter';
@@ -141,7 +141,7 @@ FileListBannerController.prototype.onDriveConnectionChanged_ = function() {
 
 /**
  * @param {string} type 'none'|'page'|'header'.
- * @param {string} messageId Reource ID of the message.
+ * @param {string} messageId Resource ID of the message.
  * @private
  */
 FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
@@ -191,6 +191,7 @@ FileListBannerController.prototype.prepareAndShowWelcomeBanner_ =
     more.textContent = str('DRIVE_LEARN_MORE');
     more.href = urlConstants.GOOGLE_DRIVE_FAQ_URL;
   }
+  more.tabIndex = '13';  // See: go/filesapp-tabindex.
   more.target = '_blank';
 
   var dismiss;
@@ -406,7 +407,7 @@ FileListBannerController.prototype.showWelcomeBanner_ = function(type) {
 /**
  * Update the UI when the current directory changes.
  *
- * @param {cr.Event} event The directory-changed event.
+ * @param {Event} event The directory-changed event.
  * @private
  */
 FileListBannerController.prototype.onDirectoryChanged_ = function(event) {
@@ -416,7 +417,8 @@ FileListBannerController.prototype.onDirectoryChanged_ = function(event) {
 
   // Add or remove listener to show low space warning, if necessary.
   var isLowSpaceWarningTarget = this.isLowSpaceWarningTarget_(root);
-  var previousRoot = PathUtil.getTopDirectory(event.previousDirEntry.fullPath);
+  var previousRoot = event.previousDirEntry ?
+      PathUtil.getTopDirectory(event.previousDirEntry.fullPath) : '';
   if (isLowSpaceWarningTarget !== this.isLowSpaceWarningTarget_(previousRoot)) {
     if (isLowSpaceWarningTarget) {
       chrome.fileBrowserPrivate.onDirectoryChanged.addListener(
@@ -456,6 +458,9 @@ FileListBannerController.prototype.isLowSpaceWarningTarget_ = function(root) {
  */
 FileListBannerController.prototype.privateOnDirectoryChanged_ = function(
     event) {
+  if (!this.directoryModel_.getCurrentDirEntry())
+    return;
+
   var currentRoot = PathUtil.getTopDirectory(
       this.directoryModel_.getCurrentDirPath());
   var eventRoot = PathUtil.getTopDirectory(
@@ -589,8 +594,21 @@ FileListBannerController.prototype.ensureDriveUnmountedPanelInitialized_ =
 };
 
 /**
+ * Called when volume info list is updated.
+ * @param {Event} event Splice event data on volume info list.
+ * @private
+ */
+FileListBannerController.prototype.onVolumeInfoListSplice_ = function(event) {
+  var isDriveVolume = function(volumeInfo) {
+    return volumeInfo.volumeType === util.VolumeType.DRIVE;
+  };
+  if (event.removed.some(isDriveVolume) || event.added.some(isDriveVolume))
+    this.updateDriveUnmountedPanel_();
+};
+
+/**
  * Shows the panel when current directory is DRIVE and it's unmounted.
- * Hides it otherwise. The pannel shows spinner if DRIVE is mounting or
+ * Hides it otherwise. The panel shows spinner if DRIVE is mounting or
  * an error message if it failed.
  * @private
  */
@@ -620,10 +638,10 @@ FileListBannerController.prototype.maybeShowAuthFailBanner_ = function() {
   var reasons = connection.reasons;
   var showDriveNotReachedMessage =
       this.isOnDrive() &&
-      connection.type == VolumeManager.DriveConnectionType.OFFLINE &&
+      connection.type == util.DriveConnectionType.OFFLINE &&
       // Show the banner only when authentication fails. Don't show it when the
       // drive service is disabled.
-      reasons.indexOf(VolumeManager.DriveConnectionReason.NOT_READY) != -1 &&
-      reasons.indexOf(VolumeManager.DriveConnectionReason.NO_SERVICE) == -1;
+      reasons.indexOf(util.DriveConnectionReason.NOT_READY) != -1 &&
+      reasons.indexOf(util.DriveConnectionReason.NO_SERVICE) == -1;
   this.authFailedBanner_.hidden = !showDriveNotReachedMessage;
 };

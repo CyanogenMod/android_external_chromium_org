@@ -68,6 +68,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   int id() const { return layer_id_; }
 
   // LayerAnimationValueObserver implementation.
+  virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
   virtual bool IsActive() const OVERRIDE;
@@ -187,6 +188,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
+  bool FilterIsAnimating() const;
+  bool FilterIsAnimatingOnImplOnly() const;
 
   void SetBackgroundFilters(const FilterOperations& filters);
   const FilterOperations& background_filters() const {
@@ -342,6 +345,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   void SetScrollOffsetDelegate(
       LayerScrollOffsetDelegate* scroll_offset_delegate);
+  bool IsExternalFlingActive() const;
+
   void SetScrollOffset(gfx::Vector2d scroll_offset);
   void SetScrollOffsetAndDelta(gfx::Vector2d scroll_offset,
                                gfx::Vector2dF scroll_delta);
@@ -424,7 +429,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool LayerPropertyChanged() const {
     return layer_property_changed_ || LayerIsAlwaysDamaged();
   }
-  bool LayerSurfacePropertyChanged() const;
 
   void ResetAllChangeTrackingForSubtree();
 
@@ -463,8 +467,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   virtual skia::RefPtr<SkPicture> GetPicture();
 
-  virtual bool CanClipSelf() const;
-
   virtual bool AreVisibleResourcesReady() const;
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
@@ -494,7 +496,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   virtual void AsValueInto(base::DictionaryValue* dict) const;
 
-  void NoteLayerSurfacePropertyChanged();
   void NoteLayerPropertyChanged();
   void NoteLayerPropertyChangedForSubtree();
 
@@ -549,13 +550,6 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   // Tracks if drawing-related properties have changed since last redraw.
   bool layer_property_changed_;
-
-  // Indicates that a property has changed on this layer that would not
-  // affect the pixels on its target surface, but would require redrawing
-  // the target_surface onto its ancestor target_surface.
-  // For layers that do not own a surface this flag acts as
-  // layer_property_changed_.
-  bool layer_surface_property_changed_;
 
   bool masks_to_bounds_;
   bool contents_opaque_;

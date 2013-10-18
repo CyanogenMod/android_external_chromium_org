@@ -42,7 +42,6 @@ def AddDirToPythonPath(*path_parts):
 def WaitFor(condition,
             timeout, poll_interval=0.1,
             pass_time_left_to_func=False):
-  assert isinstance(condition, type(lambda: None))  # is function
   start_time = time.time()
   while True:
     if pass_time_left_to_func:
@@ -50,7 +49,7 @@ def WaitFor(condition,
     else:
       res = condition()
     if res:
-      break
+      return res
     if time.time() - start_time > timeout:
       if condition.__name__ == '<lambda>':
         try:
@@ -115,7 +114,6 @@ def GetBuildDirectories():
   """Yields all combination of Chromium build output directories."""
   build_dirs = ['build',
                 'out',
-                'sconsbuild',
                 'xcodebuild']
 
   build_types = ['Debug', 'Debug_x64', 'Release', 'Release_x64']
@@ -124,16 +122,19 @@ def GetBuildDirectories():
     for build_type in build_types:
       yield build_dir, build_type
 
-def FindSupportBinary(binary_name):
+def FindSupportBinary(binary_name, executable=True):
   """Returns the path to the given binary name."""
   # TODO(tonyg/dtu): This should support finding binaries in cloud storage.
   command = None
   command_mtime = 0
+  required_mode = os.R_OK
+  if executable:
+    required_mode = os.X_OK
 
   chrome_root = GetChromiumSrcDir()
   for build_dir, build_type in GetBuildDirectories():
     candidate = os.path.join(chrome_root, build_dir, build_type, binary_name)
-    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+    if os.path.isfile(candidate) and os.access(candidate, required_mode):
       candidate_mtime = os.stat(candidate).st_mtime
       if candidate_mtime > command_mtime:
         command = candidate

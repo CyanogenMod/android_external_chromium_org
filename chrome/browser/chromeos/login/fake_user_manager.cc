@@ -148,6 +148,11 @@ const User* FakeUserManager::FindLocallyManagedUser(
   return NULL;
 }
 
+const User* FakeUserManager::FindLocallyManagedUserBySyncId(
+    const std::string& sync_id) const {
+  return NULL;
+}
+
 const User* FakeUserManager::GetLoggedInUser() const {
   return NULL;
 }
@@ -157,6 +162,10 @@ User* FakeUserManager::GetLoggedInUser() {
 }
 
 const User* FakeUserManager::GetPrimaryUser() const {
+  return primary_user_;
+}
+
+User* FakeUserManager::GetUserByProfile(Profile* profile) const {
   return primary_user_;
 }
 
@@ -279,6 +288,10 @@ bool FakeUserManager::AreLocallyManagedUsersAllowed() const {
 base::FilePath FakeUserManager::GetUserProfileDir(
     const std::string&email) const {
   return base::FilePath();
+}
+
+void FakeUserManager::RespectLocalePreference(Profile* profile,
+                                              const User* user) const {
 }
 
 }  // namespace chromeos

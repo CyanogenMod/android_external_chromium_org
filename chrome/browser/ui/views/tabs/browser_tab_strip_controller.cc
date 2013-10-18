@@ -388,7 +388,7 @@ void BrowserTabStripController::TabInsertedAt(WebContents* contents,
                                               int model_index,
                                               bool is_active) {
   DCHECK(contents);
-  DCHECK(model_->ContainsIndex(model_index));
+  CHECK(model_->ContainsIndex(model_index));
   AddTab(contents, model_index, is_active);
 }
 
@@ -471,17 +471,7 @@ void BrowserTabStripController::SetTabRendererDataFromModel(
   data->mini = model_->IsMiniTab(model_index);
   data->blocked = model_->IsTabBlocked(model_index);
   data->app = extensions::TabHelper::FromWebContents(contents)->is_app();
-  if (chrome::ShouldShowProjectingIndicator(contents))
-    data->capture_state = TabRendererData::CAPTURE_STATE_PROJECTING;
-  else if (chrome::ShouldShowRecordingIndicator(contents))
-    data->capture_state = TabRendererData::CAPTURE_STATE_RECORDING;
-  else
-    data->capture_state = TabRendererData::CAPTURE_STATE_NONE;
-
-  if (chrome::IsPlayingAudio(contents))
-    data->audio_state = TabRendererData::AUDIO_STATE_PLAYING;
-  else
-    data->audio_state = TabRendererData::AUDIO_STATE_NONE;
+  data->media_state = chrome::GetTabMediaStateForContents(contents);
 }
 
 void BrowserTabStripController::SetTabDataAt(content::WebContents* web_contents,

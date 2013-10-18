@@ -29,13 +29,14 @@
 #include "ui/views/corewm/input_method_event_filter.h"
 #include "ui/views/corewm/shadow_controller.h"
 #include "ui/views/corewm/shadow_types.h"
+#include "ui/views/corewm/tooltip.h"
+#include "ui/views/corewm/tooltip_controller.h"
 #include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/corewm/window_modality_controller.h"
 #include "ui/views/drag_utils.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/ime/input_method_bridge.h"
 #include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
-#include "ui/views/widget/desktop_aura/scoped_tooltip_client.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/native_widget_aura_window_observer.h"
@@ -45,6 +46,10 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
+#endif
 
 DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(VIEWS_EXPORT,
                                       views::DesktopNativeWidgetAura*);
@@ -181,7 +186,8 @@ DesktopNativeWidgetAura::DesktopNativeWidgetAura(
       native_widget_delegate_(delegate),
       last_drop_operation_(ui::DragDropTypes::DRAG_NONE),
       restore_focus_on_activate_(false),
-      cursor_(gfx::kNullCursor) {
+      cursor_(gfx::kNullCursor),
+      widget_type_(Widget::InitParams::TYPE_WINDOW) {
   window_->SetProperty(kDesktopNativeWidgetAuraKey, this);
   aura::client::SetFocusChangeObserver(window_, this);
   aura::client::SetActivationChangeObserver(window_, this);
@@ -192,12 +198,6 @@ DesktopNativeWidgetAura::~DesktopNativeWidgetAura() {
     delete native_widget_delegate_;
   else
     CloseNow();
-
-  stacking_client_.reset();  // Uses root_window_ at destruction.
-
-  root_window_->RemoveRootWindowObserver(this);
-  root_window_.reset();  // Uses input_method_event_filter_ at destruction.
-  input_method_event_filter_.reset();
 }
 
 // static
@@ -207,10 +207,44 @@ DesktopNativeWidgetAura* DesktopNativeWidgetAura::ForWindow(
 }
 
 void DesktopNativeWidgetAura::OnHostClosed() {
+  // Don't invoke Widget::OnNativeWidgetDestroying(), its done by
+  // DesktopRootWindowHost.
+
+  // The WindowModalityController is at the front of the event pretarget
+  // handler list. We destroy it first to preserve order symantics.
+  if (window_modality_controller_)
+    window_modality_controller_.reset();
+
+  // Make sure we don't still have capture. Otherwise CaptureController and
+  // RootWindow are left referencing a deleted Window.
+  {
+    aura::Window* capture_window =
+        capture_client_->capture_client()->GetCaptureWindow();
+    if (capture_window && root_window_->Contains(capture_window))
+      capture_window->ReleaseCapture();
+  }
+
+  // DesktopRootWindowHost owns the ActivationController which ShadowController
+  // references. Make sure we destroy ShadowController early on.
+  shadow_controller_.reset();
+  tooltip_manager_.reset();
+  root_window_->RemovePreTargetHandler(tooltip_controller_.get());
+  aura::client::SetTooltipClient(root_window_.get(), NULL);
+  tooltip_controller_.reset();
+
   root_window_event_filter_->RemoveHandler(input_method_event_filter_.get());
-  // This will, through a long list of callbacks, trigger |root_window_| going
-  // away. See OnWindowDestroyed()
-  delete window_;
+
+  stacking_client_.reset();  // Uses root_window_ at destruction.
+
+  root_window_->RemoveRootWindowObserver(this);
+  root_window_.reset();  // Uses input_method_event_filter_ at destruction.
+  // RootWindow owns |desktop_root_window_host_|.
+  desktop_root_window_host_ = NULL;
+  window_ = NULL;
+
+  native_widget_delegate_->OnNativeWidgetDestroyed();
+  if (ownership_ == Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
+    delete this;
 }
 
 void DesktopNativeWidgetAura::InstallInputMethodEventFilter(
@@ -267,12 +301,23 @@ void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
   }
 }
 
+void DesktopNativeWidgetAura::InstallWindowModalityController(
+    aura::RootWindow* root) {
+  // The WindowsModalityController event filter should be at the head of the
+  // pre target handlers list. This ensures that it handles input events first
+  // when modal windows are at the top of the Zorder.
+  if (widget_type_ == Widget::InitParams::TYPE_WINDOW)
+    window_modality_controller_.reset(
+        new views::corewm::WindowModalityController(root));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, internal::NativeWidgetPrivate implementation:
 
 void DesktopNativeWidgetAura::InitNativeWidget(
     const Widget::InitParams& params) {
   ownership_ = params.ownership;
+  widget_type_ = params.type;
 
   NativeWidgetAura::RegisterNativeWidgetForWindow(this, window_);
   // Animations on TYPE_WINDOW are handled by the OS. Additionally if we animate
@@ -283,7 +328,6 @@ void DesktopNativeWidgetAura::InitNativeWidget(
     window_->SetProperty(aura::client::kAnimationsDisabledKey, true);
   }
   window_->SetType(GetAuraWindowTypeForWidgetType(params.type));
-  window_->SetTransparent(true);
   window_->Init(params.layer_type);
   corewm::SetShadowType(window_, corewm::SHADOW_TYPE_NONE);
 #if defined(OS_LINUX)  // TODO(scottmg): http://crbug.com/180071
@@ -297,12 +341,14 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   root_window_.reset(
       desktop_root_window_host_->Init(window_, params));
 
+  UpdateWindowTransparency();
+
   content_window_container_ = new aura::Window(NULL);
   content_window_container_->Init(ui::LAYER_NOT_DRAWN);
   content_window_container_->Show();
   content_window_container_->AddChild(window_);
-  content_window_container_->SetBounds(root_window_->bounds());
   root_window_->AddChild(content_window_container_);
+  OnRootWindowHostResized(root_window_.get());
 
   root_window_->AddRootWindowObserver(this);
 
@@ -314,7 +360,11 @@ void DesktopNativeWidgetAura::InitNativeWidget(
 
   tooltip_manager_.reset(new views::TooltipManagerAura(window_, GetWidget()));
 
-  scoped_tooltip_client_.reset(new ScopedTooltipClient(root_window_.get()));
+  tooltip_controller_.reset(
+      new corewm::TooltipController(
+          desktop_root_window_host_->CreateTooltip()));
+  aura::client::SetTooltipClient(root_window_.get(), tooltip_controller_.get());
+  root_window_->AddPreTargetHandler(tooltip_controller_.get());
 
   if (params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW) {
     visibility_controller_.reset(new views::corewm::VisibilityController);
@@ -322,12 +372,14 @@ void DesktopNativeWidgetAura::InitNativeWidget(
                                       visibility_controller_.get());
     views::corewm::SetChildWindowVisibilityChangesAnimated(
         GetNativeView()->GetRootWindow());
+    views::corewm::SetChildWindowVisibilityChangesAnimated(
+        content_window_container_);
   }
 
   if (params.type == Widget::InitParams::TYPE_WINDOW) {
-    window_modality_controller_.reset(
-        new views::corewm::WindowModalityController);
-    root_window_->AddPreTargetHandler(window_modality_controller_.get());
+    FocusManager* focus_manager =
+        native_widget_delegate_->AsWidget()->GetFocusManager();
+    root_window_->AddPreTargetHandler(focus_manager->GetEventHandler());
   }
 
   window_->Show();
@@ -353,6 +405,7 @@ bool DesktopNativeWidgetAura::ShouldUseNativeFrame() const {
 
 void DesktopNativeWidgetAura::FrameTypeChanged() {
   desktop_root_window_host_->FrameTypeChanged();
+  UpdateWindowTransparency();
 }
 
 Widget* DesktopNativeWidgetAura::GetWidget() {
@@ -493,7 +546,10 @@ gfx::Rect DesktopNativeWidgetAura::GetRestoredBounds() const {
 void DesktopNativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
   if (!window_)
     return;
-
+  // TODO(ananta)
+  // This code by default scales the bounds rectangle by 1.
+  // We could probably get rid of this and similar logic from
+  // the DesktopNativeWidgetAura::OnRootWindowHostResized function.
   float scale = 1;
   aura::RootWindow* root = root_window_.get();
   if (root) {
@@ -504,10 +560,6 @@ void DesktopNativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
       gfx::ToCeiledPoint(gfx::ScalePoint(bounds.origin(), scale)),
       gfx::ToFlooredSize(gfx::ScaleSize(bounds.size(), scale)));
   desktop_root_window_host_->AsRootWindowHost()->SetBounds(bounds_in_pixels);
-  if (content_window_container_) {
-    content_window_container_->SetBounds(
-        content_window_container_->GetRootWindow()->bounds());
-  }
 }
 
 void DesktopNativeWidgetAura::SetSize(const gfx::Size& size) {
@@ -591,6 +643,10 @@ bool DesktopNativeWidgetAura::IsActive() const {
 void DesktopNativeWidgetAura::SetAlwaysOnTop(bool always_on_top) {
   if (window_)
     desktop_root_window_host_->SetAlwaysOnTop(always_on_top);
+}
+
+bool DesktopNativeWidgetAura::IsAlwaysOnTop() const {
+  return window_ && desktop_root_window_host_->IsAlwaysOnTop();
 }
 
 void DesktopNativeWidgetAura::Maximize() {
@@ -678,7 +734,8 @@ void DesktopNativeWidgetAura::ClearNativeFocus() {
 }
 
 gfx::Rect DesktopNativeWidgetAura::GetWorkAreaBoundsInScreen() const {
-  return desktop_root_window_host_->GetWorkAreaBoundsInScreen();
+  return desktop_root_window_host_ ?
+      desktop_root_window_host_->GetWorkAreaBoundsInScreen() : gfx::Rect();
 }
 
 void DesktopNativeWidgetAura::SetInactiveRenderingDisabled(bool value) {
@@ -734,18 +791,6 @@ gfx::Size DesktopNativeWidgetAura::GetMaximumSize() const {
   return native_widget_delegate_->GetMaximumSize();
 }
 
-void DesktopNativeWidgetAura::OnBoundsChanged(const gfx::Rect& old_bounds,
-                                              const gfx::Rect& new_bounds) {
-  if (old_bounds.origin() != new_bounds.origin())
-    native_widget_delegate_->OnNativeWidgetMove();
-  if (old_bounds.size() != new_bounds.size())
-    native_widget_delegate_->OnNativeWidgetSizeChanged(new_bounds.size());
-  if (content_window_container_) {
-    content_window_container_->SetBounds(
-        content_window_container_->GetRootWindow()->bounds());
-  }
-}
-
 gfx::NativeCursor DesktopNativeWidgetAura::GetCursor(const gfx::Point& point) {
   return cursor_;
 }
@@ -780,23 +825,12 @@ void DesktopNativeWidgetAura::OnDeviceScaleFactorChanged(
 }
 
 void DesktopNativeWidgetAura::OnWindowDestroying() {
-  // DesktopRootWindowHost owns the ActivationController which ShadowController
-  // references. Make sure we destroy ShadowController early on.
-  shadow_controller_.reset();
-  // The DesktopRootWindowHost implementation sends OnNativeWidgetDestroying().
-  tooltip_manager_.reset();
-  scoped_tooltip_client_.reset();
-  if (window_modality_controller_) {
-    root_window_->RemovePreTargetHandler(window_modality_controller_.get());
-    window_modality_controller_.reset();
-  }
+  // Cleanup happens in OnHostClosed().
 }
 
 void DesktopNativeWidgetAura::OnWindowDestroyed() {
-  window_ = NULL;
-  native_widget_delegate_->OnNativeWidgetDestroyed();
-  if (ownership_ == Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
-    delete this;
+  // Cleanup happens in OnHostClosed(). We own |window_| (indirectly by way of
+  // |root_window_|) so there should be no need to do any processing here.
 }
 
 void DesktopNativeWidgetAura::OnWindowTargetVisibilityChanged(bool visible) {
@@ -968,11 +1002,39 @@ void DesktopNativeWidgetAura::OnRootWindowHostCloseRequested(
   Close();
 }
 
+void DesktopNativeWidgetAura::OnRootWindowHostResized(
+    const aura::RootWindow* root) {
+  gfx::Rect new_bounds = gfx::Rect(root->bounds().size());
+  // TODO(ananta)
+  // This code by default scales the bounds rectangle by 1.
+  // We could probably get rid of this and similar logic from
+  // the DesktopNativeWidgetAura::SetBounds function.
+#if defined(OS_WIN)
+  gfx::Size dip_size = gfx::win::ScreenToDIPSize(new_bounds.size());
+  new_bounds = gfx::Rect(dip_size);
+#endif
+  window_->SetBounds(new_bounds);
+  // Can be NULL at start.
+  if (content_window_container_)
+    content_window_container_->SetBounds(new_bounds);
+  native_widget_delegate_->OnNativeWidgetSizeChanged(new_bounds.size());
+}
+
+void DesktopNativeWidgetAura::OnRootWindowHostMoved(
+    const aura::RootWindow* root,
+    const gfx::Point& new_origin) {
+  native_widget_delegate_->OnNativeWidgetMove();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, NativeWidget implementation:
 
 ui::EventHandler* DesktopNativeWidgetAura::GetEventHandler() {
   return this;
+}
+
+void DesktopNativeWidgetAura::UpdateWindowTransparency() {
+  window_->SetTransparent(ShouldUseNativeFrame());
 }
 
 }  // namespace views

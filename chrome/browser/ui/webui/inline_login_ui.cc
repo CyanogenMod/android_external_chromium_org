@@ -8,20 +8,27 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager_cookie_helper.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/storage_partition.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "grit/browser_resources.h"
+#include "net/base/escape.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/login/oauth2_token_fetcher.h"
@@ -76,7 +83,8 @@ class InlineLoginUIOAuth2Delegate
 
 class InlineLoginUIHandler : public content::WebUIMessageHandler {
  public:
-  explicit InlineLoginUIHandler(Profile* profile) : profile_(profile) {}
+  explicit InlineLoginUIHandler(Profile* profile)
+      : profile_(profile), weak_factory_(this) {}
   virtual ~InlineLoginUIHandler() {}
 
   // content::WebUIMessageHandler overrides:
@@ -90,12 +98,41 @@ class InlineLoginUIHandler : public content::WebUIMessageHandler {
   }
 
  private:
+  // Enum for gaia auth mode, must match AuthMode defined in
+  // chrome/browser/resources/gaia_auth_host/gaia_auth_host.js.
+  enum AuthMode {
+    kDefaultAuthMode = 0,
+    kOfflineAuthMode = 1,
+    kInlineAuthMode = 2
+  };
+
   void LoadAuthExtension() {
     base::DictionaryValue params;
 
     const std::string& app_locale = g_browser_process->GetApplicationLocale();
     params.SetString("hl", app_locale);
-    params.SetString("gaiaUrl", GaiaUrls::GetInstance()->gaia_url().spec());
+
+    GaiaUrls* gaiaUrls = GaiaUrls::GetInstance();
+    params.SetString("gaiaUrl", gaiaUrls->gaia_url().spec());
+
+    bool enable_inline = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableInlineSignin);
+    params.SetInteger("authMode",
+        enable_inline ? kInlineAuthMode : kDefaultAuthMode);
+    // Set continueUrl param for the inline sign in flow. It should point to
+    // the oauth2 auth code URL so that later we can grab the auth code from
+    // the cookie jar of the embedded webview.
+    if (enable_inline) {
+      std::string scope = net::EscapeUrlEncodedData(
+          gaiaUrls->oauth1_login_scope(), true);
+      std::string client_id = net::EscapeUrlEncodedData(
+          gaiaUrls->oauth2_chrome_client_id(), true);
+      std::string encoded_continue_params = base::StringPrintf(
+          "?scope=%s&client_id=%s", scope.c_str(), client_id.c_str());
+      params.SetString("continueUrl",
+          gaiaUrls->client_login_to_oauth2_url().Resolve(
+              encoded_continue_params).spec());
+    }
 
     web_ui()->CallJavascriptFunction("inline.login.loadAuthExtension", params);
   }
@@ -124,23 +161,46 @@ class InlineLoginUIHandler : public content::WebUIMessageHandler {
       return;
     }
 
-    // Call OneClickSigninSyncStarter to exchange cookies for oauth tokens.
-    // OneClickSigninSyncStarter will delete itself once the job is done.
-    // TODO(guohui): should collect from user whether they want to use
-    // default sync settings or configure first.
-    new OneClickSigninSyncStarter(
-        profile_, NULL, "0" /* session_index 0 for the default user */,
-        UTF16ToASCII(email), UTF16ToASCII(password),
-        OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS,
-        web_ui()->GetWebContents(),
-        OneClickSigninSyncStarter::NO_CONFIRMATION,
-        signin::SOURCE_UNKNOWN,
-        OneClickSigninSyncStarter::Callback());
-    web_ui()->CallJavascriptFunction("inline.login.closeDialog");
+    content::WebContents* web_contents = web_ui()->GetWebContents();
+    content::StoragePartition* partition =
+        content::BrowserContext::GetStoragePartitionForSite(
+            web_contents->GetBrowserContext(),
+            GURL("chrome-guest://mfffpogegjflfpflabcdkioaeobkgjik/?"));
+
+    scoped_refptr<SigninManagerCookieHelper> cookie_helper(
+        new SigninManagerCookieHelper(partition->GetURLRequestContext()));
+    cookie_helper->StartFetchingCookiesOnUIThread(
+        GURL(GaiaUrls::GetInstance()->client_login_to_oauth2_url()),
+        base::Bind(&InlineLoginUIHandler::OnGaiaCookiesFetched,
+                   weak_factory_.GetWeakPtr(), email, password));
 #endif
   }
 
+  void OnGaiaCookiesFetched(
+      const string16 email,
+      const string16 password,
+      const net::CookieList& cookie_list) {
+    net::CookieList::const_iterator it;
+    for (it = cookie_list.begin(); it != cookie_list.end(); ++it) {
+      if (it->Name() == "oauth_code") {
+        // Call OneClickSigninSyncStarter to exchange oauth code for tokens.
+        // OneClickSigninSyncStarter will delete itself once the job is done.
+        // TODO(guohui): should collect from user whether they want to use
+        // default sync settings or configure first.
+        new OneClickSigninSyncStarter(
+            profile_, NULL, "0" /* session_index 0 for the default user */,
+            UTF16ToASCII(email), UTF16ToASCII(password), it->Value(),
+            OneClickSigninSyncStarter::SYNC_WITH_DEFAULT_SETTINGS,
+            web_ui()->GetWebContents(),
+            OneClickSigninSyncStarter::NO_CONFIRMATION,
+            OneClickSigninSyncStarter::Callback());
+      }
+    }
+    web_ui()->CallJavascriptFunction("inline.login.closeDialog");
+  }
+
   Profile* profile_;
+  base::WeakPtrFactory<InlineLoginUIHandler> weak_factory_;
 #if defined(OS_CHROMEOS)
   scoped_ptr<chromeos::OAuth2TokenFetcher> oauth2_token_fetcher_;
   scoped_ptr<InlineLoginUIOAuth2Delegate> oauth2_delegate_;
@@ -158,6 +218,10 @@ InlineLoginUI::InlineLoginUI(content::WebUI* web_ui)
   content::WebUIDataSource::Add(profile, CreateWebUIDataSource());
 
   web_ui->AddMessageHandler(new InlineLoginUIHandler(profile));
+  // Required for intercepting extension function calls when the page is loaded
+  // in a bubble (not a full tab, thus tab helpers are not registered
+  // automatically).
+  extensions::TabHelper::CreateForWebContents(web_ui->GetWebContents());
 }
 
 InlineLoginUI::~InlineLoginUI() {}

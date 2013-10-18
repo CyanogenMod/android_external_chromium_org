@@ -8,6 +8,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "net/url_request/url_fetcher_core.h"
 #include "net/url_request/url_fetcher_factory.h"
+#include "net/url_request/url_fetcher_response_writer.h"
 
 namespace net {
 
@@ -129,6 +130,11 @@ void URLFetcherImpl::SaveResponseToTemporaryFile(
   core_->SaveResponseToTemporaryFile(file_task_runner);
 }
 
+void URLFetcherImpl::SaveResponseWithWriter(
+    scoped_ptr<URLFetcherResponseWriter> response_writer) {
+  core_->SaveResponseWithWriter(response_writer.Pass());
+}
+
 HttpResponseHeaders* URLFetcherImpl::GetResponseHeaders() const {
   return core_->GetResponseHeaders();
 }
@@ -163,10 +169,6 @@ int URLFetcherImpl::GetResponseCode() const {
 
 const ResponseCookies& URLFetcherImpl::GetCookies() const {
   return core_->GetCookies();
-}
-
-bool URLFetcherImpl::FileErrorOccurred(int* out_error_code) const {
-  return core_->FileErrorOccurred(out_error_code);
 }
 
 void URLFetcherImpl::ReceivedContentWasMalformed() {

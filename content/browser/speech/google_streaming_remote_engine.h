@@ -49,6 +49,9 @@ class CONTENT_EXPORT GoogleStreamingRemoteEngine
       public net::URLFetcherDelegate,
       public NON_EXPORTED_BASE(base::NonThreadSafe) {
  public:
+  // Duration of each audio packet.
+  static const int kAudioPacketIntervalMs;
+
   explicit GoogleStreamingRemoteEngine(net::URLRequestContextGetter* context);
   virtual ~GoogleStreamingRemoteEngine();
 
@@ -70,8 +73,8 @@ class CONTENT_EXPORT GoogleStreamingRemoteEngine
   friend class GoogleStreamingRemoteEngineTest;
 
   // IDs passed to URLFetcher::Create(). Used for testing.
-  static const int kUpstreamUrlFetcherIdForTests;
-  static const int kDownstreamUrlFetcherIdForTests;
+  static const int kUpstreamUrlFetcherIdForTesting;
+  static const int kDownstreamUrlFetcherIdForTesting;
 
   // Response status codes from the speech recognition webservice.
   static const int kWebserviceStatusNoError;

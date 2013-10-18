@@ -80,7 +80,7 @@ ImageUtil.between = function(min, value, max) {
  */
 
 /**
- * Rectange constructor takes 0, 1, 2 or 4 arguments.
+ * Rectangle constructor takes 0, 1, 2 or 4 arguments.
  * Supports following variants:
  *   new Rect(left, top, width, height)
  *   new Rect(width, height)
@@ -182,7 +182,7 @@ Rect.prototype.inflate = function(dx, dy) {
 /**
  * @param {number} x Coordinate of the point.
  * @param {number} y Coordinate of the point.
- * @return {boolean} True if the point lies inside the rectange.
+ * @return {boolean} True if the point lies inside the rectangle.
  */
 Rect.prototype.inside = function(x, y) {
   return this.left <= x && x < this.left + this.width &&
@@ -191,7 +191,7 @@ Rect.prototype.inside = function(x, y) {
 
 /**
  * @param {Rect} rect Rectangle to check.
- * @return {boolean} True if this recangle intersects with the |rect|.
+ * @return {boolean} True if this rectangle intersects with the |rect|.
  */
 Rect.prototype.intersects = function(rect) {
   return (this.left + this.width) > rect.left &&
@@ -202,7 +202,7 @@ Rect.prototype.intersects = function(rect) {
 
 /**
  * @param {Rect} rect Rectangle to check.
- * @return {boolean} True if this recangle containg the |rect|.
+ * @return {boolean} True if this rectangle containing the |rect|.
  */
 Rect.prototype.contains = function(rect) {
   return (this.left <= rect.left) &&
@@ -222,7 +222,7 @@ Rect.prototype.isEmpty = function() {
  * Clamp the rectangle to the bounds by moving it.
  * Decrease the size only if necessary.
  * @param {Rect} bounds Bounds.
- * @return {Rect} Caclulated rectangle.
+ * @return {Rect} Calculated rectangle.
  */
 Rect.prototype.clamp = function(bounds) {
   var rect = new Rect(this);
@@ -266,7 +266,7 @@ Rect.prototype.toString = function() {
  * @param {CanvasRenderingContext2D} context Context to draw.
  * @param {Image} image Image to draw.
  * @param {Rect=} opt_dstRect Rectangle in the canvas (whole canvas by default).
- * @param {Rect=} opt_srcRect Rectangle in the imsge (whole image by default).
+ * @param {Rect=} opt_srcRect Rectangle in the image (whole image by default).
  */
 Rect.drawImage = function(context, image, opt_dstRect, opt_srcRect) {
   opt_dstRect = opt_dstRect || new Rect(context.canvas);
@@ -422,12 +422,12 @@ ImageUtil.ImageLoader = function(document, opt_metadataCache) {
 ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT = 25 * 1000 * 1000;
 
 /**
- * @param {HTMLImageElement|HTMLCanvasElement|Object} image Image or image
- *     metadata, should have |width| and |height| properties.
+ * @param {number} width Width of the image.
+ * @param {number} height Height of the image.
  * @return {boolean} True if the image is too large to be loaded.
  */
-ImageUtil.ImageLoader.isTooLarge = function(image) {
-  return image.width * image.height > ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT;
+ImageUtil.ImageLoader.isTooLarge = function(width, height) {
+  return width * height > ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT;
 };
 
 /**
@@ -477,7 +477,8 @@ ImageUtil.ImageLoader.prototype.load = function(
     this.image_.onload = function(e) {
       this.image_.onerror = null;
       this.image_.onload = null;
-      if (ImageUtil.ImageLoader.isTooLarge(this.image_)) {
+      if (ImageUtil.ImageLoader.isTooLarge(this.image_.width,
+                                           this.image_.height)) {
         onError('IMAGE_TOO_BIG_ERROR');
         return;
       }
@@ -586,7 +587,7 @@ ImageUtil.ImageLoader.prototype.cancel = function() {
 
 /**
  * @param {HTMLImageElement} image Image to be transformed.
- * @param {Object} transform rransformation description to applay to the image.
+ * @param {Object} transform transformation description to apply to the image.
  * @private
  */
 ImageUtil.ImageLoader.prototype.convertImage_ = function(image, transform) {

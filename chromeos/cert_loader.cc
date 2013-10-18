@@ -6,11 +6,11 @@
 
 #include <algorithm>
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -52,7 +52,7 @@ void CallOpenPersistentNSSDB() {
   VLOG(1) << "CallOpenPersistentNSSDB";
 
   // Ensure we've opened the user's key/certificate database.
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     crypto::OpenPersistentNSSDB();
   crypto::EnableTPMTokenForNSS();
 }
@@ -159,7 +159,7 @@ void CertLoader::MaybeRequestCertificates() {
 
   // Ensure we only initialize the TPM token once.
   DCHECK_EQ(tpm_token_state_, TPM_STATE_UNKNOWN);
-  if (!initialize_tpm_for_test_ && !base::chromeos::IsRunningOnChromeOS())
+  if (!initialize_tpm_for_test_ && !base::SysInfo::IsRunningOnChromeOS())
     tpm_token_state_ = TPM_DISABLED;
 
   // Treat TPM as disabled for guest users since they do not store certs.
@@ -297,7 +297,8 @@ void CertLoader::OnPkcs11IsTpmTokenReady(DBusMethodCallStatus call_status,
 
 void CertLoader::OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
                                          const std::string& token_name,
-                                         const std::string& user_pin) {
+                                         const std::string& user_pin,
+                                         int token_slot) {
   VLOG(1) << "OnPkcs11GetTpmTokenInfo: " << token_name;
 
   if (call_status == DBUS_METHOD_CALL_FAILURE) {
@@ -306,10 +307,7 @@ void CertLoader::OnPkcs11GetTpmTokenInfo(DBusMethodCallStatus call_status,
   }
 
   tpm_token_name_ = token_name;
-  // TODO(stevenjb): The network code expects a slot ID, not a label. See
-  // crbug.com/201101. For now, use a hard coded, well known slot instead.
-  const char kHardcodedTpmSlot[] = "0";
-  tpm_token_slot_ = kHardcodedTpmSlot;
+  tpm_token_slot_ = base::IntToString(token_slot);
   tpm_user_pin_ = user_pin;
   tpm_token_state_ = TPM_TOKEN_INFO_RECEIVED;
 

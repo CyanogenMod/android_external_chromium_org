@@ -10,12 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/strings/stringprintf.h"
-#include "base/sys_info.h"
-#include "chrome/browser/net/basic_http_user_agent_settings.h"
-#include "chrome/browser/net/chrome_net_log.h"
-#include "chrome/common/chrome_version_info.h"
-#include "content/public/common/content_client.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -25,24 +19,18 @@
 #include "net/http/http_response_headers.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service_defaults.h"
+#include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/system/statistics_provider.h"
-#endif
-
 namespace em = enterprise_management;
 
 namespace policy {
 
 namespace {
-
-const char kValueAgent[] = "%s %s(%s)";
-const char kValuePlatform[] = "%s|%s|%s";
 
 const char kPostContentType[] = "application/protobuf";
 
@@ -67,12 +55,6 @@ const int kPendingApproval = 412;
 const int kInternalServerError = 500;
 const int kServiceUnavailable = 503;
 const int kPolicyNotFound = 902;  // This error is not sent as HTTP status code.
-
-#if defined(OS_CHROMEOS)
-// Machine info keys.
-const char kMachineInfoHWClass[] = "hardware_class";
-const char kMachineInfoBoard[] = "CHROMEOS_RELEASE_BOARD";
-#endif
 
 bool IsProxyError(const net::URLRequestStatus status) {
   switch (status.error()) {
@@ -151,78 +133,23 @@ const char* JobTypeToRequestType(DeviceManagementRequestJob::JobType type) {
   return "";
 }
 
-const std::string& GetAgentString() {
-  CR_DEFINE_STATIC_LOCAL(std::string, agent, ());
-  if (!agent.empty())
-    return agent;
-
-  chrome::VersionInfo version_info;
-  agent = base::StringPrintf(kValueAgent,
-                             version_info.Name().c_str(),
-                             version_info.Version().c_str(),
-                             version_info.LastChange().c_str());
-  return agent;
-}
-
-const std::string& GetPlatformString() {
-  CR_DEFINE_STATIC_LOCAL(std::string, platform, ());
-  if (!platform.empty())
-    return platform;
-
-  std::string os_name(base::SysInfo::OperatingSystemName());
-  std::string os_hardware(base::SysInfo::OperatingSystemArchitecture());
-
-#if defined(OS_CHROMEOS)
-  chromeos::system::StatisticsProvider* provider =
-      chromeos::system::StatisticsProvider::GetInstance();
-
-  std::string hwclass;
-  std::string board;
-  if (!provider->GetMachineStatistic(kMachineInfoHWClass, &hwclass) ||
-      !provider->GetMachineStatistic(kMachineInfoBoard, &board)) {
-    LOG(ERROR) << "Failed to get machine information";
-  }
-  os_name += ",CrOS," + board;
-  os_hardware += "," + hwclass;
-#endif
-
-  std::string os_version("-");
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
-  int32 os_major_version = 0;
-  int32 os_minor_version = 0;
-  int32 os_bugfix_version = 0;
-  base::SysInfo::OperatingSystemVersionNumbers(&os_major_version,
-                                               &os_minor_version,
-                                               &os_bugfix_version);
-  os_version = base::StringPrintf("%d.%d.%d",
-                                  os_major_version,
-                                  os_minor_version,
-                                  os_bugfix_version);
-#endif
-
-  platform = base::StringPrintf(kValuePlatform,
-                                os_name.c_str(),
-                                os_hardware.c_str(),
-                                os_version.c_str());
-  return platform;
-}
-
 // Custom request context implementation that allows to override the user agent,
 // amongst others. Wraps a baseline request context from which we reuse the
 // networking components.
 class DeviceManagementRequestContext : public net::URLRequestContext {
  public:
-  explicit DeviceManagementRequestContext(net::URLRequestContext* base_context);
+  DeviceManagementRequestContext(net::URLRequestContext* base_context,
+                                 const std::string& user_agent);
   virtual ~DeviceManagementRequestContext();
 
  private:
-  BasicHttpUserAgentSettings basic_http_user_agent_settings_;
+  net::StaticHttpUserAgentSettings http_user_agent_settings_;
 };
 
 DeviceManagementRequestContext::DeviceManagementRequestContext(
-    net::URLRequestContext* base_context)
-    // Use sane Accept-Language value for our purposes.
-    : basic_http_user_agent_settings_("*") {
+    net::URLRequestContext* base_context,
+    const std::string& user_agent)
+    : http_user_agent_settings_("*", user_agent) {
   // Share resolver, proxy service and ssl bits with the baseline context. This
   // is important so we don't make redundant requests (e.g. when resolving proxy
   // auto configuration).
@@ -239,7 +166,7 @@ DeviceManagementRequestContext::DeviceManagementRequestContext(
   // No cookies, please.
   set_cookie_store(new net::CookieMonster(NULL, NULL));
 
-  set_http_user_agent_settings(&basic_http_user_agent_settings_);
+  set_http_user_agent_settings(&http_user_agent_settings_);
 }
 
 DeviceManagementRequestContext::~DeviceManagementRequestContext() {
@@ -251,8 +178,10 @@ class DeviceManagementRequestContextGetter
     : public net::URLRequestContextGetter {
  public:
   DeviceManagementRequestContextGetter(
-      scoped_refptr<net::URLRequestContextGetter> base_context_getter)
-      : base_context_getter_(base_context_getter) {}
+      scoped_refptr<net::URLRequestContextGetter> base_context_getter,
+      const std::string& user_agent)
+      : base_context_getter_(base_context_getter),
+        user_agent_(user_agent) {}
 
   // Overridden from net::URLRequestContextGetter:
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
@@ -265,6 +194,7 @@ class DeviceManagementRequestContextGetter
  private:
   scoped_refptr<net::URLRequestContextGetter> base_context_getter_;
   scoped_ptr<net::URLRequestContext> context_;
+  const std::string user_agent_;
 };
 
 
@@ -273,7 +203,7 @@ DeviceManagementRequestContextGetter::GetURLRequestContext() {
   DCHECK(GetNetworkTaskRunner()->RunsTasksOnCurrentThread());
   if (!context_.get()) {
     context_.reset(new DeviceManagementRequestContext(
-        base_context_getter_->GetURLRequestContext()));
+        base_context_getter_->GetURLRequestContext(), user_agent_));
   }
 
   return context_.get();
@@ -290,6 +220,8 @@ DeviceManagementRequestContextGetter::GetNetworkTaskRunner() const {
 class DeviceManagementRequestJobImpl : public DeviceManagementRequestJob {
  public:
   DeviceManagementRequestJobImpl(JobType type,
+                                 const std::string& agent_parameter,
+                                 const std::string& platform_parameter,
                                  DeviceManagementService* service);
   virtual ~DeviceManagementRequestJobImpl();
 
@@ -335,8 +267,10 @@ class DeviceManagementRequestJobImpl : public DeviceManagementRequestJob {
 
 DeviceManagementRequestJobImpl::DeviceManagementRequestJobImpl(
     JobType type,
+    const std::string& agent_parameter,
+    const std::string& platform_parameter,
     DeviceManagementService* service)
-    : DeviceManagementRequestJob(type),
+    : DeviceManagementRequestJob(type, agent_parameter, platform_parameter),
       service_(service),
       bypass_proxy_(false),
       retries_count_(0) {}
@@ -513,12 +447,15 @@ em::DeviceManagementRequest* DeviceManagementRequestJob::GetRequest() {
   return &request_;
 }
 
-DeviceManagementRequestJob::DeviceManagementRequestJob(JobType type) {
+DeviceManagementRequestJob::DeviceManagementRequestJob(
+    JobType type,
+    const std::string& agent_parameter,
+    const std::string& platform_parameter) {
   AddParameter(dm_protocol::kParamRequest, JobTypeToRequestType(type));
   AddParameter(dm_protocol::kParamDeviceType, dm_protocol::kValueDeviceType);
   AddParameter(dm_protocol::kParamAppType, dm_protocol::kValueAppType);
-  AddParameter(dm_protocol::kParamAgent, GetAgentString());
-  AddParameter(dm_protocol::kParamPlatform, GetPlatformString());
+  AddParameter(dm_protocol::kParamAgent, agent_parameter);
+  AddParameter(dm_protocol::kParamPlatform, platform_parameter);
 }
 
 void DeviceManagementRequestJob::SetRetryCallback(
@@ -547,7 +484,11 @@ DeviceManagementService::~DeviceManagementService() {
 
 DeviceManagementRequestJob* DeviceManagementService::CreateJob(
     DeviceManagementRequestJob::JobType type) {
-  return new DeviceManagementRequestJobImpl(type, this);
+  return new DeviceManagementRequestJobImpl(
+      type,
+      configuration_->GetAgentParameter(),
+      configuration_->GetPlatformParameter(),
+      this);
 }
 
 void DeviceManagementService::ScheduleInitialization(int64 delay_milliseconds) {
@@ -564,8 +505,8 @@ void DeviceManagementService::Initialize() {
   if (initialized_)
     return;
   DCHECK(!request_context_getter_.get());
-  request_context_getter_ =
-      new DeviceManagementRequestContextGetter(request_context_);
+  request_context_getter_ = new DeviceManagementRequestContextGetter(
+      request_context_, configuration_->GetUserAgent());
   initialized_ = true;
 
   while (!queued_jobs_.empty()) {
@@ -585,17 +526,19 @@ void DeviceManagementService::Shutdown() {
 }
 
 DeviceManagementService::DeviceManagementService(
-    scoped_refptr<net::URLRequestContextGetter> request_context,
-    const std::string& server_url)
-    : request_context_(request_context),
-      server_url_(server_url),
+    scoped_ptr<Configuration> configuration,
+    scoped_refptr<net::URLRequestContextGetter> request_context)
+    : configuration_(configuration.Pass()),
+      request_context_(request_context),
       initialized_(false),
       weak_ptr_factory_(this) {
+  DCHECK(configuration_);
 }
 
 void DeviceManagementService::StartJob(DeviceManagementRequestJobImpl* job) {
+  std::string server_url = configuration_->GetServerUrl();
   net::URLFetcher* fetcher = net::URLFetcher::Create(
-      kURLFetcherID, job->GetURL(server_url_), net::URLFetcher::POST, this);
+      kURLFetcherID, job->GetURL(server_url), net::URLFetcher::POST, this);
   fetcher->SetRequestContext(request_context_getter_.get());
   job->ConfigureRequest(fetcher);
   pending_jobs_[fetcher] = job;

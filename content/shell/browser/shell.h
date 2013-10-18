@@ -11,9 +11,8 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "ipc/ipc_channel.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
@@ -27,15 +26,15 @@ typedef struct _GtkToolItem GtkToolItem;
 #include "base/android/scoped_java_ref.h"
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-namespace content {
+namespace shell {
 class MinimalShell;
-}
-#endif
+}  // namespace shell
+#endif  // defined(OS_CHROMEOS)
 namespace views {
 class Widget;
 class ViewsDelegate;
-}
-#endif
+}  // namespace views
+#endif  // defined(USE_AURA)
 
 class GURL;
 namespace content {
@@ -49,7 +48,7 @@ class WebContents;
 // This represents one window of the Content Shell, i.e. all the UI including
 // buttons and url bar, as well as the web content area.
 class Shell : public WebContentsDelegate,
-              public NotificationObserver {
+              public WebContentsObserver {
  public:
   static const int kDefaultTestWindowWidthDip;
   static const int kDefaultTestWindowHeightDip;
@@ -111,6 +110,12 @@ class Shell : public WebContentsDelegate,
   // WebContentsDelegate
   virtual WebContents* OpenURLFromTab(WebContents* source,
                                       const OpenURLParams& params) OVERRIDE;
+  virtual void AddNewContents(WebContents* source,
+                              WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture,
+                              bool* was_blocked) OVERRIDE;
   virtual void LoadingStateChanged(WebContents* source) OVERRIDE;
 #if defined(OS_ANDROID)
   virtual void LoadProgressChanged(WebContents* source,
@@ -125,11 +130,6 @@ class Shell : public WebContentsDelegate,
                                   bool last_unlocked_by_target) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual bool CanOverscrollContent() const OVERRIDE;
-  virtual void WebContentsCreated(WebContents* source_contents,
-                                  int64 source_frame_id,
-                                  const string16& frame_name,
-                                  const GURL& target_url,
-                                  WebContents* new_contents) OVERRIDE;
   virtual void DidNavigateMainFramePostCommit(
       WebContents* web_contents) OVERRIDE;
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager() OVERRIDE;
@@ -166,6 +166,10 @@ class Shell : public WebContentsDelegate,
   // Helper for one time initialization of application
   static void PlatformInitialize(const gfx::Size& default_window_size);
 
+  // Adjust the size when Blink sends 0 for width and/or height.
+  // This happens when Blink requests a default-sized window.
+  static gfx::Size AdjustWindowSize(const gfx::Size& initial_size);
+
   // All the methods that begin with Platform need to be implemented by the
   // platform specific Shell implementation.
   // Called from the destructor to let each platform do any necessary cleanup.
@@ -193,10 +197,8 @@ class Shell : public WebContentsDelegate,
 
   gfx::NativeView GetContentView();
 
-  // NotificationObserver
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // WebContentsObserver
+  virtual void TitleWasSet(NavigationEntry* entry, bool explicit_set) OVERRIDE;
 
   void OnDevToolsWebContentsDestroyed();
 
@@ -234,9 +236,6 @@ class Shell : public WebContentsDelegate,
   gfx::NativeWindow window_;
   gfx::NativeEditView url_edit_view_;
 
-  // Notification manager
-  NotificationRegistrar registrar_;
-
 #if defined(OS_WIN) && !defined(USE_AURA)
   WNDPROC default_edit_wnd_proc_;
   static HINSTANCE instance_handle_;
@@ -258,7 +257,7 @@ class Shell : public WebContentsDelegate,
   base::android::ScopedJavaGlobalRef<jobject> java_object_;
 #elif defined(USE_AURA)
 #if defined(OS_CHROMEOS)
-  static content::MinimalShell* minimal_shell_;
+  static shell::MinimalShell* minimal_shell_;
 #endif
   static views::ViewsDelegate* views_delegate_;
 

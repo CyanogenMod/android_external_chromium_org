@@ -271,7 +271,6 @@ TEST_F(GLES2FormatTest, BufferData) {
       next_cmd, sizeof(cmd));
 }
 
-// TODO(gman): Implement test for BufferDataImmediate
 TEST_F(GLES2FormatTest, BufferSubData) {
   cmds::BufferSubData& cmd = *GetBufferAs<cmds::BufferSubData>();
   void* next_cmd = cmd.Set(
@@ -431,7 +430,6 @@ TEST_F(GLES2FormatTest, CompressedTexImage2D) {
       next_cmd, sizeof(cmd));
 }
 
-// TODO(gman): Implement test for CompressedTexImage2DImmediate
 TEST_F(GLES2FormatTest, CompressedTexImage2DBucket) {
   cmds::CompressedTexImage2DBucket& cmd =
       *GetBufferAs<cmds::CompressedTexImage2DBucket>();
@@ -1215,7 +1213,6 @@ TEST_F(GLES2FormatTest, GetAttachedShaders) {
 }
 
 // TODO(gman): Write test for GetAttribLocation
-// TODO(gman): Write test for GetAttribLocationImmediate
 // TODO(gman): Write test for GetAttribLocationBucket
 TEST_F(GLES2FormatTest, GetBooleanv) {
   cmds::GetBooleanv& cmd = *GetBufferAs<cmds::GetBooleanv>();
@@ -1540,7 +1537,6 @@ TEST_F(GLES2FormatTest, GetUniformiv) {
 }
 
 // TODO(gman): Write test for GetUniformLocation
-// TODO(gman): Write test for GetUniformLocationImmediate
 // TODO(gman): Write test for GetUniformLocationBucket
 TEST_F(GLES2FormatTest, GetVertexAttribfv) {
   cmds::GetVertexAttribfv& cmd = *GetBufferAs<cmds::GetVertexAttribfv>();
@@ -1932,7 +1928,6 @@ TEST_F(GLES2FormatTest, ShaderSource) {
       next_cmd, sizeof(cmd));
 }
 
-// TODO(gman): Implement test for ShaderSourceImmediate
 TEST_F(GLES2FormatTest, ShaderSourceBucket) {
   cmds::ShaderSourceBucket& cmd = *GetBufferAs<cmds::ShaderSourceBucket>();
   void* next_cmd = cmd.Set(
@@ -2079,7 +2074,6 @@ TEST_F(GLES2FormatTest, TexImage2D) {
       next_cmd, sizeof(cmd));
 }
 
-// TODO(gman): Implement test for TexImage2DImmediate
 TEST_F(GLES2FormatTest, TexParameterf) {
   cmds::TexParameterf& cmd = *GetBufferAs<cmds::TexParameterf>();
   void* next_cmd = cmd.Set(
@@ -2235,7 +2229,6 @@ TEST_F(GLES2FormatTest, TexSubImage2D) {
       next_cmd, sizeof(cmd));
 }
 
-// TODO(gman): Implement test for TexSubImage2DImmediate
 TEST_F(GLES2FormatTest, Uniform1f) {
   cmds::Uniform1f& cmd = *GetBufferAs<cmds::Uniform1f>();
   void* next_cmd = cmd.Set(
@@ -3985,19 +3978,7 @@ TEST_F(GLES2FormatTest, VertexAttribDivisorANGLE) {
       next_cmd, sizeof(cmd));
 }
 
-TEST_F(GLES2FormatTest, GenMailboxCHROMIUM) {
-  cmds::GenMailboxCHROMIUM& cmd = *GetBufferAs<cmds::GenMailboxCHROMIUM>();
-  void* next_cmd = cmd.Set(
-      &cmd,
-      static_cast<GLuint>(11));
-  EXPECT_EQ(static_cast<uint32>(cmds::GenMailboxCHROMIUM::kCmdId),
-            cmd.header.command);
-  EXPECT_EQ(sizeof(cmd), cmd.header.size * 4u);
-  EXPECT_EQ(static_cast<GLuint>(11), cmd.bucket_id);
-  CheckBytesWrittenMatchesExpectedSize(
-      next_cmd, sizeof(cmd));
-}
-
+// TODO(gman): Write test for GenMailboxCHROMIUM
 TEST_F(GLES2FormatTest, ProduceTextureCHROMIUM) {
   cmds::ProduceTextureCHROMIUM& cmd =
       *GetBufferAs<cmds::ProduceTextureCHROMIUM>();

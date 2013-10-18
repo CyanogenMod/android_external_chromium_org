@@ -8,10 +8,11 @@
 #include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
 #include "net/tools/quic/quic_spdy_server_stream.h"
 #include "net/tools/quic/spdy_utils.h"
+#include "net/tools/quic/test_tools/quic_in_memory_cache_peer.h"
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -80,7 +81,7 @@ class QuicReliableServerStreamTest : public ::testing::Test {
   }
 
   static void SetUpTestCase() {
-    QuicInMemoryCache::GetInstance()->ResetForTests();
+    QuicInMemoryCachePeer::ResetForTests();
   }
 
   virtual void SetUp() {

@@ -4,7 +4,7 @@
 
 {
   'conditions': [
-    ['OS != "ios"', {
+    ['android_webview_build == 0', {
       'targets': [
         {
           'target_name': 'components_unittests',
@@ -15,13 +15,19 @@
             'auto_login_parser/auto_login_parser_unittest.cc',
             'browser_context_keyed_service/browser_context_dependency_manager_unittest.cc',
             'browser_context_keyed_service/dependency_graph_unittest.cc',
+            'dom_distiller/core/distiller_url_fetcher_unittest.cc',
             'dom_distiller/core/dom_distiller_database_unittest.cc',
+            'dom_distiller/core/dom_distiller_store_unittest.cc',
+            'dom_distiller/core/article_entry_unittest.cc',
             'json_schema/json_schema_validator_unittest.cc',
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'test/run_all_unittests.cc',
+            'translate/common/translate_metrics_unittest.cc',
+            'translate/common/translate_util_unittest.cc',
+            'translate/language_detection/language_detection_util_unittest.cc',
             # TODO(asvitkine): These should be tested on iOS too.
             'variations/entropy_provider_unittest.cc',
             'variations/metrics_util_unittest.cc',
@@ -37,6 +43,7 @@
           ],
           'dependencies': [
             '../base/base.gyp:test_support_base',
+            '../sync/sync.gyp:sync',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
 
@@ -50,8 +57,8 @@
             'browser_context_keyed_service',
 
             # Dependencies of dom_distiller
+            'distilled_page_proto',
             'dom_distiller_core',
-            'dom_distiller_core_proto',
 
             # Dependencies of encryptor
             'encryptor',
@@ -63,7 +70,7 @@
             '../content/content.gyp:test_support_content',
             '../skia/skia.gyp:skia',
             'navigation_interception',
-
+            
             # Dependencies of policy
             'policy_component',
 
@@ -71,6 +78,10 @@
             '../third_party/protobuf/protobuf.gyp:protobuf_lite',
             'sessions',
             'sessions_test_support',
+
+            # Dependencies of translate.
+            'translate_common',
+            'translate_language_detection',
 
             # Dependencies of variations
             'variations',
@@ -83,6 +94,22 @@
             'web_modal',
           ],
           'conditions': [
+            ['OS == "ios"', {
+              'sources/': [
+                ['exclude', '\\.cc$'],
+                ['include', '^test/run_all_unittests\\.cc$'],
+                # TODO(ios): Include files here as they are made to work, see
+                # http://crbug.com/303011.
+                # TODO(asvitkine): Bring up varations/ unittests on iOS.
+                ['include', '^dom_distiller'],
+                ['include', '^translate'],
+              ],
+              'dependencies!': [
+                'autofill_core_common',
+                'navigation_interception',
+                'visitedlink_renderer',
+              ],
+            }],
             ['OS == "android"', {
               'sources!': [
                 'web_modal/web_contents_modal_dialog_manager_unittest.cc',
@@ -99,11 +126,6 @@
             ['OS=="win" and win_use_allocator_shim==1', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-            ['android_webview_build == 0', {
-              'dependencies': [
-                '../sync/sync.gyp:sync',
               ],
             }],
             ['OS=="linux" and component=="shared_library" and linux_use_tcmalloc==1', {
@@ -123,6 +145,10 @@
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
         },
+      ],
+    }],
+    ['OS != "ios" and android_webview_build == 0', {
+      'targets': [
         {
           'target_name': 'components_perftests',
           'type': '<(gtest_target_type)',

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/extension_prefs.h"
 
+#include <iterator>
+
 #include "base/prefs/pref_notifier.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -23,13 +25,13 @@
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/permissions/permission_set.h"
-#include "chrome/common/extensions/permissions/permissions_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/user_script.h"
 #include "grit/generated_resources.h"
@@ -183,6 +185,9 @@ const char kPrefWasInstalledByDefault[] = "was_installed_by_default";
 
 // Key for Geometry Cache preference.
 const char kPrefGeometryCache[] = "geometry_cache";
+
+// A preference that indicates when an extension is last launched.
+const char kPrefLastLaunchTime[] = "last_launch_time";
 
 // Provider of write access to a dictionary storing extension prefs.
 class ScopedExtensionPrefUpdate : public DictionaryPrefUpdate {
@@ -1037,11 +1042,6 @@ ExtensionPrefs::LaunchType ExtensionPrefs::GetLaunchType(
   } else {
     result = default_pref_value;
   }
-#if (USE_ASH)
-  if (ash::Shell::IsForcedMaximizeMode() &&
-      (result == LAUNCH_FULLSCREEN || result == LAUNCH_WINDOW))
-    result = LAUNCH_REGULAR;
-#endif
 #if defined(OS_MACOSX)
     // App windows are not yet supported on mac.  Pref sync could make
     // the launch type LAUNCH_WINDOW, even if there is no UI to set it
@@ -1148,11 +1148,20 @@ bool ExtensionPrefs::IsExtensionDisabled(
 }
 
 ExtensionIdList ExtensionPrefs::GetToolbarOrder() {
-  return GetExtensionPrefAsVector(prefs::kExtensionToolbar);
+  return GetExtensionPrefAsContainer<ExtensionIdList>(prefs::kExtensionToolbar);
 }
 
 void ExtensionPrefs::SetToolbarOrder(const ExtensionIdList& extension_ids) {
-  SetExtensionPrefFromVector(prefs::kExtensionToolbar, extension_ids);
+  SetExtensionPrefFromContainer(prefs::kExtensionToolbar, extension_ids);
+}
+
+ExtensionIdSet ExtensionPrefs::GetKnownDisabled() {
+  return GetExtensionPrefAsContainer<ExtensionIdSet>(
+      prefs::kExtensionKnownDisabled);
+}
+
+void ExtensionPrefs::SetKnownDisabled(const ExtensionIdSet& extension_ids) {
+  SetExtensionPrefFromContainer(prefs::kExtensionKnownDisabled, extension_ids);
 }
 
 void ExtensionPrefs::OnExtensionInstalled(
@@ -1549,6 +1558,28 @@ base::Time ExtensionPrefs::GetInstallTime(
   return base::Time::FromInternalValue(install_time_i64);
 }
 
+base::Time ExtensionPrefs::GetLastLaunchTime(
+    const std::string& extension_id) const {
+  const DictionaryValue* extension = GetExtensionPref(extension_id);
+  if (!extension)
+    return base::Time();
+
+  std::string launch_time_str;
+  if (!extension->GetString(kPrefLastLaunchTime, &launch_time_str))
+    return base::Time();
+  int64 launch_time_i64 = 0;
+  if (!base::StringToInt64(launch_time_str, &launch_time_i64))
+    return base::Time();
+  return base::Time::FromInternalValue(launch_time_i64);
+}
+
+void ExtensionPrefs::SetLastLaunchTime(const std::string& extension_id,
+                                       const base::Time& time) {
+  DCHECK(Extension::IdIsValid(extension_id));
+  ScopedExtensionPrefUpdate update(prefs_, extension_id);
+  SaveTime(update.Get(), kPrefLastLaunchTime, time);
+}
+
 void ExtensionPrefs::GetExtensions(ExtensionIdList* out) {
   CHECK(out);
 
@@ -1753,6 +1784,8 @@ void ExtensionPrefs::RegisterProfilePrefs(
       prefs::kExtensionsLastChromeVersion,
       std::string(),  // default value
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kExtensionKnownDisabled,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
 #if defined(TOOLKIT_VIEWS)
   registry->RegisterIntegerPref(
@@ -1762,30 +1795,35 @@ void ExtensionPrefs::RegisterProfilePrefs(
 #endif
 }
 
-ExtensionIdList ExtensionPrefs::GetExtensionPrefAsVector(
+template <class ExtensionIdContainer>
+ExtensionIdContainer ExtensionPrefs::GetExtensionPrefAsContainer(
     const char* pref) {
-  ExtensionIdList extension_ids;
+  ExtensionIdContainer extension_ids;
   const ListValue* list_of_values = prefs_->GetList(pref);
   if (!list_of_values)
     return extension_ids;
 
+  std::insert_iterator<ExtensionIdContainer> insert_iterator(
+      extension_ids, extension_ids.end());
   std::string extension_id;
   for (size_t i = 0; i < list_of_values->GetSize(); ++i) {
     if (list_of_values->GetString(i, &extension_id))
-      extension_ids.push_back(extension_id);
+      insert_iterator = extension_id;
   }
   return extension_ids;
 }
 
-void ExtensionPrefs::SetExtensionPrefFromVector(
+template <class ExtensionIdContainer>
+void ExtensionPrefs::SetExtensionPrefFromContainer(
     const char* pref,
-    const ExtensionIdList& strings) {
+    const ExtensionIdContainer& strings) {
   ListPrefUpdate update(prefs_, pref);
   ListValue* list_of_values = update.Get();
   list_of_values->Clear();
-  for (ExtensionIdList::const_iterator iter = strings.begin();
-       iter != strings.end(); ++iter)
+  for (typename ExtensionIdContainer::const_iterator iter = strings.begin();
+       iter != strings.end(); ++iter) {
     list_of_values->Append(new base::StringValue(*iter));
+  }
 }
 
 void ExtensionPrefs::PopulateExtensionInfoPrefs(

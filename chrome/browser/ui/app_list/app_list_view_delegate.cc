@@ -16,9 +16,9 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
-#include "chrome/browser/ui/app_list/apps_model_builder.h"
-#include "chrome/browser/ui/app_list/chrome_app_list_item.h"
+#include "chrome/browser/ui/app_list/extension_app_model_builder.h"
 #include "chrome/browser/ui/app_list/search/search_controller.h"
+#include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -27,6 +27,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
@@ -80,6 +81,7 @@ AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller,
     : controller_(controller),
       profile_(profile),
       model_(NULL) {
+  CHECK(controller_);
   RegisterForNotifications();
   g_browser_process->profile_manager()->GetProfileInfoCache().AddObserver(this);
 }
@@ -94,22 +96,22 @@ void AppListViewDelegate::RegisterForNotifications() {
   DCHECK(profile_);
 
   registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-                 content::Source<Profile>(profile_));
+                 content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-                 content::Source<Profile>(profile_));
+                 content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                 content::Source<Profile>(profile_));
+                 content::NotificationService::AllSources());
 }
 
 void AppListViewDelegate::OnProfileChanged() {
+  CHECK(controller_);
   search_controller_.reset(new app_list::SearchController(
       profile_, model_->search_box(), model_->results(), controller_.get()));
 
   signin_delegate_.SetProfile(profile_);
 
 #if defined(USE_ASH)
-  app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_,
-                                                             model_));
+  app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_, model_));
 #endif
 
   model_->SetSignedIn(!GetSigninDelegate()->NeedSignin());
@@ -151,9 +153,9 @@ void AppListViewDelegate::InitModel(app_list::AppListModel* model) {
   model_ = model;
 
   // Initialize apps model.
-  apps_builder_.reset(new AppsModelBuilder(profile_,
-                                           model->apps(),
-                                           controller_.get()));
+  apps_builder_.reset(new ExtensionAppModelBuilder(profile_,
+                                                   model,
+                                                   controller_.get()));
 
   // Initialize the profile information in the app list menu.
   OnProfileChanged();
@@ -161,13 +163,6 @@ void AppListViewDelegate::InitModel(app_list::AppListModel* model) {
 
 app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
   return &signin_delegate_;
-}
-
-void AppListViewDelegate::ActivateAppListItem(
-    app_list::AppListItemModel* item,
-    int event_flags) {
-  content::RecordAction(content::UserMetricsAction("AppList_ClickOnApp"));
-  static_cast<ChromeAppListItem*>(item)->Activate(event_flags);
 }
 
 void AppListViewDelegate::GetShortcutPathForApp(
@@ -290,4 +285,13 @@ void AppListViewDelegate::OnProfileNameChanged(
     const base::FilePath& profile_path,
     const base::string16& old_profile_name) {
   OnProfileChanged();
+}
+
+content::WebContents* AppListViewDelegate::GetStartPageContents() {
+  app_list::StartPageService* service =
+      app_list::StartPageService::Get(profile_);
+  if (!service)
+    return NULL;
+
+  return service->contents();
 }

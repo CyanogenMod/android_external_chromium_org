@@ -41,6 +41,7 @@ void TargetGenerator::Run() {
   FillDependentConfigs();
   FillData();
   FillDependencies();
+  FillGypFile();
 
   // To type-specific generation.
   DoRun();
@@ -100,6 +101,10 @@ void TargetGenerator::GenerateTarget(Scope* scope,
     BinaryTargetGenerator generator(target, scope, function_token,
                                     Target::SHARED_LIBRARY, err);
     generator.Run();
+  } else if (output_type == functions::kSourceSet) {
+    BinaryTargetGenerator generator(target, scope, function_token,
+                                    Target::SOURCE_SET, err);
+    generator.Run();
   } else if (output_type == functions::kStaticLibrary) {
     BinaryTargetGenerator generator(target, scope, function_token,
                                     Target::STATIC_LIBRARY, err);
@@ -123,7 +128,7 @@ void TargetGenerator::FillSources() {
   if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
                                   scope_->GetSourceDir(), &dest_sources, err_))
     return;
-  target_->swap_in_sources(&dest_sources);
+  target_->sources().swap(dest_sources);
 }
 
 void TargetGenerator::FillSourcePrereqs() {
@@ -135,18 +140,18 @@ void TargetGenerator::FillSourcePrereqs() {
   if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
                                   scope_->GetSourceDir(), &dest_reqs, err_))
     return;
-  target_->swap_in_source_prereqs(&dest_reqs);
+  target_->source_prereqs().swap(dest_reqs);
 }
 
 void TargetGenerator::FillConfigs() {
-  FillGenericConfigs(variables::kConfigs, &Target::swap_in_configs);
+  FillGenericConfigs(variables::kConfigs, &Target::configs);
 }
 
 void TargetGenerator::FillDependentConfigs() {
   FillGenericConfigs(variables::kAllDependentConfigs,
-                     &Target::swap_in_all_dependent_configs);
+                     &Target::all_dependent_configs);
   FillGenericConfigs(variables::kDirectDependentConfigs,
-                     &Target::swap_in_direct_dependent_configs);
+                     &Target::direct_dependent_configs);
 }
 
 void TargetGenerator::FillData() {
@@ -160,18 +165,29 @@ void TargetGenerator::FillData() {
   if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
                                   scope_->GetSourceDir(), &dest_data, err_))
     return;
-  target_->swap_in_data(&dest_data);
+  target_->data().swap(dest_data);
 }
 
 void TargetGenerator::FillDependencies() {
-  FillGenericDeps(variables::kDeps, &Target::swap_in_deps);
-  FillGenericDeps(variables::kDatadeps, &Target::swap_in_datadeps);
+  FillGenericDeps(variables::kDeps, &Target::deps);
+  FillGenericDeps(variables::kDatadeps, &Target::datadeps);
 
   // This is a list of dependent targets to have their configs fowarded, so
   // it goes here rather than in FillConfigs.
   FillForwardDependentConfigs();
 
   FillHardDep();
+}
+
+void TargetGenerator::FillGypFile() {
+  const Value* gyp_file_value = scope_->GetValue(variables::kGypFile, true);
+  if (!gyp_file_value)
+    return;
+  if (!gyp_file_value->VerifyTypeIs(Value::STRING, err_))
+    return;
+
+  target_->set_gyp_file(scope_->GetSourceDir().ResolveRelativeFile(
+      gyp_file_value->string_value()));
 }
 
 void TargetGenerator::FillHardDep() {
@@ -210,7 +226,7 @@ void TargetGenerator::FillOutputs() {
             outputs[i].value(), value->list_value()[i], err_))
       return;
   }
-  target_->script_values().swap_in_outputs(&outputs);
+  target_->script_values().outputs().swap(outputs);
 }
 
 void TargetGenerator::SetToolchainDependency() {
@@ -226,7 +242,7 @@ void TargetGenerator::SetToolchainDependency() {
 
 void TargetGenerator::FillGenericConfigs(
     const char* var_name,
-    void (Target::*setter)(std::vector<const Config*>*)) {
+    std::vector<const Config*>& (Target::*accessor)()) {
   const Value* value = scope_->GetValue(var_name, true);
   if (!value)
     return;
@@ -246,12 +262,12 @@ void TargetGenerator::FillGenericConfigs(
     if (err_->has_error())
       return;
   }
-  (target_->*setter)(&dest_configs);
+  (target_->*accessor)().swap(dest_configs);
 }
 
 void TargetGenerator::FillGenericDeps(
     const char* var_name,
-    void (Target::*setter)(std::vector<const Target*>*)) {
+    std::vector<const Target*>& (Target::*accessor)()) {
   const Value* value = scope_->GetValue(var_name, true);
   if (!value)
     return;
@@ -270,7 +286,7 @@ void TargetGenerator::FillGenericDeps(
       return;
   }
 
-  (target_->*setter)(&dest_deps);
+  (target_->*accessor)().swap(dest_deps);
 }
 
 void TargetGenerator::FillForwardDependentConfigs() {
@@ -308,7 +324,7 @@ void TargetGenerator::FillForwardDependentConfigs() {
     forward_from_list.push_back(forward_from);
   }
 
-  target_->swap_in_forward_dependent_configs(&forward_from_list);
+  target_->forward_dependent_configs().swap(forward_from_list);
 }
 
 

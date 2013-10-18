@@ -22,6 +22,7 @@
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/client/vertex_array_object_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/common/gpu_control.h"
 #include "gpu/command_buffer/common/trace_event.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -113,6 +114,7 @@ GLES2Implementation::GLES2Implementation(
       gpu_control_(gpu_control) {
   GPU_DCHECK(helper);
   GPU_DCHECK(transfer_buffer);
+  GPU_DCHECK(gpu_control);
 
   char temp[128];
   sprintf(temp, "%p", static_cast<void*>(this));
@@ -153,7 +155,7 @@ bool GLES2Implementation::Initialize(
   unsigned chunk_size = 2 * 1024 * 1024;
   if (mapped_memory_limit != kNoLimit) {
     // Use smaller chunks if the client is very memory conscientious.
-    chunk_size = std::min(mapped_memory_limit / 2, chunk_size);
+    chunk_size = std::min(mapped_memory_limit / 4, chunk_size);
   }
   mapped_memory_->set_chunk_size_multiple(chunk_size);
 
@@ -661,6 +663,13 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
     case GL_TEXTURE_BINDING_CUBE_MAP:
       if (share_group_->bind_generates_resource()) {
         *params = texture_units_[active_texture_unit_].bound_texture_cube_map;
+        return true;
+      }
+      return false;
+    case GL_TEXTURE_BINDING_EXTERNAL_OES:
+      if (share_group_->bind_generates_resource()) {
+        *params =
+            texture_units_[active_texture_unit_].bound_texture_external_oes;
         return true;
       }
       return false;
@@ -2090,7 +2099,7 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
             "GL_CHROMIUM_map_sub "
             "GL_CHROMIUM_shallow_flush "
             "GL_EXT_unpack_subimage";
-        if (gpu_control_ != NULL) {
+        if (gpu_control_->SupportsGpuMemoryBuffer()) {
           // The first space character is intentional.
           str += " GL_CHROMIUM_map_image";
         }
@@ -2457,6 +2466,12 @@ bool GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
         changed = true;
       }
       break;
+    case GL_TEXTURE_EXTERNAL_OES:
+      if (unit.bound_texture_external_oes != texture) {
+        unit.bound_texture_external_oes = texture;
+        changed = true;
+      }
+      break;
     default:
       changed = true;
       break;
@@ -2583,6 +2598,9 @@ void GLES2Implementation::DeleteTexturesHelper(
       }
       if (textures[ii] == unit.bound_texture_cube_map) {
         unit.bound_texture_cube_map = 0;
+      }
+      if (textures[ii] == unit.bound_texture_external_oes) {
+        unit.bound_texture_external_oes = 0;
       }
     }
   }
@@ -3398,13 +3416,12 @@ void GLES2Implementation::GenMailboxCHROMIUM(
       << static_cast<const void*>(mailbox) << ")");
   TRACE_EVENT0("gpu", "GLES2::GenMailboxCHROMIUM");
 
-  helper_->GenMailboxCHROMIUM(kResultBucketId);
-
-  std::vector<GLbyte> result;
-  GetBucketContents(kResultBucketId, &result);
-
-  std::copy(result.begin(), result.end(), mailbox);
-  CheckGLError();
+  std::vector<gpu::Mailbox> names;
+  if (!gpu_control_->GenerateMailboxNames(1, &names)) {
+    SetGLError(GL_OUT_OF_MEMORY, "glGenMailboxCHROMIUM", "Generate failed.");
+    return;
+  }
+  memcpy(mailbox, names[0].name, GL_MAILBOX_SIZE_CHROMIUM);
 }
 
 void GLES2Implementation::PushGroupMarkerEXT(
@@ -3659,7 +3676,8 @@ void GLES2Implementation::WaitAsyncTexImage2DCHROMIUM(GLenum target) {
 GLuint GLES2Implementation::InsertSyncPointCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glInsertSyncPointCHROMIUM");
-  return helper_->InsertSyncPointCHROMIUM();
+  helper_->CommandBufferHelper::Flush();
+  return gpu_control_->InsertSyncPoint();
 }
 
 GLuint GLES2Implementation::CreateImageCHROMIUMHelper(

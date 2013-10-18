@@ -15,7 +15,7 @@
 #include "net/base/linked_hash_map.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_protocol.h"
-#include "net/tools/flip_server/epoll_server.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_packet_writer.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "net/tools/quic/quic_time_wait_list_manager.h"
@@ -60,11 +60,11 @@ class QuicDispatcher : public QuicPacketWriter, public QuicSessionOwner {
   virtual ~QuicDispatcher();
 
   // QuicPacketWriter
-  virtual int WritePacket(const char* buffer, size_t buf_len,
-                          const IPAddressNumber& self_address,
-                          const IPEndPoint& peer_address,
-                          QuicBlockedWriterInterface* writer,
-                          int* error) OVERRIDE;
+  virtual WriteResult WritePacket(
+      const char* buffer, size_t buf_len,
+      const IPAddressNumber& self_address,
+      const IPEndPoint& peer_address,
+      QuicBlockedWriterInterface* writer) OVERRIDE;
 
   virtual void ProcessPacket(const IPEndPoint& server_address,
                              const IPEndPoint& client_address,

@@ -24,8 +24,9 @@
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/onc/onc_utils.h"
+#include "components/onc/onc_constants.h"
 #include "policy/policy_constants.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #endif  // OS_CHROMEOS
@@ -37,7 +38,6 @@ namespace chromeos {
 
 #if defined(OS_CHROMEOS)
 const char kUser1ProfilePath[] = "/profile/user1/shill";
-const char kUserIdStubHashSuffix[] = "-hash";
 #endif  // defined(OS_CHROMEOS)
 
 
@@ -78,8 +78,8 @@ class ExtensionNetworkingPrivateApiTest :
     // uses the ProfileHelper to obtain the userhash crbug/238623.
     std::string login_user =
         command_line->GetSwitchValueNative(switches::kLoginUser);
-    // Do the same as CryptohomeClientStubImpl::GetSanitizedUsername
-    std::string sanitized_user = login_user + kUserIdStubHashSuffix;
+    std::string sanitized_user = CryptohomeClient::GetStubSanitizedUsername(
+        login_user);
     command_line->AppendSwitchASCII(switches::kLoginProfile, sanitized_user);
     if (GetParam())
       command_line->AppendSwitch(::switches::kMultiProfiles);
@@ -128,6 +128,12 @@ class ExtensionNetworkingPrivateApiTest :
     service_test->AddService("stub_ethernet", "eth0",
                              shill::kTypeEthernet, shill::kStateOnline,
                              add_to_visible, add_to_watchlist);
+    service_test->SetServiceProperty(
+        "stub_ethernet",
+        shill::kProfileProperty,
+        base::StringValue(shill_stub_helper::kSharedProfilePath));
+    profile_test->AddService(shill_stub_helper::kSharedProfilePath,
+                             "stub_ethernet");
 
     service_test->AddService("stub_wifi1", "wifi1",
                              shill::kTypeWifi, shill::kStateOnline,
@@ -135,6 +141,10 @@ class ExtensionNetworkingPrivateApiTest :
     service_test->SetServiceProperty("stub_wifi1",
                                      shill::kSecurityProperty,
                                      base::StringValue(shill::kSecurityWep));
+    service_test->SetServiceProperty("stub_wifi1",
+                                     shill::kProfileProperty,
+                                     base::StringValue(kUser1ProfilePath));
+    profile_test->AddService(kUser1ProfilePath, "stub_wifi1");
     base::ListValue frequencies1;
     frequencies1.AppendInteger(2400);
     service_test->SetServiceProperty("stub_wifi1",
@@ -314,7 +324,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionNetworkingPrivateApiTest,
       "      \"WiFi\": {"
       "        \"Passphrase\": \"passphrase\","
       "        \"Recommended\": [ \"AutoConnect\", \"Passphrase\" ],"
-      "        \"SSID\": \"stub_wifi2\","
+      "        \"SSID\": \"wifi2_PSK\","
       "        \"Security\": \"WPA-PSK\" }"
       "    }"
       "  ],"

@@ -49,7 +49,6 @@
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/storage_partition.h"
 #include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #endif
 
 #if defined(ENABLE_APP_LIST)
@@ -302,6 +301,15 @@ void ComponentLoader::AddImageLoaderExtension() {
 #endif  // defined(IMAGE_LOADER_EXTENSION)
 }
 
+void ComponentLoader::AddBookmarksExtensions() {
+  Add(IDR_BOOKMARKS_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("bookmark_manager")));
+#if defined(ENABLE_ENHANCED_BOOKMARKS)
+  Add(IDR_ENHANCED_BOOKMARKS_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("enhanced_bookmark_manager")));
+#endif
+}
+
 void ComponentLoader::AddWithName(int manifest_resource_id,
                                   const base::FilePath& root_directory,
                                   const std::string& name) {
@@ -374,16 +382,14 @@ void ComponentLoader::AddDefaultComponentExtensions(
   if (!skip_session_components) {
     const CommandLine* command_line = CommandLine::ForCurrentProcess();
     if (!command_line->HasSwitch(chromeos::switches::kGuestSession))
-      Add(IDR_BOOKMARKS_MANIFEST,
-          base::FilePath(FILE_PATH_LITERAL("bookmark_manager")));
+      AddBookmarksExtensions();
 
     Add(IDR_CROSH_BUILTIN_MANIFEST, base::FilePath(FILE_PATH_LITERAL(
         "/usr/share/chromeos-assets/crosh_builtin")));
   }
 #else  // !defined(OS_CHROMEOS)
   DCHECK(!skip_session_components);
-  Add(IDR_BOOKMARKS_MANIFEST,
-      base::FilePath(FILE_PATH_LITERAL("bookmark_manager")));
+  AddBookmarksExtensions();
   // Cloud Print component app. Not required on Chrome OS.
   Add(IDR_CLOUDPRINT_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("cloud_print")));
@@ -407,7 +413,8 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   // because they generate a lot of background behavior that can interfere.
   if (!enable_background_extensions_during_testing &&
       (command_line->HasSwitch(switches::kTestType) ||
-          command_line->HasSwitch(switches::kMetricsRecordingOnly))) {
+          command_line->HasSwitch(
+              switches::kDisableComponentExtensionsWithBackgroundPages))) {
     return;
   }
 

@@ -103,9 +103,6 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // TODO(phoglund): check that user actually has the requisite devices and
-    // print a nice message if not; otherwise the test just times out which can
-    // be confusing.
     // This test expects real device handling and requires a real webcam / audio
     // device; it will not work with fake devices.
     EXPECT_FALSE(
@@ -171,16 +168,6 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
     return base::KillProcess(pywebsocket_server_, 0, false);
   }
 
-  // Convenience method which executes the provided javascript in the context
-  // of the provided web contents and returns what it evaluated to.
-  std::string ExecuteJavascript(const std::string& javascript,
-                                content::WebContents* tab_contents) {
-    std::string result;
-    EXPECT_TRUE(content::ExecuteScriptAndExtractString(
-        tab_contents, javascript, &result));
-    return result;
-  }
-
   // Ensures we didn't get any errors asynchronously (e.g. while no javascript
   // call from this test was outstanding).
   // TODO(phoglund): this becomes obsolete when we switch to communicating with
@@ -190,19 +177,11 @@ class WebrtcVideoQualityBrowserTest : public WebRtcTestBase {
               ExecuteJavascript("getAnyTestFailures()", tab_contents));
   }
 
-  // The peer connection server lets our two tabs find each other and talk to
-  // each other (e.g. it is the application-specific "signaling solution").
-  void ConnectToPeerConnectionServer(const std::string peer_name,
-                                     content::WebContents* tab_contents) {
-    std::string javascript = base::StringPrintf(
-        "connect('http://localhost:8888', '%s');", peer_name.c_str());
-    EXPECT_EQ("ok-connected", ExecuteJavascript(javascript, tab_contents));
-  }
-
   void EstablishCall(content::WebContents* from_tab,
                      content::WebContents* to_tab) {
     EXPECT_EQ("ok-peerconnection-created",
-              ExecuteJavascript("preparePeerConnection()", from_tab));
+              ExecuteJavascript("preparePeerConnection(false, true)",
+                                from_tab));
     EXPECT_EQ("ok-added", ExecuteJavascript("addLocalStream()", from_tab));
     EXPECT_EQ("ok-negotiating", ExecuteJavascript("negotiateCall()", from_tab));
 

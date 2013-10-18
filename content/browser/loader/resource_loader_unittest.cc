@@ -66,6 +66,8 @@ class ClientCertStoreStub : public net::ClientCertStore {
 // initialize ResourceLoader.
 class ResourceHandlerStub : public ResourceHandler {
  public:
+  ResourceHandlerStub() : ResourceHandler(NULL) {}
+
   virtual bool OnUploadProgress(int request_id,
                                 uint64 position,
                                 uint64 size) OVERRIDE {
@@ -90,7 +92,7 @@ class ResourceHandlerStub : public ResourceHandler {
   }
 
   virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
+                          scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE {
     return true;
@@ -201,7 +203,8 @@ TEST_F(ResourceLoaderTest, ClientCertStoreLookup) {
                                           ResourceType::MAIN_FRAME,
                                           &resource_context_,
                                           kRenderProcessId,
-                                          kRenderViewId);
+                                          kRenderViewId,
+                                          false);
 
   // Set up the test client cert store.
   net::CertificateList dummy_certs(1, scoped_refptr<net::X509Certificate>(

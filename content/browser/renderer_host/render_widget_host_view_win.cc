@@ -499,7 +499,7 @@ void RenderWidgetHostViewWin::SetSize(const gfx::Size& size) {
 }
 
 void RenderWidgetHostViewWin::SetBounds(const gfx::Rect& rect) {
-  if (is_hidden_)
+  if (is_hidden_ || being_destroyed_)
     return;
 
   // No SWP_NOREDRAW as autofill popups can move and the underneath window
@@ -1396,7 +1396,8 @@ void RenderWidgetHostViewWin::OnPaint(HDC unused_dc) {
       web_contents_switch_paint_time_ = TimeTicks();
     }
 
-    software_latency_info_.swap_timestamp = TimeTicks::HighResNow();
+    software_latency_info_.AddLatencyNumber(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
     render_widget_host_->FrameSwapped(software_latency_info_);
     software_latency_info_.Clear();
   } else {
@@ -2554,6 +2555,18 @@ gfx::GLSurfaceHandle RenderWidgetHostViewWin::GetCompositingSurface() {
   return surface_handle;
 }
 
+void RenderWidgetHostViewWin::ResizeCompositingSurface(const gfx::Size& size) {
+  // Ensure window does not have zero area because D3D cannot create a zero
+  // area swap chain.
+  ::SetWindowPos(compositor_host_window_,
+      NULL,
+      0, 0,
+      std::max(1, size.width()),
+      std::max(1, size.height()),
+      SWP_NOSENDCHANGING | SWP_NOCOPYBITS | SWP_NOZORDER |
+          SWP_NOACTIVATE | SWP_DEFERERASE | SWP_NOMOVE);
+}
+
 void RenderWidgetHostViewWin::OnAcceleratedCompositingStateChange() {
   bool show = render_widget_host_->is_accelerated_compositing_active();
   // When we first create the compositor, we will get a show request from
@@ -2743,6 +2756,8 @@ void RenderWidgetHostViewWin::OnFinalMessage(HWND window) {
   }
   if (render_widget_host_)
     render_widget_host_->ViewDestroyed();
+  if (base::win::IsTSFAwareRequired())
+    ui::TSFBridge::GetInstance()->RemoveFocusedClient(this);
   delete this;
 }
 

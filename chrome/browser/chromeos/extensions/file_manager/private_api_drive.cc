@@ -19,6 +19,7 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
+#include "webkit/common/fileapi/file_system_info.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using content::BrowserThread;
@@ -57,7 +58,20 @@ void FillDriveEntryPropertiesValue(
       entry_proto.file_specific_info();
 
   properties->thumbnail_url.reset(
-      new std::string(file_specific_info.thumbnail_url()));
+      new std::string("https://www.googledrive.com/thumb/" +
+          entry_proto.resource_id() + "?width=500&height=500"));
+  if (file_specific_info.has_image_width()) {
+    properties->image_width.reset(
+        new int(file_specific_info.image_width()));
+  }
+  if (file_specific_info.has_image_height()) {
+    properties->image_height.reset(
+        new int(file_specific_info.image_height()));
+  }
+  if (file_specific_info.has_image_rotation()) {
+    properties->image_rotation.reset(
+        new int(file_specific_info.image_rotation()));
+  }
   properties->is_hosted.reset(
       new bool(file_specific_info.is_hosted_document()));
   properties->content_mime_type.reset(
@@ -394,16 +408,12 @@ void FileBrowserPrivateSearchDriveFunction::OnSearch(
   base::ListValue* entries = new ListValue();
 
   // Convert Drive files to something File API stack can understand.
-  GURL origin_url = source_url_.GetOrigin();
-  fileapi::FileSystemType file_system_type = fileapi::kFileSystemTypeExternal;
-  GURL file_system_root_url =
-      fileapi::GetFileSystemRootURI(origin_url, file_system_type);
-  std::string file_system_name =
-      fileapi::GetFileSystemName(origin_url, file_system_type);
+  fileapi::FileSystemInfo info =
+      fileapi::GetFileSystemInfoForChromeOS(source_url_.GetOrigin());
   for (size_t i = 0; i < results->size(); ++i) {
     DictionaryValue* entry = new DictionaryValue();
-    entry->SetString("fileSystemName", file_system_name);
-    entry->SetString("fileSystemRoot", file_system_root_url.spec());
+    entry->SetString("fileSystemName", info.name);
+    entry->SetString("fileSystemRoot", info.root_url.spec());
     entry->SetString("fileFullPath", "/" + results->at(i).path.value());
     entry->SetBoolean("fileIsDirectory", results->at(i).is_directory);
     entries->Append(entry);
@@ -482,19 +492,15 @@ void FileBrowserPrivateSearchDriveMetadataFunction::OnSearchMetadata(
   // file_browser_handler_custom_bindings.cc and
   // file_browser_private_custom_bindings.js for how this is magically
   // converted to a FileEntry.
-  GURL origin_url = source_url_.GetOrigin();
-  fileapi::FileSystemType file_system_type = fileapi::kFileSystemTypeExternal;
-  GURL file_system_root_url =
-      fileapi::GetFileSystemRootURI(origin_url, file_system_type);
-  std::string file_system_name =
-      fileapi::GetFileSystemName(origin_url, file_system_type);
+  fileapi::FileSystemInfo info =
+      fileapi::GetFileSystemInfoForChromeOS(source_url_.GetOrigin());
   for (size_t i = 0; i < results->size(); ++i) {
     DictionaryValue* result_dict = new DictionaryValue();
 
     // FileEntry fields.
     DictionaryValue* entry = new DictionaryValue();
-    entry->SetString("fileSystemName", file_system_name);
-    entry->SetString("fileSystemRoot", file_system_root_url.spec());
+    entry->SetString("fileSystemName", info.name);
+    entry->SetString("fileSystemRoot", info.root_url.spec());
     entry->SetString("fileFullPath", "/" + results->at(i).path.value());
     entry->SetBoolean("fileIsDirectory",
                       results->at(i).entry.file_info().is_directory());

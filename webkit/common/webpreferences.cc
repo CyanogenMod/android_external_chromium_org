@@ -33,6 +33,7 @@ WebPreferences::WebPreferences()
       allow_scripts_to_close_windows(false),
       remote_fonts_enabled(true),
       javascript_can_access_clipboard(false),
+      xslt_enabled(true),
       xss_auditor_enabled(true),
       dns_prefetching_enabled(true),
       local_storage_enabled(false),
@@ -81,8 +82,6 @@ WebPreferences::WebPreferences()
       should_print_backgrounds(false),
       enable_scroll_animator(false),
       visual_word_movement_enabled(false),
-      css_sticky_position_enabled(false),
-      css_shaders_enabled(false),
       lazy_layout_enabled(false),
       region_based_columns_enabled(false),
       touch_enabled(false),
@@ -118,6 +117,7 @@ WebPreferences::WebPreferences()
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
+      compositor_touch_hit_testing(true),
       cookie_enabled(true)
 #if defined(OS_ANDROID)
       ,

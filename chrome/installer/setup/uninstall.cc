@@ -443,13 +443,6 @@ bool ScheduleParentAndGrandparentForDeletion(const base::FilePath& path) {
   return ret;
 }
 
-enum DeleteResult {
-  DELETE_SUCCEEDED,
-  DELETE_NOT_EMPTY,
-  DELETE_FAILED,
-  DELETE_REQUIRES_REBOOT,
-};
-
 // Deletes the given directory if it is empty. Returns DELETE_SUCCEEDED if the
 // directory is deleted, DELETE_NOT_EMPTY if it is not empty, and DELETE_FAILED
 // otherwise.
@@ -563,7 +556,7 @@ bool MoveSetupOutOfInstallFolder(const InstallerState& installer_state,
   return ret;
 }
 
-DeleteResult DeleteApplicationProductAndVendorDirectories(
+DeleteResult DeleteChromeDirectoriesIfEmpty(
     const base::FilePath& application_directory) {
   DeleteResult result(DeleteEmptyDir(application_directory));
   if (result == DELETE_SUCCEEDED) {
@@ -1131,9 +1124,6 @@ InstallStatus UninstallProduct(const InstallationState& original_state,
   const string16 chrome_exe(
       installer_state.target_path().Append(installer::kChromeExe).value());
 
-  const string16 suffix(ShellUtil::GetCurrentInstallationSuffix(browser_dist,
-                                                                chrome_exe));
-
   bool is_chrome = product.is_chrome();
 
   VLOG(1) << "UninstallProduct: " << browser_dist->GetDisplayName();
@@ -1150,6 +1140,9 @@ InstallStatus UninstallProduct(const InstallationState& original_state,
     if (status != installer::UNINSTALL_CONFIRMED &&
         status != installer::UNINSTALL_DELETE_PROFILE)
       return status;
+
+    const string16 suffix(ShellUtil::GetCurrentInstallationSuffix(browser_dist,
+                                                                  chrome_exe));
 
     // Check if we need admin rights to cleanup HKLM (the conditions for
     // requiring a cleanup are the same as the conditions to do the actual
@@ -1212,11 +1205,6 @@ InstallStatus UninstallProduct(const InstallationState& original_state,
     }
 
     DeleteShortcuts(installer_state, product, base::FilePath(chrome_exe));
-
-  } else if (product.is_chrome_app_host()) {
-    const base::FilePath app_host_exe(
-        installer_state.target_path().Append(installer::kChromeAppHostExe));
-    DeleteShortcuts(installer_state, product, app_host_exe);
   }
 
   // Delete the registry keys (Uninstall key and Version key).
@@ -1244,6 +1232,9 @@ InstallStatus UninstallProduct(const InstallationState& original_state,
   InstallStatus ret = installer::UNKNOWN_STATUS;
 
   if (is_chrome) {
+    const string16 suffix(ShellUtil::GetCurrentInstallationSuffix(browser_dist,
+                                                                  chrome_exe));
+
     // Remove all Chrome registration keys.
     // Registration data is put in HKCU for both system level and user level
     // installs.
@@ -1436,15 +1427,15 @@ void CleanUpInstallationDirectoryAfterUninstall(
     const InstallationState& original_state,
     const InstallerState& installer_state,
     const CommandLine& cmd_line,
-    installer::InstallStatus* uninstall_status) {
-  if (*uninstall_status != installer::UNINSTALL_SUCCESSFUL &&
-      *uninstall_status != installer::UNINSTALL_REQUIRES_REBOOT) {
+    InstallStatus* uninstall_status) {
+  if (*uninstall_status != UNINSTALL_SUCCESSFUL &&
+      *uninstall_status != UNINSTALL_REQUIRES_REBOOT) {
     return;
   }
   const base::FilePath target_path(installer_state.target_path());
   if (target_path.empty()) {
     LOG(ERROR) << "No installation destination path.";
-    *uninstall_status = installer::UNINSTALL_FAILED;
+    *uninstall_status = UNINSTALL_FAILED;
     return;
   }
   base::FilePath setup_exe(base::MakeAbsoluteFilePath(cmd_line.GetProgram()));
@@ -1470,7 +1461,7 @@ void CleanUpInstallationDirectoryAfterUninstall(
 
   // Remove files from "...\<product>\Application\<version>\Installer"
   if (!RemoveInstallerFiles(install_directory, remove_setup)) {
-    *uninstall_status = installer::UNINSTALL_FAILED;
+    *uninstall_status = UNINSTALL_FAILED;
     return;
   }
 
@@ -1481,7 +1472,7 @@ void CleanUpInstallationDirectoryAfterUninstall(
 
   // Delete "...\<product>\Application\<version>\Installer"
   if (DeleteEmptyDir(install_directory) != DELETE_SUCCEEDED) {
-    *uninstall_status = installer::UNINSTALL_FAILED;
+    *uninstall_status = UNINSTALL_FAILED;
     return;
   }
 
@@ -1489,12 +1480,12 @@ void CleanUpInstallationDirectoryAfterUninstall(
   DeleteResult delete_result = DeleteEmptyDir(install_directory.DirName());
   if (delete_result == DELETE_FAILED ||
       (delete_result == DELETE_NOT_EMPTY &&
-       *uninstall_status != installer::UNINSTALL_REQUIRES_REBOOT)) {
-    *uninstall_status = installer::UNINSTALL_FAILED;
+       *uninstall_status != UNINSTALL_REQUIRES_REBOOT)) {
+    *uninstall_status = UNINSTALL_FAILED;
     return;
   }
 
-  if (*uninstall_status == installer::UNINSTALL_REQUIRES_REBOOT) {
+  if (*uninstall_status == UNINSTALL_REQUIRES_REBOOT) {
     // Delete the Application directory at reboot if empty.
     ScheduleFileSystemEntityForDeletion(target_path);
 
@@ -1502,9 +1493,8 @@ void CleanUpInstallationDirectoryAfterUninstall(
     // deletion unconditionally. If they are not empty, the session manager
     // will not delete them on reboot.
     ScheduleParentAndGrandparentForDeletion(target_path);
-  } else if (DeleteApplicationProductAndVendorDirectories(target_path) ==
-             installer::DELETE_FAILED) {
-    *uninstall_status = installer::UNINSTALL_FAILED;
+  } else if (DeleteChromeDirectoriesIfEmpty(target_path) == DELETE_FAILED) {
+    *uninstall_status = UNINSTALL_FAILED;
   }
 }
 

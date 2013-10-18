@@ -104,6 +104,38 @@ ExtensionPage::ExtensionPage(const GURL& url,
       generated_background_page(generated_background_page) {
 }
 
+// On Mac, the install prompt is not modal. This means that the user can
+// navigate while the dialog is up, causing the dialog handler to outlive the
+// ExtensionSettingsHandler. That's a problem because the dialog framework will
+// try to contact us back once the dialog is closed, which causes a crash.
+// This class is designed to broker the message between the two objects, while
+// managing its own lifetime so that it can outlive the ExtensionSettingsHandler
+// and (when doing so) gracefully ignore the message from the dialog.
+class BrokerDelegate : public ExtensionInstallPrompt::Delegate {
+ public:
+  explicit BrokerDelegate(
+      const base::WeakPtr<ExtensionSettingsHandler>& delegate)
+      : delegate_(delegate) {}
+
+  // ExtensionInstallPrompt::Delegate implementation.
+  virtual void InstallUIProceed() OVERRIDE {
+    if (delegate_)
+      delegate_->InstallUIProceed();
+    delete this;
+  };
+
+  virtual void InstallUIAbort(bool user_initiated) OVERRIDE {
+    if (delegate_)
+      delegate_->InstallUIAbort(user_initiated);
+    delete this;
+  };
+
+ private:
+  base::WeakPtr<ExtensionSettingsHandler> delegate_;
+
+  DISALLOW_COPY_AND_ASSIGN(BrokerDelegate);
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // ExtensionSettingsHandler
@@ -192,7 +224,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
       ManifestURL::GetHomepageURL(extension).is_valid());
 
   string16 location_text;
-  if (extension->location() == Manifest::EXTERNAL_POLICY_DOWNLOAD) {
+  if (Manifest::IsPolicyLocation(extension->location())) {
     location_text = l10n_util::GetStringUTF16(
         IDS_OPTIONS_INSTALL_LOCATION_ENTERPRISE);
   } else if (extension->location() == Manifest::INTERNAL &&
@@ -205,8 +237,7 @@ base::DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
   }
   extension_data->SetString("locationText", location_text);
 
-  // Determine the sort order: Extensions loaded through --load-extensions show
-  // up at the top. Disabled extensions show up at the bottom.
+  // Force unpacked extensions to show at the top.
   if (Manifest::IsUnpackedLocation(extension->location()))
     extension_data->SetInteger("order", 1);
   else
@@ -751,10 +782,10 @@ void ExtensionSettingsHandler::HandleLaunchMessage(
   CHECK(args->GetString(0, &extension_id));
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id, false);
-  chrome::OpenApplication(chrome::AppLaunchParams(extension_service_->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_WINDOW,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(extension_service_->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_WINDOW,
+                                  NEW_WINDOW));
 }
 
 void ExtensionSettingsHandler::HandleReloadMessage(
@@ -911,7 +942,9 @@ void ExtensionSettingsHandler::HandlePermissionsMessage(
       retained_file_paths.push_back(retained_file_entries[i].path);
     }
   }
-  prompt_->ReviewPermissions(this, extension, retained_file_paths);
+  // The BrokerDelegate manages its own lifetime.
+  prompt_->ReviewPermissions(
+      new BrokerDelegate(AsWeakPtr()), extension, retained_file_paths);
 }
 
 void ExtensionSettingsHandler::HandleShowButtonMessage(

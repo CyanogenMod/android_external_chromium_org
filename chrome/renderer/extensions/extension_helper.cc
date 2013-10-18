@@ -230,6 +230,14 @@ void ExtensionHelper::FrameDetached(WebFrame* frame) {
   g_schedulers.Get().erase(i);
 }
 
+void ExtensionHelper::DidMatchCSS(
+    WebKit::WebFrame* frame,
+    const WebKit::WebVector<WebKit::WebString>& newly_matching_selectors,
+    const WebKit::WebVector<WebKit::WebString>& stopped_matching_selectors) {
+  dispatcher_->DidMatchCSS(
+      frame, newly_matching_selectors, stopped_matching_selectors);
+}
+
 void ExtensionHelper::DidCreateDataSource(WebFrame* frame, WebDataSource* ds) {
   // Check first if we created a scheduler for the frame, since this function
   // gets called for navigations within the document.
@@ -263,12 +271,13 @@ void ExtensionHelper::OnExtensionDispatchOnConnect(
     int target_port_id,
     const std::string& channel_name,
     const base::DictionaryValue& source_tab,
-    const ExtensionMsg_ExternalConnectionInfo& info) {
+    const ExtensionMsg_ExternalConnectionInfo& info,
+    const std::string& tls_channel_id) {
   MessagingBindings::DispatchOnConnect(
       dispatcher_->v8_context_set().GetAll(),
       target_port_id, channel_name, source_tab,
       info.source_id, info.target_id, info.source_url,
-      render_view());
+      tls_channel_id, render_view());
 }
 
 void ExtensionHelper::OnExtensionDeliverMessage(int target_id,

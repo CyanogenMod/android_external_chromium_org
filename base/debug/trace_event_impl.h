@@ -64,23 +64,23 @@ namespace debug {
 
 // For any argument of type TRACE_VALUE_TYPE_CONVERTABLE the provided
 // class must implement this interface.
-class ConvertableToTraceFormat {
+class ConvertableToTraceFormat : public RefCounted<ConvertableToTraceFormat> {
  public:
-  virtual ~ConvertableToTraceFormat() {}
-
   // Append the class info to the provided |out| string. The appended
   // data must be a valid JSON object. Strings must be properly quoted, and
   // escaped. There is no processing applied to the content after it is
   // appended.
   virtual void AppendAsTraceFormat(std::string* out) const = 0;
+
+ protected:
+  virtual ~ConvertableToTraceFormat() {}
+
+ private:
+  friend class RefCounted<ConvertableToTraceFormat>;
 };
 
 const int kTraceMaxNumArgs = 2;
 
-// Output records are "Events" and can be obtained via the
-// OutputCallback whenever the tracing system decides to flush. This
-// can happen at any time, on any thread, or you can programmatically
-// force it to happen.
 class BASE_EXPORT TraceEvent {
  public:
   union TraceValue {
@@ -93,22 +93,28 @@ class BASE_EXPORT TraceEvent {
   };
 
   TraceEvent();
-  TraceEvent(int thread_id,
-             TimeTicks timestamp,
-             TimeTicks thread_timestamp,
-             char phase,
-             const unsigned char* category_group_enabled,
-             const char* name,
-             unsigned long long id,
-             int num_args,
-             const char** arg_names,
-             const unsigned char* arg_types,
-             const unsigned long long* arg_values,
-             scoped_ptr<ConvertableToTraceFormat> convertable_values[],
-             unsigned char flags);
-  TraceEvent(const TraceEvent& other);
-  TraceEvent& operator=(const TraceEvent& other);
   ~TraceEvent();
+
+  // We don't need to copy TraceEvent except when TraceEventBuffer is cloned.
+  // Use explicit copy method to avoid accidentally misuse of copy.
+  void CopyFrom(const TraceEvent& other);
+
+  void Initialize(
+      int thread_id,
+      TimeTicks timestamp,
+      TimeTicks thread_timestamp,
+      char phase,
+      const unsigned char* category_group_enabled,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
+      unsigned char flags);
+
+  void Reset();
 
   // Serialize event data to JSON
   static void AppendEventsAsJSON(const std::vector<TraceEvent>& events,
@@ -147,7 +153,7 @@ class BASE_EXPORT TraceEvent {
   unsigned long long id_;
   TraceValue arg_values_[kTraceMaxNumArgs];
   const char* arg_names_[kTraceMaxNumArgs];
-  scoped_ptr<ConvertableToTraceFormat> convertable_values_[kTraceMaxNumArgs];
+  scoped_refptr<ConvertableToTraceFormat> convertable_values_[kTraceMaxNumArgs];
   const unsigned char* category_group_enabled_;
   const char* name_;
   scoped_refptr<base::RefCountedString> parameter_copy_storage_;
@@ -155,6 +161,43 @@ class BASE_EXPORT TraceEvent {
   char phase_;
   unsigned char flags_;
   unsigned char arg_types_[kTraceMaxNumArgs];
+
+  DISALLOW_COPY_AND_ASSIGN(TraceEvent);
+};
+
+// TraceBufferChunk is the basic unit of TraceBuffer.
+class BASE_EXPORT TraceBufferChunk {
+ public:
+  TraceBufferChunk(uint32 seq)
+      : next_free_(0),
+        seq_(seq) {
+  }
+
+  void Reset(uint32 new_seq);
+  TraceEvent* AddTraceEvent();
+  bool IsFull() const { return next_free_ == kTraceBufferChunkSize; }
+
+  uint32 seq() const { return seq_; }
+  size_t capacity() const { return kTraceBufferChunkSize; }
+  size_t size() const { return next_free_; }
+
+  TraceEvent* GetEventAt(size_t index) {
+    DCHECK(index < size());
+    return &chunk_[index];
+  }
+  const TraceEvent* GetEventAt(size_t index) const {
+    DCHECK(index < size());
+    return &chunk_[index];
+  }
+
+  scoped_ptr<TraceBufferChunk> Clone() const;
+
+  static const size_t kTraceBufferChunkSize = 64;
+
+ private:
+  size_t next_free_;
+  TraceEvent chunk_[kTraceBufferChunkSize];
+  uint32 seq_;
 };
 
 // TraceBuffer holds the events as they are collected.
@@ -162,15 +205,20 @@ class BASE_EXPORT TraceBuffer {
  public:
   virtual ~TraceBuffer() {}
 
-  virtual void AddEvent(const TraceEvent& event) = 0;
-  virtual bool HasMoreEvents() const = 0;
-  virtual const TraceEvent& NextEvent() = 0;
+  virtual scoped_ptr<TraceBufferChunk> GetChunk(size_t *index) = 0;
+  virtual void ReturnChunk(size_t index,
+                           scoped_ptr<TraceBufferChunk> chunk) = 0;
+
   virtual bool IsFull() const = 0;
-  virtual size_t CountEnabledByName(const unsigned char* category,
-                                    const std::string& event_name) const = 0;
   virtual size_t Size() const = 0;
   virtual size_t Capacity() const = 0;
-  virtual const TraceEvent& GetEventAt(size_t index) const = 0;
+  virtual const TraceEvent* GetEventAt(
+      size_t chunk_index, size_t event_index) const = 0;
+
+  // For iteration. Each TraceBuffer can only be iterated once.
+  virtual const TraceBufferChunk* NextChunk() = 0;
+
+  virtual scoped_ptr<TraceBuffer> CloneForIteration() const = 0;
 };
 
 // TraceResultBuffer collects and converts trace fragments returned by TraceLog
@@ -308,11 +356,14 @@ class BASE_EXPORT TraceLog {
     // and we use it as a ring buffer during recording.
     RECORD_CONTINUOUSLY = 1 << 1,
 
-    // Enable the sampling profiler.
+    // Enable the sampling profiler in the recording mode.
     ENABLE_SAMPLING = 1 << 2,
 
+    // Enable the sampling profiler in the monitoring mode.
+    MONITOR_SAMPLING = 1 << 3,
+
     // Echo to console. Events are discarded.
-    ECHO_TO_CONSOLE = 1 << 3,
+    ECHO_TO_CONSOLE = 1 << 4,
   };
 
   static TraceLog* GetInstance();
@@ -336,7 +387,7 @@ class BASE_EXPORT TraceLog {
   // on how to control what categories will be traced.
   void SetEnabled(const CategoryFilter& category_filter, Options options);
 
-  // Disable tracing for all categories.
+  // Disables tracing for all categories.
   void SetDisabled();
   bool IsEnabled() { return !!enable_count_; }
 
@@ -350,6 +401,7 @@ class BASE_EXPORT TraceLog {
 #if defined(OS_ANDROID)
   void StartATrace();
   void StopATrace();
+  void AddClockSyncMetadataEvent();
 #endif
 
   // Enabled state listeners give a callback when tracing is enabled or
@@ -407,6 +459,7 @@ class BASE_EXPORT TraceLog {
   typedef base::Callback<void(const scoped_refptr<base::RefCountedString>&,
                               bool has_more_events)> OutputCallback;
   void Flush(const OutputCallback& cb);
+  void FlushButLeaveBufferIntact(const OutputCallback& flush_output_callback);
 
   // Called by TRACE_EVENT* macros, don't call this directly.
   // The name parameter is a category group for example:
@@ -418,16 +471,17 @@ class BASE_EXPORT TraceLog {
   // Called by TRACE_EVENT* macros, don't call this directly.
   // If |copy| is set, |name|, |arg_name1| and |arg_name2| will be deep copied
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
-  void AddTraceEvent(char phase,
-                     const unsigned char* category_group_enabled,
-                     const char* name,
-                     unsigned long long id,
-                     int num_args,
-                     const char** arg_names,
-                     const unsigned char* arg_types,
-                     const unsigned long long* arg_values,
-                     scoped_ptr<ConvertableToTraceFormat> convertable_values[],
-                     unsigned char flags);
+  void AddTraceEvent(
+      char phase,
+      const unsigned char* category_group_enabled,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
+      unsigned char flags);
   void AddTraceEventWithThreadIdAndTimestamp(
       char phase,
       const unsigned char* category_group_enabled,
@@ -439,7 +493,7 @@ class BASE_EXPORT TraceLog {
       const char** arg_names,
       const unsigned char* arg_types,
       const unsigned long long* arg_values,
-      scoped_ptr<ConvertableToTraceFormat> convertable_values[],
+      const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
       unsigned char flags);
   static void AddTraceEventEtw(char phase,
                                const char* category_group,
@@ -471,9 +525,7 @@ class BASE_EXPORT TraceLog {
 
   // Allow tests to inspect TraceEvents.
   size_t GetEventsSize() const { return logged_events_->Size(); }
-  const TraceEvent& GetEventAt(size_t index) const {
-    return logged_events_->GetEventAt(index);
-  }
+  const TraceEvent* GetEventAt(size_t index);
 
   void SetProcessID(int process_id);
 
@@ -502,6 +554,13 @@ class BASE_EXPORT TraceLog {
   size_t GetObserverCountForTest() const;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceBufferRingBufferGetReturnChunk);
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceBufferRingBufferHalfIteration);
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceBufferRingBufferFullIteration);
+
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
   friend struct DefaultSingletonTraits<TraceLog>;
@@ -513,21 +572,6 @@ class BASE_EXPORT TraceLog {
   // On Android, ATRACE_ENABLED flag will be applied if atrace is started.
   void UpdateCategoryGroupEnabledFlags();
   void UpdateCategoryGroupEnabledFlag(int category_index);
-
-  static void SetCategoryGroupEnabled(int category_index, bool enabled);
-  static bool IsCategoryGroupEnabled(
-      const unsigned char* category_group_enabled);
-
-  // The pointer returned from GetCategoryGroupEnabledInternal() points to a
-  // value with zero or more of the following bits. Used in this class only.
-  // The TRACE_EVENT macros should only use the value as a bool.
-  enum CategoryGroupEnabledFlags {
-    // Normal enabled flag for category groups enabled with Enable().
-    CATEGORY_GROUP_ENABLED = 1 << 0,
-    // On Android if ATrace is enabled, all categories will have this bit.
-    // Not used on other platforms.
-    ATRACE_ENABLED = 1 << 1
-  };
 
   // Helper class for managing notification_thread_count_ and running
   // notification callbacks. This is very similar to a reader-writer lock, but
@@ -557,31 +601,48 @@ class BASE_EXPORT TraceLog {
   TraceLog();
   ~TraceLog();
   const unsigned char* GetCategoryGroupEnabledInternal(const char* name);
-  void AddMetadataEvents();
+  void AddMetadataEventsWhileLocked();
 
 #if defined(OS_ANDROID)
-  void SendToATrace(char phase,
-                    const char* category_group,
-                    const char* name,
-                    unsigned long long id,
-                    int num_args,
-                    const char** arg_names,
-                    const unsigned char* arg_types,
-                    const unsigned long long* arg_values,
-                    scoped_ptr<ConvertableToTraceFormat> convertable_values[],
-                    unsigned char flags);
-  static void ApplyATraceEnabledFlag(unsigned char* category_group_enabled);
+  void SendToATrace(
+      char phase,
+      const char* category_group,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
+      unsigned char flags);
 #endif
 
-  TraceBuffer* GetTraceBuffer();
+  TraceBuffer* trace_buffer() const { return logged_events_.get(); }
+  TraceBuffer* CreateTraceBuffer();
 
-  void AddEventToMainBufferWhileLocked(const TraceEvent& trace_event);
+  void OutputEventToConsoleWhileLocked(TraceEvent* trace_event);
+
+  TraceEvent* AddEventToThreadSharedChunkWhileLocked(
+      NotificationHelper* notifier);
   void CheckIfBufferIsFullWhileLocked(NotificationHelper* notifier);
-  // |flush_count| is used in the following callbacks to check if the callback
-  // is called for the current flush.
-  void FlushCurrentThread(int flush_count);
-  void FinishFlush(int flush_count);
-  void OnFlushTimeout(int flush_count);
+
+  // |generation| is used in the following callbacks to check if the callback
+  // is called for the flush of the current |logged_events_|.
+  void FlushCurrentThread(int generation);
+  void ConvertTraceEventsToTraceFormat(scoped_ptr<TraceBuffer> logged_events,
+      const TraceLog::OutputCallback& flush_output_callback);
+  void FinishFlush(int generation);
+  void OnFlushTimeout(int generation);
+
+  int generation() const {
+    return static_cast<int>(subtle::NoBarrier_Load(&generation_));
+  }
+  bool CheckGeneration(int generation) const {
+    return generation == this->generation();
+  }
+  int NextGeneration() {
+    return static_cast<int>(subtle::NoBarrier_AtomicIncrement(&generation_, 1));
+  }
 
   // This lock protects TraceLog member accesses from arbitrary threads.
   Lock lock_;
@@ -629,12 +690,17 @@ class BASE_EXPORT TraceLog {
   // Contains the message loops of threads that have had at least one event
   // added into the local event buffer. Not using MessageLoopProxy because we
   // need to know the life time of the message loops.
-  base::hash_set<MessageLoop*> thread_message_loops_;
+  hash_set<MessageLoop*> thread_message_loops_;
+
+  // For events which can't be added into the thread local buffer, e.g. events
+  // from threads without a message loop.
+  scoped_ptr<TraceBufferChunk> thread_shared_chunk_;
+  size_t thread_shared_chunk_index_;
 
   // Set when asynchronous Flush is in progress.
   OutputCallback flush_output_callback_;
   scoped_refptr<MessageLoopProxy> flush_message_loop_proxy_;
-  int flush_count_;
+  subtle::AtomicWord generation_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceLog);
 };

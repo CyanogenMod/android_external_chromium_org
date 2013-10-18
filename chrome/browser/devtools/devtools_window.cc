@@ -1,12 +1,12 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #include "chrome/browser/devtools/devtools_window.h"
 
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -217,6 +217,10 @@ const char kDockSideRight[] = "right";
 const char kDockSideUndocked[] = "undocked";
 const char kDockSideMinimized[] = "minimized";
 
+static const char kFrontendHostId[] = "id";
+static const char kFrontendHostMethod[] = "method";
+static const char kFrontendHostParams[] = "params";
+
 const int kMinContentsSize = 50;
 
 std::string SkColorToRGBAString(SkColor color) {
@@ -284,6 +288,10 @@ void DevToolsWindow::RegisterProfilePrefs(
       GetDevToolsWindowPlacementPrefKey().c_str(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
+  registry->RegisterBooleanPref(
+      prefs::kDevToolsDiscoverUsbDevicesEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kDevToolsPortForwardingEnabled,
       false,
@@ -440,7 +448,7 @@ int DevToolsWindow::GetMinimizedHeight() {
 }
 
 void DevToolsWindow::InspectedContentsClosing() {
-  Hide();
+  web_contents_->GetRenderViewHost()->ClosePage();
 }
 
 content::RenderViewHost* DevToolsWindow::GetRenderViewHost() {
@@ -548,10 +556,10 @@ DevToolsWindow::DevToolsWindow(Profile* profile,
       dock_side_(dock_side),
       is_loaded_(false),
       action_on_load_(DEVTOOLS_TOGGLE_ACTION_SHOW),
-      weak_factory_(this),
       width_(-1),
       height_(-1),
-      dock_side_before_minimized_(dock_side) {
+      dock_side_before_minimized_(dock_side),
+      weak_factory_(this) {
   web_contents_ =
       content::WebContents::Create(content::WebContents::CreateParams(profile));
   frontend_contents_observer_.reset(
@@ -779,6 +787,25 @@ void DevToolsWindow::AddNewContents(content::WebContents* source,
 }
 
 void DevToolsWindow::CloseContents(content::WebContents* source) {
+  CHECK(IsDocked());
+  // Update dev tools to reflect removed dev tools window.
+  BrowserWindow* inspected_window = GetInspectedBrowserWindow();
+  if (inspected_window)
+    inspected_window->UpdateDevTools();
+  // In case of docked web_contents_, we own it so delete here.
+  delete web_contents_;
+
+  delete this;
+}
+
+void DevToolsWindow::BeforeUnloadFired(content::WebContents* tab,
+                                       bool proceed,
+                                       bool* proceed_to_fire_unload) {
+  if (proceed) {
+    content::DevToolsManager::GetInstance()->ClientHostClosing(
+        frontend_host_.get());
+  }
+  *proceed_to_fire_unload = proceed;
 }
 
 bool DevToolsWindow::PreHandleKeyboardEvent(
@@ -836,7 +863,31 @@ void DevToolsWindow::WebContentsFocused(content::WebContents* contents) {
 }
 
 void DevToolsWindow::DispatchOnEmbedder(const std::string& message) {
-  embedder_message_dispatcher_->Dispatch(message);
+  std::string method;
+  base::ListValue empty_params;
+  base::ListValue* params = &empty_params;
+
+  base::DictionaryValue* dict = NULL;
+  scoped_ptr<base::Value> parsed_message(base::JSONReader::Read(message));
+  if (!parsed_message ||
+      !parsed_message->GetAsDictionary(&dict) ||
+      !dict->GetString(kFrontendHostMethod, &method) ||
+      (dict->HasKey(kFrontendHostParams) &&
+          !dict->GetList(kFrontendHostParams, &params))) {
+    LOG(ERROR) << "Invalid message was sent to embedder: " << message;
+    return;
+  }
+
+  int id = 0;
+  dict->GetInteger(kFrontendHostId, &id);
+
+  std::string error = embedder_message_dispatcher_->Dispatch(method, params);
+  if (id) {
+    scoped_ptr<base::Value> id_value(base::Value::CreateIntegerValue(id));
+    scoped_ptr<base::Value> error_value(base::Value::CreateStringValue(error));
+    CallClientFunction("InspectorFrontendAPI.embedderMessageAck",
+                       id_value.get(), error_value.get(), NULL);
+  }
 }
 
 void DevToolsWindow::ActivateWindow() {
@@ -846,11 +897,23 @@ void DevToolsWindow::ActivateWindow() {
     browser_->window()->Activate();
 }
 
+void DevToolsWindow::ActivateContents(content::WebContents* contents) {
+  if (IsDocked()) {
+    content::WebContents* inspected_tab = this->GetInspectedWebContents();
+    inspected_tab->GetDelegate()->ActivateContents(inspected_tab);
+  } else {
+    browser_->window()->Activate();
+  }
+}
+
 void DevToolsWindow::CloseWindow() {
   DCHECK(IsDocked());
-  content::DevToolsManager::GetInstance()->ClientHostClosing(
-      frontend_host_.get());
-  Hide();
+  web_contents_->GetRenderViewHost()->FirePageBeforeUnload(false);
+}
+
+void DevToolsWindow::SetWindowBounds(int x, int y, int width, int height) {
+  if (!IsDocked())
+    browser_->window()->SetBounds(gfx::Rect(x, y, width, height));
 }
 
 void DevToolsWindow::MoveWindow(int x, int y) {
@@ -1189,26 +1252,6 @@ void DevToolsWindow::UpdateFrontendDockSide() {
   base::FundamentalValue docked(IsDocked());
   CallClientFunction("InspectorFrontendAPI.setAttachedWindow", &docked, NULL,
                      NULL);
-}
-
-void DevToolsWindow::Hide() {
-  if (IsDocked()) {
-    // Update dev tools to reflect removed dev tools window.
-    BrowserWindow* inspected_window = GetInspectedBrowserWindow();
-    if (inspected_window)
-      inspected_window->UpdateDevTools();
-    // In case of docked web_contents_, we own it so delete here.
-    delete web_contents_;
-
-    delete this;
-  } else {
-    // First, initiate self-destruct to free all the registrars.
-    // Then close all tabs. Browser will take care of deleting web_contents_
-    // for us.
-    Browser* browser = browser_;
-    delete this;
-    browser->tab_strip_model()->CloseAllTabs();
-  }
 }
 
 void DevToolsWindow::ScheduleAction(DevToolsToggleAction action) {

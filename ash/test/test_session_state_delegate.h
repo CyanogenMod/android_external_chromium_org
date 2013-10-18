@@ -27,6 +27,7 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   virtual bool IsActiveUserSessionStarted() const OVERRIDE;
   virtual bool CanLockScreen() const OVERRIDE;
   virtual bool IsScreenLocked() const OVERRIDE;
+  virtual bool ShouldLockScreenBeforeSuspending() const OVERRIDE;
   virtual void LockScreen() OVERRIDE;
   virtual void UnlockScreen() OVERRIDE;
   virtual bool IsUserSessionBlocked() const OVERRIDE;
@@ -43,6 +44,9 @@ class TestSessionStateDelegate : public SessionStateDelegate {
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual void RemoveSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
+  virtual bool TransferWindowToDesktopOfUser(
+      aura::Window* window,
+      ash::MultiProfileIndex index) const OVERRIDE;
 
   // TODO(oshima): Use state machine instead of using boolean variables.
 

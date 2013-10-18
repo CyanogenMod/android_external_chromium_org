@@ -58,6 +58,8 @@ const char ExternalProviderImpl::kSupportedLocales[] = "supported_locales";
 const char ExternalProviderImpl::kIsBookmarkApp[] = "is_bookmark_app";
 const char ExternalProviderImpl::kIsFromWebstore[] = "is_from_webstore";
 const char ExternalProviderImpl::kKeepIfPresent[] = "keep_if_present";
+const char ExternalProviderImpl::kRequirePermissionsConsent[] =
+    "require_permissions_consent";
 
 ExternalProviderImpl::ExternalProviderImpl(VisitorInterface* service,
                                            ExternalLoader* loader,
@@ -214,6 +216,12 @@ void ExternalProviderImpl::SetPrefs(base::DictionaryValue* prefs) {
         continue;
       }
     }
+    bool require_permissions_consent;
+    if (extension->GetBoolean(kRequirePermissionsConsent,
+                              &require_permissions_consent) &&
+        require_permissions_consent) {
+      creation_flags |= Extension::REQUIRE_PERMISSIONS_CONSENT;
+    }
 
     if (has_external_crx) {
       if (crx_location_ == Manifest::INVALID_LOCATION) {
@@ -267,7 +275,8 @@ void ExternalProviderImpl::SetPrefs(base::DictionaryValue* prefs) {
         continue;
       }
       service_->OnExternalExtensionUpdateUrlFound(
-          extension_id, update_url, download_location_);
+          extension_id, update_url, download_location_, creation_flags,
+          auto_acknowledge_);
     }
   }
 
@@ -490,7 +499,7 @@ void ExternalProviderImpl::CreateExternalProviders(
             new ExternalComponentLoader(),
             profile,
             Manifest::INVALID_LOCATION,
-            Manifest::EXTERNAL_POLICY_DOWNLOAD,
+            Manifest::EXTERNAL_COMPONENT,
             Extension::FROM_WEBSTORE | Extension::WAS_INSTALLED_BY_DEFAULT)));
   }
 }

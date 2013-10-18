@@ -15,6 +15,9 @@
         'chrome_resources.gyp:chrome_strings',
         '../components/components.gyp:autofill_content_renderer',
         '../components/components.gyp:startup_metric_utils',
+        '../components/components.gyp:plugins_renderer',
+        '../components/components.gyp:translate_common',
+        '../components/components.gyp:translate_language_detection',
         '../components/components.gyp:visitedlink_renderer',
         '../content/content.gyp:content_renderer',
         '../net/net.gyp:net',
@@ -105,6 +108,8 @@
         'renderer/extensions/file_system_natives.h',
         'renderer/extensions/i18n_custom_bindings.cc',
         'renderer/extensions/i18n_custom_bindings.h',
+        'renderer/extensions/id_generator_custom_bindings.cc',
+        'renderer/extensions/id_generator_custom_bindings.h',
         'renderer/extensions/logging_native_handler.cc',
         'renderer/extensions/logging_native_handler.h',
         'renderer/extensions/media_galleries_custom_bindings.cc',
@@ -144,8 +149,6 @@
         'renderer/extensions/tab_finder.h',
         'renderer/extensions/tabs_custom_bindings.cc',
         'renderer/extensions/tabs_custom_bindings.h',
-        'renderer/extensions/tts_custom_bindings.cc',
-        'renderer/extensions/tts_custom_bindings.h',
         'renderer/extensions/unsafe_persistent.h',
         'renderer/extensions/user_script_scheduler.cc',
         'renderer/extensions/user_script_scheduler.h',
@@ -153,12 +156,8 @@
         'renderer/extensions/user_script_slave.h',
         'renderer/extensions/v8_schema_registry.cc',
         'renderer/extensions/v8_schema_registry.h',
-        'renderer/extensions/web_request_custom_bindings.cc',
-        'renderer/extensions/web_request_custom_bindings.h',
         'renderer/extensions/webstore_bindings.cc',
         'renderer/extensions/webstore_bindings.h',
-        'renderer/extensions/webview_custom_bindings.cc',
-        'renderer/extensions/webview_custom_bindings.h',
         'renderer/frame_sniffer.cc',
         'renderer/frame_sniffer.h',
         'renderer/isolated_world_ids.h',
@@ -191,7 +190,6 @@
         'renderer/resources/extensions/chrome_direct_setting.js',
         'renderer/resources/extensions/chrome_setting.js',
         'renderer/resources/extensions/content_setting.js',
-        'renderer/resources/extensions/content_watcher.js',
         'renderer/resources/extensions/context_menus_custom_bindings.js',
         'renderer/resources/extensions/declarative_content_custom_bindings.js',
         'renderer/resources/extensions/declarative_webrequest_custom_bindings.js',
@@ -268,12 +266,10 @@
         'renderer/pepper/ppb_nacl_private_impl.h',
         'renderer/pepper/ppb_pdf_impl.cc',
         'renderer/pepper/ppb_pdf_impl.h',
-        'renderer/plugins/plugin_placeholder.cc',
-        'renderer/plugins/plugin_placeholder.h',
+        'renderer/plugins/chrome_plugin_placeholder.cc',
+        'renderer/plugins/chrome_plugin_placeholder.h',
         'renderer/plugins/plugin_uma.cc',
         'renderer/plugins/plugin_uma.h',
-        'renderer/plugins/webview_plugin.cc',
-        'renderer/plugins/webview_plugin.h',
         'renderer/prerender/prerender_dispatcher.cc',
         'renderer/prerender/prerender_dispatcher.h',
         'renderer/prerender/prerender_extra_data.cc',
@@ -310,6 +306,8 @@
         'renderer/safe_browsing/phishing_url_feature_extractor.h',
         'renderer/safe_browsing/scorer.cc',
         'renderer/safe_browsing/scorer.h',
+        'renderer/searchbox/search_bouncer.cc',
+        'renderer/searchbox/search_bouncer.h',
         'renderer/searchbox/searchbox.cc',
         'renderer/searchbox/searchbox.h',
         'renderer/searchbox/searchbox_extension.cc',
@@ -391,6 +389,11 @@
             '../third_party/hunspell/hunspell.gyp:hunspell',
           ],
         }],
+        ['chromeos==1', {
+          'sources': [
+            'renderer/resources/extensions/wallpaper_custom_bindings.js',
+          ],
+        }],
         ['OS=="mac"', {
           'dependencies': [
             '../third_party/mach_override/mach_override.gyp:mach_override',
@@ -407,11 +410,11 @@
             ['exclude', '^renderer/automation/']
           ]
         }],
-	['enable_printing==0', {
+        ['enable_printing==0', {
           'sources/': [
             ['exclude', '^renderer/printing/']
           ]
-	}],
+        }],
         ['OS=="android"', {
           'sources!': [
             'renderer/prerender/prerender_media_load_deferrer.cc',
@@ -428,9 +431,6 @@
             'renderer/extensions/send_request_natives.cc',
             'renderer/extensions/tabs_custom_bindings.cc',
             'renderer/extensions/tts_custom_bindings.cc',
-          ],
-          'defines': [
-            'ENABLE_MOBILE_YOUTUBE_PLUGIN',
           ],
           'conditions' : [
             ['google_tv==1', {

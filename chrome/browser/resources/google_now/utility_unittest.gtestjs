@@ -46,25 +46,24 @@ TEST_F('GoogleNowUtilityUnitTest', 'SendErrorReport1', function() {
 
   var mockRequest = {send: this.mockLocalFunctions.functions().sendRequest};
 
-  var expectedRequestParameters = 'error=TEST%20ERROR%20NAME%3A%20' +
-      'TEST%20ERROR%20MESSAGE&' +
-      'script=%2F%2Fext_id%2Futility.js&' +
-      'line=29&' +
-      'trace=Error%3A%20TEST%20ERROR%20MESSAGE%0A%20%20%20%20' +
-      'at%20buildErrorWithMessageForServer%20' +
-      '(chrome-extension%3A%2F%2Fext_id%2Futility.js%3A29%3A15)%0A' +
-      '%20%20%20%20at%20%3Canonymous%3E%3A2%3A16%0A%20%20%20%20' +
-      'at%20Object.InjectedScript._evaluateOn%20(%3Canonymous%3E%3A580%3A39)' +
-      '%0A%20%20%20%20' +
-      'at%20Object.InjectedScript._evaluateAndWrap%20(%3Canonymous%3E%3A539' +
-      '%3A52)%0A%20%20%20%20' +
-      'at%20Object.InjectedScript.evaluate%20(%3Canonymous%3E%3A458%3A21)';
+  var expectedRequestObject = {
+    message: 'TEST ERROR NAME: TEST ERROR MESSAGE',
+    file: '//ext_id/utility.js',
+    line: '29',
+    trace: 'Error: TEST ERROR MESSAGE\n    ' +
+           'at buildErrorWithMessageForServer (chrome-extension://ext_id/util' +
+           'ity.js:29:15)\n    ' +
+           'at <anonymous>:2:16\n    ' +
+           'at Object.InjectedScript._evaluateOn (<anonymous>:580:39)\n    ' +
+           'at Object.InjectedScript._evaluateAndWrap (<anonymous>:539:52)\n' +
+           '    at Object.InjectedScript.evaluate (<anonymous>:458:21)'
+  };
 
   this.mockGlobals.expects(once()).
-      buildServerRequest('jserror', 'application/x-www-form-urlencoded').
+      buildServerRequest('POST', 'jserrors', 'application/json').
       will(returnValue(mockRequest));
   this.mockLocalFunctions.expects(once()).sendRequest(
-      expectedRequestParameters);
+      JSON.stringify(expectedRequestObject));
 
   // Invoking the tested function.
   sendErrorReport(testError);
@@ -90,19 +89,20 @@ TEST_F('GoogleNowUtilityUnitTest', 'SendErrorReport2', function() {
 
   var mockRequest = {send: this.mockLocalFunctions.functions().sendRequest};
 
-  var expectedRequestParameters = 'error=TypeError&' +
-      'script=%2F%2Fext_id%2Fbackground.js&' +
-      'line=444&' +
-      'trace=(message%20removed)%0A%20%20%20%20' +
-      'at%20chrome-extension%3A%2F%2Fext_id%2Fbackground.js%3A444%3A11' +
-      '%0A%20%20%20%20' +
-      'at%20chrome-extension%3A%2F%2Fext_id%2Futility.js%3A509%3A7';
+  var expectedRequestObject = {
+    message: 'TypeError',
+    file: '//ext_id/background.js',
+    line: '444',
+    trace: '(message removed)\n    ' +
+           'at chrome-extension://ext_id/background.js:444:11\n    ' +
+           'at chrome-extension://ext_id/utility.js:509:7'
+  };
 
   this.mockGlobals.expects(once()).
-      buildServerRequest('jserror', 'application/x-www-form-urlencoded').
+      buildServerRequest('POST', 'jserrors', 'application/json').
       will(returnValue(mockRequest));
   this.mockLocalFunctions.expects(once()).sendRequest(
-      expectedRequestParameters);
+      JSON.stringify(expectedRequestObject));
 
   // Invoking the tested function.
   sendErrorReport(testError);
@@ -471,14 +471,14 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManager2Sequential', function() {
 
   // Step 1. Add 1st task that doesn't create pending callbacks.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task1();
   // Invocation.
   test.tasks.add(taskNameA, this.mockLocalFunctions.functions().task1);
   Mock4JS.verifyAllMocks();
 
   // Step 2. Add 2nd task.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task2(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task2();
   // Invocation.
   test.tasks.add(taskNameB, this.mockLocalFunctions.functions().task2);
 });
@@ -493,7 +493,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerConflicting', function() {
 
   // Step 1. Add 1st task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance = test.pluginFactory();
       }));
@@ -524,7 +524,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerNestedTaskEnqueue', function() {
 
   // Step 1. Add 1st task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance = test.pluginFactory();
       }));
@@ -543,7 +543,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerNestedTaskEnqueue', function() {
 
   // Step 4. Leave the callback of task1.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task2(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task2();
   // Invocation.
   task1PluginInstance.epilogue();
 });
@@ -559,7 +559,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerBranching', function() {
 
   // Step 1. Add 1st task that creates a 2 pending callbacks.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance1 = test.pluginFactory();
         task1PluginInstance2 = test.pluginFactory();
@@ -586,7 +586,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerBranching', function() {
   // Step 4. Leave 3rd callback of task1. Now task1 is complete, and task2
   // should start.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task2(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task2();
   // Invocation.
   task1PluginInstance3.epilogue();
 });
@@ -601,7 +601,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerSuspendError', function() {
 
   // Step 1. Add a task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         test.pluginFactory();
       }));
@@ -631,7 +631,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerSuspendSuccess', function() {
 
   // Step 1. Add a task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance = test.pluginFactory();
       }));
@@ -658,7 +658,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManager3Tasks', function() {
 
   // Step 1. Add 1st task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance = test.pluginFactory();
       }));
@@ -678,8 +678,8 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManager3Tasks', function() {
 
   // Step 4. Leave the callback of task1.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task2(ANYTHING);
-  this.mockLocalFunctions.expects(once()).task3(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task2();
+  this.mockLocalFunctions.expects(once()).task3();
   // Invocation.
   task1PluginInstance.epilogue();
 });
@@ -694,7 +694,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerNestedNonTask', function() {
 
   // Step 1. Add 1st task that creates a pending callback.
   // Expectations.
-  this.mockLocalFunctions.expects(once()).task1(ANYTHING).
+  this.mockLocalFunctions.expects(once()).task1().
       will(callFunction(function() {
         task1PluginInstance = test.pluginFactory();
       }));
@@ -714,7 +714,7 @@ TEST_F('GoogleNowUtilityUnitTest', 'TaskManagerNestedNonTask', function() {
 
   // Step 4. Check that task1 is finished by submitting task2, which should
   // be executed immediately.
-  this.mockLocalFunctions.expects(once()).task2(ANYTHING);
+  this.mockLocalFunctions.expects(once()).task2();
   test.tasks.add(taskNameC, this.mockLocalFunctions.functions().task2);
 });
 

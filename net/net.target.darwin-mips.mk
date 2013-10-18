@@ -81,6 +81,7 @@ LOCAL_SRC_FILES := \
 	net/base/platform_mime_util_linux.cc \
 	net/base/prioritized_dispatcher.cc \
 	net/base/registry_controlled_domains/registry_controlled_domain.cc \
+	net/base/request_priority.cc \
 	net/base/sdch_filter.cc \
 	net/base/sdch_manager.cc \
 	net/base/static_cookie_policy.cc \
@@ -450,6 +451,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/view_cache_helper.cc \
 	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
+	net/websockets/websocket_deflate_stream.cc \
 	net/websockets/websocket_deflater.cc \
 	net/websockets/websocket_errors.cc \
 	net/websockets/websocket_extension.cc \
@@ -458,6 +460,7 @@ LOCAL_SRC_FILES := \
 	net/websockets/websocket_frame_parser.cc \
 	net/websockets/websocket_handshake_constants.cc \
 	net/websockets/websocket_handshake_handler.cc \
+	net/websockets/websocket_inflater.cc \
 	net/websockets/websocket_job.cc \
 	net/websockets/websocket_net_log_params.cc \
 	net/websockets/websocket_stream.cc \
@@ -507,7 +510,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -600,7 +602,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

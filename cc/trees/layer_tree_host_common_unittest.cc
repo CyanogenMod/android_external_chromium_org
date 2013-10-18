@@ -186,22 +186,7 @@ class LayerWithForcedDrawsContent : public Layer {
   virtual ~LayerWithForcedDrawsContent() {}
 };
 
-class LayerCanClipSelf : public Layer {
- public:
-  LayerCanClipSelf() : Layer() {}
-
-  virtual bool DrawsContent() const OVERRIDE;
-  virtual bool CanClipSelf() const OVERRIDE;
-
- private:
-  virtual ~LayerCanClipSelf() {}
-};
-
 bool LayerWithForcedDrawsContent::DrawsContent() const { return true; }
-
-bool LayerCanClipSelf::DrawsContent() const { return true; }
-
-bool LayerCanClipSelf::CanClipSelf() const { return true; }
 
 class MockContentLayerClient : public ContentLayerClient {
  public:
@@ -848,147 +833,6 @@ TEST_F(LayerTreeHostCommonTest, SublayerTransformWithAnchorPoint) {
   expected_child_draw_transform.Translate(-20.0, -80.0);
   EXPECT_TRANSFORMATION_MATRIX_EQ(expected_child_draw_transform,
                                   child->draw_transform());
-}
-
-TEST_F(LayerTreeHostCommonTest, SeparateRenderTargetRequirementWithClipping) {
-  scoped_refptr<Layer> root = Layer::Create();
-  scoped_refptr<Layer> parent = Layer::Create();
-  scoped_refptr<Layer> child = Layer::Create();
-  scoped_refptr<Layer> grand_child = make_scoped_refptr(new LayerCanClipSelf());
-  root->AddChild(parent);
-  parent->AddChild(child);
-  child->AddChild(grand_child);
-  parent->SetMasksToBounds(true);
-  child->SetMasksToBounds(true);
-
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
-  host->SetRootLayer(root);
-
-  gfx::Transform identity_matrix;
-  gfx::Transform parent_layer_transform;
-  gfx::Transform parent_sublayer_matrix;
-  gfx::Transform child_layer_matrix;
-
-  // No render surface should exist yet.
-  EXPECT_FALSE(root->render_surface());
-  EXPECT_FALSE(parent->render_surface());
-  EXPECT_FALSE(child->render_surface());
-  EXPECT_FALSE(grand_child->render_surface());
-
-  // One-time setup of root layer
-  parent_layer_transform.Scale3d(1.f, 0.9f, 1.f);
-  parent_sublayer_matrix.Scale3d(0.9f, 1.f, 3.3f);
-  child_layer_matrix.Rotate(20.0);
-
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(1, 2),
-                               false);
-  SetLayerPropertiesForTesting(parent.get(),
-                               parent_layer_transform,
-                               parent_sublayer_matrix,
-                               gfx::PointF(0.25f, 0.25f),
-                               gfx::PointF(),
-                               gfx::Size(100, 120),
-                               false);
-  SetLayerPropertiesForTesting(child.get(),
-                               child_layer_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(16, 18),
-                               false);
-  SetLayerPropertiesForTesting(grand_child.get(),
-                               identity_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(8, 10),
-                               false);
-
-  ExecuteCalculateDrawProperties(root.get());
-
-  // Render surfaces should have been created according to clipping rules now
-  // (grandchild can clip self).
-  EXPECT_TRUE(root->render_surface());
-  EXPECT_FALSE(parent->render_surface());
-  EXPECT_FALSE(child->render_surface());
-  EXPECT_FALSE(grand_child->render_surface());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-       SeparateRenderTargetRequirementWithoutClipping) {
-  scoped_refptr<Layer> root = Layer::Create();
-  scoped_refptr<Layer> parent = Layer::Create();
-  scoped_refptr<Layer> child = Layer::Create();
-  // This layer cannot clip itself, a feature we are testing here.
-  scoped_refptr<Layer> grand_child =
-      make_scoped_refptr(new LayerWithForcedDrawsContent());
-  root->AddChild(parent);
-  parent->AddChild(child);
-  child->AddChild(grand_child);
-  parent->SetMasksToBounds(true);
-  child->SetMasksToBounds(true);
-
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
-  host->SetRootLayer(root);
-
-  gfx::Transform identity_matrix;
-  gfx::Transform parent_layer_transform;
-  gfx::Transform parent_sublayer_matrix;
-  gfx::Transform child_layer_matrix;
-
-  // No render surface should exist yet.
-  EXPECT_FALSE(root->render_surface());
-  EXPECT_FALSE(parent->render_surface());
-  EXPECT_FALSE(child->render_surface());
-  EXPECT_FALSE(grand_child->render_surface());
-
-  // One-time setup of root layer
-  parent_layer_transform.Scale3d(1.f, 0.9f, 1.f);
-  parent_sublayer_matrix.Scale3d(0.9f, 1.f, 3.3f);
-  child_layer_matrix.Rotate(20.0);
-
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(1, 2),
-                               false);
-  SetLayerPropertiesForTesting(parent.get(),
-                               parent_layer_transform,
-                               parent_sublayer_matrix,
-                               gfx::PointF(0.25f, 0.25f),
-                               gfx::PointF(),
-                               gfx::Size(100, 120),
-                               false);
-  SetLayerPropertiesForTesting(child.get(),
-                               child_layer_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(16, 18),
-                               false);
-  SetLayerPropertiesForTesting(grand_child.get(),
-                               identity_matrix,
-                               identity_matrix,
-                               gfx::PointF(),
-                               gfx::PointF(),
-                               gfx::Size(8, 10),
-                               false);
-
-  ExecuteCalculateDrawProperties(root.get());
-
-  // Render surfaces should have been created according to clipping rules now
-  // (grandchild can't clip self).
-  EXPECT_TRUE(root->render_surface());
-  EXPECT_FALSE(parent->render_surface());
-  EXPECT_TRUE(child->render_surface());
-  EXPECT_FALSE(grand_child->render_surface());
 }
 
 TEST_F(LayerTreeHostCommonTest, TransformsForReplica) {
@@ -5454,6 +5298,121 @@ TEST_F(LayerTreeHostCommonTest, HitTestingForMultipleLayerLists) {
   EXPECT_EQ(4, result_layer->id());
 }
 
+TEST_F(LayerTreeHostCommonTest, HitTestingForEmptyLayers) {
+  FakeImplProxy proxy;
+  FakeLayerTreeHostImpl host_impl(&proxy);
+
+  // Layer 1 - root
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl.active_tree(), 1);
+  gfx::Transform identity_matrix;
+  gfx::PointF anchor;
+  gfx::PointF position;
+  gfx::Size bounds(100, 100);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               identity_matrix,
+                               anchor,
+                               position,
+                               bounds,
+                               false);
+  root->SetDrawsContent(true);
+
+  {
+    // Layer 2 - empty: drawsContent=false
+    gfx::PointF position(10.f, 10.f);
+    gfx::Size bounds(30, 30);
+    scoped_ptr<LayerImpl> empty_layer =
+        LayerImpl::Create(host_impl.active_tree(), 2);
+    SetLayerPropertiesForTesting(empty_layer.get(),
+                                 identity_matrix,
+                                 identity_matrix,
+                                 anchor,
+                                 position,
+                                 bounds,
+                                 false);
+
+    empty_layer->SetDrawsContent(false);
+    root->AddChild(empty_layer.Pass());
+  }
+
+  {
+    // Layer 3 - empty, but has touch handler
+    gfx::PointF position(10.f, 60.f);
+    gfx::Size bounds(30, 30);
+    scoped_ptr<LayerImpl> test_layer =
+        LayerImpl::Create(host_impl.active_tree(), 3);
+    SetLayerPropertiesForTesting(test_layer.get(),
+                                 identity_matrix,
+                                 identity_matrix,
+                                 anchor,
+                                 position,
+                                 bounds,
+                                 false);
+
+    test_layer->SetDrawsContent(false);
+    Region touch_handler_region(gfx::Rect(10, 10, 10, 10));
+    test_layer->SetTouchEventHandlerRegion(touch_handler_region);
+    root->AddChild(test_layer.Pass());
+  }
+
+  {
+    // Layer 4 - empty, but has mousewheel handler
+    gfx::PointF position(60.f, 60.f);
+    gfx::Size bounds(30, 30);
+    scoped_ptr<LayerImpl> test_layer =
+        LayerImpl::Create(host_impl.active_tree(), 4);
+    SetLayerPropertiesForTesting(test_layer.get(),
+                                 identity_matrix,
+                                 identity_matrix,
+                                 anchor,
+                                 position,
+                                 bounds,
+                                 false);
+
+    test_layer->SetDrawsContent(false);
+    test_layer->SetHaveWheelEventHandlers(true);
+    root->AddChild(test_layer.Pass());
+  }
+
+  LayerImplList render_surface_layer_list;
+  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+      root.get(), root->bounds(), &render_surface_layer_list);
+  inputs.can_adjust_raster_scales = true;
+  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+  // Verify that the root layer and empty layers with touch/wheel handlers
+  // (but not the empty layer without a touch handler) are in the RSSL.
+  ASSERT_EQ(1u, render_surface_layer_list.size());
+  EXPECT_EQ(1, render_surface_layer_list[0]->id());
+  ASSERT_EQ(3u, root->render_surface()->layer_list().size());
+  EXPECT_EQ(1, root->render_surface()->layer_list().at(0)->id());
+  EXPECT_EQ(3, root->render_surface()->layer_list().at(1)->id());
+  EXPECT_EQ(4, root->render_surface()->layer_list().at(2)->id());
+
+  // Hit testing for a point inside the empty no-handlers layer should return
+  // the root layer.
+  gfx::Point test_point = gfx::Point(15, 15);
+  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
+      test_point, render_surface_layer_list);
+  ASSERT_TRUE(result_layer);
+  EXPECT_EQ(1, result_layer->id());
+
+  // Hit testing for a point inside the touch handler layer should return it.
+  test_point = gfx::Point(15, 75);
+  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
+          test_point, render_surface_layer_list);
+  ASSERT_TRUE(result_layer);
+  EXPECT_EQ(3, result_layer->id());
+
+  // Hit testing for a point inside the mousewheel layer should return it.
+  test_point = gfx::Point(75, 75);
+  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
+          test_point, render_surface_layer_list);
+  ASSERT_TRUE(result_layer);
+  EXPECT_EQ(4, result_layer->id());
+}
+
 TEST_F(LayerTreeHostCommonTest,
        HitCheckingTouchHandlerRegionsForEmptyLayerList) {
   // Hit checking on an empty render_surface_layer_list should return a null
@@ -8881,6 +8840,84 @@ TEST_F(LayerTreeHostCommonTest,
   // Sanity check our num_unclipped_descendants values.
   EXPECT_EQ(1, render_surface1->num_unclipped_descendants());
   EXPECT_EQ(0, render_surface2->num_unclipped_descendants());
+}
+
+TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
+  FakeImplProxy proxy;
+  FakeLayerTreeHostImpl host_impl(&proxy);
+  scoped_ptr<LayerImpl> root =
+      LayerImpl::Create(host_impl.active_tree(), 12345);
+  scoped_ptr<LayerImpl> child1 =
+      LayerImpl::Create(host_impl.active_tree(), 123456);
+  scoped_ptr<LayerImpl> child2 =
+      LayerImpl::Create(host_impl.active_tree(), 1234567);
+  scoped_ptr<LayerImpl> child3 =
+      LayerImpl::Create(host_impl.active_tree(), 12345678);
+
+  gfx::Transform identity_matrix;
+  gfx::PointF anchor;
+  gfx::PointF position;
+  gfx::Size bounds(100, 100);
+  SetLayerPropertiesForTesting(root.get(),
+                               identity_matrix,
+                               identity_matrix,
+                               anchor,
+                               position,
+                               bounds,
+                               false);
+  root->SetDrawsContent(true);
+
+  // This layer structure normally forces render surface due to preserves3d
+  // behavior.
+  bool preserves3d = true;
+  SetLayerPropertiesForTesting(child1.get(),
+                               identity_matrix,
+                               identity_matrix,
+                               anchor,
+                               position,
+                               bounds,
+                               preserves3d);
+  child1->SetDrawsContent(true);
+  SetLayerPropertiesForTesting(child2.get(),
+                               identity_matrix,
+                               identity_matrix,
+                               anchor,
+                               position,
+                               bounds,
+                               false);
+  child2->SetDrawsContent(true);
+  SetLayerPropertiesForTesting(child3.get(),
+                               identity_matrix,
+                               identity_matrix,
+                               anchor,
+                               position,
+                               bounds,
+                               false);
+  child3->SetDrawsContent(true);
+
+  child2->AddChild(child3.Pass());
+  child1->AddChild(child2.Pass());
+  root->AddChild(child1.Pass());
+
+  {
+    LayerImplList render_surface_layer_list;
+    LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+        root.get(), root->bounds(), &render_surface_layer_list);
+    inputs.can_render_to_separate_surface = true;
+    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+    EXPECT_EQ(2u, render_surface_layer_list.size());
+  }
+
+  {
+    LayerImplList render_surface_layer_list;
+    LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+        root.get(), root->bounds(), &render_surface_layer_list);
+    inputs.can_render_to_separate_surface = false;
+    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+    EXPECT_EQ(1u, render_surface_layer_list.size());
+  }
 }
 
 TEST_F(LayerTreeHostCommonTest, DoNotIncludeBackfaceInvisibleSurfaces) {

@@ -179,9 +179,11 @@ class _JSCModel(object):
       return {}
     as_dict = {
       'name': self._namespace.name,
+      'documentationOptions': self._namespace.documentation_options,
       'types': self._GenerateTypes(self._namespace.types.values()),
       'functions': self._GenerateFunctions(self._namespace.functions),
       'events': self._GenerateEvents(self._namespace.events),
+      'domEvents': self._GenerateDomEvents(self._namespace.events),
       'properties': self._GenerateProperties(self._namespace.properties),
       'introList': self._GetIntroTableList(),
       'channelWarning': self._GetChannelWarning(),
@@ -197,7 +199,7 @@ class _JSCModel(object):
 
   def _GetApiAvailability(self):
     # Check for a predetermined availability for this API.
-    api_info = self._api_availabilities.get(self._namespace.name)
+    api_info = self._api_availabilities.Get().get(self._namespace.name)
     if api_info is not None:
       channel = api_info['channel']
       if channel == 'stable':
@@ -256,7 +258,12 @@ class _JSCModel(object):
     return function_dict
 
   def _GenerateEvents(self, events):
-    return [self._GenerateEvent(e) for e in events.values()]
+    return [self._GenerateEvent(e) for e in events.values()
+            if not e.supports_dom]
+
+  def _GenerateDomEvents(self, events):
+    return [self._GenerateEvent(e) for e in events.values()
+            if e.supports_dom]
 
   def _GenerateEvent(self, event):
     event_dict = {
@@ -268,6 +275,7 @@ class _JSCModel(object):
       'actions': [self._GetLink(action) for action in event.actions],
       'supportsRules': event.supports_rules,
       'supportsListeners': event.supports_listeners,
+      'properties': [],
       'id': _CreateId(event, 'event')
     }
     if (event.parent is not None and
@@ -295,6 +303,11 @@ class _JSCModel(object):
         'callback': self._GenerateFunction(callback_object),
         'parameters': [callback_parameters]
       }
+    if event.supports_dom:
+      # Treat params as properties of the custom Event object associated with
+      # this DOM Event.
+      event_dict['properties'] += [self._GenerateProperty(param)
+                                   for param in event.params]
     return event_dict
 
   def _GenerateCallback(self, callback):
@@ -451,7 +464,7 @@ class _JSCModel(object):
     # Devtools aren't in _api_features. If we're dealing with devtools, bail.
     if 'devtools' in self._namespace.name:
       return []
-    feature = self._api_features.get(self._namespace.name)
+    feature = self._api_features.Get().get(self._namespace.name)
     assert feature, ('"%s" not found in _api_features.json.'
                      % self._namespace.name)
 
@@ -473,7 +486,7 @@ class _JSCModel(object):
         manifest_content.append(make_code_node('"%s": {...}' % name))
       elif context == 'api':
         transitive_dependencies = (
-            self._api_features.get(name, {}).get('dependencies', []))
+            self._api_features.Get().get(name, {}).get('dependencies', []))
         for transitive_dependency in transitive_dependencies:
           categorize_dependency(transitive_dependency)
       else:
@@ -504,7 +517,7 @@ class _JSCModel(object):
     # Look up the API name in intro_tables.json, which is structured
     # similarly to the data structure being created. If the name is found, loop
     # through the attributes and add them to this structure.
-    table_info = self._intro_tables.get(self._namespace.name)
+    table_info = self._intro_tables.Get().get(self._namespace.name)
     if table_info is None:
       return misc_rows
 
@@ -540,11 +553,13 @@ class APIDataSource(object):
   class Factory(object):
     def __init__(self,
                  compiled_fs_factory,
+                 file_system,
                  base_path,
                  availability_finder,
                  branch_utility):
       def create_compiled_fs(fn, category):
-        return compiled_fs_factory.Create(fn, APIDataSource, category=category)
+        return compiled_fs_factory.Create(
+            file_system, fn, APIDataSource, category=category)
 
       self._json_cache = create_compiled_fs(
           lambda api_name, api: self._LoadJsonAPI(api, False),
@@ -622,8 +637,9 @@ class APIDataSource(object):
       description from Event in events.json.
       """
       if self._add_rules_schema is None:
-        self._add_rules_schema = _GetAddRulesDefinitionFromEvents(
-            self._json_cache.GetFromFile('%s/events.json' % self._base_path))
+        events_json = self._json_cache.GetFromFile(
+            '%s/events.json' % self._base_path).Get()
+        self._add_rules_schema = _GetAddRulesDefinitionFromEvents(events_json)
       return self._add_rules_schema
 
     def _LoadJsonAPI(self, api, disable_refs):
@@ -680,8 +696,10 @@ class APIDataSource(object):
     self._samples = samples
     self._disable_refs = disable_refs
 
-  def _GenerateHandlebarContext(self, handlebar_dict, path):
-    handlebar_dict['samples'] = _LazySamplesGetter(path, self._samples)
+  def _GenerateHandlebarContext(self, handlebar_dict):
+    handlebar_dict['samples'] = _LazySamplesGetter(
+        handlebar_dict['name'],
+        self._samples)
     return handlebar_dict
 
   def _GetAsSubdirectory(self, name):
@@ -699,8 +717,8 @@ class APIDataSource(object):
     else:
       path = key
     unix_name = model.UnixName(path)
-    idl_names = self._idl_names_cache.GetFromFileListing(self._base_path)
-    names = self._names_cache.GetFromFileListing(self._base_path)
+    idl_names = self._idl_names_cache.GetFromFileListing(self._base_path).Get()
+    names = self._names_cache.GetFromFileListing(self._base_path).Get()
     if unix_name not in names and self._GetAsSubdirectory(unix_name) in names:
       unix_name = self._GetAsSubdirectory(unix_name)
 
@@ -712,5 +730,4 @@ class APIDataSource(object):
       cache, ext = ((self._idl_cache, '.idl') if (unix_name in idl_names) else
                     (self._json_cache, '.json'))
     return self._GenerateHandlebarContext(
-        cache.GetFromFile('%s/%s%s' % (self._base_path, unix_name, ext)),
-        path)
+        cache.GetFromFile('%s/%s%s' % (self._base_path, unix_name, ext)).Get())

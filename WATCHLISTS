@@ -33,10 +33,6 @@
     'android_webview': {
       'filepath': 'android_webview/',
     },
-    'app_container': {
-      'filepath': '.*app_window.*' \
-                  '|.*app_current_window.*'
-    },
     'app_list': {
       'filepath': 'chrome/browser/ui/app_list'\
                   '|chrome/browser/ui/ash/app_list'\
@@ -581,6 +577,9 @@
                   'ui/views/view.cc|'\
                   'ui/views/widget/',
     },
+    'views_corewm': {
+      'filepath': 'ui/views/corewm/',
+    },
     'webkit': {
       'filepath': 'webkit/',
     },
@@ -588,7 +587,8 @@
       'filepath': 'chrome/browser/media/|'\
                   'content/browser/renderer_host/media/|'\
                   'content/renderer/media/|'\
-                  'media/video/capture/',
+                  'media/video/|'\
+                  'video.*_accelerat',
     },
     'website_settings': {
       'filepath': 'chrome/browser/content_settings/'\
@@ -631,20 +631,24 @@
                       'craigdh+watch@chromium.org',
                       'frankf+watch@chromium.org'],
     'android_webview': ['android-webview-reviews@chromium.org'],
-    'app_container': ['scheib+watch@chromium.org'],
     'app_list': ['tfarina@chromium.org', 'chrome-apps-syd-reviews@chromium.org'],
     'app_shortcuts': ['chrome-apps-syd-reviews@chromium.org'],
     'appcache': ['michaeln@chromium.org'],
     'apps': ['tfarina@chromium.org', 'chromium-apps-reviews@chromium.org'],
-    'aura': ['ben+watch@chromium.org', 'sadrul@chromium.org'],
+    'aura': ['ben+aura@chromium.org',
+             'sadrul@chromium.org',
+             'kalyan.kondapally@intel.com'],
     'aura_compositor': ['danakj+watch@chromium.org',
                         'jbauman+watch@chromium.org',
                         'piman+watch@chromium.org',
-                        'sievers+watch@chromium.org'],
-    'autofill': ['isherman@chromium.org',
-                 'dyu@chromium.org', 'abodenha@chromium.org',
-                 'estade+watch@chromium.org', 'dgwallinga@chromium.org',
-                 'benquan@chromium.org', 'rouslan+autofillwatch@chromium.org'],
+                        'sievers+watch@chromium.org',
+                        'kalyan.kondapally@intel.com'],
+    'autofill': ['benquan@chromium.org',
+                 'dgwallinga@chromium.org',
+                 'dyu@chromium.org',
+                 'estade+watch@chromium.org',
+                 'isherman@chromium.org',
+                 'rouslan+autofillwatch@chromium.org'],
     'automation': ['robertshield@chromium.org'],
     'base': ['erikwright+watch@chromium.org'],
     'base_allocator': ['dmikurube+memory@chromium.org'],
@@ -670,7 +674,6 @@
     'chromeos_attestation' : ['dkrahn+watch@chromium.org'],
     'chromeos_calculator' : ['dharcourt@chromium.org'],
     'chromeos_net' : ['gauravsh+watch@chromium.org',
-                      'gspencer+watch@chromium.org',
                       'stevenjb+watch@chromium.org'],
     'chromeos_power' : ['derat+watch@chromium.org'],
     'chromeos_webui': ['nkostylev+watch@chromium.org'],
@@ -699,7 +702,7 @@
     'drive_resource_metadata': ['hashimoto+watch@chromium.org'],
     'extension': ['chromium-apps-reviews@chromium.org',
                   'extensions-reviews@chromium.org'],
-    'fileapi': ['kinuko+watch@chromium.org', 'tzik+watch@chromium.org'],
+    'fileapi': ['kinuko+watch@chromium.org', 'tzik@chromium.org'],
     'filebrowse': ['rginda+watch@chromium.org'],
     'filesapp': ['mtomasz+watch@chromium.org'],
     'ftp': ['phajdan.jr@chromium.org'],
@@ -731,7 +734,10 @@
     'metrics': ['jar@chromium.org',
                 'isherman@chromium.org',
                 'asvitkine+watch@chromium.org'],
-    'mojo': ['aa@chromium.org'],
+    'mojo': ['aa@chromium.org',
+             'ben+mojo@chromium.org',
+             'darin@chromium.org',
+             'viettrungluu+watch@chromium.org'],
     'mouse_lock': ['scheib+watch@chromium.org'],
     'nacl': ['native-client-reviews@googlegroups.com'],
     'native_client_sdk': ['sbc@chromium.org', 'binji@chromium.org'],
@@ -743,7 +749,7 @@
             'pedrosimonetti+watch@chromium.org'],
     'omnibox': ['suzhe@chromium.org'],
     'options': ['dbeam+watch-options@chromium.org'],
-    'ozone': ['rjkroege@chromium.org'],
+    'ozone': ['rjkroege@chromium.org', 'kalyan.kondapally@intel.com'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
                'dcheng@chromium.org', 'jianli@chromium.org'],
     'pepper_api': ['piman+watch@chromium.org',
@@ -782,7 +788,7 @@
              'rsimha+watch@chromium.org',
              'tim+watch@chromium.org'],
     'syncfs': ['kinuko+watch@chromium.org',
-               'tzik+watch@chromium.org',
+               'tzik@chromium.org',
                'nhiroki+watch@chromium.org'],
     'sync_proto': ['albertb+watch@chromium.org'],
     'tab_capture': ['miu+watch@chromium.org'],
@@ -807,9 +813,11 @@
                  'glider+watch@chromium.org',
                  'timurrrr+watch@chromium.org'],
     'views': ['tfarina@chromium.org'],
-    'views_core': ['ben+watch@chromium.org'],
+    'views_core': ['ben+views@chromium.org'],
+    'views_corewm': ['ben+corewm@chromium.org'],
     'webkit': ['darin-cc@chromium.org'],
-    'webrtc_media': ['wjia+watch@chromium.org'],
+    'webrtc_media': ['fischman+watch@chromium.org',
+                     'wjia+watch@chromium.org'],
     'website_settings': ['markusheintz@chromium.org'],
     'worker': ['jam@chromium.org'],
     'x11': ['derat+watch@chromium.org',

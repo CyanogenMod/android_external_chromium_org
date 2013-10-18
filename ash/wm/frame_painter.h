@@ -6,7 +6,7 @@
 #define ASH_WM_FRAME_PAINTER_H_
 
 #include "ash/ash_export.h"
-#include "ash/wm/window_state.h"
+#include "ash/wm/window_state_observer.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"  // OVERRIDE
 #include "base/gtest_prod_util.h"
@@ -41,7 +41,7 @@ class FrameCaptionButtonContainerView;
 // layout constants for Ash window frames.
 class ASH_EXPORT FramePainter : public aura::WindowObserver,
                                 public gfx::AnimationDelegate,
-                                public wm::WindowState::Observer {
+                                public wm::WindowStateObserver {
  public:
   // Opacity values for the window header in various states, from 0 to 255.
   static int kActiveWindowOpacity;
@@ -133,9 +133,6 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   void OnThemeChanged();
 
   // aura::WindowObserver overrides:
-  virtual void OnWindowPropertyChanged(aura::Window* window,
-                                       const void* key,
-                                       intptr_t old) OVERRIDE;
   virtual void OnWindowVisibilityChanged(aura::Window* window,
                                          bool visible) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
@@ -145,9 +142,11 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE;
   virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE;
 
-  // ash::WindowSettings::Observer overrides:
-  virtual void OnTrackedByWorkspaceChanged(aura::Window* window,
+  // ash::WindowStateObserver overrides:
+  virtual void OnTrackedByWorkspaceChanged(wm::WindowState* window_state,
                                            bool old) OVERRIDE;
+  virtual void OnWindowShowTypeChanged(wm::WindowState* window_state,
+                                       wm::WindowShowType old_type) OVERRIDE;
 
   // Overridden from gfx::AnimationDelegate
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
@@ -183,9 +182,6 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // Returns the radius of the header's top corners.
   int GetHeaderCornerRadius() const;
 
-  // Adjust frame operations for left / right maximized modes.
-  int AdjustFrameHitCodeForMaximizedModes(int hit_code);
-
   // Returns true if |window_->GetRootWindow()| should be drawing transparent
   // window headers.
   bool UseSoloWindowHeader() const;
@@ -203,6 +199,10 @@ class ASH_EXPORT FramePainter : public aura::WindowObserver,
   // changes it schedules paints as necessary.
   static void UpdateSoloWindowInRoot(aura::RootWindow* root_window,
                                      aura::Window* ignore_window);
+
+  // Updates the size of the region inside of |window_| in which the resize
+  // handles are shown based on |window_|'s show type.
+  void UpdateHitTestBoundsOverrideInner();
 
   // Schedules a paint for the header. Used when transitioning from no header to
   // a header (or other way around).

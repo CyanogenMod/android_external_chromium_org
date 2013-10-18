@@ -3,39 +3,17 @@
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/chrome_scheme_hosts.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
-#include "grit/generated_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 const char kThumbsWhiteListedExtension[] = "khopmbdjffemhegeeobelklnbglcdgfh";
 }  // namespace
 
 namespace extensions {
-
-PermissionMessages GetChromeSchemePermissionWarnings(
-    const URLPatternSet& hosts) {
-  PermissionMessages messages;
-  for (URLPatternSet::const_iterator i = hosts.begin();
-       i != hosts.end(); ++i) {
-    if (i->scheme() != chrome::kChromeUIScheme)
-      continue;
-    // chrome://favicon is the only URL for chrome:// scheme that we
-    // want to support. We want to deprecate the "chrome" scheme.
-    // We should not add any additional "host" here.
-    if (GURL(chrome::kChromeUIFaviconURL).host() != i->host())
-      continue;
-    messages.push_back(PermissionMessage(
-        PermissionMessage::kFavicon,
-        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_FAVICON)));
-    break;
-  }
-  return messages;
-}
 
 URLPatternSet GetPermittedChromeSchemeHosts(
     const Extension* extension,

@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_H_
 #define CONTENT_RENDERER_GPU_RENDER_WIDGET_COMPOSITOR_H_
 
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "cc/debug/rendering_stats.h"
@@ -50,10 +51,16 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
                               bool animate);
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
+  // Like setNeedsRedraw but forces the frame to be drawn, without early-outs.
+  // Redraw will be forced after the next commit
+  void SetNeedsForcedRedraw();
   void SetLatencyInfo(const ui::LatencyInfo& latency_info);
   int GetLayerTreeId() const;
   void NotifyInputThrottledUntilCommit();
   const cc::Layer* GetRootLayer() const;
+  bool ScheduleMicroBenchmark(
+      const std::string& name,
+      const base::Callback<void(scoped_ptr<base::Value>)>& callback);
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -115,9 +122,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void DidCompleteSwapBuffers() OVERRIDE;
   virtual void ScheduleComposite() OVERRIDE;
   virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+      OffscreenContextProvider() OVERRIDE;
 
  private:
   RenderWidgetCompositor(RenderWidget* widget, bool threaded);

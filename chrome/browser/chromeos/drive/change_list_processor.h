@@ -60,16 +60,24 @@ class DirectoryFetchInfo {
 // Class to represent a change list.
 class ChangeList {
  public:
+  ChangeList();  // For tests.
   explicit ChangeList(const google_apis::ResourceList& resource_list);
   ~ChangeList();
 
   const std::vector<ResourceEntry>& entries() const { return entries_; }
   std::vector<ResourceEntry>* mutable_entries() { return &entries_; }
+  const std::vector<std::string>& parent_resource_ids() const {
+    return parent_resource_ids_;
+  }
+  std::vector<std::string>* mutable_parent_resource_ids() {
+    return &parent_resource_ids_;
+  }
   const GURL& next_url() const { return next_url_; }
   int64 largest_changestamp() const { return largest_changestamp_; }
 
  private:
   std::vector<ResourceEntry> entries_;
+  std::vector<std::string> parent_resource_ids_;
   GURL next_url_;
   int64 largest_changestamp_;
 
@@ -81,12 +89,6 @@ class ChangeList {
 // updates the resource metadata stored locally.
 class ChangeListProcessor {
  public:
-  typedef std::map<std::string /* resource_id */, ResourceEntry>
-      ResourceEntryMap;
-
-  // Class used to record UMA stats with ConvertToMap().
-  class ChangeListToEntryMapUMAStats;
-
   explicit ChangeListProcessor(ResourceMetadata* resource_metadata);
   ~ChangeListProcessor();
 
@@ -100,36 +102,33 @@ class ChangeListProcessor {
                   ScopedVector<ChangeList> change_lists,
                   bool is_delta_update);
 
-  // Converts change lists into a ResourceEntryMap.
-  // |uma_stats| may be NULL.
-  static void ConvertToMap(ScopedVector<ChangeList> change_lists,
-                           ResourceEntryMap* entry_map,
-                           ChangeListToEntryMapUMAStats* uma_stats);
-
   // The set of changed directories as a result of change list processing.
   const std::set<base::FilePath>& changed_dirs() const { return changed_dirs_; }
 
   // Updates the changestamp of a directory according to |directory_fetch_info|
-  // and adds or refreshes the child entries from |entry_map|.
+  // and adds or refreshes the child entries from |change_lists|.
   static FileError RefreshDirectory(
       ResourceMetadata* resource_metadata,
       const DirectoryFetchInfo& directory_fetch_info,
-      const ResourceEntryMap& entry_map,
+      ScopedVector<ChangeList> change_lists,
       base::FilePath* out_file_path);
 
  private:
+  typedef std::map<std::string /* resource_id */, ResourceEntry>
+      ResourceEntryMap;
+  typedef std::map<std::string /* resource_id */,
+                   std::string /* parent_resource_id*/> ParentResourceIdMap;
+
   // Applies the pre-processed metadata from entry_map_ onto the resource
   // metadata. If this is not delta update (i.e. |is_delta_update| is false),
   // |about_resource| must not be null.
   FileError ApplyEntryMap(
       bool is_delta_update,
+      int64 changestamp,
       scoped_ptr<google_apis::AboutResource> about_resource);
 
   // Apply |entry| to resource_metadata_.
   FileError ApplyEntry(const ResourceEntry& entry);
-
-  // Updates the root directory entry. changestamp will be updated.
-  FileError UpdateRootEntry(int64 largest_changestamp);
 
   // Adds the directories changed by the update on |entry| to |changed_dirs_|.
   void UpdateChangedDirs(const ResourceEntry& entry);
@@ -137,6 +136,7 @@ class ChangeListProcessor {
   ResourceMetadata* resource_metadata_;  // Not owned.
 
   ResourceEntryMap entry_map_;
+  ParentResourceIdMap parent_resource_id_map_;
   std::set<base::FilePath> changed_dirs_;
 
   DISALLOW_COPY_AND_ASSIGN(ChangeListProcessor);

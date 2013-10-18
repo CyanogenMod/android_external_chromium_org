@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
@@ -24,6 +23,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
 #include "base/time/time.h"
@@ -43,7 +43,6 @@
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util_chromeos.h"
@@ -58,16 +57,20 @@
 #include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/cryptohome/cryptohome_util.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -249,6 +252,10 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
   if (browser_shutdown::IsTryingToQuit())
     return;
 
+  User* user = UserManager::Get()->GetUserByProfile(profile);
+  if (user != NULL)
+    UserManager::Get()->RespectLocalePreference(profile, user);
+
   if (!UserManager::Get()->GetCurrentUserFlow()->ShouldLaunchBrowser()) {
     UserManager::Get()->GetCurrentUserFlow()->LaunchExtraSteps(profile);
     return;
@@ -294,6 +301,9 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
                                 first_run,
                                 &return_code);
 
+  // Triggers app launcher start page service to load start page web contents.
+  app_list::StartPageService::Get(profile);
+
   // Mark login host for deletion after browser starts.  This
   // guarantees that the message loop will be referenced by the
   // browser before it is dereferenced by the login host.
@@ -328,7 +338,7 @@ void LoginUtilsImpl::PrepareProfile(
   btl->AddLoginTimeMarker("UserLoggedIn-End", false);
 
   // Switch log file as soon as possible.
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     logging::RedirectChromeLogging(*(CommandLine::ForCurrentProcess()));
 
   // Update user's displayed email.
@@ -505,13 +515,13 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   // Own TPM device if, for any reason, it has not been done in EULA
   // wizard screen.
-  CryptohomeLibrary* cryptohome = CryptohomeLibrary::Get();
+  CryptohomeClient* client = DBusThreadManager::Get()->GetCryptohomeClient();
   btl->AddLoginTimeMarker("TPMOwn-Start", false);
-  if (cryptohome->TpmIsEnabled() && !cryptohome->TpmIsBeingOwned()) {
-    if (cryptohome->TpmIsOwned()) {
-      cryptohome->TpmClearStoredPassword();
+  if (cryptohome_util::TpmIsEnabled() && !cryptohome_util::TpmIsBeingOwned()) {
+    if (cryptohome_util::TpmIsOwned()) {
+      client->CallTpmClearStoredPasswordAndBlock();
     } else {
-      cryptohome->TpmCanAttemptOwnership();
+      client->TpmCanAttemptOwnership(EmptyVoidDBusMethodCallback());
     }
   }
   btl->AddLoginTimeMarker("TPMOwn-End", false);
@@ -525,8 +535,11 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
       content::NotificationService::AllSources(),
       content::Details<Profile>(user_profile));
 
-  InitRlzDelayed(user_profile);
-
+  // Initialize RLZ only for primary user.
+  if (UserManager::Get()->GetPrimaryUser() ==
+      UserManager::Get()->GetUserByProfile(user_profile)) {
+    InitRlzDelayed(user_profile);
+  }
   // TODO(altimofeev): This pointer should probably never be NULL, but it looks
   // like LoginUtilsImpl::OnProfileCreated() may be getting called before
   // LoginUtilsImpl::PrepareProfile() has set |delegate_| when Chrome is killed
@@ -720,6 +733,8 @@ void LoginUtilsImpl::OnSessionRestoreStateChanged(
   User::OAuthTokenStatus user_status = User::OAUTH_TOKEN_STATUS_UNKNOWN;
   OAuth2LoginManager* login_manager =
       OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+
+  bool connection_error = false;
   switch (state) {
     case OAuth2LoginManager::SESSION_RESTORE_DONE:
       user_status = User::OAUTH2_TOKEN_STATUS_VALID;
@@ -727,18 +742,23 @@ void LoginUtilsImpl::OnSessionRestoreStateChanged(
     case OAuth2LoginManager::SESSION_RESTORE_FAILED:
       user_status = User::OAUTH2_TOKEN_STATUS_INVALID;
       break;
+    case OAuth2LoginManager::SESSION_RESTORE_CONNECTION_FAILED:
+      connection_error = true;
+      break;
     case OAuth2LoginManager::SESSION_RESTORE_NOT_STARTED:
-      return;
     case OAuth2LoginManager::SESSION_RESTORE_PREPARING:
-      return;
     case OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS:
       return;
   }
 
-  // We are in one of "done" states here.
-  UserManager::Get()->SaveUserOAuthStatus(
-      UserManager::Get()->GetLoggedInUser()->email(),
-      user_status);
+  // We should not be clearing existing token state if that was a connection
+  // error. http://crbug.com/295245
+  if (!connection_error) {
+    // We are in one of "done" states here.
+    UserManager::Get()->SaveUserOAuthStatus(
+        UserManager::Get()->GetLoggedInUser()->email(),
+        user_status);
+  }
   login_manager->RemoveObserver(this);
 }
 

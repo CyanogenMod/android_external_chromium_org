@@ -18,7 +18,7 @@
 #include "ui/app_list/app_list_view_delegate.h"
 
 class AppListControllerDelegate;
-class AppsModelBuilder;
+class ExtensionAppModelBuilder;
 class Profile;
 
 namespace app_list {
@@ -63,8 +63,6 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
       const base::Callback<void(const base::FilePath&)>& callback) OVERRIDE;
-  virtual void ActivateAppListItem(app_list::AppListItemModel* item,
-                                   int event_flags) OVERRIDE;
   virtual void StartSearch() OVERRIDE;
   virtual void StopSearch() OVERRIDE;
   virtual void OpenSearchResult(app_list::SearchResult* result,
@@ -80,6 +78,7 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void OpenFeedback() OVERRIDE;
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE;
+  virtual content::WebContents* GetStartPageContents() OVERRIDE;
 
   // Overridden from content::NotificationObserver:
   virtual void Observe(int type,
@@ -94,7 +93,7 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
       const base::FilePath& profile_path,
       const base::string16& old_profile_name) OVERRIDE;
 
-  scoped_ptr<AppsModelBuilder> apps_builder_;
+  scoped_ptr<ExtensionAppModelBuilder> apps_builder_;
   scoped_ptr<app_list::SearchController> search_controller_;
   scoped_ptr<AppListControllerDelegate> controller_;
   Profile* profile_;

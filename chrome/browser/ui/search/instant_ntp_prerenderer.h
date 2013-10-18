@@ -125,8 +125,6 @@ class InstantNTPPrerenderer
   virtual void InstantPageAboutToNavigateMainFrame(
       const content::WebContents* contents,
       const GURL& url) OVERRIDE;
-  virtual void FocusOmnibox(const content::WebContents* contents,
-                            OmniboxFocusState state) OVERRIDE;
   virtual void NavigateToURL(const content::WebContents* contents,
                              const GURL& url,
                              content::PageTransition transition,
@@ -134,9 +132,6 @@ class InstantNTPPrerenderer
                              bool is_search_type) OVERRIDE;
   virtual void PasteIntoOmnibox(const content::WebContents* contents,
                                 const string16& text) OVERRIDE;
-  virtual void DeleteMostVisitedItem(const GURL& url) OVERRIDE;
-  virtual void UndoMostVisitedDeletion(const GURL& url) OVERRIDE;
-  virtual void UndoAllMostVisitedDeletions() OVERRIDE;
   virtual void InstantPageLoadFailed(content::WebContents* contents) OVERRIDE;
 
   // Overridden from InstantServiceObserver:

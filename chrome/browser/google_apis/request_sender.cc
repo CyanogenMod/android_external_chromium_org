@@ -8,6 +8,7 @@
 #include "base/stl_util.h"
 #include "chrome/browser/google_apis/auth_service.h"
 #include "chrome/browser/google_apis/base_requests.h"
+#include "net/url_request/url_request_context_getter.h"
 
 namespace google_apis {
 
@@ -21,7 +22,6 @@ RequestSender::RequestSender(
       blocking_task_runner_(blocking_task_runner),
       custom_user_agent_(custom_user_agent),
       weak_ptr_factory_(this) {
-  DCHECK(thread_checker_.CalledOnValidThread());
 }
 
 RequestSender::~RequestSender() {

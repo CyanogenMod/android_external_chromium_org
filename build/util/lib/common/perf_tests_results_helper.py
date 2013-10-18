@@ -25,12 +25,12 @@ def _EscapePerfResult(s):
   return re.sub('[\:|=/#&,]', '_', s)
 
 
-def _Flatten(values):
+def FlattenList(values):
   """Returns a simple list without sub-lists."""
   ret = []
   for entry in values:
     if isinstance(entry, list):
-      ret.extend(_Flatten(entry))
+      ret.extend(FlattenList(entry))
     else:
       ret.append(entry)
   return ret
@@ -92,10 +92,15 @@ def PrintPerfResult(measurement, trace, values, units,
 
   The string args may be empty but they must not contain any colons (:) or
   equals signs (=).
+  This is parsed by the buildbot using:
+  http://src.chromium.org/viewvc/chrome/trunk/tools/build/scripts/slave/process_log_utils.py
 
   Args:
     measurement: A description of the quantity being measured, e.g. "vm_peak".
+        On the dashboard, this maps to a particular graph. Mandatory.
     trace: A description of the particular data point, e.g. "reference".
+        On the dashboard, this maps to a particular "line" in the graph.
+        Mandatory.
     values: A list of numeric measured values. An N-dimensional list will be
         flattened and treated as a simple list.
     units: A description of the units of measure, e.g. "bytes".
@@ -115,9 +120,10 @@ def PrintPerfResult(measurement, trace, values, units,
       result_type == perf_result_data_type.DEFAULT or
       result_type == perf_result_data_type.INFORMATIONAL):
     assert isinstance(values, list)
-    assert len(values)
     assert '/' not in measurement
-    value, avg, sd = _MeanAndStdDevFromList(_Flatten(values))
+    flattened_values = FlattenList(values)
+    assert len(flattened_values)
+    value, avg, sd = _MeanAndStdDevFromList(flattened_values)
     output = '%s%s: %s%s%s %s' % (
         RESULT_TYPES[result_type],
         _EscapePerfResult(measurement),
@@ -134,11 +140,12 @@ def PrintPerfResult(measurement, trace, values, units,
     # across different histograms.
     assert len(values) == 1
     value = values[0]
-    output = '%s%s: %s= %s' % (
+    output = '%s%s: %s= %s %s' % (
         RESULT_TYPES[result_type],
         _EscapePerfResult(measurement),
         trace_name,
-        value)
+        value,
+        units)
     avg, sd = GeomMeanAndStdDevFromHistogram(value)
 
   if avg:

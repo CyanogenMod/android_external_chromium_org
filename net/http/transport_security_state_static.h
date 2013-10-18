@@ -442,6 +442,7 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {26, true, "\011translate\012googleapis\003com", true, kGooglePins, DOMAIN_GOOGLEAPIS_COM },
   {23, true, "\005chart\004apis\006google\003com", false, kGooglePins, DOMAIN_GOOGLE_COM },
   {28, true, "\012oraprodsso\004corp\006google\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {27, true, "\011oraprodmv\004corp\006google\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {11, true, "\005ytimg\003com", false, kGooglePins, DOMAIN_YTIMG_COM },
   {23, true, "\021googleusercontent\003com", false, kGooglePins, DOMAIN_GOOGLEUSERCONTENT_COM },
   {13, true, "\007youtube\003com", false, kGooglePins, DOMAIN_YOUTUBE_COM },
@@ -871,6 +872,15 @@ static const struct HSTSPreload kPreloadedSTS[] = {
   {17, true, "\013crowdcurity\003com", true, kNoPins, DOMAIN_NOT_PINNED },
   {19, true, "\013saturngames\002co\002uk", true, kNoPins, DOMAIN_NOT_PINNED },
   {23, true, "\021strongest-privacy\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {25, true, "\011ecosystem\011atlassian\003net", true, kNoPins, DOMAIN_NOT_PINNED },
+  {18, true, "\002id\011atlassian\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {15, false, "\011bitbucket\003org", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\007cupcake\002io", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\007cupcake\002is", true, kNoPins, DOMAIN_NOT_PINNED },
+  {9, true, "\004tent\002io", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006cybozu\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {17, true, "\013davidlyness\003com", true, kNoPins, DOMAIN_NOT_PINNED },
+  {12, true, "\006medium\003com", true, kNoPins, DOMAIN_NOT_PINNED },
 };
 static const size_t kNumPreloadedSTS = ARRAYSIZE_UNSAFE(kPreloadedSTS);
 

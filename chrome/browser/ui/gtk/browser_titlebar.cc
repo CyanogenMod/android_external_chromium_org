@@ -78,11 +78,6 @@ const int kAvatarBottomSpacing = 1;
 // it on the left, and between it and the tabstrip on the right).
 const int kAvatarSideSpacing = 2;
 
-// The thickness of the custom frame border; we need it here to enlarge the
-// close button whent the custom frame border isn't showing but the custom
-// titlebar is showing.
-const int kFrameBorderThickness = 4;
-
 // There is a 4px gap between the icon and the title text.
 const int kIconTitleSpacing = 4;
 
@@ -647,7 +642,8 @@ void BrowserTitlebar::UpdateThrobber(WebContents* web_contents) {
 
     // Note: we want to exclude the application popup/panel window.
     if ((browser_window_->browser()->is_app() &&
-        !browser_window_->browser()->is_type_tabbed())) {
+        !browser_window_->browser()->is_type_tabbed()) ||
+        browser_window_->browser()->is_type_popup()) {
       gfx::Image icon = browser_window_->browser()->GetCurrentPageIcon();
       if (icon.IsEmpty()) {
         // Fallback to the Chromium icon if the page has no icon.

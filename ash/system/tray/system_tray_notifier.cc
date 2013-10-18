@@ -37,15 +37,6 @@ void SystemTrayNotifier::RemoveBluetoothObserver(BluetoothObserver* observer) {
   bluetooth_observers_.RemoveObserver(observer);
 }
 
-void SystemTrayNotifier::AddBrightnessObserver(BrightnessObserver* observer) {
-  brightness_observers_.AddObserver(observer);
-}
-
-void SystemTrayNotifier::RemoveBrightnessObserver(
-    BrightnessObserver* observer) {
-  brightness_observers_.RemoveObserver(observer);
-}
-
 void SystemTrayNotifier::AddCapsLockObserver(CapsLockObserver* observer) {
   caps_lock_observers_.AddObserver(observer);
 }
@@ -198,14 +189,6 @@ void SystemTrayNotifier::NotifyBluetoothDiscoveringChanged() {
                     OnBluetoothDiscoveringChanged());
 }
 
-void SystemTrayNotifier::NotifyBrightnessChanged(double level,
-                                                 bool user_initiated) {
-  FOR_EACH_OBSERVER(
-      BrightnessObserver,
-      brightness_observers_,
-      OnBrightnessChanged(level, user_initiated));
-}
-
 void SystemTrayNotifier::NotifyCapsLockChanged(
     bool enabled,
     bool search_mapped_to_caps_lock) {
@@ -283,6 +266,12 @@ void SystemTrayNotifier::NotifyUserUpdate() {
   FOR_EACH_OBSERVER(UserObserver,
                     user_observers_,
                     OnUserUpdate());
+}
+
+void SystemTrayNotifier::NotifyUserAddedToSession() {
+  FOR_EACH_OBSERVER(UserObserver,
+                    user_observers_,
+                    OnUserAddedToSession());
 }
 
 #if defined(OS_CHROMEOS)

@@ -8,39 +8,19 @@
 
 // static
 bool BookmarkNodeData::ClipboardContainsBookmarks() {
-  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
-      bookmark_pasteboard_helper_mac::kCopyPastePasteboard);
+  return PasteboardContainsBookmarks(ui::CLIPBOARD_TYPE_COPY_PASTE);
 }
 
-void BookmarkNodeData::WriteToClipboard() const {
-  bookmark_pasteboard_helper_mac::WriteToPasteboard(
-      bookmark_pasteboard_helper_mac::kCopyPastePasteboard,
-      elements,
-      profile_path_);
+void BookmarkNodeData::WriteToClipboard(ui::ClipboardType type) {
+  WriteBookmarksToPasteboard(type, elements, profile_path_);
 }
 
-bool BookmarkNodeData::ReadFromClipboard() {
+bool BookmarkNodeData::ReadFromClipboard(ui::ClipboardType type) {
   base::FilePath file_path;
-  if (!bookmark_pasteboard_helper_mac::ReadFromPasteboard(
-          bookmark_pasteboard_helper_mac::kCopyPastePasteboard,
-          elements,
-          &file_path)) {
-    return false;
+  if (ReadBookmarksFromPasteboard(type, elements, &file_path)) {
+    profile_path_ = file_path;
+    return true;
   }
 
-  profile_path_ = file_path;
-  return true;
-}
-
-bool BookmarkNodeData::ReadFromDragClipboard() {
-  base::FilePath file_path;
-  if (!bookmark_pasteboard_helper_mac::ReadFromPasteboard(
-          bookmark_pasteboard_helper_mac::kDragPasteboard,
-          elements,
-          &file_path)) {
-    return false;
-  }
-
-  profile_path_ = file_path;
-  return true;
+  return false;
 }

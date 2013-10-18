@@ -42,9 +42,9 @@
 #include "net/base/escape.h"
 #include "skia/ext/image_operations.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
-#include "ui/webui/web_ui_util.h"
 
 using content::OpenURLParams;
 using content::Referrer;
@@ -224,9 +224,15 @@ void NTPLoginHandler::UpdateLogin() {
         header = CreateSpanWithClass(UTF8ToUTF16(username), "profile-name");
     }
   } else {
-#if !defined(OS_ANDROID)
-    // Android uses a custom sign in promo.
-    if (signin::ShouldShowPromo(profile)) {
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+    // Android uses a custom sign in promo. Don't call the function
+    // signin::ShouldShowPromo() since it does a bunch of checks that are not
+    // required here.  We only want to suppress this login status for users that
+    // are not allowed to sign in.  Chromeos does not show this status header
+    // at all.
+    SigninManager* signin = SigninManagerFactory::GetForProfile(
+        profile->GetOriginalProfile());
+    if (!profile->IsManaged() && signin->IsSigninAllowed()) {
       string16 signed_in_link = l10n_util::GetStringUTF16(
           IDS_SYNC_PROMO_NOT_SIGNED_IN_STATUS_LINK);
       signed_in_link = CreateSpanWithClass(signed_in_link, "link-span");

@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "ash/keyboard_overlay/keyboard_overlay_view.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_util.h"
@@ -72,39 +72,27 @@ void ChromeShellDelegate::Shutdown() {
       RequestShutdown();
 }
 
-void ChromeShellDelegate::OpenFileManager(bool as_dialog) {
-  if (as_dialog) {
-    Browser* browser =
-        chrome::FindBrowserWithWindow(ash::wm::GetActiveWindow());
-    // Open the select file dialog only if there is an active browser where the
-    // selected file is displayed.
-    if (browser) {
-      browser->OpenFile();
+void ChromeShellDelegate::OpenFileManager() {
+  using file_manager::kFileManagerAppId;
+  Profile* const profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+  const apps::ShellWindowRegistry* const registry =
+      apps::ShellWindowRegistry::Get(profile);
+  const apps::ShellWindowRegistry::ShellWindowList list =
+      registry->GetShellWindowsForApp(kFileManagerAppId);
+  if (list.empty()) {
+    // Open the new window.
+    const ExtensionService* const service = profile->GetExtensionService();
+    if (service == NULL ||
+        !service->IsExtensionEnabledForLauncher(kFileManagerAppId))
       return;
-    }
+    const extensions::Extension* const extension =
+        service->GetInstalledExtension(kFileManagerAppId);
+    // event_flags = 0 means this invokes the same behavior as the launcher
+    // item is clicked without any keyboard modifiers.
+    OpenApplication(AppLaunchParams(profile, extension, 0 /* event_flags */));
   } else {
-    using file_manager::kFileManagerAppId;
-    Profile* const profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
-    const apps::ShellWindowRegistry* const registry =
-        apps::ShellWindowRegistry::Get(profile);
-    const apps::ShellWindowRegistry::ShellWindowList list =
-        registry->GetShellWindowsForApp(kFileManagerAppId);
-    if (list.empty()) {
-      // Open the new window.
-      const ExtensionService* const service = profile->GetExtensionService();
-      if (service == NULL ||
-          !service->IsExtensionEnabledForLauncher(kFileManagerAppId))
-        return;
-      const extensions::Extension* const extension =
-          service->GetInstalledExtension(kFileManagerAppId);
-      // event_flags = 0 means this invokes the same behavior as the launcher
-      // item is clicked without any keyboard modifiers.
-      chrome::OpenApplication(
-          chrome::AppLaunchParams(profile, extension, 0 /* event_flags */));
-    } else {
-      // Activate the existing window.
-      list.front()->GetBaseWindow()->Activate();
-    }
+    // Activate the existing window.
+    list.front()->GetBaseWindow()->Activate();
   }
 }
 

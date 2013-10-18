@@ -20,7 +20,8 @@ typedef std::vector<TouchEventWithLatencyInfo> WebTouchEventWithLatencyList;
 class CoalescedWebTouchEvent {
  public:
   explicit CoalescedWebTouchEvent(const TouchEventWithLatencyInfo& event)
-      : coalesced_event_(event) {
+      : coalesced_event_(event),
+        ignore_ack_(false) {
     events_.push_back(event);
     TRACE_EVENT_ASYNC_BEGIN0(
         "input", "TouchEventQueue::QueueEvent", this);
@@ -35,49 +36,35 @@ class CoalescedWebTouchEvent {
   // the event was coalesced.
   bool CoalesceEventIfPossible(
       const TouchEventWithLatencyInfo& event_with_latency) {
-    if (coalesced_event_.event.type == WebKit::WebInputEvent::TouchMove &&
-        event_with_latency.event.type == WebKit::WebInputEvent::TouchMove &&
-        coalesced_event_.event.modifiers ==
-        event_with_latency.event.modifiers &&
-        coalesced_event_.event.touchesLength ==
-        event_with_latency.event.touchesLength) {
-      TRACE_EVENT_INSTANT0(
-          "input", "TouchEventQueue::MoveCoalesced", TRACE_EVENT_SCOPE_THREAD);
-      events_.push_back(event_with_latency);
-      // The WebTouchPoints include absolute position information. So it is
-      // sufficient to simply replace the previous event with the new event.
-      // However, it is necessary to make sure that all the points have the
-      // correct state, i.e. the touch-points that moved in the last event, but
-      // didn't change in the current event, will have Stationary state. It is
-      // necessary to change them back to Moved state.
-      const WebKit::WebTouchEvent last_event = coalesced_event_.event;
-      const ui::LatencyInfo last_latency = coalesced_event_.latency;
-      coalesced_event_ = event_with_latency;
-      coalesced_event_.latency.MergeWith(last_latency);
-      for (unsigned i = 0; i < last_event.touchesLength; ++i) {
-        if (last_event.touches[i].state == WebKit::WebTouchPoint::StateMoved)
-          coalesced_event_.event.touches[i].state =
-              WebKit::WebTouchPoint::StateMoved;
-      }
-      return true;
-    }
+    if (ignore_ack_)
+      return false;
 
-    return false;
+    if (!coalesced_event_.CanCoalesceWith(event_with_latency))
+      return false;
+
+    TRACE_EVENT_INSTANT0(
+        "input", "TouchEventQueue::MoveCoalesced", TRACE_EVENT_SCOPE_THREAD);
+    coalesced_event_.CoalesceWith(event_with_latency);
+    events_.push_back(event_with_latency);
+    return true;
   }
 
   const TouchEventWithLatencyInfo& coalesced_event() const {
     return coalesced_event_;
   }
 
-  WebTouchEventWithLatencyList::const_iterator begin() const {
+  WebTouchEventWithLatencyList::iterator begin() {
     return events_.begin();
   }
 
-  WebTouchEventWithLatencyList::const_iterator end() const {
+  WebTouchEventWithLatencyList::iterator end() {
     return events_.end();
   }
 
   size_t size() const { return events_.size(); }
+
+  bool ignore_ack() const { return ignore_ack_; }
+  void set_ignore_ack(bool value) { ignore_ack_ = value; }
 
  private:
   // This is the event that is forwarded to the renderer.
@@ -86,13 +73,17 @@ class CoalescedWebTouchEvent {
   // This is the list of the original events that were coalesced.
   WebTouchEventWithLatencyList events_;
 
+  // If |ignore_ack_| is true, don't send this touch event to client
+  // when the event is acked.
+  bool ignore_ack_;
+
   DISALLOW_COPY_AND_ASSIGN(CoalescedWebTouchEvent);
 };
 
 TouchEventQueue::TouchEventQueue(TouchEventQueueClient* client)
     : client_(client),
-      dispatching_touch_ack_(false),
-      no_touch_move_to_renderer_(false) {
+      dispatching_touch_ack_(NULL),
+      no_touch_to_renderer_(false) {
   DCHECK(client);
 }
 
@@ -153,6 +144,7 @@ void TouchEventQueue::ProcessTouchAck(InputEventAckState ack_result,
 }
 
 void TouchEventQueue::TryForwardNextEventToRenderer() {
+  DCHECK(!dispatching_touch_ack_);
   // If there are queued touch events, then try to forward them to the renderer
   // immediately, or ACK the events back to the client if appropriate.
   while (!touch_queue_.empty()) {
@@ -164,6 +156,41 @@ void TouchEventQueue::TryForwardNextEventToRenderer() {
     }
     PopTouchEventToClient(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
                           ui::LatencyInfo());
+  }
+}
+
+void TouchEventQueue::OnGestureScrollEvent(
+    const GestureEventWithLatencyInfo& gesture_event) {
+  WebKit::WebInputEvent::Type type = gesture_event.event.type;
+  if (type == WebKit::WebInputEvent::GestureScrollBegin) {
+    // We assume the scroll event are generated synchronously from
+    // dispatching a touch event ack, so that we can fake a cancel
+    // event that has the correct touch ids as the touch event that
+    // is being acked. If not, we don't do the touch-cancel optimization.
+    if (no_touch_to_renderer_ || !dispatching_touch_ack_)
+      return;
+    no_touch_to_renderer_ = true;
+    // Fake a TouchCancel to cancel the touch points of the touch event
+    // that is currently being acked.
+    TouchEventWithLatencyInfo cancel_event =
+        dispatching_touch_ack_->coalesced_event();
+    cancel_event.event.type = WebKit::WebInputEvent::TouchCancel;
+    for (size_t i = 0; i < cancel_event.event.touchesLength; i++)
+      cancel_event.event.touches[i].state =
+          WebKit::WebTouchPoint::StateCancelled;
+    CoalescedWebTouchEvent* coalesced_cancel_event =
+        new CoalescedWebTouchEvent(cancel_event);
+    // Ignore the ack of the touch cancel so when it is acked, it won't get
+    // sent to gesture recognizer.
+    coalesced_cancel_event->set_ignore_ack(true);
+    // |dispatching_touch_ack_| is non-null when we reach here, meaning we
+    // are in the scope of PopTouchEventToClient() and that no touch event
+    // in the queue is waiting for ack from renderer. So we can just insert
+    // the touch cancel at the beginning of the queue.
+    touch_queue_.push_front(coalesced_cancel_event);
+  } else if (type == WebKit::WebInputEvent::GestureScrollEnd ||
+             type == WebKit::WebInputEvent::GestureFlingStart) {
+    no_touch_to_renderer_ = false;
   }
 }
 
@@ -190,31 +217,31 @@ void TouchEventQueue::PopTouchEventToClient(
   scoped_ptr<CoalescedWebTouchEvent> acked_event(touch_queue_.front());
   touch_queue_.pop_front();
 
+  if (acked_event->ignore_ack())
+    return;
+
   // Note that acking the touch-event may result in multiple gestures being sent
   // to the renderer, or touch-events being queued.
-  base::AutoReset<bool> dispatching_touch_ack(&dispatching_touch_ack_, true);
+  base::AutoReset<CoalescedWebTouchEvent*>
+      dispatching_touch_ack(&dispatching_touch_ack_, acked_event.get());
 
-  base::TimeTicks now = base::TimeTicks::HighResNow();
-  for (WebTouchEventWithLatencyList::const_iterator iter = acked_event->begin(),
+  for (WebTouchEventWithLatencyList::iterator iter = acked_event->begin(),
        end = acked_event->end();
        iter != end; ++iter) {
-    ui::LatencyInfo* latency = const_cast<ui::LatencyInfo*>(&(iter->latency));
-    latency->AddNewLatencyFrom(renderer_latency_info);
-    latency->AddLatencyNumberWithTimestamp(
-        ui::INPUT_EVENT_LATENCY_ACKED_COMPONENT, 0, 0, now, 1);
+    iter->latency.AddNewLatencyFrom(renderer_latency_info);
     client_->OnTouchEventAck((*iter), ack_result);
   }
 }
 
 bool TouchEventQueue::ShouldForwardToRenderer(
     const WebKit::WebTouchEvent& event) const {
+  if (no_touch_to_renderer_ &&
+      event.type != WebKit::WebInputEvent::TouchCancel)
+    return false;
+
   // Touch press events should always be forwarded to the renderer.
   if (event.type == WebKit::WebInputEvent::TouchStart)
     return true;
-
-  if (event.type == WebKit::WebInputEvent::TouchMove &&
-      no_touch_move_to_renderer_)
-    return false;
 
   for (unsigned int i = 0; i < event.touchesLength; ++i) {
     const WebKit::WebTouchPoint& point = event.touches[i];

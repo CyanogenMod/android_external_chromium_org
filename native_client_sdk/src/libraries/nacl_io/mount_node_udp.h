@@ -22,7 +22,7 @@ class MountNodeUDP : public MountNodeSocket {
   explicit MountNodeUDP(Mount* mount);
 
  protected:
-  virtual Error Init(int flags);
+  virtual Error Init(int open_flags);
   virtual void Destroy();
 
  public:
@@ -32,7 +32,9 @@ class MountNodeUDP : public MountNodeSocket {
   virtual void QueueOutput();
 
   virtual Error Bind(const struct sockaddr* addr, socklen_t len);
-  virtual Error Connect(const struct sockaddr* addr, socklen_t len);
+  virtual Error Connect(const HandleAttr& attr,
+                        const struct sockaddr* addr,
+                        socklen_t len);
 
  protected:
   virtual Error Recv_Locked(void* buf,

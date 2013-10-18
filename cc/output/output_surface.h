@@ -5,6 +5,8 @@
 #ifndef CC_OUTPUT_OUTPUT_SURFACE_H_
 #define CC_OUTPUT_OUTPUT_SURFACE_H_
 
+#include <deque>
+
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -13,6 +15,7 @@
 #include "cc/output/context_provider.h"
 #include "cc/output/software_output_device.h"
 #include "cc/scheduler/frame_rate_controller.h"
+#include "cc/scheduler/rolling_time_delta_history.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
@@ -132,11 +135,15 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
 
   bool HasClient() { return !!client_; }
 
+  // Returns an estimate of the current GPU latency. When only a software
+  // device is present, returns 0.
+  base::TimeDelta GpuLatencyEstimate();
+
  protected:
   // Synchronously initialize context3d and enter hardware mode.
   // This can only supported in threaded compositing mode.
   // |offscreen_context_provider| should match what is returned by
-  // LayerTreeClient::OffscreenContextProviderForCompositorThread.
+  // LayerTreeClient::OffscreenContextProvider().
   bool InitializeAndSetContext3d(
       scoped_refptr<ContextProvider> context_provider,
       scoped_refptr<ContextProvider> offscreen_context_provider);
@@ -151,7 +158,6 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   bool has_swap_buffers_complete_callback_;
   gfx::Size surface_size_;
   float device_scale_factor_;
-  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
 
   // The FrameRateController is deprecated.
   // Platforms should move to native BeginFrames instead.
@@ -196,12 +202,19 @@ class CC_EXPORT OutputSurface : public FrameRateControllerClient {
   void ResetContext3d();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy,
                        bool discard_backbuffer_when_not_visible);
+  void UpdateAndMeasureGpuLatency();
 
   // check_for_retroactive_begin_frame_pending_ is used to avoid posting
   // redundant checks for a retroactive BeginFrame.
   bool check_for_retroactive_begin_frame_pending_;
 
   bool external_stencil_test_enabled_;
+
+  base::WeakPtrFactory<OutputSurface> weak_ptr_factory_;
+
+  std::deque<unsigned> available_gpu_latency_query_ids_;
+  std::deque<unsigned> pending_gpu_latency_query_ids_;
+  RollingTimeDeltaHistory gpu_latency_history_;
 
   DISALLOW_COPY_AND_ASSIGN(OutputSurface);
 };

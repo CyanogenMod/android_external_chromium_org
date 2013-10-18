@@ -59,13 +59,6 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target) {
   // It's rediculously faster to write to a string and then write that to
   // disk in one operation than to use an fstream here.
   std::stringstream file;
-  if (file.fail()) {
-    g_scheduler->FailWithError(
-        Err(Location(), "Error writing ninja file.",
-            "Unable to open \"" + FilePathToUTF8(ninja_file) + "\"\n"
-            "for writing."));
-    return;
-  }
 
   // Call out to the correct sub-type of writer.
   if (target->output_type() == Target::COPY_FILES) {
@@ -79,7 +72,8 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target) {
     writer.Run();
   } else if (target->output_type() == Target::EXECUTABLE ||
              target->output_type() == Target::STATIC_LIBRARY ||
-             target->output_type() == Target::SHARED_LIBRARY) {
+             target->output_type() == Target::SHARED_LIBRARY ||
+             target->output_type() == Target::SOURCE_SET) {
     NinjaBinaryTargetWriter writer(target, file);
     writer.Run();
   } else {
@@ -87,7 +81,8 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target) {
   }
 
   std::string contents = file.str();
-  file_util::WriteFile(ninja_file, contents.c_str(), contents.size());
+  file_util::WriteFile(ninja_file, contents.c_str(),
+                       static_cast<int>(contents.size()));
 }
 
 void NinjaTargetWriter::WriteEnvironment() {

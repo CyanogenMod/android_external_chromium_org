@@ -32,7 +32,7 @@ namespace gfx {
 //
 // FontList allows operator= since FontList is a data member type in RenderText,
 // and operator= is used in RenderText::SetFontList().
-class UI_EXPORT FontList {
+class GFX_EXPORT FontList {
  public:
   // Creates a font list with a Font with default name and style.
   FontList();
@@ -80,6 +80,10 @@ class UI_EXPORT FontList {
   // Returns the baseline of this font list, which is max(baseline) for all the
   // fonts in the font list.
   int GetBaseline() const;
+
+  // Returns the cap height of this font list.
+  // Currently returns the cap height of the primary font.
+  int GetCapHeight() const;
 
   // Returns the number of horizontal pixels needed to display |text|.
   int GetStringWidth(const base::string16& text) const;

@@ -419,19 +419,43 @@ TEST_P(DockedWindowResizerTest, AttachMinimizeRestore) {
             window->GetBoundsInScreen().right());
   EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
 
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
   // Minimize the window, it should be hidden.
-  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  window_state->Minimize();
   RunAllPendingInMessageLoop();
   EXPECT_FALSE(window->IsVisible());
+  EXPECT_TRUE(window_state->IsMinimized());
   // Restore the window; window should be visible.
-  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
+  window_state->Restore();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(window->IsVisible());
+  EXPECT_TRUE(window_state->IsNormalShowState());
+}
+
+// Maximize a docked window and check that it is maximized and no longer docked.
+TEST_P(DockedWindowResizerTest, AttachMaximize) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> window(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  DragRelativeToEdge(DOCKED_EDGE_RIGHT, window.get(), 0);
+
+  // The window should be attached and snapped to the right edge.
+  EXPECT_EQ(window->GetRootWindow()->bounds().right(),
+            window->GetBoundsInScreen().right());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
+
+  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  // Maximize the window, it should get undocked and maximized in a desktop.
+  window_state->Maximize();
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(window->IsVisible());
+  EXPECT_TRUE(window_state->IsMaximized());
+  EXPECT_EQ(internal::kShellWindowId_DefaultContainer, window->parent()->id());
 }
 
 // Dock two windows, undock one, check that the other one is still docked.
-TEST_P(DockedWindowResizerTest, AttachTwoWindows)
-{
+TEST_P(DockedWindowResizerTest, AttachTwoWindows) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -468,10 +492,50 @@ TEST_P(DockedWindowResizerTest, AttachTwoWindows)
             w2->parent()->id());
 }
 
+// Create two windows, dock one and change shelf to auto-hide.
+TEST_P(DockedWindowResizerTest, AttachOneAutoHideShelf) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  scoped_ptr<aura::Window> w1(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, w1.get(), 20);
+
+  // w1 should be attached and snapped to the right edge.
+  EXPECT_EQ(w1->GetRootWindow()->bounds().right(),
+            w1->GetBoundsInScreen().right());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, w1->parent()->id());
+
+  scoped_ptr<aura::Window> w2(CreateTestWindowInShellWithDelegateAndType(
+      NULL, aura::client::WINDOW_TYPE_NORMAL, 0, gfx::Rect(20, 20, 150, 20)));
+  wm::GetWindowState(w2.get())->Maximize();
+  EXPECT_EQ(internal::kShellWindowId_DefaultContainer, w2->parent()->id());
+  EXPECT_TRUE(wm::GetWindowState(w2.get())->IsMaximized());
+
+  gfx::Rect work_area =
+      Shell::GetScreen()->GetDisplayNearestWindow(w1.get()).work_area();
+  DockedWindowLayoutManager* manager =
+      static_cast<DockedWindowLayoutManager*>(w1->parent()->layout_manager());
+
+  // Docked window should be centered vertically in the work area.
+  EXPECT_EQ(work_area.CenterPoint().y(), w1->bounds().CenterPoint().y());
+  // Docked background should extend to the bottom of work area.
+  EXPECT_EQ(work_area.bottom(), manager->docked_bounds().bottom());
+
+  // set launcher shelf to be aligned on the right
+  ash::Shell* shell = ash::Shell::GetInstance();
+  shell->SetShelfAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS,
+                                  shell->GetPrimaryRootWindow());
+  work_area =
+        Shell::GetScreen()->GetDisplayNearestWindow(w1.get()).work_area();
+  // Docked window should be centered vertically in the work area.
+  EXPECT_EQ(work_area.CenterPoint().y(), w1->bounds().CenterPoint().y());
+  // Docked background should extend to the bottom of work area.
+  EXPECT_EQ(work_area.bottom(), manager->docked_bounds().bottom());
+}
+
 // Dock one window, try to dock another window on the opposite side (should not
 // dock).
-TEST_P(DockedWindowResizerTest, AttachOnTwoSides)
-{
+TEST_P(DockedWindowResizerTest, AttachOnTwoSides) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -584,8 +648,7 @@ TEST_P(DockedWindowResizerTest, DragAcrossDisplays) {
 
 // Dock two windows, undock one.
 // Test the docked windows area size and default container resizing.
-TEST_P(DockedWindowResizerTest, AttachTwoWindowsDetachOne)
-{
+TEST_P(DockedWindowResizerTest, AttachTwoWindowsDetachOne) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -657,8 +720,7 @@ TEST_P(DockedWindowResizerTest, AttachTwoWindowsDetachOne)
 }
 
 // Dock one of the windows. Maximize other testing desktop resizing.
-TEST_P(DockedWindowResizerTest, AttachWindowMaximizeOther)
-{
+TEST_P(DockedWindowResizerTest, AttachWindowMaximizeOther) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -757,8 +819,7 @@ TEST_P(DockedWindowResizerTest, AttachWindowMaximizeOther)
 }
 
 // Dock one window. Test the sticky behavior near screen or desktop edge.
-TEST_P(DockedWindowResizerTest, AttachOneTestSticky)
-{
+TEST_P(DockedWindowResizerTest, AttachOneTestSticky) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -855,8 +916,7 @@ TEST_P(DockedWindowResizerTest, AttachOneTestSticky)
 
 // Dock two windows, resize one or both.
 // Test the docked windows area size and remaining desktop resizing.
-TEST_P(DockedWindowResizerTest, ResizeTwoWindows)
-{
+TEST_P(DockedWindowResizerTest, ResizeTwoWindows) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -996,8 +1056,9 @@ TEST_P(DockedWindowResizerTest, ResizeTwoWindows)
             ScreenAsh::GetDisplayWorkAreaBoundsInParent(w2.get()).width());
 }
 
-TEST_P(DockedWindowResizerTest, DragToShelf)
-{
+// Tests that dragging a window down to shelf attaches a panel but does not
+// attach a regular window.
+TEST_P(DockedWindowResizerTest, DragToShelf) {
   if (!SupportsHostWindowResize())
     return;
 
@@ -1040,6 +1101,47 @@ TEST_P(DockedWindowResizerTest, DragToShelf)
     // The window should not be touching the shelf.
     EXPECT_EQ(shelf_y - kDistanceFromShelf, w1->bounds().bottom());
   }
+}
+
+// Tests that docking and undocking a |window| with a transient child properly
+// maintains the parent of that transient child to be the same as the |window|.
+TEST_P(DockedWindowResizerTest, DragWindowWithTransientChild) {
+  if (!SupportsHostWindowResize())
+    return;
+
+  // Create a window with a transient child.
+  scoped_ptr<aura::Window> window(CreateTestWindow(gfx::Rect(0, 0, 201, 201)));
+  scoped_ptr<aura::Window> child(CreateTestWindowInShellWithDelegateAndType(
+      NULL, aura::client::WINDOW_TYPE_NORMAL, 0, gfx::Rect(20, 20, 150, 20)));
+  window->AddTransientChild(child.get());
+  if (window->parent() != child->parent())
+    window->parent()->AddChild(child.get());
+  EXPECT_EQ(window.get(), child->transient_parent());
+
+  DragToVerticalPositionAndToEdge(DOCKED_EDGE_RIGHT, window.get(), 20);
+
+  // A window should be attached and snapped to the right edge.
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
+  EXPECT_EQ(internal::kShellWindowId_DockedContainer, child->parent()->id());
+
+  // Drag the child - it should move freely and stay where it is dragged.
+  ASSERT_NO_FATAL_FAILURE(DragStart(child.get()));
+  DragMove(500, 20);
+  DragEnd();
+  EXPECT_EQ(gfx::Point(20 + 500, 20 + 20).ToString(),
+            child->GetBoundsInScreen().origin().ToString());
+
+  // Undock the window by dragging left.
+  ASSERT_NO_FATAL_FAILURE(DragStart(window.get()));
+  DragMove(-32, -10);
+  DragEnd();
+
+  // The window should be undocked and the transient child should be reparented.
+  EXPECT_EQ(internal::kShellWindowId_DefaultContainer, window->parent()->id());
+  EXPECT_EQ(internal::kShellWindowId_DefaultContainer, child->parent()->id());
+  // The child should not have moved.
+  EXPECT_EQ(gfx::Point(20 + 500, 20 + 20).ToString(),
+            child->GetBoundsInScreen().origin().ToString());
 }
 
 // Tests run twice - on both panels and normal windows

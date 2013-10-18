@@ -48,7 +48,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/webui/web_ui_util.h"
+#include "ui/base/webui/web_ui_util.h"
 
 namespace chromeos {
 
@@ -374,12 +374,6 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
 #else
   localized_strings->SetString("buildType", "chromium");
 #endif
-
-  if (CommandLine::ForCurrentProcess()->
-          HasSwitch(ash::switches::kAshDisableNewLockAnimations))
-    localized_strings->SetString("lockAnimationsType", "old");
-  else
-    localized_strings->SetString("lockAnimationsType", "new");
 
   // If we're not doing boot animation then WebUI should trigger
   // wallpaper load on boot.

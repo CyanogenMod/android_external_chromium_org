@@ -16,37 +16,21 @@
       'sources': [
         'cast_config.cc',
         'cast_config.h',
-        'cast_thread.cc',
-        'cast_thread.h',
+        'cast_environment.cc',
+        'cast_environment.h',
       ], # source
-    },
-    {
-      'target_name': 'cast_sender',
-      'type': 'static_library',
-      'dependencies': [
-        'cast_config',
-        'cast_sender.gyp:cast_sender_impl',
-      ],
-    },
-    {
-      'target_name': 'cast_receiver',
-      'type': 'static_library',
-      'dependencies': [
-        'cast_config',
-        'cast_receiver.gyp:cast_receiver_impl',
-      ],
     },
   ],  # targets,
   'conditions': [
     ['include_tests==1', {
       'targets': [
         {
-          'target_name': 'cast_unittest',
+          'target_name': 'cast_unittests',
           'type': '<(gtest_target_type)',
           'dependencies': [
-            'cast_sender',
-            'cast_receiver',
-            'rtcp/rtcp.gyp:cast_rtcp_test',
+            'cast_config',
+            'cast_receiver.gyp:cast_receiver_impl',
+            'cast_sender.gyp:cast_sender_impl',
             '<(DEPTH)/base/base.gyp:run_all_unittests',
             '<(DEPTH)/net/net.gyp:net',
             '<(DEPTH)/testing/gmock.gyp:gmock',
@@ -66,10 +50,18 @@
             'framer/cast_message_builder_unittest.cc',
             'framer/frame_buffer_unittest.cc',
             'framer/framer_unittest.cc',
+            'pacing/mock_paced_packet_sender.cc',
+            'pacing/mock_paced_packet_sender.h',
             'pacing/paced_sender_unittest.cc',
+            'rtcp/mock_rtcp_receiver_feedback.cc',
+            'rtcp/mock_rtcp_receiver_feedback.h',
+            'rtcp/mock_rtcp_sender_feedback.cc',
+            'rtcp/mock_rtcp_sender_feedback.h',
             'rtcp/rtcp_receiver_unittest.cc',
             'rtcp/rtcp_sender_unittest.cc',
             'rtcp/rtcp_unittest.cc',
+            'rtp_common/mock_rtp_payload_feedback.cc',
+            'rtp_common/mock_rtp_payload_feedback.h',
             'rtp_receiver/receiver_stats_unittest.cc',
             'rtp_receiver/rtp_parser/test/rtp_packet_builder.cc',
             'rtp_receiver/rtp_parser/rtp_parser_unittest.cc',
@@ -77,9 +69,13 @@
             'rtp_sender/rtp_packetizer/rtp_packetizer_unittest.cc',
             'rtp_sender/rtp_packetizer/test/rtp_header_parser.cc',
             'rtp_sender/rtp_packetizer/test/rtp_header_parser.h',
+            'test/encode_decode_test.cc',
             'test/fake_task_runner.cc',
+            'test/video_utility.cc',
             'video_receiver/video_decoder_unittest.cc',
             'video_receiver/video_receiver_unittest.cc',
+            'video_sender/mock_video_encoder_controller.cc',
+            'video_sender/mock_video_encoder_controller.h',
             'video_sender/video_encoder_unittest.cc',
             'video_sender/video_sender_unittest.cc',
           ], # source

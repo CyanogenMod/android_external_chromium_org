@@ -11,9 +11,10 @@ Contents:
    quick-start.rst
    nacl-and-pnacl.rst
    glossary.rst
+   sdk/index.rst
    sdk/download.rst
    sdk/examples.rst
-   sdk/index.rst
+   sdk/release-notes.rst
    sdk/release-notes.rst
    devguide/index.rst
    devguide/tutorial.rst
@@ -21,6 +22,7 @@ Contents:
    devguide/devcycle/building.rst
    devguide/devcycle/running.rst
    devguide/devcycle/debugging.rst
+   devguide/devcycle/vs-addin.rst
    devguide/devcycle/dynamic-loading.rst
    devguide/coding/3D-graphics.rst
    devguide/coding/audio.rst
@@ -34,7 +36,15 @@ Contents:
    devguide/distributing.rst
    community/application-gallery.rst
    community/middleware.rst
+   community/security-contest/index.rst
+   community/security-contest/contest-announcement.rst
+   community/security-contest/contest-terms.rst
+   community/security-contest/contest-faq.rst
    peppercpp/index.rst
+   reference/index.rst
+   reference/pnacl-bitcode-abi.rst
+   reference/nacl-manifest-format.rst
+   publications-and-presentations.rst
    faq.rst
    help.rst
    version.rst

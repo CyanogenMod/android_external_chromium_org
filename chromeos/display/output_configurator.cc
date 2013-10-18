@@ -9,9 +9,10 @@
 #include <X11/extensions/XInput2.h>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "base/time/time.h"
 #include "chromeos/display/output_util.h"
 #include "chromeos/display/real_output_configurator_delegate.h"
@@ -56,6 +57,29 @@ std::string OutputStateToString(OutputState state) {
   }
   NOTREACHED() << "Unknown state " << state;
   return "INVALID";
+}
+
+// Returns a string representation of OutputSnapshot.
+std::string OutputSnapshotToString(
+    const OutputConfigurator::OutputSnapshot* output) {
+  return base::StringPrintf(
+      "[type=%d, output=%ld, crtc=%ld, mode=%ld, dim=%dx%d]",
+      output->type,
+      output->output,
+      output->crtc,
+      output->current_mode,
+      static_cast<int>(output->width_mm),
+      static_cast<int>(output->height_mm));
+}
+
+// Returns a string representation of ModeInfo.
+std::string ModeInfoToString(const OutputConfigurator::ModeInfo* mode) {
+  return base::StringPrintf("[%dx%d %srate=%f]",
+                            mode->width,
+                            mode->height,
+                            mode->interlaced ? "interlaced " : "",
+                            mode->refresh_rate);
+
 }
 
 // Returns the number of outputs in |outputs| that should be turned on, per
@@ -132,6 +156,7 @@ OutputConfigurator::OutputSnapshot::OutputSnapshot()
       height_mm(0),
       is_internal(false),
       is_aspect_preserving_scaling(false),
+      type(OUTPUT_TYPE_UNKNOWN),
       touch_device_id(0),
       display_id(0),
       has_display_id(false),
@@ -224,10 +249,11 @@ OutputConfigurator::OutputConfigurator()
     : state_controller_(NULL),
       mirroring_controller_(NULL),
       is_panel_fitting_enabled_(false),
-      configure_display_(base::chromeos::IsRunningOnChromeOS()),
+      configure_display_(base::SysInfo::IsRunningOnChromeOS()),
       xrandr_event_base_(0),
       output_state_(STATE_INVALID),
-      power_state_(DISPLAY_POWER_ALL_ON) {
+      power_state_(DISPLAY_POWER_ALL_ON),
+      next_output_protection_client_id_(1) {
 }
 
 OutputConfigurator::~OutputConfigurator() {}
@@ -273,6 +299,122 @@ void OutputConfigurator::Start(uint32 background_color_argb) {
   NotifyObservers(success, new_state);
 }
 
+OutputConfigurator::OutputProtectionClientId
+OutputConfigurator::RegisterOutputProtectionClient() {
+  if (!configure_display_)
+    return 0;
+
+  return next_output_protection_client_id_++;
+}
+
+void OutputConfigurator::UnregisterOutputProtectionClient(
+    OutputProtectionClientId client_id) {
+  EnableOutputProtection(client_id, OUTPUT_PROTECTION_METHOD_NONE);
+}
+
+bool OutputConfigurator::QueryOutputProtectionStatus(
+    OutputProtectionClientId client_id,
+    uint32_t* link_mask,
+    uint32_t* protection_mask) {
+  if (!configure_display_)
+    return false;
+
+  uint32_t enabled = 0;
+  uint32_t unfulfilled = 0;
+  *link_mask = 0;
+  for (std::vector<OutputSnapshot>::const_iterator it = cached_outputs_.begin();
+       it != cached_outputs_.end(); ++it) {
+    RROutput this_id = it->output;
+    *link_mask |= it->type;
+    switch (it->type) {
+      case OUTPUT_TYPE_UNKNOWN:
+        return false;
+      // DisplayPort, DVI, and HDMI all support HDCP.
+      case OUTPUT_TYPE_DISPLAYPORT:
+      case OUTPUT_TYPE_DVI:
+      case OUTPUT_TYPE_HDMI: {
+        HDCPState state;
+        if (!delegate_->GetHDCPState(this_id, &state))
+          return false;
+        if (state == HDCP_STATE_ENABLED)
+          enabled |= OUTPUT_PROTECTION_METHOD_HDCP;
+        else
+          unfulfilled |= OUTPUT_PROTECTION_METHOD_HDCP;
+        break;
+      }
+      case OUTPUT_TYPE_INTERNAL:
+      case OUTPUT_TYPE_VGA:
+      case OUTPUT_TYPE_NETWORK:
+        // No protections for these types. Do nothing.
+        break;
+      case OUTPUT_TYPE_NONE:
+        NOTREACHED();
+        break;
+    }
+  }
+
+  // Don't reveal protections requested by other clients.
+  ProtectionRequests::iterator it = client_protection_requests_.find(client_id);
+  if (it != client_protection_requests_.end()) {
+    uint32_t requested_mask = it->second;
+    *protection_mask = enabled & ~unfulfilled & requested_mask;
+  } else {
+    *protection_mask = 0;
+  }
+  return true;
+}
+
+bool OutputConfigurator::EnableOutputProtection(
+    OutputProtectionClientId client_id,
+    uint32_t desired_method_mask) {
+  if (!configure_display_)
+    return false;
+
+  uint32_t all_desired = desired_method_mask;
+  for (ProtectionRequests::const_iterator it =
+           client_protection_requests_.begin();
+       it != client_protection_requests_.end();
+       ++it) {
+    if (it->first != client_id)
+      all_desired |= it->second;
+  }
+
+  for (std::vector<OutputSnapshot>::const_iterator it = cached_outputs_.begin();
+       it != cached_outputs_.end(); ++it) {
+    RROutput this_id = it->output;
+    switch (it->type) {
+      case OUTPUT_TYPE_UNKNOWN:
+        return false;
+      // DisplayPort, DVI, and HDMI all support HDCP.
+      case OUTPUT_TYPE_DISPLAYPORT:
+      case OUTPUT_TYPE_DVI:
+      case OUTPUT_TYPE_HDMI: {
+        HDCPState new_desired_state =
+            (all_desired & OUTPUT_PROTECTION_METHOD_HDCP) ?
+            HDCP_STATE_DESIRED : HDCP_STATE_UNDESIRED;
+        if (!delegate_->SetHDCPState(this_id, new_desired_state))
+          return false;
+        break;
+      }
+      case OUTPUT_TYPE_INTERNAL:
+      case OUTPUT_TYPE_VGA:
+      case OUTPUT_TYPE_NETWORK:
+        // No protections for these types. Do nothing.
+        break;
+      case OUTPUT_TYPE_NONE:
+        NOTREACHED();
+        break;
+    }
+  }
+
+  if (desired_method_mask == OUTPUT_PROTECTION_METHOD_NONE)
+    client_protection_requests_.erase(client_id);
+  else
+    client_protection_requests_[client_id] = desired_method_mask;
+
+  return true;
+}
+
 void OutputConfigurator::Stop() {
   configure_display_ = false;
 }
@@ -283,7 +425,9 @@ bool OutputConfigurator::SetDisplayPower(DisplayPowerState power_state,
     return false;
 
   VLOG(1) << "SetDisplayPower: power_state="
-          << DisplayPowerStateToString(power_state) << " flags=" << flags;
+          << DisplayPowerStateToString(power_state) << " flags=" << flags
+          << ", configure timer="
+          << (configure_timer_->IsRunning() ? "Running" : "Stopped");
   if (power_state == power_state_ && !(flags & kSetDisplayPowerForceProbe))
     return true;
 
@@ -400,6 +544,7 @@ base::EventStatus OutputConfigurator::WillProcessEvent(
   // these events. So process them directly from here.
   if (configure_display_ && event->type == GenericEvent &&
       event->xgeneric.evtype == XI_HierarchyChanged) {
+    VLOG(1) << "Received XI_HierarchyChanged event";
     // Defer configuring outputs to not stall event processing.
     // This also takes care of same event being received twice.
     ScheduleConfigureOutputs();
@@ -665,6 +810,15 @@ bool OutputConfigurator::EnterState(
               GetModeInfo(*output, output->selected_mode);
           if (!mode_info)
             return false;
+          if (mode_info->width == 1024 && mode_info->height == 768) {
+            VLOG(1) << "Potentially misdetecting display(1024x768):"
+                    << " outputs size=" << updated_outputs.size()
+                    << ", num_on_outputs=" << num_on_outputs
+                    << ", current size:" << width << "x" << height
+                    << ", i=" << i
+                    << ", output=" << OutputSnapshotToString(output)
+                    << ", mode_info=" << ModeInfoToString(mode_info);
+          }
           width = mode_info->width;
           height = mode_info->height;
         }

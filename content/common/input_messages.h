@@ -11,10 +11,9 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event.h"
-#include "content/common/input/input_event_disposition.h"
 #include "content/common/input/input_param_traits.h"
-#include "content/common/input/ipc_input_event_payload.h"
-#include "content/common/input/event_packet.h"
+#include "content/common/input/synthetic_gesture_params.h"
+#include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/port/common/input_event_ack_state.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
@@ -32,20 +31,35 @@
 
 #define IPC_MESSAGE_START InputMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::InputEvent::Payload::Type,
-                          content::InputEvent::Payload::PAYLOAD_TYPE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventAckState,
                           content::INPUT_EVENT_ACK_STATE_MAX)
-IPC_ENUM_TRAITS_MAX_VALUE(content::InputEventDisposition,
-                          content::INPUT_EVENT_DISPOSITION_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    content::SyntheticGestureParams::GestureSourceType,
+    content::SyntheticGestureParams::GESTURE_SOURCE_TYPE_MAX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    content::SyntheticGestureParams::GestureType,
+    content::SyntheticGestureParams::SYNTHETIC_GESTURE_TYPE_MAX)
 
 IPC_STRUCT_TRAITS_BEGIN(content::EditCommand)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(value)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::IPCInputEventPayload)
-  IPC_STRUCT_TRAITS_MEMBER(message)
+IPC_STRUCT_TRAITS_BEGIN(content::InputEvent)
+  IPC_STRUCT_TRAITS_MEMBER(web_event)
+  IPC_STRUCT_TRAITS_MEMBER(latency_info)
+  IPC_STRUCT_TRAITS_MEMBER(is_keyboard_shortcut)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(gesture_source_type)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
+  IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
+  IPC_STRUCT_TRAITS_MEMBER(distance)
+  IPC_STRUCT_TRAITS_MEMBER(anchor_x)
+  IPC_STRUCT_TRAITS_MEMBER(anchor_y)
 IPC_STRUCT_TRAITS_END()
 
 // Sends an input event to the render widget.
@@ -53,11 +67,6 @@ IPC_MESSAGE_ROUTED3(InputMsg_HandleInputEvent,
                     IPC::WebInputEventPointer /* event */,
                     ui::LatencyInfo /* latency_info */,
                     bool /* is_keyboard_shortcut */)
-
-// Sends an event packet to the render widget.
-IPC_MESSAGE_ROUTED2(InputMsg_HandleEventPacket,
-                    content::EventPacket /* event_packet */,
-                    content::InputEventDispositions /* dispositions */)
 
 // Sends the cursor visibility state to the render widget.
 IPC_MESSAGE_ROUTED1(InputMsg_CursorVisibilityChange,
@@ -149,10 +158,6 @@ IPC_MESSAGE_ROUTED3(InputHostMsg_HandleInputEvent_ACK,
                     WebKit::WebInputEvent::Type,
                     content::InputEventAckState /* ack_result */,
                     ui::LatencyInfo /* latency_info */)
-
-IPC_MESSAGE_ROUTED2(InputHostMsg_HandleEventPacket_ACK,
-                    int64 /* event_packet_id */,
-                    content::InputEventDispositions /* dispositions */)
 
 
 // Adding a new message? Stick to the sort order above: first platform

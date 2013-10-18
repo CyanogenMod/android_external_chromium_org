@@ -79,7 +79,7 @@ def RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
     cmd.extend(['-t', config['truncate_percent']])
 
   if config['max_time_minutes']:
-    cmd.extend(['--repeat_test_max_time', config['max_time_minutes']])
+    cmd.extend(['--max_time_minutes', config['max_time_minutes']])
 
   cmd.extend(['--build_preference', 'ninja'])
 
@@ -95,7 +95,7 @@ def RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
       print
       return 1
 
-  if '--browser=android' in config['command']:
+  if 'android' in config['command']:
     cmd.extend(['--target_platform', 'android'])
 
   goma_file = ''

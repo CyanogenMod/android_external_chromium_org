@@ -18,7 +18,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/ui/echo_dialog_view.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/ui/browser.h"
@@ -26,6 +25,7 @@
 #include "chrome/common/extensions/api/echo_private.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/system/statistics_provider.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace echo_api = extensions::api::echo_private;
@@ -180,37 +180,6 @@ bool EchoPrivateGetOobeTimestampFunction::GetOobeTimestampOnFileThread() {
                                     ctime.day_of_month);
   }
   results_ = echo_api::GetOobeTimestamp::Results::Create(timestamp);
-  return true;
-}
-
-EchoPrivateCheckAllowRedeemOffersFunction::
-    EchoPrivateCheckAllowRedeemOffersFunction() {
-}
-
-EchoPrivateCheckAllowRedeemOffersFunction::
-    ~EchoPrivateCheckAllowRedeemOffersFunction() {
-}
-
-void EchoPrivateCheckAllowRedeemOffersFunction::CheckAllowRedeemOffers() {
-  chromeos::CrosSettingsProvider::TrustedStatus status =
-      chromeos::CrosSettings::Get()->PrepareTrustedValues(base::Bind(
-          &EchoPrivateCheckAllowRedeemOffersFunction::CheckAllowRedeemOffers,
-          this));
-  if (status == chromeos::CrosSettingsProvider::TEMPORARILY_UNTRUSTED)
-    return;
-
-  bool allow = true;
-  chromeos::CrosSettings::Get()->GetBoolean(
-      chromeos::kAllowRedeemChromeOsRegistrationOffers, &allow);
-  results_ = echo_api::CheckAllowRedeemOffers::Results::Create(allow);
-  SendResponse(true);
-}
-
-// Check the enterprise policy kAllowRedeemChromeOsRegistrationOffers flag
-// value. This policy is used to control whether user can redeem offers using
-// enterprise device.
-bool EchoPrivateCheckAllowRedeemOffersFunction::RunImpl() {
-  CheckAllowRedeemOffers();
   return true;
 }
 

@@ -115,6 +115,7 @@
       'c/private/ppb_instance_private.h',
       'c/private/ppb_nacl_private.h',
       'c/private/ppb_net_address_private.h',
+      'c/private/ppb_output_protection_private.h',
       'c/private/ppb_pdf.h',
       'c/private/ppb_platform_verification_private.h',
       'c/private/ppb_proxy_private.h',
@@ -136,7 +137,6 @@
       'c/trusted/ppb_broker_trusted.h',
       'c/trusted/ppb_browser_font_trusted.h',
       'c/trusted/ppb_file_chooser_trusted.h',
-      'c/trusted/ppb_file_io_trusted.h',
       'c/trusted/ppb_url_loader_trusted.h',
       'c/trusted/ppp_broker.h',
 
@@ -321,6 +321,8 @@
       'cpp/private/instance_private.h',
       'cpp/private/net_address_private.cc',
       'cpp/private/net_address_private.h',
+      'cpp/private/output_protection_private.cc',
+      'cpp/private/output_protection_private.h',
       'cpp/private/pass_file_handle.cc',
       'cpp/private/pass_file_handle.h',
       'cpp/private/pdf.cc',
@@ -349,8 +351,6 @@
       'cpp/trusted/browser_font_trusted.h',
       'cpp/trusted/file_chooser_trusted.cc',
       'cpp/trusted/file_chooser_trusted.h',
-      'cpp/trusted/file_io_trusted.cc',
-      'cpp/trusted/file_io_trusted.h',
 
       # Extensions interfaces.
       'cpp/extensions/dict_field.h',
@@ -450,6 +450,8 @@
       'tests/test_network_monitor.h',
       'tests/test_network_proxy.cc',
       'tests/test_network_proxy.h',
+      'tests/test_output_protection_private.cc',
+      'tests/test_output_protection_private.h',
       'tests/test_paint_aggregator.cc',
       'tests/test_paint_aggregator.h',
       'tests/test_post_message.cc',

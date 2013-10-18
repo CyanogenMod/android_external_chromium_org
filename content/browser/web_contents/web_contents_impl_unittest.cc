@@ -7,7 +7,6 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/web_contents/frame_tree_node.h"
 #include "content/browser/web_contents/interstitial_page_impl.h"
 #include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -376,7 +375,7 @@ TEST_F(WebContentsImplTest, SimpleNavigation) {
   // Controller's pending entry will have a NULL site instance until we assign
   // it in DidNavigate.
   EXPECT_TRUE(
-      NavigationEntryImpl::FromNavigationEntry(controller().GetActiveEntry())->
+      NavigationEntryImpl::FromNavigationEntry(controller().GetVisibleEntry())->
           site_instance() == NULL);
 
   // DidNavigate from the page
@@ -388,7 +387,7 @@ TEST_F(WebContentsImplTest, SimpleNavigation) {
   // able to find it later.
   EXPECT_EQ(
       instance1,
-      NavigationEntryImpl::FromNavigationEntry(controller().GetActiveEntry())->
+      NavigationEntryImpl::FromNavigationEntry(controller().GetVisibleEntry())->
           site_instance());
 }
 
@@ -400,7 +399,7 @@ TEST_F(WebContentsImplTest, NavigateToExcessivelyLongURL) {
 
   controller().LoadURL(
       url, Referrer(), PAGE_TRANSITION_GENERATED, std::string());
-  EXPECT_TRUE(controller().GetActiveEntry() == NULL);
+  EXPECT_TRUE(controller().GetVisibleEntry() == NULL);
 }
 
 // Test that navigating across a site boundary creates a new RenderViewHost
@@ -1062,7 +1061,7 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
   // Simulate the pending renderer's response, which leads to an unload request
   // being sent to orig_rvh.
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      pending_rvh, GlobalRequestID(0, 0));
+      pending_rvh, GlobalRequestID(0, 0), false, GURL(), Referrer(), 1);
 
   // Suppose the original renderer navigates now, while the unload request is in
   // flight.  We should ignore it, wait for the unload ack, and let the pending
@@ -1233,7 +1232,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url2);
 
@@ -1242,7 +1241,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url1);
   EXPECT_EQ(1, controller().GetEntryCount());
@@ -1280,7 +1279,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url2);
 
@@ -1289,7 +1288,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url1);
   EXPECT_EQ(1, controller().GetEntryCount());
@@ -1325,7 +1324,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialNoNewNavigationDontProceed) {
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   // The URL specified to the interstitial should have been ignored.
   EXPECT_TRUE(entry->GetURL() == url1);
@@ -1335,7 +1334,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialNoNewNavigationDontProceed) {
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url1);
   EXPECT_EQ(1, controller().GetEntryCount());
@@ -1376,7 +1375,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url2);
 
@@ -1396,7 +1395,7 @@ TEST_F(WebContentsImplTest,
 
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url3);
 
@@ -1434,7 +1433,7 @@ TEST_F(WebContentsImplTest,
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url2);
 
@@ -1454,7 +1453,7 @@ TEST_F(WebContentsImplTest,
 
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url3);
 
@@ -1491,7 +1490,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialNoNewNavigationProceed) {
   EXPECT_TRUE(interstitial->is_showing());
   EXPECT_TRUE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == interstitial);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   // The URL specified to the interstitial should have been ignored.
   EXPECT_TRUE(entry->GetURL() == url1);
@@ -1503,7 +1502,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialNoNewNavigationProceed) {
   EXPECT_EQ(TestInterstitialPage::OKED, state);
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  entry = controller().GetActiveEntry();
+  entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == url1);
 
@@ -1562,7 +1561,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialThenGoBack) {
   // Make sure we are back to the original page and that the interstitial is
   // gone.
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry);
   EXPECT_EQ(url1.spec(), entry->GetURL().spec());
 
@@ -1602,7 +1601,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialCrashRendererThenGoBack) {
   // Make sure we are back to the original page and that the interstitial is
   // gone.
   EXPECT_EQ(TestInterstitialPage::CANCELED, state);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry);
   EXPECT_EQ(url1.spec(), entry->GetURL().spec());
 
@@ -1769,7 +1768,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialOnInterstitial) {
 
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == landing_url);
   EXPECT_EQ(2, controller().GetEntryCount());
@@ -1828,7 +1827,7 @@ TEST_F(WebContentsImplTest, ShowInterstitialProceedShowInterstitial) {
   EXPECT_TRUE(deleted2);
   EXPECT_FALSE(contents()->ShowingInterstitialPage());
   EXPECT_TRUE(contents()->GetInterstitialPage() == NULL);
-  NavigationEntry* entry = controller().GetActiveEntry();
+  NavigationEntry* entry = controller().GetVisibleEntry();
   ASSERT_TRUE(entry != NULL);
   EXPECT_TRUE(entry->GetURL() == landing_url);
   EXPECT_EQ(2, controller().GetEntryCount());
@@ -2142,84 +2141,6 @@ TEST_F(WebContentsImplTest, PendingContents) {
   int route_id = other_contents->GetRenderViewHost()->GetRoutingID();
   other_contents.reset();
   EXPECT_EQ(NULL, contents()->GetCreatedWindow(route_id));
-}
-
-// This test asserts the shape of the frame tree is correct, based on incoming
-// frame attached/detached messages.
-TEST_F(WebContentsImplTest, FrameTreeShape) {
-  std::string no_children_node("no children node");
-  std::string deep_subtree("node with deep subtree");
-
-  // The initial navigation will create a frame_tree_root_ node with the top
-  // level frame id. Simulate that by just creating it here.
-  contents()->frame_tree_root_.reset(
-      new FrameTreeNode(5, std::string("top-level")));
-
-  // Let's send a series of messages for frame attached and build the
-  // frame tree.
-  contents()->OnFrameAttached(5, 14, std::string());
-  contents()->OnFrameAttached(5, 15, std::string());
-  contents()->OnFrameAttached(5, 16, std::string());
-
-  contents()->OnFrameAttached(14, 244, std::string());
-  contents()->OnFrameAttached(14, 245, std::string());
-
-  contents()->OnFrameAttached(15, 255, no_children_node);
-
-  contents()->OnFrameAttached(16, 264, std::string());
-  contents()->OnFrameAttached(16, 265, std::string());
-  contents()->OnFrameAttached(16, 266, std::string());
-  contents()->OnFrameAttached(16, 267, deep_subtree);
-  contents()->OnFrameAttached(16, 268, std::string());
-
-  contents()->OnFrameAttached(267, 365, std::string());
-  contents()->OnFrameAttached(365, 455, std::string());
-  contents()->OnFrameAttached(455, 555, std::string());
-  contents()->OnFrameAttached(555, 655, std::string());
-
-  // Now, verify the tree structure is as expected.
-  FrameTreeNode* root = contents()->frame_tree_root_.get();
-  EXPECT_EQ(5, root->frame_id());
-  EXPECT_EQ(3UL, root->child_count());
-
-  EXPECT_EQ(2UL, root->child_at(0)->child_count());
-  EXPECT_EQ(0UL, root->child_at(0)->child_at(0)->child_count());
-  EXPECT_EQ(0UL, root->child_at(0)->child_at(1)->child_count());
-
-  EXPECT_EQ(1UL, root->child_at(1)->child_count());
-  EXPECT_EQ(0UL, root->child_at(1)->child_at(0)->child_count());
-  EXPECT_STREQ(no_children_node.c_str(),
-      root->child_at(1)->child_at(0)->frame_name().c_str());
-
-  EXPECT_EQ(5UL, root->child_at(2)->child_count());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(0)->child_count());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(1)->child_count());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(2)->child_count());
-  EXPECT_EQ(1UL, root->child_at(2)->child_at(3)->child_count());
-  EXPECT_STREQ(deep_subtree.c_str(),
-      root->child_at(2)->child_at(3)->frame_name().c_str());
-  EXPECT_EQ(0UL, root->child_at(2)->child_at(4)->child_count());
-
-  FrameTreeNode* deep_tree = root->child_at(2)->child_at(3)->child_at(0);
-  EXPECT_EQ(365, deep_tree->frame_id());
-  EXPECT_EQ(1UL, deep_tree->child_count());
-  EXPECT_EQ(455, deep_tree->child_at(0)->frame_id());
-  EXPECT_EQ(1UL, deep_tree->child_at(0)->child_count());
-  EXPECT_EQ(555, deep_tree->child_at(0)->child_at(0)->frame_id());
-  EXPECT_EQ(1UL, deep_tree->child_at(0)->child_at(0)->child_count());
-  EXPECT_EQ(655, deep_tree->child_at(0)->child_at(0)->child_at(0)->frame_id());
-  EXPECT_EQ(0UL,
-      deep_tree->child_at(0)->child_at(0)->child_at(0)->child_count());
-
-  // Test removing of nodes.
-  contents()->OnFrameDetached(555, 655);
-  EXPECT_EQ(0UL, deep_tree->child_at(0)->child_at(0)->child_count());
-
-  contents()->OnFrameDetached(16, 265);
-  EXPECT_EQ(4UL, root->child_at(2)->child_count());
-
-  contents()->OnFrameDetached(5, 15);
-  EXPECT_EQ(2UL, root->child_count());
 }
 
 }  // namespace content

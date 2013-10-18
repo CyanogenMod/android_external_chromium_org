@@ -31,7 +31,11 @@ const char kMultilineEndString[] = "---------- END ----------\n\n";
 const size_t kFeedbackMaxLength = 4 * 1024;
 const size_t kFeedbackMaxLineCount = 40;
 
-const char kTraceFilename[] = "tracing.log\n";
+const char kTraceFilename[] = "tracing.zip\n";
+const char kPerformanceCategoryTag[] = "Performance";
+
+const base::FilePath::CharType kLogsFilename[] =
+    FILE_PATH_LITERAL("system_logs.txt");
 
 // Converts the system logs into a string that we can compress and send
 // with the report. This method only converts those logs that we want in
@@ -68,7 +72,7 @@ void ZipLogs(FeedbackData::SystemLogsMap* sys_info,
   DCHECK(compressed_logs);
   std::string logs_string = LogsToString(sys_info);
   if (logs_string.empty() ||
-      !feedback_util::ZipString(logs_string, compressed_logs)) {
+      !feedback_util::ZipString(kLogsFilename, logs_string, compressed_logs)) {
     compressed_logs->clear();
   }
 }
@@ -109,7 +113,7 @@ void FeedbackData::SetAndCompressSystemInfo(
     if (!manager ||
         !manager->GetTraceData(
             trace_id_,
-            base::Bind(&FeedbackData::OnGetTraceData, this))) {
+            base::Bind(&FeedbackData::OnGetTraceData, this, trace_id_))) {
       trace_id_ = 0;
     }
   }
@@ -130,14 +134,20 @@ void FeedbackData::SetAndCompressSystemInfo(
 }
 
 void FeedbackData::OnGetTraceData(
+    int trace_id_,
     scoped_refptr<base::RefCountedString> trace_data) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  TracingManager* manager = TracingManager::Get();
+  if (manager)
+    manager->DiscardTraceData(trace_id_);
 
   scoped_ptr<std::string> data(new std::string(trace_data->data()));
 
   set_attached_filename(kTraceFilename);
   set_attached_filedata(data.Pass());
   trace_id_ = 0;
+
+  set_category_tag(kPerformanceCategoryTag);
 
   SendReport();
 }

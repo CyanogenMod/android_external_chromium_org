@@ -111,12 +111,13 @@ LOCAL_SRC_FILES := \
 	content/common/indexed_db/indexed_db_key_path.cc \
 	content/common/indexed_db/indexed_db_key_range.cc \
 	content/common/indexed_db/indexed_db_param_traits.cc \
-	content/common/input/event_packet.cc \
-	content/common/input/ipc_input_event_payload.cc \
 	content/common/input/input_event.cc \
-	content/common/input/input_event_disposition.cc \
 	content/common/input/input_param_traits.cc \
-	content/common/input/web_input_event_payload.cc \
+	content/common/input/scoped_web_input_event.cc \
+	content/common/input/synthetic_gesture_packet.cc \
+	content/common/input/synthetic_gesture_params.cc \
+	content/common/input/synthetic_smooth_scroll_gesture_params.cc \
+	content/common/input/web_input_event_traits.cc \
 	content/common/inter_process_time_ticks_converter.cc \
 	content/common/media/media_param_traits.cc \
 	content/common/media/media_stream_options.cc \
@@ -190,7 +191,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -307,7 +307,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

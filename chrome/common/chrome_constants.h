@@ -72,6 +72,7 @@ extern const base::FilePath::CharType kNewTabThumbnailsFilename[];
 extern const base::FilePath::CharType kOBCertFilename[];
 extern const base::FilePath::CharType kPreferencesFilename[];
 extern const base::FilePath::CharType kReadmeFilename[];
+extern const base::FilePath::CharType kResetPromptMementoFilename[];
 extern const base::FilePath::CharType kSafeBrowsingBaseFilename[];
 extern const base::FilePath::CharType kServiceStateFileName[];
 extern const base::FilePath::CharType kShortcutsDatabaseName[];
@@ -91,10 +92,6 @@ extern const base::FilePath::CharType kPepperFlashPluginFilename[];
 extern const wchar_t kUserDataDirname[];
 
 extern const bool kRecordModeEnabled;
-
-// The language code used when the language of a page could not be detected.
-// (Matches what the CLD -Compact Language Detection- library reports.)
-extern const char* const kUnknownLanguageCode;
 
 // If a WebContents is impolite and displays a second JavaScript alert within
 // kJavaScriptMessageExpectedDelay of a previous JavaScript alert being

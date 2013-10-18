@@ -12,9 +12,7 @@ namespace app_list {
 namespace test {
 
 AppListTestViewDelegate::AppListTestViewDelegate()
-    : activate_count_(0),
-      dismiss_count_(0),
-      last_activated_(NULL),
+    : dismiss_count_(0),
       test_signin_delegate_(NULL) {
 }
 
@@ -30,18 +28,16 @@ void AppListTestViewDelegate::GetShortcutPathForApp(
   callback.Run(base::FilePath());
 }
 
-void AppListTestViewDelegate::ActivateAppListItem(AppListItemModel* item,
-                                                  int event_flags) {
-  last_activated_ = item;
-  ++activate_count_;
-}
-
 void AppListTestViewDelegate::Dismiss() {
   ++dismiss_count_;
 }
 
 gfx::ImageSkia AppListTestViewDelegate::GetWindowIcon() {
   return gfx::ImageSkia();
+}
+
+content::WebContents* AppListTestViewDelegate::GetStartPageContents() {
+  return NULL;
 }
 
 }  // namespace test

@@ -80,6 +80,7 @@ $(STAMPDIR)/$(1).stamp: $(LIBDIR)/$(TOOLCHAIN)/$(CONFIG)/lib$(1).a
 all: $(LIBDIR)/$(TOOLCHAIN)/$(CONFIG)/lib$(1).a
 $(LIBDIR)/$(TOOLCHAIN)/$(CONFIG)/lib$(1).a: $(foreach src,$(2),$(call SRC_TO_OBJ,$(src),_pnacl))
 	$(MKDIR) -p $$(dir $$@)
+	$(RM) $$@
 	$(call LOG,LIB,$$@,$(PNACL_LIB) -cr $$@ $$^ $(3))
 endef
 
@@ -111,7 +112,7 @@ $(1).pexe: $(1).bc
 	$(call LOG,FINALIZE,$$@,$(PNACL_FINALIZE) -o $$@ $$^)
 
 $(1).bc: $(2) $(foreach dep,$(4),$(STAMPDIR)/$(dep).stamp)
-	$(call LOG,LINK,$$@,$(PNACL_LINK) -o $$@ $(2) $(foreach path,$(5),-L$(path)/pnacl/$(CONFIG)) $(foreach lib,$(3),-l$(lib)) $(6))
+	$(call LOG,LINK,$$@,$(PNACL_LINK) -o $$@ $(2) $(PNACL_LDFLAGS) $(foreach path,$(5),-L$(path)/pnacl/$(CONFIG)) $(foreach lib,$(3),-l$(lib)) $(6))
 endef
 
 

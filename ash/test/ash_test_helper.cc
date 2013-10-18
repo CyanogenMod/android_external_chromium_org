@@ -4,15 +4,19 @@
 
 #include "ash/test/ash_test_helper.h"
 
+#include "ash/accelerators/accelerator_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/shell.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/shell_test_api.h"
+#include "ash/test/test_screenshot_delegate.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/test/test_system_tray_delegate.h"
 #include "base/run_loop.h"
 #include "ui/aura/env.h"
+#include "ui/aura/input_state_lookup.h"
+#include "ui/aura/test/env_test_helper.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/message_center/message_center.h"
@@ -33,6 +37,7 @@ namespace test {
 AshTestHelper::AshTestHelper(base::MessageLoopForUI* message_loop)
     : message_loop_(message_loop),
       test_shell_delegate_(NULL),
+      test_screenshot_delegate_(NULL),
       tear_down_network_handler_(false) {
   CHECK(message_loop_);
 #if defined(USE_X11)
@@ -71,6 +76,9 @@ void AshTestHelper::SetUp(bool start_session) {
   RunAllPendingInMessageLoop();
 #endif
   ash::Shell::CreateInstance(test_shell_delegate_);
+  aura::test::EnvTestHelper(aura::Env::GetInstance()).SetInputStateLookup(
+      scoped_ptr<aura::InputStateLookup>());
+
   Shell* shell = Shell::GetInstance();
   if (start_session) {
     test_shell_delegate_->test_session_state_delegate()->
@@ -82,11 +90,16 @@ void AshTestHelper::SetUp(bool start_session) {
   test::DisplayManagerTestApi(shell->display_manager()).
       DisableChangeDisplayUponHostResize();
   ShellTestApi(shell).DisableOutputConfiguratorAnimation();
+
+  test_screenshot_delegate_ = new TestScreenshotDelegate();
+  shell->accelerator_controller()->SetScreenshotDelegate(
+      scoped_ptr<ScreenshotDelegate>(test_screenshot_delegate_));
 }
 
 void AshTestHelper::TearDown() {
   // Tear down the shell.
   Shell::DeleteInstance();
+  test_screenshot_delegate_ = NULL;
 
   // Remove global message center state.
   message_center::MessageCenter::Shutdown();
@@ -110,6 +123,7 @@ void AshTestHelper::TearDown() {
 
 void AshTestHelper::RunAllPendingInMessageLoop() {
   DCHECK(base::MessageLoopForUI::current() == message_loop_);
+  aura::Env::CreateInstance();
   base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
   run_loop.RunUntilIdle();
 }

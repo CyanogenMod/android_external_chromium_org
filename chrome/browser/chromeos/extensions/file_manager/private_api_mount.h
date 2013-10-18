@@ -34,10 +34,11 @@ class FileBrowserPrivateAddMountFunction : public LoggedAsyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 
  private:
-  // A callback method to handle the result of MarkCacheAsMounted.
-  void OnMountedStateSet(const base::FilePath::StringType& file_name,
-                         drive::FileError error,
-                         const base::FilePath& file_path);
+  // Part of Run(). Called after MarkCacheFielAsMounted for Drive File System.
+  // (or directly called from RunImpl() for other file system).
+  void RunAfterMarkCacheFileAsMounted(const base::FilePath& display_name,
+                                      drive::FileError error,
+                                      const base::FilePath& file_path);
 };
 
 // Implements chrome.fileBrowserPrivate.removeMount method.
@@ -60,15 +61,15 @@ class FileBrowserPrivateRemoveMountFunction
       const std::vector<ui::SelectedFileInfo>& files);
 };
 
-// Implements chrome.fileBrowserPrivate.getMountPoints method.
-class FileBrowserPrivateGetMountPointsFunction
+// Implements chrome.fileBrowserPrivate.getVolumeMetadataList method.
+class FileBrowserPrivateGetVolumeMetadataListFunction
     : public LoggedAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.getMountPoints",
-                             FILEBROWSERPRIVATE_GETMOUNTPOINTS)
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.getVolumeMetadataList",
+                             FILEBROWSERPRIVATE_GETVOLUMEMETADATALIST)
 
  protected:
-  virtual ~FileBrowserPrivateGetMountPointsFunction() {}
+  virtual ~FileBrowserPrivateGetVolumeMetadataListFunction() {}
 
   // AsyncExtensionFunction overrides.
   virtual bool RunImpl() OVERRIDE;

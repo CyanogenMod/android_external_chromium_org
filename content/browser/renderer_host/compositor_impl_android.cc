@@ -91,7 +91,6 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
 
 static bool g_initialized = false;
 static base::Thread* g_impl_thread = NULL;
-static bool g_use_direct_gl = false;
 
 } // anonymous namespace
 
@@ -115,18 +114,6 @@ void Compositor::Initialize() {
 }
 
 // static
-void Compositor::InitializeWithFlags(uint32 flags) {
-  g_use_direct_gl = flags & DIRECT_CONTEXT_ON_DRAW_THREAD;
-  if (flags & ENABLE_COMPOSITOR_THREAD) {
-    TRACE_EVENT_INSTANT0("test_gpu", "ThreadedCompositingInitialization",
-                         TRACE_EVENT_SCOPE_THREAD);
-    g_impl_thread = new base::Thread("Browser Compositor");
-    g_impl_thread->Start();
-  }
-  Compositor::Initialize();
-}
-
-// static
 bool CompositorImpl::IsInitialized() {
   return g_initialized;
 }
@@ -134,11 +121,6 @@ bool CompositorImpl::IsInitialized() {
 // static
 bool CompositorImpl::IsThreadingEnabled() {
   return g_impl_thread;
-}
-
-// static
-bool CompositorImpl::UsesDirectGL() {
-  return g_use_direct_gl;
 }
 
 // static
@@ -167,11 +149,6 @@ CompositorImpl::~CompositorImpl() {
   ImageTransportFactoryAndroid::RemoveObserver(this);
   // Clean-up any surface references.
   SetSurface(NULL);
-}
-
-void CompositorImpl::SetNeedsRedraw() {
-  if (host_)
-    host_->SetNeedsRedraw();
 }
 
 void CompositorImpl::Composite() {
@@ -248,11 +225,6 @@ void CompositorImpl::SetVisible(bool visible) {
     settings.use_memory_management = false;
     settings.highp_threshold_min = 2048;
 
-    // Do not clear the framebuffer when rendering into external GL contexts
-    // like Android View System's.
-    if (UsesDirectGL())
-      settings.should_clear_root_render_pass = false;
-
     scoped_refptr<base::SingleThreadTaskRunner> impl_thread_task_runner =
         g_impl_thread ? g_impl_thread->message_loop()->message_loop_proxy()
                       : NULL;
@@ -283,12 +255,6 @@ void CompositorImpl::SetWindowBounds(const gfx::Size& size) {
   if (host_)
     host_->SetViewportSize(size);
   root_layer_->SetBounds(size);
-}
-
-void CompositorImpl::SetHasTransparentBackground(bool flag) {
-  has_transparent_background_ = flag;
-  if (host_)
-    host_->set_has_transparent_background(flag);
 }
 
 bool CompositorImpl::CompositeAndReadback(void *pixels, const gfx::Rect& rect) {
@@ -414,7 +380,7 @@ CreateGpuProcessViewContext(
           64 * 1024,  // min transfer buffer size
           std::min(3 * full_screen_texture_size_in_bytes,
                    kDefaultMaxTransferBufferSize),
-          WebGraphicsContext3DCommandBufferImpl::kNoLimit
+          2 * 1024 * 1024  // mapped memory limit
   )) {
     LOG(ERROR) << "Failed to create 3D context for compositor.";
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
@@ -427,23 +393,6 @@ scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface(
   WebKit::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.noAutomaticFlushes = true;
-
-  if (g_use_direct_gl) {
-    using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-    scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d =
-        WebGraphicsContext3DInProcessCommandBufferImpl::CreateViewContext(
-            attrs, window_);
-    scoped_refptr<webkit::gpu::ContextProviderInProcess> context_provider =
-        webkit::gpu::ContextProviderInProcess::Create(context3d.Pass(),
-                                                      "BrowserCompositor");
-
-    scoped_ptr<cc::OutputSurface> output_surface;
-    if (!window_)
-      output_surface.reset(new DirectOutputSurface(context_provider));
-    else
-      output_surface.reset(new cc::OutputSurface(context_provider));
-    return output_surface.Pass();
-  }
 
   DCHECK(window_);
   DCHECK(surface_id_);
@@ -472,17 +421,7 @@ void CompositorImpl::ScheduleComposite() {
   client_->ScheduleComposite();
 }
 
-scoped_refptr<cc::ContextProvider>
-CompositorImpl::OffscreenContextProviderForMainThread() {
-  // There is no support for offscreen contexts, or compositor filters that
-  // would require them in this compositor instance. If they are needed,
-  // then implement a context provider that provides contexts from
-  // ImageTransportSurfaceAndroid.
-  return NULL;
-}
-
-scoped_refptr<cc::ContextProvider>
-CompositorImpl::OffscreenContextProviderForCompositorThread() {
+scoped_refptr<cc::ContextProvider> CompositorImpl::OffscreenContextProvider() {
   // There is no support for offscreen contexts, or compositor filters that
   // would require them in this compositor instance. If they are needed,
   // then implement a context provider that provides contexts from

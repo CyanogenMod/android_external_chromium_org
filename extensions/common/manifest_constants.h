@@ -47,6 +47,7 @@ extern const char kFileHandlerTitle[];
 extern const char kFileHandlerTypes[];
 extern const char kFileFilters[];
 extern const char kFileBrowserHandlers[];
+extern const char kGlobal[];
 extern const char kMediaGalleriesHandlers[];
 extern const char kHomepageURL[];
 extern const char kIcons[];
@@ -158,6 +159,9 @@ extern const char kUrlHandlerTitle[];
 extern const char kVersion[];
 extern const char kWebAccessibleResources[];
 extern const char kWebURLs[];
+extern const char kWebview[];
+extern const char kWebviewAccessibleResources[];
+extern const char kWebviewPrivilegedPartitions[];
 
 }  // namespace manifest_keys
 
@@ -398,6 +402,11 @@ extern const char kInvalidURLHandlerPattern[];
 extern const char kInvalidVersion[];
 extern const char kInvalidWebAccessibleResourcesList[];
 extern const char kInvalidWebAccessibleResource[];
+extern const char kInvalidWebview[];
+extern const char kInvalidWebviewAccessibleResourcesList[];
+extern const char kInvalidWebviewAccessibleResource[];
+extern const char kInvalidWebviewPrivilegedPartitionList[];
+extern const char kInvalidWebviewPrivilegedPartition[];
 extern const char kInvalidWebURL[];
 extern const char kInvalidWebURLs[];
 extern const char kInvalidZipHash[];

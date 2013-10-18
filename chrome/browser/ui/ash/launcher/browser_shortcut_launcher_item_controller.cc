@@ -16,6 +16,8 @@
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item_browser.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_app_menu_item_tab.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
+#include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
+#include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -39,12 +41,10 @@
 #endif
 
 BrowserShortcutLauncherItemController::BrowserShortcutLauncherItemController(
-    ChromeLauncherController* launcher_controller,
-    Profile* profile)
+    ChromeLauncherController* launcher_controller)
     : LauncherItemController(TYPE_SHORTCUT,
                              extension_misc::kChromeAppId,
-                             launcher_controller),
-      profile_(profile) {
+                             launcher_controller) {
 }
 
 BrowserShortcutLauncherItemController::
@@ -98,10 +98,6 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
   }
 }
 
-string16 BrowserShortcutLauncherItemController::GetTitle() {
-  return l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-}
-
 bool BrowserShortcutLauncherItemController::IsCurrentlyShownInWindow(
     aura::Window* window) const {
   const BrowserList* ash_browser_list =
@@ -125,7 +121,7 @@ bool BrowserShortcutLauncherItemController::IsOpen() const {
 
 bool BrowserShortcutLauncherItemController::IsVisible() const {
   Browser* last_browser = chrome::FindTabbedBrowser(
-      profile_,
+      launcher_controller()->profile(),
       true,
       chrome::HOST_DESKTOP_TYPE_ASH);
 
@@ -143,7 +139,7 @@ void BrowserShortcutLauncherItemController::Launch(ash::LaunchSource source,
 
 void BrowserShortcutLauncherItemController::Activate(ash::LaunchSource source) {
   Browser* last_browser = chrome::FindTabbedBrowser(
-      profile_,
+      launcher_controller()->profile(),
       true,
       chrome::HOST_DESKTOP_TYPE_ASH);
 
@@ -157,31 +153,6 @@ void BrowserShortcutLauncherItemController::Activate(ash::LaunchSource source) {
 }
 
 void BrowserShortcutLauncherItemController::Close() {
-}
-
-void BrowserShortcutLauncherItemController::Clicked(const ui::Event& event) {
-  #if defined(OS_CHROMEOS)
-    chromeos::default_pinned_apps_field_trial::RecordShelfClick(
-        chromeos::default_pinned_apps_field_trial::CHROME);
-  #endif
-
-  if (event.flags() & ui::EF_CONTROL_DOWN) {
-    launcher_controller()->CreateNewWindow();
-    return;
-  }
-
-  // In case of a keyboard event, we were called by a hotkey. In that case we
-  // activate the next item in line if an item of our list is already active.
-  if (event.type() & ui::ET_KEY_RELEASED) {
-    ActivateOrAdvanceToNextBrowser();
-    return;
-  }
-
-  Activate(ash::LAUNCH_FROM_UNKNOWN);
-}
-
-void BrowserShortcutLauncherItemController::OnRemoved() {
-  // BrowserShortcutLauncherItemController is owned by ChromeLauncherController.
 }
 
 ChromeLauncherAppMenuItems
@@ -234,6 +205,52 @@ BrowserShortcutLauncherItemController::GetApplicationList(int event_flags) {
   if (!found_tabbed_browser)
     items.clear();
   return items.Pass();
+}
+
+void BrowserShortcutLauncherItemController::ItemSelected(
+    const ui::Event& event) {
+#if defined(OS_CHROMEOS)
+  chromeos::default_pinned_apps_field_trial::RecordShelfClick(
+      chromeos::default_pinned_apps_field_trial::CHROME);
+#endif
+
+  if (event.flags() & ui::EF_CONTROL_DOWN) {
+    launcher_controller()->CreateNewWindow();
+    return;
+  }
+
+  // In case of a keyboard event, we were called by a hotkey. In that case we
+  // activate the next item in line if an item of our list is already active.
+  if (event.type() & ui::ET_KEY_RELEASED) {
+    ActivateOrAdvanceToNextBrowser();
+    return;
+  }
+
+  Activate(ash::LAUNCH_FROM_UNKNOWN);
+}
+
+string16 BrowserShortcutLauncherItemController::GetTitle() {
+  return l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+}
+
+ui::MenuModel* BrowserShortcutLauncherItemController::CreateContextMenu(
+    aura::RootWindow* root_window) {
+  ash::LauncherItem item =
+      *(launcher_controller()->model()->ItemByID(launcher_id()));
+  return new LauncherContextMenu(launcher_controller(), &item, root_window);
+}
+
+ash::LauncherMenuModel*
+BrowserShortcutLauncherItemController::CreateApplicationMenu(int event_flags) {
+  return new LauncherApplicationMenuItemModel(GetApplicationList(event_flags));
+}
+
+bool BrowserShortcutLauncherItemController::IsDraggable() {
+  return launcher_controller()->CanPin() ? true : false;
+}
+
+bool BrowserShortcutLauncherItemController::ShouldShowTooltip() {
+  return true;
 }
 
 gfx::Image BrowserShortcutLauncherItemController::GetBrowserListIcon(
@@ -296,7 +313,7 @@ void BrowserShortcutLauncherItemController::ActivateOrAdvanceToNextBrowser() {
     if (i != items.end()) {
       browser = (++i == items.end()) ? items[0] : *i;
     } else {
-      browser = chrome::FindTabbedBrowser(profile_,
+      browser = chrome::FindTabbedBrowser(launcher_controller()->profile(),
                                           true,
                                           chrome::HOST_DESKTOP_TYPE_ASH);
       if (!browser ||

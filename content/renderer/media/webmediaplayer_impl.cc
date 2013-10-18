@@ -153,6 +153,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       supports_save_(true),
       starting_(false),
       chunk_demuxer_(NULL),
+      current_frame_painted_(false),
+      frames_dropped_before_paint_(0),
       pending_repaint_(false),
       pending_size_change_(false),
       video_frame_provider_client_(NULL),
@@ -176,7 +178,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
   // Also we want to be notified of |main_loop_| destruction.
   base::MessageLoop::current()->AddDestructionObserver(this);
 
-  if (WebKit::WebRuntimeFeatures::isLegacyEncryptedMediaEnabled()) {
+  if (WebKit::WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()) {
     decryptor_.reset(new ProxyDecryptor(
 #if defined(ENABLE_PEPPER_CDMS)
         client,
@@ -304,7 +306,7 @@ void WebMediaPlayerImpl::play() {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = false;
-  pipeline_->SetPlaybackRate(playback_rate_);
+  SetPlaybackRate(playback_rate_);
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PLAY));
 
@@ -316,7 +318,7 @@ void WebMediaPlayerImpl::pause() {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = true;
-  pipeline_->SetPlaybackRate(0.0f);
+  SetPlaybackRate(0.0f);
   paused_time_ = pipeline_->GetMediaTime();
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PAUSE));
@@ -383,7 +385,7 @@ void WebMediaPlayerImpl::setRate(double rate) {
 
   playback_rate_ = rate;
   if (!paused_) {
-    pipeline_->SetPlaybackRate(rate);
+    SetPlaybackRate(rate);
   }
 }
 
@@ -515,6 +517,7 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
   scoped_refptr<media::VideoFrame> video_frame;
   {
     base::AutoLock auto_lock(lock_);
+    current_frame_painted_ = true;
     video_frame = current_frame_;
   }
   gfx::Rect gfx_rect(rect);
@@ -548,7 +551,12 @@ unsigned WebMediaPlayerImpl::droppedFrameCount() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   media::PipelineStatistics stats = pipeline_->GetStatistics();
-  return stats.video_frames_dropped;
+
+  base::AutoLock auto_lock(lock_);
+  unsigned frames_dropped =
+      stats.video_frames_dropped + frames_dropped_before_paint_;
+  DCHECK_LE(frames_dropped, stats.video_frames_decoded);
+  return frames_dropped;
 }
 
 unsigned WebMediaPlayerImpl::audioDecodedByteCount() const {
@@ -576,6 +584,7 @@ void WebMediaPlayerImpl::SetVideoFrameProviderClient(
 
 scoped_refptr<media::VideoFrame> WebMediaPlayerImpl::GetCurrentFrame() {
   base::AutoLock auto_lock(lock_);
+  current_frame_painted_ = true;
   return current_frame_;
 }
 
@@ -922,8 +931,7 @@ void WebMediaPlayerImpl::OnKeyAdded(const std::string& session_id) {
                         WebString::fromUTF8(session_id));
 }
 
-void WebMediaPlayerImpl::OnNeedKey(const std::string& session_id,
-                                   const std::string& type,
+void WebMediaPlayerImpl::OnNeedKey(const std::string& type,
                                    const std::vector<uint8>& init_data) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
@@ -939,7 +947,7 @@ void WebMediaPlayerImpl::OnNeedKey(const std::string& session_id,
 
   const uint8* init_data_ptr = init_data.empty() ? NULL : &init_data[0];
   GetClient()->keyNeeded(WebString(),
-                         WebString::fromUTF8(session_id),
+                         WebString(),
                          init_data_ptr,
                          init_data.size());
 }
@@ -1036,7 +1044,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     demuxer_.reset(new media::FFmpegDemuxer(
         media_loop_, data_source_.get(),
-        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
         media_log_));
   } else {
     DCHECK(!chunk_demuxer_);
@@ -1051,7 +1059,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     chunk_demuxer_ = new media::ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
-        BIND_TO_RENDER_LOOP_1(&WebMediaPlayerImpl::OnNeedKey, ""),
+        BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNeedKey),
         add_text_track_cb,
         base::Bind(&LogMediaSourceError, media_log_));
     demuxer_.reset(chunk_demuxer_);
@@ -1234,7 +1242,17 @@ void WebMediaPlayerImpl::FrameReady(
     pending_size_change_ = true;
   }
 
+  // If |current_frame_| is set, hasn't been painted, and we haven't even
+  // gotten the chance to request a repaint for it yet, then mark it as dropped.
+  if (current_frame_ && !current_frame_painted_ && pending_repaint_) {
+    DVLOG(1) << "Frame dropped before being painted: "
+             << current_frame_->GetTimestamp().InSecondsF();
+    if (frames_dropped_before_paint_ < kuint32max)
+      frames_dropped_before_paint_++;
+  }
+
   current_frame_ = frame;
+  current_frame_painted_ = false;
 
   if (pending_repaint_)
     return;
@@ -1242,6 +1260,12 @@ void WebMediaPlayerImpl::FrameReady(
   pending_repaint_ = true;
   main_loop_->PostTask(FROM_HERE, base::Bind(
       &WebMediaPlayerImpl::Repaint, AsWeakPtr()));
+}
+
+void WebMediaPlayerImpl::SetPlaybackRate(float playback_rate) {
+  pipeline_->SetPlaybackRate(playback_rate);
+  if (data_source_)
+    data_source_->SetPlaybackRate(playback_rate);
 }
 
 }  // namespace content

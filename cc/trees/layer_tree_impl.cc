@@ -40,7 +40,8 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       contents_textures_purged_(false),
       viewport_size_invalid_(false),
       needs_update_draw_properties_(true),
-      needs_full_tree_sync_(true) {
+      needs_full_tree_sync_(true),
+      next_activation_forces_redraw_(false) {
 }
 
 LayerTreeImpl::~LayerTreeImpl() {
@@ -110,6 +111,11 @@ scoped_ptr<LayerImpl> LayerTreeImpl::DetachLayerTree() {
 void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   // The request queue should have been processed and does not require a push.
   DCHECK_EQ(ui_resource_request_queue_.size(), 0u);
+
+  if (next_activation_forces_redraw_) {
+    layer_tree_host_impl_->SetFullRootLayerDamage();
+    next_activation_forces_redraw_ = false;
+  }
 
   target_tree->SetLatencyInfo(latency_info_);
   latency_info_.Clear();
@@ -190,8 +196,10 @@ void LayerTreeImpl::SetPageScaleFactorAndLimits(float page_scale_factor,
   max_page_scale_factor_ = max_page_scale_factor;
   page_scale_factor_ = page_scale_factor;
 
-  if (root_layer_scroll_offset_delegate_)
-    root_layer_scroll_offset_delegate_->SetPageScaleFactor(page_scale_factor_);
+  if (root_layer_scroll_offset_delegate_) {
+    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactor(
+        total_page_scale_factor());
+  }
 }
 
 void LayerTreeImpl::SetPageScaleDelta(float delta) {
@@ -218,6 +226,11 @@ void LayerTreeImpl::SetPageScaleDelta(float delta) {
 
   UpdateMaxScrollOffset();
   set_needs_update_draw_properties();
+
+  if (root_layer_scroll_offset_delegate_) {
+    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactor(
+        total_page_scale_factor());
+  }
 }
 
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
@@ -355,6 +368,8 @@ void LayerTreeImpl::UpdateDrawProperties() {
                  source_frame_number_);
     LayerImpl* page_scale_layer =
         page_scale_layer_ ? page_scale_layer_ : RootContainerLayer();
+    bool can_render_to_separate_surface =
+        !output_surface()->ForcedDrawToSoftwareDevice();
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         root_layer(),
         DrawViewportSize(),
@@ -364,6 +379,7 @@ void LayerTreeImpl::UpdateDrawProperties() {
         page_scale_layer,
         MaxTextureSize(),
         settings().can_use_lcd_text,
+        can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
         &render_surface_layer_list_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
@@ -587,7 +603,7 @@ scoped_ptr<base::Value> LayerTreeImpl::AsValue() const {
   typedef LayerIterator<LayerImpl,
                         LayerImplList,
                         RenderSurfaceImpl,
-                        LayerIteratorActions::BackToFront> LayerIteratorType;
+                        LayerIteratorActions::FrontToBack> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
   for (LayerIteratorType it = LayerIteratorType::Begin(
            &render_surface_layer_list_); it != end; ++it) {
@@ -615,7 +631,8 @@ void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
 
   if (root_layer_scroll_offset_delegate_) {
     root_layer_scroll_offset_delegate_->SetScrollableSize(ScrollableSize());
-    root_layer_scroll_offset_delegate_->SetPageScaleFactor(page_scale_factor_);
+    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactor(
+        total_page_scale_factor());
   }
 }
 

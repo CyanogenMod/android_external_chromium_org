@@ -122,6 +122,9 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
   // content scripts and executeScript() calls without a response callback
   // are examples of when this will be false.
   IPC_STRUCT_MEMBER(bool, wants_result)
+
+  // The URL of the file that was injected, if any.
+  IPC_STRUCT_MEMBER(GURL, file_url)
 IPC_STRUCT_END()
 
 // Struct containing the data for external connections to extensions. Used to
@@ -423,11 +426,12 @@ IPC_MESSAGE_ROUTED2(ExtensionMsg_GetAppInstallStateResponse,
                     int32 /* callback_id */)
 
 // Dispatch the Port.onConnect event for message channels.
-IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
+IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
                     int /* target_port_id */,
                     std::string /* channel_name */,
                     base::DictionaryValue /* source_tab */,
-                    ExtensionMsg_ExternalConnectionInfo)
+                    ExtensionMsg_ExternalConnectionInfo,
+                    std::string /* tls_channel_id */)
 
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
@@ -517,10 +521,11 @@ IPC_MESSAGE_ROUTED0(ExtensionHostMsg_EventAck)
 // the given ID.  This always returns a valid port ID which can be used for
 // sending messages.  If an error occurred, the opener will be notified
 // asynchronously.
-IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToExtension,
+IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToExtension,
                             int /* routing_id */,
                             ExtensionMsg_ExternalConnectionInfo,
                             std::string /* channel_name */,
+                            bool /* include_tls_channel_id */,
                             int /* port_id */)
 
 IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToNativeApp,

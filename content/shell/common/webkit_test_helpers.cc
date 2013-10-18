@@ -41,7 +41,6 @@ void ExportLayoutTestSpecificPreferences(
   to->caret_browsing_enabled = from.caretBrowsingEnabled;
   to->allow_displaying_insecure_content = from.allowDisplayOfInsecureContent;
   to->allow_running_insecure_content = from.allowRunningOfInsecureContent;
-  to->css_shaders_enabled = from.cssCustomFilterEnabled;
   to->should_respect_image_orientation = from.shouldRespectImageOrientation;
   to->asynchronous_spell_checking_enabled =
       from.asynchronousSpellCheckingEnabled;
@@ -60,6 +59,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
   prefs->allow_universal_access_from_file_urls = true;
   prefs->dom_paste_enabled = true;
   prefs->javascript_can_access_clipboard = true;
+  prefs->xslt_enabled = true;
   prefs->xss_auditor_enabled = false;
 #if defined(OS_MACOSX)
   prefs->editing_behavior = webkit_glue::EDITING_BEHAVIOR_MAC;
@@ -111,6 +111,7 @@ void ApplyLayoutTestDefaultPreferences(WebPreferences* prefs) {
 #if defined(OS_ANDROID)
   prefs->text_autosizing_enabled = false;
 #endif
+  prefs->viewport_enabled = false;
 }
 
 base::FilePath GetWebKitRootDirFilePath() {

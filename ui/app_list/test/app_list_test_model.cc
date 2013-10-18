@@ -10,7 +10,26 @@
 namespace app_list {
 namespace test {
 
-AppListTestModel::AppListTestModel() {
+class AppListTestModel::AppListTestItemModel : public AppListItemModel {
+ public:
+  AppListTestItemModel(const std::string& id, AppListTestModel* model)
+      : AppListItemModel(id),
+        model_(model) {
+  }
+  virtual ~AppListTestItemModel() {}
+
+  virtual void Activate(int event_flags) OVERRIDE {
+    model_->ItemActivated(this);
+  }
+
+ private:
+  AppListTestModel* model_;
+  DISALLOW_COPY_AND_ASSIGN(AppListTestItemModel);
+};
+
+AppListTestModel::AppListTestModel()
+    : activate_count_(0),
+      last_activated_(NULL) {
   SetSignedIn(true);
 }
 
@@ -35,7 +54,7 @@ std::string AppListTestModel::GetModelContent() {
 
 AppListItemModel* AppListTestModel::CreateItem(const std::string& title,
                                                const std::string& full_name) {
-  AppListItemModel* item = new AppListItemModel;
+  AppListItemModel* item = new AppListTestItemModel(title, this);
   item->SetTitleAndFullName(title, full_name);
   return item;
 }
@@ -52,6 +71,11 @@ void AppListTestModel::AddItem(const std::string& title,
 void AppListTestModel::HighlightItemAt(int index) {
   AppListItemModel* item = apps()->GetItemAt(index);
   item->SetHighlighted(true);
+}
+
+void AppListTestModel::ItemActivated(AppListTestItemModel* item) {
+  last_activated_ = item;
+  ++activate_count_;
 }
 
 }  // namespace test

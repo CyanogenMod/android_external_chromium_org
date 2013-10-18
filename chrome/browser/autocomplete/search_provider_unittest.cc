@@ -481,16 +481,41 @@ TEST_F(SearchProviderTest, DontSendPrivateDataToSuggest) {
     "unknownscheme:anything",
     "http://hostname/?query=q",
     "http://hostname/path#ref",
+    "http://hostname/path #ref",
     "https://hostname/path",
   };
 
   for (size_t i = 0; i < arraysize(inputs); ++i) {
     QueryForInput(ASCIIToUTF16(inputs[i]), false, false);
-    // Make sure the default providers suggest service was not queried.
+    // Make sure the default provider's suggest service was not queried.
     ASSERT_TRUE(test_factory_.GetFetcherByID(
         SearchProvider::kDefaultProviderURLFetcherID) == NULL);
     // Run till the history results complete.
     RunTillProviderDone();
+  }
+}
+
+TEST_F(SearchProviderTest, SendNonPrivateDataToSuggest) {
+  // All of the following input strings should be sent to the suggest server,
+  // because they should not get caught by the private data checks.
+  const char* inputs[] = {
+    "query",
+    "query with spaces",
+    "http://hostname",
+    "http://hostname/path",
+    "http://hostname #ref",
+    "www.hostname.com #ref",
+    "https://hostname",
+    "#hashtag",
+    "foo https://hostname/path"
+  };
+
+  profile_.BlockUntilHistoryProcessesPendingRequests();
+  for (size_t i = 0; i < arraysize(inputs); ++i) {
+    QueryForInput(ASCIIToUTF16(inputs[i]), false, false);
+    // Make sure the default provider's suggest service was queried.
+    ASSERT_TRUE(test_factory_.GetFetcherByID(
+        SearchProvider::kDefaultProviderURLFetcherID) != NULL);
   }
 }
 
@@ -2621,4 +2646,24 @@ TEST_F(SearchProviderTest, PrefetchMetadataParsing) {
                 matches[j].keyword == ASCIIToUTF16("k"));
     }
   }
+}
+
+TEST_F(SearchProviderTest, ReflectsBookmarkBarState) {
+  profile_.GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, false);
+  string16 term = term1_.substr(0, term1_.length() - 1);
+  QueryForInput(term, true, false);
+  ASSERT_FALSE(provider_->matches().empty());
+  EXPECT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
+            provider_->matches()[0].type);
+  ASSERT_TRUE(provider_->matches()[0].search_terms_args != NULL);
+  EXPECT_FALSE(provider_->matches()[0].search_terms_args->bookmark_bar_pinned);
+
+  profile_.GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
+  term = term1_.substr(0, term1_.length() - 1);
+  QueryForInput(term, true, false);
+  ASSERT_FALSE(provider_->matches().empty());
+  EXPECT_EQ(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
+            provider_->matches()[0].type);
+  ASSERT_TRUE(provider_->matches()[0].search_terms_args != NULL);
+  EXPECT_TRUE(provider_->matches()[0].search_terms_args->bookmark_bar_pinned);
 }

@@ -16,7 +16,6 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
-#include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
@@ -137,16 +136,9 @@ void DragBookmarks(Profile* profile,
   bool was_nested = base::MessageLoop::current()->IsNested();
   base::MessageLoop::current()->SetNestableTasksAllowed(true);
 
-  std::vector<BookmarkNodeData::Element> elements;
-  for (std::vector<const BookmarkNode*>::const_iterator it = nodes.begin();
-       it != nodes.end(); ++it) {
-    elements.push_back(BookmarkNodeData::Element(*it));
-  }
-
-  bookmark_pasteboard_helper_mac::WriteToPasteboard(
-      bookmark_pasteboard_helper_mac::kDragPasteboard,
-      elements,
-      profile->GetPath());
+  BookmarkNodeData drag_data(nodes);
+  drag_data.SetOriginatingProfile(profile);
+  drag_data.WriteToClipboard(ui::CLIPBOARD_TYPE_DRAG);
 
   // Synthesize an event for dragging, since we can't be sure that
   // [NSApp currentEvent] will return a valid dragging event.

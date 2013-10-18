@@ -4,6 +4,7 @@
 
 #include "content/browser/aura/software_browser_compositor_output_surface.h"
 
+#include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/software_output_device.h"
@@ -19,8 +20,14 @@ SoftwareBrowserCompositorOutputSurface::SoftwareBrowserCompositorOutputSurface(
 void SoftwareBrowserCompositorOutputSurface::SwapBuffers(
     cc::CompositorFrame* frame) {
   ui::LatencyInfo latency_info = frame->metadata.latency_info;
-  latency_info.swap_timestamp = base::TimeTicks::HighResNow();
-  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
+  latency_info.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &RenderWidgetHostImpl::CompositorFrameDrawn,
+          latency_info));
 }
 
 }  // namespace content

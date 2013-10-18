@@ -16,7 +16,7 @@ GYP_TARGET_DEPENDENCIES := \
 
 
 ### Generated for rule "content_content_gyp_content_jni_headers_target_generate_jni_headers":
-# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingIntentHandler.java', 'public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/CommandLine.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
+# "{'inputs': ['../base/android/jni_generator/jni_generator.py', '../android_webview/build/jarjar-rules.txt'], 'process_outputs_as_sources': '1', 'extension': 'java', 'outputs': ['$(gyp_shared_intermediate_dir)/content/jni/%(INPUT_ROOT)s_jni.h'], 'rule_name': 'generate_jni_headers', 'rule_sources': ['public/android/java/src/org/chromium/content/app/ChildProcessService.java', 'public/android/java/src/org/chromium/content/app/ContentMain.java', 'public/android/java/src/org/chromium/content/app/LibraryLoader.java', 'public/android/java/src/org/chromium/content/browser/accessibility/BrowserAccessibilityManager.java', 'public/android/java/src/org/chromium/content/browser/BrowserStartupController.java', 'public/android/java/src/org/chromium/content/browser/ChildProcessLauncher.java', 'public/android/java/src/org/chromium/content/browser/ContentSettings.java', 'public/android/java/src/org/chromium/content/browser/ContentVideoView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewCore.java', 'public/android/java/src/org/chromium/content/browser/ContentViewRenderView.java', 'public/android/java/src/org/chromium/content/browser/ContentViewStatics.java', 'public/android/java/src/org/chromium/content/browser/DeviceMotionAndOrientation.java', 'public/android/java/src/org/chromium/content/browser/DownloadController.java', 'public/android/java/src/org/chromium/content/browser/input/ImeAdapter.java', 'public/android/java/src/org/chromium/content/browser/input/DateTimeChooserAndroid.java', 'public/android/java/src/org/chromium/content/browser/InterstitialPageDelegateAndroid.java', 'public/android/java/src/org/chromium/content/browser/LoadUrlParams.java', 'public/android/java/src/org/chromium/content/browser/LocationProvider.java', 'public/android/java/src/org/chromium/content/browser/MediaDrmCredentialManager.java', 'public/android/java/src/org/chromium/content/browser/MediaResourceGetter.java', 'public/android/java/src/org/chromium/content/browser/PowerSaveBlocker.java', 'public/android/java/src/org/chromium/content/browser/GenericTouchGesture.java', 'public/android/java/src/org/chromium/content/browser/SpeechRecognition.java', 'public/android/java/src/org/chromium/content/browser/TouchPoint.java', 'public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java', 'public/android/java/src/org/chromium/content/browser/VibrationMessageFilter.java', 'public/android/java/src/org/chromium/content/browser/WebContentsObserverAndroid.java', 'public/android/java/src/org/chromium/content/common/CommandLine.java', 'public/android/java/src/org/chromium/content/common/DeviceTelephonyInfo.java', 'public/android/java/src/org/chromium/content/common/TraceEvent.java'], 'action': ['../base/android/jni_generator/jni_generator.py', '--input_file', '$(RULE_SOURCES)', '--output_dir', '$(gyp_shared_intermediate_dir)/content/jni', '--optimize_generation', '0', '--jarjar', '../android_webview/build/jarjar-rules.txt'], 'message': 'Generating JNI bindings from $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/content/jni/ChildProcessService_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
@@ -257,15 +257,15 @@ $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h: $(LOCAL_PATH)/conte
 .PHONY: content_content_jni_headers_gyp_rule_trigger
 content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h
 
-$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h: gyp_local_path := $(LOCAL_PATH)
-$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
-$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
-$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/TracingIntentHandler.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
-	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TracingIntentHandler.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
+$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: gyp_local_path := $(LOCAL_PATH)
+$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
+$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
+$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h: $(LOCAL_PATH)/content/public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java $(LOCAL_PATH)/base/android/jni_generator/jni_generator.py $(LOCAL_PATH)/android_webview/build/jarjar-rules.txt $(GYP_TARGET_DEPENDENCIES)
+	mkdir -p $(gyp_shared_intermediate_dir)/content/jni; cd $(gyp_local_path)/content; ../base/android/jni_generator/jni_generator.py --input_file public/android/java/src/org/chromium/content/browser/TracingControllerAndroid.java --output_dir "$(gyp_shared_intermediate_dir)/content/jni" --optimize_generation 0 --jarjar ../android_webview/build/jarjar-rules.txt
 
 .PHONY: content_content_jni_headers_gyp_rule_trigger
-content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h
+content_content_jni_headers_gyp_rule_trigger: $(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h
 
 $(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
@@ -344,7 +344,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h \
@@ -379,7 +379,7 @@ LOCAL_GENERATED_SOURCES := \
 	$(gyp_shared_intermediate_dir)/content/jni/GenericTouchGesture_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/SpeechRecognition_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/TouchPoint_jni.h \
-	$(gyp_shared_intermediate_dir)/content/jni/TracingIntentHandler_jni.h \
+	$(gyp_shared_intermediate_dir)/content/jni/TracingControllerAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/VibrationMessageFilter_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/WebContentsObserverAndroid_jni.h \
 	$(gyp_shared_intermediate_dir)/content/jni/CommandLine_jni.h \
@@ -437,7 +437,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -517,7 +516,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

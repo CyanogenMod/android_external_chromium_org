@@ -398,6 +398,8 @@ void RenderThreadImpl::Init() {
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
+  renderer_process_id_ = base::kNullProcessId;
+
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
 
@@ -460,8 +462,8 @@ void RenderThreadImpl::Shutdown() {
 
   // Leak shared contexts on other threads, as we can not get to the correct
   // thread to destroy them.
-  if (shared_contexts_compositor_thread_.get())
-    shared_contexts_compositor_thread_->set_leak_on_destroy();
+  if (offscreen_compositor_contexts_.get())
+    offscreen_compositor_contexts_->set_leak_on_destroy();
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -653,18 +655,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 #endif
     if (!compositor_message_loop_proxy_.get()) {
       compositor_thread_.reset(new base::Thread("Compositor"));
-#if defined(OS_POSIX)
-      // Workaround for crbug.com/293736
-      // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
-      // compositor scheduling) work incorrectly across system time changes
-      // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
-      // uses monotonic time (immune to these problems).
-      base::Thread::Options options;
-      options.message_loop_type = base::MessageLoop::TYPE_IO;
-      compositor_thread_->StartWithOptions(options);
-#else
       compositor_thread_->Start();
-#endif
 #if defined(OS_ANDROID)
       compositor_thread_->SetPriority(base::kThreadPriority_Display);
 #endif
@@ -922,45 +913,56 @@ RenderThreadImpl::CreateOffscreenContext3d() {
 }
 
 scoped_refptr<cc::ContextProvider>
-RenderThreadImpl::OffscreenContextProviderForMainThread() {
+RenderThreadImpl::OffscreenCompositorContextProvider() {
   DCHECK(IsMainThread());
 
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
       SynchronousCompositorFactory::GetInstance()) {
+    if (compositor_message_loop_proxy_)
+      return factory->GetOffscreenContextProviderForCompositorThread();
     return factory->GetOffscreenContextProviderForMainThread();
   }
 #endif
 
-  if (!shared_contexts_main_thread_.get() ||
-      shared_contexts_main_thread_->DestroyedOnMainThread()) {
-    shared_contexts_main_thread_ = ContextProviderCommandBuffer::Create(
+  if (!offscreen_compositor_contexts_.get() ||
+      offscreen_compositor_contexts_->DestroyedOnMainThread()) {
+    offscreen_compositor_contexts_ = ContextProviderCommandBuffer::Create(
         CreateOffscreenContext3d(),
-        "Compositor-Offscreen-MainThread");
-    if (shared_contexts_main_thread_.get() &&
-        !shared_contexts_main_thread_->BindToCurrentThread())
-      shared_contexts_main_thread_ = NULL;
+        "Compositor-Offscreen");
   }
-  return shared_contexts_main_thread_;
+  return offscreen_compositor_contexts_;
 }
 
 scoped_refptr<cc::ContextProvider>
-RenderThreadImpl::OffscreenContextProviderForCompositorThread() {
+RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
-
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance()) {
-    return factory->GetOffscreenContextProviderForCompositorThread();
-  }
+      SynchronousCompositorFactory::GetInstance())
+    return factory->GetOffscreenContextProviderForMainThread();
 #endif
 
-  if (!shared_contexts_compositor_thread_.get() ||
-      shared_contexts_compositor_thread_->DestroyedOnMainThread()) {
-    shared_contexts_compositor_thread_ = ContextProviderCommandBuffer::Create(
-        CreateOffscreenContext3d(), "Compositor-Offscreen");
+  if (!shared_main_thread_contexts_ ||
+      shared_main_thread_contexts_->DestroyedOnMainThread()) {
+    if (compositor_message_loop_proxy_) {
+      // In threaded compositing mode, we have to create a new ContextProvider
+      // to bind to the main thread since the compositor's is bound to the
+      // compositor thread.
+      shared_main_thread_contexts_ =
+          ContextProviderCommandBuffer::Create(CreateOffscreenContext3d(),
+                                               "Offscreen-MainThread");
+    } else {
+      // In single threaded mode, we can use the same context provider.
+      shared_main_thread_contexts_ =
+          static_cast<ContextProviderCommandBuffer*>(
+                OffscreenCompositorContextProvider().get());
+    }
   }
-  return shared_contexts_compositor_thread_;
+  if (shared_main_thread_contexts_ &&
+      !shared_main_thread_contexts_->BindToCurrentThread())
+    shared_main_thread_contexts_ = NULL;
+  return shared_main_thread_contexts_;
 }
 
 AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
@@ -1094,6 +1096,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
     IPC_MESSAGE_HANDLER(ViewMsg_NetworkStateChanged, OnNetworkStateChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_TempCrashWithData, OnTempCrashWithData)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetRendererProcessID, OnSetRendererProcessID)
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -1231,6 +1234,10 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
   CHECK(false);
 }
 
+void RenderThreadImpl::OnSetRendererProcessID(base::ProcessId process_id) {
+  renderer_process_id_ = process_id;
+}
+
 void RenderThreadImpl::OnSetWebKitSharedTimersSuspended(bool suspend) {
   ToggleWebKitSharedTimer(suspend);
 }
@@ -1271,18 +1278,7 @@ RenderThreadImpl::GetMediaThreadMessageLoopProxy() {
   DCHECK(message_loop() == base::MessageLoop::current());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
-#if defined(OS_POSIX)
-    // Workaround for crbug.com/293736
-    // On Posix, MessagePumpDefault uses system time, so delayed tasks (for
-    // compositor scheduling) work incorrectly across system time changes
-    // (e.g.  tlsdate). So instead, use an IO loop, which uses libevent, that
-    // uses monotonic time (immune to these problems).
-    base::Thread::Options options;
-    options.message_loop_type = base::MessageLoop::TYPE_IO;
-    media_thread_->StartWithOptions(options);
-#else
     media_thread_->Start();
-#endif
 
 #if defined(OS_ANDROID)
     renderer_demuxer_ = new RendererDemuxerAndroid();
@@ -1304,6 +1300,10 @@ void RenderThreadImpl::SampleGamepads(WebKit::WebGamepads* data) {
   if (!gamepad_shared_memory_reader_)
     gamepad_shared_memory_reader_.reset(new GamepadSharedMemoryReader);
   gamepad_shared_memory_reader_->SampleGamepads(*data);
+}
+
+base::ProcessId RenderThreadImpl::renderer_process_id() const {
+  return renderer_process_id_;
 }
 
 }  // namespace content

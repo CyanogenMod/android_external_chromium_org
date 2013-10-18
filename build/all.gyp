@@ -14,7 +14,6 @@
         '../chrome/chrome.gyp:*',
         '../content/content.gyp:*',
         '../crypto/crypto.gyp:*',
-        '../mojo/mojo.gyp:*',
         '../net/net.gyp:*',
         '../sdch/sdch.gyp:*',
         '../sql/sql.gyp:*',
@@ -41,7 +40,9 @@
             '../gpu/tools/tools.gyp:*',
             '../ipc/ipc.gyp:*',
             '../jingle/jingle.gyp:*',
+            '../media/cast/cast.gyp:*',
             '../media/media.gyp:*',
+            '../mojo/mojo.gyp:*',
             '../ppapi/ppapi.gyp:*',
             '../ppapi/ppapi_internal.gyp:*',
             '../printing/printing.gyp:*',
@@ -62,6 +63,7 @@
             '../third_party/qcms/qcms.gyp:*',
             '../third_party/re2/re2.gyp:re2',
             '../third_party/WebKit/public/all.gyp:*',
+            '../tools/gn/gn.gyp:*',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../v8/tools/gyp/v8.gyp:*',
             '../webkit/glue/webkit_glue.gyp:*',
@@ -71,6 +73,11 @@
         }, { #  'OS=="ios"'
           'dependencies': [
             '../ios/ios.gyp:*',
+          ],
+        }],
+        ['OS!="android" and OS!="ios"', {
+          'dependencies': [
+            '../chrome/tools/profile_reset/jtl_compiler.gyp:*',
           ],
         }],
         ['os_posix==1 and OS!="android" and OS!="ios"', {
@@ -289,6 +296,29 @@
                 '../remoting/remoting.gyp:remoting_host_installation',
               ],
             }],
+            ['asan==1', {
+              'variables': {
+                # Disable incremental linking for all modules.
+                # 0: inherit, 1: disabled, 2: enabled.
+                'msvs_debug_link_incremental': '1',
+                'msvs_large_module_debug_link_mode': '1',
+                # Disable RTC. Syzygy explicitly doesn't support RTC
+                # instrumented binaries for now.
+                'win_debug_RuntimeChecks': '0',
+              },
+              'defines': [
+                # Disable iterator debugging (huge speed boost).
+                '_HAS_ITERATOR_DEBUGGING=0',
+              ],
+              'msvs_settings': {
+                'VCLinkerTool': {
+                  # Enable profile information (necessary for asan
+                  # instrumentation). This is incompatible with incremental
+                  # linking.
+                  'Profile': 'true',
+                },
+              }
+            }],
           ],
         }],
         ['OS=="linux"', {
@@ -341,8 +371,8 @@
           'target_name': 'chromium_builder_perf',
           'type': 'none',
           'dependencies': [
-            'chromium_builder_qa', # needed for pyauto
             '../cc/cc_tests.gyp:cc_perftests',
+            '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:performance_ui_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
@@ -483,12 +513,30 @@
 
             # We refer to content_shell directly rather than all_webkit
             # because we don't want the _unittests binaries.
-            '../content/content.gyp:content_browsertests',
             '../content/content.gyp:content_shell',
-
-            '../net/net.gyp:dns_fuzz_stub',
-         ],
-       },
+          ],
+          'conditions': [
+            ['OS!="win"', {
+              'dependencies': [
+                '../content/content.gyp:content_browsertests',
+                '../net/net.gyp:dns_fuzz_stub',
+              ],
+            }],
+            ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome_syzygy.gyp:chrome_dll_syzygy',
+                '../content/content.gyp:content_shell_syzyasan',
+              ],
+              'conditions': [
+                ['chrome_multiple_dll==1', {
+                  'dependencies': [
+                    '../chrome/chrome_syzygy.gyp:chrome_child_dll_syzygy',
+                  ],
+                }],
+              ],
+            }],
+          ],
+        },
       ],  # targets
     }],
     ['OS=="mac"', {

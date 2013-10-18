@@ -13,8 +13,6 @@
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
-#include "cc/debug/benchmark_instrumentation.h"
-#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/debug/traced_picture.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
@@ -204,11 +202,9 @@ void Picture::CloneForDrawing(int num_threads) {
 }
 
 void Picture::Record(ContentLayerClient* painter,
-                     const SkTileGridPicture::TileGridInfo& tile_grid_info,
-                     RenderingStatsInstrumentation* stats_instrumentation) {
-  TRACE_EVENT1(benchmark_instrumentation::kCategory,
-               benchmark_instrumentation::kPictureRecord,
-               benchmark_instrumentation::kData, AsTraceableRecordData());
+                     const SkTileGridPicture::TileGridInfo& tile_grid_info) {
+  TRACE_EVENT1("cc", "Picture::Record",
+               "data", AsTraceableRecordData());
 
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
   picture_ = skia::AdoptRef(new SkTileGridPicture(
@@ -231,13 +227,8 @@ void Picture::Record(ContentLayerClient* painter,
   canvas->clipRect(layer_skrect);
 
   gfx::RectF opaque_layer_rect;
-  base::TimeTicks start_time = stats_instrumentation->StartRecording();
 
   painter->PaintContents(canvas, layer_rect_, &opaque_layer_rect);
-
-  base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
-  stats_instrumentation->AddRecord(duration,
-                                   layer_rect_.width() * layer_rect_.height());
 
   canvas->restore();
   picture_->endRecording();
@@ -248,8 +239,7 @@ void Picture::Record(ContentLayerClient* painter,
 }
 
 void Picture::GatherPixelRefs(
-    const SkTileGridPicture::TileGridInfo& tile_grid_info,
-    RenderingStatsInstrumentation* stats_instrumentation) {
+    const SkTileGridPicture::TileGridInfo& tile_grid_info) {
   TRACE_EVENT2("cc", "Picture::GatherPixelRefs",
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
@@ -267,8 +257,6 @@ void Picture::GatherPixelRefs(
   int min_y = std::numeric_limits<int>::max();
   int max_x = 0;
   int max_y = 0;
-
-  base::TimeTicks start_time = stats_instrumentation->StartRecording();
 
   skia::LazyPixelRefList pixel_refs;
   skia::LazyPixelRefUtils::GatherPixelRefs(picture_.get(), &pixel_refs);
@@ -299,22 +287,18 @@ void Picture::GatherPixelRefs(
     max_y = std::max(max_y, max.y());
   }
 
-  base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
-  stats_instrumentation->AddImageGathering(duration);
-
   min_pixel_cell_ = gfx::Point(min_x, min_y);
   max_pixel_cell_ = gfx::Point(max_x, max_y);
 }
 
-void Picture::Raster(
+int Picture::Raster(
     SkCanvas* canvas,
     SkDrawPictureCallback* callback,
     gfx::Rect content_rect,
     float contents_scale) {
-  TRACE_EVENT_BEGIN1(benchmark_instrumentation::kCategory,
-                     benchmark_instrumentation::kPictureRaster,
-                     "data",
-                     AsTraceableRasterData(content_rect, contents_scale));
+  TRACE_EVENT_BEGIN1(
+      "cc", "Picture::Raster",
+      "data", AsTraceableRasterData(content_rect, contents_scale));
 
   DCHECK(picture_);
 
@@ -326,10 +310,10 @@ void Picture::Raster(
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   canvas->restore();
-  TRACE_EVENT_END1(benchmark_instrumentation::kCategory,
-                   benchmark_instrumentation::kPictureRaster,
-                   benchmark_instrumentation::kNumPixelsRasterized,
-                   bounds.width() * bounds.height());
+  TRACE_EVENT_END1(
+      "cc", "Picture::Raster",
+      "num_pixels_rasterized", bounds.width() * bounds.height());
+  return bounds.width() * bounds.height();
 }
 
 void Picture::Replay(SkCanvas* canvas) {
@@ -475,7 +459,7 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
   return *this;
 }
 
-scoped_ptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRasterData(gfx::Rect rect, float scale) const {
   scoped_ptr<base::DictionaryValue> raster_data(new base::DictionaryValue());
   raster_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
@@ -487,14 +471,12 @@ scoped_ptr<base::debug::ConvertableToTraceFormat>
   return TracedValue::FromValue(raster_data.release());
 }
 
-scoped_ptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRecordData() const {
   scoped_ptr<base::DictionaryValue> record_data(new base::DictionaryValue());
   record_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
-  record_data->SetInteger(benchmark_instrumentation::kWidth,
-                          layer_rect_.width());
-  record_data->SetInteger(benchmark_instrumentation::kHeight,
-                          layer_rect_.height());
+  record_data->SetInteger("width", layer_rect_.width());
+  record_data->SetInteger("height", layer_rect_.height());
   return TracedValue::FromValue(record_data.release());
 }
 

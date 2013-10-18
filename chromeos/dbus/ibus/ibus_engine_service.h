@@ -15,11 +15,8 @@
 
 namespace chromeos {
 
-class IBusLookupTable;
-class IBusProperty;
 class IBusText;
 class IBusEngineHandlerInterface;
-typedef ScopedVector<IBusProperty> IBusPropertyList;
 
 // A class to make the actual DBus method call handling for IBusEngine service.
 // The exported method call is used by ibus-demon to process key event, because
@@ -56,8 +53,6 @@ class CHROMEOS_EXPORT IBusEngineService {
   virtual void ForwardKeyEvent(uint32 keyval, uint32 keycode, uint32 state) = 0;
   // Emits RequireSurroundingText signal.
   virtual void RequireSurroundingText() = 0;
-  // Emits CommitText signal.
-  virtual void CommitText(const std::string& text) = 0;
   // Emits DeleteSurroundingText signal.
   virtual void DeleteSurroundingText(int32 offset, uint32 length) = 0;
 

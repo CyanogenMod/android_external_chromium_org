@@ -33,17 +33,14 @@ class VideoDecoderJob;
 
 // This class handles media source extensions on Android. It uses Android
 // MediaCodec to decode audio and video streams in two separate threads.
-// IPC is being used to send data from the render process to this object.
-// TODO(qinmin): use shared memory to send data between processes.
 class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
                                        public DemuxerAndroidClient {
  public:
-  // Constructs a player with the given IDs. |manager| and |demuxer| must
-  // outlive the lifetime of this object.
+  // Constructs a player with the given ID and demuxer. |manager| must outlive
+  // the lifetime of this object.
   MediaSourcePlayer(int player_id,
                     MediaPlayerManager* manager,
-                    int demuxer_client_id,
-                    DemuxerAndroid* demuxer);
+                    scoped_ptr<DemuxerAndroid> demuxer);
   virtual ~MediaSourcePlayer();
 
   static bool IsTypeSupported(const std::vector<uint8>& scheme_uuid,
@@ -160,8 +157,7 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void SetPendingEvent(PendingEventFlags event);
   void ClearPendingEvent(PendingEventFlags event);
 
-  int demuxer_client_id_;
-  DemuxerAndroid* demuxer_;
+  scoped_ptr<DemuxerAndroid> demuxer_;
 
   // Pending event that the player needs to do.
   unsigned pending_event_;
@@ -223,6 +219,11 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   base::WeakPtrFactory<MediaSourcePlayer> weak_this_;
 
   MediaDrmBridge* drm_bridge_;
+
+  // No decryption key available to decrypt the encrypted buffer. In this case,
+  // the player should pause. When a new key is added (OnKeyAdded()), we should
+  // try to start playback again.
+  bool is_waiting_for_key_;
 
   friend class MediaSourcePlayerTest;
   DISALLOW_COPY_AND_ASSIGN(MediaSourcePlayer);

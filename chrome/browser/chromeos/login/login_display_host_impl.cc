@@ -43,7 +43,6 @@
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
-#include "chrome/browser/chromeos/system/timezone_settings.h"
 #include "chrome/browser/chromeos/ui/focus_ring_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
@@ -56,6 +55,7 @@
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
+#include "chromeos/settings/timezone_settings.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
@@ -259,13 +259,6 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
                << " wait_for_wp_load_: " << waiting_for_wallpaper_load_
                << " wait_for_pods_: " << waiting_for_user_pods_
                << " init_webui_hidden_: " << initialize_webui_hidden_;
-
-  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation()) {
-    views::FocusManager::set_arrow_key_traversal_enabled(true);
-
-    focus_ring_controller_.reset(new FocusRingController);
-    focus_ring_controller_->SetVisible(true);
-  }
 }
 
 LoginDisplayHostImpl::~LoginDisplayHostImpl() {
@@ -290,6 +283,12 @@ LoginDisplayHostImpl::~LoginDisplayHostImpl() {
 
 LoginDisplay* LoginDisplayHostImpl::CreateLoginDisplay(
     LoginDisplay::Delegate* delegate) {
+  if (system::keyboard_settings::ForceKeyboardDrivenUINavigation()) {
+    views::FocusManager::set_arrow_key_traversal_enabled(true);
+
+    focus_ring_controller_.reset(new FocusRingController);
+    focus_ring_controller_->SetVisible(true);
+  }
   webui_login_display_ = new WebUILoginDisplay(delegate);
   webui_login_display_->set_background_bounds(background_bounds());
   return webui_login_display_;
@@ -301,10 +300,6 @@ gfx::NativeWindow LoginDisplayHostImpl::GetNativeWindow() const {
 
 WebUILoginView* LoginDisplayHostImpl::GetWebUILoginView() const {
   return login_view_;
-}
-
-views::Widget* LoginDisplayHostImpl::GetWidget() const {
-  return login_window_;
 }
 
 void LoginDisplayHostImpl::BeforeSessionStart() {
@@ -339,13 +334,6 @@ void LoginDisplayHostImpl::OnCompleteLogin() {
 void LoginDisplayHostImpl::OpenProxySettings() {
   if (login_view_)
     login_view_->OpenProxySettings();
-}
-
-void LoginDisplayHostImpl::SetOobeProgressBarVisible(bool visible) {
-  GetOobeUI()->ShowOobeUI(visible);
-}
-
-void LoginDisplayHostImpl::SetShutdownButtonEnabled(bool enable) {
 }
 
 void LoginDisplayHostImpl::SetStatusAreaVisible(bool visible) {
@@ -437,7 +425,6 @@ void LoginDisplayHostImpl::StartUserAdding(
   sign_in_controller_.reset(new chromeos::ExistingUserController(this));
   SetOobeProgressBarVisible(oobe_progress_bar_visible_ = false);
   SetStatusAreaVisible(true);
-  SetShutdownButtonEnabled(true);
   sign_in_controller_->Init(
       chromeos::UserManager::Get()->GetUsersAdmittedForMultiProfile());
   CHECK(webui_login_display_);
@@ -478,7 +465,6 @@ void LoginDisplayHostImpl::StartSignInScreen() {
   oobe_progress_bar_visible_ = !StartupUtils::IsDeviceRegistered();
   SetOobeProgressBarVisible(oobe_progress_bar_visible_);
   SetStatusAreaVisible(true);
-  SetShutdownButtonEnabled(true);
   sign_in_controller_->Init(users);
 
   // We might be here after a reboot that was triggered after OOBE was complete,
@@ -510,7 +496,6 @@ void LoginDisplayHostImpl::ResumeSignInScreen() {
   CHECK(sign_in_controller_.get());
   SetOobeProgressBarVisible(oobe_progress_bar_visible_);
   SetStatusAreaVisible(true);
-  SetShutdownButtonEnabled(true);
   sign_in_controller_->ResumeLogin();
 }
 
@@ -835,6 +820,10 @@ bool LoginDisplayHostImpl::IsRunningUserAdding() {
 
 void LoginDisplayHostImpl::OnAuthPrewarmDone() {
   auth_prewarmer_.reset();
+}
+
+void LoginDisplayHostImpl::SetOobeProgressBarVisible(bool visible) {
+  GetOobeUI()->ShowOobeUI(visible);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

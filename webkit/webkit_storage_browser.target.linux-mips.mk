@@ -60,7 +60,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/copy_or_move_operation_delegate.cc \
 	webkit/browser/fileapi/dragged_file_util.cc \
 	webkit/browser/fileapi/external_mount_points.cc \
-	webkit/browser/fileapi/file_permission_policy.cc \
 	webkit/browser/fileapi/file_system_context.cc \
 	webkit/browser/fileapi/file_system_dir_url_request_job.cc \
 	webkit/browser/fileapi/file_system_file_stream_reader.cc \
@@ -92,7 +91,6 @@ LOCAL_SRC_FILES := \
 	webkit/browser/fileapi/sandbox_origin_database.cc \
 	webkit/browser/fileapi/sandbox_origin_database_interface.cc \
 	webkit/browser/fileapi/sandbox_quota_observer.cc \
-	webkit/browser/fileapi/test_file_system_backend.cc \
 	webkit/browser/fileapi/timed_task_helper.cc \
 	webkit/browser/fileapi/transient_file_util.cc \
 	webkit/browser/fileapi/upload_file_system_file_element_reader.cc \
@@ -151,7 +149,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -272,7 +269,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

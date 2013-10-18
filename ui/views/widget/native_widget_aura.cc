@@ -534,6 +534,10 @@ void NativeWidgetAura::SetAlwaysOnTop(bool on_top) {
     window_->SetProperty(aura::client::kAlwaysOnTopKey, on_top);
 }
 
+bool NativeWidgetAura::IsAlwaysOnTop() const {
+  return window_ && window_->GetProperty(aura::client::kAlwaysOnTopKey);
+}
+
 void NativeWidgetAura::Maximize() {
   if (window_)
     window_->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MAXIMIZED);
@@ -1141,7 +1145,7 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
 
 // static
 bool NativeWidgetPrivate::IsMouseButtonDown() {
-  return aura::Env::GetInstance()->is_mouse_button_down();
+  return aura::Env::GetInstance()->IsMouseButtonDown();
 }
 
 // static

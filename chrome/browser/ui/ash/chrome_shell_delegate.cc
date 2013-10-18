@@ -4,9 +4,9 @@
 
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/session_state_delegate.h"
@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
 #include "chrome/browser/ui/ash/user_action_handler.h"
-#include "chrome/browser/ui/ash/window_positioner.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -100,9 +99,7 @@ class ChromeShellDelegate::TabRestoreHelper : public TabRestoreServiceObserver {
 };
 
 ChromeShellDelegate::ChromeShellDelegate()
-    : window_positioner_(new ash::WindowPositioner()),
-      weak_factory_(this),
-      launcher_delegate_(NULL) {
+    : launcher_delegate_(NULL) {
   instance_ = this;
   PlatformInit();
 }
@@ -344,6 +341,9 @@ void ChromeShellDelegate::RecordUserMetricsAction(
       break;
     case ash::UMA_CLOSE_THROUGH_CONTEXT_MENU:
       content::RecordAction(content::UserMetricsAction("CloseFromContextMenu"));
+      break;
+    case ash::UMA_GESTURE_OVERVIEW:
+      content::RecordAction(content::UserMetricsAction("Gesture_Overview"));
       break;
     case ash::UMA_LAUNCHER_CLICK_ON_APP:
       content::RecordAction(content::UserMetricsAction("Launcher_ClickOnApp"));

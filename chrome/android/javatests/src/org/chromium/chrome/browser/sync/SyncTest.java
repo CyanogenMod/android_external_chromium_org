@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.sync;
 
 import android.accounts.Account;
 import android.app.Activity;
-import android.content.Context;
 import android.util.Log;
 
 import org.chromium.base.ThreadUtils;
@@ -18,14 +17,12 @@ import org.chromium.chrome.test.util.browser.sync.SyncTestUtil;
 import org.chromium.chrome.testshell.ChromiumTestShellActivity;
 import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
 import org.chromium.chrome.testshell.sync.SyncController;
-import org.chromium.content.browser.BrowserStartupController;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.JavaScriptUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
-import org.chromium.content.common.CommandLine;
 import org.chromium.sync.notifier.SyncStatusHelper;
 import org.chromium.sync.signin.AccountManagerHelper;
 import org.chromium.sync.signin.ChromeSigninController;
@@ -73,17 +70,6 @@ public class SyncTest extends ChromiumTestShellTestBase {
             }
         });
         SyncTestUtil.verifySyncServerIsRunning();
-    }
-
-    private static void startChromeBrowserProcessSync(final Context targetContext) {
-        ThreadUtils.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                CommandLine.initFromFile("/data/local/tmp/chromium-testshell-command-line");
-                BrowserStartupController.get(targetContext).startBrowserProcessesSync(
-                        BrowserStartupController.MAX_RENDERERS_LIMIT);
-            }
-        });
     }
 
     @HostDrivenTest
@@ -150,6 +136,22 @@ public class SyncTest extends ChromiumTestShellTestBase {
                 hadExpectedStatus);
     }
 
+    @HostDrivenTest
+    public void testDisableAndEnableSync() throws InterruptedException {
+        setupTestAccountAndSignInToSync(FOREIGN_SESSION_TEST_MACHINE_ID);
+        Account account =
+                AccountManagerHelper.createAccountFromName(SyncTestUtil.DEFAULT_TEST_ACCOUNT);
+
+        // Disabling Android sync should turn Chrome sync engine off.
+        SyncStatusHelper.get(mContext).disableAndroidSync(account);
+        SyncTestUtil.verifySyncIsDisabled(mContext, account);
+
+        // Enabling Android sync should turn Chrome sync engine on.
+        SyncStatusHelper.get(mContext).enableAndroidSync(account);
+        SyncTestUtil.ensureSyncInitialized(mContext);
+        SyncTestUtil.verifySignedInWithAccount(mContext, account);
+    }
+
     private void setupTestAccountAndSignInToSync(
             final String syncClientIdentifier)
             throws InterruptedException {
@@ -177,6 +179,8 @@ public class SyncTest extends ChromiumTestShellTestBase {
         });
 
         SyncTestUtil.verifySyncIsSignedIn(mContext, defaultTestAccount);
+        assertTrue("Sync everything should be enabled",
+                SyncTestUtil.isSyncEverythingEnabled(mContext));
     }
 
     private static ContentViewCore getContentViewCore(ChromiumTestShellActivity activity) {

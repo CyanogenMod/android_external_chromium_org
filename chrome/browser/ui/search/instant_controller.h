@@ -22,9 +22,9 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "url/gurl.h"
 
 class BrowserInstantController;
+class GURL;
 class InstantService;
 class InstantTab;
 class Profile;
@@ -159,8 +159,6 @@ class InstantController : public InstantPage::Delegate {
   virtual void InstantPageAboutToNavigateMainFrame(
       const content::WebContents* contents,
       const GURL& url) OVERRIDE;
-  virtual void FocusOmnibox(const content::WebContents* contents,
-                            OmniboxFocusState state) OVERRIDE;
   virtual void NavigateToURL(
       const content::WebContents* contents,
       const GURL& url,
@@ -170,18 +168,6 @@ class InstantController : public InstantPage::Delegate {
   virtual void PasteIntoOmnibox(const content::WebContents* contents,
                                 const string16& text) OVERRIDE;
   virtual void InstantPageLoadFailed(content::WebContents* contents) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to delete a
-  // Most Visited item.
-  virtual void DeleteMostVisitedItem(const GURL& url) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to undo a
-  // Most Visited deletion.
-  virtual void UndoMostVisitedDeletion(const GURL& url) OVERRIDE;
-
-  // Invoked by the InstantLoader when the Instant page wants to undo all
-  // Most Visited deletions.
-  virtual void UndoAllMostVisitedDeletions() OVERRIDE;
 
   // Helper function to navigate the given contents to the local fallback
   // Instant URL and trim the history correctly.
@@ -194,7 +180,7 @@ class InstantController : public InstantPage::Delegate {
   // point to it. Else, deletes any existing |instant_tab_|.
   void ResetInstantTab();
 
-  // Sends theme info, omnibox bounds, font info, etc. down to the Instant tab.
+  // Sends theme info, omnibox bounds, etc. down to the Instant tab.
   void UpdateInfoForInstantTab();
 
   // Returns whether input is in progress, i.e. if the omnibox has focus and the

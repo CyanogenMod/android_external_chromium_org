@@ -52,6 +52,8 @@
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
+// Disable everything due to issue 306144
+#if 0
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadItem;
@@ -2201,8 +2203,9 @@ IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
   EXPECT_STREQ(kPayloadData, disk_data.c_str());
 }
 
+// Test is flaky: http://crbug.com/302071
 IN_PROC_BROWSER_TEST_F(DownloadExtensionTest,
-                       DownloadExtensionTest_OnDeterminingFilename_NoChange) {
+                       DISABLED_DownloadExtensionTest_OnDeterminingFilename_NoChange) {
   GoOnTheRecord();
   LoadExtension("downloads_split");
   AddFilenameDeterminer();
@@ -2538,10 +2541,16 @@ IN_PROC_BROWSER_TEST_F(
       "    \"current\": \"complete\"}}]",
       result_id)));
 }
-
+#if defined(OS_WIN)
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_ReservedFilename\
+  DISABLED_DownloadExtensionTest_OnDeterminingFilename_ReservedFilename
+#else
+#define MAYBE_DownloadExtensionTest_OnDeterminingFilename_ReservedFilename\
+  DownloadExtensionTest_OnDeterminingFilename_ReservedFilename
+#endif
 IN_PROC_BROWSER_TEST_F(
     DownloadExtensionTest,
-    DownloadExtensionTest_OnDeterminingFilename_ReservedFilename) {
+    MAYBE_DownloadExtensionTest_OnDeterminingFilename_ReservedFilename) {
   GoOnTheRecord();
   LoadExtension("downloads_split");
   AddFilenameDeterminer();
@@ -3603,3 +3612,4 @@ TEST(ExtensionDetermineDownloadFilenameInternal,
             warnings.begin()->warning_type());
   EXPECT_EQ("incumbent", warnings.begin()->extension_id());
 }
+#endif // Issue 306144

@@ -29,6 +29,17 @@ function OptionsWebUITest() {}
 OptionsWebUITest.prototype = {
   __proto__: testing.Test.prototype,
 
+  /** @override */
+  accessibilityIssuesAreErrors: true,
+
+  /** @override */
+  setUp: function() {
+    // user-image-stream is a streaming video element used for capturing a
+    // user image during OOBE.
+    this.accessibilityAuditConfig.ignoreSelectors('videoWithoutCaptions',
+                                                  '.user-image-stream');
+  },
+
   /**
    * Browse to the options page & call our preLoad().
    */
@@ -269,6 +280,14 @@ OptionsWebUINavigationTest.prototype = {
   /** @override */
   isAsync: true,
 
+  /** @override */
+  setUp: function () {
+      // user-image-stream is a streaming video element used for capturing a
+      // user image during OOBE.
+      this.accessibilityAuditConfig.ignoreSelectors('videoWithoutCaptions',
+                                                    '.user-image-stream');
+  },
+
   /**
    * Asserts that two non-nested arrays are equal. The arrays must contain only
    * plain data types, no nested arrays or other objects.
@@ -393,7 +412,9 @@ OptionsWebUINavigationTest.prototype = {
 OptionsWebUINavigationTest.verifyHistoryCallback = null;
 
 // Show the search page with no query string, to fall back to the settings page.
-TEST_F('OptionsWebUINavigationTest', 'ShowSearchPageNoQuery', function() {
+// Test disabled because it's flaky. crbug.com/303841
+TEST_F('OptionsWebUINavigationTest', 'DISABLED_ShowSearchPageNoQuery',
+       function() {
   OptionsPage.showPageByName('search');
   this.verifyOpenPages_(['settings']);
   this.verifyHistory_(['settings'], testDone);

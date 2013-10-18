@@ -12,8 +12,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/synchronization/lock.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
-#include "chrome/common/extensions/permissions/permission_message.h"
+#include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/permission_message.h"
 
 class GURL;
 

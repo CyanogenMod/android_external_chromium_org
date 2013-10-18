@@ -7,6 +7,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/win/windows_version.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -1760,6 +1761,13 @@ TEST_F(RenderViewImplTest, TestBackForward) {
 
 #if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
 TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
+
+#if defined(OS_WIN)
+  // http://crbug.com/304193
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+    return;
+#endif
+
   LoadHTML("<textarea id=\"test\"></textarea>");
   ExecuteJavaScript("document.getElementById('test').focus();");
 
@@ -1948,6 +1956,83 @@ TEST_F(RenderViewImplTest, GetSSLStatusOfFrame) {
           SerializeSecurityInfo(0, net::CERT_STATUS_ALL_ERRORS, 0, 0));
   ssl_status = view()->GetSSLStatusOfFrame(frame);
   EXPECT_TRUE(net::IsCertStatusError(ssl_status.cert_status));
+}
+
+class SuppressErrorPageTest : public RenderViewTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    SetRendererClientForTesting(&client_);
+    RenderViewTest::SetUp();
+  }
+
+  RenderViewImpl* view() {
+    return static_cast<RenderViewImpl*>(view_);
+  }
+
+ private:
+  class TestContentRendererClient : public ContentRendererClient {
+   public:
+    virtual bool ShouldSuppressErrorPage(const GURL& url) OVERRIDE {
+      return url == GURL("http://example.com/suppress");
+    }
+
+    virtual void GetNavigationErrorStrings(
+        WebKit::WebFrame* frame,
+        const WebKit::WebURLRequest& failed_request,
+        const WebKit::WebURLError& error,
+        const std::string& accept_languages,
+        std::string* error_html,
+        string16* error_description) OVERRIDE {
+      if (error_html)
+        *error_html = "A suffusion of yellow.";
+    }
+  };
+
+  TestContentRendererClient client_;
+};
+
+TEST_F(SuppressErrorPageTest, Suppresses) {
+  WebURLError error;
+  error.domain = WebString::fromUTF8(net::kErrorDomain);
+  error.reason = net::ERR_FILE_NOT_FOUND;
+  error.unreachableURL = GURL("http://example.com/suppress");
+  WebFrame* web_frame = GetMainFrame();
+
+  // Start a load that will reach provisional state synchronously,
+  // but won't complete synchronously.
+  ViewMsg_Navigate_Params params;
+  params.page_id = -1;
+  params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params.url = GURL("data:text/html,test data");
+  view()->OnNavigate(params);
+
+  // An error occurred.
+  view()->didFailProvisionalLoad(web_frame, error);
+  const int kMaxOutputCharacters = 22;
+  EXPECT_EQ("", UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
+}
+
+TEST_F(SuppressErrorPageTest, DoesNotSuppress) {
+  WebURLError error;
+  error.domain = WebString::fromUTF8(net::kErrorDomain);
+  error.reason = net::ERR_FILE_NOT_FOUND;
+  error.unreachableURL = GURL("http://example.com/dont-suppress");
+  WebFrame* web_frame = GetMainFrame();
+
+  // Start a load that will reach provisional state synchronously,
+  // but won't complete synchronously.
+  ViewMsg_Navigate_Params params;
+  params.page_id = -1;
+  params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params.url = GURL("data:text/html,test data");
+  view()->OnNavigate(params);
+
+  // An error occurred.
+  view()->didFailProvisionalLoad(web_frame, error);
+  ProcessPendingMessages();
+  const int kMaxOutputCharacters = 22;
+  EXPECT_EQ("A suffusion of yellow.",
+            UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
 }
 
 }  // namespace content

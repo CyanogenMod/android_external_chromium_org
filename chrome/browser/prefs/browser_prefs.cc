@@ -10,6 +10,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/accessibility/invert_bubble_prefs.h"
+#include "chrome/browser/apps/shortcut_manager.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/bookmarks/bookmark_prompt_prefs.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
@@ -45,6 +46,7 @@
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
+#include "chrome/browser/network_time/network_time_service.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification_prefs_manager.h"
 #if !defined(OS_ANDROID)
@@ -170,11 +172,16 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/ui/webui/ntp/android/promo_handler.h"
 #else
+#include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
 #include "chrome/browser/ui/autofill/generated_credit_card_bubble_controller.h"
 #endif
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 #include "chrome/browser/plugins/plugins_resource_service.h"
+#endif
+
+#if defined(OS_WIN)
+#include "chrome/browser/apps/app_launch_for_metro_restart_win.h"
 #endif
 
 namespace {
@@ -193,9 +200,6 @@ enum MigratedPreferences {
 // MigrateUserPrefs.
 const char kBackupPref[] = "backup";
 
-// Chrome To Mobile has been removed; this pref will be cleared from user data.
-const char kChromeToMobilePref[] = "chrome_to_mobile.device_list";
-
 #if !defined(OS_ANDROID)
 // The sync promo error message preference has been removed; this pref will
 // be cleared from user data.
@@ -212,7 +216,6 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 
   // Please keep this list alphabetized.
   AppListService::RegisterPrefs(registry);
-  apps::RegisterPrefs(registry);
   browser_shutdown::RegisterPrefs(registry);
   BrowserProcessImpl::RegisterPrefs(registry);
   RegisterScreenshotPrefs(registry);
@@ -266,6 +269,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #endif
 
 #if !defined(OS_ANDROID)
+  AutomaticProfileResetterFactory::RegisterPrefs(registry);
   BackgroundModeManager::RegisterPrefs(registry);
   RegisterBrowserPrefs(registry);
 #if !defined(OS_CHROMEOS)
@@ -302,6 +306,10 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 #if defined(OS_MACOSX)
   confirm_quit::RegisterLocalState(registry);
 #endif
+
+#if defined(OS_WIN)
+  app_metro_launch::RegisterPrefs(registry);
+#endif
 }
 
 // Register prefs applicable to all profiles.
@@ -310,6 +318,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // User prefs. Please keep this list alphabetized.
   AlternateErrorPageTabObserver::RegisterProfilePrefs(registry);
   apps::RegisterProfilePrefs(registry);
+#if !defined(OS_ANDROID)
+  AppShortcutManager::RegisterProfilePrefs(registry);
+#endif
   autofill::AutofillManager::RegisterProfilePrefs(registry);
 #if !defined(OS_ANDROID)
   autofill::GeneratedCreditCardBubbleController::RegisterUserPrefs(registry);
@@ -331,6 +342,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   MediaCaptureDevicesDispatcher::RegisterProfilePrefs(registry);
   MediaStreamDevicesController::RegisterProfilePrefs(registry);
   NetPrefObserver::RegisterProfilePrefs(registry);
+  NetworkTimeService::RegisterProfilePrefs(registry);
   NewTabUI::RegisterProfilePrefs(registry);
 #if !defined(OS_ANDROID)
   notifier::ChromeNotifierService::RegisterProfilePrefs(registry);
@@ -434,9 +446,6 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       kBackupPref,
       new DictionaryValue(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterListPref(
-      kChromeToMobilePref,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #if !defined(OS_ANDROID)
   registry->RegisterStringPref(
       kSyncPromoErrorMessage,
@@ -470,9 +479,6 @@ void MigrateUserPrefs(Profile* profile) {
 
   // Cleanup prefs from now-removed protector feature.
   prefs->ClearPref(kBackupPref);
-
-  // Cleanup prefs from now-removed Chrome To Mobile feature.
-  prefs->ClearPref(kChromeToMobilePref);
 
 #if !defined(OS_ANDROID)
   // Cleanup now-removed sync promo error message preference.

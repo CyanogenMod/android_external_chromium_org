@@ -24,7 +24,8 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // in JellyBrean.
   if (base::android::BuildInfo::GetInstance()->sdk_int() < 16) {
     WebRuntimeFeatures::enableWebKitMediaSource(false);
-    WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
+    WebRuntimeFeatures::enableMediaSource(false);
+    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
   }
 #endif  // !defined(GOOGLE_TV)
   bool enable_webaudio = false;
@@ -77,6 +78,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableWebKitMediaSource))
     WebRuntimeFeatures::enableWebKitMediaSource(false);
 
+  if (command_line.HasSwitch(switches::kDisableUnprefixedMediaSource))
+    WebRuntimeFeatures::enableMediaSource(false);
+
 #if defined(OS_ANDROID)
   if (command_line.HasSwitch(switches::kDisableWebRTC)) {
     WebRuntimeFeatures::enableMediaStream(false);
@@ -87,6 +91,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableScriptedSpeech(false);
 #endif
 
+  if (command_line.HasSwitch(switches::kEnableServiceWorker))
+    WebRuntimeFeatures::enableServiceWorker(true);
+
   if (command_line.HasSwitch(switches::kDisableWebAudio))
     WebRuntimeFeatures::enableWebAudio(false);
 
@@ -96,8 +103,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableEncryptedMedia))
     WebRuntimeFeatures::enableEncryptedMedia(true);
 
-  if (command_line.HasSwitch(switches::kDisableLegacyEncryptedMedia))
-    WebRuntimeFeatures::enableLegacyEncryptedMedia(false);
+  if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
+    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
 
   if (command_line.HasSwitch(switches::kEnableWebAnimationsCSS))
     WebRuntimeFeatures::enableWebAnimationsCSS();
@@ -132,11 +139,17 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableHTMLImports))
     WebRuntimeFeatures::enableHTMLImports(true);
 
+  if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo))
+    WebRuntimeFeatures::enableOverlayFullscreenVideo(true);
+
   if (command_line.HasSwitch(switches::kEnableOverlayScrollbars))
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
   if (command_line.HasSwitch(switches::kEnableInputModeAttribute))
     WebRuntimeFeatures::enableInputModeAttribute(true);
+
+  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
+    WebRuntimeFeatures::enableFastTextAutosizing(true);
 }
 
 }  // namespace content

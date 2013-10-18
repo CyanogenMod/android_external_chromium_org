@@ -15,9 +15,9 @@
 #include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/values.h"
+#include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/browser/web_contents/frame_tree_node.h"
 #include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/browser/web_contents/render_view_host_manager.h"
 #include "content/common/content_export.h"
@@ -202,10 +202,6 @@ class CONTENT_EXPORT WebContentsImpl
   // a Drag Source Move.
   void DragSourceMovedTo(int client_x, int client_y,
                          int screen_x, int screen_y);
-
-  FrameTreeNode* GetFrameTreeRootForTesting() {
-    return frame_tree_root_.get();
-  }
 
   // WebContents ------------------------------------------------------
   virtual WebContentsDelegate* GetDelegate() OVERRIDE;
@@ -466,6 +462,7 @@ class CONTENT_EXPORT WebContentsImpl
       const MediaResponseCallback& callback) OVERRIDE;
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) OVERRIDE;
+  virtual FrameTree* GetFrameTree() OVERRIDE;
 
   // RenderWidgetHostDelegate --------------------------------------------------
 
@@ -493,8 +490,9 @@ class CONTENT_EXPORT WebContentsImpl
   virtual void RenderProcessGoneFromRenderManager(
       RenderViewHost* render_view_host) OVERRIDE;
   virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE;
+  virtual void CancelModalDialogsForRenderManager() OVERRIDE;
   virtual void NotifySwappedFromRenderManager(
-      RenderViewHost* old_render_view_host) OVERRIDE;
+      RenderViewHost* old_host, RenderViewHost* new_host) OVERRIDE;
   virtual int CreateOpenerRenderViewsForRenderManager(
       SiteInstance* instance) OVERRIDE;
   virtual NavigationControllerImpl&
@@ -636,20 +634,17 @@ class CONTENT_EXPORT WebContentsImpl
                           const std::vector<gfx::Size>& original_bitmap_sizes);
   void OnUpdateFaviconURL(int32 page_id,
                           const std::vector<FaviconURL>& candidates);
-  void OnFrameAttached(int64 parent_frame_id,
-                       int64 frame_id,
-                       const std::string& frame_name);
-  void OnFrameDetached(int64 parent_frame_id, int64 frame_id);
 
   void OnMediaNotification(int64 player_cookie,
                            bool has_video,
                            bool has_audio,
                            bool is_playing);
 
-  // Changes the IsLoading state and notifies delegate as needed
+  // Changes the IsLoading state and notifies the delegate as needed.
   // |details| is used to provide details on the load that just finished
-  // (but can be null if not applicable). Can be overridden.
-  void SetIsLoading(bool is_loading,
+  // (but can be null if not applicable).
+  void SetIsLoading(RenderViewHost* render_view_host,
+                    bool is_loading,
                     LoadNotificationDetails* details);
 
   // Called by derived classes to indicate that we're no longer waiting for a
@@ -744,15 +739,13 @@ class CONTENT_EXPORT WebContentsImpl
   // Misc non-view stuff -------------------------------------------------------
 
   // Helper functions for sending notifications.
-  void NotifySwapped(RenderViewHost* old_render_view_host);
+  void NotifySwapped(RenderViewHost* old_host, RenderViewHost* new_host);
   void NotifyDisconnected();
   void NotifyNavigationEntryCommitted(const LoadCommittedDetails& load_details);
 
   void SetEncoding(const std::string& encoding);
 
   RenderViewHostImpl* GetRenderViewHostImpl();
-
-  FrameTreeNode* FindFrameTreeNodeByID(int64 frame_id);
 
   // Removes browser plugin embedder if there is one.
   void RemoveBrowserPluginEmbedder();
@@ -765,6 +758,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
   gfx::Size GetSizeForNewRenderView() const;
+
+  void OnFrameRemoved(RenderViewHostImpl* render_view_host, int64 frame_id);
 
   // Data for core operation ---------------------------------------------------
 
@@ -821,6 +816,9 @@ class CONTENT_EXPORT WebContentsImpl
   // Manages creation and swapping of render views.
   RenderViewHostManager render_manager_;
 
+  // The frame tree structure of the current page.
+  FrameTree frame_tree_;
+
 #if defined(OS_ANDROID)
   // Manages injecting Java objects into all RenderViewHosts associated with
   // this WebContentsImpl.
@@ -875,9 +873,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // True if this is a secure page which displayed insecure content.
   bool displayed_insecure_content_;
-
-  // The frame tree structure of the current page.
-  scoped_ptr<FrameTreeNode> frame_tree_root_;
 
   // Data for misc internal state ----------------------------------------------
 

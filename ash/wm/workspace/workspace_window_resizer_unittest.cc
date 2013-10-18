@@ -190,15 +190,19 @@ class WorkspaceWindowResizerTest : public test::AshTestBase {
     touch_resize_window_.reset(
         CreateTestWindowInShellWithDelegate(&touch_resize_delegate_, 0,
                                             bounds));
-    gfx::Insets mouse_insets = gfx::Insets(-ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize,
-                                           -ash::kResizeOutsideBoundsSize);
-    gfx::Insets touch_insets = mouse_insets.Scale(
+    gfx::Insets mouse_outer_insets = gfx::Insets(-ash::kResizeOutsideBoundsSize,
+                                                 -ash::kResizeOutsideBoundsSize,
+                                                 -ash::kResizeOutsideBoundsSize,
+                                                -ash::kResizeOutsideBoundsSize);
+    gfx::Insets touch_outer_insets = mouse_outer_insets.Scale(
         ash::kResizeOutsideBoundsScaleForTouch);
-    touch_resize_window_->SetHitTestBoundsOverrideOuter(mouse_insets,
-                                                        touch_insets);
-    touch_resize_window_->set_hit_test_bounds_override_inner(mouse_insets);
+    touch_resize_window_->SetHitTestBoundsOverrideOuter(mouse_outer_insets,
+                                                        touch_outer_insets);
+    touch_resize_window_->set_hit_test_bounds_override_inner(
+        gfx::Insets(ash::kResizeInsideBoundsSize,
+                    ash::kResizeInsideBoundsSize,
+                    ash::kResizeInsideBoundsSize,
+                    ash::kResizeInsideBoundsSize));
   }
 
   // Simulate running the animation.
@@ -721,6 +725,23 @@ TEST_F(WorkspaceWindowResizerTest, DontDragOffBottomWithMultiDisplay) {
   // Positions the secondary display at the bottom the primary display.
   Shell::GetInstance()->display_controller()->SetLayoutForCurrentDisplays(
       ash::DisplayLayout(ash::DisplayLayout::BOTTOM, 0));
+
+  {
+    window_->SetBounds(gfx::Rect(100, 200, 300, 20));
+    DCHECK_LT(window_->bounds().height(),
+              WorkspaceWindowResizer::kMinOnscreenHeight);
+    scoped_ptr<WorkspaceWindowResizer> resizer(WorkspaceWindowResizer::Create(
+        window_.get(), gfx::Point(), HTCAPTION,
+        aura::client::WINDOW_MOVE_SOURCE_MOUSE, empty_windows()));
+    ASSERT_TRUE(resizer.get());
+    resizer->Drag(CalculateDragPoint(*resizer, 0, 400), 0);
+    int expected_y = kRootHeight - window_->bounds().height() - 10;
+    // When the mouse cursor is in the primary display, the window cannot move
+    // on non-work area but can get all the way towards the bottom,
+    // restricted only by the window height.
+    EXPECT_EQ("100," + base::IntToString(expected_y) + " 300x20",
+              window_->bounds().ToString());
+  }
 
   {
     window_->SetBounds(gfx::Rect(100, 200, 300, 400));

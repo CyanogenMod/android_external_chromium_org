@@ -94,16 +94,14 @@ void LauncherContextMenu::Init() {
         AddCheckItemWithStringId(
             LAUNCH_TYPE_PINNED_TAB,
             IDS_APP_CONTEXT_MENU_OPEN_PINNED);
-        if (!ash::Shell::IsForcedMaximizeMode()) {
-          AddCheckItemWithStringId(
-              LAUNCH_TYPE_WINDOW,
-              IDS_APP_CONTEXT_MENU_OPEN_WINDOW);
-          // Even though the launch type is Full Screen it is more accurately
-          // described as Maximized in Ash.
-          AddCheckItemWithStringId(
-              LAUNCH_TYPE_FULLSCREEN,
-              IDS_APP_CONTEXT_MENU_OPEN_MAXIMIZED);
-        }
+        AddCheckItemWithStringId(
+            LAUNCH_TYPE_WINDOW,
+            IDS_APP_CONTEXT_MENU_OPEN_WINDOW);
+        // Even though the launch type is Full Screen it is more accurately
+        // described as Maximized in Ash.
+        AddCheckItemWithStringId(
+            LAUNCH_TYPE_FULLSCREEN,
+            IDS_APP_CONTEXT_MENU_OPEN_MAXIMIZED);
       }
     } else if (item_.type == ash::TYPE_BROWSER_SHORTCUT) {
       AddItem(MENU_NEW_WINDOW,
@@ -205,8 +203,7 @@ bool LauncherContextMenu::IsCommandIdChecked(int command_id) const {
 bool LauncherContextMenu::IsCommandIdEnabled(int command_id) const {
   switch (command_id) {
     case MENU_PIN:
-      return item_.type == ash::TYPE_PLATFORM_APP ||
-          controller_->IsPinnable(item_.id);
+      return controller_->IsPinnable(item_.id);
 #if defined(OS_CHROMEOS)
     case MENU_CHANGE_WALLPAPER:
       return ash::Shell::GetInstance()->user_wallpaper_delegate()->

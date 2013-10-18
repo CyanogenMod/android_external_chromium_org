@@ -67,6 +67,27 @@
 
 namespace {
 
+// For this database, schema migrations are deprecated after two
+// years.  This means that the oldest non-deprecated version should be
+// two years old or greater (thus the migrations to get there are
+// older).  Databases containing deprecated versions will be cleared
+// at startup.  Since this database is a cache, losing old data is not
+// fatal (in fact, very old data may be expired immediately at startup
+// anyhow).
+
+// Version 7: 911a634d/r209424 by qsr@chromium.org on 2013-07-01
+// Version 6: 610f923b/r152367 by pkotwicz@chromium.org on 2012-08-20
+// Version 5: e2ee8ae9/r105004 by groby@chromium.org on 2011-10-12
+// Version 4: 5f104d76/r77288 by sky@chromium.org on 2011-03-08 (deprecated)
+// Version 3: 09911bf3/r15 by initial.commit on 2008-07-26 (deprecated)
+
+// Version number of the database.
+// NOTE(shess): When changing the version, add a new golden file for
+// the new version and a test to verify that Init() works with it.
+const int kCurrentVersionNumber = 7;
+const int kCompatibleVersionNumber = 7;
+const int kDeprecatedVersionNumber = 4;  // and earlier.
+
 void FillIconMapping(const sql::Statement& statement,
                      const GURL& page_url,
                      history::IconMapping* icon_mapping) {
@@ -270,8 +291,7 @@ bool InitTables(sql::Connection* db) {
       "("
       "id INTEGER PRIMARY KEY,"
       "url LONGVARCHAR NOT NULL,"
-      // Set the default icon_type as FAVICON to be consistent with
-      // table upgrade in UpgradeToVersion4().
+      // default icon_type FAVICON to be consistent with past migration.
       "icon_type INTEGER DEFAULT 1"
       ")";
   if (!db->Execute(kFaviconsSql))
@@ -324,11 +344,11 @@ enum RecoveryEventType {
   RECOVERY_EVENT_FAILED_SCOPER,
   RECOVERY_EVENT_FAILED_META_VERSION_ERROR,
   RECOVERY_EVENT_FAILED_META_VERSION_NONE,
-  RECOVERY_EVENT_FAILED_META_WRONG_VERSION6,
+  RECOVERY_EVENT_FAILED_META_WRONG_VERSION6,  // obsolete
   RECOVERY_EVENT_FAILED_META_WRONG_VERSION5,
   RECOVERY_EVENT_FAILED_META_WRONG_VERSION,
   RECOVERY_EVENT_FAILED_RECOVER_META,
-  RECOVERY_EVENT_FAILED_META_INSERT,
+  RECOVERY_EVENT_FAILED_META_INSERT,  // obsolete
   RECOVERY_EVENT_FAILED_INIT,
   RECOVERY_EVENT_FAILED_RECOVER_FAVICONS,
   RECOVERY_EVENT_FAILED_FAVICONS_INSERT,
@@ -336,6 +356,8 @@ enum RecoveryEventType {
   RECOVERY_EVENT_FAILED_FAVICON_BITMAPS_INSERT,
   RECOVERY_EVENT_FAILED_RECOVER_ICON_MAPPING,
   RECOVERY_EVENT_FAILED_ICON_MAPPING_INSERT,
+  RECOVERY_EVENT_RECOVERED_VERSION6,
+  RECOVERY_EVENT_FAILED_META_INIT,
 
   // Always keep this at the end.
   RECOVERY_EVENT_MAX,
@@ -353,6 +375,11 @@ void RecordRecoveryEvent(RecoveryEventType recovery_event) {
 // opposed to just razing it and starting over whenever corruption is
 // detected.  So this database is a good test subject.
 void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
+  // NOTE(shess): This code is currently specific to the version
+  // number.  I am working on simplifying things to loosen the
+  // dependency, meanwhile contact me if you need to bump the version.
+  DCHECK_EQ(7, kCurrentVersionNumber);
+
   // TODO(shess): Reset back after?
   db->reset_error_callback();
 
@@ -374,6 +401,7 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
   // Setup the meta recovery table, and check that the version number
   // is covered by the recovery code.
   // TODO(shess): sql::Recovery should provide a helper to handle meta.
+  int version = 0;  // For reporting which version was recovered.
   {
     const char kRecoverySql[] =
         "CREATE VIRTUAL TABLE temp.recover_meta USING recover"
@@ -412,20 +440,18 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
         recovery_version.Clear();
         sql::Recovery::Rollback(recovery.Pass());
         return;
-      } else if (7 != recovery_version.ColumnInt(0)) {
-        // TODO(shess): Recovery code is generally schema-dependent.
-        // Version 6 should be easy, if the numbers warrant it.
-        // Version 5 is probably not warranted.
-        switch (recovery_version.ColumnInt(0)) {
-          case 6 :
-            RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_WRONG_VERSION6);
-            break;
-          case 5 :
-            RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_WRONG_VERSION5);
-            break;
-          default :
-            RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_WRONG_VERSION);
-            break;
+      }
+      version = recovery_version.ColumnInt(0);
+
+      // Recovery code is generally schema-dependent.  Version 7 and
+      // version 6 are very similar, so can be handled together.
+      // Track version 5, to see whether it's worth writing recovery
+      // code for.
+      if (version != 7 && version != 6) {
+        if (version == 5) {
+          RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_WRONG_VERSION5);
+        } else {
+          RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_WRONG_VERSION);
         }
         recovery_version.Clear();
         sql::Recovery::Rollback(recovery.Pass());
@@ -433,13 +459,12 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
       }
     }
 
-    const char kCopySql[] =
-        "INSERT OR REPLACE INTO meta SELECT key, value FROM recover_meta";
-    if (!recovery->db()->Execute(kCopySql)) {
-      // TODO(shess): Earlier the version was queried, unclear what
-      // this failure could mean.
+    // Either version 6 or version 7 recovers to current.
+    sql::MetaTable recover_meta_table;
+    if (!recover_meta_table.Init(recovery->db(), kCurrentVersionNumber,
+                                 kCompatibleVersionNumber)) {
       sql::Recovery::Rollback(recovery.Pass());
-      RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_INSERT);
+      RecordRecoveryEvent(RECOVERY_EVENT_FAILED_META_INIT);
       return;
     }
   }
@@ -463,13 +488,19 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
 
   // Setup favicons table.
   {
+    // Version 6 had the |sizes| column, version 7 removed it.  The
+    // recover virtual table treats more columns than expected as an
+    // error, but if _fewer_ columns are present, they can be treated
+    // as NULL.  SQLite requires this because ALTER TABLE adds columns
+    // to the schema, but not to the actual table storage.
     const char kRecoverySql[] =
         "CREATE VIRTUAL TABLE temp.recover_favicons USING recover"
         "("
         "corrupt.favicons,"
         "id ROWID,"
         "url TEXT NOT NULL,"
-        "icon_type INTEGER"
+        "icon_type INTEGER,"
+        "sizes TEXT"
         ")";
     if (!recovery->db()->Execute(kRecoverySql)) {
       // TODO(shess): Failure to create the recovery table probably
@@ -483,7 +514,7 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
     // COALESCE().  Either way, the new code has a literal 1 rather
     // than a NULL, right?
     const char kCopySql[] =
-        "INSERT OR REPLACE INTO favicons "
+        "INSERT OR REPLACE INTO main.favicons "
         "SELECT id, url, COALESCE(icon_type, 1) FROM recover_favicons";
     if (!recovery->db()->Execute(kCopySql)) {
       // TODO(shess): The recover_favicons table should mask problems
@@ -517,7 +548,7 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
     }
 
     const char kCopySql[] =
-        "INSERT OR REPLACE INTO favicon_bitmaps "
+        "INSERT OR REPLACE INTO main.favicon_bitmaps "
         "SELECT id, icon_id, COALESCE(last_updated, 0), image_data, "
         " COALESCE(width, 0), COALESCE(height, 0) "
         "FROM recover_favicons_bitmaps";
@@ -550,7 +581,7 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
     }
 
     const char kCopySql[] =
-        "INSERT OR REPLACE INTO icon_mapping "
+        "INSERT OR REPLACE INTO main.icon_mapping "
         "SELECT id, page_url, icon_id FROM recover_icon_mapping";
     if (!recovery->db()->Execute(kCopySql)) {
       // TODO(shess): The recover_icon_mapping table should mask
@@ -573,7 +604,11 @@ void RecoverDatabaseOrRaze(sql::Connection* db, const base::FilePath& db_path) {
   // collection.
 
   ignore_result(sql::Recovery::Recovered(recovery.Pass()));
-  RecordRecoveryEvent(RECOVERY_EVENT_RECOVERED);
+  if (version == 6) {
+    RecordRecoveryEvent(RECOVERY_EVENT_RECOVERED_VERSION6);
+  } else {
+    RecordRecoveryEvent(RECOVERY_EVENT_RECOVERED);
+  }
 }
 
 void DatabaseErrorCallback(sql::Connection* db,
@@ -616,18 +651,6 @@ void DatabaseErrorCallback(sql::Connection* db,
 
 namespace history {
 
-// Version 7: 911a634d/r209424 by qsr@chromium.org on 2013-07-01
-// Version 6: 610f923b/r152367 by pkotwicz@chromium.org on 2012-08-20
-// Version 5: e2ee8ae9/r105004 by groby@chromium.org on 2011-10-12
-// Version 4: 5f104d76/r77288 by sky@chromium.org on 2011-03-08
-// Version 3: 09911bf3/r15 by initial.commit on 2008-07-26
-
-// Version number of the database.
-// NOTE(shess): When changing the version, add a new golden file for
-// the new version and a test to verify that Init() works with it.
-static const int kCurrentVersionNumber = 7;
-static const int kCompatibleVersionNumber = 7;
-
 ThumbnailDatabase::IconMappingEnumerator::IconMappingEnumerator() {
 }
 
@@ -656,12 +679,19 @@ ThumbnailDatabase::~ThumbnailDatabase() {
   // The DBCloseScoper will delete the DB and the cache.
 }
 
-sql::InitStatus ThumbnailDatabase::Init(
-    const base::FilePath& db_name,
-    URLDatabase* url_db) {
+sql::InitStatus ThumbnailDatabase::Init(const base::FilePath& db_name) {
   sql::InitStatus status = OpenDatabase(&db_, db_name);
   if (status != sql::INIT_OK)
     return status;
+
+  // Clear databases which are too old to process.
+  DCHECK_LT(kDeprecatedVersionNumber, kCurrentVersionNumber);
+  sql::MetaTable::RazeIfDeprecated(&db_, kDeprecatedVersionNumber);
+
+  // TODO(shess): Sqlite.Version.Thumbnail shows versions 22, 23, and
+  // 25.  Future versions are not destroyed because that could lead to
+  // data loss if the profile is opened by a later channel, but
+  // perhaps a heuristic like >kCurrentVersionNumber+3 could be used.
 
   // Scope initialization in a transaction so we can't be partially initialized.
   sql::Transaction transaction(&db_);
@@ -693,17 +723,6 @@ sql::InitStatus ThumbnailDatabase::Init(
   }
 
   int cur_version = meta_table_.GetVersionNumber();
-  if (cur_version == 2) {
-    ++cur_version;
-    if (!UpgradeToVersion3())
-      return CantUpgradeToVersion(cur_version);
-  }
-
-  if (cur_version == 3) {
-    ++cur_version;
-    if (!UpgradeToVersion4() || !MigrateIconMappingData(url_db))
-      return CantUpgradeToVersion(cur_version);
-  }
 
   if (!db_.DoesColumnExist("favicons", "icon_type")) {
     LOG(ERROR) << "Raze because of missing favicon.icon_type";
@@ -711,12 +730,6 @@ sql::InitStatus ThumbnailDatabase::Init(
 
     db_.RazeAndClose();
     return sql::INIT_FAILURE;
-  }
-
-  if (cur_version == 4) {
-    ++cur_version;
-    if (!UpgradeToVersion5())
-      return CantUpgradeToVersion(cur_version);
   }
 
   if (cur_version < 7 && !db_.DoesColumnExist("favicons", "sizes")) {
@@ -797,13 +810,6 @@ void ThumbnailDatabase::ComputeDatabaseMetrics() {
   UMA_HISTOGRAM_COUNTS_10000(
       "History.NumFaviconsInDB",
       favicon_count.Step() ? favicon_count.ColumnInt(0) : 0);
-}
-
-bool ThumbnailDatabase::UpgradeToVersion3() {
-  // Version 3 migrated table thumbnails, which is obsolete.
-  meta_table_.SetVersionNumber(3);
-  meta_table_.SetCompatibleVersionNumber(std::min(3, kCompatibleVersionNumber));
-  return true;
 }
 
 bool ThumbnailDatabase::IsFaviconDBStructureIncorrect() {
@@ -1193,20 +1199,6 @@ bool ThumbnailDatabase::InitIconMappingEnumerator(
   return enumerator->statement_.is_valid();
 }
 
-bool ThumbnailDatabase::MigrateIconMappingData(URLDatabase* url_db) {
-  URLDatabase::IconMappingEnumerator e;
-  if (!url_db->InitIconMappingEnumeratorForEverything(&e))
-    return false;
-
-  IconMapping info;
-  while (e.GetNextIconMapping(&info)) {
-    // TODO: Using bulk insert to improve the performance.
-    if (!AddIconMapping(info.page_url, info.icon_id))
-      return false;
-  }
-  return true;
-}
-
 bool ThumbnailDatabase::RetainDataForPageUrls(
     const std::vector<GURL>& urls_to_keep) {
   sql::Transaction transaction(&db_);
@@ -1329,27 +1321,8 @@ bool ThumbnailDatabase::IsLatestVersion() {
   return meta_table_.GetVersionNumber() == kCurrentVersionNumber;
 }
 
-bool ThumbnailDatabase::UpgradeToVersion4() {
-  // Set the default icon type as favicon, so the current data are set
-  // correctly.
-  if (!db_.Execute("ALTER TABLE favicons ADD icon_type INTEGER DEFAULT 1")) {
-    return false;
-  }
-  meta_table_.SetVersionNumber(4);
-  meta_table_.SetCompatibleVersionNumber(std::min(4, kCompatibleVersionNumber));
-  return true;
-}
-
-bool ThumbnailDatabase::UpgradeToVersion5() {
-  if (!db_.Execute("ALTER TABLE favicons ADD sizes LONGVARCHAR")) {
-    return false;
-  }
-  meta_table_.SetVersionNumber(5);
-  meta_table_.SetCompatibleVersionNumber(std::min(5, kCompatibleVersionNumber));
-  return true;
-}
-
 bool ThumbnailDatabase::UpgradeToVersion6() {
+  // Move bitmap data from favicons to favicon_bitmaps.
   bool success =
       db_.Execute("INSERT INTO favicon_bitmaps (icon_id, last_updated, "
                   "image_data, width, height)"
@@ -1358,8 +1331,8 @@ bool ThumbnailDatabase::UpgradeToVersion6() {
                   "id INTEGER PRIMARY KEY,"
                   "url LONGVARCHAR NOT NULL,"
                   "icon_type INTEGER DEFAULT 1,"
-                  // Set the default icon_type as FAVICON to be consistent with
-                  // table upgrade in UpgradeToVersion4().
+                  // default icon_type FAVICON to be consistent with
+                  // past migration.
                   "sizes LONGVARCHAR)") &&
       db_.Execute("INSERT INTO temp_favicons (id, url, icon_type) "
                   "SELECT id, url, icon_type FROM favicons") &&
@@ -1374,10 +1347,13 @@ bool ThumbnailDatabase::UpgradeToVersion6() {
 }
 
 bool ThumbnailDatabase::UpgradeToVersion7() {
+  // Sizes column was never used, remove it.
   bool success =
       db_.Execute("CREATE TABLE temp_favicons ("
                   "id INTEGER PRIMARY KEY,"
                   "url LONGVARCHAR NOT NULL,"
+                  // default icon_type FAVICON to be consistent with
+                  // past migration.
                   "icon_type INTEGER DEFAULT 1)") &&
       db_.Execute("INSERT INTO temp_favicons (id, url, icon_type) "
                   "SELECT id, url, icon_type FROM favicons") &&

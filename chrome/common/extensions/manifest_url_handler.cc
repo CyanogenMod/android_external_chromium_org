@@ -13,13 +13,13 @@
 #include "base/values.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/permissions/api_permission.h"
-#include "chrome/common/extensions/permissions/api_permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/api_permission_set.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -288,6 +288,11 @@ bool URLOverridesHandler::Parse(Extension* extension, string16* error) {
 #endif
 #if defined(OS_CHROMEOS)
     is_override = (is_override && page != keyboard::kKeyboardWebUIHost);
+#endif
+#if defined(ENABLE_ENHANCED_BOOKMARKS)
+    is_override = (is_override &&
+                   !(extension->location() == Manifest::COMPONENT &&
+                     page ==  chrome::kChromeUIEnhancedBookmarksHost));
 #endif
 
     if (is_override || !iter.value().GetAsString(&val)) {

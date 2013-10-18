@@ -8,8 +8,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chromeos/network/network_event_log.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
 #include "content/public/common/page_transition_types.h"
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
@@ -183,17 +186,17 @@ void EnrollmentDialogView::InitDialog() {
 ////////////////////////////////////////////////////////////////////////////////
 // Handler for certificate enrollment.
 
-class DialogEnrollmentDelegate : public EnrollmentDelegate {
+class DialogEnrollmentDelegate {
  public:
   // |owning_window| is the window that will own the dialog.
-  explicit DialogEnrollmentDelegate(gfx::NativeWindow owning_window,
-                                    const std::string& network_name,
-                                    Profile* profile);
-  virtual ~DialogEnrollmentDelegate();
+  DialogEnrollmentDelegate(gfx::NativeWindow owning_window,
+                           const std::string& network_name,
+                           Profile* profile);
+  ~DialogEnrollmentDelegate();
 
   // EnrollmentDelegate overrides
-  virtual bool Enroll(const std::vector<std::string>& uri_list,
-                      const base::Closure& connect) OVERRIDE;
+  bool Enroll(const std::vector<std::string>& uri_list,
+              const base::Closure& connect);
 
  private:
   gfx::NativeWindow owning_window_;
@@ -214,6 +217,11 @@ DialogEnrollmentDelegate::~DialogEnrollmentDelegate() {}
 
 bool DialogEnrollmentDelegate::Enroll(const std::vector<std::string>& uri_list,
                                       const base::Closure& post_action) {
+  if (uri_list.empty()) {
+    NET_LOG_EVENT("No enrollment URIs", network_name_);
+    return false;
+  }
+
   // Keep the closure for later activation if we notice that
   // a certificate has been added.
 
@@ -226,17 +234,23 @@ bool DialogEnrollmentDelegate::Enroll(const std::vector<std::string>& uri_list,
     if (uri.IsStandard() || uri.scheme() == extensions::kExtensionScheme) {
       // If this is a "standard" scheme, like http, ftp, etc., then open that in
       // the enrollment dialog.
+      NET_LOG_EVENT("Showing enrollment dialog", network_name_);
       EnrollmentDialogView::ShowDialog(owning_window_,
                                        network_name_,
                                        profile_,
                                        uri, post_action);
       return true;
     }
+    NET_LOG_DEBUG("Nonstandard URI: " + uri.spec(), network_name_);
   }
 
   // No appropriate scheme was found.
-  NET_LOG_EVENT("No usable enrollment URI", network_name_);
+  NET_LOG_ERROR("No usable enrollment URI", network_name_);
   return false;
+}
+
+void EnrollmentComplete(const std::string& service_path) {
+  NET_LOG_USER("Enrollment Complete", service_path);
 }
 
 }  // namespace
@@ -244,10 +258,38 @@ bool DialogEnrollmentDelegate::Enroll(const std::vector<std::string>& uri_list,
 ////////////////////////////////////////////////////////////////////////////////
 // Factory function.
 
-EnrollmentDelegate* CreateEnrollmentDelegate(gfx::NativeWindow owning_window,
-                                             const std::string& network_name,
-                                             Profile* profile) {
-  return new DialogEnrollmentDelegate(owning_window, network_name, profile);
+namespace enrollment {
+
+bool CreateDialog(const std::string& service_path,
+                  gfx::NativeWindow owning_window) {
+  const NetworkState* network = NetworkHandler::Get()->network_state_handler()->
+      GetNetworkState(service_path);
+  if (!network) {
+    NET_LOG_ERROR("Enrolling Unknown network", service_path);
+    return false;
+  }
+  // We skip certificate patterns for device policy ONC so that an unmanaged
+  // user can't get to the place where a cert is presented for them
+  // involuntarily.
+  if (network->ui_data().onc_source() == onc::ONC_SOURCE_DEVICE_POLICY)
+    return false;
+
+  const CertificatePattern& certificate_pattern =
+      network->ui_data().certificate_pattern();
+  if (certificate_pattern.Empty()) {
+    NET_LOG_EVENT("No certificate pattern found", service_path);
+    return false;
+  }
+
+  NET_LOG_USER("Enrolling", service_path);
+
+  DialogEnrollmentDelegate* enrollment =
+      new DialogEnrollmentDelegate(owning_window, network->name(),
+                                   ProfileManager::GetDefaultProfile());
+  return enrollment->Enroll(certificate_pattern.enrollment_uri_list(),
+                            base::Bind(&EnrollmentComplete, service_path));
 }
+
+}  // namespace enrollment
 
 }  // namespace chromeos

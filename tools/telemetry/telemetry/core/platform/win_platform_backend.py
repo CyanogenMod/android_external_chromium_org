@@ -4,7 +4,7 @@
 
 import collections
 import ctypes
-import os
+import platform
 import re
 import subprocess
 import time
@@ -182,7 +182,7 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     return 'win'
 
   def GetOSVersionName(self):
-    os_version = os.uname()[2]
+    os_version = platform.uname()[3]
 
     if os_version.startswith('5.1.'):
       return 'xp'

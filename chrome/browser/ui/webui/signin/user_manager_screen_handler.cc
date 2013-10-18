@@ -26,8 +26,8 @@
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/image/image_util.h"
-#include "ui/webui/web_ui_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
 #include "chrome/browser/managed_mode/managed_user_service.h"
@@ -165,9 +165,6 @@ void UserManagerScreenHandler::HandleInitialize(const base::ListValue* args) {
 }
 
 void UserManagerScreenHandler::HandleAddUser(const base::ListValue* args) {
-  Browser* browser = chrome::FindOrCreateTabbedBrowser(
-      ProfileManager::GetLastUsedProfileAllowedByPolicy(), desktop_type_);
-  DCHECK(browser);
   profiles::CreateAndSwitchToNewProfile(desktop_type_);
 }
 
@@ -195,9 +192,7 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
 }
 
 void UserManagerScreenHandler::HandleLaunchGuest(const base::ListValue* args) {
-  Browser* browser = chrome::FindOrCreateTabbedBrowser(
-      ProfileManager::GetLastUsedProfileAllowedByPolicy(), desktop_type_);
-  AvatarMenu::SwitchToGuestProfileWindow(browser);
+  AvatarMenu::SwitchToGuestProfileWindow(desktop_type_);
 }
 
 void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
@@ -301,6 +296,7 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("publicAccountReminder", string16());
   localized_strings->SetString("publicAccountEnter", string16());
   localized_strings->SetString("publicAccountEnterAccessibleName", string16());
+  localized_strings->SetString("multiple-signin-banner-text", string16());
  }
 
 void UserManagerScreenHandler::SendUserList() {

@@ -6,7 +6,6 @@
 
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/app_list/app_list_item_model.h"
-#include "ui/base/layout.h"
 #include "ui/gfx/image/image_skia_rep.h"
 
 namespace {
@@ -88,7 +87,7 @@ bool PickleImage(Pickle* pickle, const gfx::ImageSkia& image) {
   pickle->WriteInt(static_cast<int>(reps.size()));
   for (std::vector<gfx::ImageSkiaRep>::const_iterator it = reps.begin();
        it != reps.end(); ++it) {
-    pickle->WriteInt(static_cast<int>(ui::GetSupportedScaleFactor(it->scale())));
+    pickle->WriteFloat(it->scale());
     pickle->WriteInt(it->pixel_width());
     pickle->WriteInt(it->pixel_height());
     ImageFormat format = NONE;
@@ -111,8 +110,8 @@ bool UnpickleImage(PickleIterator* it, gfx::ImageSkia* out) {
 
   gfx::ImageSkia result;
   for (int i = 0; i < rep_count; ++i) {
-    int scale_factor = 0;
-    if (!it->ReadInt(&scale_factor))
+    float scale = 0.0f;
+    if (!it->ReadFloat(&scale))
       return false;
 
     int width = 0;
@@ -147,7 +146,6 @@ bool UnpickleImage(PickleIterator* it, gfx::ImageSkia* out) {
       SkAutoLockPixels lock(bitmap);
       memcpy(bitmap.getPixels(), pixels, bitmap.getSize());
     }
-    float scale = ui::GetImageScale(static_cast<ui::ScaleFactor>(scale_factor));
     result.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
   }
 
@@ -156,11 +154,10 @@ bool UnpickleImage(PickleIterator* it, gfx::ImageSkia* out) {
 }
 
 scoped_ptr<AppListItemModel> UnpickleAppListItemModel(PickleIterator* it) {
-  scoped_ptr<AppListItemModel> result(new AppListItemModel);
   std::string id;
   if (!it->ReadString(&id))
     return scoped_ptr<AppListItemModel>();
-  result->set_app_id(id);
+  scoped_ptr<AppListItemModel> result(new AppListItemModel(id));
   std::string title;
   if (!it->ReadString(&title))
     return scoped_ptr<AppListItemModel>();
@@ -179,7 +176,7 @@ scoped_ptr<AppListItemModel> UnpickleAppListItemModel(PickleIterator* it) {
 }
 
 bool PickleAppListItemModel(Pickle* pickle, AppListItemModel* item) {
-  if (!pickle->WriteString(item->app_id()))
+  if (!pickle->WriteString(item->id()))
     return false;
   if (!pickle->WriteString(item->title()))
     return false;
@@ -193,7 +190,6 @@ bool PickleAppListItemModel(Pickle* pickle, AppListItemModel* item) {
 }
 
 void CopyOverItem(AppListItemModel* src_item, AppListItemModel* dest_item) {
-  dest_item->set_app_id(src_item->app_id());
   dest_item->SetTitleAndFullName(src_item->title(), src_item->full_name());
   dest_item->SetIcon(src_item->icon(), src_item->has_shadow());
 }
@@ -225,7 +221,7 @@ void FastShowPickler::CopyOver(AppListModel* src, AppListModel* dest) {
   dest->SetSignedIn(src->signed_in());
   for (size_t i = 0; i < src->apps()->item_count(); i++) {
     AppListItemModel* src_item = src->apps()->GetItemAt(i);
-    AppListItemModel* dest_item = new AppListItemModel;
+    AppListItemModel* dest_item = new AppListItemModel(src_item->id());
     CopyOverItem(src_item, dest_item);
     dest->apps()->Add(dest_item);
   }

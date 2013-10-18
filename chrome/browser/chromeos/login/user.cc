@@ -7,10 +7,10 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/threading/thread_restrictions.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "grit/theme_resources.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace chromeos {
@@ -214,10 +214,8 @@ User::User(const std::string& email)
 
 User::~User() {}
 
-void User::SetAccountLocale(const std::string& raw_account_locale) {
-  account_locale_.reset(new std::string);
-  // Ignore result
-  l10n_util::CheckAndResolveLocale(raw_account_locale, account_locale_.get());
+void User::SetAccountLocale(const std::string& resolved_account_locale) {
+  account_locale_.reset(new std::string(resolved_account_locale));
 }
 
 void User::SetImage(const UserImage& user_image, int image_index) {

@@ -126,6 +126,8 @@ class TestURLFetcher : public URLFetcher {
       scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
   virtual void SaveResponseToTemporaryFile(
       scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
+  virtual void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) OVERRIDE;
   virtual HttpResponseHeaders* GetResponseHeaders() const OVERRIDE;
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual bool WasFetchedViaProxy() const OVERRIDE;
@@ -139,7 +141,6 @@ class TestURLFetcher : public URLFetcher {
   virtual const URLRequestStatus& GetStatus() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual bool FileErrorOccurred(int* out_error_code) const OVERRIDE;
   virtual void ReceivedContentWasMalformed() OVERRIDE;
   // Override response access functions to return fake data.
   virtual bool GetResponseAsString(
@@ -377,13 +378,7 @@ class FakeURLFetcherFactory : public URLFetcherFactory,
 
   // Sets the fake response for a given URL.  If success is true we will serve
   // an HTTP/200 and an HTTP/500 otherwise.  The |response_data| may be empty.
-  void SetFakeResponseForURL(const GURL& url,
-                             const std::string& response_data,
-                             bool success);
-
-  // Convenience helper that calls SetFakeResponseForURL with GURL(url).
-  // TODO(mnissler): Convert callers to SetFakeResponseForURL.
-  void SetFakeResponse(const std::string& url,
+  void SetFakeResponse(const GURL& url,
                        const std::string& response_data,
                        bool success);
 

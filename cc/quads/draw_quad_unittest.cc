@@ -352,7 +352,7 @@ TEST(DrawQuadTest, CopyDebugBorderDrawQuad) {
 }
 
 TEST(DrawQuadTest, CopyIOSurfaceDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Size size(58, 95);
   ResourceProvider::ResourceId resource_id = 72;
   IOSurfaceDrawQuad::Orientation orientation = IOSurfaceDrawQuad::UNFLIPPED;
@@ -444,7 +444,7 @@ TEST(DrawQuadTest, CopySolidColorDrawQuad) {
 }
 
 TEST(DrawQuadTest, CopyStreamVideoDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   ResourceProvider::ResourceId resource_id = 64;
   gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
   CREATE_SHARED_STATE();
@@ -462,7 +462,7 @@ TEST(DrawQuadTest, CopyStreamVideoDrawQuad) {
 }
 
 TEST(DrawQuadTest, CopyTextureDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   unsigned resource_id = 82;
   bool premultiplied_alpha = true;
   gfx::PointF uv_top_left(0.5f, 224.f);
@@ -506,102 +506,6 @@ TEST(DrawQuadTest, CopyTextureDrawQuad) {
   EXPECT_EQ(flipped, copy_quad->flipped);
 }
 
-TEST(DrawQuadTest, ClipTextureDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
-  unsigned resource_id = 82;
-  bool premultiplied_alpha = true;
-  bool flipped = true;
-  CREATE_SHARED_STATE();
-  // The original quad position is (30, 40) its size is 50*60.
-  shared_state->content_to_target_transform =
-      gfx::Transform(1.f, 0.f, 0.f, 1.f, 10.f, 20.f);
-  // After transformation, the quad position is (40, 60) its size is 50*60.
-  shared_state->clip_rect = gfx::Rect(50, 70, 30, 20);
-
-  // The original quad is 'ABCD', the clipped quad is 'abcd':
-  // 40 50       90
-  //  B--:-------C 60
-  //  |  b----c -|-70
-  //  |  |    |  |
-  //  |  a----d -|-90
-  //  |          |
-  //  A----------D 120
-  // UV and vertex opacity are stored per vertex on the parent rectangle 'ABCD'.
-
-  // This is the UV value for vertex 'B'.
-  gfx::PointF uv_top_left(0.1f, 0.2f);
-  // This is the UV value for vertex 'D'.
-  gfx::PointF uv_bottom_right(0.9f, 0.8f);
-  // This the vertex opacity for the vertices 'ABCD'.
-  const float vertex_opacity[] = { 0.3f, 0.4f, 0.7f, 0.8f };
-  {
-    CREATE_QUAD_8_NEW(TextureDrawQuad,
-                      opaque_rect,
-                      resource_id,
-                      premultiplied_alpha,
-                      uv_top_left,
-                      uv_bottom_right,
-                      SK_ColorTRANSPARENT,
-                      vertex_opacity,
-                      flipped);
-    CREATE_QUAD_7_ALL(TextureDrawQuad,
-                      resource_id,
-                      premultiplied_alpha,
-                      uv_top_left,
-                      uv_bottom_right,
-                      SK_ColorTRANSPARENT,
-                      vertex_opacity,
-                      flipped);
-    EXPECT_TRUE(quad_all->PerformClipping());
-
-    // This is the expected UV value for vertex 'b'.
-    // uv(b) = uv(B) + (Bb / BD) * (uv(D) - uv(B))
-    // 0.3 = 0.2 + (10 / 60) * (0.8 - 0.2)
-    gfx::PointF uv_top_left_clipped(0.26f, 0.3f);
-    // This is the expected UV value for vertex 'd'.
-    // uv(d) = uv(B) + (Bd / BD) * (uv(D) - uv(B))
-    gfx::PointF uv_bottom_right_clipped(0.74f, 0.5f);
-    // This the expected vertex opacity for the vertices 'abcd'.
-    // They are computed with a bilinear interpolation of the corner values.
-    const float vertex_opacity_clipped[] = { 0.43f, 0.45f, 0.65f, 0.67f };
-
-    EXPECT_EQ(uv_top_left_clipped, quad_all->uv_top_left);
-    EXPECT_EQ(uv_bottom_right_clipped, quad_all->uv_bottom_right);
-    EXPECT_FLOAT_ARRAY_EQ(vertex_opacity_clipped, quad_all->vertex_opacity, 4);
-  }
-
-  uv_top_left = gfx::PointF(0.8f, 0.7f);
-  uv_bottom_right = gfx::PointF(0.2f, 0.1f);
-  {
-    CREATE_QUAD_8_NEW(TextureDrawQuad,
-                      opaque_rect,
-                      resource_id,
-                      premultiplied_alpha,
-                      uv_top_left,
-                      uv_bottom_right,
-                      SK_ColorTRANSPARENT,
-                      vertex_opacity,
-                      flipped);
-    CREATE_QUAD_7_ALL(TextureDrawQuad,
-                      resource_id,
-                      premultiplied_alpha,
-                      uv_top_left,
-                      uv_bottom_right,
-                      SK_ColorTRANSPARENT,
-                      vertex_opacity,
-                      flipped);
-    EXPECT_TRUE(quad_all->PerformClipping());
-
-    // This is the expected UV value for vertex 'b'.
-    gfx::PointF uv_top_left_clipped(0.68f, 0.6f);
-    // This is the expected UV value for vertex 'd'.
-    gfx::PointF uv_bottom_right_clipped(0.32f, 0.4f);
-
-    EXPECT_EQ(uv_top_left_clipped, quad_all->uv_top_left);
-    EXPECT_EQ(uv_bottom_right_clipped, quad_all->uv_bottom_right);
-  }
-}
-
 TEST(DrawQuadTest, CopyTileDrawQuad) {
   gfx::Rect opaque_rect(33, 44, 22, 33);
   unsigned resource_id = 104;
@@ -636,7 +540,7 @@ TEST(DrawQuadTest, CopyTileDrawQuad) {
 }
 
 TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::SizeF tex_scale(0.75f, 0.5f);
   ResourceProvider::ResourceId y_plane_resource_id = 45;
   ResourceProvider::ResourceId u_plane_resource_id = 532;
@@ -760,7 +664,7 @@ TEST_F(DrawQuadIteratorTest, DebugBorderDrawQuad) {
 }
 
 TEST_F(DrawQuadIteratorTest, IOSurfaceDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::Size size(58, 95);
   ResourceProvider::ResourceId resource_id = 72;
   IOSurfaceDrawQuad::Orientation orientation = IOSurfaceDrawQuad::UNFLIPPED;
@@ -815,7 +719,7 @@ TEST_F(DrawQuadIteratorTest, SolidColorDrawQuad) {
 }
 
 TEST_F(DrawQuadIteratorTest, StreamVideoDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   ResourceProvider::ResourceId resource_id = 64;
   gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
 
@@ -827,7 +731,7 @@ TEST_F(DrawQuadIteratorTest, StreamVideoDrawQuad) {
 }
 
 TEST_F(DrawQuadIteratorTest, TextureDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   unsigned resource_id = 82;
   bool premultiplied_alpha = true;
   gfx::PointF uv_top_left(0.5f, 224.f);
@@ -870,7 +774,7 @@ TEST_F(DrawQuadIteratorTest, TileDrawQuad) {
 }
 
 TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
-  gfx::Rect opaque_rect(3, 7, 10, 12);
+  gfx::Rect opaque_rect(33, 47, 10, 12);
   gfx::SizeF tex_scale(0.75f, 0.5f);
   ResourceProvider::ResourceId y_plane_resource_id = 45;
   ResourceProvider::ResourceId u_plane_resource_id = 532;

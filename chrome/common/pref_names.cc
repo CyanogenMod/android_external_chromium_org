@@ -84,6 +84,10 @@ const char kRestoreOnStartupMigrated[] = "session.restore_on_startup_migrated";
 // are only restored on startup if kRestoreOnStartup is 4.
 const char kURLsToRestoreOnStartup[] = "session.urls_to_restore_on_startup";
 
+// If set to true profiles are created in ephemeral mode and do not store their
+// data in the profile folder on disk but only in memory.
+const char kForceEphemeralProfiles[] = "profile.ephemeral_mode";
+
 // The application locale.
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
 // and user's profile.  Global property determines locale of login screen,
@@ -336,6 +340,13 @@ const char kPasswordManagerEnabled[] = "profile.password_manager_enabled";
 // in clear text.
 const char kPasswordManagerAllowShowPasswords[] =
     "profile.password_manager_allow_show_passwords";
+
+// A list of numbers. Each number corresponds to one of the domains monitored
+// for save-password-prompt breakages. That number is a random index into
+// the array of groups containing the monitored domain. That group should be
+// used for reporting that domain.
+const char kPasswordManagerGroupsForDomains[] =
+    "profile.password_manager_groups_for_domains";
 
 // Booleans identifying whether normal and reverse auto-logins are enabled.
 const char kAutologinEnabled[] = "autologin.enabled";
@@ -704,6 +715,8 @@ const char kScreenMagnifierScale[] = "settings.a11y.screen_magnifier_scale";
 // A boolean pref which determines whether virtual keyboard is enabled.
 // TODO(hashimoto): Remove this pref.
 const char kVirtualKeyboardEnabled[] = "settings.a11y.virtual_keyboard";
+// A boolean pref which determines whether autoclick is enabled.
+const char kAutoclickEnabled[] = "settings.a11y.autoclick";
 // A boolean pref which determines whether the accessibility menu shows
 // regardless of the state of a11y features.
 const char kShouldAlwaysShowAccessibilityMenu[] = "settings.a11y.enable_menu";
@@ -936,6 +949,9 @@ const char kExtensionToolbar[] = "extensions.toolbar";
 // Dictionary pref that tracks which command belongs to which
 // extension + named command pair.
 const char kExtensionCommands[] = "extensions.commands";
+
+// A list of known disabled extensions IDs.
+const char kExtensionKnownDisabled[] = "extensions.known_disabled";
 
 // Pref containing the directory for internal plugins as written to the plugins
 // list (below).
@@ -1220,6 +1236,10 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 extern const char kMessageCenterEnabledSyncNotifierIds[] =
     "message_center.enabled_sync_notifier_ids";
 
+// Boolean pref indicating the welcome notification was dismissed by the user.
+extern const char kWelcomeNotificationDismissed[] =
+    "message_center.welcome_notification_dismissed";
+
 // List pref containing synced notification sending services that are currently
 // enabled.
 extern const char kEnabledSyncedNotificationSendingServices[] =
@@ -1229,6 +1249,11 @@ extern const char kEnabledSyncedNotificationSendingServices[] =
 // been turned on once for the user (so we don't turn them on again).
 extern const char kInitializedSyncedNotificationSendingServices[] =
     "synced_notification.initialized_sending_services";
+
+// Boolean pref containing whether this is the first run of the Synced
+// Notification feature.
+extern const char kSyncedNotificationFirstRun[] =
+    "synced_notification.first_run";
 
 // Dictionary pref that keeps track of per-extension settings. The keys are
 // extension ids.
@@ -1247,6 +1272,11 @@ extern const char kFullscreenAllowed[] = "fullscreen.allowed";
 // registered to the user's account, e.g. Google Cloud Print printers.
 const char kLocalDiscoveryNotificationsEnabled[] =
     "local_discovery.notifications_enabled";
+
+// String that indicates if the Profile Reset prompt has already been shown to
+// the user. Used both in user preferences and local state, in the latter, it is
+// actually a dictionary that maps profile keys to before-mentioned strings.
+const char kProfileResetPromptMemento[] = "profile.reset_prompt_memento";
 
 // *************** LOCAL STATE ***************
 // These are attached to the machine/installation
@@ -1711,6 +1741,11 @@ const char kDevToolsAdbKey[] = "devtools.adb_key";
 
 const char kDevToolsDisabled[] = "devtools.disabled";
 
+// Determines whether devtools should be discovering usb devices for
+// remote debugging at chrome://inspect.
+const char kDevToolsDiscoverUsbDevicesEnabled[] =
+    "devtools.discover_usb_devices";
+
 // A string specifying the dock location (either 'bottom' or 'right').
 const char kDevToolsDockSide[] = "devtools.dock_side";
 
@@ -1782,6 +1817,7 @@ const char kSyncFaviconTracking[] = "sync.favicon_tracking";
 const char kSyncHistoryDeleteDirectives[] = "sync.history_delete_directives";
 const char kSyncManagedUserSettings[] = "sync.managed_user_settings";
 const char kSyncManagedUsers[] = "sync.managed_users";
+const char kSyncArticles[] = "sync.articles";
 const char kSyncPasswords[] = "sync.passwords";
 const char kSyncPreferences[] = "sync.preferences";
 const char kSyncPriorityPreferences[] = "sync.priority_preferences";
@@ -2474,6 +2510,7 @@ const char kRLZBrand[] = "rlz.brand";
 const char kRLZDisabled[] = "rlz.disabled";
 #endif
 
+#if defined(ENABLE_APP_LIST)
 // The directory in user data dir that contains the profile to be used with the
 // app launcher.
 extern const char kAppListProfile[] = "app_list.profile";
@@ -2491,6 +2528,37 @@ extern const char kLastAppListLaunchPing[] = "app_list.last_launch_ping";
 // ping and the time of the last ping.
 extern const char kAppListAppLaunchCount[] = "app_list.app_launch_count";
 extern const char kLastAppListAppLaunchPing[] = "app_list.last_app_launch_ping";
+
+// A boolean that tracks whether the user has ever enabled the app launcher.
+const char kAppLauncherHasBeenEnabled[] =
+    "apps.app_launcher.has_been_enabled";
+
+// TODO(calamity): remove this pref since app launcher will always be
+// installed.
+// Local state caching knowledge of whether the app launcher is installed.
+const char kAppLauncherIsEnabled[] =
+    "apps.app_launcher.should_show_apps_page";
+
+// Integer representing the version of the app launcher shortcut installed on
+// the system. Incremented, e.g., when embedded icons change.
+const char kAppLauncherShortcutVersion[] = "apps.app_launcher.shortcut_version";
+
+// A boolean identifying if we should show the app launcher promo or not.
+const char kShowAppLauncherPromo[] = "app_launcher.show_promo";
+#endif
+
+// If set, the user requested to launch the app with this extension id while
+// in Metro mode, and then relaunched to Desktop mode to start it.
+const char kAppLaunchForMetroRestart[] = "apps.app_launch_for_metro_restart";
+
+// Set with |kAppLaunchForMetroRestart|, the profile whose loading triggers
+// launch of the specified app when restarting Chrome in desktop mode.
+const char kAppLaunchForMetroRestartProfile[] =
+    "apps.app_launch_for_metro_restart_profile";
+
+// A boolean that indicates whether app shortcuts have been created.
+// On a transition from false to true, shortcuts are created for all apps.
+const char kAppShortcutsHaveBeenCreated[] = "apps.shortcuts_have_been_created";
 
 // How often the bubble has been shown.
 extern const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
@@ -2511,5 +2579,9 @@ const char kWatchdogExtensionActive[] =
 // hashes of profile prefs that we track to detect changes that happen outside
 // of Chrome.
 const char kProfilePreferenceHashes[] = "profile.preference_hashes";
+
+// Stores a pair of local time and corresponding network time to bootstrap
+// network time tracker when browser starts.
+const char kNetworkTimeMapping[] = "profile.network_time_mapping";
 
 }  // namespace prefs

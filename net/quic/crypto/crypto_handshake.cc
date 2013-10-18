@@ -519,6 +519,17 @@ void QuicCryptoClientConfig::CachedState::SetProofVerifyDetails(
   proof_verify_details_.reset(details);
 }
 
+void QuicCryptoClientConfig::CachedState::InitializeFrom(
+    const QuicCryptoClientConfig::CachedState& other) {
+  DCHECK(server_config_.empty());
+  DCHECK(!server_config_valid_);
+  server_config_ = other.server_config_;
+  source_address_token_ = other.source_address_token_;
+  certs_ = other.certs_;
+  server_config_sig_ = other.server_config_sig_;
+  server_config_valid_ = other.server_config_valid_;
+}
+
 void QuicCryptoClientConfig::SetDefaults() {
   // Version must be 0.
   // TODO(agl): this version stuff is obsolete now.
@@ -741,17 +752,20 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     if (!channel_id_signer_->Sign(server_hostname, hkdf_input,
                                   &key, &signature)) {
       *error_details = "Channel ID signature failed";
-      return QUIC_INTERNAL_ERROR;
+      return QUIC_INVALID_CHANNEL_ID_SIGNATURE;
     }
 
     cetv.SetStringPiece(kCIDK, key);
     cetv.SetStringPiece(kCIDS, signature);
 
     CrypterPair crypters;
-    CryptoUtils::DeriveKeys(out_params->initial_premaster_secret,
-                            out_params->aead, out_params->client_nonce,
-                            out_params->server_nonce, hkdf_input,
-                            CryptoUtils::CLIENT, &crypters);
+    if (!CryptoUtils::DeriveKeys(out_params->initial_premaster_secret,
+                                 out_params->aead, out_params->client_nonce,
+                                 out_params->server_nonce, hkdf_input,
+                                 CryptoUtils::CLIENT, &crypters)) {
+      *error_details = "Symmetric key setup failed";
+      return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
+    }
 
     const QuicData& cetv_plaintext = cetv.GetSerialized();
     scoped_ptr<QuicData> cetv_ciphertext(crypters.encrypter->EncryptPacket(
@@ -783,10 +797,13 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   hkdf_input.append(QuicCryptoConfig::kInitialLabel, label_len);
   hkdf_input.append(out_params->hkdf_input_suffix);
 
-  CryptoUtils::DeriveKeys(out_params->initial_premaster_secret,
-                          out_params->aead, out_params->client_nonce,
-                          out_params->server_nonce, hkdf_input,
-                          CryptoUtils::CLIENT, &out_params->initial_crypters);
+  if (!CryptoUtils::DeriveKeys(
+           out_params->initial_premaster_secret, out_params->aead,
+           out_params->client_nonce, out_params->server_nonce, hkdf_input,
+           CryptoUtils::CLIENT, &out_params->initial_crypters)) {
+    *error_details = "Symmetric key setup failed";
+    return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
+  }
 
   return QUIC_NO_ERROR;
 }
@@ -893,10 +910,13 @@ QuicErrorCode QuicCryptoClientConfig::ProcessServerHello(
   hkdf_input.append(QuicCryptoConfig::kForwardSecureLabel, label_len);
   hkdf_input.append(out_params->hkdf_input_suffix);
 
-  CryptoUtils::DeriveKeys(
-      out_params->forward_secure_premaster_secret, out_params->aead,
-      out_params->client_nonce, out_params->server_nonce, hkdf_input,
-      CryptoUtils::CLIENT, &out_params->forward_secure_crypters);
+  if (!CryptoUtils::DeriveKeys(
+           out_params->forward_secure_premaster_secret, out_params->aead,
+           out_params->client_nonce, out_params->server_nonce, hkdf_input,
+           CryptoUtils::CLIENT, &out_params->forward_secure_crypters)) {
+    *error_details = "Symmetric key setup failed";
+    return QUIC_CRYPTO_SYMMETRIC_KEY_SETUP_FAILED;
+  }
 
   return QUIC_NO_ERROR;
 }
@@ -915,6 +935,16 @@ ChannelIDSigner* QuicCryptoClientConfig::channel_id_signer() const {
 
 void QuicCryptoClientConfig::SetChannelIDSigner(ChannelIDSigner* signer) {
   channel_id_signer_.reset(signer);
+}
+
+void QuicCryptoClientConfig::InitializeFrom(
+    const std::string& server_hostname,
+    const std::string& canonical_server_hostname,
+    QuicCryptoClientConfig* canonical_crypto_config) {
+  CachedState* canonical_cached =
+      canonical_crypto_config->LookupOrCreate(canonical_server_hostname);
+  CachedState* cached = LookupOrCreate(server_hostname);
+  cached->InitializeFrom(*canonical_cached);
 }
 
 }  // namespace net

@@ -95,6 +95,7 @@ scoped_ptr<WindowResizer> CreateWindowResizer(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshEnableDockedWindows) &&
       window_resizer && window->parent() &&
+      !window->transient_parent() &&
       (window->parent()->id() == internal::kShellWindowId_DefaultContainer ||
        window->parent()->id() == internal::kShellWindowId_DockedContainer ||
        window->parent()->id() == internal::kShellWindowId_PanelContainer)) {
@@ -773,8 +774,10 @@ void WorkspaceWindowResizer::AdjustBoundsForMainWindow(
       ScreenAsh::ConvertRectFromScreen(window()->parent(), display.work_area());
   if (details_.window_component == HTCAPTION) {
     // Adjust the bounds to the work area where the mouse cursor is located.
-    // Always keep kMinOnscreenHeight on the bottom.
-    int max_y = work_area.bottom() - kMinOnscreenHeight;
+    // Always keep kMinOnscreenHeight or the window height (whichever is less)
+    // on the bottom.
+    int max_y = work_area.bottom() - std::min(kMinOnscreenHeight,
+                                              bounds->height());
     if (bounds->y() > max_y) {
       bounds->set_y(max_y);
     } else if (bounds->y() <= work_area.y()) {
@@ -899,22 +902,25 @@ void WorkspaceWindowResizer::UpdateSnapPhantomWindow(const gfx::Point& location,
       return;
     }
   }
+  const bool can_dock = dock_layout_->CanDockWindow(window(), snap_type_);
+  const bool can_snap = window_state()->CanSnap();
+  if (!can_snap && !can_dock) {
+    snap_type_ = SNAP_NONE;
+    snap_phantom_window_controller_.reset();
+    snap_sizer_.reset();
+    SetDraggedWindowDocked(false);
+    return;
+  }
   SnapSizer::Edge edge = (snap_type_ == SNAP_LEFT) ?
       SnapSizer::LEFT_EDGE : SnapSizer::RIGHT_EDGE;
-
   if (!snap_sizer_) {
-    snap_sizer_.reset(new SnapSizer(window(),
+    snap_sizer_.reset(new SnapSizer(window_state(),
                                     location,
                                     edge,
                                     internal::SnapSizer::OTHER_INPUT));
   } else {
     snap_sizer_->Update(location);
   }
-
-  const bool can_dock = dock_layout_->CanDockWindow(window(), snap_type_);
-  const bool can_snap = window_state()->CanSnap();
-  if (!can_snap && !can_dock)
-    return;
 
   // Update phantom window with snapped or docked guide bounds.
   // Windows that cannot be snapped or are less wide than kMaxDockWidth can get

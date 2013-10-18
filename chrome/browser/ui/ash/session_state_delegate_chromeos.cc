@@ -7,10 +7,15 @@
 #include "ash/session_state_observer.h"
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/ash/multi_user_window_manager.h"
+#include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -42,6 +47,11 @@ bool SessionStateDelegateChromeos::CanLockScreen() const {
 bool SessionStateDelegateChromeos::IsScreenLocked() const {
   return chromeos::ScreenLocker::default_screen_locker() &&
          chromeos::ScreenLocker::default_screen_locker()->locked();
+}
+
+bool SessionStateDelegateChromeos::ShouldLockScreenBeforeSuspending() const {
+  Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
+  return profile && profile->GetPrefs()->GetBoolean(prefs::kEnableScreenLock);
 }
 
 void SessionStateDelegateChromeos::LockScreen() {
@@ -149,9 +159,29 @@ void SessionStateDelegateChromeos::RemoveSessionStateObserver(
   session_state_observer_list_.RemoveObserver(observer);
 }
 
+bool SessionStateDelegateChromeos::TransferWindowToDesktopOfUser(
+    aura::Window* window,
+    ash::MultiProfileIndex index) const {
+  chrome::MultiUserWindowManager* window_manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  if (!window_manager || window_manager->GetWindowOwner(window).empty())
+    return false;
+  DCHECK_LT(index, NumberOfLoggedInUsers());
+  window_manager->ShowWindowForUser(window,
+      chromeos::UserManager::Get()->GetLRULoggedInUsers()[index]->email());
+  return true;
+}
+
 void SessionStateDelegateChromeos::ActiveUserChanged(
     const chromeos::User* active_user) {
   FOR_EACH_OBSERVER(ash::SessionStateObserver,
                     session_state_observer_list_,
                     ActiveUserChanged(active_user->email()));
+}
+
+void SessionStateDelegateChromeos::UserAddedToSession(
+    const chromeos::User* added_user) {
+  FOR_EACH_OBSERVER(ash::SessionStateObserver,
+                    session_state_observer_list_,
+                    UserAddedToSession(added_user->email()));
 }

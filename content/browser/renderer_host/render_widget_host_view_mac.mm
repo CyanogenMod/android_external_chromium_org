@@ -867,6 +867,10 @@ void RenderWidgetHostViewMac::Show() {
 }
 
 void RenderWidgetHostViewMac::Hide() {
+  // We're messing with the window, so do this to ensure no flashes.
+  if (!use_core_animation_)
+    [[cocoa_view_ window] disableScreenUpdatesUntilFlush];
+
   [cocoa_view_ setHidden:YES];
 
   WasHidden();
@@ -1898,7 +1902,8 @@ gfx::Rect RenderWidgetHostViewMac::GetScaledOpenGLPixelRect(
 }
 
 void RenderWidgetHostViewMac::FrameSwapped() {
-  software_latency_info_.swap_timestamp = base::TimeTicks::HighResNow();
+  software_latency_info_.AddLatencyNumber(
+      ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   render_widget_host_->FrameSwapped(software_latency_info_);
   software_latency_info_.Clear();
 }
@@ -2174,14 +2179,15 @@ void RenderWidgetHostViewMac::FrameSwapped() {
   return YES;
 }
 
-- (void)keyEvent:(NSEvent*)theEvent {
+- (EventHandled)keyEvent:(NSEvent*)theEvent {
   if (delegate_ && [delegate_ respondsToSelector:@selector(handleEvent:)]) {
     BOOL handled = [delegate_ handleEvent:theEvent];
     if (handled)
-      return;
+      return kEventHandled;
   }
 
   [self keyEvent:theEvent wasKeyEquivalent:NO];
+  return kEventHandled;
 }
 
 - (void)keyEvent:(NSEvent*)theEvent wasKeyEquivalent:(BOOL)equiv {

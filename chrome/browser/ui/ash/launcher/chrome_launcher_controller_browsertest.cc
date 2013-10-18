@@ -4,9 +4,9 @@
 
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "ash/ash_switches.h"
 #include "ash/display/display_controller.h"
 #include "ash/launcher/launcher.h"
@@ -34,6 +34,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/ash/launcher/browser_shortcut_launcher_item_controller.h"
+#include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -151,7 +152,8 @@ class LauncherPlatformAppBrowserTest
   int GetNumApplicationMenuItems(const ash::LauncherItem& item) {
     const int event_flags = 0;
     scoped_ptr<ash::LauncherMenuModel> menu(
-        controller_->CreateApplicationMenu(item, event_flags));
+        new LauncherApplicationMenuItemModel(
+            controller_->GetApplicationList(item, event_flags)));
     int num_items = 0;
     for (int i = 0; i < menu->GetItemCount(); ++i) {
       if (menu->GetTypeAt(i) != ui::MenuModel::TYPE_SEPARATOR)
@@ -220,10 +222,10 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
         service->GetExtensionById(last_loaded_extension_id_, false);
     EXPECT_TRUE(extension);
 
-    chrome::OpenApplication(chrome::AppLaunchParams(profile(),
-                                                    extension,
-                                                    container,
-                                                    disposition));
+    OpenApplication(AppLaunchParams(profile(),
+                                    extension,
+                                    container,
+                                    disposition));
     return extension;
   }
 
@@ -658,7 +660,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserNoMinimizeOnClick,
   EXPECT_EQ(LauncherItemController::TYPE_APP, item1_controller->type());
   // Clicking the item should have no effect.
   TestEvent click_event(ui::ET_MOUSE_PRESSED);
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   // Minimize the window and confirm that the controller item is updated.
@@ -667,14 +669,14 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserNoMinimizeOnClick,
   EXPECT_FALSE(window1->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_RUNNING, item1.status);
   // Clicking the item should activate the window.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
   // Maximizing a window should preserve state after minimize + click.
   window1->GetBaseWindow()->Maximize();
   window1->GetBaseWindow()->Minimize();
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   EXPECT_TRUE(window1->GetBaseWindow()->IsMaximized());
@@ -697,20 +699,20 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserMinimizeOnClick,
   EXPECT_EQ(LauncherItemController::TYPE_APP, item1_controller->type());
   // Since it is already active, clicking it should minimize.
   TestEvent click_event(ui::ET_MOUSE_PRESSED);
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_FALSE(window1->GetNativeWindow()->IsVisible());
   EXPECT_FALSE(window1->GetBaseWindow()->IsActive());
   EXPECT_TRUE(window1->GetBaseWindow()->IsMinimized());
   EXPECT_EQ(ash::STATUS_RUNNING, item1.status);
   // Clicking the item again should activate the window again.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
   // Maximizing a window should preserve state after minimize + click.
   window1->GetBaseWindow()->Maximize();
   window1->GetBaseWindow()->Minimize();
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   EXPECT_TRUE(window1->GetBaseWindow()->IsMaximized());
@@ -725,13 +727,13 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserMinimizeOnClick,
   EXPECT_TRUE(window1a->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1a->GetBaseWindow()->IsActive());
   // The first click does nothing.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1a->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
   EXPECT_FALSE(window1a->GetBaseWindow()->IsActive());
   // The second neither.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1a->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
@@ -760,15 +762,15 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, AppPanelClickBehavior) {
   EXPECT_EQ(LauncherItemController::TYPE_APP_PANEL, item1_controller->type());
   // Click the item and confirm that the panel is activated.
   TestEvent click_event(ui::ET_MOUSE_PRESSED);
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(panel->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
   // Click the item again and confirm that the panel is minimized.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(panel->GetBaseWindow()->IsMinimized());
   EXPECT_EQ(ash::STATUS_RUNNING, item1.status);
   // Click the item again and confirm that the panel is activated.
-  item1_controller->Clicked(click_event);
+  item1_controller->ItemSelected(click_event);
   EXPECT_TRUE(panel->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(panel->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
@@ -1024,6 +1026,49 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, Navigation) {
   ui_test_utils::NavigateToURL(
       browser(), GURL("http://www.example.com/path1/foo.html"));
   EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
+}
+
+// Confirm that a tab can be moved between browsers while maintaining the
+// correct running state.
+IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, TabDragAndDrop) {
+  TabStripModel* tab_strip_model1 = browser()->tab_strip_model();
+  EXPECT_EQ(1, tab_strip_model1->count());
+  int browser_index = ash::GetBrowserItemIndex(*model_);
+  EXPECT_TRUE(browser_index >= 0);
+  EXPECT_EQ(1u, chrome::GetTotalBrowserCount());
+
+  // Create a shortcut for app1.
+  ash::LauncherID shortcut_id = CreateShortcut("app1");
+  EXPECT_EQ(ash::STATUS_ACTIVE, model_->items()[browser_index].status);
+  EXPECT_EQ(ash::STATUS_CLOSED, (*model_->ItemByID(shortcut_id)).status);
+
+  // Activate app1 and check its item status.
+  ActivateLauncherItem(model_->ItemIndexByID(shortcut_id));
+  EXPECT_EQ(2, tab_strip_model1->count());
+  EXPECT_EQ(ash::STATUS_RUNNING, model_->items()[browser_index].status);
+  EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
+
+  // Create a new browser with blank tab.
+  Browser* browser2 = CreateBrowser(profile());
+  EXPECT_EQ(2u, chrome::GetTotalBrowserCount());
+  TabStripModel* tab_strip_model2 = browser2->tab_strip_model();
+  EXPECT_EQ(1, tab_strip_model2->count());
+  EXPECT_EQ(ash::STATUS_ACTIVE, model_->items()[browser_index].status);
+  EXPECT_EQ(ash::STATUS_RUNNING, (*model_->ItemByID(shortcut_id)).status);
+
+  // Detach a tab at index 1 (app1) from |tab_strip_model1| and insert it as an
+  // active tab at index 1 to |tab_strip_model2|.
+  content::WebContents* detached_tab = tab_strip_model1->DetachWebContentsAt(1);
+  tab_strip_model2->InsertWebContentsAt(1,
+                                        detached_tab,
+                                        TabStripModel::ADD_ACTIVE);
+  EXPECT_EQ(1, tab_strip_model1->count());
+  EXPECT_EQ(2, tab_strip_model2->count());
+  EXPECT_EQ(ash::STATUS_RUNNING, model_->items()[browser_index].status);
+  EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
+
+  tab_strip_model1->CloseAllTabs();
+  tab_strip_model2->CloseAllTabs();
 }
 
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, MultipleOwnedTabs) {
@@ -1375,7 +1420,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowAttentionStatus) {
 
   // Click the item and confirm that the panel is activated.
   TestEvent click_event(ui::ET_MOUSE_PRESSED);
-  item_controller->Clicked(click_event);
+  item_controller->ItemSelected(click_event);
   EXPECT_TRUE(panel->GetBaseWindow()->IsActive());
   EXPECT_EQ(ash::STATUS_ACTIVE, item.status);
 
@@ -1481,8 +1526,9 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ActivateAfterSessionRestore) {
   EXPECT_EQ(it, ash_browser_list->end_last_active());
 
   // Now request to either activate an existing app or create a new one.
-  controller_->ItemSelected(*model_->ItemByID(shortcut_id),
-                           ui::KeyEvent(ui::ET_KEY_RELEASED,
+  LauncherItemController* item_controller =
+      controller_->GetLauncherItemController(shortcut_id);
+  item_controller->ItemSelected(ui::KeyEvent(ui::ET_KEY_RELEASED,
                                         ui::VKEY_RETURN,
                                         0,
                                         false));
@@ -1679,6 +1725,39 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(2, model_->item_count());  // And it remains that way.
   EXPECT_EQ(-1, GetIndexOfLauncherItemType(ash::TYPE_APP_SHORTCUT));
+
+  // Test #6: Ripping out the application when the overflow button exists.
+  // After ripping out, overflow button should be removed.
+  int items_added = 0;
+  EXPECT_FALSE(test.IsOverflowButtonVisible());
+
+  // Create fake app shortcuts until overflow button is created.
+  while (!test.IsOverflowButtonVisible()) {
+    std::string fake_app_id = base::StringPrintf("fake_app_%d", items_added);
+    PinFakeApp(fake_app_id);
+
+    ++items_added;
+    ASSERT_LT(items_added, 10000);
+  }
+  // Make one more item after creating a overflow button.
+  std::string fake_app_id = base::StringPrintf("fake_app_%d", items_added);
+  PinFakeApp(fake_app_id);
+
+  int total_count = model_->item_count();
+  app_index = GetIndexOfLauncherItemType(ash::TYPE_APP_SHORTCUT);
+  RipOffItemIndex(app_index, &generator, &test, RIP_OFF_ITEM);
+  // When an item is ripped off from the launcher that has overflow button
+  // (see crbug.com/3050787), it was hidden accidentally and was then
+  // suppressing any further events. If handled correctly the operation will
+  // however correctly done and the item will get removed (as well as the
+  // overflow button).
+  EXPECT_EQ(total_count - 1, model_->item_count());
+  EXPECT_TRUE(test.IsOverflowButtonVisible());
+
+  // Rip off again and the overflow button should has disappeared.
+  RipOffItemIndex(app_index, &generator, &test, RIP_OFF_ITEM);
+  EXPECT_EQ(total_count - 2, model_->item_count());
+  EXPECT_FALSE(test.IsOverflowButtonVisible());
 }
 
 // Check that clicking on an app launcher item launches a new browser.

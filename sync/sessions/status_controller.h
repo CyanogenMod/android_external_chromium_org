@@ -35,8 +35,8 @@
 #include "base/stl_util.h"
 #include "base/time/time.h"
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/sessions/model_neutral_state.h"
-#include "sync/sessions/ordered_commit_set.h"
 
 namespace syncer {
 namespace sessions {
@@ -69,13 +69,6 @@ class SYNC_EXPORT_PRIVATE StatusController {
   // Changelog related state.
   int64 num_server_changes_remaining() const {
     return model_neutral_.num_server_changes_remaining;
-  }
-
-  const OrderedCommitSet::Projection& commit_id_projection(
-      const sessions::OrderedCommitSet &commit_set) {
-    DCHECK(group_restriction_in_effect_)
-        << "No group restriction for projection.";
-    return commit_set.GetCommitIdProjection(group_restriction_);
   }
 
   // Various conflict counters.

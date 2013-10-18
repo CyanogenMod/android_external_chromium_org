@@ -1,6 +1,8 @@
 # HeapCheck sanity test
 leak:base::ToolsSanityTest_MemoryLeak_Test::TestBody
 
+#### Third-party leaks ####
+
 # False positives in libfontconfig. http://crbug.com/39050
 leak:libfontconfig
 
@@ -38,6 +40,10 @@ leak:FontConfigTypeface::LegacyCreateTypeface
 # Skia leaks GrGpuGL::ProgramCache::Entry. http://crbug.com/262934
 leak:GrGpuGL::flushGraphicsState
 
+#### Actual bugs in Chromium code ####
+# PLEASE DO NOT ADD NEW SUPPRESSIONS TO THIS SECTION. Instead, commits that
+# introduce memory leaks should be reverted.
+
 # Small test-only leak in ppapi_unittests. http://crbug.com/258113
 leak:ppapi::proxy::PPP_Instance_Private_ProxyTest_PPPInstancePrivate_Test
 
@@ -58,3 +64,5 @@ leak:StatusIconGtk::UpdatePlatformContextMenu
 leak:GlobalMenuBar::GlobalMenuBar
 leak:BookmarkBubbleGtk::InitFolderComboModel
 leak:TranslateInfoBarBase::CreateLanguageCombobox
+
+# PLEASE DO NOT ADD NEW SUPPRESSIONS HERE. See the comment above.

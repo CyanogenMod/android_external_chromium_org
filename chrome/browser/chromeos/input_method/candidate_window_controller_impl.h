@@ -19,11 +19,11 @@ class Widget;
 }  // namespace views
 
 namespace chromeos {
-class IBusLookupTable;
-
 namespace input_method {
 
+class CandidateWindow;
 class DelayableWidget;
+class ModeIndicatorController;
 
 // The implementation of CandidateWindowController.
 // CandidateWindowController controls the CandidateWindow.
@@ -56,10 +56,10 @@ class CandidateWindowControllerImpl
       const gfx::Rect& screen_rect,
       const gfx::Size& infolist_winodw_size);
 
-  // Converts |lookup_table| to infolist entries. |focused_index| become
+  // Converts |candidate_window| to infolist entries. |focused_index| become
   // InfolistWindowView::InvalidFocusIndex if there is no selected entries.
   static void ConvertLookupTableToInfolistEntry(
-      const IBusLookupTable& lookup_table,
+      const CandidateWindow& candidate_window,
       std::vector<InfolistWindowView::Entry>* infolist_entries,
       size_t* focused_index);
 
@@ -88,7 +88,7 @@ class CandidateWindowControllerImpl
                                  const ibus::Rect& composition_head) OVERRIDE;
   virtual void UpdateAuxiliaryText(const std::string& utf8_text,
                                    bool visible) OVERRIDE;
-  virtual void UpdateLookupTable(const IBusLookupTable& lookup_table,
+  virtual void UpdateLookupTable(const CandidateWindow& candidate_window,
                                  bool visible) OVERRIDE;
   virtual void UpdatePreeditText(const std::string& utf8_text,
                                  unsigned int cursor, bool visible) OVERRIDE;
@@ -98,7 +98,7 @@ class CandidateWindowControllerImpl
   void UpdateInfolistBounds();
 
   // The candidate window view.
-  CandidateWindowView* candidate_window_;
+  CandidateWindowView* candidate_window_view_;
 
   // This is the outer frame of the candidate window view. The frame will
   // own |candidate_window_|.
@@ -107,6 +107,9 @@ class CandidateWindowControllerImpl
   // This is the outer frame of the infolist window view. The frame will
   // own |infolist_window_|.
   scoped_ptr<DelayableWidget> infolist_window_;
+
+  // This is the controller of the IME mode indicator.
+  scoped_ptr<ModeIndicatorController> mode_indicator_controller_;
 
   // The infolist entries and its focused index which currently shown in
   // Infolist window.

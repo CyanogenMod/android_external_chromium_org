@@ -168,6 +168,7 @@ TEXT_FILES = [
   'COPYING',
   'LICENSE',
   'README.Makefiles',
+  'getting_started/README',
 ]
 
 def BuildStepCopyTextFiles(pepperdir, pepper_ver, chrome_revision,
@@ -282,11 +283,11 @@ NACL_HEADER_MAP = {
       ('src/include/nacl/nacl_exception.h', 'nacl/'),
       ('src/include/nacl/nacl_minidump.h', 'nacl/'),
       ('src/untrusted/irt/irt.h', ''),
+      ('src/untrusted/irt/irt_dev.h', ''),
       ('src/untrusted/irt/irt_ppapi.h', ''),
       ('src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('src/untrusted/nacl/nacl_startup.h', 'nacl/'),
       ('src/untrusted/nacl/nacl_thread.h', 'nacl/'),
-      ('src/untrusted/nacl/pnacl.h', ''),
       ('src/untrusted/pthread/pthread.h', ''),
       ('src/untrusted/pthread/semaphore.h', ''),
       ('src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
@@ -295,11 +296,11 @@ NACL_HEADER_MAP = {
       ('src/include/nacl/nacl_exception.h', 'nacl/'),
       ('src/include/nacl/nacl_minidump.h', 'nacl/'),
       ('src/untrusted/irt/irt.h', ''),
+      ('src/untrusted/irt/irt_dev.h', ''),
       ('src/untrusted/irt/irt_ppapi.h', ''),
       ('src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('src/untrusted/nacl/nacl_startup.h', 'nacl/'),
       ('src/untrusted/nacl/nacl_thread.h', 'nacl/'),
-      ('src/untrusted/nacl/pnacl.h', ''),
       ('src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
   ],
   'host': []
@@ -682,6 +683,10 @@ def BuildStepBuildLibraries(pepperdir, directory):
   BuildStepMakeAll(pepperdir, directory, 'Build Libraries Release',
       clean=True, config='Release')
 
+  # Cleanup .pyc file generated while building libraries.  Without
+  # this we would end up shipping the pyc in the SDK tarball.
+  buildbot_common.RemoveFile(os.path.join(pepperdir, 'tools', '*.pyc'))
+
 
 def GenerateNotice(fileroot, output_filename='NOTICE', extra_files=None):
   # Look for LICENSE files
@@ -730,13 +735,11 @@ to test.""" % (e, file_list_rel, verify_filelist_py, file_list_rel,
     buildbot_common.ErrorExit(msg)
 
 
-
 def BuildStepTarBundle(pepper_ver, tarfile):
   buildbot_common.BuildStep('Tar Pepper Bundle')
   buildbot_common.MakeDir(os.path.dirname(tarfile))
   buildbot_common.Run([sys.executable, CYGTAR, '-C', OUT_DIR, '-cjf', tarfile,
        'pepper_' + pepper_ver], cwd=NACL_DIR)
-
 
 
 def GetManifestBundle(pepper_ver, chrome_revision, nacl_revision, tarfile,
@@ -919,12 +922,13 @@ def main(args):
     BuildStepDownloadToolchains()
     BuildStepUntarToolchains(pepperdir, toolchains)
 
-  BuildStepCopyTextFiles(pepperdir, pepper_ver, chrome_revision, nacl_revision)
   BuildStepBuildToolchains(pepperdir, toolchains)
 
   BuildStepUpdateHelpers(pepperdir, True)
   BuildStepUpdateUserProjects(pepperdir, toolchains,
                               options.build_experimental, True)
+
+  BuildStepCopyTextFiles(pepperdir, pepper_ver, chrome_revision, nacl_revision)
 
   # Ship with libraries prebuilt, so run that first.
   BuildStepBuildLibraries(pepperdir, 'src')

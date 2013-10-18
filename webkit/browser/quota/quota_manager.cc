@@ -41,7 +41,7 @@ const int64 kMBytes = 1024 * 1024;
 const int kMinutesInMilliSeconds = 60 * 1000;
 
 const int64 kReportHistogramInterval = 60 * 60 * 1000;  // 1 hour
-const double kTemporaryQuotaRatioToAvail = 0.5;  // 50%
+const double kTemporaryQuotaRatioToAvail = 1.0 / 3.0;  // 33%
 
 }  // namespace
 
@@ -513,8 +513,8 @@ class QuotaManager::GetUsageInfoTask : public QuotaTask {
 
   GetUsageInfoCallback callback_;
   UsageInfoEntries entries_;
-  base::WeakPtrFactory<GetUsageInfoTask> weak_factory_;
   int remaining_trackers_;
+  base::WeakPtrFactory<GetUsageInfoTask> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GetUsageInfoTask);
 };
@@ -1074,6 +1074,25 @@ void QuotaManager::GetHostUsage(const std::string& host,
                                 const UsageCallback& callback) {
   LazyInitialize();
   GetUsageTracker(type)->GetHostUsage(host, callback);
+}
+
+void QuotaManager::GetHostUsage(const std::string& host,
+                                StorageType type,
+                                QuotaClient::ID client_id,
+                                const UsageCallback& callback) {
+  LazyInitialize();
+  ClientUsageTracker* tracker =
+      GetUsageTracker(type)->GetClientTracker(client_id);
+  if (!tracker) {
+    callback.Run(0);
+    return;
+  }
+  tracker->GetHostUsage(host, callback);
+}
+
+bool QuotaManager::IsTrackingHostUsage(StorageType type,
+                                       QuotaClient::ID client_id) const {
+  return GetUsageTracker(type)->GetClientTracker(client_id) != NULL;
 }
 
 void QuotaManager::GetStatistics(

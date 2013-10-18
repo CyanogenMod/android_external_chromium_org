@@ -429,6 +429,7 @@ ThreadWatcherList::CrashDataThresholds::CrashDataThresholds()
 
 // static
 void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
+  // TODO(rtenneti): Enable ThreadWatcher.
   uint32 unresponsive_threshold;
   CrashOnHangThreadMap crash_on_hang_threads;
   ParseCommandLine(command_line,
@@ -448,6 +449,7 @@ void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
 
 // static
 void ThreadWatcherList::StopWatchingAll() {
+  // TODO(rtenneti): Enable ThreadWatcher.
   ThreadWatcherObserver::RemoveNotifications();
   DeleteAll();
 }
@@ -569,16 +571,23 @@ void ThreadWatcherList::ParseCommandLine(
   scoped_refptr<base::FieldTrial> field_trial(
       base::FieldTrialList::FactoryGetFieldTrial(
           "ThreadWatcher", 100, "default_hung_threads",
-          2013, 10, 30, base::FieldTrial::SESSION_RANDOMIZED, NULL));
+          2014, 10, 30, base::FieldTrial::SESSION_RANDOMIZED, NULL));
   int hung_thread_group = field_trial->AppendGroup("hung_thread", 100);
   if (field_trial->group() == hung_thread_group) {
     for (CrashOnHangThreadMap::iterator it = crash_on_hang_threads->begin();
          crash_on_hang_threads->end() != it;
          ++it) {
-      if (it->first != "IO")
+      if (it->first == "FILE")
         continue;
       it->second.live_threads_threshold = INT_MAX;
-      it->second.unresponsive_threshold = 15;
+      if (it->first == "UI") {
+        // TODO(rtenneti): set unresponsive threshold to 120 seconds to catch
+        // the worst UI hangs and for fewer crashes due to ThreadWatcher. Reduce
+        // it to a more reasonable time ala IO thread.
+        it->second.unresponsive_threshold = 60;
+      } else {
+        it->second.unresponsive_threshold = 15;
+      }
     }
   }
 }

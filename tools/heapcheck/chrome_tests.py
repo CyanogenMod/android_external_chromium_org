@@ -394,7 +394,7 @@ class ChromeTests(object):
     # so parse it out of build_dir.  run_webkit_tests.py can only handle
     # the two values "Release" and "Debug".
     # TODO(Hercules): unify how all our scripts pass around build mode
-    # (--mode / --target / --build_dir / --debug)
+    # (--mode / --target / --build-dir / --debug)
     if self._options.build_dir.endswith("Debug"):
       script_cmd.append("--debug");
     if (chunk_size > 0):
@@ -470,15 +470,13 @@ def main():
     return 1
   parser = optparse.OptionParser("usage: %prog -b <dir> -t <test> "
                                  "[-t <test> ...]")
-  parser.disable_interspersed_args()
-  parser.add_option("-b", "--build_dir",
+  parser.add_option("-b", "--build-dir",
                     help="the location of the output of the compiler output")
-  parser.add_option("-t", "--test", action="append",
-                    help="which test to run")
-  parser.add_option("", "--gtest_filter",
+  parser.add_option("--target", help="Debug or Release")
+  parser.add_option("-t", "--test", action="append", help="which test to run")
+  parser.add_option("--gtest_filter",
                     help="additional arguments to --gtest_filter")
-  parser.add_option("", "--gtest_repeat",
-                    help="argument for --gtest_repeat")
+  parser.add_option("--gtest_repeat", help="argument for --gtest_repeat")
   parser.add_option("-v", "--verbose", action="store_true", default=False,
                     help="verbose output - enable debug log messages")
   # My machine can do about 120 layout tests/hour in release mode.
@@ -489,6 +487,10 @@ def main():
                     help="for layout tests: # of subtests per run.  0 for all.")
 
   options, args = parser.parse_args()
+
+  # Bake target into build_dir.
+  assert not options.build_dir.endswith(options.target)
+  options.build_dir = os.path.join(options.build_dir, options.target)
 
   if options.verbose:
     logging_utils.config_root(logging.DEBUG)

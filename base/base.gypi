@@ -108,10 +108,8 @@
           'callback_helpers.h',
           'callback_internal.cc',
           'callback_internal.h',
-          'callback_registry.h',
+          'callback_list.h',
           'cancelable_callback.h',
-          'chromeos/chromeos_version.cc',
-          'chromeos/chromeos_version.h',
           'command_line.cc',
           'command_line.h',
           'compiler_specific.h',
@@ -598,9 +596,11 @@
           'time/time_mac.cc',
           'time/time_posix.cc',
           'time/time_win.cc',
+          'timer/elapsed_timer.cc',
+          'timer/elapsed_timer.h',
+          'timer/hi_res_timer_manager.h',
           'timer/hi_res_timer_manager_posix.cc',
           'timer/hi_res_timer_manager_win.cc',
-          'timer/hi_res_timer_manager.h',
           'timer/timer.cc',
           'timer/timer.h',
           'tracked_objects.cc',
@@ -667,6 +667,9 @@
           'win/windows_version.h',
           'win/wrapped_window_proc.cc',
           'win/wrapped_window_proc.h',
+          'x11/x11_error_tracker.cc',
+          'x11/x11_error_tracker.h',
+          'x11/x11_error_tracker_gtk.cc',
         ],
         'conditions': [
           ['use_aura==1 and use_x11==1', {
@@ -907,6 +910,11 @@
           ['<(use_system_nspr)==1 and >(nacl_untrusted_build)==0', {
             'sources/': [
               ['exclude', '^third_party/nspr/'],
+            ],
+          }],
+          ['<(toolkit_uses_gtk) == 1', {
+            'sources!': [
+              'x11/x11_error_tracker.cc',
             ],
           }],
         ],

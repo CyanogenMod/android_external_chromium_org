@@ -204,6 +204,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
   void GetGlobalUsage(StorageType type, const GlobalUsageCallback& callback);
   void GetHostUsage(const std::string& host, StorageType type,
                     const UsageCallback& callback);
+  void GetHostUsage(const std::string& host, StorageType type,
+                    QuotaClient::ID client_id,
+                    const UsageCallback& callback);
+
+  bool IsTrackingHostUsage(StorageType type, QuotaClient::ID client_id) const;
 
   void GetStatistics(std::map<std::string, std::string>* statistics);
 
@@ -411,13 +416,14 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
 
   scoped_refptr<SpecialStoragePolicy> special_storage_policy_;
 
-  base::WeakPtrFactory<QuotaManager> weak_factory_;
   base::RepeatingTimer<QuotaManager> histogram_timer_;
 
   // Pointer to the function used to get the available disk space. This is
   // overwritten by QuotaManagerTest in order to attain a deterministic reported
   // value. The default value points to base::SysInfo::AmountOfFreeDiskSpace.
   GetAvailableDiskSpaceFn get_disk_space_fn_;
+
+  base::WeakPtrFactory<QuotaManager> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuotaManager);
 };

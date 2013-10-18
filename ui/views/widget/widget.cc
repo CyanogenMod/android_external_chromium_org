@@ -658,6 +658,10 @@ void Widget::SetAlwaysOnTop(bool on_top) {
   native_widget_->SetAlwaysOnTop(on_top);
 }
 
+bool Widget::IsAlwaysOnTop() const {
+  return native_widget_->IsAlwaysOnTop();
+}
+
 void Widget::Maximize() {
   native_widget_->Maximize();
 }
@@ -931,10 +935,12 @@ bool Widget::HasCapture() {
   return native_widget_->HasCapture();
 }
 
-void Widget::TooltipTextChanged(View* view) {
-  TooltipManager* manager = native_widget_private()->GetTooltipManager();
-  if (manager)
-    manager->TooltipTextChanged(view);
+TooltipManager* Widget::GetTooltipManager() {
+  return native_widget_->GetTooltipManager();
+}
+
+const TooltipManager* Widget::GetTooltipManager() const {
+  return native_widget_->GetTooltipManager();
 }
 
 bool Widget::SetInitialFocus() {

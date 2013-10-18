@@ -1119,7 +1119,6 @@ gboolean OmniboxViewGtk::HandleViewFocusOut(GtkWidget* sender,
   CloseOmniboxPopup();
   // Tell the model to reset itself.
   model()->OnKillFocus();
-  controller()->OnKillFocus();
 
   g_signal_handlers_disconnect_by_func(
       gdk_keymap_get_for_display(gtk_widget_get_display(text_view_)),
@@ -1385,8 +1384,7 @@ void OmniboxViewGtk::HandleDragDataGet(GtkWidget* widget,
       break;
     }
     case ui::CHROME_NAMED_URL: {
-      WebContents* current_tab =
-          browser_->tab_strip_model()->GetActiveWebContents();
+      WebContents* current_tab = controller()->GetWebContents();
       string16 tab_title = current_tab->GetTitle();
       // Pass an empty string if user has edited the URL.
       if (current_tab->GetURL().spec() != dragged_text_)
@@ -1582,7 +1580,7 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
   if (write_url) {
     BookmarkNodeData data;
     data.ReadFromTuple(url, text);
-    data.WriteToClipboard();
+    data.WriteToClipboard(ui::CLIPBOARD_TYPE_COPY_PASTE);
     SetSelectedRange(selection);
 
     // Stop propagating the signal.

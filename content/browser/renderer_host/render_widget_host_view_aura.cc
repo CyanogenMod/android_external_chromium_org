@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "cc/layers/delegated_frame_provider.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/copy_output_request.h"
@@ -1129,10 +1130,10 @@ void RenderWidgetHostViewAura::SelectionChanged(const string16& text,
   if (text.empty() || range.is_empty())
     return;
 
-  // Set the BUFFER_SELECTION to the ui::Clipboard.
+  // Set the CLIPBOARD_TYPE_SELECTION to the ui::Clipboard.
   ui::ScopedClipboardWriter clipboard_writer(
       ui::Clipboard::GetForCurrentThread(),
-      ui::Clipboard::BUFFER_SELECTION);
+      ui::CLIPBOARD_TYPE_SELECTION);
   clipboard_writer.WriteText(text);
 #endif  // defined(USE_X11) && !defined(OS_CHROMEOS)
 }
@@ -1299,7 +1300,7 @@ void RenderWidgetHostViewAura::UpdateExternalTexture() {
                                            mailbox.shared_memory_size());
     CheckResizeLock();
   } else {
-    window_->layer()->SetExternalTexture(NULL);
+    window_->layer()->SetShowPaintedContent();
     resize_lock_.reset();
     host_->WasResized();
     framebuffer_holder_ = NULL;
@@ -1425,22 +1426,18 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
     scoped_ptr<cc::DelegatedFrameData> frame_data,
     float frame_device_scale_factor,
     const ui::LatencyInfo& latency_info) {
-  gfx::Size frame_size;
-  gfx::Size frame_size_in_dip;
-  gfx::Rect damage_rect;
-  gfx::Rect damage_rect_in_dip;
+  DCHECK_NE(0u, frame_data->render_pass_list.size());
 
-  if (!frame_data->render_pass_list.empty()) {
-    cc::RenderPass* root_pass = frame_data->render_pass_list.back();
+  cc::RenderPass* root_pass = frame_data->render_pass_list.back();
 
-    frame_size = root_pass->output_rect.size();
-    frame_size_in_dip = ConvertSizeToDIP(frame_device_scale_factor, frame_size);
+  gfx::Size frame_size = root_pass->output_rect.size();
+  gfx::Size frame_size_in_dip =
+      ConvertSizeToDIP(frame_device_scale_factor, frame_size);
 
-    damage_rect = gfx::ToEnclosingRect(root_pass->damage_rect);
-    damage_rect.Intersect(gfx::Rect(frame_size));
-    damage_rect_in_dip = ConvertRectToDIP(frame_device_scale_factor,
-                                          damage_rect);
-  }
+  gfx::Rect damage_rect = gfx::ToEnclosingRect(root_pass->damage_rect);
+  damage_rect.Intersect(gfx::Rect(frame_size));
+  gfx::Rect damage_rect_in_dip =
+      ConvertRectToDIP(frame_device_scale_factor, damage_rect);
 
   framebuffer_holder_ = NULL;
   FrameMemoryManager::GetInstance()->RemoveFrame(this);
@@ -1472,12 +1469,41 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
     // indicates the renderer's output surface may have been recreated, in which
     // case we should recreate the DelegatedRendererLayer, to avoid matching
     // resources from the old one with resources from the new one which would
-    // have the same id.
-    window_->layer()->SetDelegatedFrame(scoped_ptr<cc::DelegatedFrameData>(),
-                                        frame_size_in_dip);
+    // have the same id. Changing the layer to showing painted content destroys
+    // the DelegatedRendererLayer.
+    window_->layer()->SetShowPaintedContent();
+    frame_provider_ = NULL;
+
+    // TODO(danakj): Lose all resources and send them back here, such as:
+    // resource_collection_->LoseAllResources();
+    // SendReturnedDelegatedResources(last_output_surface_id_);
+
+    // Drop the cc::DelegatedFrameResourceCollection so that we will not return
+    // any resources from the old output surface with the new output surface id.
+    if (resource_collection_) {
+      resource_collection_->SetClient(NULL);
+      resource_collection_ = NULL;
+    }
     last_output_surface_id_ = output_surface_id;
   }
-  window_->layer()->SetDelegatedFrame(frame_data.Pass(), frame_size_in_dip);
+  if (frame_size.IsEmpty()) {
+    DCHECK_EQ(0u, frame_data->resource_list.size());
+    window_->layer()->SetShowPaintedContent();
+    frame_provider_ = NULL;
+  } else {
+    if (!resource_collection_) {
+      resource_collection_ = new cc::DelegatedFrameResourceCollection;
+      resource_collection_->SetClient(this);
+    }
+    if (!frame_provider_.get() || frame_size != frame_provider_->frame_size()) {
+      frame_provider_ = new cc::DelegatedFrameProvider(
+          resource_collection_.get(), frame_data.Pass());
+      window_->layer()->SetShowDelegatedContent(frame_provider_.get(),
+                                                frame_size_in_dip);
+    } else {
+      frame_provider_->SetFrameData(frame_data.Pass());
+    }
+  }
   released_front_lock_ = NULL;
   current_frame_size_ = frame_size_in_dip;
   CheckResizeLock();
@@ -1501,10 +1527,16 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
 
 void RenderWidgetHostViewAura::SendDelegatedFrameAck(uint32 output_surface_id) {
   cc::CompositorFrameAck ack;
-  window_->layer()->TakeUnusedResourcesForChildCompositor(&ack.resources);
-  RenderWidgetHostImpl::SendSwapCompositorFrameAck(
-      host_->GetRoutingID(), output_surface_id,
-      host_->GetProcess()->GetID(), ack);
+  if (resource_collection_)
+    resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
+  RenderWidgetHostImpl::SendSwapCompositorFrameAck(host_->GetRoutingID(),
+                                                   output_surface_id,
+                                                   host_->GetProcess()->GetID(),
+                                                   ack);
+}
+
+void RenderWidgetHostViewAura::UnusedResourcesAreAvailable() {
+  // TODO(danakj): If no ack is pending, collect and send resources now.
 }
 
 void RenderWidgetHostViewAura::SwapSoftwareFrame(
@@ -1582,13 +1614,10 @@ void RenderWidgetHostViewAura::SwapSoftwareFrame(
 
 void RenderWidgetHostViewAura::SendSoftwareFrameAck(uint32 output_surface_id) {
   unsigned software_frame_id = 0;
-  if (!released_software_frames_.empty()) {
-    unsigned released_output_surface_id =
-        released_software_frames_.back().output_surface_id;
-    if (released_output_surface_id == output_surface_id) {
-      software_frame_id = released_software_frames_.back().frame_id;
-      released_software_frames_.pop_back();
-    }
+  if (released_software_frame_ &&
+      released_software_frame_->output_surface_id == output_surface_id) {
+    software_frame_id = released_software_frame_->frame_id;
+    released_software_frame_.reset();
   }
 
   cc::CompositorFrameAck ack;
@@ -1600,24 +1629,25 @@ void RenderWidgetHostViewAura::SendSoftwareFrameAck(uint32 output_surface_id) {
 }
 
 void RenderWidgetHostViewAura::SendReclaimSoftwareFrames() {
-  while (!released_software_frames_.empty()) {
-    cc::CompositorFrameAck ack;
-    ack.last_software_frame_id = released_software_frames_.back().frame_id;
-    RenderWidgetHostImpl::SendReclaimCompositorResources(
-        host_->GetRoutingID(),
-        released_software_frames_.back().output_surface_id,
-        host_->GetProcess()->GetID(),
-        ack);
-    released_software_frames_.pop_back();
-  }
+  if (!released_software_frame_)
+    return;
+  cc::CompositorFrameAck ack;
+  ack.last_software_frame_id = released_software_frame_->frame_id;
+  RenderWidgetHostImpl::SendReclaimCompositorResources(
+      host_->GetRoutingID(),
+      released_software_frame_->output_surface_id,
+      host_->GetProcess()->GetID(),
+      ack);
+  released_software_frame_.reset();
 }
 
 void RenderWidgetHostViewAura::ReleaseSoftwareFrame(
     uint32 output_surface_id,
     unsigned software_frame_id) {
   SendReclaimSoftwareFrames();
-  released_software_frames_.push_back(
-      ReleasedFrameInfo(output_surface_id, software_frame_id));
+  DCHECK(!released_software_frame_);
+  released_software_frame_.reset(new ReleasedFrameInfo(
+      output_surface_id, software_frame_id));
 }
 
 void RenderWidgetHostViewAura::OnSwapCompositorFrame(
@@ -2151,7 +2181,9 @@ bool RenderWidgetHostViewAura::LockMouse() {
     return true;
 
   mouse_locked_ = true;
+#if !defined(OS_WIN)
   window_->SetCapture();
+#endif
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window);
   if (cursor_client) {
@@ -2175,7 +2207,9 @@ void RenderWidgetHostViewAura::UnlockMouse() {
 
   mouse_locked_ = false;
 
+#if !defined(OS_WIN)
   window_->ReleaseCapture();
+#endif
   window_->MoveCursorTo(unlocked_mouse_position_);
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window);
@@ -2592,8 +2626,11 @@ void RenderWidgetHostViewAura::DidRecreateLayer(ui::Layer *old_layer,
           current_surface_->device_scale_factor(), texture_id);
       }
     }
-    old_layer->SetExternalTexture(new_texture);
-    new_layer->SetExternalTexture(old_texture);
+    if (new_texture.get())
+      old_layer->SetExternalTexture(new_texture.get());
+    else
+      old_layer->SetShowPaintedContent();
+    new_layer->SetExternalTexture(old_texture.get());
   } else if (old_mailbox.IsSharedMemory()) {
     base::SharedMemory* old_buffer = old_mailbox.shared_memory();
     const size_t size = old_mailbox.shared_memory_size_in_bytes();
@@ -2613,8 +2650,10 @@ void RenderWidgetHostViewAura::DidRecreateLayer(ui::Layer *old_layer,
                                    callback.Pass(),
                                    mailbox_scale_factor);
     }
+  } else if (frame_provider_.get()) {
+    new_layer->SetShowDelegatedContent(frame_provider_.get(),
+                                       current_frame_size_);
   }
-  // TODO(piman): handle delegated frames.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3173,6 +3212,12 @@ RenderWidgetHostViewAura::~RenderWidgetHostViewAura() {
   // associated with the window, but just in case.
   DetachFromInputMethod();
   FrameMemoryManager::GetInstance()->RemoveFrame(this);
+  // The destruction of the holder may call back into the RWHVA, so do it
+  // early.
+  framebuffer_holder_ = NULL;
+
+  if (resource_collection_.get())
+    resource_collection_->SetClient(NULL);
 }
 
 void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
@@ -3186,10 +3231,15 @@ void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
   gfx::Point local_point = screen_point;
   local_point.Offset(-screen_rect.x(), -screen_rect.y());
 
-  if (!root_window->HasFocus() ||
-      root_window->GetEventHandlerForPoint(local_point) != window_) {
+#if defined(OS_WIN)
+  // If there's another toplevel window above us at this point (for example a
+  // menu), we don't want to update the cursor.
+  POINT windows_point = { screen_point.x(), screen_point.y() };
+  if (root_window->GetAcceleratedWidget() != ::WindowFromPoint(windows_point))
     return;
-  }
+#endif
+  if (root_window->GetEventHandlerForPoint(local_point) != window_)
+    return;
 
   gfx::NativeCursor cursor = current_cursor_.GetNativeCursor();
   // Do not show loading cursor when the cursor is currently hidden.
@@ -3325,7 +3375,8 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
     cursor_client->AddObserver(this);
     NotifyRendererOfCursorVisibilityState(cursor_client->IsCursorVisible());
   }
-  UpdateExternalTexture();
+  if (current_surface_.get())
+    UpdateExternalTexture();
 }
 
 void RenderWidgetHostViewAura::RemovingFromRootWindow() {
@@ -3338,11 +3389,14 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
   window_->GetRootWindow()->RemoveRootWindowObserver(this);
   host_->ParentChanged(0);
   ui::Compositor* compositor = GetCompositor();
-  // We can't get notification for commits after this point, which would
-  // guarantee that the compositor isn't using an old texture any more, so
-  // instead we force the texture to NULL which synchronizes with the compositor
-  // thread, and makes it safe to run the callback.
-  window_->layer()->SetExternalTexture(NULL);
+  if (current_surface_.get()) {
+    // We can't get notification for commits after this point, which would
+    // guarantee that the compositor isn't using an old texture any more, so
+    // instead we force the layer to stop using any external resources which
+    // synchronizes with the compositor thread, and makes it safe to run the
+    // callback.
+    window_->layer()->SetShowPaintedContent();
+  }
   RunOnCommitCallbacks();
   resize_lock_.reset();
   host_->WasResized();

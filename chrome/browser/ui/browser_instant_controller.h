@@ -56,9 +56,6 @@ class BrowserInstantController : public SearchModelObserver,
   // this BrowserInstantController.
   InstantController* instant() { return &instant_; }
 
-  // Invoked by |instant_| to change the omnibox focus.
-  void FocusOmnibox(OmniboxFocusState state);
-
   // Invoked by |instant_| to get the currently active tab.
   content::WebContents* GetActiveWebContents() const;
 
@@ -80,9 +77,6 @@ class BrowserInstantController : public SearchModelObserver,
 
   // Sets the stored omnibox bounds.
   void SetOmniboxBounds(const gfx::Rect& bounds);
-
-  // Sets the current query to prefetch if any.
-  void SetSuggestionToPrefetch(const InstantSuggestion& suggestion);
 
   // Notifies |instant_| to toggle voice search.
   void ToggleVoiceSearch();

@@ -38,6 +38,25 @@ struct EntryExpectation {
   FileOrDirectory type;
 };
 
+typedef std::map<std::string, ResourceEntry> ResourceEntryMap;
+typedef std::map<std::string, std::string> ParentResourceIdMap;
+void ConvertToMap(ScopedVector<ChangeList> change_lists,
+                  ResourceEntryMap* entry_map,
+                  ParentResourceIdMap* parent_resource_id_map) {
+  for (size_t i = 0; i < change_lists.size(); ++i) {
+    const std::vector<ResourceEntry>& entries = change_lists[i]->entries();
+    const std::vector<std::string>& parent_resource_ids =
+        change_lists[i]->parent_resource_ids();
+    EXPECT_EQ(entries.size(), parent_resource_ids.size());
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+      const std::string& resource_id = entries[i].resource_id();
+      (*parent_resource_id_map)[resource_id] = parent_resource_ids[i];
+      (*entry_map)[resource_id] = entries[i];
+    }
+  }
+}
+
 class ChangeListProcessorTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
@@ -81,8 +100,13 @@ class ChangeListProcessorTest : public testing::Test {
   // should contain their changestamp in themselves.
   FileError ApplyChangeList(ScopedVector<ChangeList> changes,
                             std::set<base::FilePath>* changed_dirs) {
+    scoped_ptr<google_apis::AboutResource> about_resource(
+        new google_apis::AboutResource);
+    about_resource->set_largest_change_id(kBaseResourceListChangestamp);
+    about_resource->set_root_folder_id(kRootId);
+
     ChangeListProcessor processor(metadata_.get());
-    FileError error = processor.Apply(scoped_ptr<google_apis::AboutResource>(),
+    FileError error = processor.Apply(about_resource.Pass(),
                                       changes.Pass(),
                                       true /* is_delta_update */);
     *changed_dirs = processor.changed_dirs();
@@ -155,7 +179,11 @@ TEST_F(ChangeListProcessorTest, ApplyFullResourceList) {
     scoped_ptr<ResourceEntry> entry = GetResourceEntry(kExpected[i].path);
     ASSERT_TRUE(entry) << "for path: " << kExpected[i].path;
     EXPECT_EQ(kExpected[i].id, entry->resource_id());
-    EXPECT_EQ(kExpected[i].parent_id, entry->parent_local_id());
+
+    ResourceEntry parent_entry;
+    EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryById(
+        entry->parent_local_id(), &parent_entry));
+    EXPECT_EQ(kExpected[i].parent_id, parent_entry.resource_id());
     EXPECT_EQ(kExpected[i].type,
               entry->file_info().is_directory() ? DIRECTORY : FILE);
   }
@@ -167,9 +195,9 @@ TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
   const char kTestJson[] =
       "gdata/delta_file_added_in_new_directory.json";
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJson), &entry_map, NULL);
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
+  ConvertToMap(ParseChangeList(kTestJson), &entry_map, &parent_resource_id_map);
 
   const std::string kNewFolderId("folder:new_folder_resource_id");
   const std::string kNewFileId("document:file_added_in_new_dir_id");
@@ -178,8 +206,8 @@ TEST_F(ChangeListProcessorTest, DeltaFileAddedInNewDirectory) {
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kNewFolderId));
   EXPECT_TRUE(entry_map.count(kNewFileId));
-  EXPECT_EQ(kRootId, entry_map[kNewFolderId].parent_local_id());
-  EXPECT_EQ(kNewFolderId, entry_map[kNewFileId].parent_local_id());
+  EXPECT_EQ(kRootId, parent_resource_id_map[kNewFolderId]);
+  EXPECT_EQ(kNewFolderId, parent_resource_id_map[kNewFileId]);
   EXPECT_TRUE(entry_map[kNewFolderId].file_info().is_directory());
   EXPECT_FALSE(entry_map[kNewFileId].file_info().is_directory());
   EXPECT_EQ("New Directory", entry_map[kNewFolderId].title());
@@ -209,9 +237,9 @@ TEST_F(ChangeListProcessorTest, DeltaDirMovedFromRootToDirectory) {
   const char kTestJson[] =
       "gdata/delta_dir_moved_from_root_to_directory.json";
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJson), &entry_map, NULL);
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
+  ConvertToMap(ParseChangeList(kTestJson), &entry_map, &parent_resource_id_map);
 
   const std::string kMovedId("folder:1_folder_resource_id");
   const std::string kDestId("folder:sub_dir_folder_2_self_link");
@@ -220,7 +248,7 @@ TEST_F(ChangeListProcessorTest, DeltaDirMovedFromRootToDirectory) {
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kMovedId));
   EXPECT_TRUE(entry_map.count(kDestId));
-  EXPECT_EQ(kDestId, entry_map[kMovedId].parent_local_id());
+  EXPECT_EQ(kDestId, parent_resource_id_map[kMovedId]);
 
   // Apply the changelist and check the effect.
   EXPECT_EQ(FILE_ERROR_OK,
@@ -252,9 +280,9 @@ TEST_F(ChangeListProcessorTest, DeltaFileMovedFromDirectoryToRoot) {
   const char kTestJson[] =
       "gdata/delta_file_moved_from_directory_to_root.json";
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJson), &entry_map, NULL);
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
+  ConvertToMap(ParseChangeList(kTestJson), &entry_map, &parent_resource_id_map);
 
   const std::string kMovedId("file:subdirectory_file_1_id");
   const std::string kSrcId("folder:1_folder_resource_id");
@@ -263,7 +291,7 @@ TEST_F(ChangeListProcessorTest, DeltaFileMovedFromDirectoryToRoot) {
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kMovedId));
   EXPECT_TRUE(entry_map.count(kSrcId));
-  EXPECT_EQ(kRootId, entry_map[kMovedId].parent_local_id());
+  EXPECT_EQ(kRootId, parent_resource_id_map[kMovedId]);
 
   // Apply the changelist and check the effect.
   EXPECT_EQ(FILE_ERROR_OK,
@@ -289,9 +317,9 @@ TEST_F(ChangeListProcessorTest, DeltaFileRenamedInDirectory) {
   const char kTestJson[] =
       "gdata/delta_file_renamed_in_directory.json";
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJson), &entry_map, NULL);
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
+  ConvertToMap(ParseChangeList(kTestJson), &entry_map, &parent_resource_id_map);
 
   const std::string kRenamedId("file:subdirectory_file_1_id");
   const std::string kParentId("folder:1_folder_resource_id");
@@ -300,7 +328,7 @@ TEST_F(ChangeListProcessorTest, DeltaFileRenamedInDirectory) {
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kRenamedId));
   EXPECT_TRUE(entry_map.count(kParentId));
-  EXPECT_EQ(kParentId, entry_map[kRenamedId].parent_local_id());
+  EXPECT_EQ(kParentId, parent_resource_id_map[kRenamedId]);
   EXPECT_EQ("New SubDirectory File 1.txt", entry_map[kRenamedId].title());
 
   // Apply the changelist and check the effect.
@@ -333,14 +361,15 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
   const std::string kParentId(kRootId);
   const std::string kFileId("document:added_in_root_id");
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
 
   // Check the content of kTestJsonAdd.
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJsonAdd), &entry_map, NULL);
+  ConvertToMap(ParseChangeList(kTestJsonAdd),
+               &entry_map, &parent_resource_id_map);
   EXPECT_EQ(1U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kFileId));
-  EXPECT_EQ(kParentId, entry_map[kFileId].parent_local_id());
+  EXPECT_EQ(kParentId, parent_resource_id_map[kFileId]);
   EXPECT_EQ("Added file", entry_map[kFileId].title());
   EXPECT_FALSE(entry_map[kFileId].deleted());
 
@@ -358,11 +387,12 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileInRoot) {
 
   // Check the content of kTestJsonDelete.
   entry_map.clear();
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJsonDelete), &entry_map, NULL);
+  parent_resource_id_map.clear();
+  ConvertToMap(ParseChangeList(kTestJsonDelete),
+               &entry_map, &parent_resource_id_map);
   EXPECT_EQ(1U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kFileId));
-  EXPECT_EQ(kParentId, entry_map[kFileId].parent_local_id());
+  EXPECT_EQ(kParentId, parent_resource_id_map[kFileId]);
   EXPECT_EQ("Added file", entry_map[kFileId].title());
   EXPECT_TRUE(entry_map[kFileId].deleted());
 
@@ -386,15 +416,16 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileFromExistingDirectory) {
   const std::string kParentId("folder:1_folder_resource_id");
   const std::string kFileId("document:added_in_root_id");
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
 
   // Check the content of kTestJsonAdd.
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJsonAdd), &entry_map, NULL);
+  ConvertToMap(ParseChangeList(kTestJsonAdd),
+               &entry_map, &parent_resource_id_map);
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kFileId));
   EXPECT_TRUE(entry_map.count(kParentId));
-  EXPECT_EQ(kParentId, entry_map[kFileId].parent_local_id());
+  EXPECT_EQ(kParentId, parent_resource_id_map[kFileId]);
   EXPECT_EQ("Added file", entry_map[kFileId].title());
   EXPECT_FALSE(entry_map[kFileId].deleted());
 
@@ -415,11 +446,12 @@ TEST_F(ChangeListProcessorTest, DeltaAddAndDeleteFileFromExistingDirectory) {
 
   // Check the content of kTestJsonDelete.
   entry_map.clear();
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJsonDelete), &entry_map, NULL);
+  parent_resource_id_map.clear();
+  ConvertToMap(ParseChangeList(kTestJsonDelete),
+               &entry_map, &parent_resource_id_map);
   EXPECT_EQ(1U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kFileId));
-  EXPECT_EQ(kParentId, entry_map[kFileId].parent_local_id());
+  EXPECT_EQ(kParentId, parent_resource_id_map[kFileId]);
   EXPECT_EQ("Added file", entry_map[kFileId].title());
   EXPECT_TRUE(entry_map[kFileId].deleted());
 
@@ -442,9 +474,9 @@ TEST_F(ChangeListProcessorTest, DeltaAddFileToNewButDeletedDirectory) {
   const char kTestJson[] =
       "gdata/delta_file_added_in_new_but_deleted_directory.json";
 
-  ChangeListProcessor::ResourceEntryMap entry_map;
-  ChangeListProcessor::ConvertToMap(
-      ParseChangeList(kTestJson), &entry_map, NULL);
+  ResourceEntryMap entry_map;
+  ParentResourceIdMap parent_resource_id_map;
+  ConvertToMap(ParseChangeList(kTestJson), &entry_map, &parent_resource_id_map);
 
   const std::string kDirId("folder:new_folder_resource_id");
   const std::string kFileId("pdf:file_added_in_deleted_dir_id");
@@ -453,7 +485,7 @@ TEST_F(ChangeListProcessorTest, DeltaAddFileToNewButDeletedDirectory) {
   EXPECT_EQ(2U, entry_map.size());
   EXPECT_TRUE(entry_map.count(kDirId));
   EXPECT_TRUE(entry_map.count(kFileId));
-  EXPECT_EQ(kDirId, entry_map[kFileId].parent_local_id());
+  EXPECT_EQ(kDirId, parent_resource_id_map[kFileId]);
   EXPECT_TRUE(entry_map[kDirId].deleted());
 
   // Apply the changelist and check the effect.
@@ -475,22 +507,24 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory) {
   EXPECT_EQ(FILE_ERROR_OK,
             ApplyFullResourceList(ParseChangeList(kBaseResourceListFile)));
 
-  // Create a map.
-  ChangeListProcessor::ResourceEntryMap entry_map;
+  // Create change lists.
+  ScopedVector<ChangeList> change_lists;
+  change_lists.push_back(new ChangeList);
 
-  // Add a new file to the map.
+  // Add a new file to the change lists.
   ResourceEntry new_file;
   new_file.set_title("new_file");
   new_file.set_resource_id("new_file_id");
-  new_file.set_parent_local_id(kRootId);
-  entry_map["new_file_id"] = new_file;
+  change_lists[0]->mutable_entries()->push_back(new_file);
+  change_lists[0]->mutable_parent_resource_ids()->push_back(kRootId);
 
   // Add "Directory 1" to the map with a new name.
   ResourceEntry dir1;
   EXPECT_EQ(FILE_ERROR_OK, metadata_->GetResourceEntryByPath(
       util::GetDriveMyDriveRootPath().AppendASCII("Directory 1"), &dir1));
   dir1.set_title(dir1.title() + " (renamed)");
-  entry_map[dir1.resource_id()] = dir1;
+  change_lists[0]->mutable_entries()->push_back(dir1);
+  change_lists[0]->mutable_parent_resource_ids()->push_back(kRootId);
 
   // Update the directory with the map.
   const int64 kNewChangestamp = 12345;
@@ -498,7 +532,7 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory) {
   EXPECT_EQ(FILE_ERROR_OK, ChangeListProcessor::RefreshDirectory(
       metadata_.get(),
       DirectoryFetchInfo(kRootId, kNewChangestamp),
-      entry_map,
+      change_lists.Pass(),
       &file_path));
   EXPECT_EQ(util::GetDriveMyDriveRootPath().value(), file_path.value());
 
@@ -522,22 +556,25 @@ TEST_F(ChangeListProcessorTest, RefreshDirectory_WrongParentId) {
   EXPECT_EQ(FILE_ERROR_OK,
             ApplyFullResourceList(ParseChangeList(kBaseResourceListFile)));
 
-  // Create a map and add a new file to it.
-  ChangeListProcessor::ResourceEntryMap entry_map;
+  // Create change lists and add a new file to it.
+  ScopedVector<ChangeList> change_lists;
+  change_lists.push_back(new ChangeList);
   ResourceEntry new_file;
   new_file.set_title("new_file");
   new_file.set_resource_id("new_file_id");
   // This entry should not be added because the parent ID does not match.
-  new_file.set_parent_local_id("some-random-resource-id");
-  entry_map["new_file_id"] = new_file;
+  change_lists[0]->mutable_parent_resource_ids()->push_back(
+      "some-random-resource-id");
+  change_lists[0]->mutable_entries()->push_back(new_file);
 
-  // Update the directory with the map.
+
+  // Update the directory.
   const int64 kNewChangestamp = 12345;
   base::FilePath file_path;
   EXPECT_EQ(FILE_ERROR_OK, ChangeListProcessor::RefreshDirectory(
       metadata_.get(),
       DirectoryFetchInfo(kRootId, kNewChangestamp),
-      entry_map,
+      change_lists.Pass(),
       &file_path));
   EXPECT_EQ(util::GetDriveMyDriveRootPath().value(), file_path.value());
 

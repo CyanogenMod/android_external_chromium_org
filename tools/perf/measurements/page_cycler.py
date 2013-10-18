@@ -19,8 +19,10 @@ import collections
 import os
 import sys
 
+from metrics import cpu
 from metrics import io
 from metrics import memory
+from metrics import speedindex
 from metrics import v8_object_stats
 from telemetry.core import util
 from telemetry.page import page_measurement
@@ -34,8 +36,10 @@ class PageCycler(page_measurement.PageMeasurement):
       self._page_cycler_js = f.read()
 
     self._record_v8_object_stats = False
-
+    self._report_speed_index = False
+    self._speedindex_metric = speedindex.SpeedIndexMetric()
     self._memory_metric = None
+    self._cpu_metric = None
     self._v8_object_stats_metric = None
     self._number_warm_runs = None
     self._cold_runs_requested = False
@@ -54,13 +58,17 @@ class PageCycler(page_measurement.PageMeasurement):
         action='store_true',
         help='Enable detailed V8 object statistics.')
 
+    parser.add_option('--report-speed-index',
+        action='store_true',
+        help='Enable the speed index metric.')
+
     parser.add_option('--cold-load-percent', type='int', default=0,
                       help='%d of page visits for which a cold load is forced')
-
 
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
     self._memory_metric = memory.MemoryMetric(browser)
+    self._cpu_metric = cpu.CpuMetric(browser)
     if self._record_v8_object_stats:
       self._v8_object_stats_metric = v8_object_stats.V8ObjectStatsMetric()
 
@@ -73,9 +81,16 @@ class PageCycler(page_measurement.PageMeasurement):
     page.script_to_evaluate_on_commit = self._page_cycler_js
     if self.ShouldRunCold(page.url):
       tab.ClearCache()
+    if self._report_speed_index:
+      self._speedindex_metric.Start(page, tab)
 
   def DidNavigateToPage(self, page, tab):
     self._memory_metric.Start(page, tab)
+    # TODO(qyearsley): Uncomment the following line and move it to
+    # WillNavigateToPage once the cpu metric has been changed.
+    # This is being temporarily commented out to let the page cycler
+    # results return to how they were before the cpu metric was added.
+    # self._cpu_metric.Start(page, tab) See crbug.com/301714.
     if self._record_v8_object_stats:
       self._v8_object_stats_metric.Start(page, tab)
 
@@ -87,6 +102,9 @@ class PageCycler(page_measurement.PageMeasurement):
     if options.v8_object_stats:
       self._record_v8_object_stats = True
       v8_object_stats.V8ObjectStatsMetric.CustomizeBrowserOptions(options)
+
+    if options.report_speed_index:
+      self._report_speed_index = True
 
     # A disk cache bug causes some page cyclers to hang on mac.
     # TODO(tonyg): Re-enable these tests when crbug.com/268646 is fixed.
@@ -123,24 +141,37 @@ class PageCycler(page_measurement.PageMeasurement):
                                  self.discard_first_result)
 
   def MeasurePage(self, page, tab, results):
-    def _IsDone():
+    def PageLoadIsFinished():
       return bool(tab.EvaluateJavaScript('__pc_load_time'))
-    util.WaitFor(_IsDone, 60)
-    chart_name = ('times' if not self._cold_runs_requested else
-                  'cold_times' if self.ShouldRunCold(page.url) else
-                  'warm_times')
+    util.WaitFor(PageLoadIsFinished, 60)
+
+    chart_name_prefix = ('' if not self._cold_runs_requested else
+                         'cold_' if self.ShouldRunCold(page.url) else
+                         'warm_')
 
     results.Add('page_load_time', 'ms',
                 int(float(tab.EvaluateJavaScript('__pc_load_time'))),
-                chart_name=chart_name)
+                chart_name=chart_name_prefix+'times')
 
     self._has_loaded_page[page.url] += 1
 
     self._memory_metric.Stop(page, tab)
     self._memory_metric.AddResults(tab, results)
+    # TODO(qyearsley): Uncomment the following line when CPU metric is
+    # changed. See crbug.com/301714.
+    # self._cpu_metric.Stop(page, tab)
+    # self._cpu_metric.AddResults(tab, results)
     if self._record_v8_object_stats:
       self._v8_object_stats_metric.Stop(page, tab)
       self._v8_object_stats_metric.AddResults(tab, results)
+
+    if self._report_speed_index:
+      def SpeedIndexIsFinished():
+        return self._speedindex_metric.IsFinished(tab)
+      util.WaitFor(SpeedIndexIsFinished, 60)
+      self._speedindex_metric.Stop(page, tab)
+      self._speedindex_metric.AddResults(
+          tab, results, chart_name=chart_name_prefix+'speed_index')
 
   def DidRunTest(self, tab, results):
     self._memory_metric.AddSummaryResults(results)

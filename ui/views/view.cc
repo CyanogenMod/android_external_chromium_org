@@ -28,6 +28,7 @@
 #include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
@@ -66,30 +67,6 @@ const bool kContextMenuOnMousePress = false;
 #else
 const bool kContextMenuOnMousePress = true;
 #endif
-
-// Saves the drawing state, and restores the state when going out of scope.
-class ScopedCanvas {
- public:
-  explicit ScopedCanvas(gfx::Canvas* canvas) : canvas_(canvas) {
-    if (canvas_)
-      canvas_->Save();
-  }
-  ~ScopedCanvas() {
-    if (canvas_)
-      canvas_->Restore();
-  }
-  void SetCanvas(gfx::Canvas* canvas) {
-    if (canvas_)
-      canvas_->Restore();
-    canvas_ = canvas;
-    canvas_->Save();
-  }
-
- private:
-  gfx::Canvas* canvas_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedCanvas);
-};
 
 // Returns the top view in |view|'s hierarchy.
 const views::View* GetHierarchyRoot(const views::View* view) {
@@ -781,7 +758,7 @@ void View::SchedulePaintInRect(const gfx::Rect& rect) {
 void View::Paint(gfx::Canvas* canvas) {
   TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
 
-  ScopedCanvas scoped_canvas(canvas);
+  gfx::ScopedCanvas scoped_canvas(canvas);
 
   // Paint this View and its children, setting the clip rect to the bounds
   // of this View and translating the origin to the local bounds' top left
@@ -1364,21 +1341,6 @@ void View::SetFillsBoundsOpaquely(bool fills_bounds_opaquely) {
     layer()->SetFillsBoundsOpaquely(fills_bounds_opaquely);
 }
 
-bool View::SetExternalTexture(ui::Texture* texture) {
-  DCHECK(texture);
-  SetPaintToLayer(true);
-
-  layer()->SetExternalTexture(texture);
-
-  // Child views must not paint into the external texture. So make sure each
-  // child view has its own layer to paint into.
-  for (Views::iterator i = children_.begin(); i != children_.end(); ++i)
-    (*i)->SetPaintToLayer(true);
-
-  SchedulePaintInRect(GetLocalBounds());
-  return true;
-}
-
 gfx::Vector2d View::CalculateOffsetToAncestorWithLayer(
     ui::Layer** layer_parent) {
   if (layer()) {
@@ -1556,10 +1518,8 @@ void View::Blur() {
 void View::TooltipTextChanged() {
   Widget* widget = GetWidget();
   // TooltipManager may be null if there is a problem creating it.
-  if (widget && widget->native_widget_private()->GetTooltipManager()) {
-    widget->native_widget_private()->GetTooltipManager()->
-        TooltipTextChanged(this);
-  }
+  if (widget && widget->GetTooltipManager())
+    widget->GetTooltipManager()->TooltipTextChanged(this);
 }
 
 // Context menus ---------------------------------------------------------------
@@ -1742,7 +1702,7 @@ void View::PaintCommon(gfx::Canvas* canvas) {
     // The canvas mirroring is undone once the View is done painting so that we
     // don't pass the canvas with the mirrored transform to Views that didn't
     // request the canvas to be flipped.
-    ScopedCanvas scoped(canvas);
+    gfx::ScopedCanvas scoped(canvas);
     if (FlipCanvasOnPaintForRTLUI()) {
       canvas->Translate(gfx::Vector2d(width(), 0));
       canvas->Scale(-1, 1);
@@ -2291,8 +2251,8 @@ void View::UpdateTooltip() {
   // TODO(beng): The TooltipManager NULL check can be removed when we
   //             consolidate Init() methods and make views_unittests Init() all
   //             Widgets that it uses.
-  if (widget && widget->native_widget_private()->GetTooltipManager())
-    widget->native_widget_private()->GetTooltipManager()->UpdateTooltip();
+  if (widget && widget->GetTooltipManager())
+    widget->GetTooltipManager()->UpdateTooltip();
 }
 
 // Drag and drop ---------------------------------------------------------------

@@ -45,6 +45,10 @@ bool TestSessionStateDelegate::IsScreenLocked() const {
   return screen_locked_;
 }
 
+bool TestSessionStateDelegate::ShouldLockScreenBeforeSuspending() const {
+  return false;
+}
+
 void TestSessionStateDelegate::LockScreen() {
   if (CanLockScreen())
     screen_locked_ = true;
@@ -124,6 +128,12 @@ void TestSessionStateDelegate::AddSessionStateObserver(
 
 void TestSessionStateDelegate::RemoveSessionStateObserver(
     SessionStateObserver* observer) {
+}
+
+bool TestSessionStateDelegate::TransferWindowToDesktopOfUser(
+    aura::Window* window,
+    ash::MultiProfileIndex index) const {
+  return false;
 }
 
 }  // namespace test

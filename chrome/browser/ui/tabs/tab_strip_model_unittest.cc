@@ -15,7 +15,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,11 +31,9 @@
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::SiteInstance;
@@ -49,23 +46,19 @@ namespace {
 // Class used to delete a WebContents and TabStripModel when another WebContents
 // is destroyed.
 class DeleteWebContentsOnDestroyedObserver
-    : public content::NotificationObserver {
+    : public content::WebContentsObserver {
  public:
   // When |source| is deleted both |tab_to_delete| and |tab_strip| are deleted.
   // |tab_to_delete| and |tab_strip| may be NULL.
   DeleteWebContentsOnDestroyedObserver(WebContents* source,
                                        WebContents* tab_to_delete,
                                        TabStripModel* tab_strip)
-      : source_(source),
+      : WebContentsObserver(source),
         tab_to_delete_(tab_to_delete),
         tab_strip_(tab_strip) {
-    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                   content::Source<WebContents>(source));
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
     WebContents* tab_to_delete = tab_to_delete_;
     tab_to_delete_ = NULL;
     TabStripModel* tab_strip_to_delete = tab_strip_;
@@ -75,10 +68,8 @@ class DeleteWebContentsOnDestroyedObserver
   }
 
  private:
-  WebContents* source_;
   WebContents* tab_to_delete_;
   TabStripModel* tab_strip_;
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(DeleteWebContentsOnDestroyedObserver);
 };
@@ -1709,8 +1700,17 @@ TEST_F(TabStripModelTest, NavigationForgettingDoesntAffectNewTab) {
   strip.CloseAllTabs();
 }
 
+// This fails on Linux when run with the rest of unit_tests (crbug.com/302156)
+// and fails consistently on Mac.
+#if defined(OS_LINUX) || defined(OS_MACOSX)
+#define MAYBE_FastShutdown \
+    DISABLED_FastShutdown
+#else
+#define MAYBE_FastShutdown \
+    FastShutdown
+#endif
 // Tests that fast shutdown is attempted appropriately.
-TEST_F(TabStripModelTest, FastShutdown) {
+TEST_F(TabStripModelTest, MAYBE_FastShutdown) {
   TabStripDummyDelegate delegate;
   TabStripModel tabstrip(&delegate, profile());
   MockTabStripModelObserver observer(&tabstrip);
@@ -2273,6 +2273,65 @@ TEST_F(TabStripModelTest, MoveSelectedTabsTo) {
               GetTabStripStateString(strip)) << i;
     strip.CloseAllTabs();
   }
+}
+
+// Tests that moving a tab forgets all groups referencing it.
+TEST_F(TabStripModelTest, MoveSelectedTabsTo_ForgetGroups) {
+  TabStripDummyDelegate delegate;
+  TabStripModel strip(&delegate, profile());
+
+  // Open page A as a new tab and then A1 in the background from A.
+  WebContents* page_a_contents = CreateWebContents();
+  strip.AddWebContents(page_a_contents, -1,
+                       content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                       TabStripModel::ADD_ACTIVE);
+  WebContents* page_a1_contents = CreateWebContents();
+  strip.AddWebContents(page_a1_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+
+  // Likewise, open pages B and B1.
+  WebContents* page_b_contents = CreateWebContents();
+  strip.AddWebContents(page_b_contents, -1,
+                       content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                       TabStripModel::ADD_ACTIVE);
+  WebContents* page_b1_contents = CreateWebContents();
+  strip.AddWebContents(page_b1_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(3));
+
+  // Move page B to the start of the tab strip.
+  strip.MoveSelectedTabsTo(0);
+
+  // Open page B2 in the background from B. It should end up after B.
+  WebContents* page_b2_contents = CreateWebContents();
+  strip.AddWebContents(page_b2_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_b2_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(3));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(4));
+
+  // Switch to A.
+  strip.ActivateTabAt(2, true);
+  EXPECT_EQ(page_a_contents, strip.GetActiveWebContents());
+
+  // Open page A2 in the background from A. It should end up after A1.
+  WebContents* page_a2_contents = CreateWebContents();
+  strip.AddWebContents(page_a2_contents, -1, content::PAGE_TRANSITION_LINK,
+                       TabStripModel::ADD_NONE);
+  EXPECT_EQ(page_b_contents, strip.GetWebContentsAt(0));
+  EXPECT_EQ(page_b2_contents, strip.GetWebContentsAt(1));
+  EXPECT_EQ(page_a_contents, strip.GetWebContentsAt(2));
+  EXPECT_EQ(page_a1_contents, strip.GetWebContentsAt(3));
+  EXPECT_EQ(page_a2_contents, strip.GetWebContentsAt(4));
+  EXPECT_EQ(page_b1_contents, strip.GetWebContentsAt(5));
+
+  strip.CloseAllTabs();
 }
 
 TEST_F(TabStripModelTest, CloseSelectedTabs) {

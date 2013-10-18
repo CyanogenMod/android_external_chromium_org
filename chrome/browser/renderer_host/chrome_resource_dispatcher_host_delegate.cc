@@ -23,6 +23,7 @@
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/net/resource_prefetch_predictor_observer.h"
 #include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/prerender/prerender_resource_throttle.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -331,11 +332,10 @@ void ChromeResourceDispatcherHostDelegate::WillTransferRequestToNewProcess(
     int new_child_id,
     int new_route_id,
     int new_request_id) {
-  if (prerender_tracker_->IsPrerenderingOnIOThread(old_child_id,
-                                                   old_route_id)) {
-    prerender_tracker_->UpdatePrerenderStateForTransfer(
-        old_child_id, old_route_id, new_child_id, new_route_id);
-  }
+  // If a prerender, it have should been aborted on cross-process
+  // navigation in PrerenderContents::WebContentsImpl::OpenURLFromTab.
+  DCHECK(!prerender_tracker_->IsPrerenderingOnIOThread(old_child_id,
+                                                       old_route_id));
 }
 
 void ChromeResourceDispatcherHostDelegate::DownloadStarting(
@@ -487,6 +487,13 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
                                                     resource_type);
   if (throttle)
     throttles->push_back(throttle);
+
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
+  if (prerender_tracker_->IsPrerenderingOnIOThread(info->GetChildID(),
+                                                   info->GetRouteID())) {
+    throttles->push_back(new prerender::PrerenderResourceThrottle(
+        request, prerender_tracker_));
+  }
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)

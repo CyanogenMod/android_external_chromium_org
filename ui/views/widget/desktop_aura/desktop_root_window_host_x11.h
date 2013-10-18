@@ -60,6 +60,9 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   // visible.
   static std::vector<aura::Window*> GetAllOpenWindows();
 
+  // Returns the current bounds in terms of the X11 Root Window.
+  gfx::Rect GetX11RootWindowBounds() const;
+
   // Called by X11DesktopHandler to notify us that the native windowing system
   // has changed our activation.
   void HandleNativeWidgetActivationChanged(bool active);
@@ -75,6 +78,7 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual aura::RootWindow* Init(aura::Window* content_window,
                                  const Widget::InitParams& params) OVERRIDE;
   virtual void InitFocus(aura::Window* window) OVERRIDE;
+  virtual scoped_ptr<corewm::Tooltip> CreateTooltip() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void CloseNow() OVERRIDE;
   virtual aura::RootWindowHost* AsRootWindowHost() OVERRIDE;
@@ -102,6 +106,7 @@ class VIEWS_EXPORT DesktopRootWindowHostX11 :
   virtual bool IsMinimized() const OVERRIDE;
   virtual bool HasCapture() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+  virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void SetWindowTitle(const string16& title) OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
@@ -179,6 +184,9 @@ private:
   // and dispatch it to that host instead.
   void DispatchMouseEvent(ui::MouseEvent* event);
 
+  // Resets the window region for the current widget bounds if necessary.
+  void ResetWindowRegion();
+
   // See comment for variable open_windows_.
   static std::list<XID>& open_windows();
 
@@ -223,6 +231,9 @@ private:
   // Local flag for fullscreen state to avoid a state mismatch between
   // server and local window_properties_ during app-initiated fullscreen.
   bool is_fullscreen_;
+
+  // True if the window should stay on top of most other windows.
+  bool is_always_on_top_;
 
   // We are owned by the RootWindow, but we have to have a back pointer to it.
   aura::RootWindow* root_window_;

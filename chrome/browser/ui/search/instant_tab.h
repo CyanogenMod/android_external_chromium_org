@@ -8,7 +8,6 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/search/instant_page.h"
-#include "chrome/common/ntp_logging_events.h"
 
 class Profile;
 
@@ -23,22 +22,14 @@ class InstantTab : public InstantPage {
   // the page supports the Instant API.
   void Init(content::WebContents* contents);
 
-  // Used to signal that an event has occurred on the New Tab Page.
-  static void LogEvent(content::WebContents* contents,
-                       NTPLoggingEventType event);
-
   // Used to log in UMA the total number of mouseovers over NTP tiles/titles.
   static void EmitMouseoverCount(content::WebContents* contents);
 
  private:
   // Overridden from InstantPage:
   virtual bool ShouldProcessAboutToNavigateMainFrame() OVERRIDE;
-  virtual bool ShouldProcessFocusOmnibox() OVERRIDE;
   virtual bool ShouldProcessNavigateToURL() OVERRIDE;
   virtual bool ShouldProcessPasteIntoOmnibox() OVERRIDE;
-  virtual bool ShouldProcessDeleteMostVisitedItem() OVERRIDE;
-  virtual bool ShouldProcessUndoMostVisitedDeletion() OVERRIDE;
-  virtual bool ShouldProcessUndoAllMostVisitedDeletions() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InstantTab);
 };

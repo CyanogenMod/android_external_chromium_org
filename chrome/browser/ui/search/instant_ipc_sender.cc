@@ -15,35 +15,9 @@ class InstantIPCSenderImpl : public InstantIPCSender {
   virtual ~InstantIPCSenderImpl() {}
 
  private:
-  virtual void Submit(const string16& text) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxSubmit(routing_id(), text));
-  }
-
   virtual void SetOmniboxBounds(const gfx::Rect& bounds) OVERRIDE {
     Send(new ChromeViewMsg_SearchBoxMarginChange(
         routing_id(), bounds.x(), bounds.width()));
-  }
-
-  virtual void SetFontInformation(const string16& omnibox_font_name,
-                          size_t omnibox_font_size) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxFontInformation(
-        routing_id(), omnibox_font_name, omnibox_font_size));
-  }
-
-  virtual void SetPromoInformation(bool is_app_launcher_enabled) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxPromoInformation(
-        routing_id(), is_app_launcher_enabled));
-  }
-
-  virtual void SetSuggestionToPrefetch(
-      const InstantSuggestion& suggestion) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxSetSuggestionToPrefetch(routing_id(),
-                                                            suggestion));
-  }
-
-  virtual void SendThemeBackgroundInfo(
-      const ThemeBackgroundInfo& theme_info) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxThemeChanged(routing_id(), theme_info));
   }
 
   virtual void FocusChanged(OmniboxFocusState state,
@@ -54,12 +28,6 @@ class InstantIPCSenderImpl : public InstantIPCSender {
   virtual void SetInputInProgress(bool input_in_progress) OVERRIDE {
     Send(new ChromeViewMsg_SearchBoxSetInputInProgress(
         routing_id(), input_in_progress));
-  }
-
-  virtual void SendMostVisitedItems(
-      const std::vector<InstantMostVisitedItem>& items) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxMostVisitedItemsChanged(
-        routing_id(), items));
   }
 
   virtual void ToggleVoiceSearch() OVERRIDE {
@@ -76,10 +44,6 @@ class IncognitoInstantIPCSenderImpl : public InstantIPCSender {
   virtual ~IncognitoInstantIPCSenderImpl() {}
 
  private:
-  virtual void Submit(const string16& text) OVERRIDE {
-    Send(new ChromeViewMsg_SearchBoxSubmit(routing_id(), text));
-  }
-
   virtual void SetOmniboxBounds(const gfx::Rect& bounds) OVERRIDE {
     Send(new ChromeViewMsg_SearchBoxMarginChange(
         routing_id(), bounds.x(), bounds.width()));

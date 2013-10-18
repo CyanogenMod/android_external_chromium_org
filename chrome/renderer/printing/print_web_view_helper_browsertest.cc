@@ -347,6 +347,7 @@ struct TestPageData {
   const wchar_t* file;
 };
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
 const TestPageData kTestPages[] = {
   {"<html>"
   "<head>"
@@ -369,6 +370,7 @@ const TestPageData kTestPages[] = {
   NULL,
   },
 };
+#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 }  // namespace
 
 // TODO(estade): need to port MockPrinter to get this on Linux. This involves
@@ -667,7 +669,7 @@ TEST_F(PrintWebViewHelperPreviewTest, PrintPreviewCenterToFitPage) {
   OnPrintPreview(dict);
 
   EXPECT_EQ(0, chrome_render_thread_->print_preview_pages_remaining());
-  VerifyDefaultPageLayout(288, 288, 252, 252, 162, 162, true);
+  VerifyDefaultPageLayout(216, 216, 288, 288, 198, 198, true);
   VerifyPrintPreviewCancelled(false);
   VerifyPrintPreviewFailed(false);
   VerifyPrintPreviewGenerated(true);
@@ -697,7 +699,7 @@ TEST_F(PrintWebViewHelperPreviewTest, PrintPreviewShrinkToFitPage) {
   OnPrintPreview(dict);
 
   EXPECT_EQ(0, chrome_render_thread_->print_preview_pages_remaining());
-  VerifyDefaultPageLayout(612, 693, 49, 50, 0, 0, true);
+  VerifyDefaultPageLayout(571, 652, 69, 71, 20, 21, true);
   VerifyPrintPreviewCancelled(false);
   VerifyPrintPreviewFailed(false);
 }

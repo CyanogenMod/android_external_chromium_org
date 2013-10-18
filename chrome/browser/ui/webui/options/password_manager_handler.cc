@@ -17,6 +17,7 @@
 #include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -27,7 +28,8 @@ namespace options {
 
 PasswordManagerHandler::PasswordManagerHandler()
     : populater_(this),
-      exception_populater_(this) {
+      exception_populater_(this),
+      is_user_authenticated_(false) {
 }
 
 PasswordManagerHandler::~PasswordManagerHandler() {
@@ -94,11 +96,8 @@ void PasswordManagerHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("removePasswordException",
       base::Bind(&PasswordManagerHandler::RemovePasswordException,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("removeAllSavedPasswords",
-      base::Bind(&PasswordManagerHandler::RemoveAllSavedPasswords,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("removeAllPasswordExceptions",
-      base::Bind(&PasswordManagerHandler::RemoveAllPasswordExceptions,
+  web_ui()->RegisterMessageCallback("requestShowPassword",
+      base::Bind(&PasswordManagerHandler::RequestShowPassword,
                  base::Unretained(this)));
 }
 
@@ -129,8 +128,11 @@ void PasswordManagerHandler::RemoveSavedPassword(const ListValue* args) {
   std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
   int index;
   if (base::StringToInt(string_value, &index) && index >= 0 &&
-      static_cast<size_t>(index) < password_list_.size())
+      static_cast<size_t>(index) < password_list_.size()) {
     store->RemoveLogin(*password_list_[index]);
+    content::RecordAction(
+        content::UserMetricsAction("PasswordManager_RemoveSavedPassword"));
+  }
 }
 
 void PasswordManagerHandler::RemovePasswordException(
@@ -141,28 +143,30 @@ void PasswordManagerHandler::RemovePasswordException(
   std::string string_value = UTF16ToUTF8(ExtractStringValue(args));
   int index;
   if (base::StringToInt(string_value, &index) && index >= 0 &&
-      static_cast<size_t>(index) < password_exception_list_.size())
+      static_cast<size_t>(index) < password_exception_list_.size()) {
     store->RemoveLogin(*password_exception_list_[index]);
+    content::RecordAction(
+        content::UserMetricsAction("PasswordManager_RemovePasswordException"));
+  }
 }
 
-void PasswordManagerHandler::RemoveAllSavedPasswords(
-    const ListValue* args) {
-  // TODO(jhawkins): This will cause a list refresh for every password in the
-  // list. Add PasswordStore::RemoveAllLogins().
-  PasswordStore* store = GetPasswordStore();
-  if (!store)
+void PasswordManagerHandler::RequestShowPassword(const ListValue* args) {
+  int index;
+  if (!ExtractIntegerValue(args, &index)) {
+    NOTREACHED();
     return;
-  for (size_t i = 0; i < password_list_.size(); ++i)
-    store->RemoveLogin(*password_list_[i]);
-}
+  }
 
-void PasswordManagerHandler::RemoveAllPasswordExceptions(
-    const ListValue* args) {
-  PasswordStore* store = GetPasswordStore();
-  if (!store)
-    return;
-  for (size_t i = 0; i < password_exception_list_.size(); ++i)
-    store->RemoveLogin(*password_exception_list_[i]);
+  if (!is_user_authenticated_) {
+    // TODO(dubroy): Insert actual authentication code here.
+    is_user_authenticated_ = true;
+  }
+
+  // Call back the front end to reveal the password.
+  web_ui()->CallJavascriptFunction(
+      "PasswordManager.showPassword",
+      base::FundamentalValue(index),
+      StringValue(password_list_[index]->password_value));
 }
 
 void PasswordManagerHandler::SetPasswordList() {
@@ -174,15 +178,20 @@ void PasswordManagerHandler::SetPasswordList() {
     InitializeHandler();
 
   ListValue entries;
-  bool show_passwords = *show_passwords_;
-  string16 empty;
+  bool show_passwords = *show_passwords_ && is_user_authenticated_;
+  string16 placeholder(ASCIIToUTF16("        "));
   for (size_t i = 0; i < password_list_.size(); ++i) {
     ListValue* entry = new ListValue();
     entry->Append(new StringValue(net::FormatUrl(password_list_[i]->origin,
                                                  languages_)));
     entry->Append(new StringValue(password_list_[i]->username_value));
-    entry->Append(new StringValue(
-        show_passwords ? password_list_[i]->password_value : empty));
+    if (show_passwords) {
+      entry->Append(new StringValue(password_list_[i]->password_value));
+    } else {
+      // Use a placeholder value with the same length as the password.
+      entry->Append(new StringValue(
+          string16(password_list_[i]->password_value.length(), ' ')));
+    }
     entries.Append(entry);
   }
 

@@ -18,6 +18,7 @@ class AppNotification;
 class AppNotificationSettings;
 class AppSettingSpecifics;
 class AppSpecifics;
+class ArticleSpecifics;
 class AutofillProfileSpecifics;
 class AutofillSpecifics;
 class BookmarkSpecifics;
@@ -58,11 +59,15 @@ class SessionTab;
 class SessionWindow;
 class SimpleCollapsedLayout;
 class SyncCycleCompletedEventInfo;
+class SyncedNotification;
+class SyncedNotificationAction;
+class SyncedNotificationDestination;
 class SyncedNotificationImage;
 class SyncedNotificationProfileImage;
 class SyncedNotificationRenderInfo;
 class SyncedNotificationSpecifics;
 class TabNavigation;
+class Target;
 class ThemeSpecifics;
 class TimeRangeDirective;
 class TypedUrlSpecifics;
@@ -141,6 +146,28 @@ base::DictionaryValue* RenderInfoToValue(
 base::DictionaryValue* CoalescedNotificationToValue(
     const sync_pb::CoalescedSyncedNotification& proto);
 
+base::DictionaryValue* SyncedNotificationActionToValue(
+    const sync_pb::SyncedNotificationAction& action);
+
+base::DictionaryValue* SyncedNotificationDestinationToValue(
+    const sync_pb::SyncedNotificationDestination& destination);
+
+base::DictionaryValue* SyncedNotificationToValue(
+    const sync_pb::SyncedNotification& notification);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* SessionSpecificsToValue(
+    const sync_pb::SessionSpecifics& session_specifics);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* SyncedNotificationImageToValue(
+    const sync_pb::SyncedNotificationImage& image);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue*
+    SyncedNotificationProfileImageToValue(
+        const sync_pb::SyncedNotificationProfileImage& image);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* TargetToValue(
+    const sync_pb::Target& target);
+
 // Main *SpecificsToValue functions.
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* AppNotificationToValue(
@@ -151,6 +178,9 @@ base::DictionaryValue* AppSettingSpecificsToValue(
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* AppSpecificsToValue(
     const sync_pb::AppSpecifics& app_specifics);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* ArticleSpecificsToValue(
+    const sync_pb::ArticleSpecifics& article_specifics);
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* AutofillSpecificsToValue(
     const sync_pb::AutofillSpecifics& autofill_specifics);
@@ -213,16 +243,6 @@ SYNC_EXPORT_PRIVATE base::DictionaryValue* SyncedNotificationSpecificsToValue(
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* SearchEngineSpecificsToValue(
     const sync_pb::SearchEngineSpecifics& search_engine_specifics);
-
-SYNC_EXPORT_PRIVATE base::DictionaryValue* SessionSpecificsToValue(
-    const sync_pb::SessionSpecifics& session_specifics);
-
-SYNC_EXPORT_PRIVATE base::DictionaryValue* SyncedNotificationImageToValue(
-    const sync_pb::SyncedNotificationImage& image);
-
-SYNC_EXPORT_PRIVATE base::DictionaryValue*
-    SyncedNotificationProfileImageToValue(
-        const sync_pb::SyncedNotificationProfileImage& image);
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* ThemeSpecificsToValue(
     const sync_pb::ThemeSpecifics& theme_specifics);

@@ -9,8 +9,6 @@
 #include <queue>
 #include <string>
 
-#include "gpu/ipc/command_buffer_proxy.h"
-
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
@@ -22,6 +20,7 @@
 #include "content/common/gpu/surface_capturer.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
+#include "gpu/command_buffer/common/gpu_control.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ui/events/latency_info.h"
@@ -42,7 +41,8 @@ class GpuChannelHost;
 // Client side proxy that forwards messages synchronously to a
 // CommandBufferStub.
 class CommandBufferProxyImpl
-    : public CommandBufferProxy,
+    : public gpu::CommandBuffer,
+      public gpu::GpuControl,
       public IPC::Listener,
       public base::SupportsWeakPtr<CommandBufferProxyImpl> {
  public:
@@ -80,12 +80,6 @@ class CommandBufferProxyImpl
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
 
-  // CommandBufferProxy implementation:
-  virtual int GetRouteID() const OVERRIDE;
-  virtual bool Echo(const base::Closure& callback) OVERRIDE;
-  virtual bool ProduceFrontBuffer(const gpu::Mailbox& mailbox) OVERRIDE;
-  virtual void SetChannelErrorCallback(const base::Closure& callback) OVERRIDE;
-
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
   virtual State GetState() OVERRIDE;
@@ -103,7 +97,28 @@ class CommandBufferProxyImpl
   virtual void SetParseError(gpu::error::Error error) OVERRIDE;
   virtual void SetContextLostReason(
       gpu::error::ContextLostReason reason) OVERRIDE;
+
+  // gpu::GpuControl implementation:
+  virtual bool SupportsGpuMemoryBuffer() OVERRIDE;
+  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
+      size_t width,
+      size_t height,
+      unsigned internalformat,
+      int32* id) OVERRIDE;
+  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
+  virtual bool GenerateMailboxNames(unsigned num,
+                                    std::vector<gpu::Mailbox>* names) OVERRIDE;
   virtual uint32 InsertSyncPoint() OVERRIDE;
+  virtual void SignalSyncPoint(uint32 sync_point,
+                               const base::Closure& callback) OVERRIDE;
+  virtual void SignalQuery(uint32 query,
+                           const base::Closure& callback) OVERRIDE;
+
+
+  int GetRouteID() const;
+  bool Echo(const base::Closure& callback);
+  bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
+  void SetChannelErrorCallback(const base::Closure& callback);
 
   void SetMemoryAllocationChangedCallback(
       const base::Callback<void(const GpuMemoryAllocationForRenderer&)>&
@@ -114,22 +129,6 @@ class CommandBufferProxyImpl
 
   bool DiscardBackbuffer();
   bool EnsureBackbuffer();
-
-  // Makes this command buffer invoke a task when a sync point is reached, or
-  // the command buffer that inserted that sync point is destroyed.
-  bool SignalSyncPoint(uint32 sync_point,
-                       const base::Closure& callback);
-
-  // Makes this command buffer invoke a task when a query is completed, or
-  // the command buffer that inserted that sync point is destroyed or the
-  // query was deleted. Should be invoked after endQuery.
-  bool SignalQuery(unsigned query, const base::Closure& callback);
-
-  // Generates n unique mailbox names that can be used with
-  // GL_texture_mailbox_CHROMIUM. Unlike genMailboxCHROMIUM, this IPC is
-  // handled only on the GPU process' IO thread, and so is not effectively
-  // a finish.
-  bool GenerateMailboxNames(unsigned num, std::vector<gpu::Mailbox>* names);
 
   // Sends an IPC message with the new state of surface visibility.
   bool SetSurfaceVisible(bool visible);

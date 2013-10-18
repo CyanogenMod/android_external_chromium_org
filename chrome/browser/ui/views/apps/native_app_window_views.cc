@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/apps/native_app_window_views.h"
 
+#include "apps/ui/views/shell_window_frame_view.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -13,7 +14,6 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
-#include "chrome/browser/ui/views/extensions/shell_window_frame_view.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -40,6 +40,7 @@
 #endif
 
 #if defined(USE_ASH)
+#include "ash/ash_constants.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
 #include "ash/wm/custom_frame_view_ash.h"
@@ -60,6 +61,7 @@ const int kMinPanelHeight = 100;
 const int kDefaultPanelWidth = 200;
 const int kDefaultPanelHeight = 300;
 const int kResizeInsideBoundsSize = 5;
+const int kResizeAreaCornerSize = 16;
 
 struct AcceleratorMapping {
   ui::KeyboardCode keycode;
@@ -169,6 +171,7 @@ void NativeAppWindowViews::InitializeDefaultWindow(
   // TODO(erg): Conceptually, these are toplevel windows, but we theoretically
   // could plumb context through to here in some cases.
   init_params.top_level = true;
+  init_params.keep_on_top = create_params.always_on_top;
   gfx::Rect window_bounds = create_params.bounds;
   bool position_specified =
       window_bounds.x() != INT_MIN && window_bounds.y() != INT_MIN;
@@ -296,6 +299,36 @@ void NativeAppWindowViews::InitializePanelWindow(
 #endif
 }
 
+bool NativeAppWindowViews::ShouldUseChromeStyleFrame() const {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kAppsUseNativeFrame) || frameless_;
+}
+
+apps::ShellWindowFrameView* NativeAppWindowViews::CreateShellWindowFrameView() {
+  // By default the user can resize the window from slightly inside the bounds.
+  int resize_inside_bounds_size = kResizeInsideBoundsSize;
+  int resize_outside_bounds_size = 0;
+  int resize_outside_scale_for_touch = 1;
+  int resize_area_corner_size = kResizeAreaCornerSize;
+#if defined(USE_ASH)
+  // For Aura windows on the Ash desktop the sizes are different and the user
+  // can resize the window from slightly outside the bounds as well.
+  if (chrome::IsNativeWindowInAsh(window_->GetNativeWindow())) {
+    resize_inside_bounds_size = ash::kResizeInsideBoundsSize;
+    resize_outside_bounds_size = ash::kResizeOutsideBoundsSize;
+    resize_outside_scale_for_touch = ash::kResizeOutsideBoundsScaleForTouch;
+    resize_area_corner_size = ash::kResizeAreaCornerSize;
+  }
+#endif
+  apps::ShellWindowFrameView* frame_view = new apps::ShellWindowFrameView(this);
+  frame_view->Init(window_,
+                   resize_inside_bounds_size,
+                   resize_outside_bounds_size,
+                   resize_outside_scale_for_touch,
+                   resize_area_corner_size);
+  return frame_view;
+}
+
 // ui::BaseWindow implementation.
 
 bool NativeAppWindowViews::IsActive() const {
@@ -362,16 +395,19 @@ void NativeAppWindowViews::Show() {
   }
 
   window_->Show();
+  shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowViews::ShowInactive() {
   if (window_->IsVisible())
     return;
   window_->ShowInactive();
+  shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowViews::Hide() {
   window_->Hide();
+  shell_window_->OnNativeWindowChanged();
 }
 
 void NativeAppWindowViews::Close() {
@@ -407,34 +443,22 @@ void NativeAppWindowViews::FlashFrame(bool flash) {
 }
 
 bool NativeAppWindowViews::IsAlwaysOnTop() const {
-  if (!shell_window_->window_type_is_panel())
-    return false;
+  if (shell_window_->window_type_is_panel()) {
 #if defined(USE_ASH)
   return ash::wm::GetWindowState(window_->GetNativeWindow())->
       panel_attached();
 #else
   return true;
 #endif
+  } else {
+    return window_->IsAlwaysOnTop();
+  }
 }
 
-gfx::Insets NativeAppWindowViews::GetFrameInsets() const {
-  if (frameless())
-    return gfx::Insets();
-
-  // The pretend client_bounds passed in need to be large enough to ensure that
-  // GetWindowBoundsForClientBounds() doesn't decide that it needs more than
-  // the specified amount of space to fit the window controls in, and return a
-  // number larger than the real frame insets. Most window controls are smaller
-  // than 1000x1000px, so this should be big enough.
-  gfx::Rect client_bounds = gfx::Rect(1000, 1000);
-  gfx::Rect window_bounds =
-      window_->non_client_view()->GetWindowBoundsForClientBounds(
-          client_bounds);
-  return window_bounds.InsetsFrom(client_bounds);
+void NativeAppWindowViews::SetAlwaysOnTop(bool always_on_top) {
+  window_->SetAlwaysOnTop(always_on_top);
+  shell_window_->OnNativeWindowChanged();
 }
-
-void NativeAppWindowViews::HideWithApp() {}
-void NativeAppWindowViews::ShowWithApp() {}
 
 gfx::NativeView NativeAppWindowViews::GetHostView() const {
   return window_->GetNativeView();
@@ -451,11 +475,11 @@ gfx::Size NativeAppWindowViews::GetMaximumDialogSize() {
 }
 
 void NativeAppWindowViews::AddObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   observer_list_.AddObserver(observer);
 }
 void NativeAppWindowViews::RemoveObserver(
-    web_modal::WebContentsModalDialogHostObserver* observer) {
+    web_modal::ModalDialogHostObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -499,8 +523,8 @@ void NativeAppWindowViews::OnViewWasResized() {
 
   SkRegion* rgn = new SkRegion;
   if (!window_->IsFullscreen()) {
-    if (draggable_region())
-      rgn->op(*draggable_region(), SkRegion::kUnion_Op);
+    if (draggable_region_)
+      rgn->op(*draggable_region_, SkRegion::kUnion_Op);
     if (!window_->IsMaximized()) {
       if (frameless_)
         rgn->op(0, 0, width, kResizeInsideBoundsSize, SkRegion::kUnion_Op);
@@ -515,14 +539,9 @@ void NativeAppWindowViews::OnViewWasResized() {
     web_contents()->GetRenderViewHost()->GetView()->SetClickthroughRegion(rgn);
 #endif
 
-  FOR_EACH_OBSERVER(web_modal::WebContentsModalDialogHostObserver,
+  FOR_EACH_OBSERVER(web_modal::ModalDialogHostObserver,
                     observer_list_,
                     OnPositionRequiresUpdate());
-}
-
-bool NativeAppWindowViews::ShouldUseChromeStyleFrame() const {
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kAppsUseNativeFrame) || frameless_;
 }
 
 // WidgetDelegate implementation.
@@ -596,6 +615,10 @@ const views::Widget* NativeAppWindowViews::GetWidget() const {
   return window_;
 }
 
+views::View* NativeAppWindowViews::GetContentsView() {
+  return this;
+}
+
 views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
     views::Widget* widget) {
 #if defined(USE_ASH)
@@ -612,11 +635,8 @@ views::NonClientFrameView* NativeAppWindowViews::CreateNonClientFrameView(
     }
   }
 #endif
-  if (ShouldUseChromeStyleFrame()) {
-    ShellWindowFrameView* frame_view = new ShellWindowFrameView(this);
-    frame_view->Init(window_);
-    return frame_view;
-  }
+  if (ShouldUseChromeStyleFrame())
+    return CreateShellWindowFrameView();
   return views::WidgetDelegateView::CreateNonClientFrameView(widget);
 }
 
@@ -672,6 +692,12 @@ void NativeAppWindowViews::RenderViewCreated(
     DCHECK(view);
     view->SetBackground(background);
   }
+}
+
+void NativeAppWindowViews::RenderViewHostChanged(
+    content::RenderViewHost* old_host,
+    content::RenderViewHost* new_host) {
+  OnViewWasResized();
 }
 
 // views::View implementation.
@@ -754,20 +780,12 @@ bool NativeAppWindowViews::IsDetached() const {
 #endif
 }
 
-views::View* NativeAppWindowViews::GetContentsView() {
-  return this;
-}
-
 void NativeAppWindowViews::UpdateWindowIcon() {
   window_->UpdateWindowIcon();
 }
 
 void NativeAppWindowViews::UpdateWindowTitle() {
   window_->UpdateWindowTitle();
-}
-
-void NativeAppWindowViews::UpdateInputRegion(scoped_ptr<SkRegion> region) {
-  input_region_ = region.Pass();
 }
 
 void NativeAppWindowViews::UpdateDraggableRegions(
@@ -780,12 +798,43 @@ void NativeAppWindowViews::UpdateDraggableRegions(
   OnViewWasResized();
 }
 
+SkRegion* NativeAppWindowViews::GetDraggableRegion() {
+  return draggable_region_.get();
+}
+
+void NativeAppWindowViews::UpdateInputRegion(scoped_ptr<SkRegion> region) {
+  input_region_ = region.Pass();
+}
+
 void NativeAppWindowViews::HandleKeyboardEvent(
     const content::NativeWebKeyboardEvent& event) {
   unhandled_keyboard_event_handler_.HandleKeyboardEvent(event,
                                                         GetFocusManager());
 }
 
-void NativeAppWindowViews::RenderViewHostChanged() {
-  OnViewWasResized();
+bool NativeAppWindowViews::IsFrameless() const {
+  return frameless_;
 }
+
+gfx::Insets NativeAppWindowViews::GetFrameInsets() const {
+  if (frameless_)
+    return gfx::Insets();
+
+  // The pretend client_bounds passed in need to be large enough to ensure that
+  // GetWindowBoundsForClientBounds() doesn't decide that it needs more than
+  // the specified amount of space to fit the window controls in, and return a
+  // number larger than the real frame insets. Most window controls are smaller
+  // than 1000x1000px, so this should be big enough.
+  gfx::Rect client_bounds = gfx::Rect(1000, 1000);
+  gfx::Rect window_bounds =
+      window_->non_client_view()->GetWindowBoundsForClientBounds(
+          client_bounds);
+  return window_bounds.InsetsFrom(client_bounds);
+}
+
+bool NativeAppWindowViews::IsVisible() const {
+  return window_->IsVisible();
+}
+
+void NativeAppWindowViews::HideWithApp() {}
+void NativeAppWindowViews::ShowWithApp() {}

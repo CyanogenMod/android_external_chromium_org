@@ -72,6 +72,15 @@ function openSystemInfoWindow() {
 }
 
 /**
+ * Opens a new window with chrome://slow_trace, downloading performance data.
+ */
+function openSlowTraceWindow() {
+  chrome.windows.create(
+      {url: 'chrome://slow_trace/tracing.zip#' + feedbackInfo.traceId},
+      function(win) {});
+}
+
+/**
  * Sends the report; after the report is sent, we need to be redirected to
  * the landing page, but we shouldn't be able to navigate back, hence
  * we open the landing page in a new tab and sendReport closes this tab.
@@ -202,6 +211,8 @@ function initialize() {
   // Add listener to receive the feedback info object.
   chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.sentFromEventPage) {
+      // TODO(rkc):  Remove logging once crbug.com/284662 is closed.
+      console.log('FEEDBACK_DEBUG: Received feedbackInfo.');
       feedbackInfo = request.data;
       $('description-text').textContent = feedbackInfo.description;
       if (feedbackInfo.pageUrl)
@@ -210,6 +221,8 @@ function initialize() {
       takeScreenshot(function(screenshotDataUrl) {
         $('screenshot-image').src = screenshotDataUrl;
         feedbackInfo.screenshot = dataUrlToBlob(screenshotDataUrl);
+        // TODO(rkc):  Remove logging once crbug.com/284662 is closed.
+        console.log('FEEDBACK_DEBUG: Taken screenshot. Showing window.');
         chrome.app.window.current().show();
       });
 
@@ -235,6 +248,7 @@ function initialize() {
         $('performance-info-area').hidden = false;
         $('performance-info-checkbox').checked = true;
         performanceFeedbackChanged();
+        $('performance-info-link').onclick = openSlowTraceWindow;
       }
 </if>
 

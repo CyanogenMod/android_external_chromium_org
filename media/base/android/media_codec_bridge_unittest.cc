@@ -93,6 +93,15 @@ unsigned char test_mp3[] = {
 
 namespace media {
 
+// Helper macro to skip the test if MediaCodecBridge isn't available.
+#define SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE() \
+  do { \
+    if (!MediaCodecBridge::IsAvailable()) { \
+      LOG(INFO) << "Could not run test - not supported on device."; \
+      return; \
+    } \
+  } while (0) \
+
 static const int kPresentationTimeBase = 100;
 
 static inline const base::TimeDelta InfiniteTimeOut() {
@@ -132,21 +141,19 @@ void DecodeMediaFrame(
 }
 
 TEST(MediaCodecBridgeTest, Initialize) {
-  if (!MediaCodecBridge::IsAvailable())
-    return;
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
 
   scoped_ptr<media::MediaCodecBridge> media_codec;
   media_codec.reset(VideoCodecBridge::Create(kCodecH264, false));
 }
 
 TEST(MediaCodecBridgeTest, DoNormal) {
-  if (!MediaCodecBridge::IsAvailable())
-    return;
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
 
   scoped_ptr<media::AudioCodecBridge> media_codec;
   media_codec.reset(AudioCodecBridge::Create(kCodecMP3));
 
-  media_codec->Start(kCodecMP3, 44100, 2, NULL, 0, false, NULL);
+  ASSERT_TRUE(media_codec->Start(kCodecMP3, 44100, 2, NULL, 0, false, NULL));
 
   int input_buf_index = -1;
   MediaCodecStatus status =
@@ -185,7 +192,7 @@ TEST(MediaCodecBridgeTest, DoNormal) {
         continue;
 
       case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
-        media_codec->GetOutputBuffers();
+        ASSERT_TRUE(media_codec->GetOutputBuffers());
         continue;
 
       default:
@@ -201,8 +208,7 @@ TEST(MediaCodecBridgeTest, DoNormal) {
 }
 
 TEST(MediaCodecBridgeTest, InvalidVorbisHeader) {
-  if (!MediaCodecBridge::IsAvailable())
-    return;
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
 
   scoped_ptr<media::AudioCodecBridge> media_codec;
   media_codec.reset(AudioCodecBridge::Create(kCodecVorbis));
@@ -231,8 +237,7 @@ TEST(MediaCodecBridgeTest, InvalidVorbisHeader) {
 }
 
 TEST(MediaCodecBridgeTest, PresentationTimestampsDoNotDecrease) {
-  if (!MediaCodecBridge::IsAvailable())
-    return;
+  SKIP_TEST_IF_MEDIA_CODEC_BRIDGE_IS_NOT_AVAILABLE();
 
   scoped_ptr<VideoCodecBridge> media_codec;
   media_codec.reset(VideoCodecBridge::Create(kCodecVP8, false));

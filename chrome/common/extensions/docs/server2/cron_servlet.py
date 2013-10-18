@@ -15,7 +15,7 @@ from data_source_registry import CreateDataSources
 from empty_dir_file_system import EmptyDirFileSystem
 from file_system_util import CreateURLsFromPaths
 from github_file_system import GithubFileSystem
-from host_file_system_creator import HostFileSystemCreator
+from host_file_system_provider import HostFileSystemProvider
 from object_store_creator import ObjectStoreCreator
 from render_servlet import RenderServlet
 from server_instance import ServerInstance
@@ -65,7 +65,7 @@ def _RequestEachItem(title, items, request_callback):
         if response.status == 200:
           success_count += 1
         else:
-          _cronlog.error(error_message('response status %s', response.status))
+          _cronlog.error(error_message('response status %s' % response.status))
           failure_count += 1
       except Exception as e:
         _cronlog.error(error_message(traceback.format_exc()))
@@ -90,8 +90,11 @@ class CronServlet(Servlet):
     def CreateBranchUtility(self, object_store_creator):
       return BranchUtility.Create(object_store_creator)
 
-    def CreateHostFileSystemCreator(self, object_store_creator):
-      return HostFileSystemCreator(object_store_creator)
+    def CreateHostFileSystemProvider(self,
+                                     object_store_creator,
+                                     max_trunk_revision=None):
+      return HostFileSystemProvider(object_store_creator,
+                                    max_trunk_revision=max_trunk_revision)
 
     def CreateAppSamplesFileSystem(self, object_store_creator):
       # TODO(kalman): CachingFileSystem wrapper for GithubFileSystem, but it's
@@ -133,6 +136,7 @@ class CronServlet(Servlet):
     # TODO(kalman): IMPORTANT. This sometimes throws an exception, breaking
     # everything. Need retry logic at the fetcher level.
     server_instance = self._GetSafeServerInstance()
+    trunk_fs = server_instance.host_file_system_provider.GetTrunk()
 
     def render(path):
       request = Request(path, self._request.host, self._request.headers)
@@ -143,8 +147,7 @@ class CronServlet(Servlet):
       '''Requests every file found under |path| in this host file system, with
       a request prefix of |prefix|.
       '''
-      files = [name for name, _ in
-          CreateURLsFromPaths(server_instance.host_file_system, path, prefix)]
+      files = [name for name, _ in CreateURLsFromPaths(trunk_fs, path, prefix)]
       return _RequestEachItem(path, files, render)
 
     results = []
@@ -170,8 +173,7 @@ class CronServlet(Servlet):
         # Fetch the zip file of each example (contains all the individual
         # files).
         example_zips = []
-        for root, _, files in server_instance.host_file_system.Walk(
-            svn_constants.EXAMPLES_PATH):
+        for root, _, files in trunk_fs.Walk(svn_constants.EXAMPLES_PATH):
           example_zips.extend(
               root + '.zip' for name in files if name == 'manifest.json')
         results.append(_RequestEachItem(
@@ -216,18 +218,22 @@ class CronServlet(Servlet):
     existed.
     '''
     delegate = self._delegate
-    server_instance_at_head = self._CreateServerInstance(None)
+
+    # IMPORTANT: Get a ServerInstance pinned to the most recent revision, not
+    # HEAD. These cron jobs take a while and run very frequently such that
+    # there is usually one running at any given time, and eventually a file
+    # that we're dealing with will change underneath it, putting the server in
+    # an undefined state.
+    server_instance_near_head = self._CreateServerInstance(
+        self._GetMostRecentRevision())
 
     app_yaml_handler = AppYamlHelper(
         svn_constants.APP_YAML_PATH,
-        server_instance_at_head.host_file_system,
-        server_instance_at_head.object_store_creator,
-        server_instance_at_head.host_file_system_creator)
+        server_instance_near_head.object_store_creator,
+        server_instance_near_head.host_file_system_provider)
 
     if app_yaml_handler.IsUpToDate(delegate.GetAppVersion()):
-      # TODO(kalman): return a new ServerInstance at an explicit revision in
-      # case the HEAD version changes underneath us.
-      return server_instance_at_head
+      return server_instance_near_head
 
     # The version in app.yaml is greater than the currently running app's.
     # The safe version is the one before it changed.
@@ -239,21 +245,28 @@ class CronServlet(Servlet):
 
     return self._CreateServerInstance(safe_revision)
 
+  def _GetMostRecentRevision(self):
+    '''Gets the revision of the most recent patch submitted to the host file
+    system. This is similar to HEAD but it's a concrete revision so won't
+    change as the cron runs.
+    '''
+    head_fs = (
+        self._CreateServerInstance(None).host_file_system_provider.GetTrunk())
+    return head_fs.Stat('/').version
+
   def _CreateServerInstance(self, revision):
+    '''Creates a ServerInstance pinned to |revision|, or HEAD if None.
+    NOTE: If passed None it's likely that during the cron run patches will be
+    submitted at HEAD, which may change data underneath the cron run.
+    '''
     object_store_creator = ObjectStoreCreator(start_empty=True)
     branch_utility = self._delegate.CreateBranchUtility(object_store_creator)
-    host_file_system_creator = self._delegate.CreateHostFileSystemCreator(
-        object_store_creator)
-    host_file_system = host_file_system_creator.Create(revision=revision)
+    host_file_system_provider = self._delegate.CreateHostFileSystemProvider(
+        object_store_creator, max_trunk_revision=revision)
     app_samples_file_system = self._delegate.CreateAppSamplesFileSystem(
         object_store_creator)
-    compiled_host_fs_factory = CompiledFileSystem.Factory(
-        host_file_system,
-        object_store_creator)
     return ServerInstance(object_store_creator,
-                          host_file_system,
                           app_samples_file_system,
-                          '',
-                          compiled_host_fs_factory,
+                          CompiledFileSystem.Factory(object_store_creator),
                           branch_utility,
-                          host_file_system_creator)
+                          host_file_system_provider)

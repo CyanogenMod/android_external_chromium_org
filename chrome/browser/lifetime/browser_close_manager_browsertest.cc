@@ -175,7 +175,6 @@ class BrowserCloseManagerBrowserTest
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kEnableBatchedShutdown);
     if (GetParam())
       command_line->AppendSwitch(switches::kEnableFastUnload);
   }
@@ -549,8 +548,16 @@ IN_PROC_BROWSER_TEST_P(BrowserCloseManagerBrowserTest,
   EXPECT_TRUE(chrome::BrowserIterator().done());
 }
 
+// Test is flaky on windows, disabled. See http://crbug.com/276366
+#if defined(OS_WIN)
+#define MAYBE_TestOpenAndCloseWindowDuringShutdown \
+    DISABLED_TestOpenAndCloseWindowDuringShutdown
+#else
+#define MAYBE_TestOpenAndCloseWindowDuringShutdown \
+    TestOpenAndCloseWindowDuringShutdown
+#endif
 IN_PROC_BROWSER_TEST_P(BrowserCloseManagerBrowserTest,
-                       TestOpenAndCloseWindowDuringShutdown) {
+                       MAYBE_TestOpenAndCloseWindowDuringShutdown) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
   ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(
       browsers_[0], embedded_test_server()->GetURL("/beforeunload.html")));

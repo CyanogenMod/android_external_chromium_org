@@ -17,7 +17,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp)/ui_strings.stamp \
 	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
-	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_ui_jni_headers_gyp)/ui_jni_headers.stamp
 
 GYP_GENERATED_OUTPUTS :=
@@ -64,80 +63,9 @@ LOCAL_SRC_FILES := \
 	ui/base/ui_base_paths.cc \
 	ui/base/ui_base_switches.cc \
 	ui/base/ui_base_switches_util.cc \
+	ui/base/webui/jstemplate_builder.cc \
+	ui/base/webui/web_ui_util.cc \
 	ui/base/window_open_disposition.cc \
-	ui/events/event_switches.cc \
-	ui/events/keycodes/keyboard_code_conversion_android.cc \
-	ui/events/latency_info.cc \
-	ui/gfx/android/device_display_info.cc \
-	ui/gfx/android/java_bitmap.cc \
-	ui/gfx/animation/animation.cc \
-	ui/gfx/animation/animation_container.cc \
-	ui/gfx/animation/linear_animation.cc \
-	ui/gfx/animation/multi_animation.cc \
-	ui/gfx/animation/slide_animation.cc \
-	ui/gfx/animation/tween.cc \
-	ui/gfx/blit.cc \
-	ui/gfx/box_f.cc \
-	ui/gfx/canvas.cc \
-	ui/gfx/canvas_android.cc \
-	ui/gfx/codec/jpeg_codec.cc \
-	ui/gfx/codec/png_codec.cc \
-	ui/gfx/color_analysis.cc \
-	ui/gfx/color_profile.cc \
-	ui/gfx/color_utils.cc \
-	ui/gfx/display.cc \
-	ui/gfx/favicon_size.cc \
-	ui/gfx/font.cc \
-	ui/gfx/font_list.cc \
-	ui/gfx/font_render_params_android.cc \
-	ui/gfx/gfx_paths.cc \
-	ui/gfx/gpu_memory_buffer.cc \
-	ui/gfx/image/canvas_image_source.cc \
-	ui/gfx/image/image.cc \
-	ui/gfx/image/image_family.cc \
-	ui/gfx/image/image_png_rep.cc \
-	ui/gfx/image/image_skia.cc \
-	ui/gfx/image/image_skia_operations.cc \
-	ui/gfx/image/image_skia_rep.cc \
-	ui/gfx/image/image_util.cc \
-	ui/gfx/insets.cc \
-	ui/gfx/insets_f.cc \
-	ui/gfx/interpolated_transform.cc \
-	ui/gfx/matrix3_f.cc \
-	ui/gfx/platform_font_android.cc \
-	ui/gfx/point.cc \
-	ui/gfx/point3_f.cc \
-	ui/gfx/point_conversions.cc \
-	ui/gfx/point_f.cc \
-	ui/gfx/quad_f.cc \
-	ui/gfx/range/range.cc \
-	ui/gfx/rect.cc \
-	ui/gfx/rect_conversions.cc \
-	ui/gfx/rect_f.cc \
-	ui/gfx/screen.cc \
-	ui/gfx/screen_android.cc \
-	ui/gfx/scrollbar_size.cc \
-	ui/gfx/sequential_id_generator.cc \
-	ui/gfx/shadow_value.cc \
-	ui/gfx/size.cc \
-	ui/gfx/size_conversions.cc \
-	ui/gfx/size_f.cc \
-	ui/gfx/skbitmap_operations.cc \
-	ui/gfx/skia_util.cc \
-	ui/gfx/switches.cc \
-	ui/gfx/sys_color_change_listener.cc \
-	ui/gfx/text_elider.cc \
-	ui/gfx/text_utils.cc \
-	ui/gfx/text_utils_android.cc \
-	ui/gfx/transform.cc \
-	ui/gfx/transform_util.cc \
-	ui/gfx/utf16_indexing.cc \
-	ui/gfx/vector2d.cc \
-	ui/gfx/vector2d_conversions.cc \
-	ui/gfx/vector2d_f.cc \
-	ui/gfx/vector3d_f.cc \
-	ui/webui/jstemplate_builder.cc \
-	ui/webui/web_ui_util.cc \
 	ui/base/ime/composition_text.cc \
 	ui/base/ime/input_method_initializer.cc \
 	ui/base/ime/text_input_client.cc
@@ -187,11 +115,9 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DGFX_IMPLEMENTATION' \
 	'-DUI_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -204,7 +130,6 @@ MY_DEFS_Debug := \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
-	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -244,7 +169,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(gyp_shared_intermediate_dir)/ui/app_locale_settings \
 	$(gyp_shared_intermediate_dir)/ui/ui_strings \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
-	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -306,11 +230,9 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
-	'-DGFX_IMPLEMENTATION' \
 	'-DUI_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
 	'-DSK_ENABLE_INST_COUNT=0' \
@@ -323,7 +245,6 @@ MY_DEFS_Release := \
 	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DCHROME_PNG_WRITE_SUPPORT' \
 	'-DPNG_USER_CONFIG' \
-	'-DUSE_SYSTEM_LIBJPEG' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -364,7 +285,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(gyp_shared_intermediate_dir)/ui/app_locale_settings \
 	$(gyp_shared_intermediate_dir)/ui/ui_strings \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources \
-	$(PWD)/external/jpeg \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

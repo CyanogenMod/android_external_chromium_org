@@ -48,7 +48,7 @@ function onload() {
   }
   var selectedTabName = window.location.hash.slice(1) || 'devices';
   selectTab(selectedTabName);
-  initPortForwarding();
+  initSettings();
   chrome.send('init-ui');
 }
 
@@ -135,13 +135,8 @@ function populateDeviceLists(devices) {
   for (var d = 0; d < devices.length; d++) {
     var device = devices[d];
 
-    var devicePorts;
-    var browserList;
     var deviceSection = $(device.adbGlobalId);
-    if (deviceSection) {
-      devicePorts = deviceSection.querySelector('.device-ports');
-      browserList = deviceSection.querySelector('.browsers');
-    } else {
+    if (!deviceSection) {
       deviceSection = document.createElement('div');
       deviceSection.id = device.adbGlobalId;
       deviceSection.className = 'device';
@@ -153,7 +148,6 @@ function populateDeviceLists(devices) {
 
       var deviceName = document.createElement('div');
       deviceName.className = 'device-name';
-      deviceName.textContent = device.adbModel;
       deviceHeader.appendChild(deviceName);
 
       if (device.adbSerial) {
@@ -163,18 +157,28 @@ function populateDeviceLists(devices) {
         deviceHeader.appendChild(deviceSerial);
       }
 
-      devicePorts = document.createElement('div');
+      var devicePorts = document.createElement('div');
       devicePorts.className = 'device-ports';
       deviceHeader.appendChild(devicePorts);
 
-      browserList = document.createElement('div');
+      var browserList = document.createElement('div');
       browserList.className = 'browsers';
       deviceSection.appendChild(browserList);
+
+      var authenticating = document.createElement('div');
+      authenticating.className = 'device-auth';
+      deviceSection.appendChild(authenticating);
     }
 
     if (alreadyDisplayed(deviceSection, device))
       continue;
 
+    deviceSection.querySelector('.device-name').textContent = device.adbModel;
+    deviceSection.querySelector('.device-auth').textContent =
+        device.adbConnected ? '' : 'Pending authentication: please accept ' +
+          'debugging session on the device.';
+
+    var devicePorts = deviceSection.querySelector('.device-ports');
     devicePorts.textContent = '';
     if (device.adbPortStatus) {
       for (var port in device.adbPortStatus) {
@@ -198,6 +202,7 @@ function populateDeviceLists(devices) {
       }
     }
 
+    var browserList = deviceSection.querySelector('.browsers');
     var newBrowserIds =
         device.browsers.map(function(b) { return b.adbGlobalId });
     Array.prototype.forEach.call(
@@ -317,7 +322,7 @@ function addToAppsList(data) {
     Array.prototype.forEach.call(data.guests, function(guest) {
       var guestRow = addTargetToList(guest, row, ['name', 'url']);
       guestRow.classList.add('guest');
-      addFavicon(guestRow, data);
+      addFavicon(guestRow, guest);
     });
   }
 }
@@ -391,7 +396,8 @@ function addWebViewDescription(row, webview) {
   subRow.className = 'subrow webview';
   if (webview.empty || !webview.attached || !webview.visible)
     subRow.className += ' invisible-view';
-  subRow.appendChild(formatValue(viewStatus, 'visibility'));
+  if (viewStatus.visibility)
+    subRow.appendChild(formatValue(viewStatus, 'visibility'));
   subRow.appendChild(formatValue(viewStatus, 'position'));
   subRow.appendChild(formatValue(viewStatus, 'size'));
   var mainSubrow = row.querySelector('.subrow.main');
@@ -466,7 +472,8 @@ function addTargetToList(data, list, properties) {
   actionBox.className = 'actions';
   subrowBox.appendChild(actionBox);
 
-  addActionLink(row, 'inspect', inspect.bind(null, data), data.hasNoUniqueId);
+  addActionLink(row, 'inspect', inspect.bind(null, data),
+      data.hasNoUniqueId || data.adbAttachedForeign);
 
   list.appendChild(row);
   return row;
@@ -486,15 +493,21 @@ function addActionLink(row, text, handler, opt_disabled) {
 }
 
 
-function initPortForwarding() {
-  $('port-forwarding-enable').addEventListener('change', enablePortForwarding);
+function initSettings() {
+  $('discover-usb-devices-enable').addEventListener('change',
+                                                    enableDiscoverUsbDevices);
 
+  $('port-forwarding-enable').addEventListener('change', enablePortForwarding);
   $('port-forwarding-config-open').addEventListener(
       'click', openPortForwardingConfig);
   $('port-forwarding-config-close').addEventListener(
       'click', closePortForwardingConfig);
   $('port-forwarding-config-done').addEventListener(
       'click', commitPortForwardingConfig);
+}
+
+function enableDiscoverUsbDevices(event) {
+  chrome.send('set-discover-usb-devices-enabled', [event.target.checked]);
 }
 
 function enablePortForwarding(event) {
@@ -569,6 +582,12 @@ function commitPortForwardingConfig() {
       config[portInput.value] = locationInput.value;
   }
   chrome.send('set-port-forwarding-config', [config]);
+}
+
+function updateDiscoverUsbDevicesEnabled(enabled) {
+  var checkbox = $('discover-usb-devices-enable');
+  checkbox.checked = !!enabled;
+  checkbox.disabled = false;
 }
 
 function updatePortForwardingEnabled(enabled) {

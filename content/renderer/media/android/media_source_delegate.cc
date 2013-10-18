@@ -143,7 +143,7 @@ void MediaSourceDelegate::StopDemuxer() {
 
 void MediaSourceDelegate::InitializeMediaSource(
     const MediaSourceOpenedCB& media_source_opened_cb,
-    const media::NeedKeyCB& need_key_cb,
+    const media::Demuxer::NeedKeyCB& need_key_cb,
     const media::SetDecryptorReadyCB& set_decryptor_ready_cb,
     const UpdateNetworkStateCB& update_network_state_cb,
     const DurationChangeCB& duration_change_cb) {
@@ -394,9 +394,15 @@ void MediaSourceDelegate::OnBufferReady(
         statistics_.video_frames_decoded++;
       }
       data->access_units[index].timestamp = buffer->timestamp();
-      data->access_units[index].data = std::vector<uint8>(
-          buffer->data(),
-          buffer->data() + buffer->data_size());
+
+      {  // No local variable in switch-case scope.
+        int data_offset = buffer->decrypt_config() ?
+            buffer->decrypt_config()->data_offset() : 0;
+        DCHECK_LT(data_offset, buffer->data_size());
+        data->access_units[index].data = std::vector<uint8>(
+            buffer->data() + data_offset,
+            buffer->data() + buffer->data_size() - data_offset);
+      }
 #if !defined(GOOGLE_TV)
       // Vorbis needs 4 extra bytes padding on Android. Check
       // NuMediaExtractor.cpp in Android source code.
@@ -699,8 +705,7 @@ void MediaSourceDelegate::OnNeedKey(const std::string& type,
   if (need_key_cb_.is_null())
     return;
 
-  // TODO(xhwang): Remove |session_id| from media::NeedKeyCB.
-  need_key_cb_.Run("", type, init_data);
+  need_key_cb_.Run(type, init_data);
 }
 
 bool MediaSourceDelegate::HasEncryptedStream() {

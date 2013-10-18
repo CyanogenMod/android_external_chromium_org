@@ -45,7 +45,6 @@
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/device_orientation/device_motion_message_filter.h"
 #include "content/browser/device_orientation/device_orientation_message_filter.h"
-#include "content/browser/device_orientation/orientation_message_filter.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_message_filter.h"
 #include "content/browser/download/mhtml_generation_manager.h"
@@ -63,6 +62,7 @@
 #include "content/browser/loader/resource_scheduler_filter.h"
 #include "content/browser/media/android/browser_demuxer_android.h"
 #include "content/browser/media/media_internals.h"
+#include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/profiler_message_filter.h"
@@ -85,6 +85,7 @@
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
+#include "content/browser/renderer_host/render_frame_message_filter.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -397,7 +398,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
 }
 
 RenderProcessHostImpl::~RenderProcessHostImpl() {
-  DCHECK(!run_renderer_in_process());
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
 
   if (gpu_observer_registered_) {
@@ -531,7 +531,7 @@ bool RenderProcessHostImpl::Init() {
 
 void RenderProcessHostImpl::CreateMessageFilters() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  channel_->AddFilter(new ResourceSchedulerFilter(GetID()));
+  AddFilter(new ResourceSchedulerFilter(GetID()));
   MediaInternals* media_internals = MediaInternals::GetInstance();;
   media::AudioManager* audio_manager =
       BrowserMainLoop::GetInstance()->audio_manager();
@@ -540,7 +540,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   if (supports_browser_plugin_) {
     scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
         new BrowserPluginMessageFilter(GetID(), IsGuest()));
-    channel_->AddFilter(bp_message_filter.get());
+    AddFilter(bp_message_filter.get());
   }
 
   scoped_refptr<RenderMessageFilter> render_message_filter(
@@ -558,7 +558,9 @@ void RenderProcessHostImpl::CreateMessageFilters() {
           audio_manager,
           media_internals,
           storage_partition_impl_->GetDOMStorageContext()));
-  channel_->AddFilter(render_message_filter.get());
+  AddFilter(render_message_filter.get());
+  AddFilter(
+      new RenderFrameMessageFilter(GetID(), widget_helper_.get()));
   BrowserContext* browser_context = GetBrowserContext();
   ResourceContext* resource_context = browser_context->GetResourceContext();
 
@@ -578,86 +580,85 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       storage_partition_impl_->GetFileSystemContext(),
       get_contexts_callback);
 
-  channel_->AddFilter(resource_message_filter);
+  AddFilter(resource_message_filter);
   MediaStreamManager* media_stream_manager =
       BrowserMainLoop::GetInstance()->media_stream_manager();
-  channel_->AddFilter(new AudioInputRendererHost(
+  AddFilter(new AudioInputRendererHost(
       audio_manager,
       media_stream_manager,
       BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
       BrowserMainLoop::GetInstance()->user_input_monitor()));
-  channel_->AddFilter(new AudioRendererHost(
+  AddFilter(new AudioRendererHost(
       GetID(),
       audio_manager,
       BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
       media_internals,
       media_stream_manager));
-  channel_->AddFilter(
+  AddFilter(
       new MIDIHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
-  channel_->AddFilter(new MIDIDispatcherHost(GetID(), browser_context));
-  channel_->AddFilter(new VideoCaptureHost(media_stream_manager));
-  channel_->AddFilter(new AppCacheDispatcherHost(
+  AddFilter(new MIDIDispatcherHost(GetID(), browser_context));
+  AddFilter(new VideoCaptureHost(media_stream_manager));
+  AddFilter(new AppCacheDispatcherHost(
       storage_partition_impl_->GetAppCacheService(),
       GetID()));
-  channel_->AddFilter(new ClipboardMessageFilter);
-  channel_->AddFilter(new DOMStorageMessageFilter(
+  AddFilter(new ClipboardMessageFilter);
+  AddFilter(new DOMStorageMessageFilter(
       GetID(),
       storage_partition_impl_->GetDOMStorageContext()));
-  channel_->AddFilter(new IndexedDBDispatcherHost(
+  AddFilter(new IndexedDBDispatcherHost(
       GetID(),
       storage_partition_impl_->GetIndexedDBContext()));
-  channel_->AddFilter(new ServiceWorkerDispatcherHost(
+  AddFilter(new ServiceWorkerDispatcherHost(
       storage_partition_impl_->GetServiceWorkerContext()));
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
           new BrowserPluginGeolocationPermissionContext();
     }
-    channel_->AddFilter(GeolocationDispatcherHost::New(
+    AddFilter(GeolocationDispatcherHost::New(
         GetID(), g_browser_plugin_geolocation_context.Get().get()));
   } else {
-    channel_->AddFilter(GeolocationDispatcherHost::New(
+    AddFilter(GeolocationDispatcherHost::New(
         GetID(), browser_context->GetGeolocationPermissionContext()));
   }
   gpu_message_filter_ = new GpuMessageFilter(GetID(), widget_helper_.get());
-  channel_->AddFilter(gpu_message_filter_);
+  AddFilter(gpu_message_filter_);
 #if defined(ENABLE_WEBRTC)
-  channel_->AddFilter(new WebRTCIdentityServiceHost(
+  AddFilter(new WebRTCIdentityServiceHost(
       GetID(), storage_partition_impl_->GetWebRTCIdentityStore()));
   peer_connection_tracker_host_ = new PeerConnectionTrackerHost(GetID());
-  channel_->AddFilter(peer_connection_tracker_host_.get());
-  channel_->AddFilter(new MediaStreamDispatcherHost(
+  AddFilter(peer_connection_tracker_host_.get());
+  AddFilter(new MediaStreamDispatcherHost(
       GetID(), media_stream_manager));
-  channel_->AddFilter(
+  AddFilter(
       new DeviceRequestMessageFilter(resource_context, media_stream_manager));
 #endif
 #if defined(ENABLE_PLUGINS)
-  channel_->AddFilter(new PepperRendererConnection(GetID()));
+  AddFilter(new PepperRendererConnection(GetID()));
 #endif
 #if defined(ENABLE_INPUT_SPEECH)
-  channel_->AddFilter(new InputTagSpeechDispatcherHost(
+  AddFilter(new InputTagSpeechDispatcherHost(
       IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext()));
 #endif
-  channel_->AddFilter(new SpeechRecognitionDispatcherHost(
-      GetID(), storage_partition_impl_->GetURLRequestContext()));
-  channel_->AddFilter(new FileAPIMessageFilter(
+  AddFilter(new SpeechRecognitionDispatcherHost(
+      IsGuest(), GetID(), storage_partition_impl_->GetURLRequestContext()));
+  AddFilter(new FileAPIMessageFilter(
       GetID(),
       storage_partition_impl_->GetURLRequestContext(),
       storage_partition_impl_->GetFileSystemContext(),
       ChromeBlobStorageContext::GetFor(browser_context),
       StreamContext::GetFor(browser_context)));
-  channel_->AddFilter(new OrientationMessageFilter());
-  channel_->AddFilter(new FileUtilitiesMessageFilter(GetID()));
-  channel_->AddFilter(new MimeRegistryMessageFilter());
-  channel_->AddFilter(new DatabaseMessageFilter(
+  AddFilter(new FileUtilitiesMessageFilter(GetID()));
+  AddFilter(new MimeRegistryMessageFilter());
+  AddFilter(new DatabaseMessageFilter(
       storage_partition_impl_->GetDatabaseTracker()));
 #if defined(OS_MACOSX)
-  channel_->AddFilter(new TextInputClientMessageFilter(GetID()));
+  AddFilter(new TextInputClientMessageFilter(GetID()));
 #elif defined(OS_WIN)
   channel_->AddFilter(new FontCacheDispatcher());
 #elif defined(OS_ANDROID)
   browser_demuxer_android_ = new BrowserDemuxerAndroid();
-  channel_->AddFilter(browser_demuxer_android_);
+  AddFilter(browser_demuxer_android_);
 #endif
 
   SocketStreamDispatcherHost::GetRequestContextCallback
@@ -668,9 +669,14 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   SocketStreamDispatcherHost* socket_stream_dispatcher_host =
       new SocketStreamDispatcherHost(
           GetID(), request_context_callback, resource_context);
-  channel_->AddFilter(socket_stream_dispatcher_host);
+  AddFilter(socket_stream_dispatcher_host);
 
-  channel_->AddFilter(new WorkerMessageFilter(
+  message_port_message_filter_ = new MessagePortMessageFilter(
+      base::Bind(&RenderWidgetHelper::GetNextRoutingID,
+                 base::Unretained(widget_helper_.get())));
+  AddFilter(message_port_message_filter_);
+
+  AddFilter(new WorkerMessageFilter(
       GetID(),
       resource_context,
       WorkerStoragePartition(
@@ -681,34 +687,33 @@ void RenderProcessHostImpl::CreateMessageFilters() {
           storage_partition_impl_->GetFileSystemContext(),
           storage_partition_impl_->GetDatabaseTracker(),
           storage_partition_impl_->GetIndexedDBContext()),
-      base::Bind(&RenderWidgetHelper::GetNextRoutingID,
-                 base::Unretained(widget_helper_.get()))));
+      message_port_message_filter_));
 
 #if defined(ENABLE_WEBRTC)
-  channel_->AddFilter(new P2PSocketDispatcherHost(
+  AddFilter(new P2PSocketDispatcherHost(
       resource_context,
       browser_context->GetRequestContextForRenderProcess(GetID())));
 #endif
 
-  channel_->AddFilter(new TraceMessageFilter());
-  channel_->AddFilter(new ResolveProxyMsgHelper(
+  AddFilter(new TraceMessageFilter());
+  AddFilter(new ResolveProxyMsgHelper(
       browser_context->GetRequestContextForRenderProcess(GetID())));
-  channel_->AddFilter(new QuotaDispatcherHost(
+  AddFilter(new QuotaDispatcherHost(
       GetID(),
       storage_partition_impl_->GetQuotaManager(),
       GetContentClient()->browser()->CreateQuotaPermissionContext()));
-  channel_->AddFilter(new GamepadBrowserMessageFilter());
-  channel_->AddFilter(new DeviceMotionMessageFilter());
-  channel_->AddFilter(new DeviceOrientationMessageFilter());
-  channel_->AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
-  channel_->AddFilter(new HistogramMessageFilter());
+  AddFilter(new GamepadBrowserMessageFilter());
+  AddFilter(new DeviceMotionMessageFilter());
+  AddFilter(new DeviceOrientationMessageFilter());
+  AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
+  AddFilter(new HistogramMessageFilter());
 #if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableMemoryBenchmarking))
-    channel_->AddFilter(new MemoryBenchmarkMessageFilter());
+    AddFilter(new MemoryBenchmarkMessageFilter());
 #endif
 #if defined(OS_ANDROID)
-  channel_->AddFilter(new VibrationMessageFilter());
+  AddFilter(new VibrationMessageFilter());
 #endif
 }
 
@@ -862,153 +867,112 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kAuditAllHandles,
     switches::kAuditHandles,
     switches::kBlockCrossSiteDocuments,
-    switches::kDirectNPAPIRequests,
+    switches::kDefaultTileWidth,
+    switches::kDefaultTileHeight,
     switches::kDisable3DAPIs,
     switches::kDisableAcceleratedCompositing,
+    switches::kDisableAcceleratedFixedRootBackground,
     switches::kDisableAcceleratedVideoDecode,
     switches::kDisableApplicationCache,
     switches::kDisableAudio,
     switches::kDisableBreakpad,
+    switches::kDisableCompositingForFixedPosition,
+    switches::kDisableCompositingForTransition,
     switches::kDisableDatabases,
     switches::kDisableDeadlineScheduling,
     switches::kDisableDelegatedRenderer,
     switches::kDisableDesktopNotifications,
+    switches::kDisableDeviceMotion,
     switches::kDisableDeviceOrientation,
+    switches::kDisableDirectNPAPIRequests,
     switches::kDisableFileSystem,
+    switches::kDisableFullScreen,
     switches::kDisableGeolocation,
     switches::kDisableGLMultisampling,
-    switches::kDisableGpuVsync,
     switches::kDisableGpu,
     switches::kDisableGpuCompositing,
+    switches::kDisableGpuVsync,
     switches::kDisableHistogramCustomizer,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
+    switches::kDisablePinch,
+    switches::kDisablePrefixedEncryptedMedia,
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
     switches::kDisableSpeechInput,
+    switches::kDisableThreadedCompositing,
+    switches::kDisableTouchAdjustment,
     switches::kDisableTouchDragDrop,
     switches::kDisableTouchEditing,
-#if defined(OS_ANDROID)
-    switches::kDisableWebRTC,
-    switches::kEnableSpeechRecognition,
-#endif
+    switches::kDisableVp8AlphaPlayback,
     switches::kDisableWebAudio,
-#if defined(ENABLE_WEBRTC)
-    switches::kDisableDeviceEnumeration,
-    switches::kDisableSCTPDataChannels,
-    switches::kDisableWebRtcHWDecoding,
-    switches::kDisableWebRtcHWEncoding,
-    switches::kEnableWebRtcHWVp8Encoding,
-#endif
-    switches::kEnableWebAnimationsCSS,
-    switches::kEnableWebAnimationsSVG,
-    switches::kEnableWebMIDI,
-    switches::kEnableExperimentalCanvasFeatures,
-    switches::kEnableExperimentalWebSocket,
+    switches::kDisableWebKitMediaSource,
     switches::kDomAutomationController,
+    switches::kEnableAcceleratedFixedRootBackground,
+    switches::kEnableAcceleratedOverflowScroll,
     switches::kEnableAccessibilityLogging,
     switches::kEnableBeginFrameScheduling,
     switches::kEnableBrowserPluginForAllViewTypes,
-    switches::kEnableBufferedInputRouter,
+    switches::kEnableCompositingForFixedPosition,
+    switches::kEnableCompositingForTransition,
     switches::kEnableDCHECK,
     switches::kEnableDeadlineScheduling,
-    switches::kEnableDelegatedRenderer,
-    switches::kEnableEncryptedMedia,
-    switches::kDisableLegacyEncryptedMedia,
-    switches::kOverrideEncryptedMediaCanPlayType,
-#if defined(OS_ANDROID)
-    switches::kMediaDrmEnableNonCompositing,
-#endif
-    switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableFixedLayout,
     switches::kEnableDeferredImageDecoding,
-    switches::kEnableGPUServiceLogging,
+    switches::kEnableDelegatedRenderer,
+    switches::kEnableEac3Playback,
+    switches::kEnableEncryptedMedia,
+    switches::kEnableExperimentalCanvasFeatures,
+    switches::kEnableExperimentalWebPlatformFeatures,
+    switches::kEnableExperimentalWebSocket,
+    switches::kEnableFastTextAutosizing,
+    switches::kEnableFixedLayout,
+    switches::kEnableGpuBenchmarking,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
-    switches::kEnableGpuBenchmarking,
-#if defined(OS_WIN)
-    switches::kEnableHighResolutionTime,
-#endif
+    switches::kEnableGPUServiceLogging,
+    switches::kEnableHighDpiCompositingForFixedPosition,
+    switches::kEnableHTMLImports,
+    switches::kEnableInbandTextTracks,
+    switches::kEnableInputModeAttribute,
+    switches::kEnableLogging,
     switches::kEnableMP3StreamParser,
     switches::kEnableMemoryBenchmarking,
+    switches::kEnableOpusPlayback,
+    switches::kEnableOverlayFullscreenVideo,
     switches::kEnableOverlayScrollbars,
-    switches::kEnableSkiaBenchmarking,
-    switches::kEnableLogging,
-    switches::kEnableSpeechSynthesis,
-    switches::kEnableTouchDragDrop,
-    switches::kEnableTouchEditing,
-#if defined(ENABLE_WEBRTC)
-    switches::kEnableWebRtcAecRecordings,
-    switches::kEnableWebRtcTcpServerSocket,
-#endif
-    switches::kDisableWebKitMediaSource,
     switches::kEnableOverscrollNotifications,
-    switches::kEnableStrictSiteIsolation,
-    switches::kDisableFullScreen,
-#if defined(ENABLE_PLUGINS)
-    switches::kEnablePepperTesting,
-    switches::kDisablePepper3d,
-#endif
+    switches::kEnablePinch,
     switches::kEnablePreparsedJsCaching,
     switches::kEnablePruneGpuCommandBuffers,
-    switches::kEnablePinch,
-    switches::kDisablePinch,
-#if defined(OS_MACOSX)
-    // Allow this to be set when invoking the browser and relayed along.
-    switches::kEnableSandboxLogging,
-#endif
+    switches::kEnableServiceWorker,
+    switches::kEnableSkiaBenchmarking,
     switches::kEnableSoftwareCompositing,
+    switches::kEnableSpeechSynthesis,
     switches::kEnableStatsTable,
+    switches::kEnableStrictSiteIsolation,
     switches::kEnableThreadedCompositing,
-    switches::kEnableCompositingForFixedPosition,
-    switches::kEnableHighDpiCompositingForFixedPosition,
-    switches::kDisableCompositingForFixedPosition,
-    switches::kEnableAcceleratedOverflowScroll,
-    switches::kEnableCompositingForTransition,
-    switches::kDisableCompositingForTransition,
-    switches::kEnableAcceleratedFixedRootBackground,
-    switches::kDisableAcceleratedFixedRootBackground,
-    switches::kDisableThreadedCompositing,
-    switches::kDisableTouchAdjustment,
-    switches::kDefaultTileWidth,
-    switches::kDefaultTileHeight,
-    switches::kMaxUntiledLayerWidth,
-    switches::kMaxUntiledLayerHeight,
+    switches::kEnableTouchDragDrop,
+    switches::kEnableTouchEditing,
     switches::kEnableViewport,
-    switches::kEnableInbandTextTracks,
-    switches::kEnableOpusPlayback,
-    switches::kDisableVp8AlphaPlayback,
-    switches::kEnableEac3Playback,
+    switches::kEnableVtune,
+    switches::kEnableWebAnimationsCSS,
+    switches::kEnableWebAnimationsSVG,
+    switches::kEnableWebGLDraftExtensions,
+    switches::kEnableWebMIDI,
     switches::kForceDeviceScaleFactor,
     switches::kFullMemoryCrashReport,
-#if defined(OS_ANDROID)
-    switches::kHideScrollbars,
-#endif
-#if !defined (GOOGLE_CHROME_BUILD)
-    // These are unsupported and not fully tested modes, so don't enable them
-    // for official Google Chrome builds.
-    switches::kInProcessPlugins,
-#endif  // GOOGLE_CHROME_BUILD
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,
+    switches::kMaxUntiledLayerWidth,
+    switches::kMaxUntiledLayerHeight,
     switches::kMemoryMetrics,
-#if defined(OS_ANDROID)
-    switches::kNetworkCountryIso,
-    switches::kDisableGestureRequirementForMediaPlayback,
-#endif
-#if defined(GOOGLE_TV)
-    switches::kUseExternalVideoSurfaceThresholdInPixels,
-#endif
     switches::kNoReferrers,
     switches::kNoSandbox,
-    switches::kEnableVtune,
+    switches::kOverrideEncryptedMediaCanPlayType,
     switches::kPpapiInProcess,
     switches::kRegisterPepperPlugins,
     switches::kRendererAssertTest,
-#if defined(OS_POSIX)
-    switches::kChildCleanExit,
-#endif
     switches::kRendererStartupDialog,
     switches::kShowPaintRects,
     switches::kSitePerProcess,
@@ -1016,6 +980,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kTestSandbox,
     switches::kTouchEvents,
     switches::kTraceStartup,
+    switches::kTraceToConsole,
     // This flag needs to be propagated to the renderer process for
     // --in-process-webgl.
     switches::kUseGL,
@@ -1025,16 +990,12 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVideoThreads,
     switches::kVModule,
     switches::kWebCoreLogChannels,
-    switches::kEnableWebGLDraftExtensions,
-    switches::kEnableHTMLImports,
-    switches::kEnableInputModeAttribute,
-    switches::kTraceToConsole,
-    switches::kDisableDeviceMotion,
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
     cc::switches::kBackgroundColorInsteadOfCheckerboard,
     cc::switches::kCompositeToMailbox,
     cc::switches::kDisableCompositedAntialiasing,
+    cc::switches::kDisableCompositorTouchHitTesting,
     cc::switches::kDisableImplSidePainting,
     cc::switches::kDisableLCDText,
     cc::switches::kDisableMapImage,
@@ -1065,6 +1026,46 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kTopControlsHideThreshold,
     cc::switches::kTopControlsShowThreshold,
     cc::switches::kTraceOverdraw,
+#if defined(ENABLE_PLUGINS)
+    switches::kEnablePepperTesting,
+    switches::kDisablePepper3d,
+#endif
+#if defined(ENABLE_WEBRTC)
+    switches::kDisableDeviceEnumeration,
+    switches::kDisableSCTPDataChannels,
+    switches::kDisableWebRtcHWDecoding,
+    switches::kDisableWebRtcHWEncoding,
+    switches::kEnableWebRtcAecRecordings,
+    switches::kEnableWebRtcHWVp8Encoding,
+    switches::kEnableWebRtcTcpServerSocket,
+#endif
+#if !defined (GOOGLE_CHROME_BUILD)
+    // These are unsupported and not fully tested modes, so don't enable them
+    // for official Google Chrome builds.
+    switches::kInProcessPlugins,
+#endif  // GOOGLE_CHROME_BUILD
+#if defined(GOOGLE_TV)
+    switches::kUseExternalVideoSurfaceThresholdInPixels,
+#endif
+#if defined(OS_ANDROID)
+    switches::kDisableGestureRequirementForMediaPlayback,
+    switches::kDisableWebRTC,
+    switches::kEnableSpeechRecognition,
+    switches::kHideScrollbars,
+    switches::kEnableMediaDrm,
+    switches::kMediaDrmEnableNonCompositing,
+    switches::kNetworkCountryIso,
+#endif
+#if defined(OS_MACOSX)
+    // Allow this to be set when invoking the browser and relayed along.
+    switches::kEnableSandboxLogging,
+#endif
+#if defined(OS_POSIX)
+    switches::kChildCleanExit,
+#endif
+#if defined(OS_WIN)
+    switches::kEnableHighResolutionTime,
+#endif
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));
@@ -1291,6 +1292,8 @@ void RenderProcessHostImpl::OnChannelConnected(int32 peer_pid) {
   tracked_objects::ThreadData::Status status =
       tracked_objects::ThreadData::status();
   Send(new ChildProcessMsg_SetProfilerStatus(status));
+
+  Send(new ViewMsg_SetRendererProcessID(GetID()));
 }
 
 void RenderProcessHostImpl::OnChannelError() {
@@ -1340,6 +1343,7 @@ void RenderProcessHostImpl::Cleanup() {
     // OnChannelClosed() to IPC::ChannelProxy::Context on the IO thread.
     channel_.reset();
     gpu_message_filter_ = NULL;
+    message_port_message_filter_ = NULL;
 
     // Remove ourself from the list of renderer processes so that we can't be
     // reused in between now and when the Delete task runs.
@@ -1383,6 +1387,10 @@ void RenderProcessHostImpl::ResumeRequestsForView(int route_id) {
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {
   return channel_.get();
+}
+
+void RenderProcessHostImpl::AddFilter(BrowserMessageFilter* filter) {
+  channel_->AddFilter(filter->GetFilter());
 }
 
 bool RenderProcessHostImpl::FastShutdownForPageCount(size_t count) {
@@ -1434,7 +1442,7 @@ bool RenderProcessHostImpl::IsSuitableHost(
   if (host->IsGuest())
     return true;
 
-  if (!host->IsGuest() && site_url.SchemeIs(chrome::kGuestScheme))
+  if (!host->IsGuest() && site_url.SchemeIs(kGuestScheme))
     return false;
 
   // Check whether the given host and the intended site_url will be using the
@@ -1634,6 +1642,7 @@ void RenderProcessHostImpl::ProcessDied(bool already_dead) {
   child_process_launcher_.reset();
   channel_.reset();
   gpu_message_filter_ = NULL;
+  message_port_message_filter_ = NULL;
 
   IDMap<IPC::Listener>::iterator iter(&listeners_);
   while (!iter.IsAtEnd()) {

@@ -22,7 +22,6 @@
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chromeos/dbus/ibus/ibus_property.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/extension_ime_util.h"
 #include "chromeos/ime/ibus_bridge.h"
@@ -47,23 +46,21 @@ IBusControllerImpl::~IBusControllerImpl() {
 bool IBusControllerImpl::ActivateInputMethodProperty(const std::string& key) {
   // The third parameter of ibus_input_context_property_activate() has to be
   // true when the |key| points to a radio button. false otherwise.
-  bool is_radio = true;
-  size_t i;
-  for (i = 0; i < current_property_list_.size(); ++i) {
+  bool found = false;
+  for (size_t i = 0; i < current_property_list_.size(); ++i) {
     if (current_property_list_[i].key == key) {
-      is_radio = current_property_list_[i].is_selection_item;
+      found = true;
       break;
     }
   }
-  if (i == current_property_list_.size()) {
+  if (!found) {
     DVLOG(1) << "ActivateInputMethodProperty: unknown key: " << key;
     return false;
   }
 
   IBusEngineHandlerInterface* engine = IBusBridge::Get()->GetEngineHandler();
   if (engine)
-    engine->PropertyActivate(key,
-                             static_cast<ibus::IBusPropertyState>(is_radio));
+    engine->PropertyActivate(key);
   return true;
 }
 
@@ -85,8 +82,8 @@ void IBusControllerImpl::ClearProperties() {
 }
 
 void IBusControllerImpl::RegisterProperties(
-    const InputMethodPropertyList& ibus_prop_list) {
-  current_property_list_ = ibus_prop_list;
+    const InputMethodPropertyList& property_list) {
+  current_property_list_ = property_list;
   FOR_EACH_OBSERVER(IBusController::Observer, observers_, PropertyChanged());
 }
 

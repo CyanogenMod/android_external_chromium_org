@@ -25,7 +25,8 @@ void WriteEvent(
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
-    scoped_ptr<base::debug::ConvertableToTraceFormat> convertable_values[],
+    const scoped_refptr<base::debug::ConvertableToTraceFormat>*
+        convertable_values,
     unsigned char flags) {
   std::string out = base::StringPrintf("%c|%d|%s", phase, getpid(), name);
   if (flags & TRACE_EVENT_FLAG_HAS_ID)
@@ -63,25 +64,38 @@ void WriteEvent(
 namespace base {
 namespace debug {
 
+// These functions support Android systrace.py when 'webview' category is
+// traced. With the new adb_profile_chrome, we may have two phases:
+// - before WebView is ready for combined tracing, we can use adb_profile_chrome
+//   to trace android categories other than 'webview' and chromium categories.
+//   In this way we can avoid the conflict between StartATrace/StopATrace and
+//   the intents.
+// - TODO(wangxianzhu): after WebView is ready for combined tracing, remove
+//   StartATrace, StopATrace and SendToATrace, and perhaps send Java traces
+//   directly to atrace in trace_event_binding.cc.
+
 void TraceLog::StartATrace() {
-  AutoLock lock(lock_);
+  if (g_atrace_fd != -1)
+    return;
+
+  g_atrace_fd = open(kATraceMarkerFile, O_WRONLY);
   if (g_atrace_fd == -1) {
-    g_atrace_fd = open(kATraceMarkerFile, O_WRONLY);
-    if (g_atrace_fd == -1) {
-      LOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
-    } else {
-      UpdateCategoryGroupEnabledFlags();
-    }
+    PLOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
+    return;
   }
+  SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+             RECORD_CONTINUOUSLY);
 }
 
 void TraceLog::StopATrace() {
-  AutoLock lock(lock_);
-  if (g_atrace_fd != -1) {
-    close(g_atrace_fd);
-    g_atrace_fd = -1;
-    UpdateCategoryGroupEnabledFlags();
-  }
+  if (g_atrace_fd == -1)
+    return;
+
+  close(g_atrace_fd);
+  g_atrace_fd = -1;
+  SetDisabled();
+  // Delete the buffered trace events as they have been sent to atrace.
+  Flush(OutputCallback());
 }
 
 void TraceLog::SendToATrace(
@@ -93,7 +107,7 @@ void TraceLog::SendToATrace(
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
-    scoped_ptr<ConvertableToTraceFormat> convertable_values[],
+    const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
   if (g_atrace_fd == -1)
     return;
@@ -140,18 +154,24 @@ void TraceLog::SendToATrace(
   }
 }
 
-// Must be called with lock_ locked.
-void TraceLog::ApplyATraceEnabledFlag(unsigned char* category_group_enabled) {
-  if (g_atrace_fd == -1)
+void TraceLog::AddClockSyncMetadataEvent() {
+  int atrace_fd = open(kATraceMarkerFile, O_WRONLY | O_APPEND);
+  if (atrace_fd == -1) {
+    PLOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
     return;
+  }
 
-  // Don't enable disabled-by-default categories for atrace.
-  const char* category_group = GetCategoryGroupName(category_group_enabled);
-  if (strncmp(category_group, TRACE_DISABLED_BY_DEFAULT(""),
-              strlen(TRACE_DISABLED_BY_DEFAULT(""))) == 0)
-    return;
-
-  *category_group_enabled |= ATRACE_ENABLED;
+  // Android's kernel trace system has a trace_marker feature: this is a file on
+  // debugfs that takes the written data and pushes it onto the trace
+  // buffer. So, to establish clock sync, we write our monotonic clock into that
+  // trace buffer.
+  TimeTicks now = TimeTicks::NowFromSystemTraceTime();
+  double now_in_seconds = now.ToInternalValue() / 1000000.0;
+  std::string marker = StringPrintf(
+      "trace_event_clock_sync: parent_ts=%f\n", now_in_seconds);
+  if (write(atrace_fd, marker.c_str(), marker.size()) == -1)
+    PLOG(WARNING) << "Couldn't write to " << kATraceMarkerFile;
+  close(atrace_fd);
 }
 
 }  // namespace debug

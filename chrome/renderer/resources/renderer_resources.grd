@@ -27,7 +27,6 @@ without changes to the corresponding grd file. fb9 -->
       <include name="IDR_NET_ERROR_HTML" file="neterror.html" flattenhtml="true" type="BINDATA" />
 
       <!-- Extension libraries. -->
-      <include name="IDR_CONTENT_WATCHER_JS" file="extensions\content_watcher.js" type="BINDATA" />
       <include name="IDR_ENTRY_ID_MANAGER" file="extensions\entry_id_manager.js" type="BINDATA" />
       <include name="IDR_EVENT_BINDINGS_JS" file="extensions\event.js" type="BINDATA" />
       <include name="IDR_GREASEMONKEY_API_JS" file="extensions\greasemonkey_api.js" type="BINDATA" />
@@ -59,6 +58,7 @@ without changes to the corresponding grd file. fb9 -->
         <include name="IDR_CONTEXT_MENUS_CUSTOM_BINDINGS_JS" file="extensions\context_menus_custom_bindings.js" type="BINDATA" />
         <include name="IDR_DECLARATIVE_CONTENT_CUSTOM_BINDINGS_JS" file="extensions\declarative_content_custom_bindings.js" type="BINDATA" />
         <include name="IDR_DECLARATIVE_WEBREQUEST_CUSTOM_BINDINGS_JS" file="extensions\declarative_webrequest_custom_bindings.js" type="BINDATA" />
+        <include name="IDR_DESKTOP_CAPTURE_CUSTOM_BINDINGS_JS" file="extensions\desktop_capture_custom_bindings.js" type="BINDATA" />
         <include name="IDR_DOWNLOADS_CUSTOM_BINDINGS_JS" file="extensions\downloads_custom_bindings.js" type="BINDATA" />
         <include name="IDR_BLUETOOTH_CUSTOM_BINDINGS_JS" file="extensions\bluetooth_custom_bindings.js" type="BINDATA" />
         <include name="IDR_PERMISSIONS_CUSTOM_BINDINGS_JS" file="extensions\permissions_custom_bindings.js" type="BINDATA" />
@@ -90,11 +90,16 @@ without changes to the corresponding grd file. fb9 -->
         <include name="IDR_WINDOW_CONTROLS_TEMPLATE_HTML" file="extensions\window_controls_template.html" type="BINDATA" />
         <include name="IDR_WEB_REQUEST_CUSTOM_BINDINGS_JS" file="extensions\web_request_custom_bindings.js" type="BINDATA" />
         <include name="IDR_WEB_REQUEST_INTERNAL_CUSTOM_BINDINGS_JS" file="extensions\web_request_internal_custom_bindings.js" type="BINDATA" />
+        <include name="IDR_WEBRTC_CAST_SEND_TRANSPORT_CUSTOM_BINDINGS_JS" file="extensions\webrtc_cast_send_transport_custom_bindings.js" type="BINDATA" />
+        <include name="IDR_WEBRTC_UDP_TRANSPORT_CUSTOM_BINDINGS_JS" file="extensions\webrtc_udp_transport_custom_bindings.js" type="BINDATA" />
         <include name="IDR_WEBSTORE_CUSTOM_BINDINGS_JS" file="extensions\webstore_custom_bindings.js" type="BINDATA" />
         <include name="IDR_WEB_VIEW_DENY_JS" file="extensions\web_view_deny.js" type="BINDATA" />
         <include name="IDR_WEB_VIEW_EXPERIMENTAL_JS" file="extensions\web_view_experimental.js" type="BINDATA" />
         <include name="IDR_WEB_VIEW_JS" file="extensions\web_view.js" type="BINDATA" />
 
+        <if expr="pp_ifdef('chromeos')">
+          <include name="IDR_WALLPAPER_CUSTOM_BINDINGS_JS" file="extensions\wallpaper_custom_bindings.js" type="BINDATA" />
+        </if>
         <!-- Platform app support. -->
         <include name="IDR_PLATFORM_APP_CSS" file="extensions\platform_app.css" type="BINDATA" />
         <include name="IDR_PLATFORM_APP_JS" file="extensions\platform_app.js" type="BINDATA" />

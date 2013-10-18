@@ -708,7 +708,7 @@ function str(id) {
  * Return a translated string with arguments replaced.
  *
  * Wrapper function to make dealing with translated strings more concise.
- * Equivilant to loadTimeData.getStringF(id, ...).
+ * Equivalent to loadTimeData.getStringF(id, ...).
  *
  * @param {string} id The id of the string to return.
  * @param {...string} var_args The values to replace into the string.
@@ -825,7 +825,7 @@ util.AppCache.getValue = function(key, callback) {
  *
  * @param {string} key Key.
  * @param {string} value Value. Remove the key if value is null.
- * @param {number=} opt_lifetime Maximim time to keep an item (in milliseconds).
+ * @param {number=} opt_lifetime Maximum time to keep an item (in milliseconds).
  */
 util.AppCache.update = function(key, value, opt_lifetime) {
   util.AppCache.read_(function(map) {
@@ -1101,7 +1101,7 @@ util.createFileError = function(code) {
 util.isSameEntry = function(entry1, entry2) {
   // Currently, we can assume there is only one root.
   // When we support multi-file system, we need to look at filesystem, too.
-  return entry1.fullPath == entry2.fullPath;
+  return entry1 === null ? entry2 === null : entry1.fullPath == entry2.fullPath;
 };
 
 /**
@@ -1152,3 +1152,61 @@ util.getCurrentLocaleOrDefault = function() {
   // Instead, we pass it from C++-side with strings.
   return str('UI_LOCALE') || 'en';
 };
+
+/**
+ * Error type of VolumeManager.
+ * @enum {string}
+ */
+util.VolumeError = Object.freeze({
+  /* Internal errors */
+  NOT_MOUNTED: 'not_mounted',
+  TIMEOUT: 'timeout',
+
+  /* System events */
+  UNKNOWN: 'error_unknown',
+  INTERNAL: 'error_internal',
+  UNKNOWN_FILESYSTEM: 'error_unknown_filesystem',
+  UNSUPPORTED_FILESYSTEM: 'error_unsupported_filesystem',
+  INVALID_ARCHIVE: 'error_invalid_archive',
+  AUTHENTICATION: 'error_authentication',
+  PATH_UNMOUNTED: 'error_path_unmounted'
+});
+
+/**
+ * List of connection types of drive.
+ *
+ * Keep this in sync with the kDriveConnectionType* constants in
+ * file_browser_private_api.cc.
+ *
+ * @enum {string}
+ */
+util.DriveConnectionType = Object.freeze({
+  OFFLINE: 'offline',  // Connection is offline or drive is unavailable.
+  METERED: 'metered',  // Connection is metered. Should limit traffic.
+  ONLINE: 'online'     // Connection is online.
+});
+
+/**
+ * List of reasons of DriveConnectionType.
+ *
+ * Keep this in sync with the kDriveConnectionReason constants in
+ * file_browser_private_api.cc.
+ *
+ * @enum {string}
+ */
+util.DriveConnectionReason = Object.freeze({
+  NOT_READY: 'not_ready',    // Drive is not ready or authentication is failed.
+  NO_NETWORK: 'no_network',  // Network connection is unavailable.
+  NO_SERVICE: 'no_service'   // Drive service is unavailable.
+});
+
+/**
+ * The type of each volume.
+ * @enum {string}
+ */
+util.VolumeType = Object.freeze({
+  DRIVE: 'drive',
+  DOWNLOADS: 'downloads',
+  REMOVABLE: 'removable',
+  ARCHIVE: 'archive'
+});

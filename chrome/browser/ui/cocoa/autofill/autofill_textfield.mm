@@ -60,6 +60,18 @@ const CGFloat kGap = 6.0;  // gap between icon and text.
   [[self cell] setFieldValue:fieldValue];
 }
 
+- (NSString*)defaultValue {
+  return [[self cell] defaultValue];
+}
+
+- (void)setDefaultValue:(NSString*)defaultValue {
+  [[self cell] setDefaultValue:defaultValue];
+}
+
+- (BOOL)isDefault {
+  return [[[self cell] fieldValue] isEqualToString:[[self cell] defaultValue]];
+}
+
 - (NSString*)validityMessage {
   return validityMessage_;
 }
@@ -79,6 +91,7 @@ const CGFloat kGap = 6.0;  // gap between icon and text.
 @implementation AutofillTextFieldCell
 
 @synthesize invalid = invalid_;
+@synthesize defaultValue = defaultValue_;
 
 - (NSImage*) icon{
   return icon_;
@@ -176,20 +189,6 @@ const CGFloat kGap = 6.0;  // gap between icon and text.
     // Render red border for invalid fields.
     [[NSColor colorWithDeviceRed:1.0 green:0.0 blue:0.0 alpha:1.0] setStroke];
     [[NSBezierPath bezierPathWithRect:NSInsetRect(cellFrame, 0.5, 0.5)] stroke];
-
-    // Render a dog ear to flag invalid fields.
-    const CGFloat kDogEarSize = 10.0f;
-
-    // TODO(groby): This is a temporary placeholder and will be replaced
-    // with an image. (Pending UI/UX work).
-    [[NSColor colorWithDeviceRed:1.0 green:0.0 blue:0.0 alpha:1.0] setFill];
-    NSBezierPath* dog_ear = [NSBezierPath bezierPath];
-    NSPoint corner = NSMakePoint(NSMaxX(cellFrame), NSMinY(cellFrame));
-    [dog_ear moveToPoint:NSMakePoint(corner.x - kDogEarSize, corner.y)];
-    [dog_ear lineToPoint:corner];
-    [dog_ear lineToPoint:NSMakePoint(corner.x, corner.y + kDogEarSize)];
-    [dog_ear closePath];
-    [dog_ear fill];
   }
 }
 

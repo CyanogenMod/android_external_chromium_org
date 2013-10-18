@@ -44,7 +44,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/webclipboard_impl.h"
-#include "content/renderer/webcrypto_impl.h"
+#include "content/renderer/webcrypto/webcrypto_impl.h"
 #include "content/renderer/websharedworkerrepository_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -136,10 +136,6 @@ base::LazyInstance<WebKit::WebDeviceOrientationData>::Leaky
 class RendererWebKitPlatformSupportImpl::MimeRegistry
     : public webkit_glue::SimpleWebMimeRegistryImpl {
  public:
-  // TODO(ddorwin): Remove after http://webk.it/82983 lands.
-  virtual WebKit::WebMimeRegistry::SupportsType supportsMediaMIMEType(
-      const WebKit::WebString& mime_type,
-      const WebKit::WebString& codecs);
   virtual WebKit::WebMimeRegistry::SupportsType supportsMediaMIMEType(
       const WebKit::WebString& mime_type,
       const WebKit::WebString& codecs,
@@ -379,13 +375,6 @@ WebFileSystem* RendererWebKitPlatformSupportImpl::fileSystem() {
 }
 
 //------------------------------------------------------------------------------
-
-WebMimeRegistry::SupportsType
-RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
-    const WebString& mime_type,
-    const WebString& codecs) {
-  return supportsMediaMIMEType(mime_type, codecs, WebString());
-}
 
 WebMimeRegistry::SupportsType
 RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
@@ -957,15 +946,11 @@ RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
 
 WebKit::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
-  if (!shared_offscreen_context_.get() ||
-      shared_offscreen_context_->DestroyedOnMainThread()) {
-    shared_offscreen_context_ =
-        RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
-  }
-  if (!shared_offscreen_context_.get())
+  scoped_refptr<cc::ContextProvider> provider =
+      RenderThreadImpl::current()->SharedMainThreadContextProvider();
+  if (!provider)
     return NULL;
-  return new webkit::gpu::WebGraphicsContext3DProviderImpl(
-      shared_offscreen_context_);
+  return new webkit::gpu::WebGraphicsContext3DProviderImpl(provider);
 }
 
 //------------------------------------------------------------------------------
@@ -1039,12 +1024,6 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceOrientationDataForTesting(
 //------------------------------------------------------------------------------
 
 WebKit::WebCrypto* RendererWebKitPlatformSupportImpl::crypto() {
-  // Use a mock implementation for testing in-progress work.
-  WebKit::WebCrypto* crypto =
-      GetContentClient()->renderer()->OverrideWebCrypto();
-  if (crypto)
-    return crypto;
-
   if (!web_crypto_)
     web_crypto_.reset(new WebCryptoImpl());
   return web_crypto_.get();

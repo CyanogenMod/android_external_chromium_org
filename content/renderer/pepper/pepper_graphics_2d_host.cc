@@ -188,7 +188,6 @@ PepperGraphics2DHost::PepperGraphics2DHost(RendererPpapiHost* host,
       offscreen_flush_pending_(false),
       is_always_opaque_(false),
       scale_(1.0f),
-      weak_ptr_factory_(this),
       is_running_in_process_(host->IsRunningInProcess()),
       texture_mailbox_modified_(true) {}
 
@@ -386,9 +385,6 @@ void PepperGraphics2DHost::Paint(WebKit::WebCanvas* canvas,
     canvas->scale(scale_, scale_);
   }
   canvas->drawBitmap(image, pixel_origin.x(), pixel_origin.y(), &paint);
-}
-
-void PepperGraphics2DHost::ViewWillInitiatePaint() {
 }
 
 void PepperGraphics2DHost::ViewInitiatedPaint() {
@@ -621,9 +617,9 @@ int32_t PepperGraphics2DHost::Flush(PP_Resource* old_image_data) {
     // For correctness with accelerated compositing, we must issue an invalidate
     // on the full op_rect even if it is partially or completely off-screen.
     // However, if we issue an invalidate for a clipped-out region, WebKit will
-    // do nothing and we won't get any ViewWillInitiatePaint/ViewFlushedPaint
-    // calls, leaving our callback stranded. So we still need to check whether
-    // the repainted area is visible to determine how to deal with the callback.
+    // do nothing and we won't get any ViewFlushedPaint calls, leaving our
+    // callback stranded. So we still need to check whether the repainted area
+    // is visible to determine how to deal with the callback.
     if (bound_instance_ && !op_rect.IsEmpty()) {
       gfx::Point scroll_delta(operation.scroll_dx, operation.scroll_dy);
       if (!ConvertToLogicalPixels(scale_,
@@ -762,7 +758,7 @@ void PepperGraphics2DHost::ScheduleOffscreenFlushAck() {
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&PepperGraphics2DHost::SendOffscreenFlushAck,
-                 weak_ptr_factory_.GetWeakPtr()),
+                 AsWeakPtr()),
       base::TimeDelta::FromMilliseconds(kOffscreenCallbackDelayMs));
 }
 

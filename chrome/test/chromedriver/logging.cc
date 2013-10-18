@@ -152,6 +152,7 @@ scoped_ptr<base::ListValue> WebDriverLog::GetAndClearEntries() {
 
 void WebDriverLog::AddEntryTimestamped(const base::Time& timestamp,
                                        Log::Level level,
+                                       const std::string& source,
                                        const std::string& message) {
   if (level < min_level_)
     return;
@@ -160,6 +161,8 @@ void WebDriverLog::AddEntryTimestamped(const base::Time& timestamp,
   log_entry_dict->SetDouble("timestamp",
                             static_cast<int64>(timestamp.ToJsTime()));
   log_entry_dict->SetString("level", LevelToName(level));
+  if (!source.empty())
+    log_entry_dict->SetString("source", source);
   log_entry_dict->SetString("message", message);
   entries_->Append(log_entry_dict.release());
 }
@@ -226,7 +229,7 @@ Status CreateLogs(const Capabilities& capabilities,
                   ScopedVector<DevToolsEventListener>* out_listeners) {
   ScopedVector<WebDriverLog> logs;
   ScopedVector<DevToolsEventListener> listeners;
-  Log::Level browser_log_level = Log::kOff;
+  Log::Level browser_log_level = Log::kWarning;
   const LoggingPrefs& prefs = capabilities.logging_prefs;
 
   for (LoggingPrefs::const_iterator iter = prefs.begin();

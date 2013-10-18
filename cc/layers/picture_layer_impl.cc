@@ -65,10 +65,18 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   // It's possible this layer was never drawn or updated (e.g. because it was
   // a descendant of an opacity 0 layer).
   DoPostCommitInitializationIfNeeded();
+  PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
+
+  // We have already synced the important bits from the the active layer, and
+  // we will soon swap out its tilings and use them for recycling. However,
+  // there are now tiles in this layer's tilings that were unref'd and replaced
+  // with new tiles (due to invalidation). This resets all active priorities on
+  // the to-be-recycled tiling to ensure replaced tiles don't linger and take
+  // memory (due to a stale 'active' priority).
+  if (layer_impl->tilings_)
+    layer_impl->tilings_->DidBecomeRecycled();
 
   LayerImpl::PushPropertiesTo(base_layer);
-
-  PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
 
   // When the pending tree pushes to the active tree, the pending twin
   // disappears.
@@ -228,7 +236,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       case ManagedTileState::TileVersion::RESOURCE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
         gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(content_rect);
+        opaque_rect.Intersect(geometry_rect);
 
         if (iter->contents_scale() != ideal_contents_scale_)
           append_quads_data->had_incomplete_tile = true;
@@ -247,7 +255,7 @@ void PictureLayerImpl::AppendQuads(QuadSink* quad_sink,
       case ManagedTileState::TileVersion::PICTURE_PILE_MODE: {
         gfx::RectF texture_rect = iter.texture_rect();
         gfx::Rect opaque_rect = iter->opaque_rect();
-        opaque_rect.Intersect(content_rect);
+        opaque_rect.Intersect(geometry_rect);
 
         ResourceProvider* resource_provider =
             layer_tree_impl()->resource_provider();

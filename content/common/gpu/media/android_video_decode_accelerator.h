@@ -145,14 +145,10 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
   // The resolution of the stream.
   gfx::Size size_;
 
-  // Encoded bitstream buffers to be passed to media codec, queued until a input
-  // buffer is available.
+  // Encoded bitstream buffers to be passed to media codec, queued until an
+  // input buffer is available.
   typedef std::queue<media::BitstreamBuffer> BitstreamBufferList;
   BitstreamBufferList pending_bitstream_buffers_;
-
-  // Indicates the number of bytes already passed to the decoder in the first
-  // buffer in |pending_bitstream_buffers_|.
-  size_t num_bytes_used_in_the_pending_buffer_;
 
   // Keeps track of bitstream ids notified to the client with
   // NotifyEndOfBitstreamBuffer() before getting output from the bitstream.

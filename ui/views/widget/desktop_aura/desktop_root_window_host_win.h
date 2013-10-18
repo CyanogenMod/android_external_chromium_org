@@ -26,6 +26,7 @@ class HWNDMessageHandler;
 
 namespace corewm {
 class CursorManager;
+class TooltipWin;
 }
 
 class VIEWS_EXPORT DesktopRootWindowHostWin
@@ -48,6 +49,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual aura::RootWindow* Init(aura::Window* content_window,
                                  const Widget::InitParams& params) OVERRIDE;
   virtual void InitFocus(aura::Window* window) OVERRIDE;
+  virtual scoped_ptr<corewm::Tooltip> CreateTooltip() OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual void CloseNow() OVERRIDE;
   virtual aura::RootWindowHost* AsRootWindowHost() OVERRIDE;
@@ -75,6 +77,7 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual bool IsMinimized() const OVERRIDE;
   virtual bool HasCapture() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
+  virtual bool IsAlwaysOnTop() const OVERRIDE;
   virtual void SetWindowTitle(const string16& title) OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
@@ -123,7 +126,9 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   virtual void PrepareForShutdown() OVERRIDE;
 
   // Overridden from aura::client::AnimationHost
-  virtual void SetHostTransitionBounds(const gfx::Rect& bounds) OVERRIDE;
+  virtual void SetHostTransitionOffsets(
+      const gfx::Vector2d& top_left_delta,
+      const gfx::Vector2d& bottom_right_delta) OVERRIDE;
   virtual void OnWindowHidingAnimationCompleted() OVERRIDE;
 
   // Overridden from HWNDMessageHandlerDelegate:
@@ -210,6 +215,9 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
  private:
   void SetWindowTransparency();
 
+  // Returns true if a modal window is active in the current root window chain.
+  bool IsModalWindowActive() const;
+
   // We are owned by the RootWindow, but we have to have a back pointer to it.
   aura::RootWindow* root_window_;
 
@@ -235,11 +243,11 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
 
   scoped_ptr<DesktopDragDropClientWin> drag_drop_client_;
 
-  // Extra size added to the host window. Typically, the window size matches
-  // the contained content, however, when performing a translating or scaling
-  // animation the window has to be enlarged so that the content is not
-  // clipped.
-  gfx::Rect window_expansion_;
+  // When certain windows are being shown, we augment the window size
+  // temporarily for animation. The following two members contain the top left
+  // and bottom right offsets which are used to enlarge the window.
+  gfx::Vector2d window_expansion_top_left_delta_;
+  gfx::Vector2d window_expansion_bottom_right_delta_;
 
   // Whether the window close should be converted to a hide, and then actually
   // closed on the completion of the hide animation. This is cached because
@@ -256,6 +264,10 @@ class VIEWS_EXPORT DesktopRootWindowHostWin
   // rather than asking the Widget for the non_client_view so that we know at
   // Init time, before the Widget has created the NonClientView.
   bool has_non_client_view_;
+
+  // Owned by TooltipController, but we need to forward events to it so we keep
+  // a reference.
+  corewm::TooltipWin* tooltip_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopRootWindowHostWin);
 };

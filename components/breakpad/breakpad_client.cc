@@ -27,6 +27,9 @@ BreakpadClient* GetBreakpadClient() {
 BreakpadClient::BreakpadClient() {}
 BreakpadClient::~BreakpadClient() {}
 
+void BreakpadClient::SetClientID(const std::string& client_id) {
+}
+
 #if defined(OS_WIN)
 bool BreakpadClient::GetAlternativeCrashDumpLocation(
     base::FilePath* crash_dir) {
@@ -50,10 +53,6 @@ bool BreakpadClient::AboutToRestart() {
   return true;
 }
 
-base::string16 BreakpadClient::GetCrashGUID() {
-  return base::string16();
-}
-
 bool BreakpadClient::GetDeferredUploadsSupported(bool is_per_usr_install) {
   return false;
 }
@@ -68,6 +67,12 @@ bool BreakpadClient::GetShouldDumpLargerDumps(bool is_per_user_install) {
 
 int BreakpadClient::GetResultCodeRespawnFailed() {
   return 0;
+}
+
+void BreakpadClient::InitBrowserCrashDumpsRegKey() {
+}
+
+void BreakpadClient::RecordCrashDumpAttempt(bool is_real_crash) {
 }
 #endif
 
@@ -100,6 +105,10 @@ bool BreakpadClient::IsRunningUnattended() {
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 bool BreakpadClient::GetCollectStatsConsent() {
+  return false;
+}
+
+bool BreakpadClient::ReportingIsEnforcedByPolicy(bool* breakpad_enabled) {
   return false;
 }
 #endif

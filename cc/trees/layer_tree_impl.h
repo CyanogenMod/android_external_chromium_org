@@ -164,6 +164,8 @@ class CC_EXPORT LayerTreeImpl {
   void set_needs_full_tree_sync(bool needs) { needs_full_tree_sync_ = needs; }
   bool needs_full_tree_sync() const { return needs_full_tree_sync_; }
 
+  void ForceRedrawNextActivation() { next_activation_forces_redraw_ = true; }
+
   void set_ui_resource_request_queue(const UIResourceRequestQueue& queue);
 
   const LayerImplList& RenderSurfaceLayerList() const;
@@ -249,8 +251,8 @@ class CC_EXPORT LayerTreeImpl {
   // Persisted state for non-impl-side-painting.
   int scrolling_layer_id_from_previous_tree_;
 
-  // List of visible layers for the most recently prepared frame. Used for
-  // rendering and input event hit testing.
+  // List of visible or hit-testable layers for the most recently prepared
+  // frame. Used for rendering and input event hit testing.
   LayerImplList render_surface_layer_list_;
 
   bool contents_textures_purged_;
@@ -260,6 +262,8 @@ class CC_EXPORT LayerTreeImpl {
   // In impl-side painting mode, this is true when the tree may contain
   // structural differences relative to the active tree.
   bool needs_full_tree_sync_;
+
+  bool next_activation_forces_redraw_;
 
   ui::LatencyInfo latency_info_;
 

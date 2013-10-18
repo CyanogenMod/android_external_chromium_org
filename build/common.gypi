@@ -75,14 +75,11 @@
               'use_aura%': 1,
             }],
 
-            # For now, Windows builds that |use_aura| should also imply using
-            # ash. This rule should be removed for the future when Windows is
-            # using the aura windows without the ash interface.
-            ['use_aura==1 and OS=="win"', {
-              'use_ash%': 1,
-            }],
-            ['use_ash==1', {
-              'use_aura%': 1,
+            # Whether we're a traditional desktop unix.
+            ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
+              'desktop_linux%': 1,
+            }, {
+              'desktop_linux%': 0,
             }],
 
             # Compute the architecture that we're building on.
@@ -100,6 +97,7 @@
         },
         # Copy conditionally-set variables out one scope.
         'chromeos%': '<(chromeos)',
+        'desktop_linux%': '<(desktop_linux)',
         'use_aura%': '<(use_aura)',
         'use_ash%': '<(use_ash)',
         'use_cras%': '<(use_cras)',
@@ -129,6 +127,11 @@
         'arm_version%': 7,
 
         'conditions': [
+          # Ash needs Aura.
+          ['use_aura==0', {
+            'use_ash%': 0,
+          }],
+
           # Set default value of toolkit_views based on OS.
           ['OS=="win" or chromeos==1 or use_aura==1', {
             'toolkit_views%': 1,
@@ -137,17 +140,10 @@
           }],
 
           # Set toolkit_uses_gtk for the Chromium browser on Linux.
-          ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and use_aura==0 and use_ozone==0', {
+          ['desktop_linux==1 and use_aura==0 and use_ozone==0', {
             'toolkit_uses_gtk%': 1,
           }, {
             'toolkit_uses_gtk%': 0,
-          }],
-
-          # Whether we're a traditional desktop unix.
-          ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and chromeos==0', {
-            'desktop_linux%': 1,
-          }, {
-            'desktop_linux%': 0,
           }],
 
           # Enable HiDPI on Mac OS and Chrome OS.
@@ -160,8 +156,9 @@
             'enable_touch_ui%': 1,
           }],
 
-          # Enable App Launcher only on ChromeOS, Windows and OSX.
-          ['use_ash==1 or OS=="win" or OS=="mac"', {
+          # Enable App Launcher on ChromeOS, Windows and OSX.
+          # On Linux, enable App Launcher for the Aura build.
+          ['use_ash==1 or OS=="win" or OS=="mac" or (desktop_linux==1 and use_aura==1)', {
             'enable_app_list%': 1,
           }, {
             'enable_app_list%': 0,
@@ -442,7 +439,9 @@
       'spdy_proxy_auth_origin%' : '',
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
+      'data_reduction_proxy_probe_url%' : '',
       'enable_mdns%' : 0,
+      'enable_enhanced_bookmarks%': 0,
 
       'conditions': [
         # A flag for POSIX platforms
@@ -630,14 +629,6 @@
           'linux_use_gold_flags%': 1,
         }, {
           'linux_use_gold_flags%': 0,
-        }],
-
-        ['chromeos==1', {
-          'linux_use_libgps%': 1,
-        }, { # chromeos==0
-          # Do not use libgps on desktop Linux by default,
-          # see http://crbug.com/103751.
-          'linux_use_libgps%': 0,
         }],
 
         ['OS=="android" or OS=="ios"', {
@@ -859,7 +850,6 @@
     'enable_background%': '<(enable_background)',
     'linux_use_gold_binary%': '<(linux_use_gold_binary)',
     'linux_use_gold_flags%': '<(linux_use_gold_flags)',
-    'linux_use_libgps%': '<(linux_use_libgps)',
     'use_canvas_skia%': '<(use_canvas_skia)',
     'test_isolation_mode%': '<(test_isolation_mode)',
     'test_isolation_outdir%': '<(test_isolation_outdir)',
@@ -892,7 +882,9 @@
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
+    'data_reduction_proxy_probe_url%': '<(data_reduction_proxy_probe_url)',
     'enable_mdns%' : '<(enable_mdns)',
+    'enable_enhanced_bookmarks%' : '<(enable_enhanced_bookmarks)',
     'v8_optimized_debug': '<(v8_optimized_debug)',
     'proprietary_codecs%': '<(proprietary_codecs)',
 
@@ -940,6 +932,11 @@
     # Set to 1 to enable java code coverage. Instruments classes during build
     # to produce .ec files during runtime.
     'emma_coverage%': 0,
+
+    # EMMA filter string consisting of a list of inclusion/exclusion patterns
+    # separated with whitespace and/or comma. Only has effect if
+    # 'emma_coverage=1'.
+    'emma_filter%': '',
 
     # Set to 1 to force Visual C++ to use legacy debug information format /Z7.
     # This is useful for parallel compilation tools which can't support /Zi.
@@ -1049,10 +1046,6 @@
 
     # Enable EGLImage support in OpenMAX
     'enable_eglimage%': 1,
-
-    # Enable a variable used elsewhere throughout the GYP files to determine
-    # whether to compile in the sources for the GPU plugin / process.
-    'enable_gpu%': 1,
 
     # .gyp files or targets should set chromium_code to 1 if they build
     # Chromium-specific code, as opposed to external code.  This variable is
@@ -1207,7 +1200,6 @@
       ['OS=="ios"', {
         'disable_nacl%': 1,
         'enable_background%': 0,
-        'enable_gpu%': 0,
         'enable_task_manager%': 0,
         'icu_use_data_file_flag%': 1,
         'use_system_libxml%': 1,
@@ -1647,6 +1639,9 @@
       ['enable_mdns==1', {
         'grit_defines': ['-D', 'enable_mdns'],
       }],
+      ['enable_enhanced_bookmarks==1', {
+        'grit_defines': ['-D', 'enable_enhanced_bookmarks'],
+      }],
       ['clang_use_chrome_plugins==1 and OS!="win"', {
         'clang_chrome_plugins_flags': [
           '<!@(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)'
@@ -1783,11 +1778,6 @@
         'arm_fpu%': '',
         'arm_float_abi%': '',
         'arm_thumb%': 0,
-      }],
-
-      # Enable brlapi by default for chromeos.
-      [ 'chromeos==1', {
-        'use_brlapi%': 1,
       }],
     ],
 
@@ -2150,11 +2140,6 @@
           }],
         ],
       }],
-      ['enable_gpu==1', {
-        'defines': [
-          'ENABLE_GPU=1',
-        ],
-      }],
       ['use_openssl==1', {
         'defines': [
           'USE_OPENSSL=1',
@@ -2340,8 +2325,15 @@
       ['spdy_proxy_auth_value != ""', {
         'defines': ['SPDY_PROXY_AUTH_VALUE="<(spdy_proxy_auth_value)"'],
       }],
+      ['data_reduction_proxy_probe_url != ""', {
+        'defines': [
+          'DATA_REDUCTION_PROXY_PROBE_URL="<(data_reduction_proxy_probe_url)"'],
+      }],
       ['enable_mdns==1', {
         'defines': ['ENABLE_MDNS=1'],
+      }],
+      ['enable_enhanced_bookmarks==1', {
+        'defines': ['ENABLE_ENHANCED_BOOKMARKS=1'],
       }]
     ],  # conditions for 'target_defaults'
     'target_conditions': [
@@ -2953,19 +2945,6 @@
             ],
           },
         },
-        'variants': {
-          'coverage': {
-            'cflags': ['-fprofile-arcs', '-ftest-coverage'],
-            'ldflags': ['-fprofile-arcs'],
-          },
-          'profile': {
-            'cflags': ['-pg', '-g'],
-            'ldflags': ['-pg'],
-          },
-          'symbols': {
-            'cflags': ['-g'],
-          },
-        },
         'conditions': [
           ['target_arch=="ia32"', {
             'target_conditions': [
@@ -3130,6 +3109,10 @@
                           '-fuse-ld=gold',
                           '-Wno-psabi',
                         ],
+                        'ldflags!': [
+                          # Clang does not support the following options.
+                          '-fuse-ld=gold',
+                        ],
                       }],
                     ],
                   }],
@@ -3214,6 +3197,12 @@
               # code generated by flex (used in angle) contains that keyword.
               # http://crbug.com/255186
               '-Wno-deprecated-register',
+
+              # TODO(hans): Remove once we've cleaned up the warnings.
+              '-Wno-unused-const-variable',
+
+              # This warns about auto_ptr<>, used in third-party code.
+              '-Wno-deprecated-declarations',
             ],
             'cflags!': [
               # Clang doesn't seem to know know this flag.
@@ -3917,6 +3906,12 @@
                 # code generated by flex (used in angle) contains that keyword.
                 # http://crbug.com/255186
                 '-Wno-deprecated-register',
+
+                # TODO(hans): Remove once we've cleaned up the warnings.
+                '-Wno-unused-const-variable',
+
+                # This warns about auto_ptr<>, used in third-party code.
+                '-Wno-deprecated-declarations',
               ],
             }],
             ['clang==1 and clang_use_chrome_plugins==1', {
@@ -4574,9 +4569,6 @@
                 'conditions': [
                   ['asan==0', {
                     'AdditionalOptions': ['/largeaddressaware'],
-                  }],
-                  ['clang==1', {
-                    'AdditionalOptions!': ['/safeseh'],
                   }],
                 ],
               },

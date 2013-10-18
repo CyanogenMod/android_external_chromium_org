@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_task_manager.h"
@@ -35,13 +36,14 @@ class SyncEngineInitializer;
 class SyncEngine : public RemoteFileSyncService,
                    public LocalChangeProcessor,
                    public SyncTaskManager::Client,
-                   public drive::DriveNotificationObserver {
+                   public drive::DriveNotificationObserver,
+                   public SyncEngineContext {
  public:
   typedef Observer SyncServiceObserver;
 
   SyncEngine(const base::FilePath& base_dir,
              base::SequencedTaskRunner* task_runner,
-             scoped_ptr<drive::DriveAPIService> drive_api,
+             scoped_ptr<drive::DriveAPIService> drive_service,
              drive::DriveNotificationManager* notification_manager,
              ExtensionService* extension_service);
   virtual ~SyncEngine();
@@ -96,20 +98,19 @@ class SyncEngine : public RemoteFileSyncService,
   virtual void MaybeScheduleNextTask() OVERRIDE;
   virtual void NotifyLastOperationStatus(SyncStatusCode sync_status) OVERRIDE;
 
-  // drive::DriveNotificationObserver implementation.
+  // drive::DriveNotificationObserver overrides.
   virtual void OnNotificationReceived() OVERRIDE;
   virtual void OnPushNotificationEnabled(bool enabled) OVERRIDE;
 
+  // SyncEngineContext overrides.
+  virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE;
+  virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE;
+
  private:
-  void DoRegisterApp(const std::string& app_id,
-                     const SyncStatusCallback& callback);
   void DoDisableApp(const std::string& app_id,
                     const SyncStatusCallback& callback);
   void DoEnableApp(const std::string& app_id,
                    const SyncStatusCallback& callback);
-  void DoUninstallApp(const std::string& app_id,
-                      UninstallFlag flag,
-                      const SyncStatusCallback& callback);
 
   void DidInitialize(SyncEngineInitializer* initializer,
                      SyncStatusCode status);
@@ -125,7 +126,7 @@ class SyncEngine : public RemoteFileSyncService,
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
-  scoped_ptr<drive::DriveAPIService> drive_api_;
+  scoped_ptr<drive::DriveAPIService> drive_service_;
   scoped_ptr<MetadataDatabase> metadata_database_;
 
   // These external services are not owned by SyncEngine.
@@ -139,8 +140,9 @@ class SyncEngine : public RemoteFileSyncService,
   ObserverList<FileStatusObserver> file_status_observers_;
   RemoteChangeProcessor* remote_change_processor_;
 
+  scoped_ptr<SyncTaskManager> task_manager_;
+
   base::WeakPtrFactory<SyncEngine> weak_ptr_factory_;
-  SyncTaskManager task_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncEngine);
 };

@@ -141,9 +141,9 @@
 #endif
 
 #if !defined(OS_MACOSX)
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -1315,13 +1315,20 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DeveloperToolsDisabled) {
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_DEV_TOOLS));
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_TRUE(DevToolsWindow::GetDockedInstanceForInspectedTab(contents));
+  DevToolsWindow *devtools_window =
+      DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
+  EXPECT_TRUE(devtools_window);
 
   // Disable devtools via policy.
   PolicyMap policies;
   policies.Set(key::kDeveloperToolsDisabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(true), NULL);
+  content::WindowedNotificationObserver close_observer(
+      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+      content::Source<content::WebContents>(devtools_window->web_contents()));
   UpdateProviderPolicy(policies);
+  // wait for devtools close
+  close_observer.Wait();
   // The existing devtools window should have closed.
   EXPECT_FALSE(DevToolsWindow::GetDockedInstanceForInspectedTab(contents));
   // And it's not possible to open it again.
@@ -1423,7 +1430,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistSelective) {
             service->GetExtensionById(kAdBlockCrxId, true));
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistWildcard) {
+// Flaky on windows; http://crbug.com/307994.
+#if defined(OS_WIN)
+#define MAYBE_ExtensionInstallBlacklistWildcard DISABLED_ExtensionInstallBlacklistWildcard
+#else
+#define MAYBE_ExtensionInstallBlacklistWildcard ExtensionInstallBlacklistWildcard
+#endif
+IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallBlacklistWildcard) {
   // Verify that a wildcard blacklist takes effect.
   EXPECT_TRUE(InstallExtension(kAdBlockCrxName));
   ExtensionService* service = extension_service();
@@ -2012,10 +2025,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, FullscreenAllowedApp) {
   // Launch an app that tries to open a fullscreen window.
   TestAddShellWindowObserver add_window_observer(
       apps::ShellWindowRegistry::Get(browser()->profile()));
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
   apps::ShellWindow* window = add_window_observer.WaitForShellWindow();
   ASSERT_TRUE(window);
 

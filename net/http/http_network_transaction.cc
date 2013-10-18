@@ -163,6 +163,9 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
       }
     }
   }
+
+  if (request_ && request_->upload_data_stream)
+    request_->upload_data_stream->Reset();  // Invalidate pending callbacks.
 }
 
 int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
@@ -732,12 +735,15 @@ int HttpNetworkTransaction::DoGenerateProxyAuthTokenComplete(int rv) {
 int HttpNetworkTransaction::DoGenerateServerAuthToken() {
   next_state_ = STATE_GENERATE_SERVER_AUTH_TOKEN_COMPLETE;
   HttpAuth::Target target = HttpAuth::AUTH_SERVER;
-  if (!auth_controllers_[target].get())
+  if (!auth_controllers_[target].get()) {
     auth_controllers_[target] =
         new HttpAuthController(target,
                                AuthURL(target),
                                session_->http_auth_cache(),
                                session_->http_auth_handler_factory());
+    if (request_->load_flags & LOAD_DO_NOT_USE_EMBEDDED_IDENTITY)
+      auth_controllers_[target]->DisableEmbeddedIdentity();
+  }
   if (!ShouldApplyServerAuth())
     return OK;
   return auth_controllers_[target]->MaybeGenerateAuthToken(request_,
@@ -1240,21 +1246,7 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         // version_max should match the maximum protocol version supported
         // by the SSLClientSocket class.
         version_max--;
-
-        // Fallback to the lower SSL version.
-        // While SSL 3.0 fallback should be eliminated because of security
-        // reasons, there is a high risk of breaking the servers if this is
-        // done in general.
-        // For now SSL 3.0 fallback is disabled for Google servers first,
-        // and will be expanded to other servers after enough experiences
-        // have been gained showing that this experiment works well with
-        // today's Internet.
-        if (version_max > SSL_PROTOCOL_VERSION_SSL3 ||
-            (server_ssl_config_.unrestricted_ssl3_fallback_enabled ||
-             !TransportSecurityState::IsGooglePinnedProperty(
-                 request_->url.host(), true /* include SNI */))) {
-          should_fallback = true;
-        }
+        should_fallback = true;
       }
       break;
     case ERR_SSL_BAD_RECORD_MAC_ALERT:
@@ -1268,6 +1260,22 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
         should_fallback = true;
       }
       break;
+  }
+
+  // While fallback should be eliminated because of security reasons,
+  // there is a high risk of breaking the servers if this is done in
+  // general.
+  //
+  // For now fallback is disabled for Google servers first, and will be
+  // expanded to other servers after enough experiences have been gained
+  // showing that this experiment works well with today's Internet.
+  //
+  // The --enable-unrestricted-ssl3-fallback command-line flag exists to allow
+  // fallback to any version, all the way down to SSLv3.
+  if (!server_ssl_config_.unrestricted_ssl3_fallback_enabled &&
+      TransportSecurityState::IsGooglePinnedProperty(request_->url.host(),
+                                                     true /* include SNI */)) {
+    should_fallback = false;
   }
 
   if (should_fallback) {

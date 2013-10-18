@@ -5,13 +5,13 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_WALLPAPER_API_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_WALLPAPER_API_H_
 
-#include "ash/desktop_background/desktop_background_controller.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_function_base.h"
+#include "chrome/common/extensions/api/wallpaper.h"
 
 // Implementation of chrome.wallpaper.setWallpaper API.
 // After this API being called, a jpeg encoded wallpaper will be saved to
-// /home/chronos/custom_wallpaper/{resolution}/{username}/file_name. The
+// /home/chronos/custom_wallpaper/{resolution}/{user_id_hash}/file_name. The
 // wallpaper can then persistent after Chrome restart. New call to this API
 // will replace the previous saved wallpaper with new one.
 // Note: For security reason, the original encoded wallpaper image is not saved
@@ -41,22 +41,16 @@ class WallpaperSetWallpaperFunction : public WallpaperFunctionBase {
   // Thumbnail is ready. Calls api function javascript callback.
   void ThumbnailGenerated(base::RefCountedBytes* data);
 
-  // Layout of the downloaded wallpaper.
-  ash::WallpaperLayout layout_;
-
-  // True if need to generate thumbnail and pass to callback.
-  bool generate_thumbnail_;
+  scoped_ptr<extensions::api::wallpaper::SetWallpaper::Params> params;
 
   // Unique file name of the custom wallpaper.
   std::string file_name_;
 
   // Email address of logged in user.
-  // TODO(bshe): User's email should not be used as part of wallpaper file path.
-  // http://crbug.com/287020
   std::string email_;
 
-  // String representation of downloaded wallpaper.
-  std::string image_data_;
+  // User id hash of the logged in user.
+  std::string user_id_hash_;
 
   // Sequence token associated with wallpaper operations. Shared with
   // WallpaperManager.

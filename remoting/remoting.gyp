@@ -2433,6 +2433,8 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../ui/events/events.gyp:events',
+        '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
         '../net/net.gyp:net',
         '../skia/skia.gyp:skia',
@@ -2540,6 +2542,7 @@
         'remoting_base',
         'remoting_jingle_glue',
         'remoting_protocol',
+        '../third_party/libyuv/libyuv.gyp:libyuv',
         '../third_party/webrtc/modules/modules.gyp:desktop_capture',
       ],
       'sources': [
@@ -2736,6 +2739,8 @@
         '../ppapi/ppapi.gyp:ppapi_cpp',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../ui/events/events.gyp:events',
+        '../ui/gfx/gfx.gyp:gfx',
         '../ui/ui.gyp:ui',
         'remoting_base',
         'remoting_breakpad',

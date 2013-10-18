@@ -16,12 +16,16 @@ namespace em = enterprise_management;
 namespace policy {
 namespace {
 
+const char kServerUrl[] = "https://example.com/management_service";
+const char kUserAgent[] = "Chrome 1.2.3(456)";
+const char kPlatform[] = "Test|Unit|1.2.3";
+
 // Common mock request job functionality.
 class MockRequestJobBase : public DeviceManagementRequestJob {
  public:
   MockRequestJobBase(JobType type,
                      MockDeviceManagementService* service)
-      : DeviceManagementRequestJob(type),
+      : DeviceManagementRequestJob(type, std::string(), std::string()),
         service_(service) {}
   virtual ~MockRequestJobBase() {}
 
@@ -118,10 +122,38 @@ ACTION_P2(CreateAsyncMockDeviceManagementJob, service, mock_job) {
 
 MockDeviceManagementJob::~MockDeviceManagementJob() {}
 
+MockDeviceManagementServiceConfiguration::
+    MockDeviceManagementServiceConfiguration()
+    : server_url_(kServerUrl) {}
+
+MockDeviceManagementServiceConfiguration::
+    MockDeviceManagementServiceConfiguration(const std::string& server_url)
+    : server_url_(server_url) {}
+
+MockDeviceManagementServiceConfiguration::
+    ~MockDeviceManagementServiceConfiguration() {}
+
+std::string MockDeviceManagementServiceConfiguration::GetServerUrl() {
+  return server_url_;
+}
+
+std::string MockDeviceManagementServiceConfiguration::GetUserAgent() {
+  return kUserAgent;
+}
+
+std::string MockDeviceManagementServiceConfiguration::GetAgentParameter() {
+  return kUserAgent;
+}
+
+std::string MockDeviceManagementServiceConfiguration::GetPlatformParameter() {
+  return kPlatform;
+}
+
 MockDeviceManagementService::MockDeviceManagementService()
-    : DeviceManagementService(new net::TestURLRequestContextGetter(
-                                  base::MessageLoopProxy::current()),
-                              std::string()) {}
+    : DeviceManagementService(scoped_ptr<Configuration>(
+                                  new MockDeviceManagementServiceConfiguration),
+                              new net::TestURLRequestContextGetter(
+                                  base::MessageLoopProxy::current())) {}
 
 MockDeviceManagementService::~MockDeviceManagementService() {}
 

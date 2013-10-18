@@ -19,10 +19,10 @@
 
 namespace net {
 
-class GrowableIOBuffer;
+class BoundNetLog;
+class IOBuffer;
 class URLRequestContext;
 class WebSocketEventInterface;
-class BoundNetLog;
 
 // Transport-independent implementation of WebSockets. Implements protocol
 // semantics that do not depend on the underlying transport. Provides the
@@ -41,18 +41,18 @@ class NET_EXPORT WebSocketChannel {
       const BoundNetLog&,
       scoped_ptr<WebSocketStream::ConnectDelegate>)> WebSocketStreamFactory;
 
-  // Creates a new WebSocketChannel with the specified parameters.
+  // Creates a new WebSocketChannel in an idle state.
   // SendAddChannelRequest() must be called immediately afterwards to start the
   // connection process.
-  WebSocketChannel(const GURL& socket_url,
-                   scoped_ptr<WebSocketEventInterface> event_interface);
+  WebSocketChannel(scoped_ptr<WebSocketEventInterface> event_interface,
+                   URLRequestContext* url_request_context);
   virtual ~WebSocketChannel();
 
   // Starts the connection process.
   void SendAddChannelRequest(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
-      const GURL& origin,
-      URLRequestContext* url_request_context);
+      const GURL& origin);
 
   // Sends a data frame to the remote side. The frame should usually be no
   // larger than 32KB to prevent the time required to copy the buffers from from
@@ -88,9 +88,9 @@ class NET_EXPORT WebSocketChannel {
   // Starts the connection process, using a specified factory function rather
   // than the default. This is exposed for testing.
   void SendAddChannelRequestForTesting(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
       const GURL& origin,
-      URLRequestContext* url_request_context,
       const WebSocketStreamFactory& factory);
 
  private:
@@ -129,9 +129,9 @@ class NET_EXPORT WebSocketChannel {
 
   // Starts the connection progress, using a specified factory function.
   void SendAddChannelRequestWithFactory(
+      const GURL& socket_url,
       const std::vector<std::string>& requested_protocols,
       const GURL& origin,
-      URLRequestContext* url_request_context,
       const WebSocketStreamFactory& factory);
 
   // Success callback from WebSocketStream::CreateAndConnectStream(). Reports
@@ -164,37 +164,33 @@ class NET_EXPORT WebSocketChannel {
   // within the ReadFrames() loop and does not need to call ReadFrames() itself.
   void OnReadDone(bool synchronous, int result);
 
-  // Processes a single chunk that has been read from the stream.
-  void ProcessFrameChunk(scoped_ptr<WebSocketFrameChunk> chunk);
-
-  // Appends |data_buffer| to |incomplete_control_frame_body_|.
-  void AddToIncompleteControlFrameBody(
-      const scoped_refptr<IOBufferWithSize>& data_buffer);
+  // Processes a single frame that has been read from the stream.
+  void ProcessFrame(scoped_ptr<WebSocketFrame> frame);
 
   // Handles a frame that the object has received enough of to process. May call
-  // event_interface_ methods, send responses to the server, and change the
-  // value of state_.
+  // |event_interface_| methods, send responses to the server, and change the
+  // value of |state_|.
   void HandleFrame(const WebSocketFrameHeader::OpCode opcode,
-                   bool is_first_chunk,
-                   bool is_final_chunk,
-                   const scoped_refptr<IOBufferWithSize>& data_buffer);
+                   bool final,
+                   const scoped_refptr<IOBuffer>& data_buffer,
+                   size_t size);
 
   // Low-level method to send a single frame. Used for both data and control
   // frames. Either sends the frame immediately or buffers it to be scheduled
   // when the current write finishes. |fin| and |op_code| are defined as for
   // SendFrame() above, except that |op_code| may also be a control frame
   // opcode.
-  void SendIOBufferWithSize(bool fin,
-                            WebSocketFrameHeader::OpCode op_code,
-                            const scoped_refptr<IOBufferWithSize>& buffer);
+  void SendIOBuffer(bool fin,
+                    WebSocketFrameHeader::OpCode op_code,
+                    const scoped_refptr<IOBuffer>& buffer,
+                    size_t size);
 
   // Performs the "Fail the WebSocket Connection" operation as defined in
   // RFC6455. The supplied code and reason are sent back to the renderer in an
   // OnDropChannel message. If state_ is CONNECTED then a Close message is sent
   // to the remote host. If |expose| is SEND_REAL_ERROR then the remote host is
   // given the same status code passed to the renderer; otherwise it is sent a
-  // fixed "Going Away" code.  Resets current_frame_header_, closes the stream_,
-  // and sets state_ to CLOSED.
+  // fixed "Going Away" code.  Closes the stream_ and sets state_ to CLOSED.
   void FailChannel(ExposeError expose, uint16 code, const std::string& reason);
 
   // Sends a Close frame to Start the WebSocket Closing Handshake, or to respond
@@ -208,15 +204,19 @@ class NET_EXPORT WebSocketChannel {
   // outside the valid range, then 1002 (Protocol error) is set instead. If the
   // reason text is not valid UTF-8, then |reason| is set to an empty string
   // instead.
-  void ParseClose(const scoped_refptr<IOBufferWithSize>& buffer,
+  void ParseClose(const scoped_refptr<IOBuffer>& buffer,
+                  size_t size,
                   uint16* code,
                   std::string* reason);
 
   // The URL of the remote server.
-  const GURL socket_url_;
+  GURL socket_url_;
 
   // The object receiving events.
   const scoped_ptr<WebSocketEventInterface> event_interface_;
+
+  // The URLRequestContext to pass to the WebSocketStream factory.
+  URLRequestContext* const url_request_context_;
 
   // The WebSocketStream on which to send and receive data.
   scoped_ptr<WebSocketStream> stream_;
@@ -231,20 +231,12 @@ class NET_EXPORT WebSocketChannel {
   scoped_ptr<SendBuffer> data_to_send_next_;
 
   // Destination for the current call to WebSocketStream::ReadFrames
-  ScopedVector<WebSocketFrameChunk> read_frame_chunks_;
-  // Frame header for the frame currently being received. Only non-NULL while we
-  // are processing the frame. If the frame arrives in multiple chunks, it can
-  // remain non-NULL until additional chunks arrive. If the header of the frame
-  // was invalid, this is set to NULL, the channel is failed, and subsequent
-  // chunks of the same frame will be ignored.
-  scoped_ptr<WebSocketFrameHeader> current_frame_header_;
+  ScopedVector<WebSocketFrame> read_frames_;
+
   // Handle to an in-progress WebSocketStream creation request. Only non-NULL
   // during the connection process.
   scoped_ptr<WebSocketStreamRequest> stream_request_;
-  // Although it should rarely happen in practice, a control frame can arrive
-  // broken into chunks. This variable provides storage for a partial control
-  // frame until the rest arrives. It will be NULL the rest of the time.
-  scoped_refptr<GrowableIOBuffer> incomplete_control_frame_body_;
+
   // If the renderer's send quota reaches this level, it is sent a quota
   // refresh. "quota units" are currently bytes. TODO(ricea): Update the
   // definition of quota units when necessary.

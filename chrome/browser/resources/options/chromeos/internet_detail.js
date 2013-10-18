@@ -109,12 +109,10 @@ cr.define('options.internet', function() {
      */
     showNetworkDetails_: function(params) {
       var servicePath = params.servicePath;
-      var networkType = params.networkType;
-      if (!servicePath || !servicePath.length ||
-          !networkType || !networkType.length)
+      if (!servicePath || !servicePath.length)
         return;
-      chrome.send('networkCommand',
-          [networkType, servicePath, 'options']);
+      var networkType = '';  // ignored for 'options'
+      chrome.send('networkCommand', [networkType, servicePath, 'options']);
     },
 
 
@@ -1233,7 +1231,7 @@ cr.define('options.internet', function() {
       var propData = data[propName];
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
-      var event = new cr.Event(name);
+      var event = new Event(name);
       event.value = {
         value: propData.value,
         controlledBy: propData.controlledBy,

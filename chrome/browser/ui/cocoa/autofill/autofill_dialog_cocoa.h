@@ -50,6 +50,7 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual void UpdateForErrors() OVERRIDE;
   virtual void UpdateNotificationArea() OVERRIDE;
   virtual void UpdateSection(DialogSection section) OVERRIDE;
+  virtual void UpdateErrorBubble() OVERRIDE;
   virtual void FillSection(DialogSection section,
                            const DetailInput& originating_input) OVERRIDE;
   virtual void GetUserInput(DialogSection section,
@@ -61,8 +62,8 @@ class AutofillDialogCocoa : public AutofillDialogView,
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
   virtual void ModelChanged() OVERRIDE;
-  virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
   virtual TestableAutofillDialogView* GetTestableView() OVERRIDE;
+  virtual void OnSignInResize(const gfx::Size& pref_size) OVERRIDE;
 
   // TestableAutofillDialogView implementation:
   // TODO(groby): Create a separate class to implement the testable interface:
@@ -124,6 +125,9 @@ class AutofillDialogCocoa : public AutofillDialogView,
 // A child view request re-layouting.
 - (void)requestRelayout;
 
+// Cancels all previous requests to re-layout.
+- (void)cancelRelayout;
+
 // Validate data. If it is valid, notify the delegate that the user would
 // like to use the data.
 - (IBAction)accept:(id)sender;
@@ -146,6 +150,7 @@ class AutofillDialogCocoa : public AutofillDialogView,
 - (content::NavigationController*)showSignIn;
 - (void)hideSignIn;
 - (void)modelChanged;
+- (void)updateErrorBubble;
 
 @end
 

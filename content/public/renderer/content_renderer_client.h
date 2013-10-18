@@ -29,7 +29,6 @@ class MessageLoop;
 namespace WebKit {
 class WebAudioDevice;
 class WebClipboard;
-class WebCrypto;
 class WebFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
@@ -101,6 +100,10 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool HasErrorPage(int http_status_code,
                             std::string* error_domain);
 
+  // Returns true if the embedder prefers not to show an error page for a failed
+  // navigation to |url|.
+  virtual bool ShouldSuppressErrorPage(const GURL& url);
+
   // Returns the information to display when a navigation error occurs.
   // If |error_html| is not null then it may be set to a HTML page containing
   // the details of the error and maybe links to more info.
@@ -113,6 +116,7 @@ class CONTENT_EXPORT ContentRendererClient {
       WebKit::WebFrame* frame,
       const WebKit::WebURLRequest& failed_request,
       const WebKit::WebURLError& error,
+      const std::string& accept_languages,
       std::string* error_html,
       string16* error_description) {}
 
@@ -155,10 +159,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // If it returns NULL the content layer will provide an engine.
   virtual WebKit::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       WebKit::WebSpeechSynthesizerClient* client);
-
-  // Allows the embedder to override the WebCrypto used.
-  // If it returns NULL the content layer will handle crypto.
-  virtual WebKit::WebCrypto* OverrideWebCrypto();
 
   // Returns true if the renderer process should schedule the idle handler when
   // all widgets are hidden.
@@ -240,6 +240,7 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if plugin living in the container can use
   // pp::FileIO::RequestOSFileHandle.
+  // TODO(teravest): Remove this when FileIO is moved to the browser.
   virtual bool IsPluginAllowedToCallRequestOSFileHandle(
       WebKit::WebPluginContainer* container);
 

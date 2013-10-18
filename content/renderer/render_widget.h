@@ -65,9 +65,11 @@ class Range;
 }
 
 namespace content {
+class ExternalPopupMenu;
 class PepperPluginInstanceImpl;
 class RenderWidgetCompositor;
 class RenderWidgetTest;
+struct ContextMenuParams;
 struct GpuRenderingStats;
 struct WebPluginGeometry;
 
@@ -223,6 +225,24 @@ class CONTENT_EXPORT RenderWidget
 
   bool is_swapped_out() { return is_swapped_out_; }
 
+  // ScreenMetricsEmulator class manages screen emulation inside a render
+  // widget. This includes resizing, placing view on the screen at desired
+  // position, changing device scale factor, and scaling down the whole
+  // widget if required to fit into the browser window.
+  class ScreenMetricsEmulator;
+
+  // Emulates screen and widget metrics. Supplied values override everything
+  // coming from host.
+  void EnableScreenMetricsEmulation(
+      const gfx::Size& device_size,
+      const gfx::Rect& widget_rect,
+      float device_scale_factor,
+      bool fit_to_view);
+  void DisableScreenMetricsEmulation();
+  void SetPopupOriginAdjustmentsForEmulation(ScreenMetricsEmulator* emulator);
+
+  void ScheduleCompositeWithForcedRedraw();
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -291,6 +311,11 @@ class CONTENT_EXPORT RenderWidget
               const gfx::Rect& resizer_rect,
               bool is_fullscreen,
               ResizeAck resize_ack);
+  virtual void SetScreenMetricsEmulationParameters(
+      float device_scale_factor, float root_layer_scale);
+  void SetExternalPopupOriginAdjustmentsForEmulation(
+      ExternalPopupMenu* popup, ScreenMetricsEmulator* emulator);
+  virtual void OnShowHostContextMenu(ContextMenuParams* params);
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const WebKit::WebInputEvent* event,
@@ -330,7 +355,6 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
                            const gfx::Rect& window_screen_rect);
 #if defined(OS_ANDROID)
-  void OnImeBatchStateChanged(bool is_begin);
   void OnShowImeIfNeeded();
 
   // Whenever an IME event that needs an acknowledgement is sent to the browser,
@@ -356,13 +380,11 @@ class CONTENT_EXPORT RenderWidget
   virtual void SetDeviceScaleFactor(float device_scale_factor);
 
   // Override points to notify derived classes that a paint has happened.
-  // WillInitiatePaint happens when we're about to generate a new bitmap and
-  // send it to the browser. DidInitiatePaint happens when that has completed,
-  // and subsequent rendering won't affect the painted content. DidFlushPaint
-  // happens once we've received the ACK that the screen has been updated.
-  // For a given paint operation, these overrides will always be called in the
-  // order WillInitiatePaint, DidInitiatePaint, DidFlushPaint.
-  virtual void WillInitiatePaint() {}
+  // DidInitiatePaint happens when that has completed, and subsequent rendering
+  // won't affect the painted content. DidFlushPaint happens once we've received
+  // the ACK that the screen has been updated. For a given paint operation,
+  // these overrides will always be called in the order DidInitiatePaint,
+  // DidFlushPaint.
   virtual void DidInitiatePaint() {}
   virtual void DidFlushPaint() {}
 
@@ -526,6 +548,8 @@ class CONTENT_EXPORT RenderWidget
       const WebKit::WebGraphicsContext3D::Attributes& attributes);
 
   bool OnSnapshotHelper(const gfx::Rect& src_subrect, SkBitmap* bitmap);
+
+  void ScheduleCompositeImpl(bool force_redraw);
 
   // Routing ID that allows us to communicate to the parent browser process
   // RenderWidgetHost. When MSG_ROUTING_NONE, no messages may be sent.
@@ -752,6 +776,14 @@ class CONTENT_EXPORT RenderWidget
   // browser. If this value is not 0 IME events will be dropped.
   int outstanding_ime_acks_;
 #endif
+
+  scoped_ptr<ScreenMetricsEmulator> screen_metrics_emulator_;
+
+  // Popups may be displaced when screen metrics emulation is enabled.
+  // These values are used to properly adjust popup position.
+  gfx::Point popup_view_origin_for_emulation_;
+  gfx::Point popup_screen_origin_for_emulation_;
+  float popup_origin_scale_for_emulation_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

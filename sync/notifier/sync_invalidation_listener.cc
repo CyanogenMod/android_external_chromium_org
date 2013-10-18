@@ -22,6 +22,8 @@ namespace {
 
 const char kApplicationName[] = "chrome-sync";
 
+static const int64 kUnknownVersion = -1;
+
 }  // namespace
 
 namespace syncer {
@@ -31,13 +33,13 @@ SyncInvalidationListener::Delegate::~Delegate() {}
 SyncInvalidationListener::SyncInvalidationListener(
     base::TickClock* tick_clock,
     scoped_ptr<notifier::PushClient> push_client)
-    : weak_ptr_factory_(this),
-      ack_tracker_(tick_clock, this),
+    : ack_tracker_(tick_clock, this),
       push_client_(push_client.get()),
       sync_system_resources_(push_client.Pass(), this),
       delegate_(NULL),
       ticl_state_(DEFAULT_INVALIDATION_ERROR),
-      push_client_state_(DEFAULT_INVALIDATION_ERROR) {
+      push_client_state_(DEFAULT_INVALIDATION_ERROR),
+      weak_ptr_factory_(this) {
   DCHECK(CalledOnValidThread());
   push_client_->AddObserver(this);
 }
@@ -220,7 +222,7 @@ void SyncInvalidationListener::InvalidateUnknownVersion(
   ids.insert(object_id);
   PrepareInvalidation(
       ids,
-      Invalidation::kUnknownVersion,
+      kUnknownVersion,
       std::string(),
       client,
       ack_handle);
@@ -237,7 +239,7 @@ void SyncInvalidationListener::InvalidateAll(
 
   PrepareInvalidation(
       registered_ids_,
-      Invalidation::kUnknownVersion,
+      kUnknownVersion,
       std::string(),
       client,
       ack_handle);
@@ -275,13 +277,22 @@ void SyncInvalidationListener::EmitInvalidation(
     const invalidation::AckHandle& ack_handle,
     const AckHandleMap& local_ack_handles) {
   DCHECK(CalledOnValidThread());
-  ObjectIdInvalidationMap invalidation_map =
-      ObjectIdSetToInvalidationMap(ids, version, payload);
+
+  ObjectIdInvalidationMap invalidation_map;
   for (AckHandleMap::const_iterator it = local_ack_handles.begin();
        it != local_ack_handles.end(); ++it) {
     // Update in-memory copy of the invalidation state.
     invalidation_state_map_[it->first].expected = it->second;
-    invalidation_map[it->first].ack_handle = it->second;
+
+    if (version == kUnknownVersion) {
+      Invalidation inv = Invalidation::InitUnknownVersion(it->first);
+      inv.set_ack_handle(it->second);
+      invalidation_map.Insert(inv);
+    } else {
+      Invalidation inv = Invalidation::Init(it->first, version, payload);
+      inv.set_ack_handle(it->second);
+      invalidation_map.Insert(inv);
+    }
   }
   ack_tracker_.Track(ids);
   delegate_->OnInvalidate(invalidation_map);
@@ -291,13 +302,19 @@ void SyncInvalidationListener::EmitInvalidation(
 void SyncInvalidationListener::OnTimeout(const ObjectIdSet& ids) {
   ObjectIdInvalidationMap invalidation_map;
   for (ObjectIdSet::const_iterator it = ids.begin(); it != ids.end(); ++it) {
-    Invalidation invalidation;
-    invalidation.ack_handle = invalidation_state_map_[*it].expected;
-    invalidation.version = invalidation_state_map_[*it].version;
-    invalidation.payload = invalidation_state_map_[*it].payload;
-    invalidation_map.insert(std::make_pair(*it, invalidation));
+    if (invalidation_state_map_[*it].version == kUnknownVersion) {
+      Invalidation inv = Invalidation::InitUnknownVersion(*it);
+      inv.set_ack_handle(invalidation_state_map_[*it].expected);
+      invalidation_map.Insert(inv);
+    } else {
+      Invalidation inv = Invalidation::Init(
+          *it,
+          invalidation_state_map_[*it].version,
+          invalidation_state_map_[*it].payload);
+      inv.set_ack_handle(invalidation_state_map_[*it].expected);
+      invalidation_map.Insert(inv);
+    }
   }
-
   delegate_->OnInvalidate(invalidation_map);
 }
 

@@ -24,7 +24,6 @@
 #include "webkit/browser/fileapi/isolated_file_system_backend.h"
 #include "webkit/browser/fileapi/mount_points.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/fileapi/test_file_system_backend.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/fileapi/file_system_info.h"
@@ -42,13 +41,6 @@ QuotaClient* CreateQuotaClient(
   return new FileSystemQuotaClient(context, is_incognito);
 }
 
-void DidOpenFileSystem(
-    const FileSystemContext::OpenFileSystemCallback& callback,
-    const GURL& filesystem_root,
-    const std::string& filesystem_name,
-    base::PlatformFileError error) {
-  callback.Run(error, filesystem_name, filesystem_root);
-}
 
 void DidGetMetadataForResolveURL(
     const base::FilePath& path,
@@ -278,16 +270,22 @@ void FileSystemContext::OpenFileSystem(
     FileSystemType type,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!callback.is_null());
 
-  FileSystemBackend* backend = GetFileSystemBackend(type);
-  if (!backend) {
-    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY, std::string(), GURL());
+  if (!FileSystemContext::IsSandboxFileSystem(type)) {
+    // Disallow opening a non-sandboxed filesystem.
+    callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
     return;
   }
 
-  backend->OpenFileSystem(origin_url, type, mode,
-                          base::Bind(&DidOpenFileSystem, callback));
+  FileSystemBackend* backend = GetFileSystemBackend(type);
+  if (!backend) {
+    callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
+    return;
+  }
+
+  backend->OpenFileSystem(origin_url, type, mode, callback);
 }
 
 void FileSystemContext::ResolveURL(
@@ -295,6 +293,22 @@ void FileSystemContext::ResolveURL(
     const ResolveURLCallback& callback) {
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!callback.is_null());
+
+  if (!FileSystemContext::IsSandboxFileSystem(url.type())) {
+#ifdef OS_CHROMEOS
+    // Do not have to open a non-sandboxed filesystem.
+    // TODO(nhiroki): For now we assume this path is called only on ChromeOS,
+    // but this assumption may be broken in the future and we should handle
+    // more generally. http://crbug.com/304062.
+    FileSystemInfo info = GetFileSystemInfoForChromeOS(url.origin());
+    DidOpenFileSystemForResolveURL(
+        url, callback, info.root_url, info.name, base::PLATFORM_FILE_OK);
+    return;
+#endif
+    callback.Run(base::PLATFORM_FILE_ERROR_SECURITY,
+                 FileSystemInfo(), base::FilePath(), false);
+    return;
+  }
 
   FileSystemBackend* backend = GetFileSystemBackend(url.type());
   if (!backend) {
@@ -314,7 +328,10 @@ void FileSystemContext::DeleteFileSystem(
     const GURL& origin_url,
     FileSystemType type,
     const DeleteFileSystemCallback& callback) {
+  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin_url == origin_url.GetOrigin());
+  DCHECK(!callback.is_null());
+
   FileSystemBackend* backend = GetFileSystemBackend(type);
   if (!backend) {
     callback.Run(base::PLATFORM_FILE_ERROR_SECURITY);
@@ -501,12 +518,13 @@ void FileSystemContext::DidOpenFileSystemForResolveURL(
       filesystem_name, filesystem_root, url.mount_type());
 
   // Extract the virtual path not containing a filesystem type part from |url|.
-  base::FilePath parent =
-      base::FilePath::FromUTF8Unsafe(filesystem_root.path());
-  base::FilePath child = base::FilePath::FromUTF8Unsafe(url.ToGURL().path());
+  base::FilePath parent = CrackURL(filesystem_root).virtual_path();
+  base::FilePath child = url.virtual_path();
   base::FilePath path;
 
-  if (parent != child) {
+  if (parent.empty()) {
+    path = child;
+  } else if (parent != child) {
     bool result = parent.AppendRelativePath(child, &path);
     DCHECK(result);
   }

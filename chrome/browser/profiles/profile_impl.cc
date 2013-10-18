@@ -118,7 +118,6 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/enterprise_extension_observer.h"
 #include "chrome/browser/chromeos/locale_change_guard.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/preferences.h"
@@ -250,7 +249,7 @@ void SchedulePrefsFileVerification(const base::FilePath& prefs_file) {
   const int kVerifyPrefsFileDelaySeconds = 60;
   BrowserThread::GetBlockingPool()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&VerifyFileAtPath, prefs_file, "Preferences"),
+        base::Bind(&VerifyPreferencesFile, prefs_file),
         base::TimeDelta::FromSeconds(kVerifyPrefsFileDelaySeconds));
 #endif
 }
@@ -343,6 +342,10 @@ void ProfileImpl::RegisterProfilePrefs(
       true,
 #endif
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kForceEphemeralProfiles,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
   // Initialize the cache prefs.
   registry->RegisterFilePathPref(
@@ -370,14 +373,15 @@ ProfileImpl::ProfileImpl(
     Delegate* delegate,
     CreateMode create_mode,
     base::SequencedTaskRunner* sequenced_task_runner)
-    : zoom_callback_(base::Bind(&ProfileImpl::OnZoomLevelChanged,
-                                base::Unretained(this))),
-      path_(path),
+    : path_(path),
       pref_registry_(new user_prefs::PrefRegistrySyncable),
       io_data_(this),
       host_content_settings_map_(NULL),
       last_session_exit_type_(EXIT_NORMAL),
       start_time_(Time::Now()),
+#if defined(OS_CHROMEOS)
+      is_login_profile_(false),
+#endif
       delegate_(delegate),
       predictor_(NULL) {
   TRACE_EVENT0("browser", "ProfileImpl::ctor")
@@ -420,7 +424,8 @@ ProfileImpl::ProfileImpl(
   bool async_prefs = create_mode == CREATE_MODE_ASYNCHRONOUS;
 
 #if defined(OS_CHROMEOS)
-  if (chromeos::ProfileHelper::IsSigninProfile(this))
+  is_login_profile_ = chromeos::ProfileHelper::IsSigninProfile(this);
+  if (is_login_profile_)
     chrome::RegisterLoginProfilePrefs(pref_registry_.get());
   else
 #endif
@@ -628,7 +633,8 @@ void ProfileImpl::InitHostZoomMap() {
     }
   }
 
-  host_zoom_map->AddZoomLevelChangedCallback(zoom_callback_);
+  zoom_subscription_ = host_zoom_map->AddZoomLevelChangedCallback(
+      base::Bind(&ProfileImpl::OnZoomLevelChanged, base::Unretained(this)));
 }
 
 base::FilePath ProfileImpl::last_selected_directory() {
@@ -641,9 +647,6 @@ void ProfileImpl::set_last_selected_directory(const base::FilePath& path) {
 
 ProfileImpl::~ProfileImpl() {
   MaybeSendDestroyedNotification();
-
-  HostZoomMap::GetForBrowserContext(this)->RemoveZoomLevelChangedCallback(
-      zoom_callback_);
 
   bool prefs_loaded = prefs_->GetInitializationStatus() !=
       PrefService::INITIALIZATION_STATUS_WAITING;
@@ -805,6 +808,10 @@ bool ProfileImpl::WasCreatedByVersionOrLater(const std::string& version) {
 }
 
 void ProfileImpl::SetExitType(ExitType exit_type) {
+#if defined(OS_CHROMEOS)
+  if (is_login_profile_)
+    return;
+#endif
   if (!prefs_)
     return;
   ExitType current_exit_type = SessionTypePrefValueToExitType(
@@ -1096,16 +1103,15 @@ void ProfileImpl::OnLogin() {
   locale_change_guard_->OnLogin();
 }
 
-void ProfileImpl::SetupChromeOSEnterpriseExtensionObserver() {
-  DCHECK(!chromeos_enterprise_extension_observer_);
-  chromeos_enterprise_extension_observer_.reset(
-      new chromeos::EnterpriseExtensionObserver(this));
-}
-
 void ProfileImpl::InitChromeOSPreferences() {
   chromeos_preferences_.reset(new chromeos::Preferences());
   chromeos_preferences_->Init(PrefServiceSyncable::FromProfile(this));
 }
+
+bool ProfileImpl::IsLoginProfile() {
+  return is_login_profile_;
+}
+
 #endif  // defined(OS_CHROMEOS)
 
 PrefProxyConfigTracker* ProfileImpl::GetProxyConfigTracker() {

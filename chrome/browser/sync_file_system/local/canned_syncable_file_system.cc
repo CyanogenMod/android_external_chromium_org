@@ -20,6 +20,7 @@
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/blob/mock_blob_url_request_context.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
@@ -27,8 +28,6 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/mock_file_system_options.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/blob/shareable_file_reference.h"
@@ -265,7 +264,7 @@ void CannedSyncableFileSystem::TearDown() {
 
 FileSystemURL CannedSyncableFileSystem::URL(const std::string& path) const {
   EXPECT_TRUE(is_filesystem_set_up_);
-  EXPECT_TRUE(is_filesystem_opened_);
+  EXPECT_FALSE(root_url_.is_empty());
 
   GURL url(root_url_.spec() + path);
   return file_system_context_->CrackURL(url);
@@ -273,13 +272,16 @@ FileSystemURL CannedSyncableFileSystem::URL(const std::string& path) const {
 
 PlatformFileError CannedSyncableFileSystem::OpenFileSystem() {
   EXPECT_TRUE(is_filesystem_set_up_);
-  EXPECT_FALSE(is_filesystem_opened_);
-  file_system_context_->OpenFileSystem(
-      origin_, type_,
-      fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
-      base::Bind(&CannedSyncableFileSystem::DidOpenFileSystem,
-                 base::Unretained(this)));
+
+  io_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&CannedSyncableFileSystem::DoOpenFileSystem,
+                 base::Unretained(this),
+                 base::Bind(&CannedSyncableFileSystem::DidOpenFileSystem,
+                            base::Unretained(this),
+                            base::MessageLoopProxy::current())));
   base::MessageLoop::current()->Run();
+
   if (backend()->sync_context()) {
     // Register 'this' as a sync status observer.
     RunOnThread(
@@ -546,9 +548,20 @@ void CannedSyncableFileSystem::OnWriteEnabled(const FileSystemURL& url) {
                                  url);
 }
 
+void CannedSyncableFileSystem::DoOpenFileSystem(
+    const OpenFileSystemCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
+  EXPECT_FALSE(is_filesystem_opened_);
+  file_system_context_->OpenFileSystem(
+      origin_, type_,
+      fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+      callback);
+}
+
 void CannedSyncableFileSystem::DoCreateDirectory(
     const FileSystemURL& url,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->CreateDirectory(
       url, false /* exclusive */, false /* recursive */, callback);
@@ -557,6 +570,7 @@ void CannedSyncableFileSystem::DoCreateDirectory(
 void CannedSyncableFileSystem::DoCreateFile(
     const FileSystemURL& url,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->CreateFile(url, false /* exclusive */, callback);
 }
@@ -565,6 +579,7 @@ void CannedSyncableFileSystem::DoCopy(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->Copy(
       src_url, dest_url,
@@ -576,6 +591,7 @@ void CannedSyncableFileSystem::DoMove(
     const FileSystemURL& src_url,
     const FileSystemURL& dest_url,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->Move(
       src_url, dest_url, fileapi::FileSystemOperation::OPTION_NONE, callback);
@@ -584,6 +600,7 @@ void CannedSyncableFileSystem::DoMove(
 void CannedSyncableFileSystem::DoTruncateFile(
     const FileSystemURL& url, int64 size,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->Truncate(url, size, callback);
 }
@@ -593,6 +610,7 @@ void CannedSyncableFileSystem::DoTouchFile(
     const base::Time& last_access_time,
     const base::Time& last_modified_time,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->TouchFile(url, last_access_time,
                                 last_modified_time, callback);
@@ -601,18 +619,21 @@ void CannedSyncableFileSystem::DoTouchFile(
 void CannedSyncableFileSystem::DoRemove(
     const FileSystemURL& url, bool recursive,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->Remove(url, recursive, callback);
 }
 
 void CannedSyncableFileSystem::DoFileExists(
     const FileSystemURL& url, const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->FileExists(url, callback);
 }
 
 void CannedSyncableFileSystem::DoDirectoryExists(
     const FileSystemURL& url, const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->DirectoryExists(url, callback);
 }
@@ -621,6 +642,7 @@ void CannedSyncableFileSystem::DoVerifyFile(
     const FileSystemURL& url,
     const std::string& expected_data,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->CreateSnapshotFile(
       url,
@@ -632,6 +654,7 @@ void CannedSyncableFileSystem::DoGetMetadataAndPlatformPath(
     base::PlatformFileInfo* info,
     base::FilePath* platform_path,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->CreateSnapshotFile(
       url, base::Bind(&OnCreateSnapshotFile, info, platform_path, callback));
@@ -641,6 +664,7 @@ void CannedSyncableFileSystem::DoReadDirectory(
     const FileSystemURL& url,
     FileEntryList* entries,
     const StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   operation_runner()->ReadDirectory(
       url, base::Bind(&OnReadDirectory, entries, callback));
@@ -651,6 +675,7 @@ void CannedSyncableFileSystem::DoWrite(
     const FileSystemURL& url,
     scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle,
     const WriteCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
   EXPECT_TRUE(is_filesystem_opened_);
   WriteHelper* helper = new WriteHelper;
   operation_runner()->Write(url_request_context, url,
@@ -663,6 +688,8 @@ void CannedSyncableFileSystem::DoWriteString(
     const FileSystemURL& url,
     const std::string& data,
     const WriteCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
+  EXPECT_TRUE(is_filesystem_opened_);
   MockBlobURLRequestContext* url_request_context(
       new MockBlobURLRequestContext(file_system_context_.get()));
   WriteHelper* helper = new WriteHelper(url_request_context, data);
@@ -676,16 +703,34 @@ void CannedSyncableFileSystem::DoGetUsageAndQuota(
     int64* usage,
     int64* quota,
     const quota::StatusCallback& callback) {
+  EXPECT_TRUE(io_task_runner_->RunsTasksOnCurrentThread());
+  EXPECT_TRUE(is_filesystem_opened_);
   quota_manager_->GetUsageAndQuota(
       origin_, storage_type(),
       base::Bind(&DidGetUsageAndQuota, callback, usage, quota));
 }
 
 void CannedSyncableFileSystem::DidOpenFileSystem(
-    PlatformFileError result, const std::string& name, const GURL& root) {
+    base::SingleThreadTaskRunner* original_task_runner,
+    const GURL& root,
+    const std::string& name,
+    PlatformFileError result) {
+  if (io_task_runner_->RunsTasksOnCurrentThread()) {
+    EXPECT_FALSE(is_filesystem_opened_);
+    is_filesystem_opened_ = true;
+  }
+  if (!original_task_runner->RunsTasksOnCurrentThread()) {
+    DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
+    original_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&CannedSyncableFileSystem::DidOpenFileSystem,
+                   base::Unretained(this),
+                   make_scoped_refptr(original_task_runner),
+                   root, name, result));
+    return;
+  }
   result_ = result;
   root_url_ = root;
-  is_filesystem_opened_ = true;
   base::MessageLoop::current()->Quit();
 }
 

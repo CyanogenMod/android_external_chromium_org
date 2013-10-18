@@ -98,9 +98,9 @@ class _TCMallocHeapProfilerLinux(object):
 
 class TCMallocHeapProfiler(profiler.Profiler):
   """A Factory to instantiate the platform-specific profiler."""
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(TCMallocHeapProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     if platform_backend.GetOSName() == 'android':
       self._platform_profiler = _TCMallocHeapProfilerAndroid(
           browser_backend, output_path)
@@ -122,7 +122,7 @@ class TCMallocHeapProfiler(profiler.Profiler):
     return browser_type.startswith('android')
 
   @classmethod
-  def CustomizeBrowserOptions(cls, options):
+  def CustomizeBrowserOptions(cls, browser_type, options):
     options.AppendExtraBrowserArgs('--no-sandbox')
 
   def CollectProfile(self):

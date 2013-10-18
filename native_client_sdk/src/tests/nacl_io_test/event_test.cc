@@ -105,7 +105,7 @@ class EmitterTest : public ::testing::Test {
     waiting_++;
     EXPECT_EQ(0, listener.WaitOnEvent(POLLIN, -1));
     emitter_.ClearEvents_Locked(POLLIN);
-    signaled_ ++;
+    signaled_++;
     return NULL;
   }
 
@@ -123,9 +123,6 @@ TEST_F(EmitterTest, MultiThread) {
   for (int a=0; a <NUM_THREADS; a++)
     CreateThread();
 
-  sleep(1);
-  EXPECT_EQ(0, signaled_);
-
   {
     AUTO_LOCK(emitter_.GetLock());
 
@@ -133,10 +130,15 @@ TEST_F(EmitterTest, MultiThread) {
     while(waiting_ < NUM_THREADS)
       pthread_cond_wait(&multi_cond_, emitter_.GetLock().mutex());
 
+    ASSERT_EQ(0, signaled_);
+
     emitter_.RaiseEvents_Locked(POLLIN);
   }
 
-  sleep(1);
+  // sleep for 50 milliseconds
+  struct timespec sleeptime = { 0,  50 * 1000 * 1000 };
+  nanosleep(&sleeptime, NULL);
+
   EXPECT_EQ(1, signaled_);
 
   {
@@ -144,7 +146,7 @@ TEST_F(EmitterTest, MultiThread) {
     emitter_.RaiseEvents_Locked(POLLIN);
   }
 
-  sleep(1);
+  nanosleep(&sleeptime, NULL);
   EXPECT_EQ(2, signaled_);
 
   // Clean up remaining threads.
@@ -154,6 +156,21 @@ TEST_F(EmitterTest, MultiThread) {
   }
 }
 
+TEST(EventListenerPollTest, WaitForAny) {
+  ScopedEventEmitter emitter1(new EventEmitter());
+  ScopedEventEmitter emitter2(new EventEmitter());
+  ScopedEventEmitter emitter3(new EventEmitter());
+  EventListenerPoll listener;
+  EventRequest requests[3] = {
+    { emitter1, 0, 0 },
+    { emitter2, 0, 0 },
+    { emitter3, 0, 0 },
+  };
+  Error error = listener.WaitOnAny(requests,
+                                   sizeof(requests)/sizeof(requests[0]),
+                                   1);
+  ASSERT_EQ(ETIMEDOUT, error);
+}
 
 TEST(PipeTest, Listener) {
   const char hello[] = "Hello World.";

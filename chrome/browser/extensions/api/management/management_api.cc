@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
@@ -190,10 +191,15 @@ scoped_ptr<management::ExtensionInfo> CreateExtensionInfo(
     case Manifest::EXTERNAL_PREF_DOWNLOAD:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_SIDELOAD;
       break;
+    case Manifest::EXTERNAL_POLICY:
     case Manifest::EXTERNAL_POLICY_DOWNLOAD:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_ADMIN;
       break;
-    default:
+    case Manifest::NUM_LOCATIONS:
+      NOTREACHED();
+    case Manifest::INVALID_LOCATION:
+    case Manifest::COMPONENT:
+    case Manifest::EXTERNAL_COMPONENT:
       info->install_type = management::ExtensionInfo::INSTALL_TYPE_OTHER;
       break;
   }
@@ -432,9 +438,8 @@ bool ManagementLaunchAppFunction::RunImpl() {
   extension_misc::LaunchContainer launch_container =
       service()->extension_prefs()->GetLaunchContainer(
           extension, ExtensionPrefs::LAUNCH_DEFAULT);
-  chrome::OpenApplication(chrome::AppLaunchParams(profile(), extension,
-                                                  launch_container,
-                                                  NEW_FOREGROUND_TAB));
+  OpenApplication(AppLaunchParams(profile(), extension, launch_container,
+                                  NEW_FOREGROUND_TAB));
 #if !defined(OS_ANDROID)
   CoreAppLauncherHandler::RecordAppLaunchType(
       extension_misc::APP_LAUNCH_EXTENSION_API,

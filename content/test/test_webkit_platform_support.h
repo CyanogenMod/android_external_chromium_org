@@ -19,10 +19,12 @@ namespace WebKit {
 class WebLayerTreeView;
 }
 
+namespace content {
+
 // An implementation of WebKitPlatformSupport for tests.
-class TestWebKitPlatformSupport :
-    public WebKit::WebUnitTestSupport,
-    public webkit_glue::WebKitPlatformSupportChildImpl {
+class TestWebKitPlatformSupport
+    : public WebKit::WebUnitTestSupport,
+      public webkit_glue::WebKitPlatformSupportChildImpl {
  public:
   TestWebKitPlatformSupport();
   virtual ~TestWebKitPlatformSupport();
@@ -47,13 +49,13 @@ class TestWebKitPlatformSupport :
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
   void SetThemeEngine(WebKit::WebThemeEngine* engine);
-  virtual WebKit::WebThemeEngine *themeEngine();
+  virtual WebKit::WebThemeEngine* themeEngine();
 #endif
 
   virtual WebKit::WebCompositorSupport* compositorSupport();
 
   WebURLLoaderMockFactory* url_loader_factory() {
-    return &url_loader_factory_;
+    return url_loader_factory_.get();
   }
 
   const base::FilePath& file_system_root() const {
@@ -96,10 +98,10 @@ class TestWebKitPlatformSupport :
 
  private:
   webkit_glue::SimpleWebMimeRegistryImpl mime_registry_;
-  MockWebClipboardImpl mock_clipboard_;
+  scoped_ptr<MockWebClipboardImpl> mock_clipboard_;
   webkit_glue::WebFileUtilitiesImpl file_utilities_;
   base::ScopedTempDir file_system_root_;
-  WebURLLoaderMockFactory url_loader_factory_;
+  scoped_ptr<WebURLLoaderMockFactory> url_loader_factory_;
   webkit::WebCompositorSupportImpl compositor_support_;
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -107,5 +109,7 @@ class TestWebKitPlatformSupport :
 #endif
   DISALLOW_COPY_AND_ASSIGN(TestWebKitPlatformSupport);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_TEST_TEST_WEBKIT_PLATFORM_SUPPORT_H_

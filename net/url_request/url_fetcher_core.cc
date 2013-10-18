@@ -52,7 +52,7 @@ void URLFetcherCore::Registry::RemoveURLFetcherCore(URLFetcherCore* core) {
 
 void URLFetcherCore::Registry::CancelAll() {
   while (!fetchers_.empty())
-    (*fetchers_.begin())->CancelURLRequest();
+    (*fetchers_.begin())->CancelURLRequest(ERR_ABORTED);
 }
 
 // URLFetcherCore -------------------------------------------------------------
@@ -80,8 +80,6 @@ URLFetcherCore::URLFetcherCore(URLFetcher* fetcher,
       upload_range_length_(0),
       is_chunked_upload_(false),
       was_cancelled_(false),
-      file_writer_(NULL),
-      response_destination_(STRING),
       stop_on_redirect_(false),
       stopped_on_redirect_(false),
       automatically_retry_on_5xx_(true),
@@ -119,10 +117,11 @@ void URLFetcherCore::Stop() {
   if (!network_task_runner_.get())
     return;
   if (network_task_runner_->RunsTasksOnCurrentThread()) {
-    CancelURLRequest();
+    CancelURLRequest(ERR_ABORTED);
   } else {
     network_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&URLFetcherCore::CancelURLRequest, this));
+        FROM_HERE,
+        base::Bind(&URLFetcherCore::CancelURLRequest, this, ERR_ABORTED));
   }
 }
 
@@ -266,16 +265,21 @@ void URLFetcherCore::SaveResponseToFileAtPath(
     const base::FilePath& file_path,
     scoped_refptr<base::TaskRunner> file_task_runner) {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
-  file_task_runner_ = file_task_runner;
-  response_destination_ = URLFetcherCore::PERMANENT_FILE;
-  response_destination_file_path_ = file_path;
+  SaveResponseWithWriter(scoped_ptr<URLFetcherResponseWriter>(
+      new URLFetcherFileWriter(file_task_runner, file_path)));
 }
 
 void URLFetcherCore::SaveResponseToTemporaryFile(
     scoped_refptr<base::TaskRunner> file_task_runner) {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
-  file_task_runner_ = file_task_runner;
-  response_destination_ = URLFetcherCore::TEMP_FILE;
+  SaveResponseWithWriter(scoped_ptr<URLFetcherResponseWriter>(
+      new URLFetcherFileWriter(file_task_runner, base::FilePath())));
+}
+
+void URLFetcherCore::SaveResponseWithWriter(
+    scoped_ptr<URLFetcherResponseWriter> response_writer) {
+  DCHECK(delegate_task_runner_->BelongsToCurrentThread());
+  response_writer_ = response_writer.Pass();
 }
 
 HttpResponseHeaders* URLFetcherCore::GetResponseHeaders() const {
@@ -313,19 +317,6 @@ const ResponseCookies& URLFetcherCore::GetCookies() const {
   return cookies_;
 }
 
-bool URLFetcherCore::FileErrorOccurred(int* out_error_code) const {
-  // Can't have a file error if no file is being created or written to.
-  if (!file_writer_)
-    return false;
-
-  int error_code = file_writer_->error_code();
-  if (error_code == OK)
-    return false;
-
-  *out_error_code = error_code;
-  return true;
-}
-
 void URLFetcherCore::ReceivedContentWasMalformed() {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
   if (network_task_runner_.get()) {
@@ -336,26 +327,27 @@ void URLFetcherCore::ReceivedContentWasMalformed() {
 
 bool URLFetcherCore::GetResponseAsString(
     std::string* out_response_string) const {
-  if (response_destination_ != URLFetcherCore::STRING)
+  URLFetcherStringWriter* string_writer =
+      response_writer_ ? response_writer_->AsStringWriter() : NULL;
+  if (!string_writer)
     return false;
 
-  *out_response_string = data_;
+  *out_response_string = string_writer->data();
   UMA_HISTOGRAM_MEMORY_KB("UrlFetcher.StringResponseSize",
-                          (data_.length() / 1024));
-
+                          (string_writer->data().length() / 1024));
   return true;
 }
 
 bool URLFetcherCore::GetResponseAsFilePath(bool take_ownership,
                                            base::FilePath* out_response_path) {
   DCHECK(delegate_task_runner_->BelongsToCurrentThread());
-  const bool destination_is_file =
-      response_destination_ == URLFetcherCore::TEMP_FILE ||
-      response_destination_ == URLFetcherCore::PERMANENT_FILE;
-  if (!destination_is_file || !file_writer_)
+
+  URLFetcherFileWriter* file_writer =
+      response_writer_ ? response_writer_->AsFileWriter() : NULL;
+  if (!file_writer)
     return false;
 
-  *out_response_path = file_writer_->file_path();
+  *out_response_path = file_writer->file_path();
 
   if (take_ownership) {
     // Intentionally calling a file_writer_ method directly without posting
@@ -367,7 +359,7 @@ bool URLFetcherCore::GetResponseAsFilePath(bool take_ownership,
     //
     // This direct call should be thread-safe, since DisownFile itself does no
     // file operation. It just flips the state to be referred in destruction.
-    file_writer_->DisownFile();
+    file_writer->DisownFile();
   }
   return true;
 }
@@ -427,7 +419,6 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
     url_throttler_entry_ = throttler_manager->RegisterRequestUrl(url_);
   }
 
-  bool waiting_on_write = false;
   do {
     if (!request_->status().is_success() || bytes_read <= 0)
       break;
@@ -440,9 +431,7 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
         WriteBuffer(new DrainableIOBuffer(buffer_.get(), bytes_read));
     if (result < 0) {
       // Write failed or waiting for write completion.
-      if (result == ERR_IO_PENDING)
-        waiting_on_write = true;
-      break;
+      return;
     }
   } while (request_->Read(buffer_.get(), kBufferSize, &bytes_read));
 
@@ -452,8 +441,7 @@ void URLFetcherCore::OnReadCompleted(URLRequest* request,
     request_->GetResponseCookies(&cookies_);
 
   // See comments re: HEAD requests in ReadResponse().
-  if ((!status.is_io_pending() && !waiting_on_write) ||
-      (request_type_ == URLFetcher::HEAD)) {
+  if (!status.is_io_pending() || request_type_ == URLFetcher::HEAD) {
     status_ = status;
     ReleaseRequest();
 
@@ -490,31 +478,9 @@ URLFetcherCore::~URLFetcherCore() {
 void URLFetcherCore::StartOnIOThread() {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
 
-  switch (response_destination_) {
-    case STRING:
-      response_writer_.reset(new URLFetcherStringWriter(&data_));
-      break;
+  if (!response_writer_)
+    response_writer_.reset(new URLFetcherStringWriter);
 
-    case PERMANENT_FILE:
-    case TEMP_FILE:
-      DCHECK(file_task_runner_.get())
-          << "Need to set the file task runner.";
-
-      file_writer_ = new URLFetcherFileWriter(file_task_runner_);
-
-      // If the file is successfully created,
-      // URLFetcherCore::StartURLRequestWhenAppropriate() will be called.
-      if (response_destination_ == PERMANENT_FILE) {
-        file_writer_->set_destination_file_path(
-            response_destination_file_path_);
-      }
-      response_writer_.reset(file_writer_);
-      break;
-
-    default:
-      NOTREACHED();
-  }
-  DCHECK(response_writer_);
   const int result = response_writer_->Initialize(
       base::Bind(&URLFetcherCore::DidInitializeWriter, this));
   if (result != ERR_IO_PENDING)
@@ -613,18 +579,12 @@ void URLFetcherCore::StartURLRequest() {
   if (!extra_request_headers_.IsEmpty())
     request_->SetExtraRequestHeaders(extra_request_headers_);
 
-  // There might be data left over from a previous request attempt.
-  data_.clear();
-
-  // If we are writing the response to a file, the only caller
-  // of this function should have created it and not written yet.
-  DCHECK(!file_writer_ || file_writer_->total_bytes_written() == 0);
-
   request_->Start();
 }
 
 void URLFetcherCore::DidInitializeWriter(int result) {
   if (result != OK) {
+    CancelURLRequest(result);
     delegate_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
@@ -664,13 +624,23 @@ void URLFetcherCore::StartURLRequestWhenAppropriate() {
   }
 }
 
-void URLFetcherCore::CancelURLRequest() {
+void URLFetcherCore::CancelURLRequest(int error) {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
 
   if (request_.get()) {
-    request_->Cancel();
+    request_->CancelWithError(error);
     ReleaseRequest();
   }
+
+  // Set the error manually.
+  // Normally, calling URLRequest::CancelWithError() results in calling
+  // OnReadCompleted() with bytes_read = -1 via an asynchronous task posted by
+  // URLRequestJob::NotifyDone(). But, because the request was released
+  // immediately after being canceled, the request could not call
+  // OnReadCompleted() which overwrites |status_| with the error status.
+  status_.set_status(URLRequestStatus::CANCELED);
+  status_.set_error(error);
+
   // Release the reference to the request context. There could be multiple
   // references to URLFetcher::Core at this point so it may take a while to
   // delete the object, but we cannot delay the destruction of the request
@@ -681,7 +651,6 @@ void URLFetcherCore::CancelURLRequest() {
   url_request_create_data_callback_.Reset();
   was_cancelled_ = true;
   response_writer_.reset();
-  file_writer_ = NULL;
 }
 
 void URLFetcherCore::OnCompletedURLRequest(
@@ -719,6 +688,7 @@ void URLFetcherCore::NotifyMalformedContent() {
 
 void URLFetcherCore::DidFinishWriting(int result) {
   if (result != OK) {
+    CancelURLRequest(result);
     delegate_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
@@ -830,8 +800,15 @@ int URLFetcherCore::WriteBuffer(scoped_refptr<DrainableIOBuffer> data) {
         data.get(),
         data->BytesRemaining(),
         base::Bind(&URLFetcherCore::DidWriteBuffer, this, data));
-    if (result < 0)
+    if (result < 0) {
+      if (result != ERR_IO_PENDING) {
+        CancelURLRequest(result);
+        delegate_task_runner_->PostTask(
+            FROM_HERE,
+            base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
+      }
       return result;
+    }
     data->DidConsume(result);
   }
   return OK;
@@ -839,19 +816,19 @@ int URLFetcherCore::WriteBuffer(scoped_refptr<DrainableIOBuffer> data) {
 
 void URLFetcherCore::DidWriteBuffer(scoped_refptr<DrainableIOBuffer> data,
                                     int result) {
-  if (result >= 0) {  // Continue writing.
-    data->DidConsume(result);
-    result = WriteBuffer(data);
-    if (result == ERR_IO_PENDING)
-      return;
-  }
-
   if (result < 0) {  // Handle errors.
+    CancelURLRequest(result);
     delegate_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&URLFetcherCore::InformDelegateFetchIsComplete, this));
     return;
   }
+
+  // Continue writing.
+  data->DidConsume(result);
+  if (WriteBuffer(data) < 0)
+    return;
+
   // Finished writing buffer_. Read some more.
   DCHECK_EQ(0, data->BytesRemaining());
   ReadResponse();

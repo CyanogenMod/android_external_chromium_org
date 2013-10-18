@@ -771,9 +771,13 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // think that a username + password is a host + port (and we don't want to
   // send usernames/passwords), and even if the port really is a port, the
   // server is once again unlikely to have and useful results.
+  // Note that we only block based on refs if the input is URL-typed, as search
+  // queries can legitimately have #s in them which the URL parser
+  // overaggressively categorizes as a url with a ref.
   const url_parse::Parsed& parts = input_.parts();
   if (parts.username.is_nonempty() || parts.port.is_nonempty() ||
-      parts.query.is_nonempty() || parts.ref.is_nonempty())
+      parts.query.is_nonempty() ||
+      (parts.ref.is_nonempty() && (input_.type() == AutocompleteInput::URL)))
     return false;
 
   // Don't send anything for https except the hostname.  Hostnames are OK
@@ -1491,6 +1495,8 @@ void SearchProvider::AddMatchToMap(const string16& query_string,
       !is_keyword || providers_.default_provider().empty());
   if (!match.destination_url.is_valid())
     return;
+  match.search_terms_args->bookmark_bar_pinned =
+      profile_->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar);
   match.RecordAdditionalInfo(kRelevanceFromServerKey,
                              relevance_from_server ? kTrue : kFalse);
   match.RecordAdditionalInfo(kShouldPrefetchKey,

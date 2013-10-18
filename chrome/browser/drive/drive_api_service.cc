@@ -20,6 +20,7 @@
 #include "chrome/browser/google_apis/gdata_wapi_requests.h"
 #include "chrome/browser/google_apis/request_sender.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/url_request/url_request_context_getter.h"
 
 using content::BrowserThread;
 using google_apis::AppList;
@@ -95,20 +96,25 @@ const char kAboutResourceFields[] =
     "kind,quotaBytesTotal,quotaBytesUsed,largestChangeId,rootFolderId";
 const char kFileResourceFields[] =
     "kind,id,title,createdDate,sharedWithMeDate,downloadUrl,mimeType,"
-    "md5Checksum,fileSize,labels/trashed,etag,parents/parentLink,selfLink,"
-    "thumbnailLink,alternateLink,embedLink,modifiedDate,lastViewedByMeDate";
+    "md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
+    "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
+    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
+    "modifiedDate,lastViewedByMeDate";
 const char kFileResourceOpenWithLinksFields[] =
     "kind,id,openWithLinks/*";
 const char kFileListFields[] =
     "kind,items(kind,id,title,createdDate,sharedWithMeDate,downloadUrl,"
-    "mimeType,md5Checksum,fileSize,labels/trashed,etag,parents/parentLink,"
-    "selfLink,thumbnailLink,alternateLink,embedLink,modifiedDate,"
-    "lastViewedByMeDate),nextLink";
+    "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
+    "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
+    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
+    "modifiedDate,lastViewedByMeDate),nextLink";
 const char kChangeListFields[] =
     "kind,items(file(kind,id,title,createdDate,sharedWithMeDate,downloadUrl,"
-    "mimeType,md5Checksum,fileSize,labels/trashed,etag,parents/parentLink,"
-    "selfLink,thumbnailLink,alternateLink,embedLink,modifiedDate,"
-    "lastViewedByMeDate),deleted,id,fileId),nextLink,largestChangeId";
+    "mimeType,md5Checksum,fileSize,labels/trashed,imageMediaMetadata/width,"
+    "imageMediaMetadata/height,imageMediaMetadata/rotation,etag,"
+    "parents/parentLink,selfLink,thumbnailLink,alternateLink,embedLink,"
+    "modifiedDate,lastViewedByMeDate),deleted,id,fileId),nextLink,"
+    "largestChangeId";
 
 // Callback invoked when the parsing of resource list is completed,
 // regardless whether it is succeeded or not.
@@ -305,9 +311,9 @@ void DriveAPIService::Initialize(const std::string& account_id) {
   sender_.reset(new RequestSender(
       new google_apis::AuthService(oauth2_token_service_,
                                    account_id,
-                                   url_request_context_getter_,
+                                   url_request_context_getter_.get(),
                                    scopes),
-      url_request_context_getter_,
+      url_request_context_getter_.get(),
       blocking_task_runner_.get(),
       custom_user_agent_));
   sender_->auth_service()->AddObserver(this);

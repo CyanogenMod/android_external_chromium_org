@@ -21,30 +21,13 @@
 
 namespace ash {
 
-class AccessibilityObserver;
-class AudioObserver;
-class BluetoothObserver;
-class BrightnessObserver;
-class CapsLockObserver;
-class ClockObserver;
-class DriveObserver;
-class IMEObserver;
-class LocaleObserver;
-class LogoutButtonObserver;
 class SystemTrayDelegate;
-class UpdateObserver;
-class UserObserver;
-#if defined(OS_CHROMEOS)
-class NetworkObserver;
-#endif
-
 class SystemTrayItem;
 
 namespace internal {
 class SystemBubbleWrapper;
-class SystemTrayContainer;
 class TrayAccessibility;
-class TrayGestureHandler;
+class TrayUser;
 }
 
 // There are different methods for creating bubble views.
@@ -71,6 +54,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Returns all tray items that has been added to system tray.
   const std::vector<SystemTrayItem*>& GetTrayItems() const;
+
+  // Returns all tray user items that were added to the system tray.
+  const std::vector<internal::TrayUser*>& GetTrayUserItems() const;
 
   // Shows the default view of all items.
   void ShowDefaultView(BubbleCreationType creation_type);
@@ -157,6 +143,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
     return tray_accessibility_;
   }
 
+  // Get the tray item view (or NULL) for a given |tray_item| in a unit test.
+  views::View* GetTrayItemViewForTest(SystemTrayItem* tray_item);
+
  private:
   // Creates the default set of items for the sytem tray.
   void CreateItems(SystemTrayDelegate* delegate);
@@ -192,6 +181,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // notification tray according to the current status.
   void UpdateWebNotifications();
 
+  // Deactivate the system tray in the shelf if it was active before.
+  void CloseSystemBubbleAndDeactivateSystemTray();
+
   const ScopedVector<SystemTrayItem>& items() const { return items_; }
 
   // Overridden from internal::ActionableView.
@@ -199,6 +191,10 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Owned items.
   ScopedVector<SystemTrayItem> items_;
+
+  // User items - note, this is a subset of the |items_| list. Note that no
+  // item in this list needs to be deleted.
+  std::vector<internal::TrayUser*> user_items_;
 
   // Pointers to members of |items_|.
   SystemTrayItem* detailed_item_;

@@ -41,6 +41,10 @@ content::WebUIDataSource* CreateLocalDiscoveryHTMLSource() {
                              IDS_LOCAL_DISCOVERY_ERROR_OCURRED);
   source->AddLocalizedString("addingErrorMessage",
                              IDS_LOCAL_DISCOVERY_ERROR_OCURRED_MESSAGE);
+  source->AddLocalizedString("addingCanceledMessage",
+                             IDS_LOCAL_DISCOVERY_REGISTER_CANCELED_ON_PRINTER);
+  source->AddLocalizedString("addingTimeoutMessage",
+                             IDS_LOCAL_DISCOVERY_REGISTER_TIMEOUT_ON_PRINTER);
   source->AddLocalizedString("addingMessage1",
                              IDS_LOCAL_DISCOVERY_ADDING_PRINTER_MESSAGE1);
   source->AddLocalizedString("addingMessage2",
@@ -109,7 +113,7 @@ LocalDiscoveryUI::LocalDiscoveryUI(content::WebUI* web_ui)
 
   // TODO(gene): Use LocalDiscoveryUIHandler to send updated to the devices
   // page. For example
-  web_ui->AddMessageHandler(local_discovery::LocalDiscoveryUIHandler::Create());
+  web_ui->AddMessageHandler(new local_discovery::LocalDiscoveryUIHandler());
   web_ui->AddMessageHandler(new MetricsHandler());
 }
 

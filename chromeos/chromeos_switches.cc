@@ -88,8 +88,9 @@ const char kEnableChromeAudioSwitching[] = "enable-chrome-audio-switching";
 const char kEnableChromeCaptivePortalDetector[] =
     "enable-chrome-captive-portal-detector";
 
-// Enables screensaver extensions.
-const char kEnableScreensaverExtensions[] = "enable-screensaver-extensions";
+// Enable to show the indicator about the IME (input method editor) mode
+// on Chrome OS.
+const char kEnableIMEModeIndicator[] = "enable-ime-mode-indicator";
 
 // Enable "interactive" mode for stub implemenations (e.g. NetworkStateHandler)
 const char kEnableStubInteractive[] = "enable-stub-interactive";
@@ -107,10 +108,6 @@ const char kEnableKioskMode[]               = "enable-kiosk-mode";
 
 // Enables request of tablet site (via user agent override).
 const char kEnableRequestTabletSite[]       = "enable-request-tablet-site";
-
-// Enables static ip configuration. This flag should be removed when it's on by
-// default.
-const char kEnableStaticIPConfig[]          = "enable-static-ip-config";
 
 // Power of the power-of-2 initial modulus that will be used by the
 // auto-enrollment client. E.g. "4" means the modulus will be 2^4 = 16.
@@ -173,10 +170,6 @@ const char kNaturalScrollDefault[]          = "enable-natural-scroll-default";
 // closes inactive tabs to free memory and to attempt to avoid the kernel's
 // out-of-memory process killer.
 const char kNoDiscardTabs[]                 = "no-discard-tabs";
-
-// Disables recording of swap and CPU utilization metrics logging after tab
-// switch and scroll events.
-const char kNoSwapMetrics[]                 = "no-swap-metrics";
 
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";

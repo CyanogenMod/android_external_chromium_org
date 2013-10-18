@@ -215,11 +215,20 @@ bool DoesRectContainVerticalPointExpanded(
   return y >= lower_threshold && y <= upper_threshold;
 }
 
+// Adds |x_offset| to all the rectangles in |rects|.
+void OffsetX(int x_offset, std::vector<gfx::Rect>* rects) {
+  if (x_offset == 0)
+    return;
+
+  for (size_t i = 0; i < rects->size(); ++i)
+    (*rects)[i].set_x((*rects)[i].x() + x_offset);
+}
+
 // WidgetObserver implementation that resets the window position managed
 // property on Show.
-// We're forced to do this here since BrowserFrameAura resets the 'window
+// We're forced to do this here since BrowserFrameAsh resets the 'window
 // position managed' property during a show and we need the property set to
-// false before WorkspaceLayoutManager2 sees the visibility change.
+// false before WorkspaceLayoutManager sees the visibility change.
 class WindowPositionManagedUpdater : public views::WidgetObserver {
  public:
   virtual void OnWidgetVisibilityChanged(views::Widget* widget,
@@ -382,6 +391,8 @@ TabDragController::TabDragController()
       tab_strip_to_attach_to_after_exit_(NULL),
       move_loop_widget_(NULL),
       is_mutating_(false),
+      attach_x_(-1),
+      attach_index_(-1),
       weak_factory_(this) {
   instance_ = this;
 }
@@ -984,26 +995,55 @@ void TabDragController::MoveAttached(const gfx::Point& point_in_screen) {
     TabStripModel* attached_model = GetModel(attached_tabstrip_);
     gfx::Rect bounds = GetDraggedViewTabStripBounds(dragged_view_point);
     int to_index = GetInsertionIndexForDraggedBounds(bounds);
-    WebContents* last_contents = drag_data_[drag_data_.size() - 1].contents;
-    int index_of_last_item =
-          attached_model->GetIndexOfWebContents(last_contents);
-    if (initial_move_) {
-      // TabStrip determines if the tabs needs to be animated based on model
-      // position. This means we need to invoke LayoutDraggedTabsAt before
-      // changing the model.
-      attached_tabstrip_->LayoutDraggedTabsAt(
-          tabs, source_tab_drag_data()->attached_tab, dragged_view_point,
-          initial_move_);
-      did_layout = true;
+    bool do_move = true;
+    // While dragging within a tabstrip the expectation is the insertion index
+    // is based on the left edge of the tabs being dragged. OTOH when dragging
+    // into a new tabstrip (attaching) the expectation is the insertion index is
+    // based on the cursor. This proves problematic as insertion may change the
+    // size of the tabs, resulting in the index calculated before the insert
+    // differing from the index calculated after the insert. To alleviate this
+    // the index is chosen before insertion, and subsequently a new index is
+    // only used once the mouse moves enough such that the index changes based
+    // on the direction the mouse moved relative to |attach_x_| (smaller
+    // x-coordinate should yield a smaller index or larger x-coordinate yields a
+    // larger index).
+    if (attach_index_ != -1) {
+      gfx::Point tab_strip_point(point_in_screen);
+      views::View::ConvertPointToTarget(NULL, attached_tabstrip_,
+                                        &tab_strip_point);
+      const int new_x =
+          attached_tabstrip_->GetMirroredXInView(tab_strip_point.x());
+      if (new_x < attach_x_)
+        to_index = std::min(to_index, attach_index_);
+      else
+        to_index = std::max(to_index, attach_index_);
+      if (to_index != attach_index_)
+        attach_index_ = -1;  // Once a valid move is detected, don't constrain.
+      else
+        do_move = false;
     }
-    attached_model->MoveSelectedTabsTo(to_index);
+    if (do_move) {
+      WebContents* last_contents = drag_data_[drag_data_.size() - 1].contents;
+      int index_of_last_item =
+          attached_model->GetIndexOfWebContents(last_contents);
+      if (initial_move_) {
+        // TabStrip determines if the tabs needs to be animated based on model
+        // position. This means we need to invoke LayoutDraggedTabsAt before
+        // changing the model.
+        attached_tabstrip_->LayoutDraggedTabsAt(
+            tabs, source_tab_drag_data()->attached_tab, dragged_view_point,
+            initial_move_);
+        did_layout = true;
+      }
+      attached_model->MoveSelectedTabsTo(to_index);
 
-    // Move may do nothing in certain situations (such as when dragging pinned
-    // tabs). Make sure the tabstrip actually changed before updating
-    // last_move_screen_loc_.
-    if (index_of_last_item !=
-        attached_model->GetIndexOfWebContents(last_contents)) {
-      last_move_screen_loc_ = point_in_screen.x();
+      // Move may do nothing in certain situations (such as when dragging pinned
+      // tabs). Make sure the tabstrip actually changed before updating
+      // last_move_screen_loc_.
+      if (index_of_last_item !=
+          attached_model->GetIndexOfWebContents(last_contents)) {
+        last_move_screen_loc_ = point_in_screen.x();
+      }
     }
   }
 
@@ -1200,9 +1240,11 @@ void TabDragController::Attach(TabStrip* attached_tabstrip,
                                       &tab_strip_point);
     tab_strip_point.set_x(
         attached_tabstrip_->GetMirroredXInView(tab_strip_point.x()));
-    tab_strip_point.Offset(-mouse_offset_.x(), -mouse_offset_.y());
+    tab_strip_point.Offset(0, -mouse_offset_.y());
     gfx::Rect bounds = GetDraggedViewTabStripBounds(tab_strip_point);
     int index = GetInsertionIndexForDraggedBounds(bounds);
+    attach_index_ = index;
+    attach_x_ = tab_strip_point.x();
     base::AutoReset<bool> setter(&is_mutating_, true);
     for (size_t i = 0; i < drag_data_.size(); ++i) {
       int add_types = TabStripModel::ADD_NONE;
@@ -1257,6 +1299,8 @@ void TabDragController::Attach(TabStrip* attached_tabstrip,
 }
 
 void TabDragController::Detach(ReleaseCapture release_capture) {
+  attach_index_ = -1;
+
   // When the user detaches we assume they want to reorder.
   move_behavior_ = REORDER;
 
@@ -1275,7 +1319,7 @@ void TabDragController::Detach(ReleaseCapture release_capture) {
   if (!detach_into_browser_)
     source_dragged_contents()->IncrementCapturerCount();
 
-  std::vector<gfx::Rect> drag_bounds = CalculateBoundsForDraggedTabs(0);
+  std::vector<gfx::Rect> drag_bounds = CalculateBoundsForDraggedTabs();
   TabStripModel* attached_model = GetModel(attached_tabstrip_);
   std::vector<TabRendererData> tab_data;
   for (size_t i = 0; i < drag_data_.size(); ++i) {
@@ -1343,19 +1387,9 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
     return;
   }
 
-  // Create a new browser to house the dragged tabs and have the OS run a move
-  // loop.
-  gfx::Point attached_point = GetAttachedDragPoint(point_in_screen);
-
-  // Calculate the bounds for the tabs from the attached_tab_strip. We do this
-  // so that the tabs don't change size when detached.
-  std::vector<gfx::Rect> drag_bounds =
-      CalculateBoundsForDraggedTabs(attached_point.x());
-
-  // Stash the current window size and tab area width.
-  gfx::Size source_size =
-      attached_tabstrip_->GetWidget()->GetWindowBoundsInScreen().size();
-  int available_source_width = attached_tabstrip_->tab_area_width();
+  const int last_tabstrip_width = attached_tabstrip_->tab_area_width();
+  std::vector<gfx::Rect> drag_bounds = CalculateBoundsForDraggedTabs();
+  OffsetX(GetAttachedDragPoint(point_in_screen).x(), &drag_bounds);
 
   gfx::Vector2d drag_offset;
   Browser* browser = CreateBrowserForDrag(
@@ -1366,47 +1400,34 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
   views::Widget* dragged_widget = dragged_browser_view->GetWidget();
   dragged_widget->SetVisibilityChangedAnimationsEnabled(false);
   Attach(dragged_browser_view->tabstrip(), gfx::Point());
+  attached_tabstrip_->InvalidateLayout();
+  dragged_widget->non_client_view()->Layout();
+  const int dragged_tabstrip_width = attached_tabstrip_->tab_area_width();
 
-  // If the window size has changed, the tab positioning will be quite off.
-  if (source_size !=
-          attached_tabstrip_->GetWidget()->GetWindowBoundsInScreen().size()) {
-    // First, scale the drag bounds such that they fit within the new window
-    // while maintaining the same relative positions. This scales the tabs
-    // down so that they occupy the same relative width on the new tab strip,
-    // clamping to minimum tab width.
-    int available_attached_width = attached_tabstrip_->tab_area_width();
-    float x_scale =
-        static_cast<float>(available_attached_width) / available_source_width;
-    int x_offset = std::ceil((1.0 - x_scale) * drag_bounds[0].x());
-    int accumulated_width_offset = 0;
-    for (size_t i = 0; i < drag_bounds.size(); ++i) {
-      gfx::Rect& tab_bounds = drag_bounds[i];
-      tab_bounds.Offset(-(x_offset + accumulated_width_offset), 0);
-      int old_width = tab_bounds.width();
-      int min_width = (i == source_tab_index_) ?
-          drag_data_[i].attached_tab->GetMinimumSelectedSize().width() :
-          drag_data_[i].attached_tab->GetMinimumUnselectedSize().width();
-      int new_width =
-          std::max(min_width, static_cast<int>(std::ceil(old_width * x_scale)));
-      tab_bounds.set_width(new_width);
-      accumulated_width_offset += (old_width - tab_bounds.width());
+  // If the new tabstrip is smaller than the old resize the tabs.
+  if (dragged_tabstrip_width < last_tabstrip_width) {
+    const float leading_ratio =
+        drag_bounds.front().x() / static_cast<float>(last_tabstrip_width);
+    drag_bounds = CalculateBoundsForDraggedTabs();
+
+    if (drag_bounds.back().right() < dragged_tabstrip_width) {
+      const int delta_x =
+          std::min(static_cast<int>(leading_ratio * dragged_tabstrip_width),
+                   dragged_tabstrip_width -
+                       (drag_bounds.back().right() -
+                        drag_bounds.front().x()));
+      OffsetX(delta_x, &drag_bounds);
     }
 
-    // Next, re-position the restored window such that the tab that was dragged
-    // remains centered under the mouse cursor. The two offsets needed here are
-    // the offset of the dragged tab in widget coordinates, and half the dragged
-    // tab width. The sum of these is the horizontal distance from the mouse
-    // cursor to the window edge.
-    gfx::Point offset(drag_bounds[source_tab_index_].origin());
+    // Reposition the restored window such that the tab that was dragged remains
+    // under the mouse cursor.
+    gfx::Point offset(
+        static_cast<int>(drag_bounds[source_tab_index_].width() *
+                         offset_to_width_ratio_) +
+        drag_bounds[source_tab_index_].x(), 0);
     views::View::ConvertPointToWidget(attached_tabstrip_, &offset);
-    int half_tab_width = drag_bounds[source_tab_index_].width() / 2;
     gfx::Rect new_bounds = browser->window()->GetBounds();
-    new_bounds.set_x(point_in_screen.x() - offset.x() - half_tab_width);
-
-    // To account for the extra vertical on restored windows that is absent
-    // on maximized windows, add an additional vertical offset extracted from
-    // the tab strip.
-    new_bounds.Offset(0, -attached_tabstrip_->button_v_offset());
+    new_bounds.set_x(point_in_screen.x() - offset.x());
     browser->window()->SetBounds(new_bounds);
   }
 
@@ -1632,15 +1653,15 @@ gfx::Point TabDragController::GetAttachedDragPoint(
 
   gfx::Point tab_loc(point_in_screen);
   views::View::ConvertPointToTarget(NULL, attached_tabstrip_, &tab_loc);
-  int x =
+  const int x =
       attached_tabstrip_->GetMirroredXInView(tab_loc.x()) - mouse_offset_.x();
 
   // TODO: consider caching this.
   std::vector<Tab*> attached_tabs;
   for (size_t i = 0; i < drag_data_.size(); ++i)
     attached_tabs.push_back(drag_data_[i].attached_tab);
-  int size = attached_tabstrip_->GetSizeNeededForTabs(attached_tabs);
-  int max_x = attached_tabstrip_->width() - size;
+  const int size = attached_tabstrip_->GetSizeNeededForTabs(attached_tabs);
+  const int max_x = attached_tabstrip_->width() - size;
   return gfx::Point(std::min(std::max(x, 0), max_x), 0);
 }
 
@@ -1657,18 +1678,13 @@ std::vector<Tab*> TabDragController::GetTabsMatchingDraggedContents(
   return tabs;
 }
 
-std::vector<gfx::Rect> TabDragController::CalculateBoundsForDraggedTabs(
-    int x_offset) {
+std::vector<gfx::Rect> TabDragController::CalculateBoundsForDraggedTabs() {
   std::vector<gfx::Rect> drag_bounds;
   std::vector<Tab*> attached_tabs;
   for (size_t i = 0; i < drag_data_.size(); ++i)
     attached_tabs.push_back(drag_data_[i].attached_tab);
   attached_tabstrip_->CalculateBoundsForDraggedTabs(attached_tabs,
                                                     &drag_bounds);
-  if (x_offset != 0) {
-    for (size_t i = 0; i < drag_bounds.size(); ++i)
-      drag_bounds[i].set_x(drag_bounds[i].x() + x_offset);
-  }
   return drag_bounds;
 }
 
@@ -1838,11 +1854,6 @@ void TabDragController::CompleteDrag() {
   DCHECK(started_drag_);
 
   if (attached_tabstrip_) {
-    attached_tabstrip_->StoppedDraggingTabs(
-        GetTabsMatchingDraggedContents(attached_tabstrip_),
-        initial_tab_positions_,
-        move_behavior_ == MOVE_VISIBILE_TABS,
-        true);
     if (is_dragging_new_browser_) {
       // If source window was maximized - maximize the new window as well.
       if (was_source_maximized_)
@@ -1856,6 +1867,11 @@ void TabDragController::CompleteDrag() {
       }
 #endif
     }
+    attached_tabstrip_->StoppedDraggingTabs(
+        GetTabsMatchingDraggedContents(attached_tabstrip_),
+        initial_tab_positions_,
+        move_behavior_ == MOVE_VISIBILE_TABS,
+        true);
   } else {
     if (dock_info_.type() != DockInfo::NONE) {
       switch (dock_info_.type()) {
@@ -1924,7 +1940,7 @@ void TabDragController::CompleteDrag() {
       item.add_types = drag_data_[i].pinned ? TabStripModel::ADD_PINNED
                                             : TabStripModel::ADD_NONE;
       contentses.push_back(item);
-    };
+    }
 
     Browser* new_browser =
         GetModel(source_tabstrip_)->delegate()->CreateNewStripWithContents(
@@ -2169,14 +2185,18 @@ Browser* TabDragController::CreateBrowserForDrag(
       views::View::ConvertPointToWidget(source, &right_edge);
       new_bounds.set_x(point_in_screen.x() - right_edge.x());
       new_bounds.Offset(drag_bounds->back().right() - mouse_offset_.x(), 0);
-      int delta = (*drag_bounds)[0].x();
-      for (size_t i = 0; i < drag_bounds->size(); ++i)
-        (*drag_bounds)[i].Offset(-delta, 0);
+      OffsetX(-(*drag_bounds)[0].x(), drag_bounds);
       break;
     }
     default:
       break; // Nothing to do for DETACH_ABOVE_OR_BELOW.
   }
+
+  // To account for the extra vertical on restored windows that is absent on
+  // maximized windows, add an additional vertical offset extracted from the tab
+  // strip.
+  if (source->GetWidget()->IsMaximized())
+    new_bounds.Offset(0, -source->button_v_offset());
 
   *drag_offset = point_in_screen - new_bounds.origin();
 

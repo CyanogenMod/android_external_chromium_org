@@ -4,321 +4,59 @@
 
 #include "chromeos/cryptohome/cryptohome_library.h"
 
-#include <map>
-
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
-#include "base/memory/weak_ptr.h"
+#include "base/location.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "chromeos/dbus/cryptohome_client.h"
-#include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "crypto/encryptor.h"
-#include "crypto/nss_util.h"
-#include "crypto/sha2.h"
-#include "crypto/symmetric_key.h"
 
 namespace chromeos {
-
 namespace {
 
-const char kStubSystemSalt[] = "stub_system_salt";
-const size_t kNonceSize = 16;
+CryptohomeLibrary* g_cryptohome_library = NULL;
 
 }  // namespace
 
-// This class handles the interaction with the ChromeOS cryptohome library APIs.
-class CryptohomeLibraryImpl : public CryptohomeLibrary {
- public:
-  CryptohomeLibraryImpl() {
+CryptohomeLibrary::CryptohomeLibrary() {
+}
+
+CryptohomeLibrary::~CryptohomeLibrary() {
+}
+
+void CryptohomeLibrary::GetSystemSalt(
+    const GetSystemSaltCallback& callback) {
+  // TODO(hashimoto): Stop using GetSystemSaltSynt(). crbug.com/141009
+  base::MessageLoopProxy::current()->PostTask(
+      FROM_HERE, base::Bind(callback, GetSystemSaltSync()));
+}
+
+std::string CryptohomeLibrary::GetSystemSaltSync() {
+  LoadSystemSalt();  // no-op if it's already loaded.
+  return system_salt_;
+}
+
+std::string CryptohomeLibrary::GetCachedSystemSalt() {
+  return system_salt_;
+}
+
+void CryptohomeLibrary::LoadSystemSalt() {
+  if (!system_salt_.empty())
+    return;
+  std::vector<uint8> salt;
+  DBusThreadManager::Get()->GetCryptohomeClient()->GetSystemSalt(&salt);
+  if (salt.empty() || salt.size() % 2 != 0U) {
+    LOG(WARNING) << "System salt not available";
+    return;
   }
-
-  virtual ~CryptohomeLibraryImpl() {
-  }
-
-  virtual bool TpmIsEnabled() OVERRIDE {
-    bool result = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->CallTpmIsEnabledAndBlock(
-        &result);
-    return result;
-  }
-
-  virtual bool TpmIsOwned() OVERRIDE {
-    bool result = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->CallTpmIsOwnedAndBlock(
-        &result);
-    return result;
-  }
-
-  virtual bool TpmIsBeingOwned() OVERRIDE {
-    bool result = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        CallTpmIsBeingOwnedAndBlock(&result);
-    return result;
-  }
-
-  virtual void TpmCanAttemptOwnership() OVERRIDE {
-    DBusThreadManager::Get()->GetCryptohomeClient()->TpmCanAttemptOwnership(
-        EmptyVoidDBusMethodCallback());
-  }
-
-  virtual void TpmClearStoredPassword() OVERRIDE {
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        CallTpmClearStoredPasswordAndBlock();
-  }
-
-  virtual bool InstallAttributesGet(
-      const std::string& name, std::string* value) OVERRIDE {
-    std::vector<uint8> buf;
-    bool success = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        InstallAttributesGet(name, &buf, &success);
-    if (success) {
-      // Cryptohome returns 'buf' with a terminating '\0' character.
-      DCHECK(!buf.empty());
-      DCHECK_EQ(buf.back(), 0);
-      value->assign(reinterpret_cast<char*>(buf.data()), buf.size() - 1);
-    }
-    return success;
-  }
-
-  virtual bool InstallAttributesSet(
-      const std::string& name, const std::string& value) OVERRIDE {
-    std::vector<uint8> buf(value.c_str(), value.c_str() + value.size() + 1);
-    bool success = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        InstallAttributesSet(name, buf, &success);
-    return success;
-  }
-
-  virtual bool InstallAttributesFinalize() OVERRIDE {
-    bool success = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        InstallAttributesFinalize(&success);
-    return success;
-  }
-
-  virtual bool InstallAttributesIsInvalid() OVERRIDE {
-    bool result = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        InstallAttributesIsInvalid(&result);
-    return result;
-  }
-
-  virtual bool InstallAttributesIsFirstInstall() OVERRIDE {
-    bool result = false;
-    DBusThreadManager::Get()->GetCryptohomeClient()->
-        InstallAttributesIsFirstInstall(&result);
-    return result;
-  }
-
-  virtual std::string GetSystemSalt() OVERRIDE {
-    LoadSystemSalt();  // no-op if it's already loaded.
-    return system_salt_;
-  }
-
-  virtual std::string EncryptWithSystemSalt(const std::string& token) OVERRIDE {
-    // Don't care about token encryption while debugging.
-    if (!base::chromeos::IsRunningOnChromeOS())
-      return token;
-
-    if (!LoadSystemSaltKey()) {
-      LOG(WARNING) << "System salt key is not available for encrypt.";
-      return std::string();
-    }
-    return EncryptTokenWithKey(system_salt_key_.get(),
-                               system_salt_,
-                               token);
-  }
-
-  virtual std::string DecryptWithSystemSalt(
-      const std::string& encrypted_token_hex) OVERRIDE {
-    // Don't care about token encryption while debugging.
-    if (!base::chromeos::IsRunningOnChromeOS())
-      return encrypted_token_hex;
-
-    if (!LoadSystemSaltKey()) {
-      LOG(WARNING) << "System salt key is not available for decrypt.";
-      return std::string();
-    }
-    return DecryptTokenWithKey(system_salt_key_.get(),
-                               system_salt_,
-                               encrypted_token_hex);
-  }
-
- private:
-  void LoadSystemSalt() {
-    if (!system_salt_.empty())
-      return;
-    std::vector<uint8> salt;
-    DBusThreadManager::Get()->GetCryptohomeClient()->GetSystemSalt(&salt);
-    if (salt.empty() || salt.size() % 2 != 0U) {
-      LOG(WARNING) << "System salt not available";
-      return;
-    }
-    system_salt_ = StringToLowerASCII(base::HexEncode(
-        reinterpret_cast<const void*>(salt.data()), salt.size()));
-  }
-
-  // TODO: should this use the system salt for both the password and the salt
-  // value, or should this use a separate salt value?
-  bool LoadSystemSaltKey() {
-    if (system_salt_.empty())
-      return false;
-    if (!system_salt_key_.get())
-      system_salt_key_.reset(PassphraseToKey(system_salt_, system_salt_));
-    return system_salt_key_.get();
-  }
-
-  crypto::SymmetricKey* PassphraseToKey(const std::string& passphrase,
-                                        const std::string& salt) {
-    return crypto::SymmetricKey::DeriveKeyFromPassword(
-        crypto::SymmetricKey::AES, passphrase, salt, 1000, 256);
-  }
-
-
-  // Encrypts (AES) the token given |key| and |salt|.
-  std::string EncryptTokenWithKey(crypto::SymmetricKey* key,
-                                  const std::string& salt,
-                                  const std::string& token) {
-    crypto::Encryptor encryptor;
-    if (!encryptor.Init(key, crypto::Encryptor::CTR, std::string())) {
-      LOG(WARNING) << "Failed to initialize Encryptor.";
-      return std::string();
-    }
-    std::string nonce = salt.substr(0, kNonceSize);
-    std::string encoded_token;
-    CHECK(encryptor.SetCounter(nonce));
-    if (!encryptor.Encrypt(token, &encoded_token)) {
-      LOG(WARNING) << "Failed to encrypt token.";
-      return std::string();
-    }
-
-    return StringToLowerASCII(base::HexEncode(
-        reinterpret_cast<const void*>(encoded_token.data()),
-        encoded_token.size()));
-  }
-
-  // Decrypts (AES) hex encoded encrypted token given |key| and |salt|.
-  std::string DecryptTokenWithKey(crypto::SymmetricKey* key,
-                                  const std::string& salt,
-                                  const std::string& encrypted_token_hex) {
-    std::vector<uint8> encrypted_token_bytes;
-    if (!base::HexStringToBytes(encrypted_token_hex, &encrypted_token_bytes)) {
-      LOG(WARNING) << "Corrupt encrypted token found.";
-      return std::string();
-    }
-
-    std::string encrypted_token(
-        reinterpret_cast<char*>(encrypted_token_bytes.data()),
-        encrypted_token_bytes.size());
-    crypto::Encryptor encryptor;
-    if (!encryptor.Init(key, crypto::Encryptor::CTR, std::string())) {
-      LOG(WARNING) << "Failed to initialize Encryptor.";
-      return std::string();
-    }
-
-    std::string nonce = salt.substr(0, kNonceSize);
-    std::string token;
-    CHECK(encryptor.SetCounter(nonce));
-    if (!encryptor.Decrypt(encrypted_token, &token)) {
-      LOG(WARNING) << "Failed to decrypt token.";
-      return std::string();
-    }
-    return token;
-  }
-
-  std::string system_salt_;
-  // A key based on the system salt.  Useful for encrypting device-level
-  // data for which we have no additional credentials.
-  scoped_ptr<crypto::SymmetricKey> system_salt_key_;
-
-  DISALLOW_COPY_AND_ASSIGN(CryptohomeLibraryImpl);
-};
-
-class CryptohomeLibraryStubImpl : public CryptohomeLibrary {
- public:
-  CryptohomeLibraryStubImpl()
-    : locked_(false) {}
-  virtual ~CryptohomeLibraryStubImpl() {}
-
-  virtual bool TpmIsEnabled() OVERRIDE {
-    return true;
-  }
-
-  virtual bool TpmIsOwned() OVERRIDE {
-    return true;
-  }
-
-  virtual bool TpmIsBeingOwned() OVERRIDE {
-    return true;
-  }
-
-  virtual void TpmCanAttemptOwnership() OVERRIDE {}
-
-  virtual void TpmClearStoredPassword() OVERRIDE {}
-
-  virtual bool InstallAttributesGet(
-      const std::string& name, std::string* value) OVERRIDE {
-    if (install_attrs_.find(name) != install_attrs_.end()) {
-      *value = install_attrs_[name];
-      return true;
-    }
-    return false;
-  }
-
-  virtual bool InstallAttributesSet(
-      const std::string& name, const std::string& value) OVERRIDE {
-    install_attrs_[name] = value;
-    return true;
-  }
-
-  virtual bool InstallAttributesFinalize() OVERRIDE {
-    locked_ = true;
-    return true;
-  }
-
-  virtual bool InstallAttributesIsInvalid() OVERRIDE {
-    return false;
-  }
-
-  virtual bool InstallAttributesIsFirstInstall() OVERRIDE {
-    return !locked_;
-  }
-
-  virtual std::string GetSystemSalt() OVERRIDE {
-    return kStubSystemSalt;
-  }
-
-  virtual std::string EncryptWithSystemSalt(const std::string& token) OVERRIDE {
-    return token;
-  }
-
-  virtual std::string DecryptWithSystemSalt(
-      const std::string& encrypted_token_hex) OVERRIDE {
-    return encrypted_token_hex;
-  }
-
- private:
-  std::map<std::string, std::string> install_attrs_;
-  bool locked_;
-  DISALLOW_COPY_AND_ASSIGN(CryptohomeLibraryStubImpl);
-};
-
-CryptohomeLibrary::CryptohomeLibrary() {}
-CryptohomeLibrary::~CryptohomeLibrary() {}
-
-static CryptohomeLibrary* g_cryptohome_library = NULL;
-static CryptohomeLibrary* g_test_cryptohome_library = NULL;
+  system_salt_ = ConvertRawSaltToHexString(salt);
+}
 
 // static
 void CryptohomeLibrary::Initialize() {
   CHECK(!g_cryptohome_library);
-  if (base::chromeos::IsRunningOnChromeOS())
-    g_cryptohome_library = new CryptohomeLibraryImpl();
-  else
-    g_cryptohome_library = new CryptohomeLibraryStubImpl();
+  g_cryptohome_library = new CryptohomeLibrary();
 }
 
 // static
@@ -335,22 +73,16 @@ void CryptohomeLibrary::Shutdown() {
 
 // static
 CryptohomeLibrary* CryptohomeLibrary::Get() {
-  CHECK(g_cryptohome_library || g_test_cryptohome_library)
+  CHECK(g_cryptohome_library)
       << "CryptohomeLibrary::Get() called before Initialize()";
-  if (g_test_cryptohome_library)
-    return g_test_cryptohome_library;
   return g_cryptohome_library;
 }
 
 // static
-void CryptohomeLibrary::SetForTest(CryptohomeLibrary* impl) {
-  CHECK(!g_test_cryptohome_library || !impl);
-  g_test_cryptohome_library = impl;
+std::string CryptohomeLibrary::ConvertRawSaltToHexString(
+    const std::vector<uint8>& salt) {
+  return StringToLowerASCII(base::HexEncode(
+      reinterpret_cast<const void*>(salt.data()), salt.size()));
 }
 
-// static
-CryptohomeLibrary* CryptohomeLibrary::GetTestImpl() {
-  return new CryptohomeLibraryStubImpl();
-}
-
-} // namespace chromeos
+}  // namespace chromeos

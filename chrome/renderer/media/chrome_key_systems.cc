@@ -6,9 +6,11 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/renderer/render_thread.h"
+#include "media/base/media_switches.h"
 
 #include "widevine_cdm_version.h" // In SHARED_INTERMEDIATE_DIR.
 
@@ -67,9 +69,14 @@ static void AddExternalClearKey(
   info.supported_types.push_back(std::make_pair(kAudioMp4, kMp4a));
   info.supported_types.push_back(std::make_pair(kVideoMp4, kMp4aAvc1));
 #endif  // defined(USE_PROPRIETARY_CODECS)
-
   info.pepper_type = kExternalClearKeyPepperType;
 
+  concrete_key_systems->push_back(info);
+
+  // A key system that Chrome thinks is supported by ClearKeyCdm, but actually
+  // will be refused by ClearKeyCdm. This is to test the CDM initialization
+  // failure case.
+  info.key_system += ".initializefail";
   concrete_key_systems->push_back(info);
 }
 #endif  // defined(ENABLE_PEPPER_CDMS)
@@ -244,7 +251,8 @@ void AddChromeKeySystems(std::vector<KeySystemInfo>* key_systems_info) {
 #if defined(ENABLE_PEPPER_CDMS)
   AddPepperBasedWidevine(key_systems_info);
 #elif defined(OS_ANDROID)
-  AddAndroidWidevine(key_systems_info);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableMediaDrm))
+    AddAndroidWidevine(key_systems_info);
 #endif
 #endif
 }

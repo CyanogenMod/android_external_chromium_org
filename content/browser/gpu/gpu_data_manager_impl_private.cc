@@ -258,10 +258,6 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
   std::string renderer(StringToLowerASCII(gpu_info.gl_renderer));
   bool is_img =
       gpu_info.gl_vendor.find("Imagination") != std::string::npos;
-  bool is_nexus7 =
-      gpu_info.machine_model.find("Nexus 7") != std::string::npos;
-  bool is_nexus10 =
-      gpu_info.machine_model.find("Nexus 10") != std::string::npos;
 
   gfx::DeviceDisplayInfo info;
   int default_tile_size = 256;
@@ -300,14 +296,6 @@ void ApplyAndroidWorkarounds(const gpu::GPUInfo& gpu_info,
     command_line->AppendSwitchASCII(
         switches::kDefaultTileHeight, size.str());
   }
-
-  // Increase the resolution of low resolution tiles for Nexus tablets.
-  if ((is_nexus7 || is_nexus10) &&
-      !command_line->HasSwitch(
-          cc::switches::kLowResolutionContentsScaleFactor)) {
-    command_line->AppendSwitchASCII(
-        cc::switches::kLowResolutionContentsScaleFactor, "0.25");
-  }
 }
 #endif  // OS_ANDROID
 
@@ -331,6 +319,9 @@ void GpuDataManagerImplPrivate::InitializeForTesting(
     const gpu::GPUInfo& gpu_info) {
   // This function is for testing only, so disable histograms.
   update_histograms_ = false;
+
+  // Prevent all further initialization.
+  finalized_ = true;
 
   InitializeImpl(gpu_blacklist_json, std::string(), std::string(), gpu_info);
 }
@@ -545,13 +536,30 @@ void GpuDataManagerImplPrivate::GetGLStrings(std::string* gl_vendor,
 
 void GpuDataManagerImplPrivate::Initialize() {
   TRACE_EVENT0("startup", "GpuDataManagerImpl::Initialize");
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kSkipGpuDataLoading) &&
-      !command_line->HasSwitch(switches::kUseGpuInTests))
+  if (finalized_) {
+    DLOG(INFO) << "GpuDataManagerImpl marked as finalized; skipping Initialize";
+    return;
+  }
+
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kSkipGpuDataLoading))
     return;
 
   gpu::GPUInfo gpu_info;
-  {
+  if (command_line->GetSwitchValueASCII(
+          switches::kUseGL) == gfx::kGLImplementationOSMesaName) {
+    // If using the OSMesa GL implementation, use fake vendor and device ids to
+    // make sure it never gets blacklisted. This is better than simply
+    // cancelling GPUInfo gathering as it allows us to proceed with loading the
+    // blacklist below which may have non-device specific entries we want to
+    // apply anyways (e.g., OS version blacklisting).
+    gpu_info.gpu.vendor_id = 0xffff;
+    gpu_info.gpu.device_id = 0xffff;
+
+    // Also declare the driver_vendor to be osmesa to be able to specify
+    // exceptions based on driver_vendor==osmesa for some blacklist rules.
+    gpu_info.driver_vendor = gfx::kGLImplementationOSMesaName;
+  } else {
     TRACE_EVENT0("startup",
       "GpuDataManagerImpl::Initialize:CollectBasicGraphicsInfo");
     gpu::CollectBasicGraphicsInfo(&gpu_info);
@@ -985,7 +993,8 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
       owner_(owner),
       display_count_(0),
       gpu_process_accessible_(true),
-      use_software_compositor_(false) {
+      use_software_compositor_(false),
+      finalized_(false) {
   DCHECK(owner_);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisableAcceleratedCompositing)) {
@@ -1030,23 +1039,36 @@ void GpuDataManagerImplPrivate::InitializeImpl(
       GetContentClient()->GetProduct());
   CHECK(!browser_version_string.empty());
 
+  const bool log_gpu_control_list_decisions =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLogGpuControlListDecisions);
+
   if (!gpu_blacklist_json.empty()) {
     gpu_blacklist_.reset(gpu::GpuBlacklist::Create());
-    gpu_blacklist_->LoadList(
+    if (log_gpu_control_list_decisions)
+      gpu_blacklist_->enable_control_list_logging("gpu_blacklist");
+    bool success = gpu_blacklist_->LoadList(
         browser_version_string, gpu_blacklist_json,
         gpu::GpuControlList::kCurrentOsOnly);
+    DCHECK(success);
   }
   if (!gpu_switching_list_json.empty()) {
     gpu_switching_list_.reset(gpu::GpuSwitchingList::Create());
-    gpu_switching_list_->LoadList(
+    if (log_gpu_control_list_decisions)
+      gpu_switching_list_->enable_control_list_logging("gpu_switching_list");
+    bool success = gpu_switching_list_->LoadList(
         browser_version_string, gpu_switching_list_json,
         gpu::GpuControlList::kCurrentOsOnly);
+    DCHECK(success);
   }
   if (!gpu_driver_bug_list_json.empty()) {
     gpu_driver_bug_list_.reset(gpu::GpuDriverBugList::Create());
-    gpu_driver_bug_list_->LoadList(
+    if (log_gpu_control_list_decisions)
+      gpu_driver_bug_list_->enable_control_list_logging("gpu_driver_bug_list");
+    bool success = gpu_driver_bug_list_->LoadList(
         browser_version_string, gpu_driver_bug_list_json,
         gpu::GpuControlList::kCurrentOsOnly);
+    DCHECK(success);
   }
 
   gpu_info_ = gpu_info;

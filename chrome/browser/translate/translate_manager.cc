@@ -33,12 +33,12 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/translate/language_detection_details.h"
 #include "chrome/common/url_constants.h"
+#include "components/translate/common/translate_constants.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -76,7 +76,6 @@ const char kUrlQueryName[] = "u";
 const int kMaxTranslateLoadCheckAttempts = 20;
 
 TranslateManager::~TranslateManager() {
-  weak_method_factory_.InvalidateWeakPtrs();
 }
 
 // static
@@ -287,8 +286,8 @@ void TranslateManager::NotifyTranslateError(
 }
 
 TranslateManager::TranslateManager()
-  : weak_method_factory_(this),
-    max_reload_check_attempts_(kMaxTranslateLoadCheckAttempts) {
+  : max_reload_check_attempts_(kMaxTranslateLoadCheckAttempts),
+    weak_method_factory_(this) {
   notification_registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
                               content::NotificationService::AllSources());
   notification_registrar_.Add(this,
@@ -466,7 +465,7 @@ void TranslateManager::TranslatePage(WebContents* web_contents,
   // server side auto language detection.
   std::string source_lang(original_source_lang);
   if (!IsSupportedLanguage(source_lang))
-    source_lang = std::string(chrome::kUnknownLanguageCode);
+    source_lang = std::string(translate::kUnknownLanguageCode);
 
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -580,7 +579,7 @@ void TranslateManager::DoTranslatePage(WebContents* web_contents,
 void TranslateManager::PageTranslated(WebContents* web_contents,
                                       PageTranslatedDetails* details) {
   if ((details->error_type == TranslateErrors::NONE) &&
-      details->source_language != chrome::kUnknownLanguageCode &&
+      details->source_language != translate::kUnknownLanguageCode &&
       !IsSupportedLanguage(details->source_language)) {
     details->error_type = TranslateErrors::UNSUPPORTED_LANGUAGE;
   }

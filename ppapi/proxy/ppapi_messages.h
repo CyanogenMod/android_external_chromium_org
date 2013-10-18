@@ -1220,14 +1220,6 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_Write,
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileIO_SetLength,
                      int64_t /* length */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_Flush)
-IPC_MESSAGE_CONTROL2(PpapiHostMsg_FileIO_WillWrite,
-                     int64_t /* offset */,
-                     int32_t /* bytes_to_write */)
-IPC_MESSAGE_CONTROL1(PpapiHostMsg_FileIO_WillSetLength,
-                     int64_t /* length */)
-IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_GetOSFileDescriptor)
-IPC_MESSAGE_CONTROL1(PpapiPluginMsg_FileIO_GetOSFileDescriptorReply,
-                     int32_t /* file descriptor */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_FileIO_RequestOSFileHandle)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_RequestOSFileHandleReply)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_FileIO_GeneralReply)
@@ -1706,6 +1698,17 @@ IPC_MESSAGE_CONTROL4(PpapiPluginMsg_WebSocket_ClosedReply,
                      bool /* was_clean */,
                      uint16_t /* code */,
                      std::string /* reason */)
+
+// OutputProtection -----------------------------------------------------------
+
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_Create)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_OutputProtection_EnableProtection,
+                     uint32_t /* desired_method_mask */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_OutputProtection_EnableProtectionReply)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_OutputProtection_QueryStatus)
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_OutputProtection_QueryStatusReply,
+                     uint32_t /* link_mask */,
+                     uint32_t /* protection_mask */)
 
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
 

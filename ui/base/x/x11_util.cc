@@ -32,9 +32,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "base/threading/thread.h"
+#include "base/x11/x11_error_tracker.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPostConfig.h"
-#include "ui/base/x/x11_error_tracker.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
@@ -302,7 +302,7 @@ static SharedMemorySupport DoQuerySharedMemorySupport(XDisplay* dpy) {
   memset(&shminfo, 0, sizeof(shminfo));
   shminfo.shmid = shmkey;
 
-  X11ErrorTracker err_tracker;
+  base::X11ErrorTracker err_tracker;
   bool result = XShmAttach(dpy, &shminfo);
   if (result)
     VLOG(1) << "X got shared memory segment " << shmkey;
@@ -553,7 +553,8 @@ void* GetVisualFromGtkWidget(GtkWidget* widget) {
 
 void SetHideTitlebarWhenMaximizedProperty(XID window,
                                           HideTitlebarWhenMaximized property) {
-  uint32 hide = property;
+  // XChangeProperty() expects "hide" to be long.
+  unsigned long hide = property;
   XChangeProperty(gfx::GetXDisplay(),
       window,
       GetAtom("_GTK_HIDE_TITLEBAR_WHEN_MAXIMIZED"),
@@ -871,7 +872,7 @@ bool SetIntArrayProperty(XID window,
   for (size_t i = 0; i < value.size(); ++i)
     data[i] = value[i];
 
-  X11ErrorTracker err_tracker;
+  base::X11ErrorTracker err_tracker;
   XChangeProperty(gfx::GetXDisplay(),
                   window,
                   name_atom,
@@ -896,7 +897,7 @@ bool SetAtomArrayProperty(XID window,
   for (size_t i = 0; i < value.size(); ++i)
     data[i] = value[i];
 
-  X11ErrorTracker err_tracker;
+  base::X11ErrorTracker err_tracker;
   XChangeProperty(gfx::GetXDisplay(),
                   window,
                   name_atom,
@@ -1189,7 +1190,7 @@ bool GetWindowManagerName(std::string* wm_name) {
   // _NET_SUPPORTING_WM_CHECK property pointing to itself (to avoid a stale
   // property referencing an ID that's been recycled for another window), so we
   // check that too.
-  X11ErrorTracker err_tracker;
+  base::X11ErrorTracker err_tracker;
   int wm_window_property = 0;
   bool result = GetIntProperty(
       wm_window, "_NET_SUPPORTING_WM_CHECK", &wm_window_property);

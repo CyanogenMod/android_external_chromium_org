@@ -8,8 +8,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "chromeos/dbus/ibus/ibus_constants.h"
-#include "chromeos/dbus/ibus/ibus_lookup_table.h"
-#include "chromeos/dbus/ibus/ibus_property.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
 #include "chromeos/ime/ibus_bridge.h"
 
@@ -65,17 +63,6 @@ class IBusEngineServiceDaemonlessImpl : public IBusEngineService {
   // IBusEngineService override.
   virtual void RequireSurroundingText() OVERRIDE {
     // Do nothing.
-  }
-
-  // IBusEngineService override.
-  virtual void CommitText(const std::string& text) OVERRIDE {
-    IBusInputContextHandlerInterface* input_context =
-        IBusBridge::Get()->GetInputContextHandler();
-    if (input_context) {
-      IBusText ibus_text;
-      ibus_text.set_text(text);
-      input_context->CommitText(ibus_text);
-    }
   }
 
   // IBusEngineService override.

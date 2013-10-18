@@ -40,6 +40,9 @@ class UserManager {
     // Called when active user has changed.
     virtual void ActiveUserChanged(const User* active_user);
 
+    // Called when another user got added to the existing session.
+    virtual void UserAddedToSession(const User* added_user);
+
     // Called right before notifying on user change so that those who rely
     // on user_id hash would be accessing up-to-date value.
     virtual void ActiveUserHashChanged(const std::string& hash);
@@ -188,6 +191,11 @@ class UserManager {
   virtual const User* FindLocallyManagedUser(
       const string16& display_name) const = 0;
 
+  // Returns the locally managed user with the given |sync_id| if found in
+  // the persistent list. Returns |NULL| otherwise.
+  virtual const User* FindLocallyManagedUserBySyncId(
+      const std::string& sync_id) const = 0;
+
   // Returns the logged-in user.
   // TODO(nkostylev): Deprecate this call, move clients to GetActiveUser().
   // http://crbug.com/230852
@@ -203,6 +211,9 @@ class UserManager {
   // Returns the primary user of the current session. It is recorded for the
   // first signed-in user and does not change thereafter.
   virtual const User* GetPrimaryUser() const = 0;
+
+  // Returns NULL if User is not created.
+  virtual User* GetUserByProfile(Profile* profile) const = 0;
 
   // Saves user's oauth token status in local state preferences.
   virtual void SaveUserOAuthStatus(
@@ -370,6 +381,11 @@ class UserManager {
 
   // Returns profile dir for the user identified by |email|.
   virtual base::FilePath GetUserProfileDir(const std::string& email) const = 0;
+
+  // Changes browser locale (selects best suitable locale from different
+  // user settings).
+  virtual void RespectLocalePreference(Profile* profile,
+                                       const User* user) const = 0;
 
  private:
   friend class ScopedUserManagerEnabler;

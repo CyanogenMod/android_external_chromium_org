@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/test/simple_test_tick_clock.h"
-#include "media/cast/cast_thread.h"
+#include "media/cast/cast_environment.h"
 #include "media/cast/pacing/mock_paced_packet_sender.h"
 #include "media/cast/pacing/paced_sender.h"
 #include "media/cast/test/fake_task_runner.h"
@@ -19,18 +19,19 @@
 namespace media {
 namespace cast {
 
-static const int64 kStartMillisecond = 123456789;
+static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
+static const uint8 kPixelValue = 123;
 
 using testing::_;
 
 class PeerVideoSender : public VideoSender {
  public:
-  PeerVideoSender(scoped_refptr<CastThread> cast_thread,
+  PeerVideoSender(scoped_refptr<CastEnvironment> cast_environment,
                   const VideoSenderConfig& video_config,
                   VideoEncoderController* const video_encoder_controller,
                   PacedPacketSender* const paced_packet_sender)
-      : VideoSender(cast_thread, video_config, video_encoder_controller,
-                    paced_packet_sender) {
+      : VideoSender(cast_environment, video_config,
+                    video_encoder_controller, paced_packet_sender) {
   }
   using VideoSender::OnReceivedCastFeedback;
 };
@@ -53,7 +54,7 @@ class VideoSenderTest : public ::testing::Test {
         base::TimeDelta::FromMilliseconds(kStartMillisecond));
   }
 
-  ~VideoSenderTest() {}
+  virtual ~VideoSenderTest() {}
 
   void InitEncoder(bool external) {
     VideoSenderConfig video_config;
@@ -73,19 +74,18 @@ class VideoSenderTest : public ::testing::Test {
     video_config.codec = kVp8;
 
     if (external) {
-      video_sender_.reset(new PeerVideoSender(cast_thread_, video_config,
-          &mock_video_encoder_controller_, &mock_transport_));
+      video_sender_.reset(new PeerVideoSender(cast_environment_,
+          video_config, &mock_video_encoder_controller_, &mock_transport_));
     } else {
-      video_sender_.reset(new PeerVideoSender(cast_thread_, video_config, NULL,
-          &mock_transport_));
+      video_sender_.reset(new PeerVideoSender(cast_environment_, video_config,
+                                              NULL, &mock_transport_));
     }
-    video_sender_->set_clock(&testing_clock_);
   }
 
   virtual void SetUp() {
     task_runner_ = new test::FakeTaskRunner(&testing_clock_);
-    cast_thread_ = new CastThread(task_runner_, task_runner_, task_runner_,
-                                  task_runner_, task_runner_);
+    cast_environment_ = new CastEnvironment(&testing_clock_, task_runner_,
+       task_runner_, task_runner_, task_runner_, task_runner_);
   }
 
   I420VideoFrame* AllocateNewVideoFrame() {
@@ -97,19 +97,19 @@ class VideoSenderTest : public ::testing::Test {
     video_frame->y_plane.length = video_frame->width;
     video_frame->y_plane.data =
         new uint8[video_frame->width * video_frame->height];
-    memset(video_frame->y_plane.data, 123,
+    memset(video_frame->y_plane.data, kPixelValue,
         video_frame->width * video_frame->height);
     video_frame->u_plane.stride = video_frame->width / 2;
     video_frame->u_plane.length = video_frame->width / 2;
     video_frame->u_plane.data =
         new uint8[video_frame->width * video_frame->height / 4];
-    memset(video_frame->u_plane.data, 123,
+    memset(video_frame->u_plane.data, kPixelValue,
         video_frame->width * video_frame->height / 4);
     video_frame->v_plane.stride = video_frame->width / 2;
     video_frame->v_plane.length = video_frame->width / 2;
     video_frame->v_plane.data =
         new uint8[video_frame->width * video_frame->height / 4];
-    memset(video_frame->v_plane.data, 123,
+    memset(video_frame->v_plane.data, kPixelValue,
         video_frame->width * video_frame->height / 4);
     return video_frame;
   }
@@ -119,11 +119,11 @@ class VideoSenderTest : public ::testing::Test {
   MockPacedPacketSender mock_transport_;
   scoped_refptr<test::FakeTaskRunner> task_runner_;
   scoped_ptr<PeerVideoSender> video_sender_;
-  scoped_refptr<CastThread> cast_thread_;
+  scoped_refptr<CastEnvironment> cast_environment_;
 };
 
 TEST_F(VideoSenderTest, BuiltInEncoder) {
-  EXPECT_CALL(mock_transport_, SendPacket(_, _)).Times(1);
+  EXPECT_CALL(mock_transport_, SendPackets(_)).Times(1);
 
   InitEncoder(false);
   I420VideoFrame* video_frame = AllocateNewVideoFrame();
@@ -136,7 +136,7 @@ TEST_F(VideoSenderTest, BuiltInEncoder) {
 }
 
 TEST_F(VideoSenderTest, ExternalEncoder) {
-  EXPECT_CALL(mock_transport_, SendPacket(_, _)).Times(1);
+  EXPECT_CALL(mock_transport_, SendPackets(_)).Times(1);
   EXPECT_CALL(mock_video_encoder_controller_, SkipNextFrame(false)).Times(1);
   InitEncoder(true);
 
@@ -147,7 +147,7 @@ TEST_F(VideoSenderTest, ExternalEncoder) {
   video_frame.key_frame = true;
   video_frame.frame_id = 0;
   video_frame.last_referenced_frame_id = 0;
-  video_frame.data.insert(video_frame.data.begin(), 123, 1000);
+  video_frame.data.insert(video_frame.data.begin(), 1000, kPixelValue);
 
   video_sender_->InsertCodedVideoFrame(&video_frame, capture_time,
     base::Bind(&ReleaseEncodedFrame, &video_frame));
@@ -166,8 +166,8 @@ TEST_F(VideoSenderTest, RtcpTimer) {
 }
 
 TEST_F(VideoSenderTest, ResendTimer) {
-  EXPECT_CALL(mock_transport_, SendPacket(_, _)).Times(2);
-  EXPECT_CALL(mock_transport_, ResendPacket(_, _)).Times(1);
+  EXPECT_CALL(mock_transport_, SendPackets(_)).Times(2);
+  EXPECT_CALL(mock_transport_, ResendPackets(_)).Times(1);
 
   InitEncoder(false);
 

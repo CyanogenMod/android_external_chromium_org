@@ -78,6 +78,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool allow_scripts_to_close_windows;
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
+  bool xslt_enabled;
   bool xss_auditor_enabled;
   // We don't use dns_prefetching_enabled to disable DNS prefetching.  Instead,
   // we disable the feature at a lower layer so that we catch non-WebKit uses
@@ -130,8 +131,6 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool should_print_backgrounds;
   bool enable_scroll_animator;
   bool visual_word_movement_enabled;
-  bool css_sticky_position_enabled;
-  bool css_shaders_enabled;
   bool css_variables_enabled;
   bool lazy_layout_enabled;
   bool region_based_columns_enabled;
@@ -154,6 +153,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool pinch_virtual_viewport_enabled;
   int pinch_overlay_scrollbar_thickness;
   bool use_solid_color_scrollbars;
+  bool compositor_touch_hit_testing;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly

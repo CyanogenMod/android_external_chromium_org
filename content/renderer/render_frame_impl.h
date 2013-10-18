@@ -54,13 +54,17 @@ class CONTENT_EXPORT RenderFrameImpl
       WebKit::WebApplicationCacheHostClient* client);
   virtual WebKit::WebCookieJar* cookieJar(WebKit::WebFrame* frame);
   virtual void didAccessInitialDocument(WebKit::WebFrame* frame);
-  virtual void didCreateFrame(WebKit::WebFrame* parent,
-                              WebKit::WebFrame* child);
+  virtual WebKit::WebFrame* createChildFrame(WebKit::WebFrame* parent,
+                                             const WebKit::WebString& name);
   virtual void didDisownOpener(WebKit::WebFrame* frame);
   virtual void frameDetached(WebKit::WebFrame* frame);
   virtual void willClose(WebKit::WebFrame* frame);
   virtual void didChangeName(WebKit::WebFrame* frame,
                              const WebKit::WebString& name);
+  virtual void didMatchCSS(
+      WebKit::WebFrame* frame,
+      const WebKit::WebVector<WebKit::WebString>& newly_matching_selectors,
+      const WebKit::WebVector<WebKit::WebString>& stopped_matching_selectors);
   virtual void loadURLExternally(WebKit::WebFrame* frame,
                                  const WebKit::WebURLRequest& request,
                                  WebKit::WebNavigationPolicy policy);
@@ -133,6 +137,7 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didRunInsecureContent(WebKit::WebFrame* frame,
                                      const WebKit::WebSecurityOrigin& origin,
                                      const WebKit::WebURL& target);
+  virtual void didAbortLoading(WebKit::WebFrame* frame);
   virtual void didExhaustMemoryAvailableForScript(
       WebKit::WebFrame* frame);
   virtual void didCreateScriptContext(WebKit::WebFrame* frame,

@@ -11,13 +11,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
+#include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/common/extensions/features/simple_feature.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -59,35 +60,14 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   return false;
 }
 
-// Helper for whitelisting Chrome Remote Desktop's Apps v2 builds to load the
-// Remoting Viewer plugin even though it is a trusted Pepper plugin.
-bool IsRemotingAppAndPlugin(const WebPluginInfo& plugin,
-                            const GURL& policy_url) {
-  const char* kAppWhitelist[] = {
-    "2775E568AC98F9578791F1EAB65A1BF5F8CEF414",
-    "4AA3C5D69A4AECBD236CAD7884502209F0F5C169",
-    "97B23E01B2AA064E8332EE43A7A85C628AADC3F2"
-  };
-  base::FilePath remoting_path(ChromeContentClient::kRemotingViewerPluginPath);
-  if (plugin.path == remoting_path &&
-      policy_url.SchemeIs("chrome-extension") &&
-      extensions::SimpleFeature::IsIdInWhitelist(
-          policy_url.host(),
-          std::set<std::string>(kAppWhitelist,
-                                kAppWhitelist + arraysize(kAppWhitelist)))) {
-    return true;
-  }
-
-  return false;
-}
-
 }  // namespace
 
 PluginInfoMessageFilter::Context::Context(int render_process_id,
                                           Profile* profile)
     : render_process_id_(render_process_id),
       resource_context_(profile->GetResourceContext()),
-      host_content_settings_map_(profile->GetHostContentSettingsMap()) {
+      host_content_settings_map_(profile->GetHostContentSettingsMap()),
+      plugin_prefs_(PluginPrefs::GetForProfile(profile)) {
   allow_outdated_plugins_.Init(prefs::kPluginsAllowOutdated,
                                profile->GetPrefs());
   allow_outdated_plugins_.MoveToThread(
@@ -223,6 +203,17 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     return;
   }
 #endif
+  if (plugin.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
+    CHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+    // NPAPI plugins are not supported inside <webview> guests.
+    ExtensionRendererState::WebViewInfo info;
+    if (ExtensionRendererState::GetInstance()->GetWebViewInfo(
+            render_process_id_, params.render_view_id, &info)) {
+      status->value =
+          ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported;
+      return;
+    }
+  }
 
   ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
   bool uses_default_content_setting = true;
@@ -248,6 +239,11 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     return;
   }
 #endif
+  // Check if the plug-in or its group is enabled by policy.
+  PluginPrefs::PolicyStatus plugin_policy =
+      plugin_prefs_->PolicyStatusForPlugin(plugin.name);
+  PluginPrefs::PolicyStatus group_policy =
+      plugin_prefs_->PolicyStatusForPlugin(plugin_metadata->name());
 
   // Check if the plug-in requires authorization.
   if (plugin_status ==
@@ -256,8 +252,10 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
       plugin.type != WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS &&
       !always_authorize_plugins_.GetValue() &&
       plugin_setting != CONTENT_SETTING_BLOCK &&
-      uses_default_content_setting) {
-    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
+      uses_default_content_setting &&
+      plugin_policy != PluginPrefs::POLICY_ENABLED &&
+      group_policy != PluginPrefs::POLICY_ENABLED) {
+    status->value = ChromeViewHostMsg_GetPluginInfo_Status::kBlocked;
     return;
   }
 
@@ -274,6 +272,19 @@ void PluginInfoMessageFilter::Context::DecidePluginStatus(
     status->value = ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay;
   else if (plugin_setting == CONTENT_SETTING_BLOCK)
     status->value = ChromeViewHostMsg_GetPluginInfo_Status::kBlocked;
+
+  if (status->value == ChromeViewHostMsg_GetPluginInfo_Status::kAllowed) {
+    // Allow an embedder of <webview> to block a plugin from being loaded inside
+    // the guest. In order to do this, set the status to 'Unauthorized' here,
+    // and update the status as appropriate depending on the response from the
+    // embedder.
+    ExtensionRendererState::WebViewInfo info;
+    if (ExtensionRendererState::GetInstance()->GetWebViewInfo(
+            render_process_id_, params.render_view_id, &info)) {
+      status->value =
+          ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized;
+    }
+  }
 }
 
 bool PluginInfoMessageFilter::Context::FindEnabledPlugin(
@@ -358,13 +369,6 @@ void PluginInfoMessageFilter::Context::GetPluginContentSetting(
       !uses_plugin_specific_setting &&
       info.primary_pattern == ContentSettingsPattern::Wildcard() &&
       info.secondary_pattern == ContentSettingsPattern::Wildcard();
-
-  // Temporary white-list of CRD's v2 app until crbug.com/134216 is complete.
-  if (IsRemotingAppAndPlugin(plugin, policy_url) &&
-      info.source == content_settings::SETTING_SOURCE_EXTENSION &&
-      *setting == CONTENT_SETTING_BLOCK) {
-    *setting = CONTENT_SETTING_ALLOW;
-  }
 }
 
 void PluginInfoMessageFilter::Context::MaybeGrantAccess(

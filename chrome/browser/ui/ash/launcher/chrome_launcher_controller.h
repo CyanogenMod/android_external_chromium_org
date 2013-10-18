@@ -46,6 +46,7 @@ class ShellWindowLauncherController;
 class TabContents;
 
 namespace ash {
+class LauncherItemDelegateManager;
 class LauncherModel;
 }
 
@@ -85,10 +86,7 @@ class ChromeLauncherControllerUserSwitchObserver {
 // * App shell windows have ShellWindowLauncherItemController, owned by
 //   ShellWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
-// TODO(simon.hong81): Move LauncherItemDelegate out from
-// ChromeLauncherController and makes separate subclass with it.
 class ChromeLauncherController : public ash::LauncherDelegate,
-                                 public ash::LauncherItemDelegate,
                                  public ash::LauncherModelObserver,
                                  public ash::ShellObserver,
                                  public ash::DisplayController::Observer,
@@ -119,12 +117,17 @@ class ChromeLauncherController : public ash::LauncherDelegate,
     virtual ~AppTabHelper() {}
 
     // Returns the app id of the specified tab, or an empty string if there is
-    // no app.
+    // no app. All known profiles will be queried for this.
     virtual std::string GetAppID(content::WebContents* tab) = 0;
 
-    // Returns true if |id| is valid. Used during restore to ignore no longer
-    // valid extensions.
-    virtual bool IsValidID(const std::string& id) = 0;
+    // Returns true if |id| is valid for the currently active profile.
+    // Used during restore to ignore no longer valid extensions.
+    // Note that already running applications are ignored by the restore
+    // process.
+    virtual bool IsValidIDForCurrentUser(const std::string& id) = 0;
+
+    // Sets the currently active profile for the usage of |GetAppID|.
+    virtual void SetCurrentUser(Profile* profile) = 0;
   };
 
   ChromeLauncherController(Profile* profile, ash::LauncherModel* model);
@@ -212,9 +215,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // Returns the launch type of app for the specified id.
   extensions::ExtensionPrefs::LaunchType GetLaunchType(ash::LauncherID id);
 
-  // Returns the id of the app for the specified tab.
-  std::string GetAppID(content::WebContents* tab);
-
   // Set the image for a specific launcher item (e.g. when set by the app).
   void SetLauncherItemImage(ash::LauncherID launcher_id,
                             const gfx::ImageSkia& image);
@@ -294,18 +294,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   virtual bool CanPin() const OVERRIDE;
   virtual void UnpinAppWithID(const std::string& app_id) OVERRIDE;
 
-  // ash::LauncherItemDelegate overrides:
-  virtual void ItemSelected(const ash::LauncherItem& item,
-                           const ui::Event& event) OVERRIDE;
-  virtual string16 GetTitle(const ash::LauncherItem& item) OVERRIDE;
-  virtual ui::MenuModel* CreateContextMenu(
-      const ash::LauncherItem& item, aura::RootWindow* root) OVERRIDE;
-  virtual ash::LauncherMenuModel* CreateApplicationMenu(
-      const ash::LauncherItem& item,
-      int event_flags) OVERRIDE;
-  virtual bool IsDraggable(const ash::LauncherItem& item) OVERRIDE;
-  virtual bool ShouldShowTooltip(const ash::LauncherItem& item) OVERRIDE;
-
   // ash::LauncherModelObserver overrides:
   virtual void LauncherItemAdded(int index) OVERRIDE;
   virtual void LauncherItemRemoved(int index, ash::LauncherID id) OVERRIDE;
@@ -383,6 +371,8 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   BrowserShortcutLauncherItemController*
       GetBrowserShortcutLauncherItemController();
 
+  LauncherItemController* GetLauncherItemController(const ash::LauncherID id);
+
  protected:
   // Creates a new app shortcut item and controller on the launcher at |index|.
   // Use kInsertItemAtEnd to add a shortcut as the last item.
@@ -394,6 +384,11 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   void SetAppTabHelperForTest(AppTabHelper* helper);
   void SetAppIconLoaderForTest(extensions::AppIconLoader* loader);
   const std::string& GetAppIdFromLauncherIdForTest(ash::LauncherID id);
+
+  // Sets the ash::LauncherItemDelegateManager only for unittests and doesn't
+  // take an ownership of it.
+  void SetLauncherItemDelegateManagerForTest(
+      ash::LauncherItemDelegateManager* manager);
 
  private:
   friend class ChromeLauncherControllerTest;
@@ -506,8 +501,10 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // deleted.
   void CloseWindowedAppsFromRemovedExtension(const std::string& app_id);
 
-  // Register LauncherItemDelegate.
-  void RegisterLauncherItemDelegate();
+  // Set LauncherItemDelegate |item_delegate| for |id| and take an ownership.
+  // TODO(simon.hong81): Make this take a scoped_ptr of |item_delegate|.
+  void SetLauncherItemDelegate(ash::LauncherID id,
+                               ash::LauncherItemDelegate* item_delegate);
 
   // Attach to a specific profile.
   void AttachProfile(Profile* proifile);
@@ -518,6 +515,8 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   static ChromeLauncherController* instance_;
 
   ash::LauncherModel* model_;
+
+  ash::LauncherItemDelegateManager* item_delegate_manager_;
 
   // Profile used for prefs and loading extensions. This is NOT necessarily the
   // profile new windows are created with.
@@ -550,9 +549,6 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Launchers that are currently being observed.
   std::set<ash::Launcher*> launchers_;
-
-  // The owned browser shortcut item.
-  scoped_ptr<BrowserShortcutLauncherItemController> browser_item_controller_;
 
   // The owned browser status monitor.
   scoped_ptr<BrowserStatusMonitor> browser_status_monitor_;

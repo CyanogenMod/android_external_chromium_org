@@ -8,25 +8,24 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager_observer.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/cryptohome/async_method_caller.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -168,7 +167,7 @@ void KioskAppManager::OnReadImmutableAttributes(
       g_browser_process->browser_policy_connector()->GetInstallAttributes();
   switch (attributes->GetMode()) {
     case policy::DEVICE_MODE_NOT_SET: {
-      if (!base::chromeos::IsRunningOnChromeOS()) {
+      if (!base::SysInfo::IsRunningOnChromeOS()) {
         status = CONSUMER_KIOSK_MODE_CONFIGURABLE;
       } else if (!ownership_established_) {
         bool* owner_present = new bool(false);

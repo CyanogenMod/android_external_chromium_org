@@ -20,6 +20,27 @@ var TRACING_CHECKBOX_HEIGHT = 29;
 
 var initialFeedbackInfo = null;
 
+var whitelistedExtensionIds = [
+  'bpmcpldpdmajfigpchkicefoigmkfalc', // QuickOffice
+  'ehibbfinohgbchlgdbfpikodjaojhccn', // QuickOffice
+  'efjnaogkjbogokcnohkmnjdojkikgobo', // G+ Photos
+  'ebpbnabdhheoknfklmpddcdijjkmklkp', // G+ Photoes
+  'endkpmfloggdajndjpoekmkjnkolfdbf', // Feedback Extension
+  'mlocfejafidcakdddnndjdngfmncfbeg', // Connectivity Diagnostics
+  'ganomidahfnpdchomfgdoppjmmedlhia', // Connectivity Diagnostics
+  'eemlkeanncmjljgehlbplemhmdmalhdc'  // Connectivity Diagnostics
+];
+
+/**
+ * Function to determine whether or not a given extension id is whitelisted to
+ * invoke the feedback UI.
+ * @param {string} id the id of the sender extension.
+ * @return {boolean} Whether or not this sender is whitelisted.
+ */
+function senderWhitelisted(id) {
+  return id && whitelistedExtensionIds.indexOf(id) != -1;
+}
+
 /**
  * Callback which gets notified once our feedback UI has loaded and is ready to
  * receive its initial feedback info object.
@@ -29,6 +50,8 @@ var initialFeedbackInfo = null;
  */
 function feedbackReadyHandler(request, sender, sendResponse) {
   if (request.ready) {
+    // TODO(rkc):  Remove logging once crbug.com/284662 is closed.
+    console.log('FEEDBACK_DEBUG: FeedbackUI Ready. Sending feedbackInfo.');
     chrome.runtime.sendMessage(
         {sentFromEventPage: true, data: initialFeedbackInfo});
   }
@@ -42,7 +65,7 @@ function feedbackReadyHandler(request, sender, sendResponse) {
  * @param {function(Object)} sendResponse Callback for sending a response.
  */
 function requestFeedbackHandler(request, sender, sendResponse) {
-  if (request.requestFeedback)
+  if (request.requestFeedback && senderWhitelisted(sender.id))
     startFeedbackUI(request.feedbackInfo);
 }
 
@@ -56,6 +79,8 @@ function startFeedbackUI(feedbackInfo) {
     windowHeight += TRACING_CHECKBOX_HEIGHT;
   }
   initialFeedbackInfo = feedbackInfo;
+  // TODO(rkc):  Remove logging once crbug.com/284662 is closed.
+  console.log('FEEDBACK_DEBUG: Received onFeedbackRequested. Creating Window.');
   chrome.app.window.create('html/default.html', {
       frame: 'none',
       id: 'default_window',

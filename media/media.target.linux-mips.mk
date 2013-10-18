@@ -48,7 +48,6 @@ LOCAL_SRC_FILES := \
 	media/audio/audio_output_proxy.cc \
 	media/audio/audio_output_resampler.cc \
 	media/audio/audio_power_monitor.cc \
-	media/audio/audio_util.cc \
 	media/audio/clockless_audio_sink.cc \
 	media/audio/fake_audio_consumer.cc \
 	media/audio/fake_audio_input_stream.cc \
@@ -137,7 +136,6 @@ LOCAL_SRC_FILES := \
 	media/filters/wsola_internals.cc \
 	media/midi/midi_manager.cc \
 	media/midi/midi_port_info.cc \
-	media/mp3/mp3_stream_parser.cc \
 	media/video/capture/android/video_capture_device_android.cc \
 	media/video/capture/fake_video_capture_device.cc \
 	media/video/capture/video_capture_device.cc \
@@ -167,6 +165,7 @@ LOCAL_SRC_FILES := \
 	media/mp2t/ts_section_pes.cc \
 	media/mp2t/ts_section_pmt.cc \
 	media/mp2t/ts_section_psi.cc \
+	media/mp3/mp3_stream_parser.cc \
 	media/mp4/aac.cc \
 	media/mp4/avc.cc \
 	media/mp4/box_definitions.cc \
@@ -221,7 +220,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -333,7 +331,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

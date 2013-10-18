@@ -190,6 +190,13 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // Gets the names of all video capture devices connected to this computer.
   static void GetDeviceNames(Names* device_names);
 
+  // Gets the capabilities of a particular device attached to the system. This
+  // method should be called before allocating or starting a device. In case
+  // format enumeration is not supported, or there was a problem, the formats
+  // array will be empty.
+  static void GetDeviceSupportedFormats(const Name& device,
+                                        VideoCaptureCapabilities* formats);
+
   // Prepare the camera for use. After this function has been called no other
   // applications can use the camera. On completion Client::OnFrameInfo()
   // is called informing of the resulting resolution and frame rate.
@@ -210,58 +217,6 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // would be sequenced through the same task runner, so that deallocation
   // happens first.
   virtual void StopAndDeAllocate() = 0;
-};
-
-// VideoCaptureDevice1 is a bridge to an older API against which
-// VideoCaptureDevices were implemented. Differences between VideoCaptureDevice
-// (new style) and VideoCaptureDevice1 (old style) are as follows:
-//
-// [1] The Stop+DeAllocate calls are merged in the new style.
-// [2] The Allocate+Start calls are merged in the new style.
-// [3] New style devices own their Client* pointers, allowing the client to
-//     linger after the device is stopped. Whereas old style devices
-//     may not dereference their client after DeAllocate().
-// [4] device_name() is eliminated from the new-style interface.
-//
-// TODO(nick): Remove this bridge class. It exists to enable incremental
-// migration to an alternative VideoCaptureDevice API.
-class MEDIA_EXPORT VideoCaptureDevice1 : public VideoCaptureDevice {
- public:
-  VideoCaptureDevice1();
-  virtual ~VideoCaptureDevice1();
-
-  // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(
-      const VideoCaptureCapability& capture_format,
-      scoped_ptr<Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
-
-  // Prepare the camera for use. After this function has been called no other
-  // applications can use the camera. On completion Client::OnFrameInfo()
-  // is called informing of the resulting resolution and frame rate.
-  // DeAllocate() must be called before this function can be called again and
-  // before the object is deleted.
-  virtual void Allocate(const VideoCaptureCapability& capture_format,
-                        Client* client) = 0;
-
-  // Start capturing video frames. Allocate must be called before this function.
-  virtual void Start() = 0;
-
-  // Stop capturing video frames.
-  virtual void Stop() = 0;
-
-  // Deallocates the camera. This means other applications can use it. After
-  // this function has been called the capture device is reset to the state it
-  // was when created. After DeAllocate() is called, the VideoCaptureDevice is
-  // not permitted to make any additional calls to its Client.
-  virtual void DeAllocate() = 0;
-
-  // Get the name of the capture device.
-  virtual const Name& device_name() = 0;
-
- private:
-  // The device client which proxies device events to the controller.
-  scoped_ptr<Client> client_;
 };
 
 }  // namespace media

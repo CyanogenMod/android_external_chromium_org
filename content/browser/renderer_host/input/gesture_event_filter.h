@@ -10,21 +10,39 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
+#include "content/common/content_export.h"
 #include "content/port/browser/event_with_latency_info.h"
+#include "content/port/common/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/transform.h"
 
 namespace content {
+class GestureEventFilterTest;
 class InputRouter;
 class MockRenderWidgetHost;
 class TouchpadTapSuppressionController;
+class TouchpadTapSuppressionControllerClient;
 class TouchscreenTapSuppressionController;
+
+// Interface with which the GestureEventFilter can forward gesture events, and
+// dispatch gesture event responses.
+class CONTENT_EXPORT GestureEventFilterClient {
+ public:
+  virtual ~GestureEventFilterClient() {}
+
+  virtual void SendGestureEventImmediately(
+      const GestureEventWithLatencyInfo& event) = 0;
+
+  virtual void OnGestureEventAck(
+      const GestureEventWithLatencyInfo& event,
+      InputEventAckState ack_result) = 0;
+};
 
 // Maintains WebGestureEvents in a queue before forwarding them to the renderer
 // to apply a sequence of filters on them:
 // 1. Zero-velocity fling-starts from touchpad are filtered.
 // 2. The sequence is filtered for bounces. A bounce is when the finger lifts
-//    from the screen briefly during an in-progress scroll. If this happens,
+//    from the screen briefly during an in-progress scroll. Ifco this happens,
 //    non-GestureScrollUpdate events are queued until the de-bounce interval
 //    passes or another GestureScrollUpdate event occurs.
 // 3. Unnecessary GestureFlingCancel events are filtered. These are
@@ -41,10 +59,11 @@ class TouchscreenTapSuppressionController;
 // sent together.
 // TODO(rjkroege): Possibly refactor into a filter chain:
 // http://crbug.com/148443.
-class GestureEventFilter {
+class CONTENT_EXPORT GestureEventFilter {
  public:
-  // The |input_router| must outlive the GestureEventFilter.
-  explicit GestureEventFilter(InputRouter* input_router);
+  // Both |client| and |touchpad_client| must outlive the GestureEventFilter.
+  GestureEventFilter(GestureEventFilterClient* client,
+                     TouchpadTapSuppressionControllerClient* touchpad_client);
   ~GestureEventFilter();
 
   // Returns |true| if the caller should immediately forward the provided
@@ -52,9 +71,11 @@ class GestureEventFilter {
   bool ShouldForward(const GestureEventWithLatencyInfo&);
 
   // Indicates that the caller has received an acknowledgement from the renderer
-  // with state |processed| and event |type|. May send events if the queue is
+  // with state |ack_result| and event |type|. May send events if the queue is
   // not empty.
-  void ProcessGestureAck(bool processed, int type);
+  void ProcessGestureAck(InputEventAckState ack_result,
+                         WebKit::WebInputEvent::Type type,
+                         const ui::LatencyInfo& latency);
 
   // Sets the state of the |fling_in_progress_| field to indicate that a fling
   // is definitely not in progress.
@@ -66,9 +87,6 @@ class GestureEventFilter {
   // Returns whether there are any gesture event in the queue.
   bool HasQueuedGestureEvents() const;
 
-  // Returns the last gesture event that was sent to the renderer.
-  const WebKit::WebGestureEvent& GetGestureEventAwaitingAck() const;
-
   // Tries forwarding the event to the tap deferral sub-filter.
   void ForwardGestureEventForDeferral(
       const GestureEventWithLatencyInfo& gesture_event);
@@ -79,7 +97,12 @@ class GestureEventFilter {
 
  private:
   friend class MockRenderWidgetHost;
-  friend class ImmediateInputRouterTest;
+  friend class GestureEventFilterTest;
+
+  static bool IsGestureEventTypeAsync(WebKit::WebInputEvent::Type type);
+
+  // Returns the last gesture event that was sent to the renderer.
+  const GestureEventWithLatencyInfo& GetGestureEventAwaitingAck() const;
 
   // TODO(mohsen): There are a bunch of ShouldForward.../ShouldDiscard...
   // methods that are getting confusing. This should be somehow fixed. Maybe
@@ -146,8 +169,12 @@ class GestureEventFilter {
   gfx::Transform GetTransformForEvent(
       const GestureEventWithLatencyInfo& gesture_event) const;
 
+  // Pops and sends async events from the head of |coalesced_gesture_events_|
+  // until the queue is empty or the event at the head is synchronous.
+  void SendAsyncEvents();
+
   // The receiver of all forwarded gesture events.
-  InputRouter* input_router_;
+  GestureEventFilterClient* client_;
 
   // True if a GestureFlingStart is in progress on the renderer or
   // queued without a subsequent queued GestureFlingCancel event.
@@ -183,7 +210,12 @@ class GestureEventFilter {
 
   typedef std::deque<GestureEventWithLatencyInfo> GestureEventQueue;
 
-  // Queue of coalesced gesture events not yet sent to the renderer.
+  // Queue of coalesced gesture events not yet sent to the renderer. If
+  // |ignore_next_ack_| is false, then the event at the front of the queue has
+  // been sent and is awaiting an ACK, and all other events have yet to be sent.
+  // If |ignore_next_ack_| is true, then the two events at the front of the
+  // queue have been sent, and the second is awaiting an ACK. All other events
+  // have yet to be sent.
   GestureEventQueue coalesced_gesture_events_;
 
   // Tap gesture event currently subject to deferral.

@@ -154,6 +154,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setDownloadableBinaryFontsEnabled(prefs.remote_fonts_enabled);
   settings->setJavaScriptCanAccessClipboard(
       prefs.javascript_can_access_clipboard);
+  WebRuntimeFeatures::enableXSLT(prefs.xslt_enabled);
   settings->setXSSAuditorEnabled(prefs.xss_auditor_enabled);
   settings->setDNSPrefetchingEnabled(prefs.dns_prefetching_enabled);
   settings->setLocalStorageEnabled(prefs.local_storage_enabled);
@@ -288,8 +289,6 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setEnableScrollAnimator(prefs.enable_scroll_animator);
   settings->setVisualWordMovementEnabled(prefs.visual_word_movement_enabled);
 
-  settings->setCSSStickyPositionEnabled(prefs.css_sticky_position_enabled);
-  settings->setExperimentalCSSCustomFilterEnabled(prefs.css_shaders_enabled);
   settings->setRegionBasedColumnsEnabled(prefs.region_based_columns_enabled);
 
   WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
@@ -347,6 +346,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
       prefs.viewport_meta_zero_values_quirk);
   settings->setIgnoreMainFrameOverflowHiddenQuirk(
       prefs.ignore_main_frame_overflow_hidden_quirk);
+  settings->setMainFrameClipsContent(false);
+  settings->setShrinksStandaloneImagesToFit(false);
 #endif
 
   WebNetworkStateNotifier::setOnLine(prefs.is_online);
@@ -358,6 +359,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setPinchOverlayScrollbarThickness(
       prefs.pinch_overlay_scrollbar_thickness);
   settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
+  settings->setCompositorTouchHitTesting(prefs.compositor_touch_hit_testing);
 }
 
 }  // namespace content

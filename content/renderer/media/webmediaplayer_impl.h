@@ -37,8 +37,8 @@
 #include "media/base/text_track.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/web/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/web/WebMediaPlayer.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerClient.h"
 #include "url/gurl.h"
@@ -195,7 +195,6 @@ class WebMediaPlayerImpl
                     const std::vector<uint8>& message,
                     const std::string& default_url);
   void OnNeedKey(const std::string& type,
-                 const std::string& session_id,
                  const std::vector<uint8>& init_data);
   scoped_ptr<media::TextTrack> OnTextTrack(media::TextKind kind,
                                            const std::string& label,
@@ -257,6 +256,9 @@ class WebMediaPlayerImpl
   // Called by VideoRendererBase on its internal thread with the new frame to be
   // painted.
   void FrameReady(const scoped_refptr<media::VideoFrame>& frame);
+
+  // Sets playback rate on |pipeline_| and (if it exists) |data_source_|.
+  void SetPlaybackRate(float playback_rate);
 
   WebKit::WebFrame* frame_;
 
@@ -347,12 +349,15 @@ class WebMediaPlayerImpl
 
   // Video frame rendering members.
   //
-  // |lock_| protects |current_frame_| since new frames arrive on the video
+  // |lock_| protects |current_frame_|, |current_frame_painted_|, and
+  // |frames_dropped_before_paint_| since new frames arrive on the video
   // rendering thread, yet are accessed for rendering on either the main thread
   // or compositing thread depending on whether accelerated compositing is used.
-  base::Lock lock_;
+  mutable base::Lock lock_;
   media::SkCanvasVideoRenderer skcanvas_video_renderer_;
   scoped_refptr<media::VideoFrame> current_frame_;
+  bool current_frame_painted_;
+  uint32 frames_dropped_before_paint_;
   bool pending_repaint_;
   bool pending_size_change_;
 

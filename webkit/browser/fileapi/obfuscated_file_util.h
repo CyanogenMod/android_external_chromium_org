@@ -197,11 +197,15 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
                            MigrationBackFromIsolated);
 
+  base::FilePath GetDirectoryForURL(
+      const FileSystemURL& url,
+      bool create,
+      base::PlatformFileError* error_code);
+
   base::PlatformFileError GetFileInfoInternal(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       FileId file_id,
       FileInfo* local_info,
       base::PlatformFileInfo* file_info,
@@ -221,8 +225,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   base::PlatformFileError CreateFile(
       FileSystemOperationContext* context,
       const base::FilePath& source_file_path,
-      const GURL& dest_origin,
-      FileSystemType dest_type,
+      const FileSystemURL& dest_url,
       FileInfo* dest_file_info,
       int file_flags,
       base::PlatformFile* handle);
@@ -231,23 +234,22 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // field] to an absolute platform path that can be given to the native
   // filesystem.
   base::FilePath DataPathToLocalPath(
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       const base::FilePath& data_file_path);
 
   std::string GetDirectoryDatabaseKey(const GURL& origin, FileSystemType type);
 
   // This returns NULL if |create| flag is false and a filesystem does not
-  // exist for the given |origin_url| and |type|.
+  // exist for the given |url|.
   // For read operations |create| should be false.
-  SandboxDirectoryDatabase* GetDirectoryDatabase(
-      const GURL& origin_url, FileSystemType type, bool create);
+  SandboxDirectoryDatabase* GetDirectoryDatabase(const FileSystemURL& url,
+                                                 bool create);
 
   // Gets the topmost directory specific to this origin.  This will
   // contain both the filesystem type subdirectories.
   base::FilePath GetDirectoryForOrigin(const GURL& origin,
-                                 bool create,
-                                 base::PlatformFileError* error_code);
+                                       bool create,
+                                       base::PlatformFileError* error_code);
 
   void InvalidateUsageCache(FileSystemOperationContext* context,
                             const GURL& origin,
@@ -260,8 +262,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   base::PlatformFileError GenerateNewLocalPath(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
-      const GURL& origin,
-      FileSystemType type,
+      const FileSystemURL& url,
       base::FilePath* local_path);
 
   base::PlatformFileError CreateOrOpenInternal(

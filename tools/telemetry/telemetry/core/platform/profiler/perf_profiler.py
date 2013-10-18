@@ -6,16 +6,22 @@ import logging
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 
 from telemetry.core import util
 from telemetry.core.platform import profiler
+from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
 
 
 class _SingleProcessPerfProfiler(object):
-  """An internal class for using perf for a given process."""
+  """An internal class for using perf for a given process.
+
+  On android, this profiler uses pre-built binaries from AOSP.
+  See more details in prebuilt/android/README.txt.
+  """
   def __init__(self, pid, output_file, browser_backend, platform_backend):
     self._pid = pid
     self._browser_backend = browser_backend
@@ -25,9 +31,15 @@ class _SingleProcessPerfProfiler(object):
     self._is_android = platform_backend.GetOSName() == 'android'
     cmd_prefix = []
     if self._is_android:
+      perf_binary = android_prebuilt_profiler_helper.GetDevicePath(
+          'perf')
       cmd_prefix = ['adb', '-s', browser_backend.adb.device(), 'shell',
-                    '/data/local/tmp/perf']
-      output_file = os.path.join('/sdcard', os.path.basename(output_file))
+                    perf_binary]
+      output_file = os.path.join('/sdcard', 'perf_profiles',
+                                 os.path.basename(output_file))
+      self._device_output_file = output_file
+      browser_backend.adb.RunShellCommand(
+          'mkdir -p ' + os.path.dirname(self._device_output_file))
     else:
       cmd_prefix = ['perf']
     self._proc = subprocess.Popen(cmd_prefix +
@@ -46,6 +58,9 @@ class _SingleProcessPerfProfiler(object):
       perf_pids = self._browser_backend.adb.Adb().ExtractPid('perf')
       self._browser_backend.adb.Adb().RunShellCommand(
           'kill -SIGINT ' + ' '.join(perf_pids))
+      util.WaitFor(
+          lambda: not self._browser_backend.adb.Adb().ExtractPid('perf'),
+          timeout=2)
     self._proc.send_signal(signal.SIGINT)
     exit_code = self._proc.wait()
     try:
@@ -64,7 +79,7 @@ Try rerunning this script under sudo or setting
     cmd = 'perf report'
     if self._is_android:
       self._browser_backend.adb.Adb().Adb().Pull(
-          os.path.join('/sdcard', os.path.basename(self._output_file)),
+          self._device_output_file,
           self._output_file)
       host_symfs = os.path.join(os.path.dirname(self._output_file),
                                 'data', 'app-lib')
@@ -79,12 +94,15 @@ Try rerunning this script under sudo or setting
         device_dir = filter(
             lambda app_lib: app_lib.startswith(self._browser_backend.package),
             self._browser_backend.adb.Adb().RunShellCommand('ls /data/app-lib'))
-        os.symlink(os.path.join(util.GetChromiumSrcDir(),
-                                'out', 'Release', 'lib'),
+        os.symlink(os.path.abspath(
+                      os.path.join(util.GetChromiumSrcDir(),
+                                   os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+                                   'Release', 'lib')),
                    os.path.join(host_symfs, device_dir[0]))
-      print 'On Android, assuming out/Release/lib has a fresh symbolized '
-      print 'library matching the one on device.'
-      cmd = 'perfhost report --symfs %s' % os.path.dirname(self._output_file)
+      print 'On Android, assuming $CHROMIUM_OUT_DIR/Release/lib has a fresh'
+      print 'symbolized library matching the one on device.'
+      cmd = (android_prebuilt_profiler_helper.GetHostPath('perfhost') +
+             ' report --symfs %s' % os.path.dirname(self._output_file))
     print 'To view the profile, run:'
     print '  %s -n -i %s' % (cmd, self._output_file)
     return self._output_file
@@ -100,11 +118,17 @@ Try rerunning this script under sudo or setting
 
 class PerfProfiler(profiler.Profiler):
 
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(PerfProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     process_output_file_map = self._GetProcessOutputFileMap()
     self._process_profilers = []
+    if platform_backend.GetOSName() == 'android':
+      android_prebuilt_profiler_helper.GetIfChanged('perfhost')
+      os.chmod(android_prebuilt_profiler_helper.GetHostPath('perfhost'),
+               stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+      android_prebuilt_profiler_helper.InstallOnDevice(
+          browser_backend.adb, 'perf')
     for pid, output_file in process_output_file_map.iteritems():
       if 'zygote' in output_file:
         continue
@@ -122,7 +146,7 @@ class PerfProfiler(profiler.Profiler):
       return False
     if browser_type.startswith('cros'):
       return False
-    return cls._CheckLinuxPerf() or cls._CheckAndroidPerf()
+    return cls._CheckLinuxPerf() or browser_type.startswith('android')
 
   @classmethod
   def _CheckLinuxPerf(cls):
@@ -134,21 +158,11 @@ class PerfProfiler(profiler.Profiler):
       return False
 
   @classmethod
-  def CustomizeBrowserOptions(cls, options):
+  def CustomizeBrowserOptions(cls, browser_type, options):
     options.AppendExtraBrowserArgs([
         '--no-sandbox',
         '--allow-sandbox-debugging',
     ])
-
-  @classmethod
-  def _CheckAndroidPerf(cls):
-    try:
-      return not subprocess.Popen(['perfhost', '--version'],
-                                  stderr=subprocess.STDOUT,
-                                  stdout=subprocess.PIPE).wait()
-    except OSError:
-      return False
-
 
   def CollectProfile(self):
     output_files = []

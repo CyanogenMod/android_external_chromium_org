@@ -81,16 +81,10 @@ class HelpHandler : public content::WebUIMessageHandler,
   void OnOSFirmware(const std::string& firmware);
   void OnCurrentChannel(const std::string& channel);
   void OnTargetChannel(const std::string& channel);
-
-  void ProcessLsbFileInfo(
-      base::PlatformFileError rv, const base::PlatformFileInfo& file_info);
 #endif
 
   // Specialized instance of the VersionUpdater used to update the browser.
   scoped_ptr<VersionUpdater> version_updater_;
-
-  // Used for callbacks.
-  base::WeakPtrFactory<HelpHandler> weak_factory_;
 
   // Used to observe notifications.
   content::NotificationRegistrar registrar_;
@@ -102,6 +96,9 @@ class HelpHandler : public content::WebUIMessageHandler,
   // Used to request the version.
   CancelableTaskTracker tracker_;
 #endif  // defined(OS_CHROMEOS)
+
+  // Used for callbacks.
+  base::WeakPtrFactory<HelpHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HelpHandler);
 };

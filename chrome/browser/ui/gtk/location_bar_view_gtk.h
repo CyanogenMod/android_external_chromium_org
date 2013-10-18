@@ -89,11 +89,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   // corresponding to |page_action|.
   GtkWidget* GetPageActionWidget(ExtensionAction* page_action);
 
-  // Updates the location bar.  We also reset the bar's permanent text and
-  // security style, and, if |contents| is non-NULL, also restore saved state
-  // that the tab holds.
-  void Update(const content::WebContents* contents);
-
   // Performs any updates which depend on the image having already been laid out
   // by the owning LocationBarViewGtk.
   void UpdatePostLayout();
@@ -112,17 +107,9 @@ class LocationBarViewGtk : public OmniboxEditController,
   void SetStarred(bool starred);
 
   // OmniboxEditController:
-  virtual void OnAutocompleteAccept(const GURL& url,
-                                    WindowOpenDisposition disposition,
-                                    content::PageTransition transition,
-                                    const GURL& alternate_nav_url) OVERRIDE;
+  virtual void Update(const content::WebContents* contents) OVERRIDE;
   virtual void OnChanged() OVERRIDE;
-  virtual void OnSelectionBoundsChanged() OVERRIDE;
-  virtual void OnKillFocus() OVERRIDE;
   virtual void OnSetFocus() OVERRIDE;
-  virtual void OnInputInProgress(bool in_progress) OVERRIDE;
-  virtual gfx::Image GetFavicon() const OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
   virtual InstantController* GetInstant() OVERRIDE;
   virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual ToolbarModel* GetToolbarModel() OVERRIDE;
@@ -130,7 +117,7 @@ class LocationBarViewGtk : public OmniboxEditController,
 
   // LocationBar:
   virtual void ShowFirstRunBubble() OVERRIDE;
-  virtual string16 GetInputString() const OVERRIDE;
+  virtual GURL GetDestinationURL() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
   virtual content::PageTransition GetPageTransition() const OVERRIDE;
   virtual void AcceptInput() OVERRIDE;
@@ -170,7 +157,7 @@ class LocationBarViewGtk : public OmniboxEditController,
     PageToolViewGtk();
     virtual ~PageToolViewGtk();
 
-    GtkWidget* widget();
+    GtkWidget* widget() { return alignment_.get(); }
 
     bool IsVisible();
 
@@ -188,9 +175,9 @@ class LocationBarViewGtk : public OmniboxEditController,
 
    protected:
     // Theme constants for solid background elements.
-    virtual GdkColor button_border_color() const = 0;
-    virtual GdkColor gradient_top_color() const = 0;
-    virtual GdkColor gradient_bottom_color() const = 0;
+    virtual GdkColor GetButtonBorderColor() const = 0;
+    virtual GdkColor GetGradientTopColor() const = 0;
+    virtual GdkColor GetGradientBottomColor() const = 0;
 
     // Delegate for ButtonPressed message.
     virtual void OnClick(GtkWidget* sender) = 0;
@@ -383,11 +370,6 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Updates the maximum size of the EV certificate label.
   void UpdateEVCertificateLabelSize();
 
-  // Sets the text that should be displayed in the info label and its associated
-  // tooltip text.  Call with an empty string if the info label should be
-  // hidden.
-  void SetInfoText();
-
   // Set the keyword text for the Search BLAH: keyword box.
   void SetKeywordLabel(const string16& keyword);
 
@@ -489,22 +471,7 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Alignment used to wrap |location_entry_|.
   GtkWidget* location_entry_alignment_;
 
-  CommandUpdater* command_updater_;
   Browser* browser_;
-
-  // When we get an OnAutocompleteAccept notification from the autocomplete
-  // edit, we save the input string so we can give it back to the browser on
-  // the LocationBar interface via GetInputString().
-  string16 location_input_;
-
-  // The user's desired disposition for how their input should be opened.
-  WindowOpenDisposition disposition_;
-
-  // The transition type to use for the navigation.
-  content::PageTransition transition_;
-
-  // Used to schedule a task for the first run bubble.
-  base::WeakPtrFactory<LocationBarViewGtk> weak_ptr_factory_;
 
   // When true, the location bar view is read only and also is has a slightly
   // different presentation (font size / color). This is used for popups.
@@ -537,6 +504,9 @@ class LocationBarViewGtk : public OmniboxEditController,
   // Used to remember the URL and title text when drag&drop has begun.
   GURL drag_url_;
   string16 drag_title_;
+
+  // Used to schedule a task for the first run bubble.
+  base::WeakPtrFactory<LocationBarViewGtk> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LocationBarViewGtk);
 };

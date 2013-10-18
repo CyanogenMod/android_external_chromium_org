@@ -69,7 +69,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
 
   // Notifications about the view's progress painting.  See PluginInstance.
   // These messages are used to send Flush callbacks to the plugin.
-  void ViewWillInitiatePaint();
   void ViewInitiatedPaint();
   void ViewFlushedPaint();
 
@@ -172,8 +171,6 @@ class CONTENT_EXPORT PepperGraphics2DHost
   // Set to the scale between what the plugin considers to be one pixel and one
   // DIP
   float scale_;
-
-  base::WeakPtrFactory<PepperGraphics2DHost> weak_ptr_factory_;
 
   ppapi::host::ReplyMessageContext flush_reply_context_;
 

@@ -12,8 +12,7 @@ gyp_shared_intermediate_dir := $(call intermediates-dir-for,GYP,shared)
 # Make sure our deps are built first.
 GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_khronos_khronos_headers_gyp)/khronos_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -83,14 +82,11 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DGLES2_IMPL_IMPLEMENTATION' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -113,8 +109,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -176,14 +170,11 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DGLES2_IMPL_IMPLEMENTATION' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -207,8 +198,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH) \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -268,8 +257,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

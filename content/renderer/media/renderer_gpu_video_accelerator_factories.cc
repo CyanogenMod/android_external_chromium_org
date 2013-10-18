@@ -13,7 +13,6 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/ipc/command_buffer_proxy.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace content {
@@ -229,9 +228,7 @@ void RendererGpuVideoAcceleratorFactories::AsyncCreateTextures(
                         GL_UNSIGNED_BYTE,
                         NULL);
     }
-    // GLES2Implementation doesn't currently have the fast path of mailbox
-    // generation, but WebGraphicsContext3DCommandBufferImpl does.
-    context->genMailboxCHROMIUM(created_texture_mailboxes_[i].name);
+    gles2->GenMailboxCHROMIUM(created_texture_mailboxes_[i].name);
     gles2->ProduceTextureCHROMIUM(texture_target,
                                   created_texture_mailboxes_[i].name);
   }

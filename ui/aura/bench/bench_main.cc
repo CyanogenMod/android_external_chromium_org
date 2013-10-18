@@ -182,7 +182,6 @@ class WebGLBench : public BenchCompositorObserver {
         parent_(parent),
         webgl_(ui::LAYER_TEXTURED),
         compositor_(compositor),
-        context_provider_(),
         texture_(),
         fbo_(0),
         do_draw_(true) {
@@ -208,8 +207,8 @@ class WebGLBench : public BenchCompositorObserver {
     webgl_.SetBounds(bounds);
     parent_->Add(&webgl_);
 
-    context_provider_ = ui::ContextFactory::GetInstance()
-        ->OffscreenContextProviderForMainThread();
+    context_provider_ =
+        ui::ContextFactory::GetInstance()->SharedMainThreadContextProvider();
     WebKit::WebGraphicsContext3D* context = context_provider_->Context3d();
     context->makeContextCurrent();
     texture_ = new WebGLTexture(context, bounds.size());
@@ -228,7 +227,7 @@ class WebGLBench : public BenchCompositorObserver {
   virtual ~WebGLBench() {
     context_provider_->Context3d()->makeContextCurrent();
     context_provider_->Context3d()->deleteFramebuffer(fbo_);
-    webgl_.SetExternalTexture(NULL);
+    webgl_.SetShowPaintedContent();
     texture_ = NULL;
     compositor_->RemoveObserver(this);
   }
@@ -309,7 +308,7 @@ int main(int argc, char** argv) {
   ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
 
   base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
-  aura::Env::GetInstance();
+  aura::Env::CreateInstance();
   scoped_ptr<aura::TestScreen> test_screen(
       aura::TestScreen::CreateFullscreen());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());

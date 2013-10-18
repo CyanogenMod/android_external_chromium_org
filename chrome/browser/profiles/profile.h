@@ -296,11 +296,11 @@ class Profile : public content::BrowserContext {
   // Called after login.
   virtual void OnLogin() = 0;
 
-  // Creates ChromeOS's EnterpriseExtensionListener.
-  virtual void SetupChromeOSEnterpriseExtensionObserver() = 0;
-
   // Initializes Chrome OS's preferences.
   virtual void InitChromeOSPreferences() = 0;
+
+  // True if the profile is for login session.
+  virtual bool IsLoginProfile() = 0;
 #endif  // defined(OS_CHROMEOS)
 
   // Returns the helper object that provides the proxy configuration service

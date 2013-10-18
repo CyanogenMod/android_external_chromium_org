@@ -15,6 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
@@ -33,13 +34,17 @@
 #include "chrome/common/pref_names.h"
 #endif
 
+#if defined(USE_ASH)
+#include "ash/shell.h"
+#include "ui/aura/window.h"
+#endif
+
 using content::RenderViewHost;
 using content::UserMetricsAction;
 using content::WebContents;
 
 FullscreenController::FullscreenController(Browser* browser)
-    : ptr_factory_(this),
-      browser_(browser),
+    : browser_(browser),
       window_(browser->window()),
       profile_(browser->profile()),
       fullscreened_tab_(NULL),
@@ -49,7 +54,8 @@ FullscreenController::FullscreenController(Browser* browser)
       mouse_lock_tab_(NULL),
       mouse_lock_state_(MOUSELOCK_NOT_REQUESTED),
       reentrant_window_state_change_call_check_(false),
-      is_privileged_fullscreen_for_testing_(false) {
+      is_privileged_fullscreen_for_testing_(false),
+      ptr_factory_(this) {
   DCHECK(window_);
   DCHECK(profile_);
 }
@@ -295,10 +301,13 @@ void FullscreenController::WindowFullscreenStateChanged() {
     extension_caused_fullscreen_ = GURL();
     NotifyTabOfExitIfNecessary();
   }
-  if (exiting_fullscreen)
+  if (exiting_fullscreen) {
     window_->GetDownloadShelf()->Unhide();
-  else
+  } else {
     window_->GetDownloadShelf()->Hide();
+    if (window_->GetStatusBubble())
+      window_->GetStatusBubble()->Hide();
+  }
 }
 
 bool FullscreenController::HandleUserPressedEscape() {
@@ -436,7 +445,9 @@ FullscreenExitBubbleType FullscreenController::GetFullscreenExitBubbleType()
 
   if (fullscreened_tab_) {
     if (tab_fullscreen_accepted_) {
-      if (IsMouseLocked()) {
+      if (IsPrivilegedFullscreenForTab()) {
+        return FEB_TYPE_NONE;
+      } else if (IsMouseLocked()) {
         return FEB_TYPE_FULLSCREEN_MOUSELOCK_EXIT_INSTRUCTION;
       } else if (IsMouseLockRequested()) {
         return FEB_TYPE_MOUSELOCK_BUTTONS;
@@ -485,6 +496,21 @@ void FullscreenController::UpdateNotificationRegistrations() {
 
 void FullscreenController::PostFullscreenChangeNotification(
     bool is_fullscreen) {
+#if defined(USE_ASH)
+  if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
+    // Ash window may not be a browser window and ash can't (and shouldn't)
+    // depend on chrome/ so it needs a separate notification.
+    // In ash send notification to ShellObserver objects specifying the root
+    // window. This allows different handling and layout adjustments in each
+    // screen.
+    aura::Window* window = window_->GetNativeWindow();
+    // GetNativeWindow may return NULL in tests.
+    if (window) {
+      ash::Shell::GetInstance()->NotifyFullscreenStateChange(
+          is_fullscreen, window->GetRootWindow());
+    }
+  }
+#endif
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&FullscreenController::NotifyFullscreenChange,

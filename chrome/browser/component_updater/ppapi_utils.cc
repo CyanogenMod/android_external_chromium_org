@@ -87,6 +87,7 @@
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
+#include "ppapi/c/private/ppb_output_protection_private.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/private/ppb_talk_private.h"
@@ -101,7 +102,6 @@
 #include "ppapi/c/trusted/ppb_browser_font_trusted.h"
 #include "ppapi/c/trusted/ppb_char_set_trusted.h"
 #include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
-#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
 #include "ppapi/thunk/thunk.h"
 

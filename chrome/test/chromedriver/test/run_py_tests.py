@@ -91,6 +91,8 @@ def _GetDesktopNegativeFilter(version_name):
 _ANDROID_NEGATIVE_FILTER = {}
 _ANDROID_NEGATIVE_FILTER['com.google.android.apps.chrome'] = (
     _NEGATIVE_FILTER['HEAD'] + [
+        # TODO(chrisgao): fix hang of tab crash test on android.
+        'ChromeDriverTest.testTabCrash',
         # Android doesn't support switches and extensions.
         'ChromeSwitchesCapabilityTest.*',
         'ChromeExtensionsCapabilityTest.*',
@@ -611,6 +613,13 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self.assertEquals([100, 200], self._driver.GetWindowPosition())
     self.assertEquals([600, 400], self._driver.GetWindowSize())
 
+  def testConsoleLogSources(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/console_log.html'))
+    logs = self._driver.GetLog('browser')
+    self.assertEquals(len(logs), 2)
+    self.assertEquals(logs[0]['source'], 'network')
+    self.assertEquals(logs[1]['source'], 'javascript')
+
   def testContextMenuEventFired(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/context_menu.html'))
     self._driver.MouseMoveTo(self._driver.FindElement('tagName', 'div'))
@@ -621,6 +630,18 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     # Some pages (about:blank) cause Chrome to put the focus in URL bar.
     # This breaks tests depending on focus.
     self.assertTrue(self._driver.ExecuteScript('return document.hasFocus()'))
+
+  def testTabCrash(self):
+    # If a tab is crashed, the session will be deleted.
+    # When 31 is released, will reload the tab instead.
+    # https://code.google.com/p/chromedriver/issues/detail?id=547
+    self.assertRaises(chromedriver.UnknownError,
+                      self._driver.Load, 'chrome://crash')
+    self.assertRaises(chromedriver.NoSuchSession,
+                      self._driver.GetCurrentUrl)
+
+  def testDoesntHangOnDebugger(self):
+    self._driver.ExecuteScript('debugger;')
 
 
 class ChromeSwitchesCapabilityTest(ChromeDriverBaseTest):

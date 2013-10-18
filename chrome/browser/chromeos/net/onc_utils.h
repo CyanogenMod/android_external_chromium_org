@@ -8,7 +8,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chromeos/network/onc/onc_constants.h"
+#include "components/onc/onc_constants.h"
+
+class PrefService;
 
 namespace base {
 class DictionaryValue;
@@ -17,6 +19,7 @@ class ListValue;
 
 namespace chromeos {
 
+class FavoriteState;
 class NetworkState;
 class User;
 
@@ -47,7 +50,21 @@ void ImportNetworksForUser(const chromeos::User* user,
 // |onc_source| accordingly.
 const base::DictionaryValue* FindPolicyForActiveUser(
     const std::string& guid,
-    onc::ONCSource* onc_source);
+    ::onc::ONCSource* onc_source);
+
+// Returns the effective (user or device) policy for network |favorite|. Both
+// |profile_prefs| and |local_state_prefs| might be NULL. Returns NULL if no
+// applicable policy is found. Sets |onc_source| accordingly.
+const base::DictionaryValue* GetPolicyForFavoriteNetwork(
+    const PrefService* profile_prefs,
+    const PrefService* local_state_prefs,
+    const FavoriteState& favorite,
+    ::onc::ONCSource* onc_source);
+
+// Convenience function to check only whether a policy for a network exists.
+bool HasPolicyForFavoriteNetwork(const PrefService* profile_prefs,
+                                 const PrefService* local_state_prefs,
+                                 const FavoriteState& network);
 
 }  // namespace onc
 }  // namespace chromeos

@@ -387,6 +387,7 @@ void DriveMetadataStore::DidInitialize(const InitializationCallback& callback,
   db_status_ = contents->status;
   if (db_status_ != SYNC_STATUS_OK) {
     callback.Run(db_status_, false);
+    file_task_runner_->DeleteSoon(FROM_HERE, contents.release());
     return;
   }
 
@@ -644,6 +645,15 @@ void DriveMetadataStore::DidUpdateOrigin(
 
 void DriveMetadataStore::WriteToDB(scoped_ptr<leveldb::WriteBatch> batch,
                                    const SyncStatusCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  if (db_status_ != SYNC_STATUS_OK &&
+      db_status_ != SYNC_DATABASE_ERROR_NOT_FOUND) {
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(callback, SYNC_DATABASE_ERROR_FAILED));
+    return;
+  }
+
+  DCHECK(db_);
   base::PostTaskAndReplyWithResult(
       file_task_runner_.get(),
       FROM_HERE,

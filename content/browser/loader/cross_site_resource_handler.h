@@ -47,13 +47,12 @@ class CrossSiteResourceHandler : public LayeredResourceHandler {
  private:
   // Prepare to render the cross-site response in a new RenderViewHost, by
   // telling the old RenderViewHost to run its onunload handler.
-  void StartCrossSiteTransition(
-      int request_id,
-      ResourceResponse* response);
+  void StartCrossSiteTransition(int request_id,
+                                ResourceResponse* response,
+                                bool should_transfer);
 
   void ResumeIfDeferred();
 
-  net::URLRequest* request_;
   bool has_started_response_;
   bool in_cross_site_transition_;
   bool completed_during_transition_;

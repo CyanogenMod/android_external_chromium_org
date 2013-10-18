@@ -558,12 +558,7 @@ std::string GetProgramClassName() {
 
 std::string GetDesktopName(base::Environment* env) {
 #if defined(GOOGLE_CHROME_BUILD)
-  std::string version_string_modifier(
-      chrome::VersionInfo::GetVersionStringModifier());
-  if (version_string_modifier.empty())
-    return "google-chrome.desktop";
-
-  return std::string("google-chrome-") + version_string_modifier + ".desktop";
+  return "google-chrome.desktop";
 #else  // CHROMIUM_BUILD
   // Allow $CHROME_DESKTOP to override the built-in value, so that development
   // versions can set themselves as the default without interfering with

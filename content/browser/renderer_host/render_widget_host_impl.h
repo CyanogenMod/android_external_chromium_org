@@ -726,46 +726,26 @@ class CONTENT_EXPORT RenderWidgetHostImpl : virtual public RenderWidgetHost,
   virtual void IncrementInFlightEventCount() OVERRIDE;
   virtual void DecrementInFlightEventCount() OVERRIDE;
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
-  virtual bool OnSendKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event,
-      const ui::LatencyInfo& latency_info,
-      bool* is_shortcut) OVERRIDE;
-  virtual bool OnSendWheelEvent(
-      const MouseWheelEventWithLatencyInfo& wheel_event) OVERRIDE;
-  virtual bool OnSendMouseEvent(
-      const MouseEventWithLatencyInfo& mouse_event) OVERRIDE;
-  virtual bool OnSendTouchEvent(
-      const TouchEventWithLatencyInfo& touch_event) OVERRIDE;
-  virtual bool OnSendGestureEvent(
-      const GestureEventWithLatencyInfo& gesture_event) OVERRIDE;
-  virtual bool OnSendMouseEventImmediately(
-      const MouseEventWithLatencyInfo& mouse_event) OVERRIDE;
-  virtual bool OnSendTouchEventImmediately(
-      const TouchEventWithLatencyInfo& touch_event) OVERRIDE;
-  virtual bool OnSendGestureEventImmediately(
-      const GestureEventWithLatencyInfo& gesture_event) OVERRIDE;
+  virtual OverscrollController* GetOverscrollController() const OVERRIDE;
   virtual void SetNeedsFlush() OVERRIDE;
   virtual void DidFlush() OVERRIDE;
 
   // InputAckHandler
   virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
                                   InputEventAckState ack_result) OVERRIDE;
-  virtual void OnWheelEventAck(const WebKit::WebMouseWheelEvent& event,
+  virtual void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
                                InputEventAckState ack_result) OVERRIDE;
-  virtual void OnGestureEventAck(const WebKit::WebGestureEvent& event,
+  virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
                                  InputEventAckState ack_result) OVERRIDE;
   virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE;
-
-  void SimulateTouchGestureWithMouse(const WebKit::WebMouseEvent& mouse_event);
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
   void DelayedAutoResized();
 
-  // Creates the proper InputRouter, either Buffered or Immediate.
-  scoped_ptr<InputRouter> CreateInputRouter();
+  void WindowSnapshotReachedScreen(int snapshot_id);
 
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-NULL until DetachDelegate() is called.

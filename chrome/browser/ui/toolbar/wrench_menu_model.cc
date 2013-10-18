@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "chrome/browser/ui/send_feedback_experiment.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
@@ -207,17 +206,8 @@ void ToolsMenuModel::Build(Browser* browser) {
 #if defined(GOOGLE_CHROME_BUILD)
 #if !defined(OS_CHROMEOS)
   // Show IDC_FEEDBACK in "Tools" menu for non-ChromeOS platforms.
-  if (!chrome::UseAlternateSendFeedbackLocation()) {
-    AddItemWithStringId(IDC_FEEDBACK,
-                        chrome::GetSendFeedbackMenuLabelID());
-    AddSeparator(ui::NORMAL_SEPARATOR);
-  }
-#else
-  if (chrome::UseAlternateSendFeedbackLocation()) {
-    AddItemWithStringId(IDC_FEEDBACK,
-                        chrome::GetSendFeedbackMenuLabelID());
-    AddSeparator(ui::NORMAL_SEPARATOR);
-  }
+  AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
+  AddSeparator(ui::NORMAL_SEPARATOR);
 #endif
 #endif // GOOGLE_CHROME_BUILD
 
@@ -243,14 +233,14 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
     : ui::SimpleMenuModel(this),
       provider_(provider),
       browser_(browser),
-      tab_strip_model_(browser_->tab_strip_model()),
-      zoom_callback_(base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
-                                base::Unretained(this))) {
+      tab_strip_model_(browser_->tab_strip_model()) {
   Build(is_new_menu);
   UpdateZoomControls();
 
-  HostZoomMap::GetForBrowserContext(
-      browser->profile())->AddZoomLevelChangedCallback(zoom_callback_);
+  zoom_subscription_ = HostZoomMap::GetForBrowserContext(
+      browser->profile())->AddZoomLevelChangedCallback(
+          base::Bind(&WrenchMenuModel::OnZoomLevelChanged,
+                     base::Unretained(this)));
 
   tab_strip_model_->AddObserver(this);
 
@@ -261,11 +251,6 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
 WrenchMenuModel::~WrenchMenuModel() {
   if (tab_strip_model_)
     tab_strip_model_->RemoveObserver(this);
-
-  if (browser()) {
-    HostZoomMap::GetForBrowserContext(
-        browser()->profile())->RemoveZoomLevelChangedCallback(zoom_callback_);
-  }
 }
 
 bool WrenchMenuModel::DoesCommandIdDismissMenu(int command_id) const {
@@ -636,11 +621,9 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   }
 
 #if defined(GOOGLE_CHROME_BUILD)
-  if (browser_defaults::kShowFeedbackMenuItem &&
-      !chrome::UseAlternateSendFeedbackLocation()) {
-    AddItemWithStringId(IDC_FEEDBACK,
-                        chrome::GetSendFeedbackMenuLabelID());
-  }
+#if defined(OS_CHROMEOS)
+  AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
+#endif
 #endif
 
   AddGlobalErrorMenuItems();
@@ -649,13 +632,6 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddSubMenuWithStringId(IDC_ZOOM_MENU, IDS_MORE_TOOLS_MENU,
                            tools_menu_model_.get());
   }
-
-#if !defined(OS_CHROMEOS) && defined(GOOGLE_CHROME_BUILD)
-  // For Send Feedback Link experiment (crbug.com/169339).
-  if (chrome::UseAlternateSendFeedbackLocation())
-    AddItemWithStringId(IDC_FEEDBACK,
-                        chrome::GetSendFeedbackMenuLabelID());
-#endif
 
   bool show_exit_menu = browser_defaults::kShowExitMenuItem;
 #if defined(OS_WIN) && defined(USE_AURA)
@@ -685,9 +661,7 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
   for (GlobalErrorService::GlobalErrorList::const_iterator
        it = errors.begin(); it != errors.end(); ++it) {
     GlobalError* error = *it;
-    // Verify that we're not getting NULL errors. TODO(sail) Make this a DCHECK
-    // once crbug.com/278543 is fixed.
-    CHECK(error);
+    DCHECK(error);
     if (error->HasMenuItem()) {
 #if !defined(OS_CHROMEOS)
       // Don't add a signin error if it's already being displayed elsewhere.

@@ -89,11 +89,9 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
  private:
   typedef fileapi::FileSystemOperationRunner::OperationID OperationID;
 
-  void OnOpen(int request_id,
-              const GURL& origin_url,
-              fileapi::FileSystemType type,
-              int64 requested_size,
-              bool create);
+  void OnOpenFileSystem(int request_id,
+                        const GURL& origin_url,
+                        fileapi::FileSystemType type);
   void OnResolveURL(int request_id,
                     const GURL& filesystem_url);
   void OnDeleteFileSystem(int request_id,
@@ -203,9 +201,9 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                 int64 bytes,
                 bool complete);
   void DidOpenFileSystem(int request_id,
-                         base::PlatformFileError result,
+                         const GURL& root,
                          const std::string& filesystem_name,
-                         const GURL& root);
+                         base::PlatformFileError result);
   void DidResolveURL(int request_id,
                      base::PlatformFileError result,
                      const fileapi::FileSystemInfo& info,

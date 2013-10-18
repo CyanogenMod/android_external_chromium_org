@@ -11,85 +11,6 @@
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_2_AUTOGEN_H_
 
 
-TEST_F(GLES2DecoderTest2, GetVertexAttribivValidArgs) {
-  SpecializedSetup<cmds::GetVertexAttribiv, 0>(true);
-  typedef cmds::GetVertexAttribiv::Result Result;
-  Result* result = static_cast<Result*>(shared_memory_address_);
-  result->size = 0;
-  cmds::GetVertexAttribiv cmd;
-  cmd.Init(
-      1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
-      shared_memory_offset_);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
-                GL_VERTEX_ATTRIB_ARRAY_NORMALIZED),
-            result->GetNumResults());
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-
-TEST_F(GLES2DecoderTest2, GetVertexAttribivInvalidArgs2_0) {
-  EXPECT_CALL(*gl_, GetVertexAttribiv(_, _, _)).Times(0);
-  SpecializedSetup<cmds::GetVertexAttribiv, 0>(false);
-  cmds::GetVertexAttribiv::Result* result =
-      static_cast<cmds::GetVertexAttribiv::Result*>(shared_memory_address_);
-  result->size = 0;
-  cmds::GetVertexAttribiv cmd;
-  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, kInvalidSharedMemoryId, 0);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(0u, result->size);
-}
-
-TEST_F(GLES2DecoderTest2, GetVertexAttribivInvalidArgs2_1) {
-  EXPECT_CALL(*gl_, GetVertexAttribiv(_, _, _)).Times(0);
-  SpecializedSetup<cmds::GetVertexAttribiv, 0>(false);
-  cmds::GetVertexAttribiv::Result* result =
-      static_cast<cmds::GetVertexAttribiv::Result*>(shared_memory_address_);
-  result->size = 0;
-  cmds::GetVertexAttribiv cmd;
-  cmd.Init(
-      1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
-      kInvalidSharedMemoryOffset);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  EXPECT_EQ(0u, result->size);
-}
-// TODO(gman): GetVertexAttribPointerv
-
-
-TEST_F(GLES2DecoderTest2, HintValidArgs) {
-  EXPECT_CALL(*gl_, Hint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST));
-  SpecializedSetup<cmds::Hint, 0>(true);
-  cmds::Hint cmd;
-  cmd.Init(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-
-TEST_F(GLES2DecoderTest2, HintInvalidArgs0_0) {
-  EXPECT_CALL(*gl_, Hint(_, _)).Times(0);
-  SpecializedSetup<cmds::Hint, 0>(false);
-  cmds::Hint cmd;
-  cmd.Init(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
-}
-
-TEST_F(GLES2DecoderTest2, IsBufferValidArgs) {
-  SpecializedSetup<cmds::IsBuffer, 0>(true);
-  cmds::IsBuffer cmd;
-  cmd.Init(client_buffer_id_, shared_memory_id_, shared_memory_offset_);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-
-TEST_F(GLES2DecoderTest2, IsBufferInvalidArgsBadSharedMemoryId) {
-  SpecializedSetup<cmds::IsBuffer, 0>(false);
-  cmds::IsBuffer cmd;
-  cmd.Init(client_buffer_id_, kInvalidSharedMemoryId, shared_memory_offset_);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  cmd.Init(client_buffer_id_, shared_memory_id_, kInvalidSharedMemoryOffset);
-  EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-}
-
 TEST_F(GLES2DecoderTest2, IsEnabledValidArgs) {
   SpecializedSetup<cmds::IsEnabled, 0>(true);
   cmds::IsEnabled cmd;
@@ -328,8 +249,6 @@ TEST_F(GLES2DecoderTest2, ScissorInvalidArgs3_0) {
 
 // TODO(gman): ShaderSource
 
-// TODO(gman): ShaderSourceImmediate
-
 // TODO(gman): ShaderSourceBucket
 
 TEST_F(GLES2DecoderTest2, StencilFuncValidArgs) {
@@ -384,8 +303,6 @@ TEST_F(GLES2DecoderTest2, StencilOpSeparateValidArgs) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 // TODO(gman): TexImage2D
-
-// TODO(gman): TexImage2DImmediate
 
 
 TEST_F(GLES2DecoderTest2, TexParameterfValidArgs) {
@@ -706,8 +623,6 @@ TEST_F(GLES2DecoderTest2, TexParameterivImmediateInvalidArgs1_0) {
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
 // TODO(gman): TexSubImage2D
-
-// TODO(gman): TexSubImage2DImmediate
 
 
 TEST_F(GLES2DecoderTest2, Uniform1fValidArgs) {
@@ -1763,5 +1678,12 @@ TEST_F(GLES2DecoderTest2, PopGroupMarkerEXTValidArgs) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
+// TODO(gman): GenVertexArraysOES
+// TODO(gman): GenVertexArraysOESImmediate
+// TODO(gman): DeleteVertexArraysOES
+// TODO(gman): DeleteVertexArraysOESImmediate
+// TODO(gman): IsVertexArrayOES
+// TODO(gman): BindVertexArrayOES
+// TODO(gman): SwapBuffers
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_2_AUTOGEN_H_
 

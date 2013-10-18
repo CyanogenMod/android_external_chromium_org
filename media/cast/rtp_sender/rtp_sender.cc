@@ -13,24 +13,24 @@
 namespace media {
 namespace cast {
 
-RtpSender::RtpSender(const AudioSenderConfig* audio_config,
+RtpSender::RtpSender(base::TickClock* clock,
+                     const AudioSenderConfig* audio_config,
                      const VideoSenderConfig* video_config,
                      PacedPacketSender* transport)
     : config_(),
       transport_(transport),
-      default_tick_clock_(new base::DefaultTickClock()),
-      clock_(default_tick_clock_.get()) {
+      clock_(clock) {
   // Store generic cast config and create packetizer config.
   DCHECK(audio_config || video_config) << "Invalid argument";
   if (audio_config) {
-    storage_.reset(new PacketStorage(audio_config->rtp_history_ms));
+    storage_.reset(new PacketStorage(clock, audio_config->rtp_history_ms));
     config_.audio = true;
     config_.ssrc = audio_config->sender_ssrc;
     config_.payload_type = audio_config->rtp_payload_type;
     config_.frequency = audio_config->frequency;
     config_.audio_codec = audio_config->codec;
   } else {
-    storage_.reset(new PacketStorage(video_config->rtp_history_ms));
+    storage_.reset(new PacketStorage(clock, video_config->rtp_history_ms));
     config_.audio = false;
     config_.ssrc = video_config->sender_ssrc;
     config_.payload_type = video_config->rtp_payload_type;
@@ -57,61 +57,56 @@ void RtpSender::IncomingEncodedAudioFrame(const EncodedAudioFrame* audio_frame,
 }
 
 void RtpSender::ResendPackets(
-    const MissingFramesAndPackets& missing_frames_and_packets) {
-  std::vector<uint8> packet;
+    const MissingFramesAndPacketsMap& missing_frames_and_packets) {
   // Iterate over all frames in the list.
-  for (std::map<uint8, std::set<uint16> >::const_iterator it =
+  for (MissingFramesAndPacketsMap::const_iterator it =
        missing_frames_and_packets.begin();
        it != missing_frames_and_packets.end(); ++it) {
+    PacketList packets_to_resend;
     uint8 frame_id = it->first;
-    // Iterate over all of the packets in the frame.
-    const std::set<uint16>& packets = it->second;
-    if (packets.empty()) {
+    const PacketIdSet& packets_set = it->second;
+    bool success = false;
+
+    if (packets_set.empty()) {
       VLOG(1) << "Missing all packets in frame " << static_cast<int>(frame_id);
 
-      bool success = false;
       uint16 packet_id = 0;
       do {
         // Get packet from storage.
-        packet.clear();
-        success = storage_->GetPacket(frame_id, packet_id, &packet);
+        success = storage_->GetPacket(frame_id, packet_id, &packets_to_resend);
 
         // Resend packet to the network.
         if (success) {
-          VLOG(1) << "Resend " << static_cast<int>(frame_id) << ":"
-              << packet_id << " size: " << packets.size();
+          VLOG(1) << "Resend " << static_cast<int>(frame_id)
+                  << ":" << packet_id;
           // Set a unique incremental sequence number for every packet.
+          Packet& packet = packets_to_resend.back();
           UpdateSequenceNumber(&packet);
           // Set the size as correspond to each frame.
-          transport_->ResendPacket(packet, packets.size());
           ++packet_id;
         }
       } while (success);
-
     } else {
-      for (std::set<uint16>::const_iterator set_it = packets.begin();
-          set_it != packets.end(); ++set_it) {
+      // Iterate over all of the packets in the frame.
+      for (PacketIdSet::const_iterator set_it = packets_set.begin();
+          set_it != packets_set.end(); ++set_it) {
         uint16 packet_id = *set_it;
-        // Get packet from storage.
-        packet.clear();
-        bool success = storage_->GetPacket(frame_id, packet_id, &packet);
+        success = storage_->GetPacket(frame_id, packet_id, &packets_to_resend);
+
         // Resend packet to the network.
         if (success) {
-          VLOG(1) << "Resend " << static_cast<int>(frame_id) << ":"
-              << packet_id << " size: " << packet.size();
+          VLOG(1) << "Resend " << static_cast<int>(frame_id)
+                  << ":" << packet_id;
+          Packet& packet = packets_to_resend.back();
           UpdateSequenceNumber(&packet);
-          // Set the size as correspond to each frame.
-          transport_->ResendPacket(packet, packets.size());
-        } else {
-          VLOG(1) << "Failed to resend " << static_cast<int>(frame_id) << ":"
-              << packet_id;
         }
       }
     }
+    transport_->ResendPackets(packets_to_resend);
   }
 }
 
-void RtpSender::UpdateSequenceNumber(std::vector<uint8>* packet) {
+void RtpSender::UpdateSequenceNumber(Packet* packet) {
   uint16 new_sequence_number = packetizer_->NextSequenceNumber();
   int index = 2;
   (*packet)[index] = (static_cast<uint8>(new_sequence_number));
@@ -127,7 +122,7 @@ void RtpSender::RtpStatistics(const base::TimeTicks& now,
   uint32 ntp_seconds = 0;
   uint32 ntp_fraction = 0;
   ConvertTimeToNtp(now, &ntp_seconds, &ntp_fraction);
-  // sender_info->ntp_seconds = ntp_seconds;
+  sender_info->ntp_seconds = ntp_seconds;
   sender_info->ntp_fraction = ntp_fraction;
 
   base::TimeTicks time_sent;

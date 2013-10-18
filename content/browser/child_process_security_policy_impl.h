@@ -59,8 +59,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
       const std::string& filesystem_id) OVERRIDE;
   virtual void GrantScheme(int child_id, const std::string& scheme) OVERRIDE;
   virtual bool CanReadFile(int child_id, const base::FilePath& file) OVERRIDE;
-  virtual bool CanWriteFile(int child_id, const base::FilePath& file) OVERRIDE;
-  virtual bool CanCreateFile(int child_id, const base::FilePath& file) OVERRIDE;
   virtual bool CanCreateReadWriteFile(int child_id,
                                       const base::FilePath& file) OVERRIDE;
   virtual bool CanReadFileSystem(int child_id,
@@ -104,10 +102,6 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   // file:// URL, but not all urls of the file:// scheme.
   void GrantRequestSpecificFileURL(int child_id, const GURL& url);
 
-  // Grants the child process permission to enumerate all the files in
-  // this directory and read those files.
-  void GrantReadDirectory(int child_id, const base::FilePath& directory);
-
   // Revokes all permissions granted to the given file.
   void RevokeAllPermissionsForFile(int child_id, const base::FilePath& file);
 
@@ -135,16 +129,14 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
                    const GURL& url,
                    ResourceType::Type resource_type);
 
-  // Before servicing a child process's request to enumerate a directory
-  // the browser should call this method to check for the capability.
-  bool CanReadDirectory(int child_id, const base::FilePath& directory);
-
   // Explicit permissions checks for FileSystemURL specified files.
   bool CanReadFileSystemFile(int child_id, const fileapi::FileSystemURL& url);
   bool CanWriteFileSystemFile(int child_id, const fileapi::FileSystemURL& url);
   bool CanCreateFileSystemFile(int child_id, const fileapi::FileSystemURL& url);
   bool CanCreateReadWriteFileSystemFile(int child_id,
                                         const fileapi::FileSystemURL& url);
+  bool CanCopyIntoFileSystemFile(int child_id,
+                                 const fileapi::FileSystemURL& url);
 
   // Returns true if the specified child_id has been granted WebUIBindings.
   // The browser should check this property before assuming the child process is

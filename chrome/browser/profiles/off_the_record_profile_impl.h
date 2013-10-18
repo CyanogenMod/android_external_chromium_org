@@ -67,12 +67,11 @@ class OffTheRecordProfileImpl : public Profile {
   virtual ExitType GetLastSessionExitType() OVERRIDE;
 
 #if defined(OS_CHROMEOS)
-  virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE;
-  virtual void InitChromeOSPreferences() OVERRIDE;
-
   virtual void ChangeAppLocale(const std::string& locale,
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
+  virtual void InitChromeOSPreferences() OVERRIDE;
+  virtual bool IsLoginProfile() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -138,7 +137,7 @@ class OffTheRecordProfileImpl : public Profile {
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
 
-  content::HostZoomMap::ZoomLevelChangedCallback zoom_callback_;
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

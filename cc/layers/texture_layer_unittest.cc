@@ -892,7 +892,8 @@ class TextureLayerNoMailboxIsActivatedDuringCommit : public LayerTreeTest,
  protected:
   TextureLayerNoMailboxIsActivatedDuringCommit()
       : wait_thread_("WAIT"),
-        wait_event_(false, false) {
+        wait_event_(false, false),
+        context_(TestWebGraphicsContext3D::Create()) {
     wait_thread_.Start();
   }
 
@@ -918,11 +919,11 @@ class TextureLayerNoMailboxIsActivatedDuringCommit : public LayerTreeTest,
 
   // TextureLayerClient implementation.
   virtual unsigned PrepareTexture() OVERRIDE {
-    return OffscreenContextProviderForMainThread()
-        ->Context3d()->createTexture();
+    context_->makeContextCurrent();
+    return context_->createTexture();
   }
   virtual WebKit::WebGraphicsContext3D* Context3d() OVERRIDE {
-    return OffscreenContextProviderForMainThread()->Context3d();
+    return context_.get();
   }
   virtual bool PrepareTextureMailbox(
       TextureMailbox* mailbox,
@@ -1005,6 +1006,7 @@ class TextureLayerNoMailboxIsActivatedDuringCommit : public LayerTreeTest,
   int activate_commit_;
   scoped_refptr<Layer> root_;
   scoped_refptr<TextureLayer> layer_;
+  scoped_ptr<TestWebGraphicsContext3D> context_;
 };
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
@@ -1166,6 +1168,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -1175,6 +1178,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(TextureMailbox(),
                                   scoped_ptr<SingleReleaseCallback>());
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
@@ -1184,6 +1188,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
     // Software resource.
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox3_,
         SingleReleaseCallback::Create(test_data_.release_mailbox3_));
@@ -1193,6 +1198,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    impl_layer->SetDrawsContent(true);
     ContextProvider* context_provider =
         host_impl_.output_surface()->context_provider();
     unsigned texture =
@@ -1204,6 +1210,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    impl_layer->SetDrawsContent(true);
     impl_layer->set_texture_id(0);
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
   }
@@ -1212,6 +1219,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -1221,6 +1229,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(TextureMailbox(),
                                   scoped_ptr<SingleReleaseCallback>());
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_SOFTWARE));
@@ -1230,6 +1239,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
     // Software resource.
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox3_,
         SingleReleaseCallback::Create(test_data_.release_mailbox3_));
@@ -1239,6 +1249,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    impl_layer->SetDrawsContent(true);
     ContextProvider* context_provider =
         host_impl_.output_surface()->context_provider();
     unsigned texture =
@@ -1250,6 +1261,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    impl_layer->SetDrawsContent(true);
     impl_layer->set_texture_id(0);
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_SOFTWARE));
   }
@@ -1258,6 +1270,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, true);
+    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -1267,6 +1280,7 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1, false);
+    impl_layer->SetDrawsContent(true);
     ContextProvider* context_provider =
         host_impl_.output_surface()->context_provider();
     unsigned texture =
@@ -1351,6 +1365,7 @@ TEST_F(TextureLayerImplWithMailboxTest,
   impl_layer->SetTextureMailbox(
       test_data_.mailbox1_,
       SingleReleaseCallback::Create(test_data_.release_mailbox1_));
+  impl_layer->SetDrawsContent(true);
   impl_layer->DidBecomeActive();
   EXPECT_TRUE(impl_layer->WillDraw(
       DRAW_MODE_HARDWARE, host_impl_.active_tree()->resource_provider()));

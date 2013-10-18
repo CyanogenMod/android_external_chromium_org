@@ -1676,19 +1676,13 @@ TEST_F(RenderTextTest, Multiline_MinWidth) {
 
 // Ensure strings wrap onto multiple lines for a normal available width.
 TEST_F(RenderTextTest, Multiline_NormalWidth) {
-  // TODO(ckocagil): Enable this test on XP.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return;
-#endif
-
   const struct {
     const wchar_t* const text;
     const Range first_line_char_range;
     const Range second_line_char_range;
   } kTestStrings[] = {
     { L"abc defg hijkl", Range(0, 9), Range(9, 14) },
-    { L"qwertyuiop", Range(0, 8), Range(8, 10) },
+    { L"qwertyzxcvbn", Range(0, 8), Range(8, 12) },
     { L"\x062A\x0641\x0627\x062D\x05EA\x05E4\x05D5\x05D6\x05D9\x05DD",
           Range(4, 10), Range(0, 4) }
   };
@@ -1733,27 +1727,5 @@ TEST_F(RenderTextTest, Multiline_SufficientWidth) {
   }
 }
 #endif  // defined(OS_WIN)
-
-#if defined(OS_WIN)
-TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
-  scoped_ptr<RenderTextWin> render_text(
-      static_cast<RenderTextWin*>(RenderText::CreateInstance()));
-
-  render_text->SetText(WideToUTF16(L"x\x25B6y"));
-  render_text->EnsureLayout();
-  ASSERT_EQ(3U, render_text->runs_.size());
-  EXPECT_EQ(Range(0, 1), render_text->runs_[0]->range);
-  EXPECT_EQ(Range(1, 2), render_text->runs_[1]->range);
-  EXPECT_EQ(Range(2, 3), render_text->runs_[2]->range);
-
-  render_text->SetText(WideToUTF16(L"x \x25B6 y"));
-  render_text->EnsureLayout();
-  ASSERT_EQ(3U, render_text->runs_.size());
-  EXPECT_EQ(Range(0, 2), render_text->runs_[0]->range);
-  EXPECT_EQ(Range(2, 3), render_text->runs_[1]->range);
-  EXPECT_EQ(Range(3, 5), render_text->runs_[2]->range);
-
-}
-#endif  // !defined(OS_WIN)
 
 }  // namespace gfx

@@ -15,6 +15,7 @@
 #include <algorithm>
 
 #include "nacl_io/ioctl.h"
+#include "nacl_io/kernel_handle.h"
 #include "nacl_io/mount.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
@@ -76,11 +77,10 @@ EventEmitter* MountNodeTty::GetEventEmitter() {
   return emitter_.get();
 }
 
-Error MountNodeTty::Write(size_t offs,
-                     const void* buf,
-                     size_t count,
-                     int* out_bytes) {
-
+Error MountNodeTty::Write(const HandleAttr& attr,
+                          const void* buf,
+                          size_t count,
+                          int* out_bytes) {
   AUTO_LOCK(output_lock_);
   *out_bytes = 0;
 
@@ -102,7 +102,10 @@ Error MountNodeTty::Write(size_t offs,
 }
 
 
-Error MountNodeTty::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
+Error MountNodeTty::Read(const HandleAttr& attr,
+                         void* buf,
+                         size_t count,
+                         int* out_bytes) {
   EventListenerLock wait(GetEventEmitter());
   *out_bytes = 0;
 
@@ -151,7 +154,8 @@ Error MountNodeTty::Read(size_t offs, void* buf, size_t count, int* out_bytes) {
 
 Error MountNodeTty::Echo(const char* string, int count) {
   int wrote;
-  Error error = Write(0, string, count, &wrote);
+  HandleAttr data;
+  Error error = Write(data, string, count, &wrote);
   if (error != 0 || wrote != count) {
     // TOOD(sbc): Do something more useful in response to a
     // failure to echo.
@@ -228,9 +232,10 @@ Error MountNodeTty::ProcessInput(struct tioc_nacl_input_string* message) {
   return 0;
 }
 
-Error MountNodeTty::Ioctl(int request, char* arg) {
+Error MountNodeTty::VIoctl(int request, va_list args) {
   switch (request) {
     case TIOCNACLOUTPUT: {
+      struct tioc_nacl_output* arg = va_arg(args, struct tioc_nacl_output*);
       AUTO_LOCK(output_lock_);
       if (arg == NULL) {
         output_handler_.handler = NULL;
@@ -238,18 +243,18 @@ Error MountNodeTty::Ioctl(int request, char* arg) {
       }
       if (output_handler_.handler != NULL)
         return EALREADY;
-      output_handler_ = *reinterpret_cast<tioc_nacl_output*>(arg);
+      output_handler_ = *arg;
       return 0;
     }
     case TIOCNACLINPUT: {
       // This ioctl is used to deliver data from the user to this tty node's
       // input buffer.
       struct tioc_nacl_input_string* message =
-        reinterpret_cast<struct tioc_nacl_input_string*>(arg);
+        va_arg(args, struct tioc_nacl_input_string*);
       return ProcessInput(message);
     }
     case TIOCSWINSZ: {
-      struct winsize* size = reinterpret_cast<struct winsize*>(arg);
+      struct winsize* size = va_arg(args, struct winsize*);
       {
         AUTO_LOCK(node_lock_);
         rows_ = size->ws_row;
@@ -266,7 +271,7 @@ Error MountNodeTty::Ioctl(int request, char* arg) {
       return 0;
     }
     case TIOCGWINSZ: {
-      struct winsize* size = reinterpret_cast<struct winsize*>(arg);
+      struct winsize* size = va_arg(args, struct winsize*);
       size->ws_row = rows_;
       size->ws_col = cols_;
       return 0;

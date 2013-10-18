@@ -27,6 +27,9 @@ const base::FilePath kVirtualKeyboardTestDir =
 const base::FilePath kMockController =
     base::FilePath(FILE_PATH_LITERAL("mock_controller.js"));
 
+const base::FilePath kMockTimer =
+    base::FilePath(FILE_PATH_LITERAL("mock_timer.js"));
+
 const base::FilePath kBaseKeyboardTestFramework =
     base::FilePath(FILE_PATH_LITERAL("virtual_keyboard_test_base.js"));
 
@@ -55,6 +58,7 @@ class VirtualKeyboardBrowserTest : public InProcessBrowserTest {
 
     // Inject testing scripts.
     InjectJavascript(kWebuiTestDir, kMockController);
+    InjectJavascript(kWebuiTestDir, kMockTimer);
     InjectJavascript(kVirtualKeyboardTestDir, kBaseKeyboardTestFramework);
     InjectJavascript(kVirtualKeyboardTestDir, file);
 
@@ -86,6 +90,14 @@ class VirtualKeyboardBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(VirtualKeyboardBrowserTest, TypingTest) {
   RunTest(base::FilePath(FILE_PATH_LITERAL("typing_test.js")));
+}
+
+IN_PROC_BROWSER_TEST_F(VirtualKeyboardBrowserTest, ControlKeysTest) {
+  RunTest(base::FilePath(FILE_PATH_LITERAL("control_keys_test.js")));
+}
+
+IN_PROC_BROWSER_TEST_F(VirtualKeyboardBrowserTest, KeysetTransitionTest) {
+  RunTest(base::FilePath(FILE_PATH_LITERAL("keyset_transition_test.js")));
 }
 
 // TODO(kevers|rsadam|bshe):  Add UI tests for remaining virtual keyboard

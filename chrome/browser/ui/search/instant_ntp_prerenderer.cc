@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/search_urls.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -206,12 +207,6 @@ void InstantNTPPrerenderer::InstantPageAboutToNavigateMainFrame(
   NOTREACHED();
 }
 
-void InstantNTPPrerenderer::FocusOmnibox(
-    const content::WebContents* /* contents */,
-    OmniboxFocusState /* state */) {
-  NOTREACHED();
-}
-
 void InstantNTPPrerenderer::NavigateToURL(
     const content::WebContents* /* contents */,
     const GURL& /* url */,
@@ -224,18 +219,6 @@ void InstantNTPPrerenderer::NavigateToURL(
 void InstantNTPPrerenderer::PasteIntoOmnibox(
     const content::WebContents* /* contents */,
     const string16& /* text */) {
-  NOTREACHED();
-}
-
-void InstantNTPPrerenderer::DeleteMostVisitedItem(const GURL& /* url */) {
-  NOTREACHED();
-}
-
-void InstantNTPPrerenderer::UndoMostVisitedDeletion(const GURL& /* url */) {
-  NOTREACHED();
-}
-
-void InstantNTPPrerenderer::UndoAllMostVisitedDeletions() {
   NOTREACHED();
 }
 
@@ -253,15 +236,17 @@ void InstantNTPPrerenderer::ResetNTP(const std::string& instant_url) {
   // Instant NTP is only used in extended mode so we should always have a
   // non-empty URL to use.
   DCHECK(!instant_url.empty());
-  ntp_.reset(new InstantNTP(this, instant_url, profile_));
-  ntp_->InitContents(base::Bind(&InstantNTPPrerenderer::ReloadInstantNTP,
-                                base::Unretained(this)));
+  if (!chrome::ShouldUseCacheableNTP()) {
+    ntp_.reset(new InstantNTP(this, instant_url, profile_));
+    ntp_->InitContents(base::Bind(&InstantNTPPrerenderer::ReloadInstantNTP,
+                                  base::Unretained(this)));
+  }
 }
 
 bool InstantNTPPrerenderer::PageIsCurrent() const {
   const std::string& instant_url = GetInstantURL();
   if (instant_url.empty() ||
-      !chrome::MatchesOriginAndPath(GURL(ntp()->instant_url()),
+      !search::MatchesOriginAndPath(GURL(ntp()->instant_url()),
                                     GURL(instant_url)))
     return false;
 

@@ -15,8 +15,8 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
@@ -122,6 +122,17 @@ base::FilePath GetSnapshotFileName(const base::FilePath& snapshot_directory) {
   return snapshot_file;
 }
 
+Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
+  Browser* new_browser = GetBrowserNotInSet(excluded_browsers);
+  if (new_browser == NULL) {
+    BrowserAddedObserver observer;
+    new_browser = observer.WaitForSingleNewBrowser();
+    // The new browser should never be in |excluded_browsers|.
+    DCHECK(!ContainsKey(excluded_browsers, new_browser));
+  }
+  return new_browser;
+}
+
 }  // namespace
 
 bool GetCurrentTabTitle(const Browser* browser, string16* title) {
@@ -136,35 +147,14 @@ bool GetCurrentTabTitle(const Browser* browser, string16* title) {
   return true;
 }
 
-void WaitForNavigations(NavigationController* controller,
-                        int number_of_navigations) {
-  content::TestNavigationObserver observer(controller->GetWebContents(),
-                                           number_of_navigations);
-  base::RunLoop run_loop;
-  observer.WaitForObservation(
-      base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-      content::GetQuitTaskForRunLoop(&run_loop));
-}
-
-Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
-  Browser* new_browser = GetBrowserNotInSet(excluded_browsers);
-  if (new_browser == NULL) {
-    BrowserAddedObserver observer;
-    new_browser = observer.WaitForSingleNewBrowser();
-    // The new browser should never be in |excluded_browsers|.
-    DCHECK(!ContainsKey(excluded_browsers, new_browser));
-  }
-  return new_browser;
-}
-
 Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url) {
   chrome::HostDesktopType active_desktop = chrome::GetActiveDesktop();
   chrome::OpenURLOffTheRecord(profile, url, active_desktop);
   Browser* browser = chrome::FindTabbedBrowser(
       profile->GetOffTheRecordProfile(), false, active_desktop);
-  WaitForNavigations(
-      &browser->tab_strip_model()->GetActiveWebContents()->GetController(),
-      1);
+  content::TestNavigationObserver observer(
+      browser->tab_strip_model()->GetActiveWebContents());
+  observer.Wait();
   return browser;
 }
 
@@ -230,14 +220,12 @@ static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
     web_contents = browser->tab_strip_model()->GetActiveWebContents();
   }
   if (disposition == CURRENT_TAB) {
-    base::RunLoop run_loop;
-    same_tab_observer.WaitForObservation(
-        base::Bind(&content::RunThisRunLoop, base::Unretained(&run_loop)),
-        content::GetQuitTaskForRunLoop(&run_loop));
+    same_tab_observer.Wait();
     return;
   } else if (web_contents) {
-    NavigationController* controller = &web_contents->GetController();
-    WaitForNavigations(controller, number_of_navigations);
+    content::TestNavigationObserver observer(web_contents,
+                                             number_of_navigations);
+    observer.Wait();
     return;
   }
   EXPECT_TRUE(NULL != web_contents) << " Unable to wait for navigation to \""
@@ -344,23 +332,16 @@ int FindInPage(WebContents* tab, const string16& search_string,
   return observer.number_of_matches();
 }
 
-void RegisterAndWait(content::NotificationObserver* observer,
-                     int type,
-                     const content::NotificationSource& source) {
-  content::NotificationRegistrar registrar;
-  registrar.Add(observer, type, source);
-  content::RunMessageLoop();
-}
-
 void WaitForTemplateURLServiceToLoad(TemplateURLService* service) {
   if (service->loaded())
     return;
-
-  content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
-      content::Source<TemplateURLService>(service));
+  scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+      new content::MessageLoopRunner;
+  scoped_ptr<TemplateURLService::Subscription> subscription =
+      service->RegisterOnLoadedCallback(
+          message_loop_runner->QuitClosure());
   service->Load();
-  observer.Wait();
+  message_loop_runner->Run();
 
   ASSERT_TRUE(service->loaded());
 }

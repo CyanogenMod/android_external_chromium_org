@@ -63,11 +63,6 @@ const char kDebugPluginLoading[] = "debug-plugin-loading";
 const char kDefaultTileWidth[]              = "default-tile-width";
 const char kDefaultTileHeight[]             = "default-tile-height";
 
-// Handles URL requests by NPAPI plugins directly through the browser, instead
-// of going through the renderer. This will be the new default, but it's not
-// turned on initially until we do more testing.
-const char kDirectNPAPIRequests[]           = "direct-npapi-requests";
-
 // Disable antialiasing on 2d canvas.
 const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
 
@@ -149,6 +144,9 @@ const char kDisableDeviceMotion[]           = "disable-device-motion";
 // Disable device orientation events.
 const char kDisableDeviceOrientation[]      = "disable-device-orientation";
 
+// Handles URL requests by NPAPI plugins through the renderer.
+const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
+
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
 
@@ -219,7 +217,8 @@ const char kDisableJava[]                   = "disable-java";
 const char kDisableJavaScript[]             = "disable-javascript";
 
 // Disables prefixed Encrypted Media API (e.g. webkitGenerateKeyRequest()).
-const char kDisableLegacyEncryptedMedia[] = "disable-legacy-encrypted-media";
+const char kDisablePrefixedEncryptedMedia[] =
+    "disable-prefixed-encrypted-media";
 
 // Disable LocalStorage.
 const char kDisableLocalStorage[]           = "disable-local-storage";
@@ -279,7 +278,7 @@ const char kDisableSSLFalseStart[]          = "disable-ssl-false-start";
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
-// Disables the threaded HTML parser in WebKit
+// Disables the threaded HTML parser in Blink
 const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
 
 // Disable web audio API.
@@ -288,10 +287,16 @@ const char kDisableWebAudio[]               = "disable-webaudio";
 // Disables prefixed Media Source API (i.e., the WebKitMediaSource object).
 const char kDisableWebKitMediaSource[]      = "disable-webkit-media-source";
 
+// Disables unprefixed Media Source API (i.e., the MediaSource object).
+const char kDisableUnprefixedMediaSource[]  = "disable-unprefixed-media-source";
+
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
 
-// Disables WebKit's XSSAuditor. The XSSAuditor mitigates reflective XSS.
+// Disables support for XSLT.
+const char kDisableXSLT[]                   = "disable-xslt";
+
+// Disables Blink's XSSAuditor. The XSSAuditor mitigates reflective XSS.
 const char kDisableXSSAuditor[]             = "disable-xss-auditor";
 
 // Specifies if the |DOMAutomationController| needs to be bound in the
@@ -338,9 +343,6 @@ const char kEnableBrowserPluginForAllViewTypes[] =
 // kEnableBrowserPluginGuestViews must also be set at this time.
 const char kEnableBrowserPluginDragDrop[]   = "enable-browser-plugin-drag-drop";
 
-// Batch and synchronize input event delivery to the renderer.
-const char kEnableBufferedInputRouter[]  = "enable-buffered-input-router";
-
 // Enables accelerated scrolling by the compositor for frames. Requires
 // kForceCompositingMode and kEnableAcceleratedScrollableFrames.
 const char kEnableCompositedScrollingForFrames[] =
@@ -369,9 +371,6 @@ const char kEnableCompositingForFixedPosition[] =
 const char kEnableCompositingForTransition[] =
      "enable-transition-compositing";
 
-// Enables CSS3 custom filters
-const char kEnableCssShaders[]              = "enable-css-shaders";
-
 // Defer image decoding in WebKit until painting.
 const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
 
@@ -397,6 +396,9 @@ const char kEnableExperimentalWebPlatformFeatures[] =
 
 // Enable an experimental WebSocket implementation.
 const char kEnableExperimentalWebSocket[]   = "enable-experimental-websocket";
+
+// Enable the fast text autosizing implementation.
+const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
 
 // By default, a page is laid out to fill the entire width of the window.
 // This flag fixes the layout of the page to a default of 980 CSS pixels,
@@ -447,6 +449,9 @@ const char kEnableMonitorProfile[]          = "enable-monitor-profile";
 
 // Enables use of cache if offline, even if it's stale
 const char kEnableOfflineCacheAccess[]      = "enable-offline-cache-access";
+
+// Enables use of hardware overlay for fullscreen video playback. Android only.
+const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
 
 // Enables overlay scrollbars on Aura or Linux. Does nothing on Mac.
 const char kEnableOverlayScrollbars[]       = "enable-overlay-scrollbars";
@@ -509,6 +514,10 @@ const char kEnableStatsTable[]              = "enable-stats-table";
 // --site-per-process flag, this allows cross-site iframes, but it blocks all
 // cookies on cross-site requests.
 const char kEnableStrictSiteIsolation[]     = "enable-strict-site-isolation";
+
+// Enable support for ServiceWorker. See
+// https://github.com/slightlyoff/ServiceWorker for more information.
+const char kEnableServiceWorker[]           = "enable-service-worker";
 
 // Enable use of experimental TCP sockets API for sending data in the
 // SYN packet.
@@ -616,6 +625,9 @@ const char kJavaScriptFlags[]               = "js-flags";
 // Load an NPAPI plugin from the specified path.
 const char kLoadPlugin[]                    = "load-plugin";
 
+// Logs GPU control list decisions when enforcing blacklist rules.
+const char kLogGpuControlListDecisions[]    = "log-gpu-control-list-decisions";
+
 // Sets the minimum log level. Valid values are from 0 to 3:
 // INFO = 0, WARNING = 1, LOG_ERROR = 2, LOG_FATAL = 3.
 const char kLoggingLevel[]                  = "log-level";
@@ -644,10 +656,6 @@ const char kNoReferrers[]                   = "no-referrers";
 
 // Disables the sandbox for all process types that are normally sandboxed.
 const char kNoSandbox[]                     = "no-sandbox";
-
-// Enables not sending touch events to renderer while scrolling.
-const char kNoTouchToRendererWhileScrolling[] =
-    "no-touch-to-renderer-while-scrolling";
 
 // Enables or disables history navigation in response to horizontal overscroll.
 // Set the value to '1' to enable the feature, and set to '0' to disable.
@@ -707,7 +715,7 @@ const char kProcessType[]                   = "type";
 // Reduces the GPU process sandbox to be less strict.
 const char kReduceGpuSandbox[]              = "reduce-gpu-sandbox";
 
-// Register Pepper plugins (see pepper_plugin_registry.cc for its format).
+// Register Pepper plugins (see pepper_plugin_list.cc for its format).
 const char kRegisterPepperPlugins[]         = "register-pepper-plugins";
 
 
@@ -769,7 +777,8 @@ const char kSitePerProcess[]                = "site-per-process";
 // Skip gpu info collection, blacklist loading, and blacklist auto-update
 // scheduling at browser startup time.
 // Therefore, all GPU features are available, and about:gpu page shows empty
-// content. The switch is intended only for tests.
+// content. The switch is intended only for layout tests.
+// TODO(gab): Get rid of this switch entirely.
 const char kSkipGpuDataLoading[]            = "skip-gpu-data-loading";
 
 // Specifies the request key for the continuous speech recognition webservice.

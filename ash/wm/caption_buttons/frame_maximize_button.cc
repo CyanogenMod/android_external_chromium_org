@@ -16,7 +16,6 @@
 #include "ash/wm/workspace/phantom_window_controller.h"
 #include "ash/wm/workspace/snap_sizer.h"
 #include "grit/ash_strings.h"
-#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -92,9 +91,6 @@ FrameMaximizeButton::FrameMaximizeButton(views::ButtonListener* listener,
       bubble_appearance_delay_ms_(kBubbleAppearanceDelayMS) {
   // TODO(sky): nuke this. It's temporary while we don't have good images.
   SetImageAlignment(ALIGN_LEFT, ALIGN_BOTTOM);
-
-  if (Shell::IsForcedMaximizeMode())
-    views::View::SetVisible(false);
 }
 
 FrameMaximizeButton::~FrameMaximizeButton() {
@@ -190,9 +186,9 @@ void FrameMaximizeButton::OnWindowDestroying(aura::Window* window) {
 
 void FrameMaximizeButton::OnWidgetActivationChanged(views::Widget* widget,
                                                     bool active) {
-  // Upon losing focus, the control bubble should hide.
-  if (!active && maximizer_)
-    maximizer_.reset();
+  // Upon losing focus, the bubble menu and the phantom window should hide.
+  if (!active)
+    Cancel(false);
 }
 
 bool FrameMaximizeButton::OnMousePressed(const ui::MouseEvent& event) {
@@ -240,7 +236,7 @@ void FrameMaximizeButton::OnMouseExited(const ui::MouseEvent& event) {
       }
     } else {
       // The maximize dialog does not show up immediately after creating the
-      // |mazimizer_|. Destroy the dialog therefore before it shows up.
+      // |maximizer_|. Destroy the dialog therefore before it shows up.
       maximizer_.reset();
     }
   }
@@ -314,10 +310,6 @@ void FrameMaximizeButton::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 void FrameMaximizeButton::SetVisible(bool visible) {
-  // In the enforced maximized mode we do not allow to be made visible.
-  if (Shell::IsForcedMaximizeMode())
-    return;
-
   views::View::SetVisible(visible);
 }
 
@@ -441,10 +433,11 @@ void FrameMaximizeButton::UpdateSnap(const gfx::Point& location,
     SnapSizer::InputType input_type =
         is_touch ? SnapSizer::TOUCH_MAXIMIZE_BUTTON_INPUT :
                    SnapSizer::OTHER_INPUT;
-    snap_sizer_.reset(new SnapSizer(frame_->GetNativeWindow(),
-                                    LocationForSnapSizer(location),
-                                    snap_edge,
-                                    input_type));
+    snap_sizer_.reset(new SnapSizer(
+        wm::GetWindowState(frame_->GetNativeWindow()),
+        LocationForSnapSizer(location),
+        snap_edge,
+        input_type));
     if (select_default)
       snap_sizer_->SelectDefaultSizeAndDisableResize();
   }

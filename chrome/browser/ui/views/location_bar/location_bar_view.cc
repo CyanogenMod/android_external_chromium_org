@@ -29,7 +29,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/omnibox/alternate_nav_url_fetcher.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
@@ -166,14 +165,10 @@ LocationBarView::LocationBarView(Browser* browser,
                                  CommandUpdater* command_updater,
                                  Delegate* delegate,
                                  bool is_popup_mode)
-    : browser_(browser),
+    : OmniboxEditController(command_updater),
+      browser_(browser),
       profile_(profile),
-      command_updater_(command_updater),
       delegate_(delegate),
-      disposition_(CURRENT_TAB),
-      transition_(content::PageTransitionFromInt(
-          content::PAGE_TRANSITION_TYPED |
-          content::PAGE_TRANSITION_FROM_ADDRESS_BAR)),
       location_icon_view_(NULL),
       ev_bubble_view_(NULL),
       location_entry_view_(NULL),
@@ -277,7 +272,7 @@ void LocationBarView::Init() {
   AddChildView(ev_bubble_view_);
 
   // Initialize the Omnibox view.
-  location_entry_.reset(CreateOmniboxView(this, profile_, command_updater_,
+  location_entry_.reset(CreateOmniboxView(this, profile_, command_updater(),
                                           is_popup_mode_, this, font_list,
                                           font_y_offset));
   SetLocationEntryFocusable(true);
@@ -360,7 +355,7 @@ void LocationBarView::Init() {
   script_bubble_icon_view_->SetVisible(false);
   AddChildView(script_bubble_icon_view_);
 
-  star_view_ = new StarView(command_updater_);
+  star_view_ = new StarView(command_updater());
   star_view_->SetVisible(false);
   AddChildView(star_view_);
 
@@ -476,38 +471,6 @@ void LocationBarView::SetFocusAndSelection(bool select_all) {
 
 void LocationBarView::SetAnimationOffset(int offset) {
   animation_offset_ = offset;
-}
-
-void LocationBarView::Update(const WebContents* contents) {
-  mic_search_view_->SetVisible(
-      !GetToolbarModel()->input_in_progress() && browser_ &&
-      browser_->search_model()->voice_search_supported());
-  UpdateContentSettingViewsPreLayout();
-  generated_credit_card_view_->Update();
-  ZoomBubbleView::CloseBubble();
-  RefreshZoomView();
-  RefreshPageActionViews();
-  RefreshScriptBubble();
-  open_pdf_in_reader_view_->Update(
-      GetToolbarModel()->input_in_progress() ? NULL : GetWebContents());
-
-  bool star_enabled = browser_defaults::bookmarks_enabled && !is_popup_mode_ &&
-      star_view_ && !GetToolbarModel()->input_in_progress() &&
-      edit_bookmarks_enabled_.GetValue();
-
-  command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
-  command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
-                                         star_enabled);
-  if (star_view_)
-    star_view_->SetVisible(star_enabled);
-
-  if (contents)
-    location_entry_->OnTabChanged(contents);
-  else
-    location_entry_->Update();
-
-  OnChanged();  // NOTE: Calls Layout().
-  UpdateContentSettingViewsPostLayout();
 }
 
 void LocationBarView::UpdateContentSettingsIcons() {
@@ -1007,40 +970,36 @@ views::View* LocationBarView::generated_credit_card_view() {
   return generated_credit_card_view_;
 }
 
-void LocationBarView::OnAutocompleteAccept(
-    const GURL& url,
-    WindowOpenDisposition disposition,
-    content::PageTransition transition,
-    const GURL& alternate_nav_url) {
-  // WARNING: don't add an early return here. The calls after the if must
-  // happen.
-  if (url.is_valid()) {
-    location_input_ = UTF8ToUTF16(url.spec());
-    disposition_ = disposition;
-    transition_ = content::PageTransitionFromInt(
-        transition | content::PAGE_TRANSITION_FROM_ADDRESS_BAR);
+void LocationBarView::Update(const WebContents* contents) {
+  mic_search_view_->SetVisible(
+      !GetToolbarModel()->input_in_progress() && browser_ &&
+      browser_->search_model()->voice_search_supported());
+  UpdateContentSettingViewsPreLayout();
+  generated_credit_card_view_->Update();
+  ZoomBubbleView::CloseBubble();
+  RefreshZoomView();
+  RefreshPageActionViews();
+  RefreshScriptBubble();
+  open_pdf_in_reader_view_->Update(
+      GetToolbarModel()->input_in_progress() ? NULL : GetWebContents());
 
-    if (command_updater_) {
-      if (!alternate_nav_url.is_valid()) {
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
-      } else {
-        AlternateNavURLFetcher* fetcher =
-            new AlternateNavURLFetcher(alternate_nav_url);
-        // The AlternateNavURLFetcher will listen for the pending navigation
-        // notification that will be issued as a result of the "open URL." It
-        // will automatically install itself into that navigation controller.
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
-        if (fetcher->state() == AlternateNavURLFetcher::NOT_STARTED) {
-          // I'm not sure this should be reachable, but I'm not also sure enough
-          // that it shouldn't to stick in a NOTREACHED().  In any case, this is
-          // harmless.
-          delete fetcher;
-        } else {
-          // The navigation controller will delete the fetcher.
-        }
-      }
-    }
-  }
+  bool star_enabled = browser_defaults::bookmarks_enabled && !is_popup_mode_ &&
+      star_view_ && !GetToolbarModel()->input_in_progress() &&
+      edit_bookmarks_enabled_.GetValue();
+
+  command_updater()->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
+  command_updater()->UpdateCommandEnabled(IDC_BOOKMARK_PAGE_FROM_STAR,
+                                          star_enabled);
+  if (star_view_)
+    star_view_->SetVisible(star_enabled);
+
+  if (contents)
+    location_entry_->OnTabChanged(contents);
+  else
+    location_entry_->Update();
+
+  OnChanged();  // NOTE: Calls Layout().
+  UpdateContentSettingViewsPostLayout();
 }
 
 void LocationBarView::OnChanged() {
@@ -1052,32 +1011,8 @@ void LocationBarView::OnChanged() {
   SchedulePaint();
 }
 
-void LocationBarView::OnSelectionBoundsChanged() {
-}
-
-void LocationBarView::OnInputInProgress(bool in_progress) {
-  delegate_->OnInputInProgress(in_progress);
-}
-
-void LocationBarView::OnKillFocus() {
-}
-
 void LocationBarView::OnSetFocus() {
-  views::FocusManager* focus_manager = GetFocusManager();
-  if (!focus_manager) {
-    NOTREACHED();
-    return;
-  }
-  focus_manager->SetFocusedView(this);
-}
-
-gfx::Image LocationBarView::GetFavicon() const {
-  return FaviconTabHelper::FromWebContents(
-      delegate_->GetWebContents())->GetFavicon();
-}
-
-string16 LocationBarView::GetTitle() const {
-  return delegate_->GetWebContents()->GetTitle();
+  GetFocusManager()->SetFocusedView(this);
 }
 
 InstantController* LocationBarView::GetInstant() {
@@ -1165,7 +1100,7 @@ void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
 void LocationBarView::ButtonPressed(views::Button* sender,
                                     const ui::Event& event) {
   DCHECK_EQ(mic_search_view_, sender);
-  command_updater_->ExecuteCommand(IDC_TOGGLE_SPEECH_INPUT);
+  command_updater()->ExecuteCommand(IDC_TOGGLE_SPEECH_INPUT);
 }
 
 void LocationBarView::WriteDragDataForView(views::View* sender,
@@ -1217,16 +1152,16 @@ void LocationBarView::ShowFirstRunBubble() {
   ShowFirstRunBubbleInternal();
 }
 
-string16 LocationBarView::GetInputString() const {
-  return location_input_;
+GURL LocationBarView::GetDestinationURL() const {
+  return destination_url();
 }
 
 WindowOpenDisposition LocationBarView::GetWindowOpenDisposition() const {
-  return disposition_;
+  return disposition();
 }
 
 content::PageTransition LocationBarView::GetPageTransition() const {
-  return transition_;
+  return transition();
 }
 
 void LocationBarView::AcceptInput() {

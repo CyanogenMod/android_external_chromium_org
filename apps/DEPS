@@ -1,6 +1,9 @@
 include_rules = [
   "+base",
-  "+content",
+  "+content/public/app",
+  "+content/public/browser",
+  "+content/public/common",
+  "+content/public/test",
   "+components/browser_context_keyed_service",
   "+components/user_prefs/pref_registry_syncable.h",
   "+components/web_modal",
@@ -10,18 +13,17 @@ include_rules = [
   "+third_party/skia/include",
   "+ui",
   "+win8",
+
   # Temporary allowed includes.
   # TODO(benwells): remove these (http://crbug.com/159366)
-  "+chrome/browser/browser_process.h",
   "+chrome/browser/chrome_notification_types.h",
   "+chrome/browser/chromeos/drive",
   "+chrome/browser/chromeos/login/user_manager.h",
   "+chrome/browser/lifetime/application_lifetime.h",
   "+chrome/browser/profiles",
   "+chrome/browser/sessions/session_id.h",
-  "+chrome/browser/ui/apps/app_metro_infobar_delegate_win.h",
-  "+chrome/browser/ui/host_desktop.h",
   "+chrome/common/chrome_switches.h",
+
   # Pieces of the extensions system that need to move to src/extensions.
   # See http://crbug.com/162530 for details.
   "+chrome/browser/extensions/api/app_runtime/app_runtime_api.h",
@@ -49,7 +51,6 @@ include_rules = [
   "+chrome/common/extensions/extension_set.h",
   "+chrome/common/extensions/manifest_handlers/icons_handler.h",
   "+chrome/common/extensions/manifest_handlers/kiosk_mode_info.h",
-  "+chrome/common/extensions/permissions/api_permission.h",
   "+chrome/common/extensions/permissions/permission_set.h",
 ]
 
@@ -60,6 +61,8 @@ specific_include_rules = {
     "+chrome/browser/extensions/extension_test_message_listener.h",
     "+chrome/browser/extensions/test_extension_environment.h",
     "+chrome/browser/extensions/test_extension_prefs.h",
+    "+chrome/browser/ui/browser.h",
+    "+chrome/test/base/in_process_browser_test.h",
     "+chrome/test/base/interactive_test_utils.h",
     "+chrome/test/base/testing_profile.h",
     # Temporary allowed testing include.

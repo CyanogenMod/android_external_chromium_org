@@ -89,6 +89,7 @@ class MEDIA_EXPORT MediaCodecBridge {
                                     const base::TimeDelta& presentation_time);
 
   // Similar to the above call, but submits a buffer that is encrypted.
+  // Note: NULL |subsamples| indicates the whole buffer is encrypted.
   MediaCodecStatus QueueSecureInputBuffer(
       int index,
       const uint8* data, int data_size,
@@ -129,8 +130,9 @@ class MEDIA_EXPORT MediaCodecBridge {
   void ReleaseOutputBuffer(int index, bool render);
 
   // Gets output buffers from media codec and keeps them inside the java class.
-  // To access them, use DequeueOutputBuffer().
-  void GetOutputBuffers();
+  // To access them, use DequeueOutputBuffer(). Returns whether output buffers
+  // were successfully obtained.
+  bool GetOutputBuffers() WARN_UNUSED_RESULT;
 
   static bool RegisterMediaCodecBridge(JNIEnv* env);
 
@@ -138,14 +140,18 @@ class MEDIA_EXPORT MediaCodecBridge {
   MediaCodecBridge(const std::string& mime, bool is_secure);
 
   // Calls start() against the media codec instance. Used in StartXXX() after
-  // configuring media codec.
-  void StartInternal();
+  // configuring media codec. Returns whether media codec was successfully
+  // started.
+  bool StartInternal() WARN_UNUSED_RESULT;
 
   jobject media_codec() { return j_media_codec_.obj(); }
 
  private:
-  // Fills a particular input buffer and returns the size of copied data.
-  size_t FillInputBuffer(int index, const uint8* data, int data_size);
+  // Fills a particular input buffer; returns false if |data_size| exceeds the
+  // input buffer's capacity (and doesn't touch the input buffer in that case).
+  bool FillInputBuffer(int index,
+                       const uint8* data,
+                       int data_size) WARN_UNUSED_RESULT;
 
   // Java MediaCodec instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_codec_;
@@ -162,7 +168,7 @@ class AudioCodecBridge : public MediaCodecBridge {
   // Start the audio codec bridge.
   bool Start(const AudioCodec codec, int sample_rate, int channel_count,
              const uint8* extra_data, size_t extra_data_size,
-             bool play_audio, jobject media_crypto);
+             bool play_audio, jobject media_crypto) WARN_UNUSED_RESULT;
 
   // Play the output buffer. This call must be called after
   // DequeueOutputBuffer() and before ReleaseOutputBuffer.
@@ -197,4 +203,3 @@ class MEDIA_EXPORT VideoCodecBridge : public MediaCodecBridge {
 }  // namespace media
 
 #endif  // MEDIA_BASE_ANDROID_MEDIA_CODEC_BRIDGE_H_
-

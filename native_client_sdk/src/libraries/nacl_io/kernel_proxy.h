@@ -55,7 +55,7 @@ class KernelProxy : protected KernelObject {
   virtual int open_resource(const char* file);
 
   // KernelHandle and FD allocation and manipulation functions.
-  virtual int open(const char* path, int oflag);
+  virtual int open(const char* path, int open_flags);
   virtual int close(int fd);
   virtual int dup(int fd);
   virtual int dup2(int fd, int newfd);
@@ -95,13 +95,13 @@ class KernelProxy : protected KernelObject {
   virtual ssize_t write(int fd, const void *buf, size_t nbyte);
 
   virtual int fchmod(int fd, int prot);
-  virtual int fcntl(int fd, int request, char *argp);
+  virtual int fcntl(int fd, int request, va_list args);
   virtual int fstat(int fd, struct stat *buf);
   virtual int getdents(int fd, void *buf, unsigned int count);
   virtual int ftruncate(int fd, off_t length);
   virtual int fsync(int fd);
   virtual int isatty(int fd);
-  virtual int ioctl(int fd, int request, char *argp);
+  virtual int ioctl(int fd, int request, va_list args);
 
   // lseek() relies on the mount's Stat() to determine whether or not the
   // file handle corresponding to fd is a directory

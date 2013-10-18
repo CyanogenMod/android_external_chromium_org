@@ -97,6 +97,16 @@ class MEDIA_EXPORT AudioRendererImpl
  private:
   friend class AudioRendererImplTest;
 
+  enum State {
+    kUninitialized,
+    kPaused,
+    kPrerolling,
+    kPlaying,
+    kStopped,
+    kUnderflow,
+    kRebuffering,
+  };
+
   // Callback from the audio decoder delivering decoded audio samples.
   void DecodedAudioReady(AudioDecoder::Status status,
                          const scoped_refptr<AudioBuffer>& buffer);
@@ -109,38 +119,33 @@ class MEDIA_EXPORT AudioRendererImpl
   // DecodedAudioReady().
   void HandleAbortedReadOrDecodeError(bool is_decode_error);
 
-  // Fills the given buffer with audio data by delegating to its |algorithm_|.
-  // FillBuffer() also takes care of updating the clock. Returns the number of
-  // frames copied into |dest|, which may be less than or equal to
-  // |requested_frames|.
-  //
-  // If this method returns fewer frames than |requested_frames|, it could
-  // be a sign that the pipeline is stalled or unable to stream the data fast
-  // enough.  In such scenarios, the callee should zero out unused portions
-  // of their buffer to playback silence.
-  //
-  // FillBuffer() updates the pipeline's playback timestamp. If FillBuffer() is
-  // not called at the same rate as audio samples are played, then the reported
-  // timestamp in the pipeline will be ahead of the actual audio playback. In
-  // this case |playback_delay| should be used to indicate when in the future
-  // should the filled buffer be played.
-  //
-  // Safe to call on any thread.
-  uint32 FillBuffer(AudioBus* dest,
-                    uint32 requested_frames,
-                    int audio_delay_milliseconds);
-
   // Estimate earliest time when current buffer can stop playing.
   void UpdateEarliestEndTime_Locked(int frames_filled,
                                     const base::TimeDelta& playback_delay,
                                     const base::TimeTicks& time_now);
 
-  void DoPlay();
-  void DoPause();
+  void DoPlay_Locked();
+  void DoPause_Locked();
 
   // AudioRendererSink::RenderCallback implementation.
   //
   // NOTE: These are called on the audio callback thread!
+  //
+  // Render() fills the given buffer with audio data by delegating to its
+  // |algorithm_|. Render() also takes care of updating the clock.
+  // Returns the number of frames copied into |audio_bus|, which may be less
+  // than or equal to the initial number of frames in |audio_bus|
+  //
+  // If this method returns fewer frames than the initial number of frames in
+  // |audio_bus|, it could be a sign that the pipeline is stalled or unable to
+  // stream the data fast enough.  In such scenarios, the callee should zero out
+  // unused portions of their buffer to play back silence.
+  //
+  // Render() updates the pipeline's playback timestamp. If Render() is
+  // not called at the same rate as audio samples are played, then the reported
+  // timestamp in the pipeline will be ahead of the actual audio playback. In
+  // this case |audio_delay_milliseconds| should be used to indicate when in the
+  // future should the filled buffer be played.
   virtual int Render(AudioBus* audio_bus,
                      int audio_delay_milliseconds) OVERRIDE;
   virtual void OnRenderError() OVERRIDE;
@@ -152,6 +157,7 @@ class MEDIA_EXPORT AudioRendererImpl
   void AttemptRead();
   void AttemptRead_Locked();
   bool CanRead_Locked();
+  void ChangeState_Locked(State new_state);
 
   // Returns true if the data in the buffer is all before
   // |preroll_timestamp_|. This can only return true while
@@ -215,15 +221,6 @@ class MEDIA_EXPORT AudioRendererImpl
   scoped_ptr<AudioRendererAlgorithm> algorithm_;
 
   // Simple state tracking variable.
-  enum State {
-    kUninitialized,
-    kPaused,
-    kPrerolling,
-    kPlaying,
-    kStopped,
-    kUnderflow,
-    kRebuffering,
-  };
   State state_;
 
   // Keep track of whether or not the sink is playing.

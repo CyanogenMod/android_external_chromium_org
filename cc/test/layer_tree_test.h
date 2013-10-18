@@ -33,6 +33,8 @@ class TestHooks : public AnimationDelegate {
 
   virtual void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
                                           const BeginFrameArgs& args) {}
+  virtual void DidBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
+                                          const BeginFrameArgs& args) {}
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void WillActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
@@ -76,10 +78,7 @@ class TestHooks : public AnimationDelegate {
   virtual void NotifyAnimationFinished(double time) OVERRIDE {}
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) = 0;
-  virtual scoped_refptr<cc::ContextProvider>
-  OffscreenContextProviderForMainThread() = 0;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() = 0;
+  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() = 0;
 };
 
 class BeginTask;
@@ -118,6 +117,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void PostSetNeedsRedrawToMainThread();
   void PostSetNeedsRedrawRectToMainThread(gfx::Rect damage_rect);
   void PostSetVisibleToMainThread(bool visible);
+  void PostSetNextCommitForcesRedrawToMainThread();
 
   void DoBeginTest();
   void Timeout();
@@ -139,12 +139,14 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void DispatchSetNeedsRedraw();
   void DispatchSetNeedsRedrawRect(gfx::Rect damage_rect);
   void DispatchSetVisible(bool visible);
+  void DispatchSetNextCommitForcesRedraw();
   void DispatchComposite();
   void DispatchDidAddAnimation();
 
   virtual void RunTest(bool threaded,
                        bool delegating_renderer,
                        bool impl_side_painting);
+  virtual void RunTestWithImplSidePainting();
 
   bool HasImplThread() { return proxy() ? proxy()->HasImplThread() : false; }
   base::SingleThreadTaskRunner* ImplThreadTaskRunner() {
@@ -166,10 +168,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   FakeOutputSurface* output_surface() { return output_surface_; }
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-  OffscreenContextProviderForMainThread() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProviderForCompositorThread() OVERRIDE;
+  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
 
  private:
   LayerTreeSettings settings_;
@@ -191,10 +190,9 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_ptr<base::Thread> impl_thread_;
   base::CancelableClosure timeout_;
+  scoped_refptr<TestContextProvider> compositor_contexts_;
   base::WeakPtr<LayerTreeTest> main_thread_weak_ptr_;
   base::WeakPtrFactory<LayerTreeTest> weak_factory_;
-  scoped_refptr<TestContextProvider> main_thread_contexts_;
-  scoped_refptr<TestContextProvider> compositor_thread_contexts_;
 };
 
 }  // namespace cc

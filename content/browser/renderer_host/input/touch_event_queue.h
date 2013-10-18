@@ -20,7 +20,7 @@ class CoalescedWebTouchEvent;
 
 // Interface with which TouchEventQueue can forward touch events, and dispatch
 // touch event responses.
-class TouchEventQueueClient {
+class CONTENT_EXPORT TouchEventQueueClient {
  public:
   virtual ~TouchEventQueueClient() {}
 
@@ -33,7 +33,7 @@ class TouchEventQueueClient {
 };
 
 // A queue for throttling and coalescing touch-events.
-class TouchEventQueue {
+class CONTENT_EXPORT TouchEventQueue {
  public:
 
   // The |client| must outlive the TouchEventQueue.
@@ -52,6 +52,12 @@ class TouchEventQueue {
   void ProcessTouchAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency_info);
 
+  // When GestureScrollBegin is received, we send a touch cancel to renderer,
+  // route all the following touch events directly to client, and ignore the
+  // ack for the touch cancel. When GestureScrollEnd/GestureFlingStart is
+  // received, we resume the normal flow of sending touch events to renderer.
+  void OnGestureScrollEvent(const GestureEventWithLatencyInfo& gesture_event);
+
   // Empties the queue of touch events. This may result in any number of gesture
   // events being sent to the renderer.
   void FlushQueue();
@@ -61,16 +67,15 @@ class TouchEventQueue {
     return touch_queue_.empty();
   }
 
-  void set_no_touch_move_to_renderer(bool value) {
-    no_touch_move_to_renderer_ = value;
+  bool no_touch_to_renderer() const {
+    return no_touch_to_renderer_;
   }
 
  private:
-  friend class MockRenderWidgetHost;
-  friend class ImmediateInputRouterTest;
+  friend class TouchEventQueueTest;
 
-  CONTENT_EXPORT size_t GetQueueSize() const;
-  CONTENT_EXPORT const TouchEventWithLatencyInfo& GetLatestEvent() const;
+  size_t GetQueueSize() const;
+  const TouchEventWithLatencyInfo& GetLatestEvent() const;
 
   // Walks the queue, checking each event for |ShouldForwardToRenderer()|.
   // If true, forwards the touch event and stops processing further events.
@@ -95,12 +100,14 @@ class TouchEventQueue {
   TouchPointAckStates touch_ack_states_;
 
   // Used to defer touch forwarding when ack dispatch triggers |QueueEvent()|.
-  bool dispatching_touch_ack_;
+  // If not NULL, |dispatching_touch_ack_| is the touch event of which the ack
+  // is being dispatched.
+  CoalescedWebTouchEvent* dispatching_touch_ack_;
 
-  // Don't send touch move events to renderer. This is enabled when the page
-  // is scrolling. This behaviour is currently enabled only on aura behind a
-  // flag.
-  bool no_touch_move_to_renderer_;
+  // Don't send touch events to renderer. This is enabled when the page
+  // is scrolling. This behaviour is currently enabled only on aura behind
+  // a flag.
+  bool no_touch_to_renderer_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEventQueue);
 };

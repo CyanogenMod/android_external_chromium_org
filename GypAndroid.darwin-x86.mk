@@ -146,8 +146,9 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/devtools_html.target.da
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/frontend_protocol_sources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/web/blink_common.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/web/picker_resources.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/wtf/wtf.target.darwin-x86.mk
@@ -156,8 +157,7 @@ include $(LOCAL_PATH)/third_party/WebKit/public/blink.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_minimal.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/public/blink_skia_config.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/angle_dx11/src/preprocessor.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_common.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/angle_dx11/src/translator_glsl.target.darwin-x86.mk
+include $(LOCAL_PATH)/third_party/angle_dx11/src/translator.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/ashmem/ashmem.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/expat/expat.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/freetype/ft2.target.darwin-x86.mk
@@ -217,6 +217,9 @@ include $(LOCAL_PATH)/third_party/zlib/google/zip.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/zlib/minizip.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/zlib/zlib.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/base/strings/ui_strings.target.darwin-x86.mk
+include $(LOCAL_PATH)/ui/events/events.target.darwin-x86.mk
+include $(LOCAL_PATH)/ui/gfx/gfx.target.darwin-x86.mk
+include $(LOCAL_PATH)/ui/gfx/gfx_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/gl.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-x86.mk

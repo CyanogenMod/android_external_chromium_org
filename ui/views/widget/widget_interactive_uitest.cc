@@ -8,14 +8,20 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_delegate.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/client/activation_client.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #if !defined(OS_CHROMEOS)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
+#endif
+
+#if defined(OS_WIN)
+#include "ui/views/win/hwnd_util.h"
 #endif
 
 namespace views {
@@ -440,6 +446,126 @@ TEST_F(WidgetTest, CheckResizeControllerEvents) {
 
   toplevel->CloseNow();
 }
+
+#if defined(OS_WIN)
+
+// This class subclasses the Widget class to listen for activation change
+// notifications and provides accessors to return information as to whether
+// the widget is active. We need this to ensure that users of the widget
+// class activate the widget only when the underlying window becomes really
+// active. Previously we would activate the widget in the WM_NCACTIVATE
+// message which is incorrect because APIs like FlashWindowEx flash the
+// window caption by sending fake WM_NCACTIVATE messages.
+class WidgetActivationTest : public Widget {
+ public:
+  WidgetActivationTest()
+      : active_(false) {}
+
+  virtual ~WidgetActivationTest() {}
+
+  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE {
+    active_ = active;
+  }
+
+  bool active() const { return active_; }
+
+ private:
+  bool active_;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetActivationTest);
+};
+
+// Tests whether the widget only becomes active when the underlying window
+// is really active.
+TEST_F(WidgetTest, WidgetNotActivatedOnFakeActivationMessages) {
+  WidgetActivationTest widget1;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+#if defined(USE_AURA)
+  init_params.native_widget = new DesktopNativeWidgetAura(&widget1);
+#endif
+  init_params.bounds = gfx::Rect(0, 0, 200, 200);
+  widget1.Init(init_params);
+  widget1.Show();
+  EXPECT_EQ(true, widget1.active());
+
+  WidgetActivationTest widget2;
+#if defined(USE_AURA)
+  init_params.native_widget = new DesktopNativeWidgetAura(&widget2);
+#endif
+  widget2.Init(init_params);
+  widget2.Show();
+  EXPECT_EQ(true, widget2.active());
+  EXPECT_EQ(false, widget1.active());
+
+  HWND win32_native_window1 = HWNDForWidget(&widget1);
+  EXPECT_TRUE(::IsWindow(win32_native_window1));
+
+  ::SendMessage(win32_native_window1, WM_NCACTIVATE, 1, 0);
+  EXPECT_EQ(false, widget1.active());
+  EXPECT_EQ(true, widget2.active());
+
+  ::SetActiveWindow(win32_native_window1);
+  EXPECT_EQ(true, widget1.active());
+  EXPECT_EQ(false, widget2.active());
+}
+#endif
+
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
+// Provides functionality to create a window modal dialog.
+class ModalDialogDelegate : public DialogDelegateView {
+ public:
+  ModalDialogDelegate() {}
+  virtual ~ModalDialogDelegate() {}
+
+  // WidgetDelegate overrides.
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+    return ui::MODAL_TYPE_WINDOW;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
+};
+
+// Tests whether the focused window is set correctly when a modal window is
+// created and destroyed. When it is destroyed it should focus the owner
+// window.
+TEST_F(WidgetTest, WindowModalWindowDestroyedActivationTest) {
+  // Create a top level widget.
+  Widget top_level_widget;
+  Widget::InitParams init_params =
+      CreateParams(Widget::InitParams::TYPE_WINDOW);
+  init_params.show_state = ui::SHOW_STATE_NORMAL;
+  gfx::Rect initial_bounds(0, 0, 500, 500);
+  init_params.bounds = initial_bounds;
+  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new DesktopNativeWidgetAura(&top_level_widget);
+  top_level_widget.Init(init_params);
+  top_level_widget.Show();
+
+  aura::Window* top_level_window = top_level_widget.GetNativeWindow();
+  EXPECT_EQ(top_level_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+
+  // Create a modal dialog.
+  // This instance will be destroyed when the dialog is destroyed.
+  ModalDialogDelegate* dialog_delegate = new ModalDialogDelegate;
+
+  Widget* modal_dialog_widget = views::DialogDelegate::CreateDialogWidget(
+      dialog_delegate, NULL, top_level_widget.GetNativeWindow());
+  modal_dialog_widget->SetBounds(gfx::Rect(100, 100, 200, 200));
+  modal_dialog_widget->Show();
+  aura::Window* dialog_window = modal_dialog_widget->GetNativeWindow();
+  EXPECT_EQ(dialog_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+
+  modal_dialog_widget->CloseNow();
+  EXPECT_EQ(top_level_window, aura::client::GetFocusClient(
+                top_level_window)->GetFocusedWindow());
+  top_level_widget.CloseNow();
+}
+#endif
 
 }  // namespace test
 }  // namespace views

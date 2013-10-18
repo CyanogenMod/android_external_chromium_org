@@ -56,6 +56,7 @@ class DesktopRootWindowHost;
 class InputMethod;
 class NativeWidget;
 class NonClientFrameView;
+class TooltipManager;
 class View;
 class WidgetDelegate;
 class WidgetObserver;
@@ -460,6 +461,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Sets the widget to be on top of all other widgets in the windowing system.
   void SetAlwaysOnTop(bool on_top);
 
+  // Returns whether the widget has been set to be on top of most other widgets
+  // in the windowing system.
+  bool IsAlwaysOnTop() const;
+
   // Maximizes/minimizes/restores the window.
   void Maximize();
   void Minimize();
@@ -660,8 +665,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     auto_release_capture_ = auto_release_capture;
   }
 
-  // Invoked when the tooltip text changes for the specified views.
-  void TooltipTextChanged(View* view);
+  // Returns the font used for tooltips.
+  TooltipManager* GetTooltipManager();
+  const TooltipManager* GetTooltipManager() const;
 
   // Sets-up the focus manager with the view that should have focus when the
   // window is shown the first time.  Returns true if the initial focus has been

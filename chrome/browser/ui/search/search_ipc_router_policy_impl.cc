@@ -6,6 +6,7 @@
 
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/web_contents.h"
@@ -44,6 +45,46 @@ bool SearchIPCRouterPolicyImpl::ShouldProcessSetVoiceSearchSupport() {
   return true;
 }
 
+bool SearchIPCRouterPolicyImpl::ShouldProcessFocusOmnibox() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldProcessDeleteMostVisitedItem() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldProcessUndoMostVisitedDeletion() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldProcessUndoAllMostVisitedDeletions() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldProcessLogEvent() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendSetPromoInformation() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
 bool SearchIPCRouterPolicyImpl::ShouldSendSetDisplayInstantResults() {
   return !is_incognito_;
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendSetSuggestionToPrefetch() {
+  return !is_incognito_;
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendMostVisitedItems() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendThemeBackgroundInfo() {
+  return !is_incognito_ && chrome::IsInstantNTP(web_contents_);
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSubmitQuery() {
+  return true;
 }

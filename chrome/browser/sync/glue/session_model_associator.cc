@@ -38,6 +38,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/url_constants.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/time.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -122,11 +123,11 @@ SessionModelAssociator::SessionModelAssociator(
       stale_session_threshold_days_(kDefaultStaleSessionThresholdDays),
       setup_for_test_(false),
       waiting_for_change_(false),
-      test_weak_factory_(this),
       profile_(sync_service->profile()),
       error_handler_(error_handler),
       favicon_cache_(profile_,
-                     sync_service->current_experiments().favicon_sync_limit) {
+                     sync_service->current_experiments().favicon_sync_limit),
+      test_weak_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
@@ -140,10 +141,10 @@ SessionModelAssociator::SessionModelAssociator(ProfileSyncService* sync_service,
       stale_session_threshold_days_(kDefaultStaleSessionThresholdDays),
       setup_for_test_(setup_for_test),
       waiting_for_change_(false),
-      test_weak_factory_(this),
       profile_(sync_service->profile()),
       error_handler_(NULL),
-      favicon_cache_(profile_, kMaxSyncFavicons) {
+      favicon_cache_(profile_, kMaxSyncFavicons),
+      test_weak_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(sync_service_);
   DCHECK(profile_);
@@ -1099,6 +1100,11 @@ void SessionModelAssociator::DeleteForeignSession(const std::string& tag) {
     if (specifics.session_tag() == tag)
       sync_node.Tombstone();
   }
+
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_FOREIGN_SESSION_UPDATED,
+      content::Source<Profile>(sync_service_->profile()),
+      content::NotificationService::NoDetails());
 }
 
 bool SessionModelAssociator::IsValidTab(const SyncedTabDelegate& tab) const {
@@ -1130,9 +1136,11 @@ bool SessionModelAssociator::TabHasValidEntry(
        tab.GetPendingEntry() : tab.GetEntryAtIndex(i);
     if (!entry)
       return false;
-    if (entry->GetVirtualURL().is_valid() &&
-        !entry->GetVirtualURL().SchemeIs("chrome") &&
-        !entry->GetVirtualURL().SchemeIsFile()) {
+    const GURL& virtual_url = entry->GetVirtualURL();
+    if (virtual_url.is_valid() &&
+        !virtual_url.SchemeIs(chrome::kChromeUIScheme) &&
+        !virtual_url.SchemeIs(chrome::kChromeNativeScheme) &&
+        !virtual_url.SchemeIsFile()) {
       found_valid_url = true;
     }
   }

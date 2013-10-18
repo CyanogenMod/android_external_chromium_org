@@ -57,10 +57,15 @@ class _RunState(object):
             logging.info('Model: %s' % system_info.model_name)
           if system_info.gpu:
             for i, device in enumerate(system_info.gpu.devices):
-              logging.info('GPU device %d: %s' % (i, device))
-            logging.info('GPU Attributes:')
-            for k, v in system_info.gpu.aux_attributes.iteritems():
-              logging.info('\t%s: %s' % (k, v))
+              logging.info('GPU device %d: %s', i, device)
+            if system_info.gpu.aux_attributes:
+              logging.info('GPU Attributes:')
+              for k, v in sorted(system_info.gpu.aux_attributes.iteritems()):
+                logging.info('  %-20s: %s', k, v)
+            if system_info.gpu.feature_status:
+              logging.info('Feature Status:')
+              for k, v in sorted(system_info.gpu.feature_status.iteritems()):
+                logging.info('  %-20s: %s', k, v)
           else:
             logging.info('No GPU devices')
 
@@ -86,6 +91,14 @@ class _RunState(object):
       # Ensure only one tab is open.
       while len(self.browser.tabs) > 1:
         self.browser.tabs[-1].Close()
+
+      # Must wait for tab to commit otherwise it can commit after the next
+      # navigation has begun and RenderViewHostManager::DidNavigateMainFrame()
+      # will cancel the next navigation because it's pending. This manifests as
+      # the first navigation in a PageSet freezing indefinitly because the
+      # navigation was silently cancelled when |self.browser.tabs[0]| was
+      # committed.
+      self.browser.tabs[0].WaitForDocumentReadyStateToBeComplete()
 
     if not self.tab:
       self.tab = self.browser.tabs[0]
@@ -116,7 +129,8 @@ class _RunState(object):
     self.browser.StartProfiling(finder_options.profiler, output_file)
 
   def StopProfiling(self):
-    self.browser.StopProfiling()
+    if self.browser:
+      self.browser.StopProfiling()
 
 
 class PageState(object):
@@ -125,8 +139,9 @@ class PageState(object):
 
   def PreparePage(self, page, tab, test=None):
     if page.is_file:
-      serving_dirs = page.serving_dirs_and_file[0]
-      if tab.browser.SetHTTPServerDirectories(serving_dirs) and test:
+      server_started = tab.browser.SetHTTPServerDirectories(
+        page.page_set.serving_dirs | set([page.serving_dir]))
+      if server_started and test:
         test.DidStartHTTPServer(tab)
 
     if page.credentials:
@@ -232,9 +247,6 @@ def Run(test, page_set, expectations, finder_options):
 
   # Create a possible_browser with the given options.
   test.CustomizeBrowserOptions(finder_options)
-  if finder_options.profiler:
-    profiler_class = profiler_finder.FindProfiler(finder_options.profiler)
-    profiler_class.CustomizeBrowserOptions(finder_options)
   try:
     possible_browser = browser_finder.FindBrowser(finder_options)
   except browser_finder.BrowserTypeRequiredException, e:
@@ -268,6 +280,10 @@ def Run(test, page_set, expectations, finder_options):
 
   for page in pages:
     test.CustomizeBrowserOptionsForPage(page, possible_browser.finder_options)
+  if finder_options.profiler:
+    profiler_class = profiler_finder.FindProfiler(finder_options.profiler)
+    profiler_class.CustomizeBrowserOptions(possible_browser.browser_type,
+                                           possible_browser.finder_options)
 
   for page in list(pages):
     if not test.CanRunForPage(page):

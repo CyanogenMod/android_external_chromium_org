@@ -26,7 +26,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/memset.arm.S \
 	third_party/skia/src/opts/SkBlitMask_opts_arm.cpp \
 	third_party/skia/src/opts/SkBlitRow_opts_arm.cpp \
-	third_party/skia/src/opts/opts_check_arm.cpp
+	third_party/skia/src/opts/opts_check_arm.cpp \
+	third_party/skia/src/opts/SkXfermode_opts_none.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -78,7 +79,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -167,7 +167,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

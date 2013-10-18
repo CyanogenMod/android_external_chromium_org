@@ -79,10 +79,10 @@
     'renderer/android/phone_number_detector.h',
     'renderer/android/synchronous_compositor_factory.cc',
     'renderer/android/synchronous_compositor_factory.h',
+    'renderer/clipboard_utils.cc',
+    'renderer/clipboard_utils.h',
     'renderer/cursor_utils.cc',
     'renderer/cursor_utils.h',
-    'renderer/device_orientation_dispatcher.cc',
-    'renderer/device_orientation_dispatcher.h',
     'renderer/device_orientation/device_motion_event_pump.cc',
     'renderer/device_orientation/device_motion_event_pump.h',
     'renderer/device_orientation/device_orientation_event_pump.cc',
@@ -499,10 +499,10 @@
     'renderer/web_ui_extension.h',
     'renderer/web_ui_extension_data.cc',
     'renderer/web_ui_extension_data.h',
-    'renderer/webcrypto_impl.cc',
-    'renderer/webcrypto_impl.h',
-    'renderer/webcrypto_impl_nss.cc',
-    'renderer/webcrypto_impl_openssl.cc',
+    'renderer/webcrypto/webcrypto_impl.cc',
+    'renderer/webcrypto/webcrypto_impl.h',
+    'renderer/webcrypto/webcrypto_impl_nss.cc',
+    'renderer/webcrypto/webcrypto_impl_openssl.cc',
     'renderer/websharedworker_proxy.cc',
     'renderer/websharedworker_proxy.h',
     'renderer/websharedworkerrepository_impl.cc',
@@ -696,23 +696,16 @@
         'renderer/media/crypto/ppapi_decryptor.h',
       ],
     }],
-    ['enable_gpu!=1', {
-      'sources!': [
-        'renderer/pepper/ppb_graphics_3d_impl.cc',
-        'renderer/pepper/ppb_graphics_3d_impl.h',
-        'renderer/pepper/ppb_open_gl_es_impl.cc',
-      ],
-    }],
     ['use_openssl==1', {
       'sources!': [
-        'renderer/webcrypto_impl_nss.cc',
+        'renderer/webcrypto/webcrypto_impl_nss.cc',
       ],
       'dependencies': [
         '../third_party/openssl/openssl.gyp:openssl',
       ],
     }, {
       'sources!': [
-        'renderer/webcrypto_impl_openssl.cc',
+        'renderer/webcrypto/webcrypto_impl_openssl.cc',
       ],
       'conditions': [
         ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {

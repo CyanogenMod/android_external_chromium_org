@@ -214,8 +214,13 @@ void TabContentsResourceProvider::StartUpdating() {
   // pages, prerender pages, and background printed pages.
 
   // Add all the existing WebContentses.
-  for (TabContentsIterator iterator; !iterator.done(); iterator.Next())
+  for (TabContentsIterator iterator; !iterator.done(); iterator.Next()) {
     Add(*iterator);
+    DevToolsWindow* docked =
+        DevToolsWindow::GetDockedInstanceForInspectedTab(*iterator);
+    if (docked)
+      Add(docked->web_contents());
+  }
 
   // Add all the prerender pages.
   std::vector<Profile*> profiles(
@@ -253,7 +258,7 @@ void TabContentsResourceProvider::StartUpdating() {
   // Then we register for notifications to get new web contents.
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
                  content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+  registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -266,7 +271,7 @@ void TabContentsResourceProvider::StopUpdating() {
   // Then we unregister for notifications to get new web contents.
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
       content::NotificationService::AllBrowserContextsAndSources());
-  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+  registrar_.Remove(this, content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED,
       content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
       content::NotificationService::AllBrowserContextsAndSources());
@@ -346,7 +351,7 @@ void TabContentsResourceProvider::Observe(
     case content::NOTIFICATION_WEB_CONTENTS_CONNECTED:
       Add(web_contents);
       break;
-    case content::NOTIFICATION_WEB_CONTENTS_SWAPPED:
+    case content::NOTIFICATION_RENDER_VIEW_HOST_CHANGED:
       Remove(web_contents);
       Add(web_contents);
       break;

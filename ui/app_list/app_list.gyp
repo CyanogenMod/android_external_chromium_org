@@ -17,6 +17,8 @@
         '../../skia/skia.gyp:skia',
         '../base/strings/ui_strings.gyp:ui_strings',
         '../compositor/compositor.gyp:compositor',
+        '../events/events.gyp:events',
+        '../gfx/gfx.gyp:gfx',
         '../ui.gyp:ui',
         '../ui.gyp:ui_resources',
       ],
@@ -27,6 +29,8 @@
         'app_list_constants.cc',
         'app_list_constants.h',
         'app_list_export.h',
+        'app_list_folder_item.cc',
+        'app_list_folder_item.h',
         'app_list_item_model.cc',
         'app_list_item_model.h',
         'app_list_item_model_observer.h',
@@ -55,8 +59,6 @@
         'cocoa/apps_search_results_controller.mm',
         'cocoa/apps_search_results_model_bridge.h',
         'cocoa/apps_search_results_model_bridge.mm',
-        'cocoa/blue_label_button.h',
-        'cocoa/blue_label_button.mm',
         'cocoa/item_drag_controller.h',
         'cocoa/item_drag_controller.mm',
         'cocoa/scroll_view_with_no_scrollbars.h',
@@ -119,6 +121,9 @@
         }],
         ['toolkit_views==1', {
           'dependencies': [
+            '../../content/content.gyp:content',
+            '../../content/content.gyp:content_browser',
+            '../views/controls/webview/webview.gyp:webview',
             '../views/views.gyp:views',
           ],
         }, {  # toolkit_views==0
@@ -170,7 +175,6 @@
         'cocoa/apps_grid_controller_unittest.mm',
         'cocoa/apps_search_box_controller_unittest.mm',
         'cocoa/apps_search_results_controller_unittest.mm',
-        'cocoa/blue_label_button_unittest.mm',
         'cocoa/signin_view_controller_unittest.mm',
         'cocoa/test/apps_grid_controller_test_helper.h',
         'cocoa/test/apps_grid_controller_test_helper.mm',
@@ -183,6 +187,8 @@
           'dependencies': [
             '../views/views.gyp:views',
             '../views/views.gyp:views_test_support',
+            '../../content/content.gyp:content',
+            '../../content/content.gyp:content_browser',
           ],
         }, {  # toolkit_views==0
           'sources/': [
@@ -208,6 +214,11 @@
         ['OS=="linux" and linux_use_tcmalloc==1', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
+            # The following two dependencies provide the missing
+            # symbol HeapProfilerStart in Linux component builds.
+            # They probably can be removed after http://crbug.com/263316
+            '../../webkit/glue/webkit_glue.gyp:glue',
+            '../../webkit/glue/webkit_glue.gyp:glue_child',
           ],
         }],
       ],

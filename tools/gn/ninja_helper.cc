@@ -132,6 +132,7 @@ OutputFile NinjaHelper::GetTargetOutputFile(const Target* target) const {
 
   const char* extension;
   if (target->output_type() == Target::GROUP ||
+      target->output_type() == Target::SOURCE_SET ||
       target->output_type() == Target::COPY_FILES ||
       target->output_type() == Target::CUSTOM) {
     extension = "stamp";
@@ -229,21 +230,4 @@ std::string NinjaHelper::GetRuleForSourceType(const Settings* settings,
   }
 
   return std::string();
-}
-
-std::string NinjaHelper::GetRuleForTargetType(
-    const Toolchain* toolchain,
-    Target::OutputType target_type) const {
-  std::string prefix = GetRulePrefix(toolchain);
-
-  if (target_type == Target::STATIC_LIBRARY) {
-    // TODO(brettw) stuff about standalong static libraryes on Unix in
-    // WriteTarget in the Python one, and lots of postbuild steps.
-    return prefix + "alink";
-  }
-
-  if (target_type == Target::SHARED_LIBRARY)
-    return prefix + "solink";
-
-  return prefix + "link";
 }

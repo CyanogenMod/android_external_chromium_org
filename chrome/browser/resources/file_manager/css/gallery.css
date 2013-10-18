@@ -67,11 +67,6 @@ body {
   width: 100%;
 }
 
-.gallery[tools][locked] *,
-.gallery[tools][locked] .image-container[cursor] {
-  cursor: wait;
-}
-
 .gallery[tools] .image-container[cursor='default'] {
   cursor: default;
 }
@@ -592,11 +587,12 @@ body {
 }
 
 /* Show labels if there is enough space. */
-@media (min-width: 1050px) {
+@media (min-width: 1180px) {
 
   .gallery .edit-main button,
   .gallery .edit-main button[disabled] {
     background-position: 5px center;
+    max-width: 60px;
     min-width: 0;  /* Reset. */
     padding: 0 10px 0 35px;
     width: auto;
@@ -716,7 +712,8 @@ body {
     url('../images/gallery/2x/icon_redo_selected.png') 2x);
 }
 
-.gallery > .toolbar button[disabled] {
+.gallery > .toolbar button[disabled],
+.gallery[tools][locked] > .toolbar button {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -1074,7 +1071,7 @@ body {
 }
 
 .gallery .share-menu[hidden] {
-  bottom: -100%;  /* offscreen so that 'dimmed' attribute does not show it*/
+  bottom: -100%;  /* Offscreen so that 'dimmed' attribute does not show it. */
   opacity: 0;
   pointer-events: none;
 }
@@ -1097,19 +1094,18 @@ body {
   margin-right: 5px;
 }
 
-/* Load spinner and error banner */
+/* Load spinner and error banner. */
 
 .gallery .spinner {
-  background-image: url('../images/common/spinner_white.svg');
+  background-image: url(../images/common/spinner.svg);
   background-size: 100%;
-  height: 32px;
+  height: 16px;
   left: 50%;
-  margin-left: -16px;
-  margin-top: -16px;
-  opacity: 0.5;
+  margin-left: -8px;
+  margin-top: -8px;
   position: absolute;
   top: 50%;
-  width: 32px;
+  width: 16px;
 }
 
 .gallery:not([spinner]) .spinner {
@@ -1356,19 +1352,23 @@ body {
 }
 
 .gallery > .header > button {
-  height: 27px;
-  min-width: 29px;
-  width: 29px;
+  -webkit-margin-start: 10px;
+  cursor: default;
+  height: 32px;
+  min-width: 32px;
+  width: 32px;
 }
 
 .gallery > .header > .maximize-button {
-  background-image: -webkit-image-set(
+  background: -webkit-image-set(
     url('chrome://resources/images/apps/topbar_button_maximize.png') 1x,
-    url('chrome://resources/images/2x/apps/topbar_button_maximize.png') 2x);
+    url('chrome://resources/images/2x/apps/topbar_button_maximize.png') 2x)
+    center;
 }
 
 .gallery > .header > .close-button {
-  background-image: -webkit-image-set(
+  background: -webkit-image-set(
     url('chrome://resources/images/apps/topbar_button_close.png') 1x,
-    url('chrome://resources/images/2x/apps/topbar_button_close.png') 2x);
+    url('chrome://resources/images/2x/apps/topbar_button_close.png') 2x)
+    center;
 }

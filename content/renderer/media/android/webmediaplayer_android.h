@@ -223,7 +223,6 @@ class WebMediaPlayerAndroid
   void OnMediaSourceOpened(WebKit::WebMediaSource* web_media_source);
 
   void OnNeedKey(const std::string& type,
-                 const std::string& session_id,
                  const std::vector<uint8>& init_data);
 
 #if defined(GOOGLE_TV)
@@ -239,6 +238,9 @@ class WebMediaPlayerAndroid
   // Helper methods for posting task for setting states and update WebKit.
   void UpdateNetworkState(WebKit::WebMediaPlayer::NetworkState state);
   void UpdateReadyState(WebKit::WebMediaPlayer::ReadyState state);
+  void TryCreateStreamTextureProxyIfNeeded();
+  void DoCreateStreamTexture();
+
 
   // Helper method to reestablish the surface texture peer for android
   // media player.
@@ -347,6 +349,9 @@ class WebMediaPlayerAndroid
 
   // Whether the mediaplayer is playing.
   bool is_playing_;
+
+  // Wether the mediaplayer has already started playing.
+  bool playing_started_;
 
   // Whether media player needs to re-establish the surface texture peer.
   bool needs_establish_peer_;

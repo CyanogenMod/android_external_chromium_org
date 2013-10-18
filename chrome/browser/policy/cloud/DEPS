@@ -32,6 +32,10 @@ specific_include_rules = {
     "+content/test/net",
   ],
 
+  r"cloud_policy_browsertest.cc": [
+    "+sync/internal_api/public/base/invalidation.h",
+  ],
+
   # TODO(joaodasilva): remove these exceptions.
   r"cloud_external_data_manager_base_unittest\.cc": [
     "+content/public/test/test_browser_thread_bundle.h",
@@ -85,14 +89,6 @@ specific_include_rules = {
   r"component_cloud_policy_service_unittest\.cc": [
     "+content/public/browser/browser_thread.h",
     "+content/public/test/test_browser_thread.h",
-  ],
-
-  r"device_management_service\.cc": [
-    "+chrome/browser/net/basic_http_user_agent_settings.h",
-    "+chrome/browser/net/chrome_net_log.h",
-    "+chrome/common/chrome_version_info.h",
-    "+content/public/common/content_client.h",
-    "+chrome/browser/chromeos/system/statistics_provider.h",
   ],
 
   r"test_request_interceptor\.cc": [

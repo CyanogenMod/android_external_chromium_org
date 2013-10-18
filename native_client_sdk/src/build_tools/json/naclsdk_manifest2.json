@@ -4,17 +4,17 @@
       "archives": [
         {
           "checksum": {
-            "sha1": "9c9af9e050cce3d490c7c1dd612910bed3f32b59"
+            "sha1": "61bc0ab13c4ff1d3222446fb616f207b1617441f"
           },
           "host_os": "all",
-          "size": 29354,
-          "url": "https://commondatastorage.googleapis.com/nativeclient-mirror/nacl/nacl_sdk/trunk.201132/sdk_tools.tgz"
+          "size": 29619,
+          "url": "https://commondatastorage.googleapis.com/nativeclient-mirror/nacl/nacl_sdk/trunk.228691/sdk_tools.tgz"
         }
       ],
-      "description": "Native Client SDK Tools, revision 201132",
+      "description": "Native Client SDK Tools, revision 228691",
       "name": "sdk_tools",
       "recommended": "yes",
-      "revision": 201132,
+      "revision": 228691,
       "stability": "stable",
       "version": 1
     },
@@ -32,16 +32,6 @@
       "revision": 1507,
       "stability": "dev",
       "version": 0
-    },
-    {
-      "archives": [],
-      "description": "Chrome 25 bundle, revision xxxxx",
-      "name": "pepper_25",
-      "recommended": "no",
-      "repath": "pepper_25",
-      "revision": 0,
-      "stability": "post_stable",
-      "version": 25
     },
     {
       "archives": [],
@@ -67,20 +57,20 @@
       "archives": [],
       "description": "Chrome 28 bundle, revision xxxxx",
       "name": "pepper_28",
-      "recommended": "yes",
+      "recommended": "no",
       "repath": "pepper_28",
       "revision": 0,
-      "stability": "stable",
+      "stability": "post_stable",
       "version": 28
     },
     {
       "archives": [],
       "description": "Chrome 29 bundle, revision xxxxx",
       "name": "pepper_29",
-      "recommended": "no",
+      "recommended": "yes",
       "repath": "pepper_29",
       "revision": 0,
-      "stability": "beta",
+      "stability": "stable",
       "version": 29
     },
     {
@@ -90,8 +80,18 @@
       "recommended": "no",
       "repath": "pepper_30",
       "revision": 0,
-      "stability": "dev",
+      "stability": "beta",
       "version": 30
+    },
+    {
+      "archives": [],
+      "description": "Chrome 31 bundle, revision xxxxx",
+      "name": "pepper_31",
+      "recommended": "no",
+      "repath": "pepper_31",
+      "revision": 0,
+      "stability": "dev",
+      "version": 31
     },
     {
       "archives": [],

@@ -30,7 +30,7 @@ namespace tools {
 namespace test {
 namespace {
 
-const char data1[] = "foo";
+const char kData[] = "foo";
 const bool kFromPeer = true;
 
 class TestConnectionHelper : public QuicEpollConnectionHelper {
@@ -39,15 +39,14 @@ class TestConnectionHelper : public QuicEpollConnectionHelper {
       : QuicEpollConnectionHelper(fd, eps) {
   }
 
-  virtual int WritePacketToWire(const QuicEncryptedPacket& packet,
-                                int* error) OVERRIDE {
+  virtual WriteResult WritePacketToWire(
+      const QuicEncryptedPacket& packet) OVERRIDE {
     QuicFramer framer(QuicVersionMax(), QuicTime::Zero(), true);
     FramerVisitorCapturingFrames visitor;
     framer.set_visitor(&visitor);
     EXPECT_TRUE(framer.ProcessPacket(packet));
     header_ = *visitor.header();
-    *error = 0;
-    return packet.length();
+    return WriteResult(WRITE_STATUS_OK, packet.length());
   }
 
   QuicPacketHeader* header() { return &header_; }
@@ -81,7 +80,7 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
         send_algorithm_(new testing::StrictMock<MockSendAlgorithm>),
         helper_(new TestConnectionHelper(0, &epoll_server_)),
         connection_(guid_, IPEndPoint(), helper_),
-        frame1_(3, false, 0, data1) {
+        frame_(3, false, 0, kData) {
     connection_.set_visitor(&visitor_);
     connection_.SetSendAlgorithm(send_algorithm_);
     epoll_server_.set_timeout_in_us(-1);
@@ -97,18 +96,18 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
 
   QuicPacket* ConstructDataPacket(QuicPacketSequenceNumber number,
                                   QuicFecGroupNumber fec_group) {
-    header_.public_header.version_flag = false;
-    header_.public_header.reset_flag = false;
-    header_.fec_flag = false;
-    header_.entropy_flag = false;
-    header_.packet_sequence_number = number;
-    header_.is_in_fec_group = fec_group == 0 ? NOT_IN_FEC_GROUP : IN_FEC_GROUP;
-    header_.fec_group = fec_group;
+    QuicPacketHeader header;
+    header.public_header.version_flag = false;
+    header.public_header.reset_flag = false;
+    header.fec_flag = false;
+    header.entropy_flag = false;
+    header.packet_sequence_number = number;
+    header.is_in_fec_group = fec_group == 0 ? NOT_IN_FEC_GROUP : IN_FEC_GROUP;
+    header.fec_group = fec_group;
 
     QuicFrames frames;
-    QuicFrame frame(&frame1_);
-    frames.push_back(frame);
-    return framer_.BuildUnsizedDataPacket(header_, frames).packet;
+    frames.push_back(QuicFrame(&frame_));
+    return framer_.BuildUnsizedDataPacket(header, frames).packet;
   }
 
   QuicGuid guid_;
@@ -120,8 +119,7 @@ class QuicEpollConnectionHelperTest : public ::testing::Test {
   TestConnection connection_;
   testing::StrictMock<MockConnectionVisitor> visitor_;
 
-  QuicPacketHeader header_;
-  QuicStreamFrame frame1_;
+  QuicStreamFrame frame_;
 };
 
 TEST_F(QuicEpollConnectionHelperTest, DISABLED_TestRTORetransmission) {

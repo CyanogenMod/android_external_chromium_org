@@ -11,6 +11,7 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/guestview/guestview_constants.h"
 #include "chrome/browser/guestview/webview/webview_constants.h"
+#include "chrome/browser/guestview/webview/webview_permission_types.h"
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -19,12 +20,17 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_request_details.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "net/base/net_errors.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "chrome/browser/guestview/webview/plugin_permission_helper.h"
+#endif
 
 using content::WebContents;
 
@@ -63,9 +69,16 @@ static std::string PermissionTypeToString(BrowserPluginPermissionType type) {
     case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG:
       return webview::kPermissionTypeDialog;
     case BROWSER_PLUGIN_PERMISSION_TYPE_UNKNOWN:
-    default:
       NOTREACHED();
       break;
+    default: {
+      WebViewPermissionType webview = static_cast<WebViewPermissionType>(type);
+      switch (webview) {
+        case WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN:
+          return webview::kPermissionTypeLoadPlugin;
+      }
+      NOTREACHED();
+    }
   }
   return std::string();
 }
@@ -85,6 +98,9 @@ void RemoveWebViewEventListenersOnIOThread(
 
 void AttachWebViewHelpers(WebContents* contents) {
   FaviconTabHelper::CreateForWebContents(contents);
+#if defined(ENABLE_PLUGINS)
+  PluginPermissionHelper::CreateForWebContents(contents);
+#endif
 }
 
 }  // namespace
@@ -114,6 +130,12 @@ WebViewGuest* WebViewGuest::From(int embedder_process_id,
   if (!guest)
     return NULL;
   return guest->AsWebView();
+}
+
+// static
+WebViewGuest* WebViewGuest::FromWebContents(WebContents* contents) {
+  GuestView* guest = GuestView::FromWebContents(contents);
+  return guest ? guest->AsWebView() : NULL;
 }
 
 void WebViewGuest::Attach(WebContents* embedder_web_contents,
@@ -279,9 +301,18 @@ void WebViewGuest::RendererUnresponsive() {
 bool WebViewGuest::RequestPermission(
     BrowserPluginPermissionType permission_type,
     const base::DictionaryValue& request_info,
-    const PermissionResponseCallback& callback) {
+    const PermissionResponseCallback& callback,
+    bool allowed_by_default) {
+  // If there are too many pending permission requests then reject this request.
+  if (pending_permission_requests_.size() >=
+      webview::kMaxOutstandingPermissionRequests) {
+    callback.Run(false, std::string());
+    return true;
+  }
+
   int request_id = next_permission_request_id_++;
-  pending_permission_requests_[request_id] = callback;
+  pending_permission_requests_[request_id] =
+      PermissionResponseInfo(callback, allowed_by_default);
   scoped_ptr<base::DictionaryValue> args(request_info.DeepCopy());
   args->SetInteger(webview::kRequestId, request_id);
   switch (permission_type) {
@@ -291,6 +322,12 @@ bool WebViewGuest::RequestPermission(
       break;
     }
     case BROWSER_PLUGIN_PERMISSION_TYPE_JAVASCRIPT_DIALOG: {
+      chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+      if (channel > chrome::VersionInfo::CHANNEL_DEV) {
+        // 'dialog' API is not available in stable/beta.
+        callback.Run(false, std::string());
+        return true;
+      }
       DispatchEvent(new GuestView::Event(webview::kEventDialog,
                                          args.Pass()));
       break;
@@ -346,23 +383,33 @@ void WebViewGuest::Reload() {
   guest_web_contents()->GetController().Reload(false);
 }
 
-bool WebViewGuest::SetPermission(int request_id,
-                                 bool should_allow,
-                                 const std::string& user_input) {
+WebViewGuest::SetPermissionResult WebViewGuest::SetPermission(
+    int request_id,
+    PermissionResponseAction action,
+    const std::string& user_input) {
   RequestMap::iterator request_itr =
       pending_permission_requests_.find(request_id);
 
   if (request_itr == pending_permission_requests_.end())
-    return false;
+    return SET_PERMISSION_INVALID;
 
-  request_itr->second.Run(should_allow, user_input);
+  const PermissionResponseInfo& info = request_itr->second;
+  bool allow = (action == ALLOW) ||
+      ((action == DEFAULT) && info.allowed_by_default);
+
+  info.callback.Run(allow, user_input);
   pending_permission_requests_.erase(request_itr);
-  return true;
+
+  return allow ? SET_PERMISSION_ALLOWED : SET_PERMISSION_DENIED;
 }
 
 void WebViewGuest::SetUserAgentOverride(
     const std::string& user_agent_override) {
   is_overriding_user_agent_ = !user_agent_override.empty();
+  if (is_overriding_user_agent_) {
+    content::RecordAction(content::UserMetricsAction(
+                              "WebView.Guest.OverrideUA"));
+  }
   guest_web_contents()->SetUserAgentOverride(user_agent_override);
 }
 
@@ -471,9 +518,13 @@ void WebViewGuest::LoadRedirect(const GURL& old_url,
 }
 
 void WebViewGuest::AddWebViewToExtensionRendererState() {
+  const GURL& site_url = web_contents()->GetSiteInstance()->GetSiteURL();
   ExtensionRendererState::WebViewInfo webview_info;
   webview_info.embedder_process_id = embedder_render_process_id();
   webview_info.instance_id = view_instance_id();
+  // TODO(fsamuel): Partition IDs should probably be a chrome-only concept. They
+  // should probably be passed in via attach args.
+  webview_info.partition_id =  site_url.query();
 
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
@@ -505,4 +556,18 @@ void WebViewGuest::SizeChanged(const gfx::Size& old_size,
   args->SetInteger(webview::kNewHeight, new_size.height());
   args->SetInteger(webview::kNewWidth, new_size.width());
   DispatchEvent(new GuestView::Event(webview::kEventSizeChanged, args.Pass()));
+}
+
+WebViewGuest::PermissionResponseInfo::PermissionResponseInfo()
+    : allowed_by_default(false) {
+}
+
+WebViewGuest::PermissionResponseInfo::PermissionResponseInfo(
+    const PermissionResponseCallback& callback,
+    bool allowed_by_default)
+    : callback(callback),
+      allowed_by_default(allowed_by_default) {
+}
+
+WebViewGuest::PermissionResponseInfo::~PermissionResponseInfo() {
 }

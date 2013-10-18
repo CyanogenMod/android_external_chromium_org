@@ -20,10 +20,9 @@ namespace WebTestRunner {
 class WebTestProxyBase;
 }
 
-class MockWebClipboardImpl;
-
 namespace content {
 
+class MockWebClipboardImpl;
 class ShellRenderProcessObserver;
 
 class ShellContentRendererClient : public ContentRendererClient {
@@ -51,7 +50,6 @@ class ShellContentRendererClient : public ContentRendererClient {
   virtual WebKit::WebAudioDevice* OverrideCreateAudioDevice(
       double sample_rate) OVERRIDE;
   virtual WebKit::WebClipboard* OverrideWebClipboard() OVERRIDE;
-  virtual WebKit::WebCrypto* OverrideWebCrypto() OVERRIDE;
   virtual WebKit::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
   virtual bool AllowBrowserPlugin(
       WebKit::WebPluginContainer* container) OVERRIDE;

@@ -102,25 +102,27 @@ FileGrid.prototype.relayoutImmediately_ = function() {
  */
 FileGrid.decorateThumbnail = function(li, entry, metadataCache) {
   li.className = 'thumbnail-item';
-  filelist.decorateListItem(li, entry, metadataCache);
+  if (entry)
+    filelist.decorateListItem(li, entry, metadataCache);
 
   var frame = li.ownerDocument.createElement('div');
   frame.className = 'thumbnail-frame';
   li.appendChild(frame);
 
   var box = li.ownerDocument.createElement('div');
-  FileGrid.decorateThumbnailBox(box,
-                                entry,
-                                metadataCache,
-                                ThumbnailLoader.FillMode.AUTO,
-                                FileGrid.ThumbnailQuality.HIGH);
+  if (entry) {
+    FileGrid.decorateThumbnailBox(box,
+                                  entry,
+                                  metadataCache,
+                                  ThumbnailLoader.FillMode.AUTO,
+                                  FileGrid.ThumbnailQuality.HIGH);
+  }
   frame.appendChild(box);
 
   var bottom = li.ownerDocument.createElement('div');
   bottom.className = 'thumbnail-bottom';
-  frame.appendChild(bottom);
-
   bottom.appendChild(filelist.renderFileNameLabel(li.ownerDocument, entry));
+  frame.appendChild(bottom);
 };
 
 /**
@@ -228,4 +230,71 @@ FileGrid.Item.decorate = function(li, entry, grid) {
 FileGrid.prototype.setBottomMarginForPanel = function(margin) {
   this.style.paddingBottom = margin + 'px';
   this.scrollBar_.setBottomMarginForPanel(margin);
+};
+
+/**
+ * Obtains if the drag selection should be start or not by referring the mouse
+ * event.
+ * @param {MouseEvent} event Drag start event.
+ * @return {boolean} True if the mouse is hit to the background of the list.
+ */
+FileGrid.prototype.shouldStartDragSelection = function(event) {
+  var pos = DragSelector.getScrolledPosition(this, event);
+  return this.getHitElements(pos.x, pos.y).length == 0;
+};
+
+/**
+ * Obtains the column/row index that the coordinate points.
+ * @param {number} coordinate Vertical/horizontal coodinate value that points
+ *     column/row.
+ * @param {number} step Length from a column/row to the next one.
+ * @param {number} threshold Threshold that determinds whether 1 offset is added
+ *     to the return value or not. This is used in order to handle the margin of
+ *     column/row.
+ * @return {number} Index of hit column/row.
+ * @private
+ */
+FileGrid.prototype.getHitIndex_ = function(coordinate, step, threshold) {
+  var index = ~~(coordinate / step);
+  return (coordinate % step >= threshold) ? index + 1 : index;
+};
+
+/**
+ * Obtains the index list of elements that are hit by the point or the
+ * rectangle.
+ *
+ * We should match its argument interface with FileList.getHitElements.
+ *
+ * @param {number} x X coordinate value.
+ * @param {number} y Y coordinate value.
+ * @param {=number} opt_width Width of the coordinate.
+ * @param {=number} opt_height Height of the coordinate.
+ * @return {Array.<number>} Index list of hit elements.
+ */
+FileGrid.prototype.getHitElements = function(x, y, opt_width, opt_height) {
+  var currentSelection = [];
+  var right = x + (opt_width || 0);
+  var bottom = y + (opt_height || 0);
+  var itemMetrics = this.measureItem();
+  var horizontalStartIndex = this.getHitIndex_(
+      x, itemMetrics.width, itemMetrics.width - itemMetrics.marginRight);
+  var horizontalEndIndex = Math.min(this.columns, this.getHitIndex_(
+      right, itemMetrics.width, itemMetrics.marginLeft));
+  var verticalStartIndex = this.getHitIndex_(
+      y, itemMetrics.height, itemMetrics.height - itemMetrics.bottom);
+  var verticalEndIndex = this.getHitIndex_(
+      bottom, itemMetrics.height, itemMetrics.marginTop);
+  for (var verticalIndex = verticalStartIndex;
+       verticalIndex < verticalEndIndex;
+       verticalIndex++) {
+    var indexBase = this.getFirstItemInRow(verticalIndex);
+    for (var horizontalIndex = horizontalStartIndex;
+         horizontalIndex < horizontalEndIndex;
+         horizontalIndex++) {
+      var index = indexBase + horizontalIndex;
+      if (0 <= index && index < this.dataModel.length)
+        currentSelection.push(index);
+    }
+  }
+  return currentSelection;
 };

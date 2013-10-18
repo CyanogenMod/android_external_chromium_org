@@ -10,7 +10,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/blocking_method_caller.h"
-#include "chromeos/dbus/cryptohome_client_stub.h"
+#include "chromeos/dbus/fake_cryptohome_client.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -325,6 +325,23 @@ class CryptohomeClientImpl : public CryptohomeClient {
         &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
         base::Bind(
             &CryptohomeClientImpl::OnPkcs11GetTpmTokenInfo,
+            weak_ptr_factory_.GetWeakPtr(),
+            callback));
+  }
+
+  // CryptohomeClient override.
+  virtual void Pkcs11GetTpmTokenInfoForUser(
+      const std::string& user_email,
+      const Pkcs11GetTpmTokenInfoCallback& callback) OVERRIDE {
+    dbus::MethodCall method_call(
+        cryptohome::kCryptohomeInterface,
+        cryptohome::kCryptohomePkcs11GetTpmTokenInfoForUser);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendString(user_email);
+    proxy_->CallMethod(
+        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        base::Bind(
+            &CryptohomeClientImpl::OnPkcs11GetTpmTokenInfoForUser,
             weak_ptr_factory_.GetWeakPtr(),
             callback));
   }
@@ -729,6 +746,7 @@ class CryptohomeClientImpl : public CryptohomeClient {
     bool result = false;
     if (!reader.PopBool(&result)) {
       callback.Run(DBUS_METHOD_CALL_FAILURE, false);
+      LOG(ERROR) << "Invalid response: " << response->ToString();
       return;
     }
     callback.Run(DBUS_METHOD_CALL_SUCCESS, result);
@@ -770,21 +788,44 @@ class CryptohomeClientImpl : public CryptohomeClient {
     callback.Run(DBUS_METHOD_CALL_SUCCESS, result, data);
   }
 
-  // Handles responses for Pkcs11GetTpmtTokenInfo.
+  // Handles responses for Pkcs11GetTpmTokenInfo.
   void OnPkcs11GetTpmTokenInfo(const Pkcs11GetTpmTokenInfoCallback& callback,
                                dbus::Response* response) {
     if (!response) {
-      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string());
+      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string(), -1);
       return;
     }
     dbus::MessageReader reader(response);
     std::string label;
     std::string user_pin;
     if (!reader.PopString(&label) || !reader.PopString(&user_pin)) {
-      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string());
+      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string(), -1);
+      LOG(ERROR) << "Invalid response: " << response->ToString();
       return;
     }
-    callback.Run(DBUS_METHOD_CALL_SUCCESS, label, user_pin);
+    const int kDefaultSlot = 0;
+    callback.Run(DBUS_METHOD_CALL_SUCCESS, label, user_pin, kDefaultSlot);
+  }
+
+  // Handles responses for Pkcs11GetTpmTokenInfoForUser.
+  void OnPkcs11GetTpmTokenInfoForUser(
+      const Pkcs11GetTpmTokenInfoCallback& callback,
+      dbus::Response* response) {
+    if (!response) {
+      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string(), -1);
+      return;
+    }
+    dbus::MessageReader reader(response);
+    std::string label;
+    std::string user_pin;
+    int slot = 0;
+    if (!reader.PopString(&label) || !reader.PopString(&user_pin) ||
+        !reader.PopInt32(&slot)) {
+      callback.Run(DBUS_METHOD_CALL_FAILURE, std::string(), std::string(), -1);
+      LOG(ERROR) << "Invalid response: " << response->ToString();
+      return;
+    }
+    callback.Run(DBUS_METHOD_CALL_SUCCESS, label, user_pin, slot);
   }
 
   // Handles AsyncCallStatus signal.
@@ -857,7 +898,7 @@ CryptohomeClient* CryptohomeClient::Create(DBusClientImplementationType type) {
   if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
     return new CryptohomeClientImpl();
   DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new CryptohomeClientStubImpl();
+  return new FakeCryptohomeClient();
 }
 
 // static

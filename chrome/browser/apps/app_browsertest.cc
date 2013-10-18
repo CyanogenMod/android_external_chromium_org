@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "apps/launcher.h"
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -45,6 +45,15 @@
 #include "content/public/test/test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
+
+#if defined(OS_CHROMEOS)
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/chromeos/login/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_power_manager_client.h"
+#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#endif
 
 using apps::ShellWindow;
 using apps::ShellWindowRegistry;
@@ -107,6 +116,61 @@ class TabsAddedNotificationObserver
   std::vector<content::WebContents*> observed_tabs_;
 
   DISALLOW_COPY_AND_ASSIGN(TabsAddedNotificationObserver);
+};
+
+class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
+ public:
+  explicit ScopedPreviewTestingDelegate(bool auto_cancel)
+      : auto_cancel_(auto_cancel),
+        total_page_count_(1),
+        rendered_page_count_(0) {
+    PrintPreviewUI::SetDelegateForTesting(this);
+  }
+
+  ~ScopedPreviewTestingDelegate() {
+    PrintPreviewUI::SetDelegateForTesting(NULL);
+  }
+
+  // PrintPreviewUI::TestingDelegate implementation.
+  virtual bool IsAutoCancelEnabled() OVERRIDE {
+    return auto_cancel_;
+  }
+
+  // PrintPreviewUI::TestingDelegate implementation.
+  virtual void DidGetPreviewPageCount(int page_count) OVERRIDE {
+    total_page_count_ = page_count;
+  }
+
+  // PrintPreviewUI::TestingDelegate implementation.
+  virtual void DidRenderPreviewPage(const content::WebContents& preview_dialog)
+      OVERRIDE {
+    dialog_size_ = preview_dialog.GetView()->GetContainerSize();
+    ++rendered_page_count_;
+    CHECK(rendered_page_count_ <= total_page_count_);
+    if (waiting_runner_ && rendered_page_count_ == total_page_count_) {
+      waiting_runner_->Quit();
+    }
+  }
+
+  void WaitUntilPreviewIsReady() {
+    CHECK(!waiting_runner_);
+    if (rendered_page_count_ < total_page_count_) {
+      waiting_runner_ = new content::MessageLoopRunner;
+      waiting_runner_->Run();
+      waiting_runner_ = NULL;
+    }
+  }
+
+  gfx::Size dialog_size() {
+    return dialog_size_;
+  }
+
+ private:
+  bool auto_cancel_;
+  int total_page_count_;
+  int rendered_page_count_;
+  scoped_refptr<content::MessageLoopRunner> waiting_runner_;
+  gfx::Size dialog_size_;
 };
 
 bool CopyTestDataAndSetCommandLineArg(
@@ -399,9 +463,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_ExtensionWindowingApis) {
   LoadAndLaunchPlatformApp("minimal");
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   ASSERT_EQ(1U, GetShellWindowCount());
-  ShellWindowRegistry::ShellWindowList shell_windows =
-      ShellWindowRegistry::Get(browser()->profile())->shell_windows();
-  int shell_window_id = (*shell_windows.begin())->session_id().id();
+  int shell_window_id = GetFirstShellWindow()->session_id().id();
 
   // But it's not visible to the extensions API, it still thinks there's just
   // one browser window.
@@ -438,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFile) {
 // Tests that relative paths can be passed through to the platform app.
 // This test doesn't use the normal test infrastructure as it needs to open
 // the application differently to all other platform app tests, by setting
-// the chrome::AppLaunchParams.current_directory field.
+// the AppLaunchParams.current_directory field.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithRelativeFile) {
   // Setup the command line
   ClearCommandLineArgs();
@@ -455,11 +517,11 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithRelativeFile) {
   ASSERT_TRUE(extension);
 
   // Run the test
-  chrome::AppLaunchParams params(browser()->profile(), extension,
-                                 extension_misc::LAUNCH_NONE, NEW_WINDOW);
+  AppLaunchParams params(browser()->profile(), extension,
+                         extension_misc::LAUNCH_NONE, NEW_WINDOW);
   params.command_line = CommandLine::ForCurrentProcess();
   params.current_directory = test_data_dir_;
-  chrome::OpenApplication(params);
+  OpenApplication(params);
 
   if (!catcher.GetNextResult()) {
     message_ = catcher.message();
@@ -783,10 +845,10 @@ void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
     content::WindowedNotificationObserver app_loaded_observer(
         content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
         content::NotificationService::AllSources());
-    chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                    extension,
-                                                    extension_misc::LAUNCH_NONE,
-                                                    NEW_WINDOW));
+    OpenApplication(AppLaunchParams(browser()->profile(),
+                                    extension,
+                                    extension_misc::LAUNCH_NONE,
+                                    NEW_WINDOW));
     app_loaded_observer.Wait();
     window = GetFirstShellWindow();
     ASSERT_TRUE(window);
@@ -928,10 +990,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
@@ -953,10 +1015,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_TRUE(extension);
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   ASSERT_FALSE(should_not_install.seen());
@@ -994,10 +1056,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(should_install.seen());
 
   ExtensionTestMessageListener launched_listener("Launched", false);
-  chrome::OpenApplication(chrome::AppLaunchParams(browser()->profile(),
-                                                  extension,
-                                                  extension_misc::LAUNCH_NONE,
-                                                  NEW_WINDOW));
+  OpenApplication(AppLaunchParams(browser()->profile(),
+                                  extension,
+                                  extension_misc::LAUNCH_NONE,
+                                  NEW_WINDOW));
 
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
@@ -1029,13 +1091,11 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
   EXPECT_EQ(1LU, GetShellWindowCount());
-  ShellWindowRegistry::ShellWindowList shell_windows = ShellWindowRegistry::Get(
-      browser()->profile())->shell_windows();
-  EXPECT_TRUE((*shell_windows.begin())->web_contents()->
+  EXPECT_TRUE(GetFirstShellWindow()->web_contents()->
       GetRenderWidgetHostView()->HasFocus());
 }
 
-// The next two tests will only run automatically with Chrome branded builds
+// The next three tests will only run automatically with Chrome branded builds
 // because they require the PDF preview plug-in. To run these tests manually for
 // Chromium (non-Chrome branded) builds in a development environment:
 //
@@ -1060,13 +1120,12 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        MAYBE_WindowDotPrintShouldBringUpPrintPreview) {
-  PrintPreviewUI::ScopedAutoCancelForTesting auto_cancel;
+  ScopedPreviewTestingDelegate preview_delegate(true);
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
-  EXPECT_EQ(1, auto_cancel.GetCountForTesting());
+  preview_delegate.WaitUntilPreviewIsReady();
 }
 
-// Currently fails on OS X.
-#if !defined(GOOGLE_CHROME_BUILD) || defined(OS_MACOSX)
+#if !defined(GOOGLE_CHROME_BUILD)
 #define MAYBE_ClosingWindowWhilePrintingShouldNotCrash \
     DISABLED_ClosingWindowWhilePrintingShouldNotCrash
 #else
@@ -1074,12 +1133,39 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
     ClosingWindowWhilePrintingShouldNotCrash
 #endif
 
+// This test verifies that http://crbug.com/297179 is fixed.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        MAYBE_ClosingWindowWhilePrintingShouldNotCrash) {
-  PrintPreviewUI::ScopedAutoCancelForTesting auto_cancel;
-  ASSERT_TRUE(RunPlatformAppTestWithArg("platform_apps/print_api",
-                                        "close")) << message_;
-  EXPECT_EQ(0, auto_cancel.GetCountForTesting());
+  ScopedPreviewTestingDelegate preview_delegate(false);
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
+  preview_delegate.WaitUntilPreviewIsReady();
+  GetFirstShellWindow()->GetBaseWindow()->Close();
+}
+
+// This test currently only passes on OS X (on other platforms the print preview
+// dialog's size is limited by the size of the window being printed).
+#if !defined(GOOGLE_CHROME_BUILD) || !defined(OS_MACOSX)
+#define MAYBE_PrintPreviewShouldNotBeTooSmall \
+    DISABLED_PrintPreviewShouldNotBeTooSmall
+#else
+#define MAYBE_PrintPreviewShouldNotBeTooSmall \
+    PrintPreviewShouldNotBeTooSmall
+#endif
+
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       MAYBE_PrintPreviewShouldNotBeTooSmall) {
+  // Print preview dialogs with widths less than 410 pixels will have preview
+  // areas that are too small, and ones with heights less than 191 pixels will
+  // have vertical scrollers for their controls that are too small.
+  gfx::Size minimum_dialog_size(410, 191);
+  ScopedPreviewTestingDelegate preview_delegate(false);
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
+  preview_delegate.WaitUntilPreviewIsReady();
+  EXPECT_GE(preview_delegate.dialog_size().width(),
+            minimum_dialog_size.width());
+  EXPECT_GE(preview_delegate.dialog_size().height(),
+            minimum_dialog_size.height());
+  GetFirstShellWindow()->GetBaseWindow()->Close();
 }
 
 
@@ -1133,12 +1219,81 @@ IN_PROC_BROWSER_TEST_F(PlatformAppIncognitoBrowserTest, IncognitoComponentApp) {
   ASSERT_TRUE(registry != NULL);
   registry->AddObserver(this);
 
-  chrome::AppLaunchParams params(incognito_profile, file_manager, 0);
-  chrome::OpenApplication(params);
+  OpenApplication(AppLaunchParams(incognito_profile, file_manager, 0));
 
   while (!ContainsKey(opener_app_ids_, file_manager->id())) {
     content::RunAllPendingInMessageLoop();
   }
+}
+
+class RestartDeviceTest : public PlatformAppBrowserTest {
+ public:
+  RestartDeviceTest()
+      : power_manager_client_(NULL),
+        mock_user_manager_(NULL) {}
+  virtual ~RestartDeviceTest() {}
+
+  // PlatformAppBrowserTest overrides
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    PlatformAppBrowserTest::SetUpInProcessBrowserTestFixture();
+
+    chromeos::MockDBusThreadManagerWithoutGMock* dbus_manager =
+        new chromeos::MockDBusThreadManagerWithoutGMock;
+    chromeos::DBusThreadManager::InitializeForTesting(dbus_manager);
+    power_manager_client_ = dbus_manager->fake_power_manager_client();
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    PlatformAppBrowserTest::SetUpOnMainThread();
+
+    mock_user_manager_ = new chromeos::MockUserManager;
+    user_manager_enabler_.reset(
+        new chromeos::ScopedUserManagerEnabler(mock_user_manager_));
+
+    EXPECT_CALL(*mock_user_manager_, IsUserLoggedIn())
+        .WillRepeatedly(testing::Return(true));
+    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsKioskApp())
+        .WillRepeatedly(testing::Return(true));
+  }
+
+  virtual void CleanUpOnMainThread() OVERRIDE {
+    user_manager_enabler_.reset();
+    PlatformAppBrowserTest::CleanUpOnMainThread();
+  }
+
+  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+    chromeos::DBusThreadManager::Shutdown();
+    PlatformAppBrowserTest::TearDownInProcessBrowserTestFixture();
+  }
+
+  int request_restart_call_count() const {
+    return power_manager_client_->request_restart_call_count();
+  }
+
+ private:
+  chromeos::FakePowerManagerClient* power_manager_client_;
+  chromeos::MockUserManager* mock_user_manager_;
+  scoped_ptr<chromeos::ScopedUserManagerEnabler> user_manager_enabler_;
+
+  DISALLOW_COPY_AND_ASSIGN(RestartDeviceTest);
+};
+
+// Tests that chrome.runtime.restart would request device restart in
+// ChromeOS kiosk mode.
+IN_PROC_BROWSER_TEST_F(RestartDeviceTest, Restart) {
+  ASSERT_EQ(0, request_restart_call_count());
+
+  ExtensionTestMessageListener launched_listener("Launched", true);
+  const Extension* extension = LoadAndLaunchPlatformApp("restart_device");
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+
+  launched_listener.Reply("restart");
+  ExtensionTestMessageListener restart_requested_listener("restartRequested",
+                                                          false);
+  ASSERT_TRUE(restart_requested_listener.WaitUntilSatisfied());
+
+  EXPECT_EQ(1, request_restart_call_count());
 }
 
 #endif  // defined(OS_CHROMEOS)

@@ -82,7 +82,7 @@ class OverflowBubbleView : public views::BubbleDelegateView {
 
   ShelfLayoutManager* GetShelfLayoutManagerForLauncher() const {
     return ShelfLayoutManager::ForLauncher(
-        anchor_view()->GetWidget()->GetNativeView());
+        GetAnchorView()->GetWidget()->GetNativeView());
   }
 
   LauncherView* launcher_view_;  // Owned by views hierarchy.
@@ -102,7 +102,7 @@ void OverflowBubbleView::InitOverflowBubble(views::View* anchor,
                                             LauncherView* launcher_view) {
   // set_anchor_view needs to be called before GetShelfLayoutManagerForLauncher
   // can be called.
-  set_anchor_view(anchor);
+  SetAnchorView(anchor);
   set_arrow(GetBubbleArrow());
   set_background(NULL);
   set_color(SkColorSetARGB(kLauncherBackgroundAlpha, 0, 0, 0));
@@ -284,18 +284,26 @@ void OverflowBubble::Hide() {
   launcher_view_ = NULL;
 }
 
+void OverflowBubble::HideBubbleAndRefreshButton() {
+  if (!IsShowing())
+    return;
+
+  views::View* anchor = anchor_;
+  Hide();
+  // Update overflow button (|anchor|) status when overflow bubble is hidden
+  // by outside event of overflow button.
+  anchor->SchedulePaint();
+}
+
 void OverflowBubble::ProcessPressedEvent(ui::LocatedEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
   gfx::Point event_location_in_screen = event->location();
   aura::client::GetScreenPositionClient(target->GetRootWindow())->
       ConvertPointToScreen(target, &event_location_in_screen);
-  if (!bubble_->GetBoundsInScreen().Contains(event_location_in_screen) &&
+  if (!launcher_view_->IsShowingMenu() &&
+      !bubble_->GetBoundsInScreen().Contains(event_location_in_screen) &&
       !anchor_->GetBoundsInScreen().Contains(event_location_in_screen)) {
-    views::View* anchor = anchor_;
-    Hide();
-    // Update overflow button (|anchor|) status when overflow bubble is hidden
-    // by outside event of overflow button.
-    anchor->SchedulePaint();
+    HideBubbleAndRefreshButton();
   }
 }
 

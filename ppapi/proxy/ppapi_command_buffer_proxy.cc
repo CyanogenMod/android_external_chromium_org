@@ -8,6 +8,7 @@
 #include "ppapi/proxy/proxy_channel.h"
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 
 namespace ppapi {
 namespace proxy {
@@ -29,32 +30,6 @@ PpapiCommandBufferProxy::~PpapiCommandBufferProxy() {
   }
 }
 
-void PpapiCommandBufferProxy::ReportChannelError() {
-  if (!channel_error_callback_.is_null()) {
-    channel_error_callback_.Run();
-    channel_error_callback_.Reset();
-  }
-}
-
-int PpapiCommandBufferProxy::GetRouteID() const {
-  NOTIMPLEMENTED();
-  return 0;
-}
-
-bool PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
-  return false;
-}
-
-bool PpapiCommandBufferProxy::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void PpapiCommandBufferProxy::SetChannelErrorCallback(
-    const base::Closure& callback) {
-  channel_error_callback_ = callback;
-}
-
 bool PpapiCommandBufferProxy::Initialize() {
   return true;
 }
@@ -74,14 +49,12 @@ gpu::CommandBuffer::State PpapiCommandBufferProxy::GetState() {
 }
 
 gpu::CommandBuffer::State PpapiCommandBufferProxy::GetLastState() {
-  // Note: The locking command buffer wrapper does not take a global lock before
-  // calling this function.
+  ppapi::ProxyLock::AssertAcquiredDebugOnly();
   return last_state_;
 }
 
 int32 PpapiCommandBufferProxy::GetLastToken() {
-  // Note: The locking command buffer wrapper does not take a global lock before
-  // calling this function.
+  ppapi::ProxyLock::AssertAcquiredDebugOnly();
   return last_state_.token;
 }
 
@@ -229,6 +202,42 @@ uint32 PpapiCommandBufferProxy::InsertSyncPoint() {
   }
   return sync_point;
 }
+
+void PpapiCommandBufferProxy::SignalSyncPoint(uint32 sync_point,
+                                              const base::Closure& callback) {
+  NOTREACHED();
+}
+
+void PpapiCommandBufferProxy::SignalQuery(uint32 query,
+                                          const base::Closure& callback) {
+  NOTREACHED();
+}
+
+bool PpapiCommandBufferProxy::SupportsGpuMemoryBuffer() {
+  return false;
+}
+
+gfx::GpuMemoryBuffer* PpapiCommandBufferProxy::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    int32* id) {
+  NOTREACHED();
+  return NULL;
+}
+
+void PpapiCommandBufferProxy::DestroyGpuMemoryBuffer(int32 id) {
+  NOTREACHED();
+}
+
+bool PpapiCommandBufferProxy::GenerateMailboxNames(
+    unsigned num, std::vector<gpu::Mailbox>* names) {
+  // TODO(piman): implement this so we can expose mailboxes to pepper
+  // eventually.
+  NOTREACHED();
+  return false;
+}
+
 
 bool PpapiCommandBufferProxy::Send(IPC::Message* msg) {
   DCHECK(last_state_.error == gpu::error::kNoError);

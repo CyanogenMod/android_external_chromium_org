@@ -47,6 +47,8 @@
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink_test_runner.gyp:blink_test_runner',
+        '../ui/events/events.gyp:events',
+        '../ui/gfx/gfx.gyp:gfx',
         '../ui/gl/gl.gyp:gl',
         '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
@@ -75,8 +77,6 @@
         'shell/app/webkit_test_platform_support_linux.cc',
         'shell/app/webkit_test_platform_support_mac.mm',
         'shell/app/webkit_test_platform_support_win.cc',
-        'shell/browser/minimal_shell.cc',
-        'shell/browser/minimal_shell.h',
         'shell/browser/notify_done_forwarder.cc',
         'shell/browser/notify_done_forwarder.h',
         'shell/browser/shell_android.cc',
@@ -231,6 +231,7 @@
         ['chromeos==1', {
           'dependencies': [
             '../chromeos/chromeos.gyp:chromeos',
+            '../ui/shell/shell.gyp:shell',
            ],
         }], # chromeos==1
         ['use_ash==1', {
@@ -750,5 +751,39 @@
         },
       ],
     }],  # OS=="android"
+    ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
+      'variables': {
+        'dest_dir': '<(PRODUCT_DIR)/syzygy',
+      },
+      'targets': [
+        {
+          'target_name': 'content_shell_syzyasan',
+          'type': 'none',
+          'sources' : [],
+          # Instrument content_shell with SyzyAsan.
+          'actions': [
+            {
+              'action_name': 'Instrument content_shell with SyzyAsan',
+              'msvs_cygwin_shell': 0,
+              'inputs': [
+                '<(PRODUCT_DIR)/content_shell.exe',
+              ],
+              'outputs': [
+                '<(dest_dir)/content_shell.exe',
+                '<(dest_dir)/content_shell.exe.pdb',
+              ],
+              'action': [
+                'python',
+                '<(DEPTH)/chrome/tools/build/win/syzygy_instrument.py',
+                '--mode', 'asan',
+                '--input_executable', '<(PRODUCT_DIR)/content_shell.exe',
+                '--input_symbol', '<(PRODUCT_DIR)/content_shell.exe.pdb',
+                '--destination_dir', '<(dest_dir)',
+              ],
+            },
+          ],
+        },
+      ],
+    }],  # OS=="win" and fastbuild==0 and target_arch=="ia32"
   ]
 }

@@ -25,6 +25,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/selection_model.h"
 #include "ui/gfx/shadow_value.h"
+#include "ui/gfx/size_f.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/gfx/vector2d.h"
 
@@ -151,7 +152,7 @@ struct Line {
 // visual layout. Support is built in for a cursor, a selection, simple styling,
 // complex scripts, and bi-directional text. Implementations provide mechanisms
 // for rendering and translation between logical and visual data.
-class UI_EXPORT RenderText {
+class GFX_EXPORT RenderText {
  public:
   virtual ~RenderText();
 
@@ -325,6 +326,13 @@ class UI_EXPORT RenderText {
   // string, which does not include the cursor or the margin area of text
   // shadows.
   virtual Size GetStringSize() = 0;
+
+  // This is same as GetStringSize except that fractional size is returned.
+  // The default implementation is same as GetStringSize. Certain platforms that
+  // compute the text size as floating-point values, like Mac, will override
+  // this method.
+  // See comment in Canvas::GetStringWidthF for its usage.
+  virtual SizeF GetStringSizeF();
 
   // Returns the width of the content (which is the wrapped width in multiline
   // mode). Reserves room for the cursor if |cursor_enabled_| is true.

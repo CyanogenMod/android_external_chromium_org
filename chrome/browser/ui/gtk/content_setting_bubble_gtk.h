@@ -11,9 +11,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
+#include "chrome/browser/ui/gtk/password_menu_model.h"
 #include "chrome/common/content_settings_types.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/common/media_stream_request.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/owned_widget_gtk.h"
@@ -21,10 +20,6 @@
 class ContentSettingBubbleModel;
 class ContentSettingMediaMenuModel;
 class Profile;
-
-namespace content {
-class WebContents;
-}
 
 namespace ui {
 class SimpleMenuModel;
@@ -34,14 +29,13 @@ class SimpleMenuModel;
 // content blocking (e.g. "block images"). An icon appears in the location bar,
 // and when clicked, an instance of this class is created specialized for the
 // type of content being blocked.
-class ContentSettingBubbleGtk : public BubbleDelegateGtk,
-                                public content::NotificationObserver {
+class ContentSettingBubbleGtk : public BubbleDelegateGtk {
  public:
    ContentSettingBubbleGtk(
        GtkWidget* anchor,
        BubbleDelegateGtk* delegate,
        ContentSettingBubbleModel* content_setting_bubble_model,
-       Profile* profile, content::WebContents* web_contents);
+       Profile* profile);
   virtual ~ContentSettingBubbleGtk();
 
   // Callback to allow ContentSettingMediaMenuModel to update the menu label.
@@ -73,11 +67,6 @@ class ContentSettingBubbleGtk : public BubbleDelegateGtk,
   // BubbleDelegateGtk:
   virtual void BubbleClosing(BubbleGtk* bubble, bool closed_by_escape) OVERRIDE;
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // Builds the bubble and all the widgets that it displays.
   void BuildBubble();
 
@@ -89,21 +78,17 @@ class ContentSettingBubbleGtk : public BubbleDelegateGtk,
   CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnCustomLinkClicked);
   CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnManageLinkClicked);
   CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnSaveButtonClicked);
-  CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnCancelButtonClicked);
+  CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnDoneButtonClicked);
   CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnCloseButtonClicked);
   CHROMEGTK_CALLBACK_0(ContentSettingBubbleGtk, void, OnMenuButtonClicked);
+  CHROMEGTK_CALLBACK_1(ContentSettingBubbleGtk, gboolean,
+                       OnMenuButtonPressEvent, GdkEventButton*);
 
   // We position the bubble near this widget.
   GtkWidget* anchor_;
 
   // The active profile.
   Profile* profile_;
-
-  // The active web contents.
-  content::WebContents* web_contents_;
-
-  // A registrar for listening for WEB_CONTENTS_DESTROYED notifications.
-  content::NotificationRegistrar registrar_;
 
   // Pass on delegate messages to this.
   BubbleDelegateGtk* delegate_;
@@ -122,6 +107,12 @@ class ContentSettingBubbleGtk : public BubbleDelegateGtk,
   RadioGroupGtk radio_group_gtk_;
 
   GtkMediaMenuMap media_menus_;
+
+  // The menu that provides the password menu.
+  scoped_ptr<MenuGtk> menu_;
+
+  // The model for the password |menu_|
+  scoped_ptr<PasswordMenuModel> menu_model_;
 };
 
 #endif  // CHROME_BROWSER_UI_GTK_CONTENT_SETTING_BUBBLE_GTK_H_

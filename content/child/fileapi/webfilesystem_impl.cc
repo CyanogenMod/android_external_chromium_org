@@ -327,7 +327,6 @@ void WebFileSystemImpl::OnWorkerRunLoopStopped() {
 void WebFileSystemImpl::openFileSystem(
     const WebKit::WebURL& storage_partition,
     WebKit::WebFileSystemType type,
-    bool create,
     WebFileSystemCallbacks callbacks) {
   int callbacks_id = RegisterCallbacks(callbacks);
   WaitableCallbackResults* waitable_results =
@@ -337,7 +336,6 @@ void WebFileSystemImpl::openFileSystem(
       &FileSystemDispatcher::OpenFileSystem,
       MakeTuple(GURL(storage_partition),
                 static_cast<fileapi::FileSystemType>(type),
-                0 /* size (not used) */, create,
                 base::Bind(&OpenFileSystemCallbackAdapter,
                            CurrentWorkerId(), callbacks_id,
                            base::Unretained(waitable_results)),

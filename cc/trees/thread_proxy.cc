@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/input/input_handler.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
@@ -71,8 +72,6 @@ ThreadProxy::ThreadProxy(
       manage_tiles_pending_(false),
       commit_waits_for_activation_(false),
       inside_commit_(false),
-      weak_factory_on_impl_thread_(this),
-      weak_factory_(this),
       begin_frame_sent_to_main_thread_completion_event_on_impl_thread_(NULL),
       readback_request_on_impl_thread_(NULL),
       commit_completion_event_on_impl_thread_(NULL),
@@ -92,7 +91,9 @@ ThreadProxy::ThreadProxy(
       renew_tree_priority_on_impl_thread_pending_(false),
       draw_duration_history_(kDurationHistorySize),
       begin_frame_to_commit_duration_history_(kDurationHistorySize),
-      commit_to_activate_duration_history_(kDurationHistorySize) {
+      commit_to_activate_duration_history_(kDurationHistorySize),
+      weak_factory_on_impl_thread_(this),
+      weak_factory_(this) {
   TRACE_EVENT0("cc", "ThreadProxy::ThreadProxy");
   DCHECK(IsMainThread());
   DCHECK(layer_tree_host_);
@@ -257,8 +258,8 @@ void ThreadProxy::DoCreateAndInitializeOutputSurface() {
 
   scoped_refptr<ContextProvider> offscreen_context_provider;
   if (created_offscreen_context_provider_) {
-    offscreen_context_provider = layer_tree_host_->client()->
-        OffscreenContextProviderForCompositorThread();
+    offscreen_context_provider =
+        layer_tree_host_->client()->OffscreenContextProvider();
     success = !!offscreen_context_provider.get();
     if (!success) {
       OnOutputSurfaceInitializeAttempted(false, capabilities);
@@ -443,6 +444,8 @@ bool ThreadProxy::ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
   DCHECK(IsImplThread());
 
   if (!layer_tree_host_->contents_texture_manager())
+    return false;
+  if (!layer_tree_host_impl_->resource_provider())
     return false;
 
   bool reduce_result = layer_tree_host_->contents_texture_manager()->
@@ -845,8 +848,8 @@ void ThreadProxy::BeginFrameOnMainThread(
   scoped_refptr<cc::ContextProvider> offscreen_context_provider;
   if (renderer_capabilities_main_thread_copy_.using_offscreen_context3d &&
       layer_tree_host_->needs_offscreen_context()) {
-    offscreen_context_provider = layer_tree_host_->client()->
-        OffscreenContextProviderForCompositorThread();
+    offscreen_context_provider =
+        layer_tree_host_->client()->OffscreenContextProvider();
     if (offscreen_context_provider.get())
       created_offscreen_context_provider_ = true;
   }
@@ -865,10 +868,6 @@ void ThreadProxy::BeginFrameOnMainThread(
     // to receive its callbacks before that.
     BlockingTaskRunner::CapturePostTasks blocked;
 
-    RenderingStatsInstrumentation* stats_instrumentation =
-        layer_tree_host_->rendering_stats_instrumentation();
-    base::TimeTicks start_time = stats_instrumentation->StartRecording();
-
     CompletionEvent completion;
     Proxy::ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -879,9 +878,10 @@ void ThreadProxy::BeginFrameOnMainThread(
                    offscreen_context_provider));
     completion.Wait();
 
-    base::TimeDelta duration = stats_instrumentation->EndRecording(start_time);
-    stats_instrumentation->AddCommit(duration);
-    stats_instrumentation->IssueTraceEventForMainThreadStats();
+    RenderingStatsInstrumentation* stats_instrumentation =
+        layer_tree_host_->rendering_stats_instrumentation();
+    BenchmarkInstrumentation::IssueMainThreadRenderingStatsEvent(
+        stats_instrumentation->main_thread_rendering_stats());
     stats_instrumentation->AccumulateAndClearMainThreadStats();
   }
 
@@ -1050,6 +1050,10 @@ DrawSwapReadbackResult ThreadProxy::DrawSwapReadbackInternal(
   base::TimeTicks monotonic_time =
       layer_tree_host_impl_->CurrentFrameTimeTicks();
   base::Time wall_clock_time = layer_tree_host_impl_->CurrentFrameTime();
+
+  // TODO(enne): This should probably happen post-animate.
+  if (layer_tree_host_impl_->pending_tree())
+    layer_tree_host_impl_->pending_tree()->UpdateDrawProperties();
   layer_tree_host_impl_->Animate(monotonic_time, wall_clock_time);
 
   // This method is called on a forced draw, regardless of whether we are able
@@ -1394,6 +1398,7 @@ void ThreadProxy::LayerTreeHostClosedOnImplThread(CompletionEvent* completion) {
   DCHECK(IsImplThread());
   layer_tree_host_->DeleteContentsTexturesOnImplThread(
       layer_tree_host_impl_->resource_provider());
+  current_resource_update_controller_on_impl_thread_.reset();
   layer_tree_host_impl_->SetNeedsBeginFrame(false);
   scheduler_on_impl_thread_.reset();
   layer_tree_host_impl_.reset();
@@ -1490,7 +1495,7 @@ void ThreadProxy::RenewTreePriority() {
   DCHECK(IsImplThread());
   bool smoothness_takes_priority =
       layer_tree_host_impl_->pinch_gesture_active() ||
-      layer_tree_host_impl_->CurrentlyScrollingLayer() ||
+      layer_tree_host_impl_->IsCurrentlyScrolling() ||
       layer_tree_host_impl_->page_scale_animation_active();
 
   base::TimeTicks now = layer_tree_host_impl_->CurrentPhysicalTimeTicks();

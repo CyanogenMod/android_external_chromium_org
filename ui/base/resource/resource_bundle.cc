@@ -41,6 +41,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "ui/base/win/dpi_setup.h"
 #include "ui/gfx/win/dpi.h"
 #endif
 
@@ -574,6 +575,11 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
   supported_scale_factors.push_back(SCALE_FACTOR_200P);
 #endif
   ui::SetSupportedScaleFactors(supported_scale_factors);
+#if defined(OS_WIN)
+  // Must be called _after_ supported scale factors are set since it
+  // uses them.
+  ui::win::InitDeviceScaleFactor();
+#endif
 }
 
 void ResourceBundle::FreeImages() {

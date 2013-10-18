@@ -268,14 +268,14 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
   if (transient_entry_index_ != -1) {
     // If an interstitial is showing, treat a reload as a navigation to the
     // transient entry's URL.
-    NavigationEntryImpl* active_entry =
-        NavigationEntryImpl::FromNavigationEntry(GetActiveEntry());
-    if (!active_entry)
+    NavigationEntryImpl* transient_entry =
+        NavigationEntryImpl::FromNavigationEntry(GetTransientEntry());
+    if (!transient_entry)
       return;
-    LoadURL(active_entry->GetURL(),
+    LoadURL(transient_entry->GetURL(),
             Referrer(),
             PAGE_TRANSITION_RELOAD,
-            active_entry->extra_headers());
+            transient_entry->extra_headers());
     return;
   }
 
@@ -302,6 +302,15 @@ void NavigationControllerImpl::ReloadInternal(bool check_for_repost,
   // CanReload method.
   if (!entry)
     return;
+
+  if (reload_type == NavigationControllerImpl::RELOAD_ORIGINAL_REQUEST_URL &&
+      entry->GetOriginalRequestURL().is_valid() && !entry->GetHasPostData()) {
+    // We may have been redirected when navigating to the current URL.
+    // Use the URL the user originally intended to visit, if it's valid and if a
+    // POST wasn't involved; the latter case avoids issues with sending data to
+    // the wrong page.
+    entry->SetURL(entry->GetOriginalRequestURL());
+  }
 
   if (g_check_for_repost && check_for_repost &&
       entry->GetHasPostData()) {
@@ -462,8 +471,8 @@ bool NavigationControllerImpl::CanViewSource() const {
   const std::string& mime_type = web_contents_->GetContentsMimeType();
   bool is_viewable_mime_type = net::IsSupportedNonImageMimeType(mime_type) &&
       !net::IsSupportedMediaMimeType(mime_type);
-  NavigationEntry* active_entry = GetActiveEntry();
-  return active_entry && !active_entry->IsViewSourceMode() &&
+  NavigationEntry* visible_entry = GetVisibleEntry();
+  return visible_entry && !visible_entry->IsViewSourceMode() &&
       is_viewable_mime_type && !web_contents_->GetInterstitialPage();
 }
 
@@ -1318,13 +1327,13 @@ void NavigationControllerImpl::PruneAllButVisible() {
   // We should still have a last committed entry.
   DCHECK_NE(-1, last_committed_entry_index_);
 
-  NavigationEntryImpl* entry =
-      NavigationEntryImpl::FromNavigationEntry(GetActiveEntry());
   // We pass 0 instead of GetEntryCount() for the history_length parameter of
   // SetHistoryLengthAndPrune, because it will create history_length additional
   // history entries.
   // TODO(jochen): This API is confusing and we should clean it up.
   // http://crbug.com/178491
+  NavigationEntryImpl* entry =
+      NavigationEntryImpl::FromNavigationEntry(GetVisibleEntry());
   web_contents_->SetHistoryLengthAndPrune(
       entry->site_instance(), 0, entry->GetPageID());
 }
@@ -1414,6 +1423,10 @@ NavigationControllerImpl::GetSessionStorageNamespaceMap() const {
 
 bool NavigationControllerImpl::NeedsReload() const {
   return needs_reload_;
+}
+
+void NavigationControllerImpl::SetNeedsReload() {
+  needs_reload_ = true;
 }
 
 void NavigationControllerImpl::RemoveEntryAtIndexInternal(int index) {
@@ -1557,7 +1570,7 @@ void NavigationControllerImpl::NavigateToPendingEntry(ReloadType reload_type) {
 
 void NavigationControllerImpl::NotifyNavigationEntryCommitted(
     LoadCommittedDetails* details) {
-  details->entry = GetActiveEntry();
+  details->entry = GetLastCommittedEntry();
 
   // We need to notify the ssl_manager_ before the web_contents_ so the
   // location bar will have up-to-date information about the security style

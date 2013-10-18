@@ -104,7 +104,7 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
   virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
                             EncryptionLevel level,
                             const QuicEncryptedPacket& packet,
-                            int rv) = 0;
+                            WriteResult result) = 0;
 
   // Called when the contents of a packet have been retransmitted as
   // a new packet.
@@ -171,19 +171,15 @@ class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
 
   // Sends the packet out to the peer, possibly simulating packet
   // loss if FLAGS_fake_packet_loss_percentage is set.  If the write
-  // succeeded, returns the number of bytes written.  If the write
-  // failed, returns -1 and the error code will be copied to |*error|.
-  virtual int WritePacketToWire(const QuicEncryptedPacket& packet,
-                                int* error) = 0;
+  // succeeded, the result's status is WRITE_STATUS_OK and bytes_written is
+  // populated. If the write failed, the result's status is WRITE_STATUS_BLOCKED
+  // or WRITE_STATUS_ERROR and error_code will populated.
+  virtual WriteResult WritePacketToWire(const QuicEncryptedPacket& packet) = 0;
 
   // Returns true if the helper buffers and subsequently rewrites data
   // when an attempt to write results in the underlying socket becoming
   // write blocked.
   virtual bool IsWriteBlockedDataBuffered() = 0;
-
-  // Returns true if |error| represents a write-block error code such
-  // as EAGAIN or ERR_IO_PENDING.
-  virtual bool IsWriteBlocked(int error) = 0;
 
   // Creates a new platform-specific alarm which will be configured to
   // notify |delegate| when the alarm fires.  Caller takes ownership
@@ -273,6 +269,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Called when the underlying connection becomes writable to allow queued
   // writes to happen.  Returns false if the socket has become blocked.
   virtual bool OnCanWrite() OVERRIDE;
+
+  // Called when a packet has been finally sent to the network.
+  bool OnPacketSent(WriteResult result);
 
   // If the socket is not blocked, this allows queued writes to happen. Returns
   // false if the socket has become blocked.
@@ -455,10 +454,9 @@ class NET_EXPORT_PRIVATE QuicConnection
                    HasRetransmittableData retransmittable,
                    Force force);
 
-  int WritePacketToWire(QuicPacketSequenceNumber sequence_number,
-                        EncryptionLevel level,
-                        const QuicEncryptedPacket& packet,
-                        int* error);
+  WriteResult WritePacketToWire(QuicPacketSequenceNumber sequence_number,
+                                EncryptionLevel level,
+                                const QuicEncryptedPacket& packet);
 
   // Make sure an ack we got from our peer is sane.
   bool ValidateAckFrame(const QuicAckFrame& incoming_ack);
@@ -473,6 +471,23 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicFramer framer_;
 
  private:
+  // Simple random number generator used to compute random numbers suitable
+  // for pseudo-randomly dropping packets in tests.  It works by computing
+  // the sha1 hash of the current seed, and using the first 64 bits as
+  // the next random number, and the next seed.
+  class SimpleRandom {
+   public:
+    SimpleRandom() : seed_(0) {}
+
+    // Returns a random number in the range [0, kuint64max].
+    uint64 RandUint64();
+
+    void set_seed(uint64 seed) { seed_ = seed; }
+
+   private:
+    uint64 seed_;
+  };
+
   // Stores current batch state for connection, puts the connection
   // into batch mode, and destruction restores the stored batch state.
   // While the bundler is in scope, any generated frames are bundled
@@ -554,6 +569,28 @@ class NET_EXPORT_PRIVATE QuicConnection
     QuicPacketSequenceNumber sequence_number;
     QuicTime scheduled_time;
     bool for_fec;
+  };
+
+  struct PendingWrite {
+    PendingWrite(QuicPacketSequenceNumber sequence_number,
+                 TransmissionType transmission_type,
+                 HasRetransmittableData retransmittable,
+                 EncryptionLevel level,
+                 bool is_fec_packet,
+                 size_t length)
+        : sequence_number(sequence_number),
+          transmission_type(transmission_type),
+          retransmittable(retransmittable),
+          level(level),
+          is_fec_packet(is_fec_packet),
+          length(length) { }
+
+    QuicPacketSequenceNumber sequence_number;
+    TransmissionType transmission_type;
+    HasRetransmittableData retransmittable;
+    EncryptionLevel level;
+    bool is_fec_packet;
+    size_t length;
   };
 
   class RetransmissionTimeComparator {
@@ -683,10 +720,17 @@ class NET_EXPORT_PRIVATE QuicConnection
   // sent with the INITIAL encryption and the CHLO message was lost.
   std::deque<QuicEncryptedPacket*> undecryptable_packets_;
 
+  // When the version negotiation packet could not be sent because the socket
+  // was not writable, this is set to true.
+  bool pending_version_negotiation_packet_;
+
   // When packets could not be sent because the socket was not writable,
   // they are added to this list.  All corresponding frames are in
   // unacked_packets_ if they are to be retransmitted.
   QueuedPacketList queued_packets_;
+
+  // Contains information about the current write in progress, if any.
+  scoped_ptr<PendingWrite> pending_write_;
 
   // True when the socket becomes unwritable.
   bool write_blocked_;
@@ -705,6 +749,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // An alarm that is scheduled when the sent scheduler requires a
   // a delay before sending packets and fires when the packet may be sent.
   scoped_ptr<QuicAlarm> send_alarm_;
+  // An alarm that is scheduled when the connection can still write and there
+  // may be more data to send.
+  scoped_ptr<QuicAlarm> resume_writes_alarm_;
   // An alarm that fires when the connection may have timed out.
   scoped_ptr<QuicAlarm> timeout_alarm_;
 
@@ -729,6 +776,11 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // The time that we last sent a packet for this connection.
   QuicTime time_of_last_sent_packet_;
+
+  // Sequence number of the last packet guaranteed to be sent in packet sequence
+  // number order.  Not set when packets are queued, since that may cause
+  // re-ordering.
+  QuicPacketSequenceNumber sequence_number_of_last_inorder_packet_;
 
   // Congestion manager which controls the rate the connection sends packets
   // as well as collecting and generating congestion feedback.
@@ -764,6 +816,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // all packets that a given block of data was sent in. The AckNotifierManager
   // maintains the currently active notifiers.
   AckNotifierManager ack_notifier_manager_;
+
+  // Only used to configure fake packet loss.
+  SimpleRandom simple_random_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

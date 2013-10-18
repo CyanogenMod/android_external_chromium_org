@@ -21,7 +21,6 @@
 #include "content/renderer/media/webaudio_capturer_source.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_local_audio_track.h"
-#include "content/renderer/media/webrtc_logging_initializer.h"
 #include "content/renderer/media/webrtc_uma_histograms.h"
 #include "content/renderer/p2p/ipc_network_manager.h"
 #include "content/renderer/p2p/ipc_socket_factory.h"
@@ -50,10 +49,6 @@
 
 namespace content {
 
-// The constraint key for the PeerConnection constructor for enabling diagnostic
-// WebRTC logging. It's a Google specific key, hence the "goog" prefix.
-const char kWebRtcLoggingConstraint[] = "googLog";
-
 // Constant constraint keys which enables default audio constraints on
 // mediastreams with audio.
 struct {
@@ -62,7 +57,14 @@ struct {
 } const kDefaultAudioConstraints[] = {
   { webrtc::MediaConstraintsInterface::kEchoCancellation,
     webrtc::MediaConstraintsInterface::kValueTrue },
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
+  // Enable the extended filter mode AEC on platforms with known echo issues.
+  { webrtc::MediaConstraintsInterface::kExperimentalEchoCancellation,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+#endif
   { webrtc::MediaConstraintsInterface::kAutoGainControl,
+    webrtc::MediaConstraintsInterface::kValueTrue },
+  { webrtc::MediaConstraintsInterface::kExperimentalAutoGainControl,
     webrtc::MediaConstraintsInterface::kValueTrue },
   { webrtc::MediaConstraintsInterface::kNoiseSuppression,
     webrtc::MediaConstraintsInterface::kValueTrue },
@@ -70,17 +72,20 @@ struct {
     webrtc::MediaConstraintsInterface::kValueTrue },
 };
 
+// Merge |constraints| with |kDefaultAudioConstraints|. For any key which exists
+// in both, the value from |constraints| is maintained, including its
+// mandatory/optional status. New values from |kDefaultAudioConstraints| will
+// be added with mandatory status.
 void ApplyFixedAudioConstraints(RTCMediaConstraints* constraints) {
-  const webrtc::MediaConstraintsInterface::Constraints& mandatory =
-      constraints->GetMandatory();
-  std::string string_value;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
-    if (!mandatory.FindFirst(kDefaultAudioConstraints[i].key, &string_value)) {
+    bool already_set_value;
+    if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
+                                &already_set_value, NULL)) {
       constraints->AddMandatory(kDefaultAudioConstraints[i].key,
           kDefaultAudioConstraints[i].value, false);
     } else {
       DVLOG(1) << "Constraint " << kDefaultAudioConstraints[i].key
-               << " already set to " << string_value;
+               << " already set to " << already_set_value;
     }
   }
 }
@@ -562,19 +567,6 @@ MediaStreamDependencyFactory::CreatePeerConnection(
   CHECK(web_frame);
   CHECK(observer);
 
-  webrtc::MediaConstraintsInterface::Constraints optional_constraints =
-      constraints->GetOptional();
-  std::string constraint_value;
-  if (optional_constraints.FindFirst(kWebRtcLoggingConstraint,
-                                     &constraint_value)) {
-    std::string url = web_frame->document().url().spec();
-    RenderThreadImpl::current()->GetIOMessageLoopProxy()->PostTask(
-        FROM_HERE, base::Bind(
-            &InitWebRtcLogging,
-            constraint_value,
-            url));
-  }
-
   scoped_refptr<P2PPortAllocatorFactory> pa_factory =
         new talk_base::RefCountedObject<P2PPortAllocatorFactory>(
             p2p_socket_dispatcher_.get(),
@@ -838,7 +830,9 @@ MediaStreamDependencyFactory::MaybeCreateAudioCapturer(
           device_info.device.input.sample_rate,
           device_info.device.input.frames_per_buffer,
           device_info.session_id,
-          device_info.device.id)) {
+          device_info.device.id,
+          device_info.device.matched_output.sample_rate,
+          device_info.device.matched_output.frames_per_buffer)) {
     return NULL;
   }
 

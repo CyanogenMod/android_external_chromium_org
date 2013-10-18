@@ -209,6 +209,7 @@
     // hostname for this is chart.googleapis.com.
     { "name": "chart.apis.google.com", "include_subdomains": true, "pins": "google" },
     { "name": "oraprodsso.corp.google.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "oraprodmv.corp.google.com", "include_subdomains": true, "mode": "force-https" },
 
     // Other Google-related domains that must use an acceptable certificate
     // iff using SSL.
@@ -645,6 +646,15 @@
     { "name": "crowdcurity.com", "include_subdomains": true, "mode": "force-https" },
     { "name": "saturngames.co.uk", "include_subdomains": true, "mode": "force-https" },
     { "name": "strongest-privacy.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "ecosystem.atlassian.net", "include_subdomains": true, "mode": "force-https" },
+    { "name": "id.atlassian.com", "include_subdomains": true, "mode": "force-https" },
+    { "name": "bitbucket.org", "mode": "force-https" },
+    { "name": "cupcake.io", "include_subdomains": true, "mode": "force-https" },
+    { "name": "cupcake.is", "include_subdomains": true, "mode": "force-https" },
+    { "name": "tent.io", "include_subdomains": true, "mode": "force-https" },
+    { "name": "cybozu.com", "include_subdomains": true,  "mode": "force-https" },
+    { "name": "davidlyness.com", "include_subdomains": true,  "mode": "force-https" },
+    { "name": "medium.com", "include_subdomains": true,  "mode": "force-https" },
 
     // Entries that are only valid if the client supports SNI.
     { "name": "gmail.com", "mode": "force-https", "pins": "google", "snionly": true },

@@ -11,17 +11,22 @@
     {
       'target_name': 'cast_receiver_impl',
       'type': 'static_library',
+      'include_dirs': [
+        '<(DEPTH)/',
+        '<(DEPTH)/third_party/',
+        '<(DEPTH)/third_party/webrtc/',
+      ],
       'sources': [
         'cast_receiver.h',
-#       'cast_receiver_impl.cc',
-#       'cast_receiver_impl.h',
+        'cast_receiver_impl.cc',
+        'cast_receiver_impl.h',
       ], # source
       'dependencies': [
         'rtp_receiver/rtp_receiver.gyp:*',
         'cast_audio_receiver',
         'cast_video_receiver',
         'framer/framer.gyp:cast_framer',
-        'pacing/paced_sender.gyp:paced_sender',
+        'pacing/paced_sender.gyp:cast_paced_sender',
       ],
     },
   ],

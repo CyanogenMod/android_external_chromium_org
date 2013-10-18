@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APPS_NATIVE_APP_WINDOW_VIEWS_H_
 #define CHROME_BROWSER_UI_VIEWS_APPS_NATIVE_APP_WINDOW_VIEWS_H_
 
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
+#include "apps/ui/native_app_window.h"
 #include "base/observer_list.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkRegion.h"
@@ -22,6 +22,10 @@
 
 class ExtensionKeybindingRegistryViews;
 class Profile;
+
+namespace apps {
+class ShellWindowFrameView;
+}
 
 namespace content {
 class RenderViewHost;
@@ -45,9 +49,6 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
                        const apps::ShellWindow::CreateParams& params);
   virtual ~NativeAppWindowViews();
 
-  bool frameless() const { return frameless_; }
-  SkRegion* draggable_region() { return draggable_region_.get(); }
-
  private:
   void InitializeDefaultWindow(
       const apps::ShellWindow::CreateParams& create_params);
@@ -56,6 +57,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   void OnViewWasResized();
 
   bool ShouldUseChromeStyleFrame() const;
+
+  // Caller owns the returned object.
+  apps::ShellWindowFrameView* CreateShellWindowFrameView();
 
 #if defined(OS_WIN)
   void OnShortcutInfoLoaded(
@@ -84,6 +88,7 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
   virtual void FlashFrame(bool flash) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
 
   // WidgetDelegate implementation.
   virtual void OnWidgetMove() OVERRIDE;
@@ -118,6 +123,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   // WebContentsObserver implementation.
   virtual void RenderViewCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewHostChanged(
+      content::RenderViewHost* old_host,
+      content::RenderViewHost* new_host) OVERRIDE;
 
   // views::View implementation.
   virtual void Layout() OVERRIDE;
@@ -135,13 +143,15 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual bool IsDetached() const OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
-  virtual void UpdateInputRegion(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual void UpdateDraggableRegions(
       const std::vector<extensions::DraggableRegion>& regions) OVERRIDE;
+  virtual SkRegion* GetDraggableRegion() OVERRIDE;
+  virtual void UpdateInputRegion(scoped_ptr<SkRegion> region) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void RenderViewHostChanged() OVERRIDE;
+  virtual bool IsFrameless() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
+  virtual bool IsVisible() const OVERRIDE;
   virtual void HideWithApp() OVERRIDE;
   virtual void ShowWithApp() OVERRIDE;
 
@@ -150,9 +160,9 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
   virtual gfx::Point GetDialogPosition(const gfx::Size& size) OVERRIDE;
   virtual gfx::Size GetMaximumDialogSize() OVERRIDE;
   virtual void AddObserver(
-      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::ModalDialogHostObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
-      web_modal::WebContentsModalDialogHostObserver* observer) OVERRIDE;
+      web_modal::ModalDialogHostObserver* observer) OVERRIDE;
 
   Profile* profile() { return shell_window_->profile(); }
   content::WebContents* web_contents() {
@@ -187,7 +197,7 @@ class NativeAppWindowViews : public apps::NativeAppWindow,
 
   base::WeakPtrFactory<NativeAppWindowViews> weak_ptr_factory_;
 
-  ObserverList<web_modal::WebContentsModalDialogHostObserver> observer_list_;
+  ObserverList<web_modal::ModalDialogHostObserver> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeAppWindowViews);
 };

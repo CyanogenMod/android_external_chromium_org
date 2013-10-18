@@ -55,12 +55,14 @@ const content::MediaStreamDevice* FindDeviceWithId(
   return NULL;
 };
 
-// This is a short-term solution to grant microphone access to virtual keyboard
-// extension for voice input. Once http://crbug.com/292856 is fixed, remove this
-// whitelist.
+// This is a short-term solution to grant microphone access to the
+// virtual keyboard extension and the Google Voice Search Hotword
+// extension for voice input. Once http://crbug.com/292856 is fixed,
+// remove this whitelist.
 bool IsMediaRequestWhitelistedForExtension(
     const extensions::Extension* extension) {
-  return extension->id() == "mppnpdlheglhdfmldimlhpnegondlapf";
+  return extension->id() == "mppnpdlheglhdfmldimlhpnegondlapf" ||
+      extension->id() == "bepbmhgboaologfdajaanbcjmnhjmhfn";
 }
 
 // This is a short-term solution to allow testing of the the Screen Capture API
@@ -234,7 +236,8 @@ void MediaCaptureDevicesDispatcher::ProcessDesktopCaptureAccessRequest(
   // chrome.desktopCapture.chooseDesktopMedia()) was used to generate device Id.
   content::DesktopMediaID media_id =
       GetDesktopStreamsRegistry()->RequestMediaForStreamId(
-          request.requested_video_device_id, request.security_origin);
+          request.requested_video_device_id, request.render_process_id,
+          request.render_view_id, request.security_origin);
 
   // If the id wasn't generated using Desktop Capture API then process it as a
   // screen capture request.
@@ -382,6 +385,11 @@ void MediaCaptureDevicesDispatcher::ProcessTabCaptureAccessRequest(
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   extensions::TabCaptureRegistry* tab_capture_registry =
       extensions::TabCaptureRegistry::Get(profile);
+  if (!tab_capture_registry) {
+    NOTREACHED();
+    callback.Run(devices, ui.Pass());
+    return;
+  }
   bool tab_capture_allowed =
       tab_capture_registry->VerifyRequest(request.render_process_id,
                                           request.render_view_id);

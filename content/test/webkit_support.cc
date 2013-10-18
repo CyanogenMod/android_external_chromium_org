@@ -23,6 +23,8 @@
 #include "base/test/mock_chrome_application_mac.h"
 #endif
 
+namespace content {
+
 namespace {
 
 class TestEnvironment {
@@ -54,8 +56,6 @@ TestEnvironment* test_environment;
 
 }  // namespace
 
-namespace webkit_support {
-
 void SetUpTestEnvironmentForUnitTests() {
   WebKit::WebRuntimeFeatures::enableStableFeatures(true);
   WebKit::WebRuntimeFeatures::enableExperimentalFeatures(true);
@@ -86,9 +86,8 @@ void TearDownTestEnvironment() {
 
   if (RunningOnValgrind())
     WebKit::WebCache::clear();
-  WebKit::shutdown();
   delete test_environment;
   test_environment = NULL;
 }
 
-}  // namespace webkit_support
+}  // namespace content

@@ -12,6 +12,7 @@
 #include "android_webview/native/aw_geolocation_permission_context.h"
 #include "android_webview/native/aw_quota_manager_bridge_impl.h"
 #include "android_webview/native/aw_web_contents_view_delegate.h"
+#include "android_webview/native/aw_web_preferences_populater_impl.h"
 #include "android_webview/renderer/aw_content_renderer_client.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
@@ -74,6 +75,12 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // Enable D-PAD navigation for application compatibility.
   cl->AppendSwitch(switches::kEnableSpatialNavigation);
 
+  // Disable compositor touch hit testing for now to mitigate risk of bugs.
+  cl->AppendSwitch(cc::switches::kDisableCompositorTouchHitTesting);
+
+  // Disable WebRTC.
+  cl->AppendSwitch(switches::kDisableWebRTC);
+
   return false;
 }
 
@@ -125,9 +132,9 @@ content::ContentRendererClient*
   return content_renderer_client_.get();
 }
 
-AwQuotaManagerBridge* AwMainDelegate::CreateAwQuotaManagerBridge(
+scoped_refptr<AwQuotaManagerBridge> AwMainDelegate::CreateAwQuotaManagerBridge(
     AwBrowserContext* browser_context) {
-  return new AwQuotaManagerBridgeImpl(browser_context);
+  return AwQuotaManagerBridgeImpl::Create(browser_context);
 }
 
 content::GeolocationPermissionContext*
@@ -139,6 +146,10 @@ content::GeolocationPermissionContext*
 content::WebContentsViewDelegate* AwMainDelegate::CreateViewDelegate(
     content::WebContents* web_contents) {
   return AwWebContentsViewDelegate::Create(web_contents);
+}
+
+AwWebPreferencesPopulater* AwMainDelegate::CreateWebPreferencesPopulater() {
+  return new AwWebPreferencesPopulaterImpl();
 }
 
 }  // namespace android_webview

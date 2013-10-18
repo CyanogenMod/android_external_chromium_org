@@ -43,6 +43,7 @@ public class SyncController implements ProfileSyncService.SyncStateChangedListen
         mContext = context;
         mChromeSigninController = ChromeSigninController.get(mContext);
         mSyncStatusHelper = SyncStatusHelper.get(context);
+        mSyncStatusHelper.registerSyncSettingsChangedObserver(this);
         mProfileSyncService = ProfileSyncService.get(mContext);
         mProfileSyncService.addSyncStateChangedListener(this);
 
@@ -116,7 +117,7 @@ public class SyncController implements ProfileSyncService.SyncStateChangedListen
         });
     }
 
-    public void onResume() {
+    public void onStart() {
         refreshSyncState();
     }
 

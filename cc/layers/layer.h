@@ -16,6 +16,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/micro_benchmark.h"
 #include "cc/layers/compositing_reasons.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
@@ -123,6 +124,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
+  bool FilterIsAnimating() const;
 
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
@@ -326,6 +328,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual bool NeedMoreUpdates();
   virtual void SetIsMask(bool is_mask) {}
   virtual void ReduceMemoryUsage() {}
+  virtual void OnOutputSurfaceCreated() {}
 
   virtual std::string DebugName();
 
@@ -396,8 +399,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual skia::RefPtr<SkPicture> GetPicture() const;
 
-  virtual bool CanClipSelf() const;
-
   // Constructs a LayerImpl of the correct runtime type for this Layer type.
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
 
@@ -424,6 +425,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool descendant_needs_push_properties() const {
     return num_dependents_need_push_properties_ > 0;
   }
+
+  virtual void RunMicroBenchmark(MicroBenchmark* benchmark);
 
  protected:
   friend class LayerImpl;
@@ -511,6 +514,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void RemoveChildOrDependent(Layer* child);
 
   // LayerAnimationValueObserver implementation.
+  virtual void OnFilterAnimated(const FilterOperations& filters) OVERRIDE;
   virtual void OnOpacityAnimated(float opacity) OVERRIDE;
   virtual void OnTransformAnimated(const gfx::Transform& transform) OVERRIDE;
   virtual bool IsActive() const OVERRIDE;

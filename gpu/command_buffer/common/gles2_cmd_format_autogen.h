@@ -641,52 +641,6 @@ COMPILE_ASSERT(offsetof(BufferData, data_shm_offset) == 16,
 COMPILE_ASSERT(offsetof(BufferData, usage) == 20,
                OffsetOf_BufferData_usage_not_20);
 
-struct BufferDataImmediate {
-  typedef BufferDataImmediate ValueType;
-  static const CommandId kCmdId = kBufferDataImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-
-  static uint32 ComputeSize(uint32 size_in_bytes) {
-    return static_cast<uint32>(
-        sizeof(ValueType) +  // NOLINT
-        RoundSizeToMultipleOfEntries(size_in_bytes));
-  }
-
-  void SetHeader(uint32 size_in_bytes) {
-    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
-  }
-
-  void Init(GLenum _target, GLsizeiptr _size, GLenum _usage) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    SetHeader(total_size);
-    target = _target;
-    size = _size;
-    usage = _usage;
-  }
-
-  void* Set(void* cmd, GLenum _target, GLsizeiptr _size, GLenum _usage) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    static_cast<ValueType*>(cmd)->Init(_target, _size, _usage);
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, total_size);
-  }
-
-  gpu::CommandHeader header;
-  uint32 target;
-  int32 size;
-  uint32 usage;
-};
-
-COMPILE_ASSERT(sizeof(BufferDataImmediate) == 16,
-               Sizeof_BufferDataImmediate_is_not_16);
-COMPILE_ASSERT(offsetof(BufferDataImmediate, header) == 0,
-               OffsetOf_BufferDataImmediate_header_not_0);
-COMPILE_ASSERT(offsetof(BufferDataImmediate, target) == 4,
-               OffsetOf_BufferDataImmediate_target_not_4);
-COMPILE_ASSERT(offsetof(BufferDataImmediate, size) == 8,
-               OffsetOf_BufferDataImmediate_size_not_8);
-COMPILE_ASSERT(offsetof(BufferDataImmediate, usage) == 12,
-               OffsetOf_BufferDataImmediate_usage_not_12);
-
 struct BufferSubData {
   typedef BufferSubData ValueType;
   static const CommandId kCmdId = kBufferSubData;
@@ -1142,75 +1096,6 @@ COMPILE_ASSERT(offsetof(CompressedTexImage2D, data_shm_id) == 32,
                OffsetOf_CompressedTexImage2D_data_shm_id_not_32);
 COMPILE_ASSERT(offsetof(CompressedTexImage2D, data_shm_offset) == 36,
                OffsetOf_CompressedTexImage2D_data_shm_offset_not_36);
-
-struct CompressedTexImage2DImmediate {
-  typedef CompressedTexImage2DImmediate ValueType;
-  static const CommandId kCmdId = kCompressedTexImage2DImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-
-  static uint32 ComputeSize(uint32 size_in_bytes) {
-    return static_cast<uint32>(
-        sizeof(ValueType) +  // NOLINT
-        RoundSizeToMultipleOfEntries(size_in_bytes));
-  }
-
-  void SetHeader(uint32 size_in_bytes) {
-    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
-  }
-
-  void Init(
-      GLenum _target, GLint _level, GLenum _internalformat, GLsizei _width,
-      GLsizei _height, GLint _border, GLsizei _imageSize) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    SetHeader(total_size);
-    target = _target;
-    level = _level;
-    internalformat = _internalformat;
-    width = _width;
-    height = _height;
-    border = _border;
-    imageSize = _imageSize;
-  }
-
-  void* Set(
-      void* cmd, GLenum _target, GLint _level, GLenum _internalformat,
-      GLsizei _width, GLsizei _height, GLint _border, GLsizei _imageSize) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    static_cast<ValueType*>(
-        cmd)->Init(
-            _target, _level, _internalformat, _width, _height, _border,
-            _imageSize);
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, total_size);
-  }
-
-  gpu::CommandHeader header;
-  uint32 target;
-  int32 level;
-  uint32 internalformat;
-  int32 width;
-  int32 height;
-  int32 border;
-  int32 imageSize;
-};
-
-COMPILE_ASSERT(sizeof(CompressedTexImage2DImmediate) == 32,
-               Sizeof_CompressedTexImage2DImmediate_is_not_32);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, header) == 0,
-               OffsetOf_CompressedTexImage2DImmediate_header_not_0);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, target) == 4,
-               OffsetOf_CompressedTexImage2DImmediate_target_not_4);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, level) == 8,
-               OffsetOf_CompressedTexImage2DImmediate_level_not_8);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, internalformat) == 12,
-               OffsetOf_CompressedTexImage2DImmediate_internalformat_not_12);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, width) == 16,
-               OffsetOf_CompressedTexImage2DImmediate_width_not_16);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, height) == 20,
-               OffsetOf_CompressedTexImage2DImmediate_height_not_20);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, border) == 24,
-               OffsetOf_CompressedTexImage2DImmediate_border_not_24);
-COMPILE_ASSERT(offsetof(CompressedTexImage2DImmediate, imageSize) == 28,
-               OffsetOf_CompressedTexImage2DImmediate_imageSize_not_28);
 
 struct CompressedTexImage2DBucket {
   typedef CompressedTexImage2DBucket ValueType;
@@ -5238,48 +5123,6 @@ COMPILE_ASSERT(offsetof(ShaderSource, data_shm_offset) == 12,
 COMPILE_ASSERT(offsetof(ShaderSource, data_size) == 16,
                OffsetOf_ShaderSource_data_size_not_16);
 
-struct ShaderSourceImmediate {
-  typedef ShaderSourceImmediate ValueType;
-  static const CommandId kCmdId = kShaderSourceImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-
-  static uint32 ComputeSize(uint32 size_in_bytes) {
-    return static_cast<uint32>(
-        sizeof(ValueType) +  // NOLINT
-        RoundSizeToMultipleOfEntries(size_in_bytes));
-  }
-
-  void SetHeader(uint32 size_in_bytes) {
-    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
-  }
-
-  void Init(GLuint _shader, uint32 _data_size) {
-    uint32 total_size = ComputeSize(_data_size);
-    SetHeader(total_size);
-    shader = _shader;
-    data_size = _data_size;
-  }
-
-  void* Set(void* cmd, GLuint _shader, uint32 _data_size) {
-    uint32 total_size = ComputeSize(_data_size);
-    static_cast<ValueType*>(cmd)->Init(_shader, _data_size);
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, total_size);
-  }
-
-  gpu::CommandHeader header;
-  uint32 shader;
-  uint32 data_size;
-};
-
-COMPILE_ASSERT(sizeof(ShaderSourceImmediate) == 12,
-               Sizeof_ShaderSourceImmediate_is_not_12);
-COMPILE_ASSERT(offsetof(ShaderSourceImmediate, header) == 0,
-               OffsetOf_ShaderSourceImmediate_header_not_0);
-COMPILE_ASSERT(offsetof(ShaderSourceImmediate, shader) == 4,
-               OffsetOf_ShaderSourceImmediate_shader_not_4);
-COMPILE_ASSERT(offsetof(ShaderSourceImmediate, data_size) == 8,
-               OffsetOf_ShaderSourceImmediate_data_size_not_8);
-
 struct ShaderSourceBucket {
   typedef ShaderSourceBucket ValueType;
   static const CommandId kCmdId = kShaderSourceBucket;
@@ -5646,80 +5489,6 @@ COMPILE_ASSERT(offsetof(TexImage2D, pixels_shm_id) == 36,
 COMPILE_ASSERT(offsetof(TexImage2D, pixels_shm_offset) == 40,
                OffsetOf_TexImage2D_pixels_shm_offset_not_40);
 
-struct TexImage2DImmediate {
-  typedef TexImage2DImmediate ValueType;
-  static const CommandId kCmdId = kTexImage2DImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-
-  static uint32 ComputeSize(uint32 size_in_bytes) {
-    return static_cast<uint32>(
-        sizeof(ValueType) +  // NOLINT
-        RoundSizeToMultipleOfEntries(size_in_bytes));
-  }
-
-  void SetHeader(uint32 size_in_bytes) {
-    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
-  }
-
-  void Init(
-      GLenum _target, GLint _level, GLint _internalformat, GLsizei _width,
-      GLsizei _height, GLint _border, GLenum _format, GLenum _type) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    SetHeader(total_size);
-    target = _target;
-    level = _level;
-    internalformat = _internalformat;
-    width = _width;
-    height = _height;
-    border = _border;
-    format = _format;
-    type = _type;
-  }
-
-  void* Set(
-      void* cmd, GLenum _target, GLint _level, GLint _internalformat,
-      GLsizei _width, GLsizei _height, GLint _border, GLenum _format,
-      GLenum _type) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    static_cast<ValueType*>(
-        cmd)->Init(
-            _target, _level, _internalformat, _width, _height, _border, _format,
-            _type);
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, total_size);
-  }
-
-  gpu::CommandHeader header;
-  uint32 target;
-  int32 level;
-  int32 internalformat;
-  int32 width;
-  int32 height;
-  int32 border;
-  uint32 format;
-  uint32 type;
-};
-
-COMPILE_ASSERT(sizeof(TexImage2DImmediate) == 36,
-               Sizeof_TexImage2DImmediate_is_not_36);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, header) == 0,
-               OffsetOf_TexImage2DImmediate_header_not_0);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, target) == 4,
-               OffsetOf_TexImage2DImmediate_target_not_4);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, level) == 8,
-               OffsetOf_TexImage2DImmediate_level_not_8);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, internalformat) == 12,
-               OffsetOf_TexImage2DImmediate_internalformat_not_12);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, width) == 16,
-               OffsetOf_TexImage2DImmediate_width_not_16);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, height) == 20,
-               OffsetOf_TexImage2DImmediate_height_not_20);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, border) == 24,
-               OffsetOf_TexImage2DImmediate_border_not_24);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, format) == 28,
-               OffsetOf_TexImage2DImmediate_format_not_28);
-COMPILE_ASSERT(offsetof(TexImage2DImmediate, type) == 32,
-               OffsetOf_TexImage2DImmediate_type_not_32);
-
 struct TexParameterf {
   typedef TexParameterf ValueType;
   static const CommandId kCmdId = kTexParameterf;
@@ -6082,85 +5851,6 @@ COMPILE_ASSERT(offsetof(TexSubImage2D, pixels_shm_offset) == 40,
                OffsetOf_TexSubImage2D_pixels_shm_offset_not_40);
 COMPILE_ASSERT(offsetof(TexSubImage2D, internal) == 44,
                OffsetOf_TexSubImage2D_internal_not_44);
-
-struct TexSubImage2DImmediate {
-  typedef TexSubImage2DImmediate ValueType;
-  static const CommandId kCmdId = kTexSubImage2DImmediate;
-  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
-
-  static uint32 ComputeSize(uint32 size_in_bytes) {
-    return static_cast<uint32>(
-        sizeof(ValueType) +  // NOLINT
-        RoundSizeToMultipleOfEntries(size_in_bytes));
-  }
-
-  void SetHeader(uint32 size_in_bytes) {
-    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
-  }
-
-  void Init(
-      GLenum _target, GLint _level, GLint _xoffset, GLint _yoffset,
-      GLsizei _width, GLsizei _height, GLenum _format, GLenum _type,
-      GLboolean _internal) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    SetHeader(total_size);
-    target = _target;
-    level = _level;
-    xoffset = _xoffset;
-    yoffset = _yoffset;
-    width = _width;
-    height = _height;
-    format = _format;
-    type = _type;
-    internal = _internal;
-  }
-
-  void* Set(
-      void* cmd, GLenum _target, GLint _level, GLint _xoffset, GLint _yoffset,
-      GLsizei _width, GLsizei _height, GLenum _format, GLenum _type,
-      GLboolean _internal) {
-    uint32 total_size = 0;  // TODO(gman): get correct size.
-    static_cast<ValueType*>(
-        cmd)->Init(
-            _target, _level, _xoffset, _yoffset, _width, _height, _format,
-            _type, _internal);
-    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, total_size);
-  }
-
-  gpu::CommandHeader header;
-  uint32 target;
-  int32 level;
-  int32 xoffset;
-  int32 yoffset;
-  int32 width;
-  int32 height;
-  uint32 format;
-  uint32 type;
-  uint32 internal;
-};
-
-COMPILE_ASSERT(sizeof(TexSubImage2DImmediate) == 40,
-               Sizeof_TexSubImage2DImmediate_is_not_40);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, header) == 0,
-               OffsetOf_TexSubImage2DImmediate_header_not_0);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, target) == 4,
-               OffsetOf_TexSubImage2DImmediate_target_not_4);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, level) == 8,
-               OffsetOf_TexSubImage2DImmediate_level_not_8);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, xoffset) == 12,
-               OffsetOf_TexSubImage2DImmediate_xoffset_not_12);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, yoffset) == 16,
-               OffsetOf_TexSubImage2DImmediate_yoffset_not_16);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, width) == 20,
-               OffsetOf_TexSubImage2DImmediate_width_not_20);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, height) == 24,
-               OffsetOf_TexSubImage2DImmediate_height_not_24);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, format) == 28,
-               OffsetOf_TexSubImage2DImmediate_format_not_28);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, type) == 32,
-               OffsetOf_TexSubImage2DImmediate_type_not_32);
-COMPILE_ASSERT(offsetof(TexSubImage2DImmediate, internal) == 36,
-               OffsetOf_TexSubImage2DImmediate_internal_not_36);
 
 struct Uniform1f {
   typedef Uniform1f ValueType;
@@ -10144,42 +9834,6 @@ COMPILE_ASSERT(offsetof(VertexAttribDivisorANGLE, index) == 4,
                OffsetOf_VertexAttribDivisorANGLE_index_not_4);
 COMPILE_ASSERT(offsetof(VertexAttribDivisorANGLE, divisor) == 8,
                OffsetOf_VertexAttribDivisorANGLE_divisor_not_8);
-
-struct GenMailboxCHROMIUM {
-  typedef GenMailboxCHROMIUM ValueType;
-  static const CommandId kCmdId = kGenMailboxCHROMIUM;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-
-  typedef SizedResult<GLint> Result;
-
-  static uint32 ComputeSize() {
-    return static_cast<uint32>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() {
-    header.SetCmd<ValueType>();
-  }
-
-  void Init(GLuint _bucket_id) {
-    SetHeader();
-    bucket_id = _bucket_id;
-  }
-
-  void* Set(void* cmd, GLuint _bucket_id) {
-    static_cast<ValueType*>(cmd)->Init(_bucket_id);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  gpu::CommandHeader header;
-  uint32 bucket_id;
-};
-
-COMPILE_ASSERT(sizeof(GenMailboxCHROMIUM) == 8,
-               Sizeof_GenMailboxCHROMIUM_is_not_8);
-COMPILE_ASSERT(offsetof(GenMailboxCHROMIUM, header) == 0,
-               OffsetOf_GenMailboxCHROMIUM_header_not_0);
-COMPILE_ASSERT(offsetof(GenMailboxCHROMIUM, bucket_id) == 4,
-               OffsetOf_GenMailboxCHROMIUM_bucket_id_not_4);
 
 struct ProduceTextureCHROMIUM {
   typedef ProduceTextureCHROMIUM ValueType;

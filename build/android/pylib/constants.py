@@ -13,8 +13,6 @@ import sys
 DIR_SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                                os.pardir, os.pardir, os.pardir))
 ISOLATE_DEPS_DIR = os.path.join(DIR_SOURCE_ROOT, 'isolate_deps_dir')
-EMULATOR_SDK_ROOT = os.path.abspath(os.path.join(DIR_SOURCE_ROOT, os.pardir,
-                                                 os.pardir))
 
 CHROMIUM_TEST_SHELL_HOST_DRIVEN_DIR = os.path.join(
     DIR_SOURCE_ROOT, 'chrome', 'android')
@@ -43,6 +41,12 @@ PACKAGE_INFO = {
         '/data/local/chrome-command-line',
         'chrome_devtools_remote',
         None),
+    'chrome_dev': PackageInfo(
+        'com.google.android.apps.chrome_dev',
+        'com.google.android.apps.chrome.Main',
+        '/data/local/chrome-command-line',
+        'chrome_devtools_remote',
+        None),
     'legacy_browser': PackageInfo(
         'com.google.android.browser',
         'com.android.browser.BrowserActivity',
@@ -54,13 +58,19 @@ PACKAGE_INFO = {
         'org.chromium.content_shell_apk.ContentShellActivity',
         '/data/local/tmp/content-shell-command-line',
         None,
-        None),
+        'org.chromium.content_shell_apk.tests'),
     'chromium_test_shell': PackageInfo(
         'org.chromium.chrome.testshell',
         'org.chromium.chrome.testshell.ChromiumTestShellActivity',
         '/data/local/tmp/chromium-testshell-command-line',
         'chromium_testshell_devtools_remote',
         'org.chromium.chrome.testshell.tests'),
+    'android_webview_shell': PackageInfo(
+        'org.chromium.android_webview.shell',
+        'org.chromium.android_webview.shell.AwShellActivity',
+        None,
+        None,
+        'org.chromium.android_webview.test'),
     'gtest': PackageInfo(
         'org.chromium.native_test',
         'org.chromium.native_test.ChromeNativeTestActivity',
@@ -113,6 +123,8 @@ ANDROID_SDK_ROOT = os.path.join(DIR_SOURCE_ROOT,
                                 'third_party/android_tools/sdk')
 ANDROID_NDK_ROOT = os.path.join(DIR_SOURCE_ROOT,
                                 'third_party/android_tools/ndk')
+
+EMULATOR_SDK_ROOT = os.path.join(DIR_SOURCE_ROOT, 'android_emulator_sdk')
 
 UPSTREAM_FLAKINESS_SERVER = 'test-results.appspot.com'
 

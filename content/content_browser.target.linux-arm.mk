@@ -102,7 +102,7 @@ LOCAL_SRC_FILES := \
 	content/browser/android/overscroll_glow.cc \
 	content/browser/android/surface_texture_peer_browser_impl.cc \
 	content/browser/android/touch_point.cc \
-	content/browser/android/tracing_intent_handler.cc \
+	content/browser/android/tracing_controller_android.cc \
 	content/browser/android/vibration_message_filter.cc \
 	content/browser/android/web_contents_observer_android.cc \
 	content/browser/appcache/appcache_dispatcher_host.cc \
@@ -147,18 +147,11 @@ LOCAL_SRC_FILES := \
 	content/browser/devtools/worker_devtools_manager.cc \
 	content/browser/devtools/worker_devtools_message_filter.cc \
 	content/browser/device_orientation/data_fetcher_impl_android.cc \
-	content/browser/device_orientation/data_fetcher_orientation_android.cc \
 	content/browser/device_orientation/data_fetcher_shared_memory_android.cc \
 	content/browser/device_orientation/data_fetcher_shared_memory_base.cc \
 	content/browser/device_orientation/device_inertial_sensor_service.cc \
 	content/browser/device_orientation/device_motion_message_filter.cc \
 	content/browser/device_orientation/device_orientation_message_filter.cc \
-	content/browser/device_orientation/message_filter.cc \
-	content/browser/device_orientation/observer_delegate.cc \
-	content/browser/device_orientation/orientation.cc \
-	content/browser/device_orientation/orientation_message_filter.cc \
-	content/browser/device_orientation/provider.cc \
-	content/browser/device_orientation/provider_impl.cc \
 	content/browser/dom_storage/dom_storage_area.cc \
 	content/browser/dom_storage/dom_storage_context_impl.cc \
 	content/browser/dom_storage/dom_storage_context_wrapper.cc \
@@ -263,7 +256,6 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/stream_resource_handler.cc \
 	content/browser/loader/sync_resource_handler.cc \
 	content/browser/loader/throttling_resource_handler.cc \
-	content/browser/loader/transfer_navigation_resource_throttle.cc \
 	content/browser/loader/upload_data_stream_builder.cc \
 	content/browser/media/android/browser_demuxer_android.cc \
 	content/browser/media/android/browser_media_player_manager.cc \
@@ -279,6 +271,8 @@ LOCAL_SRC_FILES := \
 	content/browser/media/webrtc_internals_message_handler.cc \
 	content/browser/media/webrtc_internals_ui.cc \
 	content/browser/media_devices_monitor.cc \
+	content/browser/message_port_message_filter.cc \
+	content/browser/message_port_service.cc \
 	content/browser/mime_registry_message_filter.cc \
 	content/browser/service_worker/service_worker_dispatcher_host.cc \
 	content/browser/service_worker/service_worker_context.cc \
@@ -302,15 +296,14 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
 	content/browser/renderer_host/frame_memory_manager.cc \
+	content/browser/renderer_host/frame_tree.cc \
+	content/browser/renderer_host/frame_tree_node.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
-	content/browser/renderer_host/input/browser_input_event.cc \
-	content/browser/renderer_host/input/buffered_input_router.cc \
 	content/browser/renderer_host/input/gesture_event_filter.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
-	content/browser/renderer_host/input/input_queue.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/touchscreen_tap_suppression_controller_stub.cc \
@@ -323,6 +316,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.cc \
 	content/browser/renderer_host/java/java_method.cc \
 	content/browser/renderer_host/java/java_type.cc \
+	content/browser/renderer_host/java/jni_helper.cc \
 	content/browser/renderer_host/media/audio_input_device_manager.cc \
 	content/browser/renderer_host/media/audio_input_renderer_host.cc \
 	content/browser/renderer_host/media/audio_input_sync_writer.cc \
@@ -350,6 +344,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/overscroll_configuration.cc \
 	content/browser/renderer_host/overscroll_controller.cc \
 	content/browser/renderer_host/render_frame_host_impl.cc \
+	content/browser/renderer_host/render_frame_message_filter.cc \
 	content/browser/renderer_host/render_message_filter.cc \
 	content/browser/renderer_host/render_process_host_impl.cc \
 	content/browser/renderer_host/render_view_host_delegate.cc \
@@ -365,8 +360,9 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/synthetic_gesture_controller.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
 	content/browser/renderer_host/socket_stream_host.cc \
-	content/browser/renderer_host/surface_texture_transport_client_android.cc \
 	content/browser/renderer_host/generic_touch_gesture_android.cc \
+	content/browser/renderer_host/websocket_dispatcher_host.cc \
+	content/browser/renderer_host/websocket_host.cc \
 	content/browser/resolve_proxy_msg_helper.cc \
 	content/browser/resource_context_impl.cc \
 	content/browser/site_instance_impl.cc \
@@ -397,7 +393,6 @@ LOCAL_SRC_FILES := \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
 	content/browser/web_contents/debug_urls.cc \
-	content/browser/web_contents/frame_tree_node.cc \
 	content/browser/web_contents/interstitial_page_impl.cc \
 	content/browser/web_contents/navigation_controller_impl.cc \
 	content/browser/web_contents/navigation_entry_impl.cc \
@@ -416,7 +411,6 @@ LOCAL_SRC_FILES := \
 	content/browser/webui/web_ui_controller_factory_registry.cc \
 	content/browser/webui/web_ui_impl.cc \
 	content/browser/webui/web_ui_message_handler.cc \
-	content/browser/worker_host/message_port_service.cc \
 	content/browser/worker_host/worker_document_set.cc \
 	content/browser/worker_host/worker_message_filter.cc \
 	content/browser/worker_host/worker_process_host.cc \
@@ -470,10 +464,10 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \
@@ -601,10 +595,10 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
+	'-DAVOID_LIBYUV_FOR_ANDROID_WEBVIEW' \
 	'-DPROTOBUF_USE_DLLS' \
 	'-DGOOGLE_PROTOBUF_NO_RTTI' \
 	'-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER' \

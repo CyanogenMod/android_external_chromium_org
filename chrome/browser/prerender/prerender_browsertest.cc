@@ -5,9 +5,12 @@
 #include <deque>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -40,6 +43,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
@@ -57,8 +61,10 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/net/url_request_mock_http_job.h"
 #include "extensions/common/switches.h"
 #include "grit/generated_resources.h"
+#include "net/base/escape.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -98,12 +104,12 @@ static const char* kPassTitle = "PASS";
 
 std::string CreateClientRedirect(const std::string& dest_url) {
   const char* const kClientRedirectBase = "client-redirect?";
-  return kClientRedirectBase + dest_url;
+  return kClientRedirectBase + net::EscapeQueryParamValue(dest_url, false);
 }
 
 std::string CreateServerRedirect(const std::string& dest_url) {
   const char* const kServerRedirectBase = "server-redirect?";
-  return kServerRedirectBase + dest_url;
+  return kServerRedirectBase + net::EscapeQueryParamValue(dest_url, false);
 }
 
 // Clears the specified data using BrowsingDataRemover.
@@ -131,6 +137,7 @@ bool ShouldRenderPrerenderedPageCorrectly(FinalStatus status) {
     case FINAL_STATUS_CANCELLED:
     case FINAL_STATUS_DEVTOOLS_ATTACHED:
     case FINAL_STATUS_PAGE_BEING_CAPTURED:
+    case FINAL_STATUS_NAVIGATION_UNCOMMITTED:
       return true;
     default:
       return false;
@@ -142,26 +149,18 @@ bool ShouldRenderPrerenderedPageCorrectly(FinalStatus status) {
 // been called, before checking its state.
 class ChannelDestructionWatcher {
  public:
-  ChannelDestructionWatcher() : channel_destroyed_(false),
-                                waiting_for_channel_destruction_(false) {
+  ChannelDestructionWatcher() : channel_destroyed_(false) {
   }
 
   ~ChannelDestructionWatcher() {
   }
 
   void WatchChannel(content::RenderProcessHost* host) {
-    host->GetChannel()->AddFilter(new DestructionMessageFilter(this));
+    host->AddFilter(new DestructionMessageFilter(this));
   }
 
   void WaitForChannelClose() {
-    ASSERT_FALSE(waiting_for_channel_destruction_);
-
-    if (channel_destroyed_)
-      return;
-    waiting_for_channel_destruction_ = true;
-    content::RunMessageLoop();
-
-    EXPECT_FALSE(waiting_for_channel_destruction_);
+    run_loop_.Run();
     EXPECT_TRUE(channel_destroyed_);
   }
 
@@ -197,14 +196,11 @@ class ChannelDestructionWatcher {
 
     EXPECT_FALSE(channel_destroyed_);
     channel_destroyed_ = true;
-    if (waiting_for_channel_destruction_) {
-      waiting_for_channel_destruction_ = false;
-      base::MessageLoop::current()->Quit();
-    }
+    run_loop_.Quit();
   }
 
   bool channel_destroyed_;
-  bool waiting_for_channel_destruction_;
+  base::RunLoop run_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelDestructionWatcher);
 };
@@ -236,8 +232,18 @@ class TestPrerenderContents : public PrerenderContents {
         expected_pending_prerenders_(0),
         prerender_should_wait_for_ready_title_(
             prerender_should_wait_for_ready_title) {
-    if (expected_number_of_loads == 0)
+    // Stop waiting if there are no loads to wait on AND the prerender
+    // is not expected to abort. (If it is expected to abort, the
+    // event loop should spin until that happens.)
+    //
+    // TODO(davidben): Split all the various wait cases into different
+    // base::RunLoop instances so this all has some hope of being
+    // understandable.
+    if (expected_number_of_loads == 0 &&
+        (ShouldRenderPrerenderedPageCorrectly(expected_final_status) ||
+         expected_final_status == FINAL_STATUS_WOULD_HAVE_BEEN_USED)) {
       base::MessageLoopForUI::current()->Quit();
+    }
   }
 
   virtual ~TestPrerenderContents() {
@@ -629,6 +635,15 @@ void CreateNeverStartProtocolHandlerOnIO(const GURL& url) {
       url, never_respond_handler.Pass());
 }
 
+// Makes |url| respond to requests with the contents of |file|.
+void CreateMockProtocolHandlerOnIO(const GURL& url,
+                                   const base::FilePath& file) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  net::URLRequestFilter::GetInstance()->AddUrlProtocolHandler(
+      url, content::URLRequestMockHTTPJob::CreateProtocolHandlerForSingleFile(
+          file));
+}
+
 // A ContentBrowserClient that cancels all prerenderers on OpenURL.
 class TestContentBrowserClient : public chrome::ChromeContentBrowserClient {
  public:
@@ -649,6 +664,25 @@ class TestContentBrowserClient : public chrome::ChromeContentBrowserClient {
   DISALLOW_COPY_AND_ASSIGN(TestContentBrowserClient);
 };
 
+// A ContentBrowserClient that forces cross-process navigations.
+class SwapProcessesContentBrowserClient
+    : public chrome::ChromeContentBrowserClient {
+ public:
+  SwapProcessesContentBrowserClient() {}
+  virtual ~SwapProcessesContentBrowserClient() {}
+
+  // chrome::ChromeContentBrowserClient implementation.
+  virtual bool ShouldSwapProcessesForRedirect(
+      content::ResourceContext* resource_context,
+      const GURL& current_url,
+      const GURL& new_url) OVERRIDE {
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SwapProcessesContentBrowserClient);
+};
+
 }  // namespace
 
 // Many of these tests are flaky. See http://crbug.com/249179
@@ -662,6 +696,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
 #endif
         use_https_src_server_(false),
         call_javascript_(true),
+        check_load_events_(true),
         loader_path_("files/prerender/prerender_loader.html"),
         explicitly_set_browser_(NULL) {}
 
@@ -924,6 +959,10 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     call_javascript_ = false;
   }
 
+  void DisableLoadEventCheck() {
+    check_load_events_ = false;
+  }
+
   TaskManagerModel* GetModel() const {
     return TaskManager::GetInstance()->model();
   }
@@ -954,17 +993,17 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
     return received_prerender_started;
   }
 
-  bool DidReceivePrerenderLoadEventForLinkNumber(int index) const {
-    bool received_prerender_loaded;
+  int GetPrerenderLoadEventCountForLinkNumber(int index) const {
+    int load_event_count;
     std::string expression = base::StringPrintf(
-        "window.domAutomationController.send(Boolean("
-            "receivedPrerenderLoadEvents[%d]))", index);
+        "window.domAutomationController.send("
+            "receivedPrerenderLoadEvents[%d] || 0)", index);
 
-    CHECK(content::ExecuteScriptAndExtractBool(
+    CHECK(content::ExecuteScriptAndExtractInt(
         current_browser()->tab_strip_model()->GetActiveWebContents(),
         expression,
-        &received_prerender_loaded));
-    return received_prerender_loaded;
+        &load_event_count));
+    return load_event_count;
   }
 
   bool DidReceivePrerenderStopEventForLinkNumber(int index) const {
@@ -1147,7 +1186,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
       ASSERT_NE(static_cast<PrerenderContents*>(NULL), prerender_contents);
       EXPECT_EQ(FINAL_STATUS_MAX, prerender_contents->final_status());
 
-      if (call_javascript_ && expected_number_of_loads > 0) {
+      if (call_javascript_) {
         // Wait for the prerendered page to change title to signal it is ready
         // if required.
         prerender_contents->WaitForPrerenderToHaveReadyTitleIfRequired();
@@ -1160,6 +1199,14 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
             &prerender_test_result));
         EXPECT_TRUE(prerender_test_result);
       }
+
+      // Test that the referring page received events.
+      EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
+      if (check_load_events_) {
+        EXPECT_EQ(expected_number_of_loads,
+                  GetPrerenderLoadEventCountForLinkNumber(0));
+      }
+      EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
     } else {
       // In the failure case, we should have removed |dest_url_| from the
       // prerender_manager.  We ignore dummy PrerenderContents (as indicated
@@ -1167,7 +1214,19 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
       // be left in the manager until the test finishes.
       EXPECT_TRUE(prerender_contents == NULL ||
                   !prerender_contents->prerendering_has_started());
+
+      if (expected_final_status != FINAL_STATUS_WOULD_HAVE_BEEN_USED) {
+        // Not a dummy PrerenderContents, so test that the referring
+        // page received events.
+        EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
+        if (check_load_events_) {
+          EXPECT_EQ(expected_number_of_loads,
+                    GetPrerenderLoadEventCountForLinkNumber(0));
+        }
+        EXPECT_TRUE(DidReceivePrerenderStopEventForLinkNumber(0));
+      }
     }
+    EXPECT_FALSE(HadPrerenderEventErrors());
   }
 
   void NavigateToURLImpl(const GURL& dest_url,
@@ -1241,11 +1300,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
       content::TestNavigationObserver observer(
           current_browser()->tab_strip_model()->GetActiveWebContents());
       observer.StartWatchingNewWebContents();
-      base::RunLoop run_loop;
-      observer.WaitForObservation(
-          base::Bind(&content::RunThisRunLoop,
-                     base::Unretained(&run_loop)),
-          content::GetQuitTaskForRunLoop(&run_loop));
+      observer.Wait();
     }
   }
 
@@ -1256,6 +1311,7 @@ class PrerenderBrowserTest : virtual public InProcessBrowserTest {
   GURL dest_url_;
   bool use_https_src_server_;
   bool call_javascript_;
+  bool check_load_events_;
   std::string loader_path_;
   std::string loader_query_and_fragment_;
   Browser* explicitly_set_browser_;
@@ -1294,10 +1350,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderPagePending) {
   // this case, we need the pending prerenders to start.
   content::RunMessageLoop();
   first_channel_close_watcher.WaitForChannelClose();
-
-  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
-  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
-  EXPECT_FALSE(HadPrerenderEventErrors());
 
   const GURL prerender_page_url =
       test_server()->GetURL("files/prerender/prerender_page.html");
@@ -1345,8 +1397,6 @@ IN_PROC_BROWSER_TEST_F(
   set_loader_query_and_fragment("?links_to_insert=1");
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_CANCELLED, 1);
-  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
-  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
 
   // No ChannelDestructionWatcher is needed here, since prerenders in the
   // PrerenderLinkManager should be deleted by removing the links, rather than
@@ -1459,21 +1509,13 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderNoCommitNoSwap) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&CreateNeverStartProtocolHandlerOnIO, kNoCommitUrl));
+  DisableJavascriptCalls();
   PrerenderTestURL(kNoCommitUrl,
-                   FINAL_STATUS_CANCELLED,
+                   FINAL_STATUS_NAVIGATION_UNCOMMITTED,
                    0);
 
   // Navigate to the URL, but assume the contents won't be swapped in.
   NavigateToDestURLWithDisposition(CURRENT_TAB, false);
-
-  // Confirm that the prerendered version of the URL is not swapped in,
-  // since it never committed.
-  EXPECT_TRUE(UrlIsInPrerenderManager(kNoCommitUrl));
-
-  // Post a task to cancel all the prerenders, so that we don't wait further.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&CancelAllPrerenders, GetPrerenderManager()));
-  content::RunMessageLoop();
 }
 
 // Checks that the prerendering of a page is canceled correctly when a
@@ -1481,7 +1523,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderNoCommitNoSwap) {
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderAlertBeforeOnload) {
   PrerenderTestURL("files/prerender/prerender_alert_before_onload.html",
                    FINAL_STATUS_JAVASCRIPT_ALERT,
-                   1);
+                   0);
 }
 
 // Checks that the prerendering of a page is canceled correctly when a
@@ -1494,19 +1536,11 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderAlertAfterOnload) {
 
 // Checks that plugins are not loaded while a page is being preloaded, but
 // are loaded when the page is displayed.
-#if defined(USE_AURA)
 // http://crbug.com/103496
-#define MAYBE_PrerenderDelayLoadPlugin DISABLED_PrerenderDelayLoadPlugin
-#elif defined(OS_MACOSX)
 // http://crbug.com/100514
-#define MAYBE_PrerenderDelayLoadPlugin DISABLED_PrerenderDelayLoadPlugin
-#elif defined(OS_WIN) && defined(ARCH_CPU_X86_64)
 // TODO(jschuh): Failing plugin tests. crbug.com/244653
-#define MAYBE_PrerenderDelayLoadPlugin DISABLED_PrerenderDelayLoadPlugin
-#else
-#define MAYBE_PrerenderDelayLoadPlugin PrerenderDelayLoadPlugin
-#endif
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MAYBE_PrerenderDelayLoadPlugin) {
+// http://crbug.com/306715
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderDelayLoadPlugin) {
   PrerenderTestURL("files/prerender/plugin_delay_load.html",
                    FINAL_STATUS_USED,
                    1);
@@ -1584,7 +1618,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHttpAuthentication) {
   PrerenderTestURL("files/prerender/prerender_http_auth_container.html",
                    FINAL_STATUS_AUTH_NEEDED,
-                   1);
+                   0);
 }
 
 // Checks that client-issued redirects work with prerendering.
@@ -1791,7 +1825,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadIframe) {
   PrerenderTestURL("files/prerender/prerender_download_iframe.html",
                    FINAL_STATUS_DOWNLOAD,
-                   1);
+                   0);
 }
 
 // Prerenders a page that contains an automatic download triggered through
@@ -1859,20 +1893,26 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCancelReferrer) {
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPopup) {
   PrerenderTestURL("files/prerender/prerender_popup.html",
                    FINAL_STATUS_CREATE_NEW_WINDOW,
-                   1);
+                   0);
 }
 
 // Checks that registering a protocol handler causes cancellation.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderRegisterProtocolHandler) {
   PrerenderTestURL("files/prerender/prerender_register_protocol_handler.html",
                    FINAL_STATUS_REGISTER_PROTOCOL_HANDLER,
-                   1);
+                   0);
 }
 
 // Checks that renderers using excessive memory will be terminated.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderExcessiveMemory) {
   ASSERT_TRUE(GetPrerenderManager());
   GetPrerenderManager()->mutable_config().max_bytes = 30 * 1024 * 1024;
+  // The excessive memory kill may happen before or after the load event as it
+  // happens asynchronously with IPC calls. Even if the test does not start
+  // allocating until after load, the browser process might notice before the
+  // message gets through. This happens on XP debug bots because they're so
+  // slow. Instead, don't bother checking the load event count.
+  DisableLoadEventCheck();
   PrerenderTestURL("files/prerender/prerender_excessive_memory.html",
                    FINAL_STATUS_MEMORY_LIMIT_EXCEEDED,
                    1);
@@ -1880,6 +1920,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderExcessiveMemory) {
 
 // Checks shutdown code while a prerender is active.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderQuickQuit) {
+  DisableJavascriptCalls();
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_APP_TERMINATING,
                    0);
@@ -2172,10 +2213,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 // redirect to refresh from a fragment on the same page.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderClientRedirectFromFragment) {
-  // The # needs to be percent-encoded. Otherwise it never gets sent
-  // to the server.
   PrerenderTestURL(
-      CreateClientRedirect("files/prerender/no_prerender_page.html%23fragment"),
+      CreateClientRedirect("files/prerender/no_prerender_page.html#fragment"),
       FINAL_STATUS_APP_TERMINATING,
       2);
   NavigateToURLWithDisposition(
@@ -2223,7 +2262,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderImageJpeg) {
 // Checks that a prerender of a CRX will result in a cancellation due to
 // download.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCrx) {
-  PrerenderTestURL("files/prerender/extension.crx", FINAL_STATUS_DOWNLOAD, 1);
+  PrerenderTestURL("files/prerender/extension.crx", FINAL_STATUS_DOWNLOAD, 0);
 }
 
 // Checks that xhr GET requests allow prerenders.
@@ -2285,14 +2324,14 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorTopLevel) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.server_certificate =
       net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL("files/prerender/prerender_page.html");
   PrerenderTestURL(https_url,
                    FINAL_STATUS_SSL_ERROR,
-                   1);
+                   0);
 }
 
 // Checks that an SSL error that comes from a subresource does not cancel
@@ -2302,9 +2341,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorSubresource) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.server_certificate =
       net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL("files/prerender/image.jpeg");
   std::vector<net::SpawnedTestServer::StringPair> replacement_text;
@@ -2326,9 +2365,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.server_certificate =
       net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL(
       "files/prerender/prerender_embedded_content.html");
@@ -2348,7 +2387,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPrint) {
   PrerenderTestURL("files/prerender/prerender_print.html",
                    FINAL_STATUS_WINDOW_PRINT,
-                   1);
+                   0);
 }
 
 // Checks that if a page is opened in a new window by javascript and both the
@@ -2376,12 +2415,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLClientCertTopLevel) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL("files/prerender/prerender_page.html");
-  PrerenderTestURL(https_url, FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED, 1);
+  PrerenderTestURL(https_url, FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED, 0);
 }
 
 // Checks that an SSL Client Certificate request that originates from a
@@ -2390,9 +2429,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderSSLClientCertSubresource) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL("files/prerender/image.jpeg");
   std::vector<net::SpawnedTestServer::StringPair> replacement_text;
@@ -2405,7 +2444,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       &replacement_path));
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED,
-                   1);
+                   0);
 }
 
 // Checks that an SSL Client Certificate request that originates from an
@@ -2413,9 +2452,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLClientCertIframe) {
   net::SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.request_client_certificate = true;
-    net::SpawnedTestServer https_server(
-        net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
-        base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  net::SpawnedTestServer https_server(
+      net::SpawnedTestServer::TYPE_HTTPS, ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(https_server.Start());
   GURL https_url = https_server.GetURL(
       "files/prerender/prerender_embedded_content.html");
@@ -2429,7 +2468,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLClientCertIframe) {
       &replacement_path));
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED,
-                   1);
+                   0);
 }
 
 #if defined(FULL_SAFE_BROWSING)
@@ -2440,7 +2479,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSafeBrowsingTopLevel) {
   GetFakeSafeBrowsingDatabaseManager()->SetThreatTypeForUrl(
       url, SB_THREAT_TYPE_URL_MALWARE);
   PrerenderTestURL("files/prerender/prerender_page.html",
-                   FINAL_STATUS_SAFE_BROWSING, 1);
+                   FINAL_STATUS_SAFE_BROWSING, 0);
 }
 
 // Ensures that server redirects to a malware page will cancel prerenders.
@@ -2451,7 +2490,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       url, SB_THREAT_TYPE_URL_MALWARE);
   PrerenderTestURL(CreateServerRedirect("files/prerender/prerender_page.html"),
                    FINAL_STATUS_SAFE_BROWSING,
-                   1);
+                   0);
 }
 
 // Ensures that client redirects to a malware page will cancel prerenders.
@@ -2480,7 +2519,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSafeBrowsingSubresource) {
       &replacement_path));
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SAFE_BROWSING,
-                   1);
+                   0);
 }
 
 // Ensures that we do not prerender pages which have a malware iframe.
@@ -2499,7 +2538,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSafeBrowsingIframe) {
       &replacement_path));
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SAFE_BROWSING,
-                   1);
+                   0);
 }
 
 #endif
@@ -2602,9 +2641,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCancelAll) {
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderEvents) {
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_CANCELLED, 1);
-  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
-  EXPECT_TRUE(DidReceivePrerenderLoadEventForLinkNumber(0));
-  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&CancelAllPrerenders, GetPrerenderManager()));
@@ -2627,19 +2663,6 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       FROM_HERE, base::Bind(&CancelAllPrerenders, GetPrerenderManager()));
   content::RunMessageLoop();
   EXPECT_TRUE(GetPrerenderContents() == NULL);
-}
-
-// PrerenderBrowserTest.PrerenderEventsNoLoad may pass flakily on regression,
-// so please be aggressive about filing bugs when this test is failing.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderEventsNoLoad) {
-  // This should be canceled.
-  PrerenderTestURL("files/prerender/prerender_http_auth_container.html",
-                   FINAL_STATUS_AUTH_NEEDED,
-                   1);
-  EXPECT_TRUE(DidReceivePrerenderStartEventForLinkNumber(0));
-  EXPECT_FALSE(DidReceivePrerenderLoadEventForLinkNumber(0));
-  EXPECT_FALSE(DidReceivePrerenderStopEventForLinkNumber(0));
-  EXPECT_FALSE(HadPrerenderEventErrors());
 }
 
 // Prerendering and history tests.
@@ -2754,6 +2777,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MAYBE_ControlGroup) {
   RestorePrerenderMode restore_prerender_mode;
   PrerenderManager::SetMode(
       PrerenderManager::PRERENDER_MODE_EXPERIMENT_CONTROL_GROUP);
+  DisableJavascriptCalls();
   PrerenderTestURL("files/prerender/prerender_alert_before_onload.html",
                    FINAL_STATUS_WOULD_HAVE_BEEN_USED, 0);
   NavigateToDestURL();
@@ -2774,7 +2798,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, MAYBE_MatchCompleteDummy) {
   expected_final_status_queue.push_back(FINAL_STATUS_JAVASCRIPT_ALERT);
   expected_final_status_queue.push_back(FINAL_STATUS_WOULD_HAVE_BEEN_USED);
   PrerenderTestURL("files/prerender/prerender_alert_before_onload.html",
-                   expected_final_status_queue, 1);
+                   expected_final_status_queue, 0);
   NavigateToDestURL();
 }
 
@@ -2956,7 +2980,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       "files/prerender/prerender_with_image.html",
       replacement_text,
       &replacement_path));
-  PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 1);
+  PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 0);
   NavigateToDestURL();
 }
 
@@ -2990,7 +3014,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       "files/prerender/prerender_with_image.html",
       replacement_text,
       &replacement_path));
-  PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 1);
+  PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 0);
   NavigateToDestURL();
 }
 
@@ -3034,7 +3058,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        PrerenderCancelMainFrameRedirectUnsupportedScheme) {
   GURL url = test_server()->GetURL(
       CreateServerRedirect("invalidscheme://www.google.com/test.html"));
-  PrerenderTestURL(url, FINAL_STATUS_UNSUPPORTED_SCHEME, 1);
+  PrerenderTestURL(url, FINAL_STATUS_UNSUPPORTED_SCHEME, 0);
   NavigateToDestURL();
 }
 
@@ -3063,6 +3087,112 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCapturedWebContents) {
   web_contents->IncrementCapturerCount();
   NavigateToDestURLWithDisposition(CURRENT_TAB, false);
   web_contents->DecrementCapturerCount();
+}
+
+// Checks that prerenders are aborted on cross-process navigation from
+// a server redirect.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderCrossProcessServerRedirect) {
+  // Force everything to be a process swap.
+  SwapProcessesContentBrowserClient test_browser_client;
+  content::ContentBrowserClient* original_browser_client =
+      content::SetBrowserClientForTesting(&test_browser_client);
+
+  PrerenderTestURL(
+      CreateServerRedirect("files/prerender/prerender_page.html"),
+      FINAL_STATUS_OPEN_URL, 0);
+
+  content::SetBrowserClientForTesting(original_browser_client);
+}
+
+// Checks that prerenders are aborted on cross-process navigation from
+// a client redirect.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderCrossProcessClientRedirect) {
+  // Cross-process navigation logic for renderer-initiated navigations
+  // is partially controlled by the renderer, namely
+  // ChromeContentRendererClient. This test instead relies on the Web
+  // Store triggering such navigations.
+  std::string webstore_url = extension_urls::GetWebstoreLaunchURL();
+
+  // Mock out requests to the Web Store.
+  base::FilePath file(FILE_PATH_LITERAL(
+      "chrome/test/data/prerender/prerender_page.html"));
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&CreateMockProtocolHandlerOnIO,
+                 GURL(webstore_url), file));
+
+  PrerenderTestURL(CreateClientRedirect(webstore_url),
+                   FINAL_STATUS_OPEN_URL, 1);
+}
+
+// Checks that canceling a MatchComplete dummy doesn't result in two
+// stop events.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, CancelMatchCompleteDummy) {
+  std::deque<FinalStatus> expected_final_status_queue;
+  expected_final_status_queue.push_back(FINAL_STATUS_JAVASCRIPT_ALERT);
+  expected_final_status_queue.push_back(FINAL_STATUS_CANCELLED);
+  PrerenderTestURL("files/prerender/prerender_alert_before_onload.html",
+                   expected_final_status_queue, 0);
+
+  // Cancel the MatchComplete dummy.
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&CancelAllPrerenders, GetPrerenderManager()));
+  content::RunMessageLoop();
+
+  // Check the referring page only got one copy of the event.
+  EXPECT_FALSE(HadPrerenderEventErrors());
+}
+
+// Checks that a deferred redirect to an image is not loaded until the
+// page is visible.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredImage) {
+  // We do NOT wait for a load event, as the image will block the
+  // load. Instead, wait for the title to change.
+  PrerenderTestURL("files/prerender/prerender_deferred_image.html",
+                   FINAL_STATUS_USED, 0, true);
+  NavigateToDestURL();
+}
+
+// Checks that a deferred redirect to an image is not loaded until the
+// page is visible, even after another redirect.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderDeferredImageAfterRedirect) {
+  // We do NOT wait for a load event, as the image will block the
+  // load. Instead, wait for the title to change.
+  PrerenderTestURL(
+      "files/prerender/prerender_deferred_image.html#double_redirect",
+      FINAL_STATUS_USED, 0, true);
+  NavigateToDestURL();
+}
+
+// Checks that deferred redirects in the main frame are followed.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredMainFrame) {
+  DisableJavascriptCalls();
+  PrerenderTestURL(
+      "files/prerender/image-deferred.png",
+      FINAL_STATUS_USED, 1);
+  NavigateToDestURL();
+}
+
+// Checks that deferred redirects in the main frame are followed, even
+// with a double-redirect.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       PrerenderDeferredMainFrameAfterRedirect) {
+  DisableJavascriptCalls();
+  PrerenderTestURL(
+      CreateServerRedirect("files/prerender/image-deferred.png"),
+      FINAL_STATUS_USED, 1);
+  NavigateToDestURL();
+}
+
+// Checks that deferred redirects in a synchronous XHR abort the
+// prerender.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDeferredSynchronousXHR) {
+  PrerenderTestURL("files/prerender/prerender_deferred_sync_xhr.html",
+                   FINAL_STATUS_BAD_DEFERRED_REDIRECT, 0);
+  NavigateToDestURL();
 }
 
 }  // namespace prerender

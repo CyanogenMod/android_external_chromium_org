@@ -485,7 +485,7 @@ void RecordAppLaunch(Profile* profile, GURL url) {
 }
 
 // We don't change a preference; we only change visibility. Preference changing
-// (global state) is handled in |BrowserWindowCocoa::ToggleBookmarkBar()|. We
+// (global state) is handled in |chrome::ToggleBookmarkBarWhenVisible()|. We
 // simply update based on what we're told.
 - (void)updateVisibility {
   [self showBookmarkBarWithAnimation:NO];
@@ -2407,7 +2407,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 - (std::vector<const BookmarkNode*>)retrieveBookmarkNodeData {
   std::vector<const BookmarkNode*> dragDataNodes;
   BookmarkNodeData dragData;
-  if (dragData.ReadFromDragClipboard()) {
+  if (dragData.ReadFromClipboard(ui::CLIPBOARD_TYPE_DRAG)) {
     std::vector<const BookmarkNode*> nodes(
         dragData.GetNodes(browser_->profile()));
     dragDataNodes.assign(nodes.begin(), nodes.end());

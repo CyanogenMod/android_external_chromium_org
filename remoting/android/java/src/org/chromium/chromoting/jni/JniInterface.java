@@ -115,6 +115,11 @@ public class JniInterface {
         disconnectNative();
         sSuccessCallback = null;
         sConnected = false;
+
+        // Drop the reference to free the Bitmap for GC.
+        synchronized (sFrameLock) {
+            sFrameBitmap = null;
+        }
     }
 
     /** Performs the native portion of the connection. */
@@ -136,14 +141,11 @@ public class JniInterface {
     /** Callback to signal whenever we need to redraw. */
     private static Runnable sRedrawCallback = null;
 
-    /** Screen width of the video feed. */
-    private static int sWidth = 0;
+    /** Bitmap holding a copy of the latest video frame. */
+    private static Bitmap sFrameBitmap = null;
 
-    /** Screen height of the video feed. */
-    private static int sHeight = 0;
-
-    /** Buffer holding the video feed. */
-    private static ByteBuffer sBuffer = null;
+    /** Lock to protect the frame bitmap reference. */
+    private static final Object sFrameLock = new Object();
 
     /** Position of cursor hot-spot. */
     private static Point sCursorHotspot = new Point();
@@ -298,10 +300,10 @@ public class JniInterface {
     }
 
     /**
-     * Obtains the image buffer.
-     * This should not be called from the UI thread. (We prefer the native graphics thread.)
+     * Returns a bitmap of the latest video frame. Called on the native graphics thread when
+     * DesktopView is repainted.
      */
-    public static Bitmap retrieveVideoFrame() {
+    public static Bitmap getVideoFrame() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             Log.w("jniiface", "Canvas being redrawn on UI thread");
         }
@@ -310,12 +312,31 @@ public class JniInterface {
             return null;
         }
 
-        int[] frame = new int[sWidth * sHeight];
+        synchronized (sFrameLock) {
+            return sFrameBitmap;
+        }
+    }
 
-        sBuffer.order(ByteOrder.LITTLE_ENDIAN);
-        sBuffer.asIntBuffer().get(frame, 0, frame.length);
+    /**
+     * Sets a new video frame. Called from native code on the native graphics thread when a new
+     * frame is allocated.
+     */
+    private static void setVideoFrame(Bitmap bitmap) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Log.w("jniiface", "Video frame updated on UI thread");
+        }
 
-        return Bitmap.createBitmap(frame, 0, sWidth, sWidth, sHeight, Bitmap.Config.ARGB_8888);
+        synchronized (sFrameLock) {
+            sFrameBitmap = bitmap;
+        }
+    }
+
+    /**
+     * Creates a new Bitmap to hold video frame pixels. Called by native code which stores a global
+     * reference to the Bitmap and writes the decoded frame pixels to it.
+     */
+    private static Bitmap newBitmap(int width, int height) {
+        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
     }
 
     /**

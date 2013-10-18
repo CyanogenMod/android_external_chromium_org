@@ -309,8 +309,13 @@ class ExtensionService
   virtual bool IsExternalExtensionUninstalled(
       const std::string& extension_id) const OVERRIDE;
 
-  // Whether the extension should show as enabled state in launcher.
+  // Whether the extension should be enabled for running.
   bool IsExtensionEnabledForLauncher(const std::string& extension_id) const;
+
+  // Whether the extension is waiting for permission consent. Such extensions
+  // technically disabled (can't be launched) but UI shows them as normal.
+  bool DoesExtensionRequirePermissionConsent(
+      const std::string& extension_id) const;
 
   // Enables the extension.  If the extension is already enabled, does
   // nothing.
@@ -561,7 +566,9 @@ class ExtensionService
   virtual bool OnExternalExtensionUpdateUrlFound(
       const std::string& id,
       const GURL& update_url,
-      extensions::Manifest::Location location) OVERRIDE;
+      extensions::Manifest::Location location,
+      int creation_flags,
+      bool mark_acknowledged) OVERRIDE;
 
   virtual void OnExternalProviderReady(
       const extensions::ExternalProviderInterface* provider) OVERRIDE;
@@ -593,6 +600,9 @@ class ExtensionService
   // marked as acknowledged.
   bool IsUnacknowledgedExternalExtension(
       const extensions::Extension* extension);
+
+  // Disable extensions that are known to be disabled yet are currently enabled.
+  void ReconcileKnownDisabled();
 
   // Opens the Extensions page because the user wants to get more details
   // about the alerts.

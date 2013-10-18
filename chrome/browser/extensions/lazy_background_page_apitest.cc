@@ -174,6 +174,8 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, BroadcastEvent) {
 }
 
 IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, Filters) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+
   const Extension* extension = LoadExtensionAndWait("filters");
   ASSERT_TRUE(extension);
 
@@ -501,6 +503,13 @@ IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, UpdateExtensionsPage) {
       "    ele[0].innerHTML.search('(Inactive)') > 0);",
       &is_inactive));
   EXPECT_TRUE(is_inactive);
+}
+
+// Tests that the lazy background page will be unloaded if the onSuspend event
+// handler calls an API function such as chrome.storage.local.set().
+// See: http://crbug.com/296834
+IN_PROC_BROWSER_TEST_F(LazyBackgroundPageApiTest, OnSuspendUseStorageApi) {
+  EXPECT_TRUE(LoadExtensionAndWait("on_suspend"));
 }
 
 // TODO: background page with timer.

@@ -20,13 +20,13 @@ class ExampleZipperTest(unittest.TestCase):
         LocalFileSystem(os.path.join(sys.path[0], 'test_data')),
         object_store_creator)
     self._example_zipper = ExampleZipper(
-        CompiledFileSystem.Factory(self._file_system, object_store_creator),
+        CompiledFileSystem.Factory(object_store_creator),
         self._file_system,
         'example_zipper')
 
   def testCreateZip(self):
     # Cache manifest.json as unicode and make sure ExampleZipper doesn't error.
-    self._file_system.ReadSingle('example_zipper/basic/manifest.json')
+    self._file_system.ReadSingle('example_zipper/basic/manifest.json').Get()
     self.assertTrue(len(self._example_zipper.Create('basic')) > 0)
 
 if __name__ == '__main__':

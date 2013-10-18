@@ -57,9 +57,9 @@ class _SingleProcessVTuneProfiler(object):
 
 class VTuneProfiler(profiler.Profiler):
 
-  def __init__(self, browser_backend, platform_backend, output_path):
+  def __init__(self, browser_backend, platform_backend, output_path, state):
     super(VTuneProfiler, self).__init__(
-        browser_backend, platform_backend, output_path)
+        browser_backend, platform_backend, output_path, state)
     process_output_file_map = self._GetProcessOutputFileMap()
     self._process_profilers = []
 
@@ -98,7 +98,7 @@ class VTuneProfiler(profiler.Profiler):
       return False
 
   @classmethod
-  def CustomizeBrowserOptions(cls, options):
+  def CustomizeBrowserOptions(cls, browser_type, options):
     options.AppendExtraBrowserArgs([
         '--no-sandbox',
         '--allow-sandbox-debugging',

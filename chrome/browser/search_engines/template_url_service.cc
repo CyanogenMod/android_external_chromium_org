@@ -708,53 +708,47 @@ TemplateURL* TemplateURLService::FindNewDefaultSearchProvider() {
   return FirstPotentialDefaultEngine(template_urls_);
 }
 
-void TemplateURLService::ResetURLs() {
+void TemplateURLService::RepairPrepopulatedSearchEngines() {
   // Can't clean DB if it hasn't been loaded.
   DCHECK(loaded());
-  DCHECK(service_);
-  ClearDefaultProviderFromPrefs();
 
-  TemplateURLVector entries_to_process = template_urls_;
-  // Clear default provider to be able to delete it.
-  default_search_provider_ = NULL;
-  for (TemplateURLVector::const_iterator i = entries_to_process.begin();
-       i != entries_to_process.end(); ++i)
+  size_t default_search_provider_index = 0;
+  ScopedVector<TemplateURL> prepopulated_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(
+          profile_, &default_search_provider_index);
+  DCHECK(!prepopulated_urls.empty());
+  int default_search_engine_id =
+      prepopulated_urls[default_search_provider_index]->prepopulate_id();
+  TemplateURL* current_dse = default_search_provider_;
+  ActionsFromPrepopulateData actions(CreateActionsFromCurrentPrepopulateData(
+      &prepopulated_urls, template_urls_, current_dse));
+  // Remove items.
+  for (std::vector<TemplateURL*>::iterator i = actions.removed_engines.begin();
+       i < actions.removed_engines.end(); ++i)
     RemoveNoNotify(*i);
 
-  entries_to_process.clear();
-  provider_map_.reset(new SearchHostToURLsMap);
-  UIThreadSearchTermsData search_terms_data(profile_);
-  provider_map_->Init(TemplateURLVector(), search_terms_data);
-
-  TemplateURL* default_search_provider = NULL;
-  // Force GetSearchProvidersUsingLoadedEngines() to include the prepopulated
-  // engines in the list by claiming we are currently on version 0, ensuring
-  // that the prepopulate data version will be newer.
-  int new_resource_keyword_version = 0;
-  GetSearchProvidersUsingLoadedEngines(service_.get(), profile_,
-                                       &entries_to_process,
-                                       &default_search_provider,
-                                       &new_resource_keyword_version,
-                                       &pre_sync_deletes_);
-  // Setup search engines and a default one.
-  base::AutoReset<DefaultSearchChangeOrigin> change_origin(
-      &dsp_change_origin_, DSP_CHANGE_PROFILE_RESET);
-  AddTemplateURLsAndSetupDefaultEngine(&entries_to_process,
-                                       default_search_provider);
-
-  // Repopulate extension keywords.
-  std::vector<ExtensionKeyword> extension_keywords =
-      GetExtensionKeywords(profile());
-  for (size_t i = 0; i < extension_keywords.size(); ++i) {
-    TemplateURL* extension_url =
-        CreateTemplateURLForExtension(extension_keywords[i]);
-    AddNoNotify(extension_url, true);
+  // Edit items.
+  for (EditedEngines::iterator i(actions.edited_engines.begin());
+       i < actions.edited_engines.end(); ++i) {
+    UIThreadSearchTermsData search_terms_data(profile());
+    TemplateURL new_values(profile(), i->second);
+    UpdateNoNotify(i->first, new_values, search_terms_data);
   }
 
-  if (new_resource_keyword_version)
-    service_->SetBuiltinKeywordVersion(new_resource_keyword_version);
+  // Add items.
+  for (std::vector<TemplateURL*>::iterator i = actions.added_engines.begin();
+       i < actions.added_engines.end(); ++i)
+    AddNoNotify(*i, true);
 
-  EnsureDefaultSearchProviderExists();
+  // Change the DSE.
+  TemplateURL* new_dse = FindURLByPrepopulateID(template_urls_,
+                                                default_search_engine_id);
+  DCHECK(new_dse);
+  if (CanMakeDefault(new_dse)) {
+    base::AutoReset<DefaultSearchChangeOrigin> change_origin(
+        &dsp_change_origin_, DSP_CHANGE_PROFILE_RESET);
+    SetDefaultSearchProviderNoNotify(new_dse);
+  }
   NotifyObservers();
 }
 
@@ -778,8 +772,16 @@ void TemplateURLService::Load() {
     load_handle_ = service_->GetKeywords(this);
   } else {
     ChangeToLoadedState();
-    NotifyLoaded();
+    on_loaded_callbacks_.Notify();
   }
+}
+
+scoped_ptr<TemplateURLService::Subscription>
+    TemplateURLService::RegisterOnLoadedCallback(
+        const base::Closure& callback) {
+  return loaded_ ?
+      scoped_ptr<TemplateURLService::Subscription>() :
+      on_loaded_callbacks_.Add(callback);
 }
 
 void TemplateURLService::OnWebDataServiceRequestDone(
@@ -794,7 +796,7 @@ void TemplateURLService::OnWebDataServiceRequestDone(
     // loaded.
     load_failed_ = true;
     ChangeToLoadedState();
-    NotifyLoaded();
+    on_loaded_callbacks_.Notify();
     return;
   }
 
@@ -826,7 +828,7 @@ void TemplateURLService::OnWebDataServiceRequestDone(
   EnsureDefaultSearchProviderExists();
 
   NotifyObservers();
-  NotifyLoaded();
+  on_loaded_callbacks_.Notify();
 }
 
 string16 TemplateURLService::GetKeywordShortName(const string16& keyword,
@@ -1576,13 +1578,6 @@ void TemplateURLService::ChangeToLoadedState() {
   loaded_ = true;
 }
 
-void TemplateURLService::NotifyLoaded() {
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
-      content::Source<TemplateURLService>(this),
-      content::NotificationService::NoDetails());
-}
-
 void TemplateURLService::SaveDefaultSearchProviderToPrefs(
     const TemplateURL* t_url) {
   PrefService* prefs = GetPrefs();
@@ -1880,10 +1875,10 @@ void TemplateURLService::UpdateTemplateURLIfPrepopulated(
   if (template_url->prepopulate_id() == 0)
     return;
 
-  ScopedVector<TemplateURL> prepopulated_urls;
   size_t default_search_index;
-  TemplateURLPrepopulateData::GetPrepopulatedEngines(profile,
-      &prepopulated_urls.get(), &default_search_index);
+  ScopedVector<TemplateURL> prepopulated_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(profile,
+                                                         &default_search_index);
 
   for (size_t i = 0; i < prepopulated_urls.size(); ++i) {
     if (prepopulated_urls[i]->prepopulate_id() == prepopulate_id) {

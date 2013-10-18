@@ -34,67 +34,119 @@ const ManagedTileBin kBinPolicyMap[NUM_TILE_MEMORY_LIMIT_POLICIES][NUM_BINS] = {
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_ABSOLUTE_MINIMUM]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
     NEVER_BIN,                  // [SOON_BIN]
     NEVER_BIN,                  // [EVENTUALLY_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_PREPAINT_ONLY]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
-    SOON_BIN,                   // [SOON_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
     NEVER_BIN,                  // [EVENTUALLY_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [EVENTUALLY_BIN]
     NEVER_BIN,                  // [AT_LAST_AND_ACTIVE_BIN]
     NEVER_BIN,                  // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NEVER_BIN
   }, {  // [ALLOW_ANYTHING]
-    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_AND_READY_TO_DRAW_BIN]
-    NOW_BIN,                    // [NOW_BIN]
-    SOON_BIN,                   // [SOON_BIN]
-    EVENTUALLY_AND_ACTIVE_BIN,  // [EVENTUALLY_AND_ACTIVE_BIN]
-    EVENTUALLY_BIN,             // [EVENTUALLY_BIN]
-    AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_AND_ACTIVE_BIN]
-    AT_LAST_BIN,                // [AT_LAST_BIN]
-    NEVER_BIN                   // [NEVER_BIN]
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }
+};
+
+// Ready to draw works by mapping NOW_BIN to NOW_AND_READY_TO_DRAW_BIN.
+const ManagedTileBin kBinReadyToDrawMap[2][NUM_BINS] = {
+  {  // Not ready
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }, {  // Ready
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_AND_READY_TO_DRAW_BIN,  // [NOW_BIN]
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }
+};
+
+// Active works by mapping some bin stats to equivalent _ACTIVE_BIN state.
+const ManagedTileBin kBinIsActiveMap[2][NUM_BINS] = {
+  {  // Inactive
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_BIN,
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_BIN,
+    NEVER_BIN
+  }, {  // Active
+    NOW_AND_READY_TO_DRAW_BIN,
+    NOW_BIN,
+    SOON_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,
+    EVENTUALLY_AND_ACTIVE_BIN,  // [EVENTUALLY_BIN]
+    AT_LAST_AND_ACTIVE_BIN,
+    AT_LAST_AND_ACTIVE_BIN,     // [AT_LAST_BIN]
+    NEVER_BIN
   }
 };
 
 // Determine bin based on three categories of tiles: things we need now,
 // things we need soon, and eventually.
-inline ManagedTileBin BinFromTilePriority(const TilePriority& prio,
-                                          TreePriority tree_priority,
-                                          bool is_ready_to_draw,
-                                          bool is_active) {
-  // The amount of time for which we want to have prepainting coverage.
+inline ManagedTileBin BinFromTilePriority(const TilePriority& prio) {
+  // The amount of time/pixels for which we want to have prepainting coverage.
+  // Note: All very arbitrary constants: metric-based tuning is welcome!
   const float kPrepaintingWindowTimeSeconds = 1.0f;
   const float kBackflingGuardDistancePixels = 314.0f;
-
-  // Don't let low res tiles be in the now bin unless we're in a mode where
-  // we're prioritizing checkerboard prevention.
-  bool can_be_in_now_bin = tree_priority == SMOOTHNESS_TAKES_PRIORITY ||
-                           prio.resolution != LOW_RESOLUTION;
+  // Note: The max distances here assume that SOON_BIN will never help overcome
+  // raster being too slow (only caching in advance will do that), so we just
+  // need enough padding to handle some latency and per-tile variability.
+  const float kMaxPrepaintingDistancePixelsHighRes = 2000.0f;
+  const float kMaxPrepaintingDistancePixelsLowRes = 4000.0f;
 
   if (prio.distance_to_visible_in_pixels ==
       std::numeric_limits<float>::infinity())
     return NEVER_BIN;
 
-  if (can_be_in_now_bin && prio.time_to_visible_in_seconds == 0)
-    return is_ready_to_draw ? NOW_AND_READY_TO_DRAW_BIN : NOW_BIN;
+  if (prio.time_to_visible_in_seconds == 0)
+    return NOW_BIN;
 
   if (prio.resolution == NON_IDEAL_RESOLUTION)
-    return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
+    return EVENTUALLY_BIN;
 
+  float max_prepainting_distance_pixels =
+      (prio.resolution == HIGH_RESOLUTION)
+          ? kMaxPrepaintingDistancePixelsHighRes
+          : kMaxPrepaintingDistancePixelsLowRes;
+
+  // Soon bin if we are within backfling-guard, or under both the time window
+  // and the max distance window.
   if (prio.distance_to_visible_in_pixels < kBackflingGuardDistancePixels ||
-      prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds)
+      (prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds &&
+       prio.distance_to_visible_in_pixels <= max_prepainting_distance_pixels))
     return SOON_BIN;
 
-  return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
+  return EVENTUALLY_BIN;
 }
 
 // Limit to the number of raster tasks that can be scheduled.
@@ -316,44 +368,56 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
 
     // Get the active priority and bin.
     TilePriority active_priority = tile->priority(ACTIVE_TREE);
-    ManagedTileBin active_bin = BinFromTilePriority(
-        active_priority, tree_priority, tile_is_ready_to_draw, tile_is_active);
-    mts.tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
+    ManagedTileBin active_bin = BinFromTilePriority(active_priority);
 
     // Get the pending priority and bin.
     TilePriority pending_priority = tile->priority(PENDING_TREE);
-    ManagedTileBin pending_bin = BinFromTilePriority(
-        pending_priority, tree_priority, tile_is_ready_to_draw, tile_is_active);
-    mts.tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];
+    ManagedTileBin pending_bin = BinFromTilePriority(pending_priority);
 
-    // Get the combined priority and bin.
-    TilePriority combined_priority = tile->combined_priority();
-    ManagedTileBin combined_bin = BinFromTilePriority(combined_priority,
-                                                      tree_priority,
-                                                      tile_is_ready_to_draw,
-                                                      tile_is_active);
+    // Adjust pending bin state for low res tiles. This prevents
+    // pending tree low-res tiles from being initialized before
+    // high-res tiles.
+    if (pending_priority.resolution == LOW_RESOLUTION)
+      pending_bin = std::max(pending_bin, EVENTUALLY_BIN);
+
+    // Compute combined bin.
+    ManagedTileBin combined_bin = std::min(active_bin, pending_bin);
+
+    // Adjust bin state based on if ready to draw.
+    active_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][active_bin];
+    pending_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][pending_bin];
+    combined_bin = kBinReadyToDrawMap[tile_is_ready_to_draw][combined_bin];
+
+    // Adjust bin state based on if active.
+    active_bin = kBinIsActiveMap[tile_is_active][active_bin];
+    pending_bin = kBinIsActiveMap[tile_is_active][pending_bin];
+    combined_bin = kBinIsActiveMap[tile_is_active][combined_bin];
+
+    ManagedTileBin tree_bin[NUM_TREES];
+    tree_bin[ACTIVE_TREE] = kBinPolicyMap[memory_policy][active_bin];
+    tree_bin[PENDING_TREE] = kBinPolicyMap[memory_policy][pending_bin];
 
     // The bin that the tile would have if the GPU memory manager had
     // a maximally permissive policy, send to the GPU memory manager
     // to determine policy.
     ManagedTileBin gpu_memmgr_stats_bin = NEVER_BIN;
+    TilePriority tile_priority;
 
-    TilePriority* high_priority = NULL;
     switch (tree_priority) {
       case SAME_PRIORITY_FOR_BOTH_TREES:
         mts.bin = kBinPolicyMap[memory_policy][combined_bin];
         gpu_memmgr_stats_bin = combined_bin;
-        high_priority = &combined_priority;
+        tile_priority = tile->combined_priority();
         break;
       case SMOOTHNESS_TAKES_PRIORITY:
-        mts.bin = mts.tree_bin[ACTIVE_TREE];
+        mts.bin = tree_bin[ACTIVE_TREE];
         gpu_memmgr_stats_bin = active_bin;
-        high_priority = &active_priority;
+        tile_priority = active_priority;
         break;
       case NEW_CONTENT_TAKES_PRIORITY:
-        mts.bin = mts.tree_bin[PENDING_TREE];
+        mts.bin = tree_bin[PENDING_TREE];
         gpu_memmgr_stats_bin = pending_bin;
-        high_priority = &pending_priority;
+        tile_priority = pending_priority;
         break;
     }
 
@@ -368,22 +432,20 @@ void TileManager::GetTilesWithAssignedBins(PrioritizedTileSet* tiles) {
     // Bump up the priority if we determined it's NEVER_BIN on one tree,
     // but is still required on the other tree.
     bool is_in_never_bin_on_both_trees =
-        mts.tree_bin[ACTIVE_TREE] == NEVER_BIN &&
-        mts.tree_bin[PENDING_TREE] == NEVER_BIN;
+        tree_bin[ACTIVE_TREE] == NEVER_BIN &&
+        tree_bin[PENDING_TREE] == NEVER_BIN;
 
     if (mts.bin == NEVER_BIN && !is_in_never_bin_on_both_trees)
       mts.bin = tile_is_active ? AT_LAST_AND_ACTIVE_BIN : AT_LAST_BIN;
 
-    DCHECK(high_priority != NULL);
-
-    mts.resolution = high_priority->resolution;
-    mts.time_to_needed_in_seconds = high_priority->time_to_visible_in_seconds;
+    mts.resolution = tile_priority.resolution;
+    mts.time_to_needed_in_seconds = tile_priority.time_to_visible_in_seconds;
     mts.distance_to_visible_in_pixels =
-        high_priority->distance_to_visible_in_pixels;
-    mts.required_for_activation = high_priority->required_for_activation;
+        tile_priority.distance_to_visible_in_pixels;
+    mts.required_for_activation = tile_priority.required_for_activation;
 
     mts.visible_and_ready_to_draw =
-        mts.tree_bin[ACTIVE_TREE] == NOW_AND_READY_TO_DRAW_BIN;
+        tree_bin[ACTIVE_TREE] == NOW_AND_READY_TO_DRAW_BIN;
 
     if (mts.bin == NEVER_BIN) {
       FreeResourcesForTile(tile);
@@ -788,7 +850,6 @@ RasterWorkerPool::RasterTask TileManager::CreateRasterTask(Tile* tile) {
       tile->content_rect(),
       tile->contents_scale(),
       mts.raster_mode,
-      mts.tree_bin[PENDING_TREE] == NOW_BIN,
       mts.resolution,
       tile->layer_id(),
       static_cast<const void *>(tile),

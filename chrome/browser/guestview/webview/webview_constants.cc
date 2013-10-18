@@ -37,6 +37,7 @@ const char kPermission[] = "permission";
 const char kPermissionTypeDialog[] = "dialog";
 const char kPermissionTypeDownload[] = "download";
 const char kPermissionTypeGeolocation[] = "geolocation";
+const char kPermissionTypeLoadPlugin[] = "loadplugin";
 const char kPermissionTypeMedia[] = "media";
 const char kPermissionTypeNewWindow[] = "newwindow";
 const char kPermissionTypePointerLock[] = "pointerLock";
@@ -54,5 +55,7 @@ const char kInternalProcessId[] = "processId";
 
 // Initialization parameters.
 const char kParameterUserAgentOverride[] = "userAgentOverride";
+
+const unsigned int kMaxOutstandingPermissionRequests = 1024;
 
 }  // namespace webview

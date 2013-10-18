@@ -7,7 +7,7 @@
   -webkit-box-align: center;
   -webkit-box-pack: center;
   -webkit-perspective: 600px;
-  bottom: 48px;  /* Leave space for the header bar */
+  bottom: 51px;  /* Leave space for the header bar */
   display: -webkit-box;
   left: 0;
   position: absolute;
@@ -148,10 +148,12 @@ body:not(.oobe-display) #progress-dots {
 
 html[build=chrome] #header-sections {
   -webkit-margin-start: -48px;
+  margin-top: -1px;
 }
 
 html[build=chromium] #header-sections {
   -webkit-margin-start: 5px;
+  margin-top: -1px;
 }
 
 .header-section {

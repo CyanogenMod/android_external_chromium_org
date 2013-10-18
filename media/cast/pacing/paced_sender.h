@@ -16,21 +16,20 @@
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
-#include "media/cast/cast_thread.h"
+#include "media/cast/cast_environment.h"
 
 namespace media {
 namespace cast {
 
+// We have this pure virtual class to enable mocking.
 class PacedPacketSender {
  public:
   // Inform the pacer / sender of the total number of packets.
-  virtual bool SendPacket(const std::vector<uint8>& packet,
-                          int num_of_packets) = 0;
+  virtual bool SendPackets(const PacketList& packets) = 0;
 
-  virtual bool ResendPacket(const std::vector<uint8>& packet,
-                            int num_of_packets) = 0;
+  virtual bool ResendPackets(const PacketList& packets) = 0;
 
-  virtual bool SendRtcpPacket(const std::vector<uint8>& packet) = 0;
+  virtual bool SendRtcpPacket(const Packet& packet) = 0;
 
   virtual ~PacedPacketSender() {}
 };
@@ -39,20 +38,15 @@ class PacedSender : public PacedPacketSender,
                     public base::NonThreadSafe,
                     public base::SupportsWeakPtr<PacedSender> {
  public:
-  PacedSender(scoped_refptr<CastThread> cast_thread, PacketSender* transport);
+  PacedSender(scoped_refptr<CastEnvironment> cast_environment,
+              PacketSender* transport);
   virtual ~PacedSender();
 
-  virtual bool SendPacket(const std::vector<uint8>& packet,
-                          int num_of_packets) OVERRIDE;
+  virtual bool SendPackets(const PacketList& packets) OVERRIDE;
 
-  virtual bool ResendPacket(const std::vector<uint8>& packet,
-                            int num_of_packets) OVERRIDE;
+  virtual bool ResendPackets(const PacketList& packets) OVERRIDE;
 
-  virtual bool SendRtcpPacket(const std::vector<uint8>& packet) OVERRIDE;
-
-  void set_clock(base::TickClock* clock) {
-    clock_ = clock;
-  }
+  virtual bool SendRtcpPacket(const Packet& packet) OVERRIDE;
 
  protected:
   // Schedule a delayed task on the main cast thread when it's time to send the
@@ -63,21 +57,20 @@ class PacedSender : public PacedPacketSender,
   void SendNextPacketBurst();
 
  private:
-  void SendStoredPacket();
-  void UpdateBurstSize(int num_of_packets);
+  bool SendPacketsToTransport(const PacketList& packets,
+                              PacketList* packets_not_sent);
+  void SendStoredPackets();
+  void UpdateBurstSize(size_t num_of_packets);
 
-  typedef std::list<std::vector<uint8> > PacketList;
-
-  scoped_refptr<CastThread> cast_thread_;
-  int burst_size_;
-  int packets_sent_in_burst_;
+  scoped_refptr<CastEnvironment> cast_environment_;
+  size_t burst_size_;
+  size_t packets_sent_in_burst_;
   base::TimeTicks time_last_process_;
+  // Note: We can't combine the |packet_list_| and the |resend_packet_list_|
+  // since then we might get reordering of the retransmitted packets.
   PacketList packet_list_;
   PacketList resend_packet_list_;
   PacketSender* transport_;
-
-  base::DefaultTickClock default_tick_clock_;
-  base::TickClock* clock_;
 
   base::WeakPtrFactory<PacedSender> weak_factory_;
 

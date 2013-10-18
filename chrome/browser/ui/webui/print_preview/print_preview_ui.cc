@@ -338,28 +338,7 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   return source;
 }
 
-int g_auto_cancel_count_for_testing_ = -1;  // Disabled if count < 0.
-
-void EnableAutoCancelAndResetCountForTesting() {
-  g_auto_cancel_count_for_testing_ = 0;
-}
-
-void DisableAutoCancelForTesting() {
-  g_auto_cancel_count_for_testing_ = -1;
-}
-
-bool IsAutoCancelEnabledForTesting() {
-  return (g_auto_cancel_count_for_testing_ >= 0);
-}
-
-void IncrementAutoCancelCountForTesting() {
-  if (g_auto_cancel_count_for_testing_ >= 0)
-    ++g_auto_cancel_count_for_testing_;
-}
-
-int GetAutoCancelCountForTesting() {
-  return std::max(g_auto_cancel_count_for_testing_, -1);
-}
+PrintPreviewUI::TestingDelegate *g_testing_delegate_ = NULL;
 
 }  // namespace
 
@@ -475,6 +454,8 @@ void PrintPreviewUI::OnShowSystemDialog() {
 void PrintPreviewUI::OnDidGetPreviewPageCount(
     const PrintHostMsg_DidGetPreviewPageCount_Params& params) {
   DCHECK_GT(params.page_count, 0);
+  if (g_testing_delegate_)
+    g_testing_delegate_->DidGetPreviewPageCount(params.page_count);
   base::FundamentalValue count(params.page_count);
   base::FundamentalValue request_id(params.preview_request_id);
   web_ui()->CallJavascriptFunction("onDidGetPreviewPageCount",
@@ -518,8 +499,12 @@ void PrintPreviewUI::OnDidPreviewPage(int page_number,
   base::FundamentalValue number(page_number);
   base::FundamentalValue ui_identifier(id_);
   base::FundamentalValue request_id(preview_request_id);
+  if (g_testing_delegate_)
+    g_testing_delegate_->DidRenderPreviewPage(*web_ui()->GetWebContents());
   web_ui()->CallJavascriptFunction(
       "onDidPreviewPage", number, ui_identifier, request_id);
+  if (g_testing_delegate_ && g_testing_delegate_->IsAutoCancelEnabled())
+    web_ui()->CallJavascriptFunction("autoCancelForTesting");
 }
 
 void PrintPreviewUI::OnReusePreviewData(int preview_request_id) {
@@ -543,13 +528,8 @@ void PrintPreviewUI::OnPreviewDataIsAvailable(int expected_pages_count,
   }
   base::FundamentalValue ui_identifier(id_);
   base::FundamentalValue ui_preview_request_id(preview_request_id);
-  if (IsAutoCancelEnabledForTesting()) {
-    IncrementAutoCancelCountForTesting();
-    OnClosePrintPreviewDialog();
-  } else {
-    web_ui()->CallJavascriptFunction("updatePrintPreview", ui_identifier,
-                                     ui_preview_request_id);
-  }
+  web_ui()->CallJavascriptFunction("updatePrintPreview", ui_identifier,
+                                   ui_preview_request_id);
 }
 
 void PrintPreviewUI::OnPrintPreviewDialogDestroyed() {
@@ -611,14 +591,7 @@ void PrintPreviewUI::OnPrintPreviewScalingDisabled() {
   web_ui()->CallJavascriptFunction("printScalingDisabledForSourcePDF");
 }
 
-PrintPreviewUI::ScopedAutoCancelForTesting::ScopedAutoCancelForTesting() {
-  EnableAutoCancelAndResetCountForTesting();
-}
-
-PrintPreviewUI::ScopedAutoCancelForTesting::~ScopedAutoCancelForTesting() {
-  DisableAutoCancelForTesting();
-}
-
-int PrintPreviewUI::ScopedAutoCancelForTesting::GetCountForTesting() {
-  return GetAutoCancelCountForTesting();
+// static
+void PrintPreviewUI::SetDelegateForTesting(TestingDelegate* delegate) {
+  g_testing_delegate_ = delegate;
 }

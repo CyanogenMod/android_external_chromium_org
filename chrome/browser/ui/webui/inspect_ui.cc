@@ -78,6 +78,8 @@ const char kTerminateCommand[]  = "terminate";
 const char kReloadCommand[]  = "reload";
 const char kOpenCommand[]  = "open";
 
+const char kDiscoverUsbDevicesEnabledCommand[] =
+    "set-discover-usb-devices-enabled";
 const char kPortForwardingEnabledCommand[] =
     "set-port-forwarding-enabled";
 const char kPortForwardingConfigCommand[] = "set-port-forwarding-config";
@@ -94,8 +96,9 @@ const char kNameField[]  = "name";
 const char kFaviconUrlField[] = "faviconUrl";
 const char kDescription[] = "description";
 const char kPidField[]  = "pid";
-const char kAdbSerialField[] = "adbSerial";
+const char kAdbConnectedField[] = "adbConnected";
 const char kAdbModelField[] = "adbModel";
+const char kAdbSerialField[] = "adbSerial";
 const char kAdbBrowserProductField[] = "adbBrowserProduct";
 const char kAdbBrowserPackageField[] = "adbBrowserPackage";
 const char kAdbBrowserVersionField[] = "adbBrowserVersion";
@@ -105,6 +108,7 @@ const char kAdbPagesField[] = "pages";
 const char kAdbPortStatus[] = "adbPortStatus";
 const char kAdbScreenWidthField[] = "adbScreenWidth";
 const char kAdbScreenHeightField[] = "adbScreenHeight";
+const char kAdbAttachedForeignField[]  = "adbAttachedForeign";
 const char kGuestList[] = "guests";
 
 DictionaryValue* BuildTargetDescriptor(
@@ -207,7 +211,8 @@ class InspectMessageHandler : public WebUIMessageHandler {
   void HandleTerminateCommand(const ListValue* args);
   void HandleReloadCommand(const ListValue* args);
   void HandleOpenCommand(const ListValue* args);
-  void HandlePortForwardingEnabledCommand(const ListValue* args);
+  void HandleBooleanPrefChanged(const char* pref_name,
+                                const ListValue* args);
   void HandlePortForwardingConfigCommand(const ListValue* args);
 
   static bool GetProcessAndRouteId(const ListValue* args,
@@ -234,9 +239,14 @@ void InspectMessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(kTerminateCommand,
       base::Bind(&InspectMessageHandler::HandleTerminateCommand,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kDiscoverUsbDevicesEnabledCommand,
+      base::Bind(&InspectMessageHandler::HandleBooleanPrefChanged,
+                  base::Unretained(this),
+                  &prefs::kDevToolsDiscoverUsbDevicesEnabled[0]));
   web_ui()->RegisterMessageCallback(kPortForwardingEnabledCommand,
-      base::Bind(&InspectMessageHandler::HandlePortForwardingEnabledCommand,
-                 base::Unretained(this)));
+      base::Bind(&InspectMessageHandler::HandleBooleanPrefChanged,
+                 base::Unretained(this),
+                 &prefs::kDevToolsPortForwardingEnabled[0]));
   web_ui()->RegisterMessageCallback(kPortForwardingConfigCommand,
       base::Bind(&InspectMessageHandler::HandlePortForwardingConfigCommand,
                  base::Unretained(this)));
@@ -338,17 +348,16 @@ bool InspectMessageHandler::GetProcessAndRouteId(const ListValue* args,
   return false;
 }
 
-void InspectMessageHandler::HandlePortForwardingEnabledCommand(
+void InspectMessageHandler::HandleBooleanPrefChanged(
+    const char* pref_name,
     const ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   if (!profile)
     return;
 
   bool enabled;
-  if (args->GetSize() == 1 && args->GetBoolean(0, &enabled)) {
-    profile->GetPrefs()->SetBoolean(
-        prefs::kDevToolsPortForwardingEnabled, enabled);
-  }
+  if (args->GetSize() == 1 && args->GetBoolean(0, &enabled))
+    profile->GetPrefs()->SetBoolean(pref_name, enabled);
 }
 
 void InspectMessageHandler::HandlePortForwardingConfigCommand(
@@ -501,6 +510,7 @@ void InspectUI::InitUI() {
   SetPortForwardingDefaults();
   StartListeningNotifications();
   PopulateLists();
+  UpdateDiscoverUsbDevicesEnabled();
   UpdatePortForwardingEnabled();
   UpdatePortForwardingConfig();
   observer_->UpdateUI();
@@ -628,6 +638,9 @@ void InspectUI::StartListeningNotifications() {
                               content::NotificationService::AllSources());
 
   pref_change_registrar_.Init(profile->GetPrefs());
+  pref_change_registrar_.Add(prefs::kDevToolsDiscoverUsbDevicesEnabled,
+      base::Bind(&InspectUI::UpdateDiscoverUsbDevicesEnabled,
+                 base::Unretained(this)));
   pref_change_registrar_.Add(prefs::kDevToolsPortForwardingEnabled,
       base::Bind(&InspectUI::UpdatePortForwardingEnabled,
                  base::Unretained(this)));
@@ -677,11 +690,12 @@ void InspectUI::RemoteDevicesChanged(
        dit != devices->end(); ++dit) {
     DevToolsAdbBridge::RemoteDevice* device = dit->get();
     DictionaryValue* device_data = new DictionaryValue();
-    device_data->SetString(kAdbModelField, device->model());
-    device_data->SetString(kAdbSerialField, device->serial());
+    device_data->SetString(kAdbModelField, device->GetModel());
+    device_data->SetString(kAdbSerialField, device->GetSerial());
+    device_data->SetBoolean(kAdbConnectedField, device->IsConnected());
     std::string device_id = base::StringPrintf(
         "device:%s",
-        device->serial().c_str());
+        device->GetSerial().c_str());
     device_data->SetString(kAdbGlobalIdField, device_id);
     ListValue* browser_list = new ListValue();
     device_data->Set(kAdbBrowsersField, browser_list);
@@ -696,7 +710,7 @@ void InspectUI::RemoteDevicesChanged(
       browser_data->SetString(kAdbBrowserVersionField, browser->version());
       std::string browser_id = base::StringPrintf(
           "browser:%s:%s:%s",
-          device->serial().c_str(),
+          device->GetSerial().c_str(),
           browser->product().c_str(),  // Force sorting by product name.
           browser->socket().c_str());
       browser_data->SetString(kAdbGlobalIdField, browser_id);
@@ -713,14 +727,16 @@ void InspectUI::RemoteDevicesChanged(
             GURL(page->url()), page->title(), GURL(page->favicon_url()),
             page->description(), 0, 0);
         std::string page_id = base::StringPrintf("page:%s:%s:%s",
-            device->serial().c_str(),
+            device->GetSerial().c_str(),
             browser->socket().c_str(),
             page->id().c_str());
         page_data->SetString(kAdbGlobalIdField, page_id);
+        page_data->SetBoolean(kAdbAttachedForeignField,
+            page->attached() && !page->HasDevToolsWindow());
         // Pass the screen size in the page object to make sure that
         // the caching logic does not prevent the page item from updating
         // when the screen size changes.
-        gfx::Size screen_size = device->GetScreenSize();
+        gfx::Size screen_size = device->screen_size();
         page_data->SetInteger(kAdbScreenWidthField, screen_size.width());
         page_data->SetInteger(kAdbScreenHeightField, screen_size.height());
         remote_pages_[page_id] = page;
@@ -731,7 +747,7 @@ void InspectUI::RemoteDevicesChanged(
 
     if (port_forwarding_controller) {
       PortForwardingController::DevicesStatus::iterator sit =
-          port_forwarding_status.find(device->serial());
+          port_forwarding_status.find(device->GetSerial());
       if (sit != port_forwarding_status.end()) {
         DictionaryValue* port_status_dict = new DictionaryValue();
         typedef PortForwardingController::PortStatusMap StatusMap;
@@ -748,6 +764,21 @@ void InspectUI::RemoteDevicesChanged(
     device_list.Append(device_data);
   }
   web_ui()->CallJavascriptFunction("populateDeviceLists", device_list);
+}
+
+void InspectUI::UpdateDiscoverUsbDevicesEnabled() {
+  const Value* value = GetPrefValue(prefs::kDevToolsDiscoverUsbDevicesEnabled);
+  web_ui()->CallJavascriptFunction("updateDiscoverUsbDevicesEnabled", *value);
+
+  // Configure adb bridge.
+  Profile* profile = Profile::FromWebUI(web_ui());
+  DevToolsAdbBridge* adb_bridge =
+      DevToolsAdbBridge::Factory::GetForProfile(profile);
+  if (adb_bridge) {
+    bool enabled = false;
+    value->GetAsBoolean(&enabled);
+    adb_bridge->set_discover_usb_devices(enabled);
+  }
 }
 
 void InspectUI::UpdatePortForwardingEnabled() {

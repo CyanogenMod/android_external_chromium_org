@@ -23,6 +23,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/process/kill.h"
+#include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -75,7 +76,6 @@
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
 #include "content/renderer/context_menu_params_builder.h"
-#include "content/renderer/device_orientation_dispatcher.h"
 #include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/disambiguation_popup_helper.h"
 #include "content/renderer/dom_automation_controller.h"
@@ -194,6 +194,7 @@
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "third_party/WebKit/public/web/default/WebRenderTheme.h"
 #include "ui/base/ui_base_switches_util.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -269,7 +270,6 @@ using WebKit::WebDOMMessageEvent;
 using WebKit::WebDragData;
 using WebKit::WebDragOperation;
 using WebKit::WebDragOperationsMask;
-using WebKit::WebEditingAction;
 using WebKit::WebElement;
 using WebKit::WebExternalPopupMenu;
 using WebKit::WebExternalPopupMenuClient;
@@ -597,6 +597,9 @@ static bool ShouldUseAcceleratedCompositingForOverflowScroll(
     float device_scale_factor) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
+  if (command_line.HasSwitch(switches::kDisableAcceleratedOverflowScroll))
+    return false;
+
   if (command_line.HasSwitch(switches::kEnableAcceleratedOverflowScroll))
     return true;
 
@@ -802,7 +805,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       geolocation_dispatcher_(NULL),
       input_tag_speech_dispatcher_(NULL),
       speech_recognition_dispatcher_(NULL),
-      device_orientation_dispatcher_(NULL),
       media_stream_dispatcher_(NULL),
       browser_plugin_manager_(NULL),
       media_stream_client_(NULL),
@@ -835,9 +837,6 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
 }
 
 void RenderViewImpl::Initialize(RenderViewImplParams* params) {
-  RenderFrameImpl* main_frame = RenderFrameImpl::Create(
-      this, params->main_frame_routing_id);
-  main_render_frame_.reset(main_frame);
   routing_id_ = params->routing_id;
   surface_id_ = params->surface_id;
   if (params->opener_id != MSG_ROUTING_NONE && params->is_renderer_created)
@@ -902,7 +901,12 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
 
   ApplyWebPreferences(webkit_preferences_, webview());
-  webview()->initializeMainFrame(main_render_frame_.get());
+
+  main_render_frame_.reset(
+      RenderFrameImpl::Create(this, params->main_frame_routing_id));
+  // The main frame WebFrame object is closed by
+  // RenderViewImpl::frameDetached().
+  webview()->setMainFrame(WebFrame::create(main_render_frame_.get()));
 
   if (switches::IsTouchDragDropEnabled())
     webview()->settings()->setTouchDragDropEnabled(true);
@@ -2197,7 +2201,8 @@ void RenderViewImpl::LoadNavigationErrorPage(
     error_html = &html;
   } else {
     GetContentClient()->renderer()->GetNavigationErrorStrings(
-        frame, failed_request, error, &alt_html, NULL);
+        frame, failed_request, error, renderer_preferences_.accept_languages,
+        &alt_html, NULL);
     error_html = &alt_html;
   }
 
@@ -2237,15 +2242,32 @@ bool RenderViewImpl::SendAndRunNestedMessageLoop(IPC::SyncMessage* message) {
 void RenderViewImpl::GetWindowSnapshot(const WindowSnapshotCallback& callback) {
   int id = next_snapshot_id_++;
   pending_snapshots_.insert(std::make_pair(id, callback));
-  Send(new ViewHostMsg_GetWindowSnapshot(routing_id_, id));
+  ui::LatencyInfo latency_info;
+  latency_info.AddLatencyNumber(ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
+                                GetLatencyComponentId(),
+                                id);
+  if (RenderWidgetCompositor* rwc = compositor()) {
+    rwc->SetLatencyInfo(latency_info);
+  } else {
+    latency_info_.MergeWith(latency_info);
+  }
+  ScheduleCompositeWithForcedRedraw();
 }
 
 void RenderViewImpl::OnWindowSnapshotCompleted(const int snapshot_id,
     const gfx::Size& size, const std::vector<unsigned char>& png) {
-  PendingSnapshotMap::iterator it = pending_snapshots_.find(snapshot_id);
-  DCHECK(it != pending_snapshots_.end());
-  it->second.Run(size, png);
-  pending_snapshots_.erase(it);
+
+  // Any pending snapshots with a lower ID than the one received are considered
+  // to be implicitly complete, and returned the same snapshot data.
+  PendingSnapshotMap::iterator it = pending_snapshots_.begin();
+  while(it != pending_snapshots_.end()) {
+      if (it->first <= snapshot_id) {
+        it->second.Run(size, png);
+        pending_snapshots_.erase(it++);
+      } else {
+        ++it;
+      }
+  }
 }
 
 // WebKit::WebViewClient ------------------------------------------------------
@@ -2341,6 +2363,10 @@ WebView* RenderViewImpl::createView(
 WebWidget* RenderViewImpl::createPopupMenu(WebKit::WebPopupType popup_type) {
   RenderWidget* widget =
       RenderWidget::Create(routing_id_, popup_type, screen_info_);
+  if (screen_metrics_emulator_) {
+    widget->SetPopupOriginAdjustmentsForEmulation(
+        screen_metrics_emulator_.get());
+  }
   return widget->webwidget();
 }
 
@@ -2357,6 +2383,10 @@ WebExternalPopupMenu* RenderViewImpl::createExternalPopupMenu(
     return NULL;
   external_popup_menu_.reset(
       new ExternalPopupMenu(this, popup_menu_info, popup_menu_client));
+  if (screen_metrics_emulator_) {
+    SetExternalPopupOriginAdjustmentsForEmulation(
+        external_popup_menu_.get(), screen_metrics_emulator_.get());
+  }
   return external_popup_menu_.get();
 }
 
@@ -2635,6 +2665,7 @@ void RenderViewImpl::showContextMenu(
     params.x = touch_editing_context_menu_location_.x();
     params.y = touch_editing_context_menu_location_.y();
   }
+  OnShowHostContextMenu(&params);
 
   // Plugins, e.g. PDF, don't currently update the render view when their
   // selected text changes, but the context menu params do contain the updated
@@ -2719,6 +2750,12 @@ gfx::RectF RenderViewImpl::ClientRectToPhysicalWindowRect(
   gfx::RectF window_rect = rect;
   window_rect.Scale(device_scale_factor_ * webview()->pageScaleFactor());
   return window_rect;
+}
+
+int64 RenderViewImpl::GetLatencyComponentId() {
+  // Note: this must match the logic in RenderWidgetHostImpl.
+  return GetRoutingID() | (static_cast<int64>(
+      RenderThreadImpl::current()->renderer_process_id()) << 32);
 }
 
 void RenderViewImpl::StartNavStateSyncTimerIfNecessary() {
@@ -2998,14 +3035,15 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     return NULL;
   }
 
-  scoped_refptr<cc::ContextProvider> context_provider =
-      RenderThreadImpl::current()->OffscreenContextProviderForMainThread();
   scoped_ptr<StreamTextureFactory> stream_texture_factory;
   if (UsingSynchronousRendererCompositor()) {
     SynchronousCompositorFactory* factory =
         SynchronousCompositorFactory::GetInstance();
     stream_texture_factory = factory->CreateStreamTextureFactory(routing_id_);
   } else {
+    scoped_refptr<cc::ContextProvider> context_provider =
+        RenderThreadImpl::current()->SharedMainThreadContextProvider();
+
     if (!context_provider.get()) {
       LOG(ERROR) << "Failed to get context3d for media player";
       return NULL;
@@ -3103,6 +3141,15 @@ void RenderViewImpl::willClose(WebFrame* frame) {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, FrameWillClose(frame));
 }
 
+void RenderViewImpl::didMatchCSS(
+    WebFrame* frame,
+    const WebVector<WebString>& newly_matching_selectors,
+    const WebVector<WebString>& stopped_matching_selectors) {
+  FOR_EACH_OBSERVER(
+      RenderViewObserver, observers_,
+      DidMatchCSS(frame, newly_matching_selectors, stopped_matching_selectors));
+}
+
 void RenderViewImpl::Repaint(const gfx::Size& size) {
   OnRepaint(size);
 }
@@ -3130,6 +3177,10 @@ SSLStatus RenderViewImpl::GetSSLStatusOfFrame(WebKit::WebFrame* frame) const {
                           &ssl_status.security_bits,
                           &ssl_status.connection_status);
   return ssl_status;
+}
+
+const std::string& RenderViewImpl::GetAcceptLanguages() const {
+  return renderer_preferences_.accept_languages;
 }
 
 WebNavigationPolicy RenderViewImpl::decidePolicyForNavigation(
@@ -3558,9 +3609,10 @@ void RenderViewImpl::didStartProvisionalLoad(WebFrame* frame) {
   if (is_top_most) {
     navigation_gesture_ = WebUserGestureIndicator::isProcessingUserGesture() ?
         NavigationGestureUser : NavigationGestureAuto;
-  } else if (frame->parent()->isLoading()) {
-    // Take note of AUTO_SUBFRAME loads here, so that we can know how to
-    // load an error page.  See didFailProvisionalLoad.
+  } else if (ds->replacesCurrentHistoryItem()) {
+    // Subframe navigations that don't add session history items must be
+    // marked with AUTO_SUBFRAME. See also didFailProvisionalLoad for how we
+    // handle loading of error pages.
     document_state->navigation_state()->set_transition_type(
         PAGE_TRANSITION_AUTO_SUBFRAME);
   }
@@ -3621,6 +3673,7 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
       frame,
       failed_request,
       error,
+      renderer_preferences_.accept_languages,
       NULL,
       &params.error_description);
   params.url = error.unreachableURL;
@@ -3639,8 +3692,16 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
     return;
   }
 
-  if (RenderThreadImpl::current()->layout_test_mode())
+  // Allow the embedder to suppress an error page.
+  if (GetContentClient()->renderer()->ShouldSuppressErrorPage(
+          error.unreachableURL)) {
     return;
+  }
+
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
+    return;
+  }
 
   // Make sure we never show errors in view source mode.
   frame->enableViewSourceMode(false);
@@ -3867,6 +3928,7 @@ void RenderViewImpl::didFailLoad(WebFrame* frame, const WebURLError& error) {
       frame,
       failed_request,
       error,
+      renderer_preferences_.accept_languages,
       NULL,
       &error_description);
   Send(new ViewHostMsg_DidFailLoadWithError(routing_id_,
@@ -4563,6 +4625,8 @@ GURL RenderViewImpl::GetAlternateErrorPageURL(const GURL& failed_url,
   remove_params.ClearQuery();
   remove_params.ClearRef();
   const GURL url_to_send = failed_url.ReplaceComponents(remove_params);
+  // TODO(yuusuke): change to net::FormatUrl when link doctor
+  // becomes unicode-capable.
   std::string spec_to_send = url_to_send.spec();
   // Notify link doctor of the url truncation by sending of "?" at the end.
   if (failed_url.has_query())
@@ -5447,17 +5511,6 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
   RenderWidget::OnResize(params);
 }
 
-void RenderViewImpl::WillInitiatePaint() {
-#if defined(ENABLE_PLUGINS)
-  // Notify all of our instances that we started painting. This is used for
-  // internal bookkeeping only, so we know that the set can not change under
-  // us.
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->ViewWillInitiatePaint();
-#endif
-}
-
 void RenderViewImpl::DidInitiatePaint() {
 #if defined(ENABLE_PLUGINS)
   // Notify all instances that we painted.  The same caveats apply as for
@@ -5493,8 +5546,8 @@ void RenderViewImpl::DidFlushPaint() {
     // What about the case where a new one is created in a callback at a new
     // address and we don't issue the callback? We're still OK since this
     // callback is used for flush callbacks and we could not have possibly
-    // started a new paint (ViewWillInitiatePaint) for the new plugin while
-    // processing a previous paint for an existing one.
+    // started a new paint for the new plugin while processing a previous paint
+    // for an existing one.
     if (active_pepper_instances_.find(*i) != active_pepper_instances_.end())
       (*i)->ViewFlushedPaint();
   }
@@ -6077,6 +6130,14 @@ bool RenderViewImpl::AllowPartialSwap() const {
   return allow_partial_swap_;
 }
 
+void RenderViewImpl::SetScreenMetricsEmulationParameters(
+    float device_scale_factor, float root_layer_scale) {
+  if (webview()) {
+    webview()->setCompositorDeviceScaleFactorOverride(device_scale_factor);
+    webview()->setRootLayerScaleTransform(root_layer_scale);
+  }
+}
+
 bool RenderViewImpl::ScheduleFileChooser(
     const FileChooserParams& params,
     WebFileChooserCompletion* completion) {
@@ -6122,12 +6183,6 @@ WebKit::WebSpeechRecognizer* RenderViewImpl::speechRecognizer() {
   if (!speech_recognition_dispatcher_)
     speech_recognition_dispatcher_ = new SpeechRecognitionDispatcher(this);
   return speech_recognition_dispatcher_;
-}
-
-WebKit::WebDeviceOrientationClient* RenderViewImpl::deviceOrientationClient() {
-  if (!device_orientation_dispatcher_)
-    device_orientation_dispatcher_ = new DeviceOrientationDispatcher(this);
-  return device_orientation_dispatcher_;
 }
 
 void RenderViewImpl::zoomLimitsChanged(double minimum_level,

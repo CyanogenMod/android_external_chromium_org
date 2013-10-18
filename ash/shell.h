@@ -49,6 +49,11 @@ class ImageSkia;
 class Point;
 class Rect;
 }
+
+namespace keyboard {
+class KeyboardController;
+}
+
 namespace ui {
 class Layer;
 }
@@ -69,12 +74,14 @@ namespace ash {
 
 class AcceleratorController;
 class AshNativeCursorManager;
+class AutoclickController;
 class CapsLockDelegate;
 class DesktopBackgroundController;
 class DisplayController;
 class HighContrastController;
 class Launcher;
 class LauncherDelegate;
+class LauncherItemDelegate;
 class LauncherItemDelegateManager;
 class LauncherModel;
 class MagnificationController;
@@ -96,12 +103,12 @@ class UserWallpaperDelegate;
 class VideoDetector;
 class WebNotificationTray;
 class WindowCycleController;
+class WindowPositioner;
 class WindowSelectorController;
 
 namespace internal {
 class AcceleratorFilter;
 class AppListController;
-class AppListShelfItemDelegate;
 class CaptureController;
 class DisplayChangeObserver;
 class DisplayErrorObserver;
@@ -111,14 +118,15 @@ class EventClientImpl;
 class EventRewriterEventFilter;
 class EventTransformationHandler;
 class FocusCycler;
+class KeyboardUMAEventFilter;
 class LocaleNotificationController;
 class MouseCursorEventFilter;
 class OutputConfiguratorAnimation;
 class OverlayEventFilter;
+class PowerEventObserver;
 class ResizeShadowController;
 class ResolutionNotificationController;
 class RootWindowController;
-class RootWindowLayoutManager;
 class ScopedTargetRootWindow;
 class ScreenPositionController;
 class SlowAnimationEventFilter;
@@ -126,6 +134,8 @@ class StatusAreaWidget;
 class SystemGestureEventFilter;
 class SystemModalContainerEventFilter;
 class TouchObserverHUD;
+class UserActivityNotifier;
+class VideoActivityNotifier;
 }
 
 namespace shell {
@@ -204,10 +214,6 @@ class ASH_EXPORT Shell
       int container_id,
       aura::RootWindow* priority_root);
 
-  // True if an experimental maximize mode is enabled which forces browser and
-  // application windows to be maximized only.
-  static bool IsForcedMaximizeMode();
-
   void set_target_root_window(aura::RootWindow* target_root_window) {
     target_root_window_ = target_root_window;
   }
@@ -274,6 +280,10 @@ class ASH_EXPORT Shell
   // Adds/removes observer.
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
+
+  keyboard::KeyboardController* keyboard_controller() {
+    return keyboard_controller_.get();
+  }
 
   AcceleratorController* accelerator_controller() {
     return accelerator_controller_.get();
@@ -360,6 +370,11 @@ class ASH_EXPORT Shell
   PartialMagnificationController* partial_magnification_controller() {
     return partial_magnification_controller_.get();
   }
+
+  AutoclickController* autoclick_controller() {
+    return autoclick_controller_.get();
+  }
+
   aura::client::ActivationClient* activation_client() {
     return activation_client_;
   }
@@ -389,6 +404,11 @@ class ASH_EXPORT Shell
 
   // Dims or undims the screen.
   void SetDimming(bool should_dim);
+
+  // Notifies |observers_| when entering or exiting fullscreen mode in
+  // |root_window|.
+  void NotifyFullscreenStateChange(bool is_fullscreen,
+                                   aura::RootWindow* root_window);
 
   // Creates a modal background (a partially-opaque fullscreen window)
   // on all displays for |window|.
@@ -466,6 +486,10 @@ class ASH_EXPORT Shell
     return launcher_model_.get();
   }
 
+  WindowPositioner* window_positioner() {
+    return window_positioner_.get();
+  }
+
   // Returns the launcher delegate, creating if necesary.
   LauncherDelegate* GetLauncherDelegate();
 
@@ -491,6 +515,9 @@ class ASH_EXPORT Shell
   virtual ~Shell();
 
   void Init();
+
+  // Initializes virtual keyboard controller and attaches it to |root|.
+  void InitKeyboard(internal::RootWindowController* root);
 
   // Initializes the root window and root window controller so that it
   // can host browser windows. |first_run_after_boot| is true for the
@@ -530,6 +557,7 @@ class ASH_EXPORT Shell
 
   std::vector<WindowAndBoundsPair> to_restore_;
 
+  scoped_ptr<keyboard::KeyboardController> keyboard_controller_;
   scoped_ptr<NestedDispatcherController> nested_dispatcher_controller_;
   scoped_ptr<AcceleratorController> accelerator_controller_;
   scoped_ptr<ShellDelegate> delegate_;
@@ -540,10 +568,9 @@ class ASH_EXPORT Shell
   scoped_ptr<SessionStateDelegate> session_state_delegate_;
   scoped_ptr<LauncherDelegate> launcher_delegate_;
   scoped_ptr<LauncherItemDelegateManager> launcher_item_delegate_manager_;
-  scoped_ptr<internal::AppListShelfItemDelegate>
-      app_list_shelf_item_delegate_;
 
   scoped_ptr<LauncherModel> launcher_model_;
+  scoped_ptr<ash::WindowPositioner> window_positioner_;
 
   scoped_ptr<internal::AppListController> app_list_controller_;
 
@@ -567,6 +594,7 @@ class ASH_EXPORT Shell
   scoped_ptr<HighContrastController> high_contrast_controller_;
   scoped_ptr<MagnificationController> magnification_controller_;
   scoped_ptr<PartialMagnificationController> partial_magnification_controller_;
+  scoped_ptr<AutoclickController> autoclick_controller_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
   scoped_ptr<aura::client::UserActionClient> user_action_client_;
   aura::client::ActivationClient* activation_client_;
@@ -585,6 +613,9 @@ class ASH_EXPORT Shell
   // screenshot UI or the keyboard overlay is active.
   scoped_ptr<internal::OverlayEventFilter> overlay_filter_;
 
+  // An event filter for logging keyboard-related metrics.
+  scoped_ptr<internal::KeyboardUMAEventFilter> keyboard_metrics_filter_;
+
   // An event filter which handles system level gestures
   scoped_ptr<internal::SystemGestureEventFilter> system_gesture_filter_;
 
@@ -599,7 +630,11 @@ class ASH_EXPORT Shell
   scoped_ptr<internal::LocaleNotificationController>
       locale_notification_controller_;
 
-#if defined(OS_CHROMEOS) && defined(USE_X11)
+#if defined(OS_CHROMEOS)
+  scoped_ptr<internal::PowerEventObserver> power_event_observer_;
+  scoped_ptr<internal::UserActivityNotifier> user_activity_notifier_;
+  scoped_ptr<internal::VideoActivityNotifier> video_activity_notifier_;
+#if defined(USE_X11)
   // Controls video output device state.
   scoped_ptr<chromeos::OutputConfigurator> output_configurator_;
   scoped_ptr<internal::OutputConfiguratorAnimation>
@@ -608,7 +643,8 @@ class ASH_EXPORT Shell
 
   // Listens for output changes and updates the display manager.
   scoped_ptr<internal::DisplayChangeObserver> display_change_observer_;
-#endif  // defined(OS_CHROMEOS) && defined(USE_X11)
+#endif  // defined(USE_X11)
+#endif  // defined(OS_CHROMEOS)
 
   scoped_ptr<internal::ResolutionNotificationController>
       resolution_notification_controller_;

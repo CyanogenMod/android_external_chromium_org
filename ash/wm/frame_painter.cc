@@ -177,8 +177,6 @@ bool IsSoloWindowHeaderCandidate(aura::Window* window) {
 // a transparent solo-window header.
 std::vector<Window*> GetWindowsForSoloHeaderUpdate(RootWindow* root_window) {
   std::vector<Window*> windows;
-  // During shutdown there may not be a workspace controller. In that case
-  // we don't care about updating any windows.
   // Avoid memory allocations for typical window counts.
   windows.reserve(16);
   // Collect windows from the desktop.
@@ -258,16 +256,17 @@ void FramePainter::Init(
       rb.GetImageNamed(IDR_AURA_WINDOW_HEADER_SHADE_RIGHT).ToImageSkia();
 
   window_ = frame->GetNativeWindow();
-  gfx::Insets mouse_insets = gfx::Insets(-kResizeOutsideBoundsSize,
-                                         -kResizeOutsideBoundsSize,
-                                         -kResizeOutsideBoundsSize,
-                                         -kResizeOutsideBoundsSize);
-  gfx::Insets touch_insets = mouse_insets.Scale(
+  gfx::Insets mouse_outer_insets(-kResizeOutsideBoundsSize,
+                                 -kResizeOutsideBoundsSize,
+                                 -kResizeOutsideBoundsSize,
+                                 -kResizeOutsideBoundsSize);
+  gfx::Insets touch_outer_insets = mouse_outer_insets.Scale(
       kResizeOutsideBoundsScaleForTouch);
   // Ensure we get resize cursors for a few pixels outside our bounds.
-  window_->SetHitTestBoundsOverrideOuter(mouse_insets, touch_insets);
+  window_->SetHitTestBoundsOverrideOuter(mouse_outer_insets,
+                                         touch_outer_insets);
   // Ensure we get resize cursors just inside our bounds as well.
-  window_->set_hit_test_bounds_override_inner(mouse_insets);
+  UpdateHitTestBoundsOverrideInner();
 
   // Watch for maximize/restore/fullscreen state changes.  Observer removes
   // itself in OnWindowDestroying() below, or in the destructor if we go away
@@ -618,36 +617,22 @@ void FramePainter::OnThemeChanged() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// WindowState::Observer overrides:
-void FramePainter::OnTrackedByWorkspaceChanged(aura::Window* window,
+// WindowStateObserver overrides:
+void FramePainter::OnTrackedByWorkspaceChanged(wm::WindowState* window_state,
                                                bool old) {
   // When 'TrackedByWorkspace' changes, we are going to paint the header
   // differently. Schedule a paint to ensure everything is updated correctly.
-  if (wm::GetWindowState(window)->tracked_by_workspace())
+  if (window_state->tracked_by_workspace())
     frame_->non_client_view()->SchedulePaint();
+}
+
+void FramePainter::OnWindowShowTypeChanged(wm::WindowState* window_state,
+                                           wm::WindowShowType old_type) {
+  UpdateHitTestBoundsOverrideInner();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // aura::WindowObserver overrides:
-
-void FramePainter::OnWindowPropertyChanged(aura::Window* window,
-                                           const void* key,
-                                           intptr_t old) {
-  if (key != aura::client::kShowStateKey)
-    return;
-
-  // Maximized and fullscreen windows don't want resize handles overlapping the
-  // content area, because when the user moves the cursor to the right screen
-  // edge we want them to be able to hit the scroll bar.
-  wm::WindowState* window_state = wm::GetWindowState(window);
-  if (window_state->IsMaximizedOrFullscreen()) {
-    window->set_hit_test_bounds_override_inner(gfx::Insets());
-  } else {
-    window->set_hit_test_bounds_override_inner(
-        gfx::Insets(kResizeInsideBoundsSize, kResizeInsideBoundsSize,
-                    kResizeInsideBoundsSize, kResizeInsideBoundsSize));
-  }
-}
 
 void FramePainter::OnWindowVisibilityChanged(aura::Window* window,
                                              bool visible) {
@@ -822,6 +807,19 @@ void FramePainter::UpdateSoloWindowInRoot(RootWindow* root,
     Widget* widget = Widget::GetWidgetForNativeWindow(*it);
     if (widget && widget->non_client_view())
       widget->non_client_view()->SchedulePaint();
+  }
+}
+
+void FramePainter::UpdateHitTestBoundsOverrideInner() {
+  // Maximized and fullscreen windows don't want resize handles overlapping the
+  // content area, because when the user moves the cursor to the right screen
+  // edge we want them to be able to hit the scroll bar.
+  if (wm::GetWindowState(window_)->IsMaximizedOrFullscreen()) {
+    window_->set_hit_test_bounds_override_inner(gfx::Insets());
+  } else {
+    window_->set_hit_test_bounds_override_inner(
+        gfx::Insets(kResizeInsideBoundsSize, kResizeInsideBoundsSize,
+                    kResizeInsideBoundsSize, kResizeInsideBoundsSize));
   }
 }
 

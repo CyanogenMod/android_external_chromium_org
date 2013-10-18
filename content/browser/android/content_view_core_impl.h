@@ -19,6 +19,7 @@
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
@@ -35,7 +36,8 @@ struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
-                            public NotificationObserver {
+                            public NotificationObserver,
+                            public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
   ContentViewCoreImpl(JNIEnv* env,
@@ -149,7 +151,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   void Reload(JNIEnv* env, jobject obj);
   void CancelPendingReload(JNIEnv* env, jobject obj);
   void ContinuePendingReload(JNIEnv* env, jobject obj);
-  jboolean NeedsReload(JNIEnv* env, jobject obj);
   void ClearHistory(JNIEnv* env, jobject obj);
   void EvaluateJavaScript(JNIEnv* env,
                           jobject obj,
@@ -246,8 +247,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                         const std::string& text,
                         int selection_start, int selection_end,
                         int composition_start, int composition_end,
-                        bool show_ime_if_needed);
-  void ProcessImeBatchStateAck(bool is_begin);
+                        bool show_ime_if_needed, bool require_ack);
   void SetTitle(const string16& title);
   void OnBackgroundColorChanged(SkColor color);
 
@@ -315,6 +315,9 @@ class ContentViewCoreImpl : public ContentViewCore,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
 
+  // WebContentsObserver implementation.
+  virtual void RenderViewReady() OVERRIDE;
+
   // --------------------------------------------------------------------------
   // Other private methods and data
   // --------------------------------------------------------------------------
@@ -344,6 +347,9 @@ class ContentViewCoreImpl : public ContentViewCore,
   // Update focus state of the RenderWidgetHostView.
   void SetFocusInternal(bool focused);
 
+  // Send device_orientation_ to renderer.
+  void SendOrientationChangeEventInternal();
+
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;
 
@@ -372,6 +378,10 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   // The owning window that has a hold of main application activity.
   ui::WindowAndroid* window_android_;
+
+  // The cache of device's current orientation set from Java side, this value
+  // will be sent to Renderer once it is ready.
+  int device_orientation_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

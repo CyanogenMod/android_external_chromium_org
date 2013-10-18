@@ -8,7 +8,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "media/cast/cast_defines.h"
-#include "media/cast/cast_thread.h"
+#include "media/cast/cast_environment.h"
 #include "third_party/webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
 #include "third_party/webrtc/modules/interface/module_common_types.h"
 
@@ -21,12 +21,12 @@ static const int kMaxNumberOfSamples = 48 * 2 * 100;
 // This class is only called from the cast audio encoder thread.
 class WebrtEncodedDataCallback : public webrtc::AudioPacketizationCallback {
  public:
-  WebrtEncodedDataCallback(scoped_refptr<CastThread> cast_thread,
+  WebrtEncodedDataCallback(scoped_refptr<CastEnvironment> cast_environment,
                            AudioCodec codec,
                            int frequency)
       : codec_(codec),
         frequency_(frequency),
-        cast_thread_(cast_thread),
+        cast_environment_(cast_environment),
         last_timestamp_(0) {}
 
   virtual int32 SendData(
@@ -35,7 +35,7 @@ class WebrtEncodedDataCallback : public webrtc::AudioPacketizationCallback {
       uint32 timestamp,
       const uint8* payload_data,
       uint16 payload_size,
-      const webrtc::RTPFragmentationHeader* /*fragmentation*/) {
+      const webrtc::RTPFragmentationHeader* /*fragmentation*/) OVERRIDE {
     scoped_ptr<EncodedAudioFrame> audio_frame(new EncodedAudioFrame());
     audio_frame->codec = codec_;
     audio_frame->samples = timestamp - last_timestamp_;
@@ -45,7 +45,7 @@ class WebrtEncodedDataCallback : public webrtc::AudioPacketizationCallback {
                              payload_data,
                              payload_data + payload_size);
 
-    cast_thread_->PostTask(CastThread::MAIN, FROM_HERE,
+    cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
         base::Bind(*frame_encoded_callback_, base::Passed(&audio_frame),
                    recorded_time_));
     return 0;
@@ -61,21 +61,20 @@ class WebrtEncodedDataCallback : public webrtc::AudioPacketizationCallback {
  private:
   const AudioCodec codec_;
   const int frequency_;
-  scoped_refptr<CastThread> cast_thread_;
+  scoped_refptr<CastEnvironment> cast_environment_;
   uint32 last_timestamp_;
   base::TimeTicks recorded_time_;
   const AudioEncoder::FrameEncodedCallback* frame_encoded_callback_;
 };
 
-AudioEncoder::AudioEncoder(scoped_refptr<CastThread> cast_thread,
+AudioEncoder::AudioEncoder(scoped_refptr<CastEnvironment> cast_environment,
                            const AudioSenderConfig& audio_config)
-    : cast_thread_(cast_thread),
+    : cast_environment_(cast_environment),
       audio_encoder_(webrtc::AudioCodingModule::Create(0)),
       webrtc_encoder_callback_(
-          new WebrtEncodedDataCallback(cast_thread, audio_config.codec,
+          new WebrtEncodedDataCallback(cast_environment, audio_config.codec,
                                        audio_config.frequency)),
       timestamp_(0) {  // Must start at 0; used above.
-
   if (audio_encoder_->InitializeSender() != 0) {
     DCHECK(false) << "Invalid webrtc return value";
   }
@@ -110,9 +109,7 @@ AudioEncoder::AudioEncoder(scoped_refptr<CastThread> cast_thread,
   }
 }
 
-AudioEncoder::~AudioEncoder() {
-  webrtc::AudioCodingModule::Destroy(audio_encoder_);
-}
+AudioEncoder::~AudioEncoder() {}
 
 // Called from main cast thread.
 void AudioEncoder::InsertRawAudioFrame(
@@ -120,7 +117,7 @@ void AudioEncoder::InsertRawAudioFrame(
     const base::TimeTicks& recorded_time,
     const FrameEncodedCallback& frame_encoded_callback,
     const base::Closure release_callback) {
-  cast_thread_->PostTask(CastThread::AUDIO_ENCODER, FROM_HERE,
+  cast_environment_->PostTask(CastEnvironment::AUDIO_ENCODER, FROM_HERE,
       base::Bind(&AudioEncoder::EncodeAudioFrameThread, this, audio_frame,
           recorded_time, frame_encoded_callback, release_callback));
 }
@@ -131,13 +128,14 @@ void AudioEncoder::EncodeAudioFrameThread(
     const base::TimeTicks& recorded_time,
     const FrameEncodedCallback& frame_encoded_callback,
     const base::Closure release_callback) {
-  int samples_per_10ms = audio_frame->frequency / 100;
-  int number_of_10ms_blocks = audio_frame->samples.size() /
+  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::AUDIO_ENCODER));
+  size_t samples_per_10ms = audio_frame->frequency / 100;
+  size_t number_of_10ms_blocks = audio_frame->samples.size() /
       (samples_per_10ms * audio_frame->channels);
   DCHECK(webrtc::AudioFrame::kMaxDataSizeSamples > samples_per_10ms)
       << "webrtc sanity check failed";
 
-  for (int i = 0; i < number_of_10ms_blocks; ++i) {
+  for (size_t i = 0; i < number_of_10ms_blocks; ++i) {
     webrtc::AudioFrame webrtc_audio_frame;
     webrtc_audio_frame.timestamp_ = timestamp_;
 
@@ -146,7 +144,12 @@ void AudioEncoder::EncodeAudioFrameThread(
     memcpy(&webrtc_audio_frame.data_[0],
            &audio_frame->samples[i * samples_per_10ms * audio_frame->channels],
            samples_per_10ms * audio_frame->channels * sizeof(int16));
-    webrtc_audio_frame.samples_per_channel_ = samples_per_10ms;
+
+    // The webrtc API is int and we have a size_t; the cast should never be an
+    // issue since the normal values are in the 480 range.
+    DCHECK_GE(1000u, samples_per_10ms);
+    webrtc_audio_frame.samples_per_channel_ =
+        static_cast<int>(samples_per_10ms);
     webrtc_audio_frame.sample_rate_hz_ = audio_frame->frequency;
     webrtc_audio_frame.num_channels_ = audio_frame->channels;
 
@@ -154,19 +157,20 @@ void AudioEncoder::EncodeAudioFrameThread(
     if (audio_encoder_->Add10MsData(webrtc_audio_frame) != 0) {
       DCHECK(false) << "Invalid webrtc return value";
     }
-    timestamp_ += samples_per_10ms;
+    timestamp_ += static_cast<uint32>(samples_per_10ms);
   }
   // We are done with the audio frame release it.
-  cast_thread_->PostTask(CastThread::MAIN, FROM_HERE, release_callback);
+  cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
+                              release_callback);
 
   // Note:
   // Not all insert of 10 ms will generate a callback with encoded data.
   webrtc_encoder_callback_->SetEncodedCallbackInfo(recorded_time,
                                                    &frame_encoded_callback);
-  for (int i = 0; i < number_of_10ms_blocks; ++i) {
+  for (size_t i = 0; i < number_of_10ms_blocks; ++i) {
     audio_encoder_->Process();
   }
 }
 
-}  // namespace media
 }  // namespace cast
+}  // namespace media

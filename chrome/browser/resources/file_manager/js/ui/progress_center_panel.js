@@ -5,125 +5,194 @@
 'use strict';
 
 /**
- * Item of the progress center.
- * @constructor
- */
-var ProgressCenterItem = function() {
-  /**
-   * Message of the progress item.
-   * @type {string}
-   */
-  this.message = '';
-
-  /**
-   * Max value of the progress.
-   * @type {number}
-   */
-  this.progressMax = 1;
-
-  /**
-   * Current value of the progress.
-   * @type {number}
-   */
-  this.progressValue = 0;
-
-  Object.seal(this);
-};
-
-/**
  * Progress center panel.
  *
  * @param {HTMLElement} element DOM Element of the process center panel.
+ * @param {function(number)} cancelCallback Callback to becalled with the ID of
+ *     the progress item when the cancel button is clicked.
  * @constructor
  */
-var ProgressCenterPanel = function(element) {
+var ProgressCenterPanel = function(element, cancelCallback) {
   this.element_ = element;
+  this.openView_ = this.element_.querySelector('#progress-center-open-view');
+  this.closeView_ = this.element_.querySelector('#progress-center-close-view');
+  this.cancelCallback_ = cancelCallback;
+
+  /**
+   * Only progress item in the close view.
+   * @type {!HTMLElement}
+   * @private
+   */
+  this.closeViewItem_ = this.closeView_.querySelector('li');
+
   Object.freeze(this);
+
+  // Register event handlers.
+  element.addEventListener('click', this.onClick_.bind(this));
+  element.addEventListener(
+      'webkitTransitionEnd', this.onItemTransitionEnd_.bind(this));
+
 };
 
 /**
- * Replaces the contents of this panel with the items.
- * @param {Array.<ProgressCenterItem>} items Items to be added to the panel.
+ * Whether to use the new progress center UI or not.
+ * TODO(hirono): Remove the flag after replacing the old butter bar with the new
+ * progress center.
+ * @type {boolean}
+ * @private
  */
-ProgressCenterPanel.prototype.setItems = function(items) {
-  this.element_.innerText = '';
-  for (var i = 0; i < items.length; i++) {
-    this.addItem(items[i]);
+ProgressCenterPanel.ENABLED_ = false;
+
+/**
+ * Update item element.
+ * @param {HTMLElement} element Element to be updated.
+ * @param {ProgressCenterItem} item Progress center item.
+ * @private
+ */
+ProgressCenterPanel.updateItemElement_ = function(element, item) {
+  var additionalClass = item.state === ProgressItemState.COMPLETE ? 'complete' :
+                        item.state === ProgressItemState.ERROR ? 'error' :
+                        item.state === ProgressItemState.CANCELED ? 'canceled' :
+                        '';
+  if (item.cancelable)
+    additionalClass += ' cancelable';
+  var previousWidthRate =
+      parseInt(element.querySelector('.progress-track').style.width);
+  if (item.state === ProgressItemState.COMPLETE &&
+      previousWidthRate === item.progressRateByPercent) {
+    // Stop to update the message until the transition ends.
+    element.setAttribute('data-complete-message', item.message);
+    // The class pre-complete means that the actual operation is already done
+    // but the UI transition of progress bar is not complete.
+    additionalClass = 'pre-complete';
+  } else {
+    element.querySelector('label').textContent = item.message;
+    element.removeAttribute('data-complete-message');
   }
-};
-
-/**
- * Adds an item to the progress center panel.
- * @param {ProgressCenterItem} item Item to be added.
- */
-ProgressCenterPanel.prototype.addItem = function(item) {
-  this.element_.appendChild(this.createItemElement_(item));
+  // To commit the property change and to trigger the transition even if the
+  // change is done synchronously, assign the width value asynchronously.
+  setTimeout(function() {
+    var track = element.querySelector('.progress-track');
+    // When the progress rate is reverted, we does not use the transition
+    // animation. Specifying '0' overrides the CSS settings and specifying null
+    // re-enables it.
+    track.style.transitionDuration =
+        previousWidthRate > item.progressRateByPercent ? '0' : null;
+    track.style.width = item.progressRateByPercent + '%';
+  }, 0);
+  // track.style.transitionDuration = null;
+  element.setAttribute('data-progress-id', item.id);
+  element.setAttribute('data-progress-max', item.progressMax);
+  element.setAttribute('data-progress-value', item.progressValue);
+  element.className = additionalClass;
 };
 
 /**
  * Updates an item to the progress center panel.
- * @param {number} id progress item ID.
  * @param {ProgressCenterItem} item Item including new contents.
+ * @param {ProgressCenterItem} summarizedItem Item to be desplayed in the close
+ *     view.
  */
-ProgressCenterPanel.prototype.updateItem = function(id, item) {
-  var oldItemElement = this.getItemElement_(id);
-  if (!oldItemElement) {
-    console.error('Invalid progress ID.');
-    return;
-  }
-  this.element_.replaceChild(this.createElement_(item), oldItemElement);
-};
-
-/**
- * Removes an itme from the progress center panel.
- * @param {number} id progress item ID.
- */
-ProgressCenterPanel.prototype.removeItem = function(id) {
-  var itemElement = this.getItemElement_(id);
+ProgressCenterPanel.prototype.updateItem = function(item, summarizedItem) {
+  var itemElement = this.getItemElement_(item.id);
   if (!itemElement) {
-    console.error('Invalid progress ID.');
-    return;
+    itemElement = this.createNewItemElement_();
+    this.openView_.insertBefore(itemElement, this.openView_.firstNode);
   }
-  this.element_.removeChild(itemElement);
+  ProgressCenterPanel.updateItemElement_(itemElement, item);
+
+  // Update close view.
+  this.closeView_.classList.toggle('single', !summarizedItem.summarized);
+  ProgressCenterPanel.updateItemElement_(this.closeViewItem_, summarizedItem);
+
+  if (ProgressCenterPanel.ENABLED_)
+    this.element_.hidden = false;
 };
 
 /**
- * Get an item element having the specified ID.
+ * Remove all the items.
+ */
+ProgressCenterPanel.prototype.reset = function() {
+  // Clear the all compete item.
+  this.openView_.innerHTML = '';
+
+  // Hide the progress center.
+  this.element_.hidden = true;
+  this.element_.classList.remove('opened');
+};
+
+/**
+ * Gets an item element having the specified ID.
  * @param {number} id progress item ID.
  * @return {HTMLElement} Item element having the ID.
  * @private
  */
 ProgressCenterPanel.prototype.getItemElement_ = function(id) {
-  var query =
-      '.progress-center-item[data-progress-id="$ID"]'.replace('$ID', id);
-  return this.element_.querySelector(query);
+  var query = 'li[data-progress-id="$ID"]'.replace('$ID', id);
+  return this.openView_.querySelector(query);
 };
 
 /**
- * Create an item element from ProgressCenterItem object.
- * @param {ProgressCenterItem} item Progress center item.
+ * Creates an item element.
  * @return {HTMLElement} Created item element.
  * @private
  */
-ProgressCenterPanel.prototype.createItemElement_ = function(item) {
-  var itemLabel = this.element_.ownerDocument.createElement('label');
-  itemLabel.className = 'progress-center-item-label';
-  itemLabel.textContent = item.message;
+ProgressCenterPanel.prototype.createNewItemElement_ = function() {
+  var label = this.element_.ownerDocument.createElement('label');
+  label.className = 'label';
 
-  var itemProgressBar = this.element_.ownerDocument.createElement('div');
-  itemProgressBar.className = 'progress-center-item-progress-bar';
-  itemProgressBar.style.width =
-      ~~(100 * item.progressValue / item.progressMax) + '%';
+  var progressBarIndicator = this.element_.ownerDocument.createElement('div');
+  progressBarIndicator.className = 'progress-track';
 
-  var itemProgressFrame = this.element_.ownerDocument.createElement('div');
-  itemProgressFrame.className = 'progress-center-item-progress-frame';
-  itemProgressFrame.appendChild(itemProgressBar);
+  var progressBar = this.element_.ownerDocument.createElement('div');
+  progressBar.className = 'progress-bar';
+  progressBar.appendChild(progressBarIndicator);
 
-  var itemElement = this.element_.ownerDocument.createElement('div');
-  itemElement.className = 'progress-center-item';
-  itemElement.setAttribute('data-progress-id', item.id);
-  itemElement.appendChild(itemLabel);
-  itemElement.appendChild(itemProgressFrame);
+  var cancelButton = this.element_.ownerDocument.createElement('button');
+  cancelButton.className = 'cancel';
+  cancelButton.setAttribute('tabindex', '-1');
+
+  var progressFrame = this.element_.ownerDocument.createElement('div');
+  progressFrame.className = 'progress-frame';
+  progressFrame.appendChild(progressBar);
+  progressFrame.appendChild(cancelButton);
+
+  var itemElement = this.element_.ownerDocument.createElement('li');
+  itemElement.appendChild(label);
+  itemElement.appendChild(progressFrame);
 
   return itemElement;
+};
+
+/**
+ * Handles the transition end event of items.
+ * @param {Event} event Transition end event.
+ * @private
+ */
+ProgressCenterPanel.prototype.onItemTransitionEnd_ = function(event) {
+  var itemElement = event.target.parentNode.parentNode.parentNode;
+  if (itemElement.className !== 'pre-complete' ||
+      event.propertyName !== 'width')
+    return;
+  var completeMessage = itemElement.getAttribute('data-complete-message');
+  if (!completeMessage)
+    return;
+  itemElement.className = 'complete';
+  itemElement.querySelector('label').textContent = completeMessage;
+};
+
+/**
+ * Handles the click event.
+ * @param {Event} event Click event.
+ * @private
+ */
+ProgressCenterPanel.prototype.onClick_ = function(event) {
+  if (event.target.classList.contains('toggle') &&
+      !this.closeView_.classList.contains('single'))
+    this.element_.classList.toggle('opened');
+  else if ((event.target.classList.contains('toggle') &&
+            this.closeView_.classList.contains('single')) ||
+           event.target.classList.contains('cancel'))
+    this.cancelCallback_(parseInt(
+        event.target.parentNode.parentNode.getAttribute('data-progress-id')));
 };

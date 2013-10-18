@@ -42,7 +42,7 @@ class CC_EXPORT Renderer {
 
   virtual void DecideRenderPassAllocationsForFrame(
       const RenderPassList& render_passes_in_draw_order) {}
-  virtual bool HaveCachedResourcesForRenderPassId(RenderPass::Id id) const;
+  virtual bool HasAllocatedResourcesForTesting(RenderPass::Id id) const;
 
   // This passes ownership of the render passes to the renderer. It should
   // consume them, and empty the list. The parameters here may change from frame
@@ -50,7 +50,8 @@ class CC_EXPORT Renderer {
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
                          ContextProvider* offscreen_context_provider,
                          float device_scale_factor,
-                         bool allow_partial_swap) = 0;
+                         bool allow_partial_swap,
+                         bool disable_picture_quad_image_filtering) = 0;
 
   // Waits for rendering to finish.
   virtual void Finish() = 0;

@@ -64,8 +64,6 @@ bool RegisterImeAdapter(JNIEnv* env) {
                                            WebKit::WebInputEvent::ControlKey,
                                            WebKit::WebInputEvent::CapsLockOn,
                                            WebKit::WebInputEvent::NumLockOn);
-  // TODO(miguelg): remove date time related enums after
-  // https://bugs.webkit.org/show_bug.cgi?id=100935.
   Java_ImeAdapter_initializeTextInputTypes(
       env,
       ui::TEXT_INPUT_TYPE_NONE,
@@ -77,12 +75,6 @@ bool RegisterImeAdapter(JNIEnv* env) {
       ui::TEXT_INPUT_TYPE_EMAIL,
       ui::TEXT_INPUT_TYPE_TELEPHONE,
       ui::TEXT_INPUT_TYPE_NUMBER,
-      ui::TEXT_INPUT_TYPE_DATE,
-      ui::TEXT_INPUT_TYPE_DATE_TIME,
-      ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL,
-      ui::TEXT_INPUT_TYPE_MONTH,
-      ui::TEXT_INPUT_TYPE_TIME,
-      ui::TEXT_INPUT_TYPE_WEEK,
       ui::TEXT_INPUT_TYPE_CONTENT_EDITABLE);
   return true;
 }
@@ -156,16 +148,6 @@ void ImeAdapterAndroid::SetComposingText(JNIEnv* env, jobject, jstring text,
     new_cursor_pos = text16.length() + new_cursor_pos - 1;
 
   rwhi->ImeSetComposition(text16, underlines, new_cursor_pos, new_cursor_pos);
-}
-
-void ImeAdapterAndroid::ImeBatchStateChanged(JNIEnv* env,
-                                             jobject,
-                                             jboolean is_begin) {
-  RenderWidgetHostImpl* rwhi = GetRenderWidgetHostImpl();
-  if (!rwhi)
-    return;
-
-  rwhi->Send(new ViewMsg_ImeBatchStateChanged(rwhi->GetRoutingID(), is_begin));
 }
 
 void ImeAdapterAndroid::CommitText(JNIEnv* env, jobject, jstring text) {

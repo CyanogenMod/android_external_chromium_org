@@ -188,19 +188,27 @@ cr.define('login', function() {
 
     /**
      * Handles selection change.
-     * @param {cr.Event} e Selection change event.
+     * @param {Event} e Selection change event.
      * @private
      */
     handleSelect_: function(e) {
       var imageGrid = $('user-image-grid');
-      if (imageGrid.selectionType == 'camera' && imageGrid.cameraLive) {
+      $('ok-button').disabled = false;
+
+      // Camera selection
+      if (imageGrid.selectionType == 'camera') {
+        $('flip-photo').tabIndex = 0;
+
         // No current image selected.
-        $('ok-button').disabled = true;
+        if (imageGrid.cameraLive) {
+          $('ok-button').disabled = true;
+          chrome.send('selectImage',
+                      [imageGrid.selectedItemUrl,
+                       imageGrid.selectionType,
+                       !imageGrid.inProgramSelection]);
+        }
       } else {
-        $('ok-button').disabled = false;
-        chrome.send('selectImage',
-                    [imageGrid.selectedItemUrl, imageGrid.selectionType,
-                     !imageGrid.inProgramSelection]);
+        $('flip-photo').tabIndex = -1;
       }
       // Start/stop camera on (de)selection.
       if (!imageGrid.inProgramSelection &&
@@ -236,7 +244,7 @@ cr.define('login', function() {
 
     /**
      * Handle photo captured event.
-     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     * @param {Event} e Event with 'dataURL' property containing a data URL.
      */
     handlePhotoTaken_: function(e) {
       chrome.send('photoTaken', [e.dataURL]);
@@ -246,7 +254,7 @@ cr.define('login', function() {
 
     /**
      * Handle photo updated event.
-     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     * @param {Event} e Event with 'dataURL' property containing a data URL.
      */
     handlePhotoUpdated_: function(e) {
       chrome.send('photoTaken', [e.dataURL]);

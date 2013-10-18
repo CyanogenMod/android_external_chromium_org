@@ -5,8 +5,10 @@
 #ifndef CHROME_BROWSER_UI_AUTOFILL_MOCK_AUTOFILL_DIALOG_VIEW_DELEGATE_H_
 #define CHROME_BROWSER_UI_AUTOFILL_MOCK_AUTOFILL_DIALOG_VIEW_DELEGATE_H_
 
+#include "base/basictypes.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "ui/gfx/range/range.h"
 
 namespace autofill {
 
@@ -53,11 +55,11 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
                      gfx::Image(ServerFieldType, const string16&));
   MOCK_CONST_METHOD1(IconsForFields, FieldIconMap(const FieldValueMap&));
   MOCK_CONST_METHOD1(FieldControlsIcons, bool(ServerFieldType));
+  MOCK_CONST_METHOD1(TooltipForField, base::string16(ServerFieldType));
   MOCK_METHOD3(InputValidityMessage,
       string16(DialogSection, ServerFieldType, const string16&));
-  MOCK_METHOD3(InputsAreValid, ValidityData(DialogSection,
-                                            const DetailOutputMap&,
-                                            ValidationType));
+  MOCK_METHOD2(InputsAreValid, ValidityMessages(DialogSection,
+                                                const DetailOutputMap&));
   MOCK_METHOD6(UserEditedOrActivatedInput,void(DialogSection,
                                                const DetailInput*,
                                                gfx::NativeView,
@@ -67,6 +69,7 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_METHOD1(HandleKeyPressEventInInput,
                bool(const content::NativeWebKeyboardEvent& event));
   MOCK_METHOD0(FocusMoved, void());
+  MOCK_CONST_METHOD0(ShouldShowErrorBubble, bool());
   MOCK_METHOD0(ViewClosed, void());
   MOCK_METHOD0(CurrentNotifications,std::vector<DialogNotification>());
   MOCK_METHOD1(LinkClicked, void(const GURL&));
@@ -79,10 +82,13 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_METHOD0(OnAccept, bool());
   MOCK_METHOD0(profile, Profile*());
   MOCK_METHOD0(GetWebContents, content::WebContents*());
+
  private:
   DetailInputs default_inputs_;
   DetailInputs cc_default_inputs_;  // Default inputs for SECTION_CC.
   std::vector<gfx::Range> range_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockAutofillDialogViewDelegate);
 };
 
 }  // namespace autofill

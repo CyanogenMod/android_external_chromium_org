@@ -30,6 +30,7 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/net/chrome_network_data_saving_metrics.h"
+#include "chrome/browser/net/client_hints.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/load_time_stats.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
@@ -52,8 +53,8 @@
 #include "net/url_request/url_request.h"
 
 #if defined(OS_CHROMEOS)
-#include "base/chromeos/chromeos_version.h"
 #include "base/command_line.h"
+#include "base/sys_info.h"
 #include "chrome/common/chrome_switches.h"
 #endif
 
@@ -334,6 +335,11 @@ void ChromeNetworkDelegate::set_predictor(
       new chrome_browser_net::ConnectInterceptor(predictor));
 }
 
+void ChromeNetworkDelegate::SetEnableClientHints() {
+  client_hints_.reset(new ClientHints());
+  client_hints_->Init();
+}
+
 // static
 void ChromeNetworkDelegate::NeverThrottleRequests() {
   g_never_throttle_requests_ = true;
@@ -417,6 +423,12 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
     request->SetReferrer(std::string());
   if (enable_do_not_track_ && enable_do_not_track_->GetValue())
     request->SetExtraRequestHeaderByName(kDNTHeader, "1", true /* override */);
+
+  if (client_hints_) {
+    request->SetExtraRequestHeaderByName(
+        ClientHints::kDevicePixelRatioHeader,
+        client_hints_->GetDevicePixelRatioHeader(), true);
+  }
 
   bool force_safe_search = force_google_safe_search_ &&
                            force_google_safe_search_->GetValue();
@@ -641,7 +653,7 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
 #if defined(OS_CHROMEOS)
   // If we're running Chrome for ChromeOS on Linux, we want to allow file
   // access.
-  if (!base::chromeos::IsRunningOnChromeOS() ||
+  if (!base::SysInfo::IsRunningOnChromeOS() ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
     return true;
   }

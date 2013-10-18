@@ -5,9 +5,9 @@
 #include "chrome/browser/extensions/api/app_window/app_window_api.h"
 
 #include "apps/app_window_contents.h"
-#include "apps/native_app_window.h"
 #include "apps/shell_window.h"
 #include "apps/shell_window_registry.h"
+#include "apps/ui/native_app_window.h"
 #include "base/command_line.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -93,6 +93,7 @@ void SetCreateResultFromShellWindow(ShellWindow* window,
   result->SetBoolean("fullscreen", window->GetBaseWindow()->IsFullscreen());
   result->SetBoolean("minimized", window->GetBaseWindow()->IsMinimized());
   result->SetBoolean("maximized", window->GetBaseWindow()->IsMaximized());
+  result->SetBoolean("alwaysOnTop", window->GetBaseWindow()->IsAlwaysOnTop());
   base::DictionaryValue* boundsValue = new base::DictionaryValue();
   gfx::Rect bounds = window->GetClientBounds();
   boundsValue->SetInteger("left", bounds.x());
@@ -132,11 +133,6 @@ bool AppWindowCreateFunction::RunImpl() {
   // with a hack in AppWindowCustomBindings::GetView().
   ShellWindow::CreateParams create_params;
   app_window::CreateWindowOptions* options = params->options.get();
-#if defined(USE_ASH)
-  bool force_maximize = ash::Shell::IsForcedMaximizeMode();
-#else
-  bool force_maximize = false;
-#endif
   if (options) {
     if (options->id.get()) {
       // TODO(mek): use URL if no id specified?
@@ -215,8 +211,9 @@ bool AppWindowCreateFunction::RunImpl() {
 
     if (options->frame.get()) {
       if (*options->frame == kHtmlFrameOption &&
-          CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableExperimentalExtensionApis)) {
+          (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
+           CommandLine::ForCurrentProcess()->HasSwitch(
+               switches::kEnableExperimentalExtensionApis))) {
         create_params.frame = ShellWindow::FRAME_NONE;
         inject_html_titlebar = true;
       } else if (*options->frame == kNoneFrameOption) {
@@ -227,8 +224,9 @@ bool AppWindowCreateFunction::RunImpl() {
     }
 
     if (options->transparent_background.get() &&
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableExperimentalExtensionApis)) {
+        (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kEnableExperimentalExtensionApis))) {
       create_params.transparent_background = *options->transparent_background;
     }
 
@@ -249,6 +247,11 @@ bool AppWindowCreateFunction::RunImpl() {
     if (options->resizable.get())
       create_params.resizable = *options->resizable.get();
 
+    if (GetCurrentChannel() <= chrome::VersionInfo::CHANNEL_DEV &&
+        options->always_on_top.get()) {
+      create_params.always_on_top = *options->always_on_top.get();
+    }
+
     if (options->type != extensions::api::app_window::WINDOW_TYPE_PANEL) {
       switch (options->state) {
         case extensions::api::app_window::STATE_NONE:
@@ -264,34 +267,11 @@ bool AppWindowCreateFunction::RunImpl() {
           create_params.state = ui::SHOW_STATE_MINIMIZED;
           break;
       }
-    } else {
-      force_maximize = false;
     }
   }
 
   create_params.creator_process_id =
       render_view_host_->GetProcess()->GetID();
-
-  // Rather then maximizing the window after it was created, we maximize it
-  // immediately - that way the initial presentation is much smoother (no odd
-  // rectangles are shown temporarily in the added space). Note that suppressing
-  // animations does not help to remove the shown artifacts.
-#if USE_ASH
-  if (force_maximize && !create_params.maximum_size.IsEmpty()) {
-    // Check that the application is able to fill the monitor - if not don't
-    // maximize.
-    // TODO(skuhne): In case of multi monitor usage we should find out in
-    // advance on which monitor the window will be displayed (or be happy with
-    // a temporary bad frame upon creation).
-    gfx::Size size = ash::Shell::GetPrimaryRootWindow()->bounds().size();
-    if (size.width() > create_params.maximum_size.width() ||
-        size.height() > create_params.maximum_size.height())
-      force_maximize = false;
-  }
- #endif
-
-  if (force_maximize)
-    create_params.state = ui::SHOW_STATE_MAXIMIZED;
 
   ShellWindow* shell_window = new ShellWindow(profile(),
                                               new ChromeShellWindowDelegate(),

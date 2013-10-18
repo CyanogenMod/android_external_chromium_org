@@ -212,6 +212,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       'showStatusError',
       'showTutorialPage',
       'showUsernamePage',
+      'showPage',
       'setDefaultImages',
       'setCameraPresent',
     ],
@@ -491,7 +492,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       var managerId = selectedPod.user.username;
       var managerDisplayId = selectedPod.user.emailAddress;
       var managerPassword = selectedPod.passwordElement.value;
-      if (managerPassword.empty)
+      if (managerPassword.length == 0)
         return;
       if (this.disabled)
         return;
@@ -663,6 +664,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
       selectedPod.showPasswordError();
       selectedPod.passwordElement.value = '';
       selectedPod.focusInput();
+      this.updateNextButtonForManager_();
     },
 
     /**
@@ -725,7 +727,10 @@ login.createScreen('LocallyManagedUserCreationScreen',
         this.getScreenElement('image-grid').redraw();
         this.updateNextButtonForUser_();
         this.getScreenElement('name').focus();
+      } else {
+        this.getScreenElement('image-grid').stopCamera();
       }
+      chrome.send('currentSupervisedUserPage', [this.currentPage_]);
     },
 
     setButtonDisabledStatus: function(buttonName, status) {
@@ -926,6 +931,10 @@ login.createScreen('LocallyManagedUserCreationScreen',
       this.setVisiblePage_('created');
     },
 
+    showPage: function(page) {
+      this.setVisiblePage_(page);
+    },
+
     showErrorPage: function(errorTitle, errorText, errorButtonText) {
       this.disabled = false;
       $('managed-user-creation-error-title').innerHTML = errorTitle;
@@ -964,7 +973,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
 
     /**
      * Handles selection change.
-     * @param {cr.Event} e Selection change event.
+     * @param {Event} e Selection change event.
      * @private
      */
     handleSelect_: function(e) {
@@ -1003,7 +1012,7 @@ login.createScreen('LocallyManagedUserCreationScreen',
 
     /**
      * Handle photo updated event.
-     * @param {cr.Event} e Event with 'dataURL' property containing a data URL.
+     * @param {Event} e Event with 'dataURL' property containing a data URL.
      */
     handlePhotoUpdated_: function(e) {
       chrome.send('supervisedUserPhotoTaken', [e.dataURL]);

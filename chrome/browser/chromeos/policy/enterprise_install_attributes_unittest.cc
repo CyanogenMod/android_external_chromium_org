@@ -10,12 +10,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "chrome/browser/policy/proto/chromeos/install_attributes.pb.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
-#include "chromeos/dbus/cryptohome_client_stub.h"
+#include "chromeos/cryptohome/cryptohome_util.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_cryptohome_client.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace policy {
+
+namespace cryptohome_util = chromeos::cryptohome_util;
 
 namespace {
 
@@ -36,14 +39,18 @@ static const char kTestDeviceId[] = "133750519";
 class EnterpriseInstallAttributesTest : public testing::Test {
  protected:
   EnterpriseInstallAttributesTest()
-      : cryptohome_(chromeos::CryptohomeLibrary::GetTestImpl()),
-        stub_cryptohome_client_(new chromeos::CryptohomeClientStubImpl()),
-        install_attributes_(cryptohome_.get(), stub_cryptohome_client_.get()) {
-    stub_cryptohome_client_->Init(NULL /* no dbus::Bus */);
+      : fake_cryptohome_client_(new chromeos::FakeCryptohomeClient()),
+        install_attributes_(fake_cryptohome_client_.get()) {
+    fake_cryptohome_client_->Init(NULL /* no dbus::Bus */);
   }
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+    chromeos::DBusThreadManager::InitializeWithStub();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    chromeos::DBusThreadManager::Shutdown();
   }
 
   base::FilePath GetTempPath() const {
@@ -62,8 +69,7 @@ class EnterpriseInstallAttributesTest : public testing::Test {
 
   base::MessageLoopForUI message_loop_;
   base::ScopedTempDir temp_dir_;
-  scoped_ptr<chromeos::CryptohomeLibrary> cryptohome_;
-  scoped_ptr<chromeos::CryptohomeClientStubImpl> stub_cryptohome_client_;
+  scoped_ptr<chromeos::FakeCryptohomeClient> fake_cryptohome_client_;
   EnterpriseInstallAttributes install_attributes_;
 
   EnterpriseInstallAttributes::LockResult LockDeviceAndWaitForResult(
@@ -175,12 +181,12 @@ TEST_F(EnterpriseInstallAttributesTest, ConsumerDevice) {
   install_attributes_.ReadCacheFile(GetTempPath());
   EXPECT_EQ(DEVICE_MODE_PENDING, install_attributes_.GetMode());
   // Lock the attributes empty.
-  ASSERT_TRUE(cryptohome_->InstallAttributesFinalize());
+  ASSERT_TRUE(cryptohome_util::InstallAttributesFinalize());
   base::RunLoop loop;
   install_attributes_.ReadImmutableAttributes(base::Bind(loop.QuitClosure()));
   loop.Run();
 
-  ASSERT_FALSE(cryptohome_->InstallAttributesIsFirstInstall());
+  ASSERT_FALSE(cryptohome_util::InstallAttributesIsFirstInstall());
   EXPECT_EQ(DEVICE_MODE_CONSUMER, install_attributes_.GetMode());
 }
 
@@ -194,7 +200,7 @@ TEST_F(EnterpriseInstallAttributesTest, ConsumerKioskDevice) {
                 DEVICE_MODE_CONSUMER_KIOSK,
                 std::string()));
 
-  ASSERT_FALSE(cryptohome_->InstallAttributesIsFirstInstall());
+  ASSERT_FALSE(cryptohome_util::InstallAttributesIsFirstInstall());
   EXPECT_EQ(DEVICE_MODE_CONSUMER_KIOSK, install_attributes_.GetMode());
   ASSERT_TRUE(install_attributes_.IsConsumerKioskDevice());
 }
@@ -203,16 +209,16 @@ TEST_F(EnterpriseInstallAttributesTest, DeviceLockedFromOlderVersion) {
   install_attributes_.ReadCacheFile(GetTempPath());
   EXPECT_EQ(DEVICE_MODE_PENDING, install_attributes_.GetMode());
   // Lock the attributes as if it was done from older Chrome version.
-  ASSERT_TRUE(cryptohome_->InstallAttributesSet(
+  ASSERT_TRUE(cryptohome_util::InstallAttributesSet(
       EnterpriseInstallAttributes::kAttrEnterpriseOwned, "true"));
-  ASSERT_TRUE(cryptohome_->InstallAttributesSet(
+  ASSERT_TRUE(cryptohome_util::InstallAttributesSet(
       EnterpriseInstallAttributes::kAttrEnterpriseUser, kTestUser));
-  ASSERT_TRUE(cryptohome_->InstallAttributesFinalize());
+  ASSERT_TRUE(cryptohome_util::InstallAttributesFinalize());
   base::RunLoop loop;
   install_attributes_.ReadImmutableAttributes(base::Bind(loop.QuitClosure()));
   loop.Run();
 
-  ASSERT_FALSE(cryptohome_->InstallAttributesIsFirstInstall());
+  ASSERT_FALSE(cryptohome_util::InstallAttributesIsFirstInstall());
   EXPECT_EQ(DEVICE_MODE_ENTERPRISE, install_attributes_.GetMode());
   EXPECT_EQ(kTestDomain, install_attributes_.GetDomain());
   EXPECT_EQ(kTestUser, install_attributes_.GetRegistrationUser());

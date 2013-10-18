@@ -8,15 +8,15 @@
  * TODO(mtomasz): Rewrite the entire audio player.
  *
  * @param {HTMLElement} container Container element.
- * @param {VolumeManager} volumeManager VolumeManager of the system.
  * @constructor
  */
-function AudioPlayer(container, volumeManager) {
+function AudioPlayer(container) {
   this.container_ = container;
   this.metadataCache_ = MetadataCache.createFull();
   this.currentTrack_ = -1;
   this.playlistGeneration_ = 0;
-  this.volumeManager_ = volumeManager;
+  this.volumeManager_ = new VolumeManagerWrapper(
+      VolumeManagerWrapper.DriveEnabledStatus.DRIVE_ENABLED);
 
   this.container_.classList.add('collapsed');
 
@@ -70,11 +70,9 @@ AudioPlayer.load = function() {
   // on downsampling by ash.
   chrome.app.window.current().setIcon('images/media/2x/audio_player.png');
 
-  VolumeManager.getInstance(function(volumeManager) {
-    AudioPlayer.instance =
-        new AudioPlayer(document.querySelector('.audio-player'), volumeManager);
-    reload();
-  });
+  AudioPlayer.instance =
+      new AudioPlayer(document.querySelector('.audio-player'));
+  reload();
 };
 
 util.addPageLoadHandler(AudioPlayer.load);
@@ -83,7 +81,8 @@ util.addPageLoadHandler(AudioPlayer.load);
  * Unload the player.
  */
 function unload() {
-  AudioPlayer.instance.audioControls_.cleanup();
+  if (AudioPlayer.instance)
+    AudioPlayer.instance.onUnload();
 }
 
 /**
@@ -182,6 +181,14 @@ AudioPlayer.prototype.onExternallyUnmounted_ = function(event) {
     return;
   if (this.selectedItemFilesystemPath_.indexOf(event.mountPath) == 0)
     close();
+};
+
+/**
+ * Called on window is being unloaded.
+ */
+AudioPlayer.prototype.onUnload = function() {
+  this.audioControls_.cleanup();
+  this.volumeManager_.dispose();
 };
 
 /**

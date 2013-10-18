@@ -70,7 +70,6 @@ class DevToolsAdbBridge
 
    private:
     friend struct DefaultSingletonTraits<Factory>;
-    friend class DevToolsAdbBridge;
 
     Factory();
     virtual ~Factory();
@@ -82,10 +81,11 @@ class DevToolsAdbBridge
   };
 
   class AndroidDevice;
+  class RefCountedAdbThread;
 
   class RemotePage : public base::RefCounted<RemotePage> {
    public:
-    RemotePage(scoped_refptr<DevToolsAdbBridge> bridge,
+    RemotePage(scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
                scoped_refptr<AndroidDevice> device,
                const std::string& socket,
                const base::DictionaryValue& value);
@@ -96,6 +96,8 @@ class DevToolsAdbBridge
     std::string description() { return description_; }
     std::string favicon_url() { return favicon_url_; }
     bool attached() { return debug_url_.empty(); }
+
+    bool HasDevToolsWindow();
 
     void Inspect(Profile* profile);
     void Activate();
@@ -116,7 +118,7 @@ class DevToolsAdbBridge
 
     void InspectOnUIThread(Profile* profile);
 
-    scoped_refptr<DevToolsAdbBridge> bridge_;
+    scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread_;
     scoped_refptr<AndroidDevice> device_;
     std::string socket_;
     std::string id_;
@@ -126,6 +128,7 @@ class DevToolsAdbBridge
     std::string favicon_url_;
     std::string debug_url_;
     std::string frontend_url_;
+    std::string agent_id_;
     DISALLOW_COPY_AND_ASSIGN(RemotePage);
   };
 
@@ -133,9 +136,10 @@ class DevToolsAdbBridge
 
   class RemoteBrowser : public base::RefCounted<RemoteBrowser> {
    public:
-    RemoteBrowser(scoped_refptr<DevToolsAdbBridge> bridge,
-                  scoped_refptr<AndroidDevice> device,
-                  const std::string& socket);
+    RemoteBrowser(
+        scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
+        scoped_refptr<AndroidDevice> device,
+        const std::string& socket);
 
     scoped_refptr<AndroidDevice> device() { return device_; }
     std::string socket() { return socket_; }
@@ -164,7 +168,7 @@ class DevToolsAdbBridge
     void PageCreatedOnUIThread(
         const std::string& response, const std::string& url);
 
-    scoped_refptr<DevToolsAdbBridge> bridge_;
+    scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread_;
     scoped_refptr<AndroidDevice> device_;
     const std::string socket_;
     std::string product_;
@@ -180,26 +184,22 @@ class DevToolsAdbBridge
 
   class RemoteDevice : public base::RefCounted<RemoteDevice> {
    public:
-    explicit RemoteDevice(scoped_refptr<DevToolsAdbBridge> bridge,
-                          scoped_refptr<AndroidDevice> device);
+    explicit RemoteDevice(scoped_refptr<AndroidDevice> device);
+
+    std::string GetSerial();
+    std::string GetModel();
+    bool IsConnected();
+    void AddBrowser(scoped_refptr<RemoteBrowser> browser);
 
     scoped_refptr<AndroidDevice> device() { return device_; }
-    std::string serial() { return device_->serial(); }
-    std::string model() { return device_->model(); }
-
     RemoteBrowsers& browsers() { return browsers_; }
-    void AddBrowser(scoped_refptr<RemoteBrowser> browser) {
-      browsers_.push_back(browser);
-    }
-
-    gfx::Size GetScreenSize() { return screen_size_; }
-    void SetScreenSize(const gfx::Size& size) { screen_size_ = size; }
+    gfx::Size screen_size() { return screen_size_; }
+    void set_screen_size(const gfx::Size& size) { screen_size_ = size; }
 
    private:
     friend class base::RefCounted<RemoteDevice>;
     virtual ~RemoteDevice();
 
-    scoped_refptr<DevToolsAdbBridge> bridge_;
     scoped_refptr<AndroidDevice> device_;
     RemoteBrowsers browsers_;
     gfx::Size screen_size_;
@@ -217,6 +217,7 @@ class DevToolsAdbBridge
                             const CommandCallback& callback) = 0;
     virtual void OpenSocket(const std::string& socket_name,
                             const SocketCallback& callback) = 0;
+    virtual bool IsConnected() = 0;
     void HttpQuery(const std::string& la_name,
                    const std::string& request,
                    const CommandCallback& callback);
@@ -259,22 +260,9 @@ class DevToolsAdbBridge
     virtual ~Listener() {}
   };
 
-  explicit DevToolsAdbBridge(Profile* profile);
-
-  void AddListener(Listener* listener);
-  void RemoveListener(Listener* listener);
-
-  base::MessageLoop* GetAdbMessageLoop();
-
- private:
-  friend struct content::BrowserThread::DeleteOnThread<
-      content::BrowserThread::UI>;
-  friend class base::DeleteHelper<DevToolsAdbBridge>;
-
   class RefCountedAdbThread : public base::RefCounted<RefCountedAdbThread> {
    public:
     static scoped_refptr<RefCountedAdbThread> GetInstance();
-    RefCountedAdbThread();
     base::MessageLoop* message_loop();
 
    private:
@@ -282,9 +270,23 @@ class DevToolsAdbBridge
     static DevToolsAdbBridge::RefCountedAdbThread* instance_;
     static void StopThread(base::Thread* thread);
 
+    RefCountedAdbThread();
     virtual ~RefCountedAdbThread();
     base::Thread* thread_;
   };
+
+  explicit DevToolsAdbBridge(Profile* profile);
+  void AddListener(Listener* listener);
+  void RemoveListener(Listener* listener);
+  void CountDevices(const base::Callback<void(int)>& callback);
+  void set_discover_usb_devices(bool enabled) {
+    discover_usb_devices_ = enabled;
+  }
+
+ private:
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<DevToolsAdbBridge>;
 
   virtual ~DevToolsAdbBridge();
 
@@ -297,6 +299,7 @@ class DevToolsAdbBridge
   scoped_ptr<crypto::RSAPrivateKey> rsa_key_;
   typedef std::vector<Listener*> Listeners;
   Listeners listeners_;
+  bool discover_usb_devices_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsAdbBridge);
 };
 

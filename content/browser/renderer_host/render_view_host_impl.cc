@@ -28,6 +28,7 @@
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/common/accessibility_messages.h"
@@ -67,7 +68,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/selected_file_info.h"
-#include "ui/snapshot/snapshot.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 
 #if defined(OS_MACOSX)
@@ -184,7 +184,8 @@ RenderViewHostImpl::RenderViewHostImpl(
     main_frame_routing_id = GetProcess()->GetNextRoutingID();
 
   main_render_frame_host_.reset(
-      new RenderFrameHostImpl(this, main_frame_routing_id, is_swapped_out_));
+      new RenderFrameHostImpl(this, delegate_->GetFrameTree(),
+                              main_frame_routing_id, is_swapped_out_));
 
   GetProcess()->EnableSendQueue();
 
@@ -255,7 +256,7 @@ bool RenderViewHostImpl::CreateRenderView(
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
   params.web_preferences = delegate_->GetWebkitPrefs();
   params.view_id = GetRoutingID();
-  params.main_frame_routing_id = main_render_frame_host_->routing_id();
+  params.main_frame_routing_id = main_render_frame_host()->routing_id();
   params.surface_id = surface_id();
   params.session_storage_namespace_id =
       delegate_->GetSessionStorageNamespace(instance_)->id();
@@ -576,6 +577,10 @@ void RenderViewHostImpl::ActivateNearestFindResult(int request_id,
 void RenderViewHostImpl::RequestFindMatchRects(int current_version) {
   Send(new ViewMsg_FindMatchRects(GetRoutingID(), current_version));
 }
+
+void RenderViewHostImpl::DisableFullscreenEncryptedMediaPlayback() {
+  media_player_manager_->DisableFullscreenEncryptedMediaPlayback();
+}
 #endif
 
 void RenderViewHostImpl::DragTargetDragEnter(
@@ -625,12 +630,8 @@ void RenderViewHostImpl::DragTargetDragEnter(
     // directories, but dragging a file would cause the read/write access to be
     // overwritten with read-only access, making them impossible to delete or
     // rename until the renderer was killed.
-    if (!policy->CanReadFile(renderer_id, path)) {
+    if (!policy->CanReadFile(renderer_id, path))
       policy->GrantReadFile(renderer_id, path);
-      // Allow dragged directories to be enumerated by the child process.
-      // Note that we can't tell a file from a directory at this point.
-      policy->GrantReadDirectory(renderer_id, path);
-    }
   }
 
   fileapi::IsolatedContext* isolated_context =
@@ -991,7 +992,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnSelectionBoundsChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ScriptEvalResponse, OnScriptEvalResponse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidZoomURL, OnDidZoomURL)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetWindowSnapshot, OnGetWindowSnapshot)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
@@ -1992,29 +1992,6 @@ void RenderViewHostImpl::OnDomOperationResponse(
       Details<DomOperationNotificationDetails>(&details));
 }
 
-void RenderViewHostImpl::OnGetWindowSnapshot(const int snapshot_id) {
-  std::vector<unsigned char> png;
-
-  // This feature is behind the kEnableGpuBenchmarking command line switch
-  // because it poses security concerns and should only be used for testing.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kEnableGpuBenchmarking)) {
-    gfx::Rect view_bounds = GetView()->GetViewBounds();
-    gfx::Rect snapshot_bounds(view_bounds.size());
-    gfx::Size snapshot_size = snapshot_bounds.size();
-
-    if (ui::GrabViewSnapshot(GetView()->GetNativeView(),
-                             &png, snapshot_bounds)) {
-      Send(new ViewMsg_WindowSnapshotCompleted(
-          GetRoutingID(), snapshot_id, snapshot_size, png));
-      return;
-    }
-  }
-
-  Send(new ViewMsg_WindowSnapshotCompleted(
-      GetRoutingID(), snapshot_id, gfx::Size(), png));
-}
-
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderViewHostImpl::OnShowPopup(
     const ViewHostMsg_ShowPopup_Params& params) {
@@ -2030,11 +2007,6 @@ void RenderViewHostImpl::OnShowPopup(
   }
 }
 #endif
-
-RenderFrameHostImpl* RenderViewHostImpl::main_render_frame_host() const {
-  DCHECK_EQ(GetProcess(), main_render_frame_host_->GetProcess());
-  return main_render_frame_host_.get();
-}
 
 void RenderViewHostImpl::SetSwappedOut(bool is_swapped_out) {
   // We update the number of RenderViews in a SiteInstance when the
@@ -2066,6 +2038,15 @@ bool RenderViewHostImpl::CanAccessFilesOfPageState(
       return false;
   }
   return true;
+}
+
+void RenderViewHostImpl::AttachToFrameTree() {
+  FrameTree* frame_tree = delegate_->GetFrameTree();
+
+  frame_tree->SwapMainFrame(main_render_frame_host_.get());
+  if (main_frame_id() != FrameTreeNode::kInvalidFrameId) {
+    frame_tree->OnFirstNavigationAfterSwap(main_frame_id());
+  }
 }
 
 }  // namespace content

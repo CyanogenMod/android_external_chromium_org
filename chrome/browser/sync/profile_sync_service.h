@@ -299,6 +299,12 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // with this profile.
   virtual ScopedVector<browser_sync::DeviceInfo> GetAllSignedInDevices() const;
 
+  // Gets the partnership guid for the local device. Can be used by other
+  // layers to distinguish sync data that belongs to the local device vs
+  // data that belong to remote devices. Returns null if sync is not
+  // initialized.
+  virtual std::string GetLocalDeviceGUID() const;
+
   // Notifies the observer of any device info changes.
   virtual void AddObserverForDeviceInfoChange(
       browser_sync::SyncedDeviceTracker::Observer* observer);
@@ -350,9 +356,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // DataTypeEncryptionHandler implementation.
   virtual bool IsPassphraseRequired() const OVERRIDE;
   virtual syncer::ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
-
-  // Update the last auth error and notify observers of error state.
-  void UpdateAuthErrorState(const GoogleServiceAuthError& error);
 
   // Called when a user chooses which data types to sync as part of the sync
   // setup wizard.  |sync_everything| represents whether they chose the
@@ -452,6 +455,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   virtual bool IsManaged() const;
 
   // SigninGlobalError::AuthStatusProvider implementation.
+  virtual std::string GetAccountId() const OVERRIDE;
   virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
 
   // syncer::UnrecoverableErrorHandler implementation.
@@ -720,6 +724,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   friend class TestProfileSyncService;
   FRIEND_TEST_ALL_PREFIXES(ProfileSyncServiceTest, InitialState);
 
+  // Update the last auth error and notify observers of error state.
+  void UpdateAuthErrorState(const GoogleServiceAuthError& error);
+
   // Detects and attempts to recover from a previous improper datatype
   // configuration where Keep Everything Synced and the preferred types were
   // not correctly set.
@@ -886,8 +893,6 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   content::NotificationRegistrar registrar_;
 
-  base::WeakPtrFactory<ProfileSyncService> weak_factory_;
-
   // This allows us to gracefully handle an ABORTED return code from the
   // DataTypeManager in the event that the server informed us to cease and
   // desist syncing immediately.
@@ -970,6 +975,8 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // access token with exponential backoff.
   base::OneShotTimer<ProfileSyncService> request_access_token_retry_timer_;
   net::BackoffEntry request_access_token_backoff_;
+
+  base::WeakPtrFactory<ProfileSyncService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

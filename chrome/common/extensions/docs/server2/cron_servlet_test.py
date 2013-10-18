@@ -9,7 +9,7 @@ from appengine_wrappers import GetAppVersion
 from app_yaml_helper import AppYamlHelper
 from cron_servlet import CronServlet
 from empty_dir_file_system import EmptyDirFileSystem
-from host_file_system_creator import HostFileSystemCreator
+from host_file_system_provider import HostFileSystemProvider
 from local_file_system import LocalFileSystem
 from mock_file_system import MockFileSystem
 from servlet import Request
@@ -30,12 +30,15 @@ class _TestDelegate(CronServlet.Delegate):
   def CreateBranchUtility(self, object_store_creator):
     return TestBranchUtility.CreateWithCannedData()
 
-  def CreateHostFileSystemCreator(self, object_store_creator):
+  def CreateHostFileSystemProvider(self,
+                                  object_store_creator,
+                                  max_trunk_revision=None):
     def constructor(branch=None, revision=None):
       file_system = self._create_file_system(revision)
       self.file_systems.append(file_system)
       return file_system
-    return HostFileSystemCreator(object_store_creator,
+    return HostFileSystemProvider(object_store_creator,
+                                 max_trunk_revision=max_trunk_revision,
                                  constructor_for_test=constructor)
 
   def CreateAppSamplesFileSystem(self, object_store_creator):
@@ -135,7 +138,9 @@ class CronServletTest(unittest.TestCase):
       to it.
       '''
       mock_file_system = MockFileSystem(TestFileSystem(test_data))
-      for update in updates[:revision]:
+      updates_for_revision = (
+          updates if revision is None else updates[:int(revision)])
+      for update in updates_for_revision:
         mock_file_system.Update(update)
       return mock_file_system
 
@@ -147,9 +152,9 @@ class CronServletTest(unittest.TestCase):
     # No updates applied yet.
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('storage.html contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Apply updates to storage.html.
     updates.append(storage_html_update('interim contents'))
@@ -157,9 +162,9 @@ class CronServletTest(unittest.TestCase):
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('new contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Apply several updates to storage.html and app.yaml. The file system
     # should be pinned at the version before app.yaml changed.
@@ -173,49 +178,49 @@ class CronServletTest(unittest.TestCase):
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Further pushes to storage.html will keep it pinned.
     updates.append(storage_html_update('y u not update!'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # Likewise app.yaml.
     updates.append(app_yaml_update('2-1-0'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
 
     # And updates to other content won't happen either.
     updates.append(static_txt_update('important content!'))
 
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-0-8'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('stuck here contents',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
     self.assertEqual('static.txt contents',
-                     file_systems[-1].ReadSingle(static_txt_path))
+                     file_systems[-1].ReadSingle(static_txt_path).Get())
 
     # Lastly - when the app version changes, everything should no longer be
     # pinned.
     delegate.SetAppVersion('2-1-0')
     CronServlet(Request.ForTest('trunk'), delegate_for_test=delegate).Get()
     self.assertEqual(AppYamlHelper.GenerateAppYaml('2-1-0'),
-                     file_systems[-1].ReadSingle(app_yaml_path))
+                     file_systems[-1].ReadSingle(app_yaml_path).Get())
     self.assertEqual('y u not update!',
-                     file_systems[-1].ReadSingle(storage_html_path))
+                     file_systems[-1].ReadSingle(storage_html_path).Get())
     self.assertEqual('important content!',
-                     file_systems[-1].ReadSingle(static_txt_path))
+                     file_systems[-1].ReadSingle(static_txt_path).Get())
 
 if __name__ == '__main__':
   unittest.main()

@@ -122,8 +122,10 @@ const uint32 kRemotingViewerPluginPermissions = ppapi::PERMISSION_PRIVATE |
                                                 ppapi::PERMISSION_DEV;
 #endif  // defined(ENABLE_REMOTING)
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
 const char kInterposeLibraryPath[] =
     "@executable_path/../../../libplugin_carbon_interpose.dylib";
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 // Appends the known built-in plugins to the given vector. Some built-in
 // plugins are "internal" which means they are compiled into the Chrome binary,
@@ -302,7 +304,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
   info.is_out_of_process = true;
   info.name = kRemotingViewerPluginName;
   info.description = kRemotingViewerPluginDescription;
-  info.path = base::FilePath(
+  info.path = base::FilePath::FromUTF8Unsafe(
       chrome::ChromeContentClient::kRemotingViewerPluginPath);
   content::WebPluginMimeType remoting_mime_type(
       kRemotingViewerPluginMimeType,
@@ -431,11 +433,11 @@ void ChromeContentClient::SetGpuInfo(const gpu::GPUInfo& gpu_info) {
       gpu_info.pixel_shader_version);
   base::debug::SetCrashKeyValue(crash_keys::kGPUVertexShaderVersion,
       gpu_info.vertex_shader_version);
-#if defined(OS_LINUX)
+#if defined(OS_MACOSX)
+  base::debug::SetCrashKeyValue(crash_keys::kGPUGLVersion, gpu_info.gl_version);
+#elif defined(OS_POSIX)
   base::debug::SetCrashKeyValue(crash_keys::kGPUVendor, gpu_info.gl_vendor);
   base::debug::SetCrashKeyValue(crash_keys::kGPURenderer, gpu_info.gl_renderer);
-#elif defined(OS_MACOSX)
-  base::debug::SetCrashKeyValue(crash_keys::kGPUGLVersion, gpu_info.gl_version);
 #endif
 }
 

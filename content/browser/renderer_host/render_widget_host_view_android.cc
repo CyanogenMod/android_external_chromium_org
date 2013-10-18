@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
+#include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_renderer_layer.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/texture_layer.h"
@@ -33,7 +34,6 @@
 #include "content/browser/renderer_host/generic_touch_gesture_android.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/surface_texture_transport_client_android.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/input_messages.h"
@@ -100,6 +100,11 @@ void CopyFromCompositingSurfaceFinished(
   callback.Run(result, *bitmap);
 }
 
+bool UsingDelegatedRenderer() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableDelegatedRenderer);
+}
+
 }  // anonymous namespace
 
 RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
@@ -116,22 +121,10 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       weak_ptr_factory_(this),
       overscroll_effect_enabled_(true),
       flush_input_requested_(false) {
-  if (CompositorImpl::UsesDirectGL()) {
-    surface_texture_transport_.reset(new SurfaceTextureTransportClient());
-    layer_ = surface_texture_transport_->Initialize();
-    layer_->SetIsDrawable(true);
-  } else {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableDelegatedRenderer)) {
-      delegated_renderer_layer_ = cc::DelegatedRendererLayer::Create(this);
-      layer_ = delegated_renderer_layer_;
-    } else {
-      texture_layer_ = cc::TextureLayer::Create(this);
-      layer_ = texture_layer_;
-    }
+  if (!UsingDelegatedRenderer()) {
+    texture_layer_ = cc::TextureLayer::Create(this);
+    layer_ = texture_layer_;
   }
-
-  layer_->SetContentsOpaque(true);
 
   overscroll_effect_enabled_ = !CommandLine::ForCurrentProcess()->
       HasSwitch(switches::kDisableOverscrollEdgeEffect);
@@ -166,8 +159,6 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
     const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostViewAndroid, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ImeBatchStateChanged_ACK,
-                        OnProcessImeBatchStateAck)
     IPC_MESSAGE_HANDLER(ViewHostMsg_StartContentIntent, OnStartContentIntent)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidChangeBodyBackgroundColor,
                         OnDidChangeBodyBackgroundColor)
@@ -218,10 +209,6 @@ void RenderWidgetHostViewAndroid::WasHidden() {
 }
 
 void RenderWidgetHostViewAndroid::WasResized() {
-  if (surface_texture_transport_.get() && content_view_core_)
-    surface_texture_transport_->SetSize(
-        content_view_core_->GetPhysicalBackingSize());
-
   host_->WasResized();
 }
 
@@ -296,9 +283,20 @@ bool RenderWidgetHostViewAndroid::PopulateBitmapWithContents(jobject jbitmap) {
 }
 
 bool RenderWidgetHostViewAndroid::HasValidFrame() const {
-  return texture_id_in_layer_ != 0 &&
-      content_view_core_ &&
-      !texture_size_in_layer_.IsEmpty();
+  if (!content_view_core_)
+    return false;
+  if (texture_size_in_layer_.IsEmpty())
+    return false;
+
+  if (UsingDelegatedRenderer()) {
+    if (!delegated_renderer_layer_.get())
+      return false;
+  } else {
+    if (texture_id_in_layer_ == 0)
+      return false;
+  }
+
+  return true;
 }
 
 gfx::NativeView RenderWidgetHostViewAndroid::GetNativeView() const {
@@ -440,12 +438,7 @@ void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
       static_cast<int>(params.type),
       params.value, params.selection_start, params.selection_end,
       params.composition_start, params.composition_end,
-      params.show_ime_if_needed);
-}
-
-void RenderWidgetHostViewAndroid::OnProcessImeBatchStateAck(bool is_begin) {
-  if (content_view_core_)
-    content_view_core_->ProcessImeBatchStateAck(is_begin);
+      params.show_ime_if_needed, params.require_ack);
 }
 
 void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
@@ -656,25 +649,72 @@ void RenderWidgetHostViewAndroid::OnAcceleratedCompositingStateChange() {
 void RenderWidgetHostViewAndroid::SendDelegatedFrameAck(
     uint32 output_surface_id) {
   cc::CompositorFrameAck ack;
-  delegated_renderer_layer_->TakeUnusedResourcesForChildCompositor(
-      &ack.resources);
-  RenderWidgetHostImpl::SendSwapCompositorFrameAck(
-      host_->GetRoutingID(), output_surface_id,
-      host_->GetProcess()->GetID(), ack);
+  if (resource_collection_.get())
+    resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
+  RenderWidgetHostImpl::SendSwapCompositorFrameAck(host_->GetRoutingID(),
+                                                   output_surface_id,
+                                                   host_->GetProcess()->GetID(),
+                                                   ack);
+}
+
+void RenderWidgetHostViewAndroid::UnusedResourcesAreAvailable() {
+  // TODO(danakj): If no ack is pending, collect and send resources now.
+}
+
+void RenderWidgetHostViewAndroid::DestroyDelegatedContent() {
+  if (are_layers_attached_)
+    RemoveLayers();
+  frame_provider_ = NULL;
+  delegated_renderer_layer_ = NULL;
+  layer_ = NULL;
 }
 
 void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::DelegatedFrameData> frame_data) {
-  bool has_frame = frame_data.get() && !frame_data->render_pass_list.empty();
+  bool has_content = !texture_size_in_layer_.IsEmpty();
 
-  if (has_frame) {
-    delegated_renderer_layer_->SetFrameData(frame_data.Pass());
-    delegated_renderer_layer_->SetDisplaySize(texture_size_in_layer_);
-    layer_->SetIsDrawable(true);
+  if (output_surface_id != current_mailbox_output_surface_id_) {
+    // TODO(danakj): Lose all resources and send them back here, such as:
+    // resource_collection_->LoseAllResources();
+    // SendReturnedDelegatedResources(last_output_surface_id_);
+
+    // Drop the cc::DelegatedFrameResourceCollection so that we will not return
+    // any resources from the old output surface with the new output surface id.
+    resource_collection_ = NULL;
+    DestroyDelegatedContent();
   }
-  layer_->SetBounds(content_size_in_layer_);
-  layer_->SetNeedsDisplay();
+
+  if (!has_content) {
+    DestroyDelegatedContent();
+  } else {
+    if (!resource_collection_) {
+      resource_collection_ = new cc::DelegatedFrameResourceCollection;
+      resource_collection_->SetClient(this);
+    }
+    if (!frame_provider_ ||
+        texture_size_in_layer_ != frame_provider_->frame_size()) {
+      if (are_layers_attached_)
+        RemoveLayers();
+      frame_provider_ = new cc::DelegatedFrameProvider(
+          resource_collection_.get(), frame_data.Pass());
+      delegated_renderer_layer_ =
+          cc::DelegatedRendererLayer::Create(this, frame_provider_);
+      layer_ = delegated_renderer_layer_;
+      if (are_layers_attached_)
+        AttachLayers();
+    } else {
+      frame_provider_->SetFrameData(frame_data.Pass());
+    }
+  }
+
+  if (delegated_renderer_layer_.get()) {
+    delegated_renderer_layer_->SetDisplaySize(texture_size_in_layer_);
+    delegated_renderer_layer_->SetIsDrawable(true);
+    delegated_renderer_layer_->SetContentsOpaque(true);
+    delegated_renderer_layer_->SetBounds(content_size_in_layer_);
+    delegated_renderer_layer_->SetNeedsDisplay();
+  }
 
   base::Closure ack_callback =
       base::Bind(&RenderWidgetHostViewAndroid::SendDelegatedFrameAck,
@@ -710,15 +750,21 @@ void RenderWidgetHostViewAndroid::OnSwapCompositorFrame(
   UpdateContentViewCoreFrameMetadata(frame->metadata);
 
   if (frame->delegated_frame_data) {
-    if (!frame->delegated_frame_data->render_pass_list.empty()) {
-      texture_size_in_layer_ = frame->delegated_frame_data->render_pass_list
-          .back()->output_rect.size();
-    }
+    DCHECK(UsingDelegatedRenderer());
+
+    DCHECK(frame->delegated_frame_data);
+    DCHECK(!frame->delegated_frame_data->render_pass_list.empty());
+
+    cc::RenderPass* root_pass =
+        frame->delegated_frame_data->render_pass_list.back();
+    texture_size_in_layer_ = root_pass->output_rect.size();
     ComputeContentsSize(frame->metadata);
 
     SwapDelegatedFrame(output_surface_id, frame->delegated_frame_data.Pass());
     return;
   }
+
+  DCHECK(!UsingDelegatedRenderer());
 
   if (!frame->gl_frame_data || frame->gl_frame_data->mailbox.IsZero())
     return;
@@ -816,6 +862,7 @@ void RenderWidgetHostViewAndroid::BuffersSwapped(
   if (!texture_id_in_layer_) {
     texture_id_in_layer_ = factory->CreateTexture();
     texture_layer_->SetIsDrawable(true);
+    texture_layer_->SetContentsOpaque(true);
   }
 
   ImageTransportFactoryAndroid::GetInstance()->AcquireTexture(
@@ -835,15 +882,16 @@ void RenderWidgetHostViewAndroid::BuffersSwapped(
 void RenderWidgetHostViewAndroid::AttachLayers() {
   if (!content_view_core_)
     return;
+  if (!layer_.get())
+    return;
 
   content_view_core_->AttachLayer(layer_);
-
-  if (overscroll_effect_)
-    content_view_core_->AttachLayer(overscroll_effect_->root_layer());
 }
 
 void RenderWidgetHostViewAndroid::RemoveLayers() {
   if (!content_view_core_)
+    return;
+  if (!layer_.get())
     return;
 
   if (overscroll_effect_)
@@ -855,7 +903,12 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
 bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
   if (!overscroll_effect_)
     return false;
-  return overscroll_effect_->Animate(frame_time);
+
+  bool overscroll_running = overscroll_effect_->Animate(frame_time);
+  if (!overscroll_running)
+    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
+
+  return overscroll_running;
 }
 
 void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
@@ -867,9 +920,6 @@ void RenderWidgetHostViewAndroid::CreateOverscrollEffectIfNecessary() {
   // Prevent future creation attempts on failure.
   if (!overscroll_effect_)
     overscroll_effect_enabled_ = false;
-
-  if (overscroll_effect_ && content_view_core_ && are_layers_attached_)
-    content_view_core_->AttachLayer(overscroll_effect_->root_layer());
 }
 
 void RenderWidgetHostViewAndroid::UpdateAnimationSize(
@@ -887,10 +937,16 @@ void RenderWidgetHostViewAndroid::UpdateAnimationSize(
 }
 
 void RenderWidgetHostViewAndroid::ScheduleAnimationIfNecessary() {
-  if (!content_view_core_)
+  if (!content_view_core_ || !overscroll_effect_)
     return;
-  if (overscroll_effect_ && overscroll_effect_->NeedsAnimate())
+
+  if (overscroll_effect_->NeedsAnimate() && are_layers_attached_) {
+    if (!overscroll_effect_->root_layer()->parent())
+      content_view_core_->AttachLayer(overscroll_effect_->root_layer());
     content_view_core_->SetNeedsAnimate();
+  } else {
+    content_view_core_->RemoveLayer(overscroll_effect_->root_layer());
+  }
 }
 
 void RenderWidgetHostViewAndroid::AcceleratedSurfacePostSubBuffer(
@@ -914,6 +970,8 @@ void RenderWidgetHostViewAndroid::AcceleratedSurfaceRelease() {
     current_mailbox_ = gpu::Mailbox();
     current_mailbox_output_surface_id_ = kUndefinedOutputSurfaceId;
   }
+  if (delegated_renderer_layer_.get())
+    DestroyDelegatedContent();
 }
 
 bool RenderWidgetHostViewAndroid::HasAcceleratedSurface(
@@ -934,12 +992,7 @@ gfx::Rect RenderWidgetHostViewAndroid::GetBoundsInRootWindow() {
 }
 
 gfx::GLSurfaceHandle RenderWidgetHostViewAndroid::GetCompositingSurface() {
-  if (surface_texture_transport_) {
-    return surface_texture_transport_->GetCompositingSurface(
-        host_->surface_id());
-  } else {
-    return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-  }
+  return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
 }
 
 void RenderWidgetHostViewAndroid::ProcessAckedTouchEvent(
@@ -1101,11 +1154,8 @@ void RenderWidgetHostViewAndroid::SendMouseWheelEvent(
 void RenderWidgetHostViewAndroid::SendGestureEvent(
     const WebKit::WebGestureEvent& event) {
   // Sending a gesture that may trigger overscroll should resume the effect.
-  if (overscroll_effect_) {
+  if (overscroll_effect_)
     overscroll_effect_->SetEnabled(true);
-    if (event.type == WebKit::WebInputEvent::GestureScrollEnd)
-      overscroll_effect_->Release(base::TimeTicks::Now());
-  }
 
   if (host_)
     host_->ForwardGestureEvent(event);
@@ -1230,8 +1280,10 @@ bool RenderWidgetHostViewAndroid::PrepareTextureMailbox(
 }
 
 void RenderWidgetHostViewAndroid::OnLostResources() {
-  if (texture_layer_)
+  if (texture_layer_.get())
     texture_layer_->SetIsDrawable(false);
+  if (delegated_renderer_layer_.get())
+    DestroyDelegatedContent();
   texture_id_in_layer_ = 0;
   RunAckCallbacks();
 }

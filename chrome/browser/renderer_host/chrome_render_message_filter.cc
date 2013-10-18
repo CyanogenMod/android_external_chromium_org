@@ -11,6 +11,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
@@ -24,6 +25,7 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -58,6 +60,8 @@ void AddActionToExtensionActivityLog(
         BrowserThread::UI, FROM_HERE,
         base::Bind(&AddActionToExtensionActivityLog, profile, action));
   } else {
+    if (!g_browser_process->profile_manager()->IsValidProfile(profile))
+      return;
     // If the action included a URL, check whether it is for an incognito
     // profile.  The check is performed here so that it can safely be done from
     // the UI thread.
@@ -280,7 +284,9 @@ void ChromeRenderMessageFilter::OnV8HeapStats(int v8_memory_allocated,
 void ChromeRenderMessageFilter::OnOpenChannelToExtension(
     int routing_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& channel_name, int* port_id) {
+    const std::string& channel_name,
+    bool include_tls_channel_id,
+    int* port_id) {
   int port2_id;
   extensions::MessageService::AllocatePortIdPair(port_id, &port2_id);
 
@@ -288,18 +294,20 @@ void ChromeRenderMessageFilter::OnOpenChannelToExtension(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread,
                  this, render_process_id_, routing_id, port2_id, info,
-                 channel_name));
+                 channel_name, include_tls_channel_id));
 }
 
 void ChromeRenderMessageFilter::OpenChannelToExtensionOnUIThread(
     int source_process_id, int source_routing_id,
     int receiver_port_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& channel_name) {
+    const std::string& channel_name,
+    bool include_tls_channel_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   extensions::MessageService::Get(profile_)->OpenChannelToExtension(
       source_process_id, source_routing_id, receiver_port_id,
-      info.source_id, info.target_id, info.source_url, channel_name);
+      info.source_id, info.target_id, info.source_url, channel_name,
+      include_tls_channel_id);
 }
 
 void ChromeRenderMessageFilter::OnOpenChannelToNativeApp(

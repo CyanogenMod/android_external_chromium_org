@@ -10,11 +10,11 @@
 namespace media {
 namespace cast {
 
-VideoEncoder::VideoEncoder(scoped_refptr<CastThread> cast_thread,
+VideoEncoder::VideoEncoder(scoped_refptr<CastEnvironment> cast_environment,
                            const VideoSenderConfig& video_config,
                            uint8 max_unacked_frames)
     : video_config_(video_config),
-      cast_thread_(cast_thread),
+      cast_environment_(cast_environment),
       skip_next_frame_(false),
       skip_count_(0) {
   if (video_config.codec == kVp8) {
@@ -43,7 +43,7 @@ bool VideoEncoder::EncodeVideoFrame(
     return false;
   }
 
-  cast_thread_->PostTask(CastThread::VIDEO_ENCODER, FROM_HERE,
+  cast_environment_->PostTask(CastEnvironment::VIDEO_ENCODER, FROM_HERE,
       base::Bind(&VideoEncoder::EncodeVideoFrameEncoderThread, this,
           video_frame, capture_time, dynamic_config_, frame_encoded_callback,
           frame_release_callback));
@@ -69,7 +69,8 @@ void VideoEncoder::EncodeVideoFrameEncoderThread(
   bool retval = vp8_encoder_->Encode(*video_frame, encoded_frame.get());
 
   // We are done with the video frame release it.
-  cast_thread_->PostTask(CastThread::MAIN, FROM_HERE, frame_release_callback);
+  cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
+                              frame_release_callback);
 
   if (!retval) {
     VLOG(1) << "Encoding failed";
@@ -79,32 +80,32 @@ void VideoEncoder::EncodeVideoFrameEncoderThread(
     VLOG(1) << "Encoding resulted in an empty frame";
     return;
   }
-  cast_thread_->PostTask(CastThread::MAIN, FROM_HERE,
+  cast_environment_->PostTask(CastEnvironment::MAIN, FROM_HERE,
       base::Bind(frame_encoded_callback,
           base::Passed(&encoded_frame), capture_time));
 }
 
 // Inform the encoder about the new target bit rate.
-void VideoEncoder::SetBitRate(int new_bit_rate) OVERRIDE {
+void VideoEncoder::SetBitRate(int new_bit_rate) {
   dynamic_config_.bit_rate = new_bit_rate;
 }
 
 // Inform the encoder to not encode the next frame.
-void VideoEncoder::SkipNextFrame(bool skip_next_frame) OVERRIDE {
+void VideoEncoder::SkipNextFrame(bool skip_next_frame) {
   skip_next_frame_ = skip_next_frame;
 }
 
 // Inform the encoder to encode the next frame as a key frame.
-void VideoEncoder::GenerateKeyFrame() OVERRIDE {
+void VideoEncoder::GenerateKeyFrame() {
   dynamic_config_.key_frame_requested = true;
 }
 
 // Inform the encoder to only reference frames older or equal to frame_id;
-void VideoEncoder::LatestFrameIdToReference(uint8 frame_id) OVERRIDE {
+void VideoEncoder::LatestFrameIdToReference(uint8 frame_id) {
   dynamic_config_.latest_frame_id_to_reference = frame_id;
 }
 
-int VideoEncoder::NumberOfSkippedFrames() const OVERRIDE {
+int VideoEncoder::NumberOfSkippedFrames() const {
   return skip_count_;
 }
 

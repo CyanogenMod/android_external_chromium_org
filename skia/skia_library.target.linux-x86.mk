@@ -143,6 +143,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/core/SkPathEffect.cpp \
 	third_party/skia/src/core/SkPathHeap.cpp \
 	third_party/skia/src/core/SkPathMeasure.cpp \
+	third_party/skia/src/core/SkPathRef.cpp \
 	third_party/skia/src/core/SkPicture.cpp \
 	third_party/skia/src/core/SkPictureFlat.cpp \
 	third_party/skia/src/core/SkPicturePlayback.cpp \
@@ -263,7 +264,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkLayerRasterizer.cpp \
 	third_party/skia/src/effects/SkLerpXfermode.cpp \
 	third_party/skia/src/effects/SkLightingImageFilter.cpp \
-	third_party/skia/src/effects/SkLumaXfermode.cpp \
+	third_party/skia/src/effects/SkLumaColorFilter.cpp \
 	third_party/skia/src/effects/SkMagnifierImageFilter.cpp \
 	third_party/skia/src/effects/SkMatrixConvolutionImageFilter.cpp \
 	third_party/skia/src/effects/SkMergeImageFilter.cpp \
@@ -278,6 +279,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/effects/SkTableColorFilter.cpp \
 	third_party/skia/src/effects/SkTableMaskFilter.cpp \
 	third_party/skia/src/effects/SkTestImageFilters.cpp \
+	third_party/skia/src/effects/SkTileImageFilter.cpp \
 	third_party/skia/src/effects/SkTransparentShader.cpp \
 	third_party/skia/src/effects/SkXfermodeImageFilter.cpp \
 	third_party/skia/src/effects/gradients/SkBitmapCache.cpp \
@@ -309,7 +311,6 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrGpu.cpp \
 	third_party/skia/src/gpu/GrGpuFactory.cpp \
 	third_party/skia/src/gpu/GrInOrderDrawBuffer.cpp \
-	third_party/skia/src/gpu/GrMemory.cpp \
 	third_party/skia/src/gpu/GrMemoryPool.cpp \
 	third_party/skia/src/gpu/GrOvalRenderer.cpp \
 	third_party/skia/src/gpu/GrPaint.cpp \
@@ -318,6 +319,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrPathRenderer.cpp \
 	third_party/skia/src/gpu/GrPathUtils.cpp \
 	third_party/skia/src/gpu/GrRectanizer.cpp \
+	third_party/skia/src/gpu/GrRectanizer_skyline.cpp \
 	third_party/skia/src/gpu/GrRenderTarget.cpp \
 	third_party/skia/src/gpu/GrReducedClip.cpp \
 	third_party/skia/src/gpu/GrResource.cpp \
@@ -337,6 +339,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/effects/GrBezierEffect.cpp \
 	third_party/skia/src/gpu/effects/GrConvolutionEffect.cpp \
 	third_party/skia/src/gpu/effects/GrBicubicEffect.cpp \
+	third_party/skia/src/gpu/effects/GrCustomCoordsTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSimpleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrSingleTextureEffect.cpp \
 	third_party/skia/src/gpu/effects/GrTextureDomainEffect.cpp \
@@ -346,15 +349,14 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/gl/GrGLContext.cpp \
 	third_party/skia/src/gpu/gl/GrGLCreateNativeInterface_none.cpp \
 	third_party/skia/src/gpu/gl/GrGLDefaultInterface_none.cpp \
-	third_party/skia/src/gpu/gl/GrGLEffect.cpp \
 	third_party/skia/src/gpu/gl/GrGLExtensions.cpp \
-	third_party/skia/src/gpu/gl/GrGLEffectMatrix.cpp \
 	third_party/skia/src/gpu/gl/GrGLIndexBuffer.cpp \
 	third_party/skia/src/gpu/gl/GrGLInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLNoOpInterface.cpp \
 	third_party/skia/src/gpu/gl/GrGLPath.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgram.cpp \
 	third_party/skia/src/gpu/gl/GrGLProgramDesc.cpp \
+	third_party/skia/src/gpu/gl/GrGLProgramEffects.cpp \
 	third_party/skia/src/gpu/gl/GrGLRenderTarget.cpp \
 	third_party/skia/src/gpu/gl/GrGLShaderBuilder.cpp \
 	third_party/skia/src/gpu/gl/GrGLSL.cpp \
@@ -425,7 +427,6 @@ MY_DEFS_Debug := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -549,7 +550,6 @@ MY_DEFS_Release := \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
-	'-DENABLE_GPU=1' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

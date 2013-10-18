@@ -19,7 +19,6 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
@@ -30,7 +29,6 @@
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/utils/SkCanvasStateUtils.h"
-#include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -148,10 +146,10 @@ const int64 kFallbackTickTimeoutInMilliseconds = 20;
 
 
 // Used to calculate memory and resource allocation. Determined experimentally.
-size_t g_memory_multiplier = 15;
+size_t g_memory_multiplier = 10;
 const size_t kMaxNumTilesToFillDisplay = 20;
 const size_t kBytesPerPixel = 4;
-const size_t kMemoryAllocationStep = 10 * 1024 * 1024;
+const size_t kMemoryAllocationStep = 5 * 1024 * 1024;
 
 class ScopedAllowGL {
  public:
@@ -297,15 +295,7 @@ void InProcessViewRenderer::CalculateTileMemoryPolicy() {
     return;
   }
 
-  // TODO(boliu): Should use view context to get the display dimensions, and
-  // pass tile size in a per WebContents setting instead of through command
-  // line switch.
-  gfx::DeviceDisplayInfo info;
-  int default_tile_size = 256;
-
-  if (info.GetDisplayWidth() >= 1080)
-    default_tile_size = 512;
-
+  const int default_tile_size = 512;
   std::stringstream size;
   size << default_tile_size;
   cl->AppendSwitchASCII(switches::kDefaultTileWidth, size.str());
@@ -314,6 +304,65 @@ void InProcessViewRenderer::CalculateTileMemoryPolicy() {
 
 bool InProcessViewRenderer::RequestProcessGL() {
   return client_->RequestDrawGL(NULL);
+}
+
+void InProcessViewRenderer::TrimMemory(int level) {
+  // Constants from Android ComponentCallbacks2.
+  enum {
+    TRIM_MEMORY_RUNNING_LOW = 10,
+    TRIM_MEMORY_UI_HIDDEN = 20,
+    TRIM_MEMORY_BACKGROUND = 40,
+  };
+
+  // Not urgent enough. TRIM_MEMORY_UI_HIDDEN is treated specially because
+  // it does not indicate memory pressure, but merely that the app is
+  // backgrounded.
+  if (level < TRIM_MEMORY_RUNNING_LOW || level == TRIM_MEMORY_UI_HIDDEN)
+    return;
+
+  // Nothing to drop.
+  if (!attached_to_window_ || !hardware_initialized_ || !compositor_)
+    return;
+
+  // Do not release resources on view we expect to get DrawGL soon.
+  if (level < TRIM_MEMORY_BACKGROUND) {
+    client_->UpdateGlobalVisibleRect();
+    if (view_visible_ && window_visible_ &&
+        !cached_global_visible_rect_.IsEmpty()) {
+      return;
+    }
+  }
+
+  if (!eglGetCurrentContext()) {
+    NOTREACHED();
+    return;
+  }
+
+  // Just set the memory limit to 0 and drop all tiles. This will be reset to
+  // normal levels in the next DrawGL call.
+  content::SynchronousCompositorMemoryPolicy policy;
+  policy.bytes_limit = 0;
+  policy.num_resources_limit = 0;
+  if (memory_policy_ == policy)
+    return;
+
+  TRACE_EVENT0("android_webview", "InProcessViewRenderer::TrimMemory");
+  ScopedAppGLStateRestore state_restore(
+      ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
+  gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
+  ScopedAllowGL allow_gl;
+
+  SetMemoryPolicy(policy);
+  ForceFakeCompositeSW();
+}
+
+void InProcessViewRenderer::SetMemoryPolicy(
+    content::SynchronousCompositorMemoryPolicy& new_policy) {
+  if (memory_policy_ == new_policy)
+    return;
+
+  memory_policy_ = new_policy;
+  compositor_->SetMemoryPolicy(memory_policy_);
 }
 
 void InProcessViewRenderer::UpdateCachedGlobalVisibleRect() {
@@ -332,11 +381,7 @@ bool InProcessViewRenderer::OnDraw(jobject java_canvas,
     return compositor_ && client_->RequestDrawGL(java_canvas);
   }
   // Perform a software draw
-  block_invalidates_ = true;
-  bool result = DrawSWInternal(java_canvas, clip);
-  block_invalidates_ = false;
-  EnsureContinuousInvalidation(NULL, false);
-  return result;
+  return DrawSWInternal(java_canvas, clip);
 }
 
 bool InProcessViewRenderer::InitializeHwDraw() {
@@ -401,10 +446,6 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
-  // DrawGL may be called without OnDraw, so cancel |fallback_tick_| here as
-  // well just to be safe.
-  fallback_tick_.Cancel();
-
   if (last_egl_context_ != current_context) {
     // TODO(boliu): Handle context lost
     TRACE_EVENT_INSTANT0(
@@ -417,6 +458,10 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
+  // DrawGL may be called without OnDraw, so cancel |fallback_tick_| here as
+  // well just to be safe.
+  fallback_tick_.Cancel();
+
   // Update memory budget. This will no-op in compositor if the policy has not
   // changed since last draw.
   content::SynchronousCompositorMemoryPolicy policy;
@@ -427,7 +472,7 @@ void InProcessViewRenderer::DrawGL(AwDrawGLInfo* draw_info) {
   policy.bytes_limit =
       (policy.bytes_limit / kMemoryAllocationStep + 1) * kMemoryAllocationStep;
   policy.num_resources_limit = kMaxNumTilesToFillDisplay * g_memory_multiplier;
-  compositor_->SetMemoryPolicy(policy);
+  SetMemoryPolicy(policy);
 
   DCHECK(gl_surface_);
   gl_surface_->SetBackingFrameBufferObject(
@@ -474,8 +519,6 @@ void InProcessViewRenderer::SetGlobalVisibleRect(
 
 bool InProcessViewRenderer::DrawSWInternal(jobject java_canvas,
                                            const gfx::Rect& clip) {
-  fallback_tick_.Cancel();
-
   if (clip.IsEmpty()) {
     TRACE_EVENT_INSTANT0(
         "android_webview", "EarlyOut_EmptyClip", TRACE_EVENT_SCOPE_THREAD);
@@ -644,7 +687,7 @@ void InProcessViewRenderer::OnDetachedFromWindow() {
     DCHECK(compositor_);
 
     ScopedAppGLStateRestore state_restore(
-        ScopedAppGLStateRestore::MODE_DETACH_FROM_WINDOW);
+        ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT);
     gpu::InProcessCommandBuffer::ProcessGpuWorkOnCurrentThread();
     ScopedAllowGL allow_gl;
     compositor_->ReleaseHwDraw();
@@ -797,6 +840,10 @@ gfx::Vector2dF InProcessViewRenderer::GetTotalRootLayerScrollOffset() {
   return scroll_offset_dip_;
 }
 
+bool InProcessViewRenderer::IsExternalFlingActive() const {
+  return client_->IsFlingActive();
+}
+
 void InProcessViewRenderer::SetRootLayerPageScaleFactor(
     float page_scale_factor) {
   page_scale_factor_ = page_scale_factor;
@@ -846,7 +893,7 @@ void InProcessViewRenderer::EnsureContinuousInvalidation(
     client_->PostInvalidate();
   }
 
-  block_invalidates_ = true;
+  block_invalidates_ = compositor_needs_continuous_invalidate_;
 
   // Unretained here is safe because the callback is cancelled when
   // |fallback_tick_| is destroyed.
@@ -875,19 +922,26 @@ void InProcessViewRenderer::FallbackTickFired() {
   // This should only be called if OnDraw or DrawGL did not come in time, which
   // means block_invalidates_ must still be true.
   DCHECK(block_invalidates_);
-  if (compositor_needs_continuous_invalidate_ && compositor_) {
-    SkBitmapDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
-    SkCanvas canvas(&device);
-    block_invalidates_ = true;
-    CompositeSW(&canvas);
-  }
-  block_invalidates_ = false;
-  EnsureContinuousInvalidation(NULL, false);
+  if (compositor_needs_continuous_invalidate_ && compositor_)
+    ForceFakeCompositeSW();
+}
+
+void InProcessViewRenderer::ForceFakeCompositeSW() {
+  DCHECK(compositor_);
+  SkBitmapDevice device(SkBitmap::kARGB_8888_Config, 1, 1);
+  SkCanvas canvas(&device);
+  CompositeSW(&canvas);
 }
 
 bool InProcessViewRenderer::CompositeSW(SkCanvas* canvas) {
   DCHECK(compositor_);
-  return compositor_->DemandDrawSw(canvas);
+
+  fallback_tick_.Cancel();
+  block_invalidates_ = true;
+  bool result = compositor_->DemandDrawSw(canvas);
+  block_invalidates_ = false;
+  EnsureContinuousInvalidation(NULL, false);
+  return result;
 }
 
 std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
@@ -916,6 +970,8 @@ std::string InProcessViewRenderer::ToString(AwDrawGLInfo* draw_info) const {
   base::StringAppendF(&str,
                       "overscroll_rounding_error_: %s ",
                       overscroll_rounding_error_.ToString().c_str());
+  base::StringAppendF(
+      &str, "on_new_picture_enable: %d ", on_new_picture_enable_);
   if (draw_info) {
     base::StringAppendF(&str,
                         "clip left top right bottom: [%d %d %d %d] ",
