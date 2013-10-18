@@ -367,6 +367,7 @@ import java.util.Map;
     private Runnable mDeferredHandleFadeInRunnable;
 
     private PositionObserver mPositionObserver;
+    private PositionObserver.Listener mPositionListener;
 
     // Size of the viewport in physical pixels as set from onSizeChanged.
     private int mViewportWidthPix;
@@ -709,6 +710,14 @@ import java.util.Map;
 
         mContainerView = containerView;
         mPositionObserver = new ViewPositionObserver(mContainerView);
+        mPositionListener = new PositionObserver.Listener() {
+            @Override
+            public void onPositionChanged(int x, int y) {
+                if (isSelectionHandleShowing() || isInsertionHandleShowing()) {
+                    temporarilyHideTextHandles();
+                }
+            }
+        };
 
         int windowNativePointer = windowAndroid != null ? windowAndroid.getNativePointer() : 0;
 
@@ -2100,6 +2109,7 @@ import java.util.Map;
         if (mInsertionHandleController != null) {
             mInsertionHandleController.hideAndDisallowAutomaticShowing();
         }
+        mPositionObserver.removeListener(mPositionListener);
     }
 
     private void showSelectActionBar() {
@@ -2472,6 +2482,9 @@ import java.util.Map;
                 }
             }
             mHasSelection = false;
+        }
+        if (isSelectionHandleShowing() || isInsertionHandleShowing()) {
+            mPositionObserver.addListener(mPositionListener);
         }
     }
 
