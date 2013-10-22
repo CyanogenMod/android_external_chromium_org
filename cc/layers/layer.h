@@ -60,6 +60,10 @@ struct AnimationEvent;
 class CC_EXPORT Layer : public base::RefCounted<Layer>,
                         public LayerAnimationValueObserver {
  public:
+  typedef RenderSurfaceLayerList RenderSurfaceListType;
+  typedef LayerList LayerListType;
+  typedef RenderSurface RenderSurfaceType;
+
   enum LayerIdLabels {
     INVALID_ID = -1,
   };
@@ -185,10 +189,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return clip_children_.get();
   }
 
-  DrawProperties<Layer, RenderSurface>& draw_properties() {
-    return draw_properties_;
-  }
-  const DrawProperties<Layer, RenderSurface>& draw_properties() const {
+  DrawProperties<Layer>& draw_properties() { return draw_properties_; }
+  const DrawProperties<Layer>& draw_properties() const {
     return draw_properties_;
   }
 
@@ -248,6 +250,12 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetScrollable(bool scrollable);
   bool scrollable() const { return scrollable_; }
+
+  void SetUserScrollable(bool horizontal, bool vertical);
+  bool user_scrollable_horizontal() const {
+    return user_scrollable_horizontal_;
+  }
+  bool user_scrollable_vertical() const { return user_scrollable_vertical_; }
 
   void SetShouldScrollOnMainThread(bool should_scroll_on_main_thread);
   bool should_scroll_on_main_thread() const {
@@ -537,6 +545,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool scrollable_;
   bool should_scroll_on_main_thread_;
   bool have_wheel_event_handlers_;
+  bool user_scrollable_horizontal_;
+  bool user_scrollable_vertical_;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -579,7 +589,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   base::Closure did_scroll_callback_;
 
-  DrawProperties<Layer, RenderSurface> draw_properties_;
+  DrawProperties<Layer> draw_properties_;
 
   PaintProperties paint_properties_;
 

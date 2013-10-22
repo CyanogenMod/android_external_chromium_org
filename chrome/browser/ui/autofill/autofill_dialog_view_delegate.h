@@ -119,11 +119,6 @@ class AutofillDialogViewDelegate {
   // Returns the current state of suggestions for |section|.
   virtual SuggestionState SuggestionStateForSection(DialogSection section) = 0;
 
-  // TODO(groby): Remove this deprecated method after Mac starts using
-  // IconsForFields. http://crbug.com/292876
-  virtual gfx::Image IconForField(ServerFieldType type,
-                                  const string16& user_input) const = 0;
-
   // Returns the icons to be displayed along with the given |user_inputs| in a
   // section.
   virtual FieldIconMap IconsForFields(
@@ -135,6 +130,10 @@ class AutofillDialogViewDelegate {
 
   // Returns a tooltip for the given field, or an empty string if none exists.
   virtual string16 TooltipForField(ServerFieldType type) const = 0;
+
+  // Whether a particular DetailInput in |section| should be edited or not.
+  virtual bool InputIsEditable(const DetailInput& input,
+                               DialogSection section) = 0;
 
   // Decides whether input of |value| is valid for a field of type |type|. If
   // valid, the returned string will be empty. Otherwise it will contain an

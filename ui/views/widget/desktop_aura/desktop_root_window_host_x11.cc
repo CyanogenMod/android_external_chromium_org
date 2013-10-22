@@ -17,7 +17,6 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/user_action_client.h"
-#include "ui/aura/focus_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_property.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
@@ -134,6 +133,11 @@ DesktopRootWindowHostX11::~DesktopRootWindowHostX11() {
   root_window_->ClearProperty(kHostForRootWindow);
   aura::client::SetFocusClient(root_window_, NULL);
   aura::client::SetActivationClient(root_window_, NULL);
+  aura::client::SetScreenPositionClient(root_window_, NULL);
+  aura::client::SetDispatcherClient(root_window_, NULL);
+  aura::client::SetCursorClient(root_window_, NULL);
+  aura::client::SetDragDropClient(root_window_, NULL);
+  aura::client::SetWindowMoveClient(root_window_, NULL);
 }
 
 // static
@@ -1041,8 +1045,9 @@ bool DesktopRootWindowHostX11::HasWMSpecProperty(const char* property) const {
 }
 
 void DesktopRootWindowHostX11::OnCaptureReleased() {
-  native_widget_delegate_->OnMouseCaptureLost();
   g_current_capture = NULL;
+  root_window_host_delegate_->OnHostLostWindowCapture();
+  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopRootWindowHostX11::DispatchMouseEvent(ui::MouseEvent* event) {

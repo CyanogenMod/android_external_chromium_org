@@ -159,7 +159,7 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
       } else {
         // Otherwise, we try to drain the response body.
         HttpStreamBase* stream = stream_.release();
-        stream->Drain(session_.get());
+        stream->Drain(session_);
       }
     }
   }
@@ -897,6 +897,11 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       return result;
   }
 
+  if (result == ERR_QUIC_HANDSHAKE_FAILED) {
+    ResetConnectionAndRequestForResend();
+    return OK;
+  }
+
   if (result < 0 && result != ERR_CONNECTION_CLOSED)
     return HandleIOError(result);
 
@@ -920,10 +925,8 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   }
   DCHECK(response_.headers.get());
 
-  // Server-induced fallback is supported only if this is a PAC configured
-  // proxy. See: http://crbug.com/143712
-  if (response_.was_fetched_via_proxy && proxy_info_.did_use_pac_script() &&
-      response_.headers.get() != NULL) {
+  // Server-induced fallback; see: http://crbug.com/143712
+  if (response_.was_fetched_via_proxy && response_.headers.get() != NULL) {
     bool should_fallback =
         response_.headers->HasHeaderValue("connection", "proxy-bypass");
     // Additionally, fallback if a 500 is returned via the data reduction proxy.
@@ -1339,6 +1342,7 @@ int HttpNetworkTransaction::HandleIOError(int error) {
       break;
     case ERR_SPDY_PING_FAILED:
     case ERR_SPDY_SERVER_REFUSED_STREAM:
+    case ERR_QUIC_HANDSHAKE_FAILED:
       net_log_.AddEventWithNetErrorCode(
           NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
       ResetConnectionAndRequestForResend();

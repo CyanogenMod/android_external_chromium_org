@@ -56,6 +56,7 @@ WebPreferences::WebPreferences()
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
       accelerated_compositing_for_overflow_scroll_enabled(false),
+      universal_accelerated_compositing_for_overflow_scroll_enabled(false),
       accelerated_compositing_for_scrollable_frames_enabled(false),
       composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
@@ -122,7 +123,7 @@ WebPreferences::WebPreferences()
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),
-      font_scale_factor(1.0f),
+      text_autosizing_font_scale_factor(1.0f),
       force_enable_zoom(false),
       double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true),
@@ -133,7 +134,8 @@ WebPreferences::WebPreferences()
       use_wide_viewport(true),
       viewport_meta_layout_size_quirk(false),
       viewport_meta_zero_values_quirk(false),
-      ignore_main_frame_overflow_hidden_quirk(false)
+      ignore_main_frame_overflow_hidden_quirk(false),
+      report_screen_size_in_physical_pixels_quirk(false)
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =

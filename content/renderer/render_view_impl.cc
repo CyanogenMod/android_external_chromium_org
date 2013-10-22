@@ -31,6 +31,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "cc/base/switches.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
 #include "content/child/child_thread.h"
@@ -606,6 +607,52 @@ static bool ShouldUseAcceleratedCompositingForOverflowScroll(
   return DeviceScaleEnsuresTextQuality(device_scale_factor);
 }
 
+static bool ShouldUseAcceleratedCompositingForScrollableFrames(
+    float device_scale_factor) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kDisableAcceleratedScrollableFrames))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableAcceleratedScrollableFrames))
+    return true;
+
+  if (!cc::switches::IsLCDTextEnabled())
+    return true;
+
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
+static bool ShouldUseCompositedScrollingForFrames(
+    float device_scale_factor) {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(switches::kDisableCompositedScrollingForFrames))
+    return false;
+
+  if (command_line.HasSwitch(switches::kEnableCompositedScrollingForFrames))
+    return true;
+
+  if (!cc::switches::IsLCDTextEnabled())
+    return true;
+
+  return DeviceScaleEnsuresTextQuality(device_scale_factor);
+}
+
+static bool ShouldUseUniversalAcceleratedCompositingForOverflowScroll() {
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+  if (command_line.HasSwitch(
+          switches::kDisableUniversalAcceleratedOverflowScroll))
+    return false;
+
+  if (command_line.HasSwitch(
+          switches::kEnableUniversalAcceleratedOverflowScroll))
+    return true;
+
+  return false;
+}
+
 static bool ShouldUseTransitionCompositing(float device_scale_factor) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -895,10 +942,16 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseFixedPositionCompositing(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForOverflowScrollEnabled(
       ShouldUseAcceleratedCompositingForOverflowScroll(device_scale_factor_));
+  webview()->settings()->setCompositorDrivenAcceleratedScrollingEnabled(
+      ShouldUseUniversalAcceleratedCompositingForOverflowScroll());
   webview()->settings()->setAcceleratedCompositingForTransitionEnabled(
       ShouldUseTransitionCompositing(device_scale_factor_));
   webview()->settings()->setAcceleratedCompositingForFixedRootBackgroundEnabled(
       ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
+  webview()->settings()->setAcceleratedCompositingForScrollableFramesEnabled(
+      ShouldUseAcceleratedCompositingForScrollableFrames(device_scale_factor_));
+  webview()->settings()->setCompositedScrollingForFramesEnabled(
+      ShouldUseCompositedScrollingForFrames(device_scale_factor_));
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -1957,6 +2010,7 @@ void RenderViewImpl::UpdateURL(WebFrame* frame) {
   params.post_id = -1;
   params.page_id = page_id_;
   params.frame_id = frame->identifier();
+  params.frame_unique_name = frame->uniqueName();
   params.socket_address.set_host(response.remoteIPAddress().utf8());
   params.socket_address.set_port(response.remotePort());
   WebURLResponseExtraDataImpl* extra_data = GetExtraDataFromResponse(response);
@@ -2332,6 +2386,11 @@ WebView* RenderViewImpl::createView(
       transferred_preferences.accelerated_compositing_enabled = true;
   }
 
+  // The initial hidden state for the RenderViewImpl here has to match what the
+  // browser will eventually decide for the given disposition. Since we have to
+  // return from this call synchronously, we just have to make our best guess
+  // and rely on the browser sending a WasHidden / WasShown message if it
+  // disagrees.
   RenderViewImpl* view = RenderViewImpl::Create(
       routing_id_,
       renderer_preferences_,
@@ -2343,7 +2402,7 @@ WebView* RenderViewImpl::createView(
       string16(),  // WebCore will take care of setting the correct name.
       true,  // is_renderer_created
       false, // swapped_out
-      false, // hidden
+      params.disposition == NEW_BACKGROUND_TAB, // hidden
       1,     // next_page_id
       screen_info_,
       accessibility_mode_,
@@ -3095,17 +3154,13 @@ WebMediaPlayer* RenderViewImpl::createMediaPlayer(
     DVLOG(1) << "Using AudioRendererMixerManager-provided sink: " << sink.get();
   }
 
-  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories =
-      RenderThreadImpl::current()->GetGpuFactories(
-          RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy());
-
   WebMediaPlayerParams params(
       RenderThreadImpl::current()->GetMediaThreadMessageLoopProxy(),
       base::Bind(&ContentRendererClient::DeferMediaLoad,
                  base::Unretained(GetContentClient()->renderer()),
                  static_cast<RenderView*>(this)),
       sink,
-      gpu_factories,
+      RenderThreadImpl::current()->GetGpuFactories(),
       new RenderMediaLog());
   return new WebMediaPlayerImpl(frame, client, AsWeakPtr(), params);
 }
@@ -3581,49 +3636,8 @@ void RenderViewImpl::ProcessViewLayoutFlags(const CommandLine& command_line) {
   webview()->setPageScaleFactorLimits(1, maxPageScaleFactor);
 }
 
+// TODO(nasko): Remove this method once WebTestProxy in Blink is fixed.
 void RenderViewImpl::didStartProvisionalLoad(WebFrame* frame) {
-  WebDataSource* ds = frame->provisionalDataSource();
-
-  // In fast/loader/stop-provisional-loads.html, we abort the load before this
-  // callback is invoked.
-  if (!ds)
-    return;
-
-  DocumentState* document_state = DocumentState::FromDataSource(ds);
-
-  // We should only navigate to swappedout:// when is_swapped_out_ is true.
-  CHECK((ds->request().url() != GURL(kSwappedOutURL)) ||
-        is_swapped_out_) << "Heard swappedout:// when not swapped out.";
-
-  // Update the request time if WebKit has better knowledge of it.
-  if (document_state->request_time().is_null()) {
-    double event_time = ds->triggeringEventTime();
-    if (event_time != 0.0)
-      document_state->set_request_time(Time::FromDoubleT(event_time));
-  }
-
-  // Start time is only set after request time.
-  document_state->set_start_load_time(Time::Now());
-
-  bool is_top_most = !frame->parent();
-  if (is_top_most) {
-    navigation_gesture_ = WebUserGestureIndicator::isProcessingUserGesture() ?
-        NavigationGestureUser : NavigationGestureAuto;
-  } else if (ds->replacesCurrentHistoryItem()) {
-    // Subframe navigations that don't add session history items must be
-    // marked with AUTO_SUBFRAME. See also didFailProvisionalLoad for how we
-    // handle loading of error pages.
-    document_state->navigation_state()->set_transition_type(
-        PAGE_TRANSITION_AUTO_SUBFRAME);
-  }
-
-  FOR_EACH_OBSERVER(
-      RenderViewObserver, observers_, DidStartProvisionalLoad(frame));
-
-  Send(new ViewHostMsg_DidStartProvisionalLoadForFrame(
-       routing_id_, frame->identifier(),
-       frame->parent() ? frame->parent()->identifier() : -1,
-       is_top_most, ds->request().url()));
 }
 
 void RenderViewImpl::didReceiveServerRedirectForProvisionalLoad(
@@ -3667,6 +3681,7 @@ void RenderViewImpl::didFailProvisionalLoad(WebFrame* frame,
 
   ViewHostMsg_DidFailProvisionalLoadWithError_Params params;
   params.frame_id = frame->identifier();
+  params.frame_unique_name = frame->uniqueName();
   params.is_main_frame = !frame->parent();
   params.error_code = error.reason;
   GetContentClient()->renderer()->GetNavigationErrorStrings(
@@ -4280,6 +4295,20 @@ bool RenderViewImpl::willCheckAndDispatchMessageEvent(
   params.source_origin = event.origin();
   if (!target_origin.isNull())
     params.target_origin = target_origin.toString();
+
+  WebKit::WebMessagePortChannelArray channels = event.releaseChannels();
+  if (!channels.isEmpty()) {
+    std::vector<int> message_port_ids(channels.size());
+     // Extract the port IDs from the channel array.
+     for (size_t i = 0; i < channels.size(); ++i) {
+       WebMessagePortChannelImpl* webchannel =
+           static_cast<WebMessagePortChannelImpl*>(channels[i]);
+       message_port_ids[i] = webchannel->message_port_id();
+       webchannel->QueueMessages();
+       DCHECK_NE(message_port_ids[i], MSG_ROUTING_NONE);
+     }
+     params.message_port_ids = message_port_ids;
+  }
 
   // Include the routing ID for the source frame, which the browser process
   // will translate into the routing ID for the equivalent frame in the target
@@ -5005,6 +5034,18 @@ void RenderViewImpl::OnPostMessageEvent(
       source_frame = source_view->webview()->mainFrame();
   }
 
+  // If the message contained MessagePorts, create the corresponding endpoints.
+  DCHECK_EQ(params.message_port_ids.size(), params.new_routing_ids.size());
+  WebKit::WebMessagePortChannelArray channels(params.message_port_ids.size());
+  for (size_t i = 0;
+       i < params.message_port_ids.size() && i < params.new_routing_ids.size();
+       ++i) {
+    channels[i] =
+        new WebMessagePortChannelImpl(params.new_routing_ids[i],
+                                      params.message_port_ids[i],
+                                      base::MessageLoopProxy::current().get());
+  }
+
   // Create an event with the message.  The final parameter to initMessageEvent
   // is the last event ID, which is not used with postMessage.
   WebDOMEvent event = frame->document().createEvent("MessageEvent");
@@ -5013,7 +5054,7 @@ void RenderViewImpl::OnPostMessageEvent(
                              // |canBubble| and |cancellable| are always false
                              false, false,
                              WebSerializedScriptValue::fromString(params.data),
-                             params.source_origin, source_frame, "");
+                             params.source_origin, source_frame, "", channels);
 
   // We must pass in the target_origin to do the security check on this side,
   // since it may have changed since the original postMessage call was made.
@@ -6006,6 +6047,11 @@ void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
     webview()->settings()->
         setAcceleratedCompositingForFixedRootBackgroundEnabled(
             ShouldUseAcceleratedFixedRootBackground(device_scale_factor_));
+    webview()->settings()->setAcceleratedCompositingForScrollableFramesEnabled(
+        ShouldUseAcceleratedCompositingForScrollableFrames(
+            device_scale_factor_));
+    webview()->settings()->setCompositedScrollingForFramesEnabled(
+        ShouldUseCompositedScrollingForFrames(device_scale_factor_));
   }
   if (auto_resize_mode_)
     AutoResizeCompositor();

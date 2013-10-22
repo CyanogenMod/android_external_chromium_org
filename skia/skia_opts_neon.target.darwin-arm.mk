@@ -26,7 +26,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/memset32_neon.S \
 	third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp \
 	third_party/skia/src/opts/SkBitmapProcState_matrixProcs_neon.cpp \
-	third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp
+	third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp \
+	third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -94,11 +95,11 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/src/opts \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -182,11 +183,11 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/src/core \
 	$(LOCAL_PATH)/third_party/skia/src/opts \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport

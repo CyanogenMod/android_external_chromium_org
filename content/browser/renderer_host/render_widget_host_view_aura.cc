@@ -594,6 +594,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host)
       can_compose_inline_(true),
       has_composition_text_(false),
       last_output_surface_id_(0),
+      pending_delegated_ack_count_(0),
       skipped_frames_(false),
       last_swapped_surface_scale_factor_(1.f),
       paint_canvas_(NULL),
@@ -1474,14 +1475,14 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
     window_->layer()->SetShowPaintedContent();
     frame_provider_ = NULL;
 
-    // TODO(danakj): Lose all resources and send them back here, such as:
-    // resource_collection_->LoseAllResources();
-    // SendReturnedDelegatedResources(last_output_surface_id_);
-
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
-    if (resource_collection_) {
+    if (resource_collection_.get()) {
       resource_collection_->SetClient(NULL);
+
+      if (resource_collection_->LoseAllResources())
+        SendReturnedDelegatedResources(last_output_surface_id_);
+
       resource_collection_ = NULL;
     }
     last_output_surface_id_ = output_surface_id;
@@ -1512,6 +1513,8 @@ void RenderWidgetHostViewAura::SwapDelegatedFrame(
     paint_observer_->OnUpdateCompositorContent();
   window_->SchedulePaintInRect(damage_rect_in_dip);
 
+  pending_delegated_ack_count_++;
+
   ui::Compositor* compositor = GetCompositor();
   if (!compositor) {
     SendDelegatedFrameAck(output_surface_id);
@@ -1533,10 +1536,28 @@ void RenderWidgetHostViewAura::SendDelegatedFrameAck(uint32 output_surface_id) {
                                                    output_surface_id,
                                                    host_->GetProcess()->GetID(),
                                                    ack);
+  DCHECK_GT(pending_delegated_ack_count_, 0);
+  pending_delegated_ack_count_--;
 }
 
 void RenderWidgetHostViewAura::UnusedResourcesAreAvailable() {
-  // TODO(danakj): If no ack is pending, collect and send resources now.
+  if (pending_delegated_ack_count_)
+    return;
+
+  SendReturnedDelegatedResources(last_output_surface_id_);
+}
+
+void RenderWidgetHostViewAura::SendReturnedDelegatedResources(
+    uint32 output_surface_id) {
+  cc::CompositorFrameAck ack;
+  if (resource_collection_)
+    resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
+  DCHECK(!ack.resources.empty());
+  RenderWidgetHostImpl::SendReclaimCompositorResources(
+      host_->GetRoutingID(),
+      output_surface_id,
+      host_->GetProcess()->GetID(),
+      ack);
 }
 
 void RenderWidgetHostViewAura::SwapSoftwareFrame(
@@ -2305,7 +2326,8 @@ bool RenderWidgetHostViewAura::CanComposeInline() const {
   return can_compose_inline_;
 }
 
-gfx::Rect RenderWidgetHostViewAura::ConvertRectToScreen(const gfx::Rect& rect) {
+gfx::Rect RenderWidgetHostViewAura::ConvertRectToScreen(
+    const gfx::Rect& rect) const {
   gfx::Point origin = rect.origin();
   gfx::Point end = gfx::Point(rect.right(), rect.bottom());
 
@@ -2325,7 +2347,7 @@ gfx::Rect RenderWidgetHostViewAura::ConvertRectToScreen(const gfx::Rect& rect) {
 }
 
 gfx::Rect RenderWidgetHostViewAura::ConvertRectFromScreen(
-    const gfx::Rect& rect) {
+    const gfx::Rect& rect) const {
   gfx::Point origin = rect.origin();
   gfx::Point end = gfx::Point(rect.right(), rect.bottom());
 
@@ -2344,14 +2366,15 @@ gfx::Rect RenderWidgetHostViewAura::ConvertRectFromScreen(
   return rect;
 }
 
-gfx::Rect RenderWidgetHostViewAura::GetCaretBounds() {
+gfx::Rect RenderWidgetHostViewAura::GetCaretBounds() const {
   const gfx::Rect rect =
       gfx::UnionRects(selection_anchor_rect_, selection_focus_rect_);
   return ConvertRectToScreen(rect);
 }
 
-bool RenderWidgetHostViewAura::GetCompositionCharacterBounds(uint32 index,
-                                                             gfx::Rect* rect) {
+bool RenderWidgetHostViewAura::GetCompositionCharacterBounds(
+    uint32 index,
+    gfx::Rect* rect) const {
   DCHECK(rect);
   if (index >= composition_character_bounds_.size())
     return false;
@@ -2359,23 +2382,24 @@ bool RenderWidgetHostViewAura::GetCompositionCharacterBounds(uint32 index,
   return true;
 }
 
-bool RenderWidgetHostViewAura::HasCompositionText() {
+bool RenderWidgetHostViewAura::HasCompositionText() const {
   return has_composition_text_;
 }
 
-bool RenderWidgetHostViewAura::GetTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewAura::GetTextRange(gfx::Range* range) const {
   range->set_start(selection_text_offset_);
   range->set_end(selection_text_offset_ + selection_text_.length());
   return true;
 }
 
-bool RenderWidgetHostViewAura::GetCompositionTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewAura::GetCompositionTextRange(
+    gfx::Range* range) const {
   // TODO(suzhe): implement this method when fixing http://crbug.com/55130.
   NOTIMPLEMENTED();
   return false;
 }
 
-bool RenderWidgetHostViewAura::GetSelectionRange(gfx::Range* range) {
+bool RenderWidgetHostViewAura::GetSelectionRange(gfx::Range* range) const {
   range->set_start(selection_range_.start());
   range->set_end(selection_range_.end());
   return true;
@@ -2395,7 +2419,7 @@ bool RenderWidgetHostViewAura::DeleteRange(const gfx::Range& range) {
 
 bool RenderWidgetHostViewAura::GetTextFromRange(
     const gfx::Range& range,
-    string16* text) {
+    string16* text) const {
   gfx::Range selection_text_range(selection_text_offset_,
       selection_text_offset_ + selection_text_.length());
 

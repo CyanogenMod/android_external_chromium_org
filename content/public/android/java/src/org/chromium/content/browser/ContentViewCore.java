@@ -388,6 +388,8 @@ public class ContentViewCore
     private int mOverdrawBottomHeightPix;
     private int mViewportSizeOffsetWidthPix;
     private int mViewportSizeOffsetHeightPix;
+    private int mLocationInWindowX;
+    private int mLocationInWindowY;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -1189,6 +1191,20 @@ public class ContentViewCore
     }
 
     /**
+     * Loads the current navigation if there is a pending lazy load (after tab restore).
+     */
+    public void loadIfNecessary() {
+        if (mNativeContentViewCore != 0) nativeLoadIfNecessary(mNativeContentViewCore);
+    }
+
+    /**
+     * Requests the current navigation to be loaded upon the next call to loadIfNecessary().
+     */
+    public void requestRestoreLoad() {
+        if (mNativeContentViewCore != 0) nativeRequestRestoreLoad(mNativeContentViewCore);
+    }
+
+    /**
      * Reload the current page.
      */
     public void reload() {
@@ -1586,6 +1602,15 @@ public class ContentViewCore
         }
 
         updateAfterSizeChanged();
+    }
+
+    /**
+     * Called when the ContentView's position in the activity window changed. This information is
+     * used for cropping screenshots.
+     */
+    public void onLocationInWindowChanged(int x, int y) {
+        mLocationInWindowX = x;
+        mLocationInWindowY = y;
     }
 
     /**
@@ -3056,6 +3081,16 @@ public class ContentViewCore
     }
 
     @CalledByNative
+    private int getLocationInWindowX() {
+        return mLocationInWindowX;
+    }
+
+    @CalledByNative
+    private int getLocationInWindowY() {
+        return mLocationInWindowY;
+    }
+
+    @CalledByNative
     private static Rect createRect(int x, int y, int right, int bottom) {
         return new Rect(x, y, right, bottom);
     }
@@ -3211,6 +3246,8 @@ public class ContentViewCore
     private native void nativeGoForward(int nativeContentViewCoreImpl);
     private native void nativeGoToOffset(int nativeContentViewCoreImpl, int offset);
     private native void nativeGoToNavigationIndex(int nativeContentViewCoreImpl, int index);
+    private native void nativeLoadIfNecessary(int nativeContentViewCoreImpl);
+    private native void nativeRequestRestoreLoad(int nativeContentViewCoreImpl);
 
     private native void nativeStopLoading(int nativeContentViewCoreImpl);
 

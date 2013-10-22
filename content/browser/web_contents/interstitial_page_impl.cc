@@ -246,7 +246,7 @@ void InterstitialPageImpl::Hide() {
   RenderWidgetHostView* old_view =
       web_contents_->GetRenderViewHost()->GetView();
   if (web_contents_->GetInterstitialPage() == this &&
-      old_view && !old_view->IsShowing()) {
+      old_view && !old_view->IsShowing() && !web_contents_->IsHidden()) {
     // Show the original RVH since we're going away.  Note it might not exist if
     // the renderer crashed while the interstitial was showing.
     // Note that it is important that we don't call Show() if the view is
@@ -381,7 +381,8 @@ void InterstitialPageImpl::DidNavigate(
   }
 
   // The RenderViewHost has loaded its contents, we can show it now.
-  render_view_host_->GetView()->Show();
+  if (!web_contents_->IsHidden())
+    render_view_host_->GetView()->Show();
   web_contents_->AttachInterstitialPage(this);
 
   RenderWidgetHostView* rwh_view =
@@ -500,16 +501,13 @@ RenderViewHost* InterstitialPageImpl::CreateRenderViewHost() {
   session_storage_namespace_ =
       new SessionStorageNamespaceImpl(dom_storage_context);
 
-  RenderViewHost* render_view_host =
-      RenderViewHostFactory::Create(site_instance.get(),
-                                    this,
-                                    this,
-                                    MSG_ROUTING_NONE,
-                                    MSG_ROUTING_NONE,
-                                    false,
-                                    false);
-  web_contents_->RenderViewForInterstitialPageCreated(render_view_host);
-  return render_view_host;
+  return RenderViewHostFactory::Create(site_instance.get(),
+                                       this,
+                                       this,
+                                       MSG_ROUTING_NONE,
+                                       MSG_ROUTING_NONE,
+                                       false,
+                                       false);
 }
 
 WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
@@ -528,6 +526,7 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   render_view_host_->CreateRenderView(string16(),
                                       MSG_ROUTING_NONE,
                                       max_page_id);
+  web_contents_->RenderViewForInterstitialPageCreated(render_view_host_);
   view->SetSize(web_contents_view->GetContainerSize());
   // Don't show the interstitial until we have navigated to it.
   view->Hide();

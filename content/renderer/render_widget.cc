@@ -43,7 +43,6 @@
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -56,7 +55,6 @@
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -86,7 +84,6 @@ using WebKit::WebMouseEvent;
 using WebKit::WebMouseWheelEvent;
 using WebKit::WebNavigationPolicy;
 using WebKit::WebPagePopup;
-using WebKit::WebPoint;
 using WebKit::WebPopupMenu;
 using WebKit::WebPopupMenuInfo;
 using WebKit::WebPopupType;
@@ -1918,14 +1915,6 @@ void RenderWidget::show(WebNavigationPolicy) {
   SetPendingWindowRect(initial_pos_);
 }
 
-void RenderWidget::didProgrammaticallyScroll(
-    const WebKit::WebPoint& scroll_point) {
-  if (!compositor_)
-    return;
-  Send(new ViewHostMsg_DidProgrammaticallyScroll(
-    routing_id_, gfx::Vector2d(scroll_point.x, scroll_point.y)));
-}
-
 void RenderWidget::didFocus() {
 }
 
@@ -1988,19 +1977,21 @@ void RenderWidget::setWindowRect(const WebRect& rect) {
         (pos.y - popup_view_origin_for_emulation_.y()) * scale;
   }
 
-  if (did_show_) {
-    if (!RenderThreadImpl::current()->layout_test_mode()) {
+  if (!RenderThreadImpl::current()->layout_test_mode()) {
+    if (did_show_) {
       Send(new ViewHostMsg_RequestMove(routing_id_, pos));
       SetPendingWindowRect(pos);
     } else {
-      WebSize new_size(pos.width, pos.height);
-      Resize(new_size, new_size, overdraw_bottom_height_,
-             WebRect(), is_fullscreen_, NO_RESIZE_ACK);
-      view_screen_rect_ = pos;
-      window_screen_rect_ = pos;
+      initial_pos_ = pos;
     }
   } else {
-    initial_pos_ = pos;
+    WebSize new_size(pos.width, pos.height);
+    Resize(new_size, new_size, overdraw_bottom_height_,
+           WebRect(), is_fullscreen_, NO_RESIZE_ACK);
+    view_screen_rect_ = pos;
+    window_screen_rect_ = pos;
+    if (!did_show_)
+      initial_pos_ = pos;
   }
 }
 

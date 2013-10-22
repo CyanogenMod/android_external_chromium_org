@@ -82,7 +82,7 @@
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/cryptohome/async_method_caller.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_policy_controller.h"
 #include "chromeos/dbus/session_manager_client.h"
@@ -102,6 +102,8 @@
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "ui/base/touch/touch_device.h"
+#include "ui/events/event_utils.h"
 
 // Exclude X11 dependents for ozone
 #if defined(USE_X11)
@@ -138,8 +140,7 @@ class StubLogin : public LoginStatusConsumer,
                   public LoginUtils::Delegate {
  public:
   StubLogin(std::string username, std::string password)
-      : pending_requests_(false),
-        profile_prepared_(false) {
+      : profile_prepared_(false) {
     authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
     authenticator_.get()->AuthenticateToLogin(
         g_browser_process->profile_manager()->GetDefaultProfile(),
@@ -157,19 +158,15 @@ class StubLogin : public LoginStatusConsumer,
     delete this;
   }
 
-  virtual void OnLoginSuccess(const UserContext& user_context,
-                              bool pending_requests,
-                              bool using_oauth) OVERRIDE {
-    pending_requests_ = pending_requests;
+  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE {
     if (!profile_prepared_) {
       // Will call OnProfilePrepared in the end.
       LoginUtils::Get()->PrepareProfile(user_context,
                                         std::string(),  // display_email
-                                        using_oauth,
                                         false,          // has_cookies
                                         true,           // has_active_session
                                         this);
-    } else if (!pending_requests) {
+    } else {
       delete this;
     }
   }
@@ -178,12 +175,10 @@ class StubLogin : public LoginStatusConsumer,
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE {
     profile_prepared_ = true;
     LoginUtils::Get()->DoBrowserLaunch(profile, NULL);
-    if (!pending_requests_)
-      delete this;
+    delete this;
   }
 
   scoped_refptr<Authenticator> authenticator_;
-  bool pending_requests_;
   bool profile_prepared_;
 };
 
@@ -268,7 +263,7 @@ class DBusServices {
     CrosDBusService::Initialize();
 
     LoginState::Initialize();
-    CryptohomeLibrary::Initialize();
+    SystemSaltGetter::Initialize();
     CertLoader::Initialize();
 
     // This function and SystemKeyEventListener use InputMethodManager.
@@ -315,7 +310,7 @@ class DBusServices {
     disks::DiskMountManager::Shutdown();
     input_method::Shutdown();
 
-    CryptohomeLibrary::Shutdown();
+    SystemSaltGetter::Shutdown();
     LoginState::Shutdown();
 
     CrosDBusService::Shutdown();
@@ -575,6 +570,26 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
     UserManager::Get()->RestoreActiveSessions();
   }
 
+  // Initialize the network portal detector for Chrome OS. The network
+  // portal detector starts to listen for notifications from
+  // NetworkStateHandler and initiates captive portal detection for
+  // active networks. Shoule be called before call to
+  // OptionallyRunChromeOSLoginManager, because it depends on
+  // NetworkPortalDetector.
+  NetworkPortalDetector::Initialize();
+  {
+    NetworkPortalDetector* detector = NetworkPortalDetector::Get();
+#if defined(GOOGLE_CHROME_BUILD)
+    bool is_official_build = true;
+#else
+    bool is_official_build = false;
+#endif
+    // Enable portal detector if EULA was previously accepted or if
+    // this is an unofficial build.
+    if (!is_official_build || StartupUtils::IsEulaAccepted())
+      detector->Enable(true);
+  }
+
   // Tests should be able to tune login manager before showing it.
   // Thus only show login manager in normal (non-testing) mode.
   if (!parameters().ui_task ||
@@ -592,23 +607,6 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
   }
 
   peripheral_battery_observer_.reset(new PeripheralBatteryObserver());
-
-  // Initialize the network portal detector for Chrome OS. The network portal
-  // detector starts to listen for notifications from NetworkStateHandler and
-  // initiates captive portal detection for active networks.
-  NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
-  if (NetworkPortalDetector::IsEnabledInCommandLine() && detector) {
-    detector->Init();
-#if defined(GOOGLE_CHROME_BUILD)
-    bool is_official_build = true;
-#else
-    bool is_official_build = false;
-#endif
-    // Enable portal detector if EULA was previously accepted or if
-    // this is an unofficial build.
-    if (!is_official_build || StartupUtils::IsEulaAccepted())
-      detector->Enable(true);
-  }
 
   display_configuration_observer_.reset(
       new DisplayConfigurationObserver());
@@ -646,6 +644,13 @@ void ChromeBrowserMainPartsChromeos::PreBrowserStart() {
   // adjusting the oom priority.
   g_browser_process->platform_part()->oom_priority_manager()->Start();
 
+  // Turn on natural scroll if we have a touch screen.
+  if (ui::IsTouchDevicePresent()) {
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        chromeos::switches::kNaturalScrollDefault);
+    ui::SetNaturalScroll(true);
+  }
+
   ChromeBrowserMainPartsLinux::PreBrowserStart();
 }
 
@@ -677,10 +682,6 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // the network manager.
   if (NetworkChangeNotifierFactoryChromeos::GetInstance())
     NetworkChangeNotifierFactoryChromeos::GetInstance()->Shutdown();
-
-  NetworkPortalDetector* detector = NetworkPortalDetector::GetInstance();
-  if (NetworkPortalDetector::IsEnabledInCommandLine() && detector)
-    detector->Shutdown();
 
   // Destroy UI related classes before destroying services that they may
   // depend on.
@@ -747,6 +748,12 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   // PostMainMessageLoopRun, which also requires UserManager to live (see
   // http://crbug.com/243364).
   ChromeBrowserMainPartsLinux::PostMainMessageLoopRun();
+
+  // Called after
+  // ChromeBrowserMainPartsLinux::PostMainMessageLoopRun() to be
+  // executed after execution of chrome::CloseAsh(), because some
+  // parts of WebUI depends on NetworkPortalDetector.
+  NetworkPortalDetector::Shutdown();
 
   UserManager::Destroy();
 }

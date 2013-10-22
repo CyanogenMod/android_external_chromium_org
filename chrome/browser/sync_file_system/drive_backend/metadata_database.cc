@@ -23,6 +23,8 @@
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/google_apis/drive_api_parser.h"
 #include "chrome/browser/google_apis/drive_entry_kinds.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
+#include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_db_migration_util.h"
 #include "chrome/browser/sync_file_system/logger.h"
@@ -33,12 +35,6 @@
 
 namespace sync_file_system {
 namespace drive_backend {
-
-const char kDatabaseVersionKey[] = "VERSION";
-const int64 kCurrentDatabaseVersion = 3;
-const char kServiceMetadataKey[] = "SERVICE";
-const char kFileMetadataKeyPrefix[] = "FILE: ";
-const char kFileTrackerKeyPrefix[] = "TRACKER: ";
 
 struct DatabaseContents {
   scoped_ptr<ServiceMetadata> service_metadata;
@@ -84,69 +80,6 @@ base::FilePath ReverseConcatPathComponents(
   }
 
   return base::FilePath(result).NormalizePathSeparators();
-}
-
-void PopulateFileDetailsByFileResource(
-    const google_apis::FileResource& file_resource,
-    FileDetails* details) {
-  details->clear_parent_folder_ids();
-  for (ScopedVector<google_apis::ParentReference>::const_iterator itr =
-           file_resource.parents().begin();
-       itr != file_resource.parents().end();
-       ++itr) {
-    details->add_parent_folder_ids((*itr)->file_id());
-  }
-  details->set_title(file_resource.title());
-
-  google_apis::DriveEntryKind kind = drive::util::GetKind(file_resource);
-  if (kind == google_apis::ENTRY_KIND_FILE)
-    details->set_file_kind(FILE_KIND_FILE);
-  else if (kind == google_apis::ENTRY_KIND_FOLDER)
-    details->set_file_kind(FILE_KIND_FOLDER);
-  else
-    details->set_file_kind(FILE_KIND_UNSUPPORTED);
-
-  details->set_md5(file_resource.md5_checksum());
-  details->set_etag(file_resource.etag());
-  details->set_creation_time(file_resource.created_date().ToInternalValue());
-  details->set_modification_time(
-      file_resource.modified_date().ToInternalValue());
-  details->set_deleted(false);
-}
-
-scoped_ptr<FileMetadata> CreateFileMetadataFromFileResource(
-    int64 change_id,
-    const google_apis::FileResource& resource) {
-  scoped_ptr<FileMetadata> file(new FileMetadata);
-  file->set_file_id(resource.file_id());
-
-  FileDetails* details = file->mutable_details();
-  details->set_change_id(change_id);
-
-  if (resource.labels().is_trashed()) {
-    details->set_deleted(true);
-    return file.Pass();
-  }
-
-  PopulateFileDetailsByFileResource(resource, details);
-  return file.Pass();
-}
-
-scoped_ptr<FileMetadata> CreateFileMetadataFromChangeResource(
-    const google_apis::ChangeResource& change) {
-  scoped_ptr<FileMetadata> file(new FileMetadata);
-  file->set_file_id(change.file_id());
-
-  FileDetails* details = file->mutable_details();
-  details->set_change_id(change.change_id());
-
-  if (change.is_deleted()) {
-    details->set_deleted(true);
-    return file.Pass();
-  }
-
-  PopulateFileDetailsByFileResource(*change.file(), details);
-  return file.Pass();
 }
 
 void CreateInitialSyncRootTracker(
@@ -205,29 +138,6 @@ void CreateInitialAppRootTracker(
 void AdaptLevelDBStatusToSyncStatusCode(const SyncStatusCallback& callback,
                                         const leveldb::Status& status) {
   callback.Run(LevelDBStatusToSyncStatusCode(status));
-}
-
-void PutServiceMetadataToBatch(const ServiceMetadata& service_metadata,
-                               leveldb::WriteBatch* batch) {
-  std::string value;
-  bool success = service_metadata.SerializeToString(&value);
-  DCHECK(success);
-  batch->Put(kServiceMetadataKey, value);
-}
-
-void PutFileToBatch(const FileMetadata& file, leveldb::WriteBatch* batch) {
-  std::string value;
-  bool success = file.SerializeToString(&value);
-  DCHECK(success);
-  batch->Put(kFileMetadataKeyPrefix + file.file_id(), value);
-}
-
-void PutTrackerToBatch(const FileTracker& tracker, leveldb::WriteBatch* batch) {
-  std::string value;
-  bool success = tracker.SerializeToString(&value);
-  DCHECK(success);
-  batch->Put(kFileTrackerKeyPrefix + base::Int64ToString(tracker.tracker_id()),
-             value);
 }
 
 void PutFileDeletionToBatch(const std::string& file_id,

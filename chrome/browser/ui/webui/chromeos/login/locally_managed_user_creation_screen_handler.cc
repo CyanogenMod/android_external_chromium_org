@@ -7,6 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_flow.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -19,15 +20,7 @@
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace {
-
 const char kJsScreenPath[] = "login.LocallyManagedUserCreationScreen";
-
-// Locally managed user creation screen id.
-const char kLocallyManagedUserCreationScreen[] =
-    "locally-managed-user-creation";
-
-}  // namespace
 
 namespace chromeos {
 
@@ -115,6 +108,21 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
   builder->Add("createManagedUserCreatedText3",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
 
+  builder->Add("importExistingSupervisedUserTitle",
+               IDS_IMPORT_EXISTING_MANAGED_USER_TITLE);
+  builder->Add("importExistingSupervisedUserText",
+               IDS_IMPORT_EXISTING_MANAGED_USER_TEXT);
+  builder->Add("managedUserCreationFlowImportButtonTitle",
+               IDS_IMPORT_EXISTING_MANAGED_USER_OK);
+  builder->Add("importSupervisedUserLink",
+               IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK);
+  builder->Add("createSupervisedUserLink",
+               IDS_CREATE_NEW_USER_LINK);
+  builder->Add("importBubbleText", IDS_SUPERVISED_USER_IMPORT_BUBBLE_TEXT);
+  builder->Add("importUserExists", IDS_SUPERVISED_USER_IMPORT_USER_EXIST);
+  builder->Add("importUsernameExists",
+               IDS_SUPERVISED_USER_IMPORT_USERNAME_EXIST);
+
   builder->Add("managementURL", chrome::kSupervisedUserManagementDisplayURL);
 
   // TODO(antrim) : this is an explicit code duplications with UserImageScreen.
@@ -145,6 +153,13 @@ void LocallyManagedUserCreationScreenHandler::RegisterMessages() {
   AddCallback("managerSelectedOnLocallyManagedUserCreationFlow",
               &LocallyManagedUserCreationScreenHandler::
                   HandleManagerSelected);
+  AddCallback("userSelectedForImportInManagedUserCreationFlow",
+              &LocallyManagedUserCreationScreenHandler::
+                  HandleImportUserSelected);
+  AddCallback("importSupervisedUser",
+              &LocallyManagedUserCreationScreenHandler::
+                  HandleImportSupervisedUser);
+
 
   // TODO(antrim) : this is an explicit code duplications with UserImageScreen.
   // It should be removed by issue 251179.
@@ -244,10 +259,17 @@ void LocallyManagedUserCreationScreenHandler::HandleManagerSelected(
   WallpaperManager::Get()->SetUserWallpaper(manager_id);
 }
 
+void LocallyManagedUserCreationScreenHandler::HandleImportUserSelected(
+    const std::string& user_id) {
+  if (!delegate_)
+    return;
+}
+
 void LocallyManagedUserCreationScreenHandler::HandleCheckLocallyManagedUserName(
     const string16& name) {
-  if (NULL != UserManager::Get()->
-          FindLocallyManagedUser(CollapseWhitespace(name, true))) {
+  std::string user_id;
+  if (NULL != UserManager::Get()->GetSupervisedUserManager()->
+          FindByDisplayName(CollapseWhitespace(name, true))) {
     CallJS("managedUserNameError", name,
            l10n_util::GetStringUTF16(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS));
@@ -255,6 +277,9 @@ void LocallyManagedUserCreationScreenHandler::HandleCheckLocallyManagedUserName(
     CallJS("managedUserNameError", name,
            l10n_util::GetStringUTF16(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ILLEGAL_USERNAME));
+  } else if (delegate_ && delegate_->FindUserByDisplayName(
+                 CollapseWhitespace(name, true), &user_id)) {
+    CallJS("managedUserSuggestImport", name, user_id);
   } else {
     CallJS("managedUserNameOk", name);
   }
@@ -266,7 +291,8 @@ void LocallyManagedUserCreationScreenHandler::HandleCreateManagedUser(
   if (!delegate_)
     return;
   const string16 new_user_name = CollapseWhitespace(new_raw_user_name, true);
-  if (NULL != UserManager::Get()->FindLocallyManagedUser(new_user_name)) {
+  if (NULL != UserManager::Get()->GetSupervisedUserManager()->
+          FindByDisplayName(new_user_name)) {
     CallJS("managedUserNameError", new_user_name,
            l10n_util::GetStringFUTF16(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS,
@@ -291,6 +317,17 @@ void LocallyManagedUserCreationScreenHandler::HandleCreateManagedUser(
       IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
 
   delegate_->CreateManagedUser(new_user_name, new_user_password);
+}
+
+void LocallyManagedUserCreationScreenHandler::HandleImportSupervisedUser(
+    const std::string& user_id) {
+  if (!delegate_)
+    return;
+
+  ShowStatusMessage(true /* progress */, l10n_util::GetStringUTF16(
+      IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE));
+
+  delegate_->ImportManagedUser(user_id);
 }
 
 void LocallyManagedUserCreationScreenHandler::HandleAuthenticateManager(
@@ -359,6 +396,11 @@ void LocallyManagedUserCreationScreenHandler::ShowPage(
 
 void LocallyManagedUserCreationScreenHandler::SetCameraPresent(bool present) {
   CallJS("setCameraPresent", present);
+}
+
+void LocallyManagedUserCreationScreenHandler::ShowExistingManagedUsers(
+    const base::ListValue* users) {
+  CallJS("setExistingManagedUsers", *users);
 }
 
 }  // namespace chromeos

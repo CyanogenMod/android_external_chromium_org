@@ -271,8 +271,12 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
   message_sender_->Send(new P2PMsg_OnDataReceived(id_, remote_address_, data));
 }
 
+// Note: dscp is not actually used on TCP sockets as this point,
+// but may be honored in the future.
 void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
-                                const std::vector<char>& data) {
+                                const std::vector<char>& data,
+                                net::DiffServCodePoint dscp,
+                                uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
     // sent by hasn't been processed the renderer.
@@ -287,7 +291,7 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
   }
 
   if (!connected_) {
-    P2PSocketHost::StunMessageType type;
+    P2PSocketHost::StunMessageType type = P2PSocketHost::StunMessageType();
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
       LOG(ERROR) << "Page tried to send a data packet to " << to.ToString()

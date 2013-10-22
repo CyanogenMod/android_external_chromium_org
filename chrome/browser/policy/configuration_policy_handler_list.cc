@@ -10,10 +10,14 @@
 #include "base/prefs/pref_value_map.h"
 #include "base/stl_util.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/policy_handlers.h"
+#include "chrome/browser/net/proxy_policy_handler.h"
 #include "chrome/browser/policy/configuration_policy_handler.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
+#include "chrome/browser/search_engines/default_search_policy_handler.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "extensions/common/manifest.h"
 #include "grit/generated_resources.h"
 #include "policy/policy_constants.h"
@@ -28,67 +32,15 @@
 #include "chrome/browser/policy/configuration_policy_handler_android.h"
 #endif  // defined(OS_ANDROID)
 
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+#include "chrome/browser/download/download_dir_policy_handler.h"
+#endif
+
 #if !defined(OS_MACOSX)
 #include "apps/pref_names.h"
 #endif
 
 namespace policy {
-
-// List of policy types to preference names, for policies affecting the default
-// search provider.
-const PolicyToPreferenceMapEntry kDefaultSearchPolicyMap[] = {
-  { key::kDefaultSearchProviderEnabled,
-    prefs::kDefaultSearchProviderEnabled,
-    Value::TYPE_BOOLEAN },
-  { key::kDefaultSearchProviderName,
-    prefs::kDefaultSearchProviderName,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderKeyword,
-    prefs::kDefaultSearchProviderKeyword,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderSearchURL,
-    prefs::kDefaultSearchProviderSearchURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderSuggestURL,
-    prefs::kDefaultSearchProviderSuggestURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderInstantURL,
-    prefs::kDefaultSearchProviderInstantURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderIconURL,
-    prefs::kDefaultSearchProviderIconURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderEncodings,
-    prefs::kDefaultSearchProviderEncodings,
-    Value::TYPE_LIST },
-  { key::kDefaultSearchProviderAlternateURLs,
-    prefs::kDefaultSearchProviderAlternateURLs,
-    Value::TYPE_LIST },
-  { key::kDefaultSearchProviderSearchTermsReplacementKey,
-    prefs::kDefaultSearchProviderSearchTermsReplacementKey,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderImageURL,
-    prefs::kDefaultSearchProviderImageURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderNewTabURL,
-    prefs::kDefaultSearchProviderNewTabURL,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderSearchURLPostParams,
-    prefs::kDefaultSearchProviderSearchURLPostParams,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderSuggestURLPostParams,
-    prefs::kDefaultSearchProviderSuggestURLPostParams,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderInstantURLPostParams,
-    prefs::kDefaultSearchProviderInstantURLPostParams,
-    Value::TYPE_STRING },
-  { key::kDefaultSearchProviderImageURLPostParams,
-    prefs::kDefaultSearchProviderImageURLPostParams,
-    Value::TYPE_STRING },
-};
-
-COMPILE_ASSERT(DEFAULT_SEARCH_KEY_SIZE == arraysize(kDefaultSearchPolicyMap),
-               wrong_policy_map_size);
 
 namespace {
 
@@ -143,9 +95,6 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kApplicationLocaleValue,
     prefs::kApplicationLocale,
     Value::TYPE_STRING },
-  { key::kExtensionInstallForcelist,
-    prefs::kExtensionInstallForceList,
-    Value::TYPE_LIST },
   { key::kDisabledPlugins,
     prefs::kPluginsDisabledPlugins,
     Value::TYPE_LIST },
@@ -279,7 +228,7 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kMediaCacheSize,
     Value::TYPE_INTEGER },
   { key::kPolicyRefreshRate,
-    prefs::kUserPolicyRefreshRate,
+    policy_prefs::kUserPolicyRefreshRate,
     Value::TYPE_INTEGER },
   { key::kDevicePolicyRefreshRate,
     prefs::kDevicePolicyRefreshRate,
@@ -509,33 +458,27 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
 
   handlers_.push_back(
       new AutofillPolicyHandler(autofill::prefs::kAutofillEnabled));
-  handlers_.push_back(
-      new DefaultSearchPolicyHandler(prefs::kDefaultSearchProviderID,
-                                     prefs::kDefaultSearchProviderPrepopulateID,
-                                     kDefaultSearchPolicyMap));
+  handlers_.push_back(new DefaultSearchPolicyHandler());
   handlers_.push_back(new FileSelectionDialogsHandler(
       prefs::kAllowFileSelectionDialogs, prefs::kPromptForDownload));
   handlers_.push_back(
       new IncognitoModePolicyHandler(prefs::kIncognitoModeAvailability));
   handlers_.push_back(
       new JavascriptPolicyHandler(prefs::kManagedDefaultJavaScriptSetting));
-  handlers_.push_back(new ProxyPolicyHandler(prefs::kProxy));
+  handlers_.push_back(new ProxyPolicyHandler());
   handlers_.push_back(new RestoreOnStartupPolicyHandler(
       prefs::kRestoreOnStartup, prefs::kURLsToRestoreOnStartup));
   handlers_.push_back(new SyncPolicyHandler(prefs::kSyncManaged));
   handlers_.push_back(new URLBlacklistPolicyHandler(prefs::kUrlBlacklist));
 
-  handlers_.push_back(
-      new ExtensionListPolicyHandler(key::kExtensionInstallWhitelist,
-                                     prefs::kExtensionInstallAllowList,
-                                     false));
-  handlers_.push_back(
-      new ExtensionListPolicyHandler(key::kExtensionInstallBlacklist,
-                                     prefs::kExtensionInstallDenyList,
-                                     true));
-  handlers_.push_back(new ExtensionInstallForcelistPolicyHandler(
-      prefs::kExtensionInstallForceList));
-  handlers_.push_back(new ExtensionURLPatternListPolicyHandler(
+  handlers_.push_back(new extensions::ExtensionListPolicyHandler(
+      key::kExtensionInstallWhitelist,
+      prefs::kExtensionInstallAllowList,
+      false));
+  handlers_.push_back(new extensions::ExtensionListPolicyHandler(
+      key::kExtensionInstallBlacklist, prefs::kExtensionInstallDenyList, true));
+  handlers_.push_back(new extensions::ExtensionInstallForcelistPolicyHandler());
+  handlers_.push_back(new extensions::ExtensionURLPatternListPolicyHandler(
       key::kExtensionInstallSources, prefs::kExtensionAllowedInstallSites));
   handlers_.push_back(new StringToIntEnumListPolicyHandler(
       key::kExtensionAllowedTypes,
@@ -543,16 +486,15 @@ ConfigurationPolicyHandlerList::ConfigurationPolicyHandlerList() {
       kExtensionAllowedTypesMap,
       kExtensionAllowedTypesMap + arraysize(kExtensionAllowedTypesMap)));
 #if defined(OS_CHROMEOS)
-  handlers_.push_back(
-      new ExtensionListPolicyHandler(key::kAttestationExtensionWhitelist,
-                                     prefs::kAttestationExtensionWhitelist,
-                                     false));
+  handlers_.push_back(new extensions::ExtensionListPolicyHandler(
+      key::kAttestationExtensionWhitelist,
+      prefs::kAttestationExtensionWhitelist,
+      false));
 #endif  // defined(OS_CHROMEOS)
 
-#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID) && !defined(OS_IOS)
   handlers_.push_back(new DiskCacheDirPolicyHandler(prefs::kDiskCacheDir));
-  handlers_.push_back(new DownloadDirPolicyHandler(
-      prefs::kDownloadDefaultDirectory, prefs::kPromptForDownload));
+  handlers_.push_back(new DownloadDirPolicyHandler);
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)

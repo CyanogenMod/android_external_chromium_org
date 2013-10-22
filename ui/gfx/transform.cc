@@ -32,6 +32,14 @@ SkMScalar TanDegrees(double degrees) {
   return SkDoubleToMScalar(std::tan(radians));
 }
 
+inline bool ApproximatelyZero(SkMScalar x, SkMScalar tolerance) {
+  return std::abs(x) <= tolerance;
+}
+
+inline bool ApproximatelyOne(SkMScalar x, SkMScalar tolerance) {
+  return std::abs(x - SkDoubleToMScalar(1.0)) <= tolerance;
+}
+
 }  // namespace
 
 Transform::Transform(SkMScalar col1row1,
@@ -208,6 +216,25 @@ void Transform::PreconcatTransform(const Transform& transform) {
 
 void Transform::ConcatTransform(const Transform& transform) {
   matrix_.postConcat(transform.matrix_);
+}
+
+bool Transform::IsApproximatelyIdentityOrTranslation(
+    SkMScalar tolerance) const {
+  DCHECK_GE(tolerance, 0);
+  return
+      ApproximatelyOne(matrix_.get(0, 0), tolerance) &&
+      ApproximatelyZero(matrix_.get(1, 0), tolerance) &&
+      ApproximatelyZero(matrix_.get(2, 0), tolerance) &&
+      matrix_.get(3, 0) == 0 &&
+      ApproximatelyZero(matrix_.get(0, 1), tolerance) &&
+      ApproximatelyOne(matrix_.get(1, 1), tolerance) &&
+      ApproximatelyZero(matrix_.get(2, 1), tolerance) &&
+      matrix_.get(3, 1) == 0 &&
+      ApproximatelyZero(matrix_.get(0, 2), tolerance) &&
+      ApproximatelyZero(matrix_.get(1, 2), tolerance) &&
+      ApproximatelyOne(matrix_.get(2, 2), tolerance) &&
+      matrix_.get(3, 2) == 0 &&
+      matrix_.get(3, 3) == 1;
 }
 
 bool Transform::IsIdentityOrIntegerTranslation() const {
@@ -480,8 +507,9 @@ void Transform::TransformPointInternal(const SkMatrix44& xform,
 
   xform.mapMScalars(p);
 
-  if (p[3] != 1 && abs(p[3]) > 0) {
-    point->SetPoint(p[0] / p[3], p[1] / p[3], p[2]/ p[3]);
+  if (p[3] != SK_MScalar1 && p[3] != 0.f) {
+    float w_inverse = SK_MScalar1 / p[3];
+    point->SetPoint(p[0] * w_inverse, p[1] * w_inverse, p[2] * w_inverse);
   } else {
     point->SetPoint(p[0], p[1], p[2]);
   }

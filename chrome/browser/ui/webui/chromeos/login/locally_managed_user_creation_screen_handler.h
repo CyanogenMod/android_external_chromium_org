@@ -14,7 +14,7 @@
 #include "content/public/browser/web_ui.h"
 
 namespace base {
-class DictionaryValue;
+class ListValue;
 }
 
 namespace chromeos {
@@ -35,12 +35,20 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
     virtual void AuthenticateManager(const std::string& manager_id,
                                      const std::string& manager_password) = 0;
 
-    // Starts managed user creation flow, with manager identified by
-    // |manager_id| and |manager_password|, and locally managed user that would
-    // have |display_name| and authenticated by the |managed_user_password|.
+    // Starts managed user creation flow, with supervised user that would have
+    // |display_name| and authenticated by the |managed_user_password|.
     virtual void CreateManagedUser(
         const string16& display_name,
         const std::string& managed_user_password) = 0;
+
+    // Look up if user with name |display_name| already exist and can be
+    // imported. Returns user ID in |out_id|. Returns true if user was found,
+    // false otherwise.
+    virtual bool FindUserByDisplayName(const string16& display_name,
+                                       std::string *out_id) const = 0;
+
+    // Starts managed user import flow for user identified with |user_id|.
+    virtual void ImportManagedUser(const std::string& user_id) = 0;
 
     virtual void AbortFlow() = 0;
     virtual void FinishFlow() = 0;
@@ -81,6 +89,8 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
 
   void SetCameraPresent(bool enabled);
 
+  void ShowExistingManagedUsers(const base::ListValue* users);
+
   // BaseScreenHandler implementation:
   virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
@@ -93,6 +103,7 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
   void HandleCheckLocallyManagedUserName(const string16& name);
 
   void HandleManagerSelected(const std::string& manager_id);
+  void HandleImportUserSelected(const std::string& user_id);
 
   void HandleFinishLocalManagedUserCreation();
   void HandleAbortLocalManagedUserCreation();
@@ -103,6 +114,7 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
                                  const std::string& manager_password);
   void HandleCreateManagedUser(const string16& new_raw_user_name,
                                const std::string& new_user_password);
+  void HandleImportSupervisedUser(const std::string& user_id);
 
   void HandleGetImages();
   void HandlePhotoTaken(const std::string& image_url);

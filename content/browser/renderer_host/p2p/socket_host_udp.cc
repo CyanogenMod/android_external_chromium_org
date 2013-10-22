@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
+#include "base/stl_util.h"
 #include "content/browser/renderer_host/p2p/socket_host_throttler.h"
 #include "content/common/p2p_messages.h"
 #include "ipc/ipc_sender.h"
@@ -38,23 +39,19 @@ bool IsTransientError(int error) {
          error == net::ERR_OUT_OF_MEMORY;
 }
 
-uint64 GetUniqueEventId(const content::P2PSocketHostUdp* obj,
-                        uint64 packet_id) {
-  uint64 uid = reinterpret_cast<uintptr_t>(obj);
-  uid <<= 32;
-  uid |= packet_id;
-  return uid;
-}
-
 }  // namespace
 
 namespace content {
 
 P2PSocketHostUdp::PendingPacket::PendingPacket(
-    const net::IPEndPoint& to, const std::vector<char>& content, uint64 id)
+    const net::IPEndPoint& to,
+    const std::vector<char>& content,
+    net::DiffServCodePoint dscp_,
+    uint64 id)
     : to(to),
       data(new net::IOBuffer(content.size())),
       size(content.size()),
+      dscp(dscp_),
       id(id) {
   memcpy(data->data(), &content[0], size);
 }
@@ -68,7 +65,7 @@ P2PSocketHostUdp::P2PSocketHostUdp(IPC::Sender* message_sender,
     : P2PSocketHost(message_sender, id),
       socket_(new net::UDPServerSocket(NULL, net::NetLog::Source())),
       send_pending_(false),
-      send_packet_count_(0),
+      last_dscp_(net::DSCP_CS0),
       throttler_(throttler) {
 }
 
@@ -142,12 +139,12 @@ void P2PSocketHostUdp::OnRecv(int result) {
 }
 
 void P2PSocketHostUdp::HandleReadResult(int result) {
-  DCHECK_EQ(state_, STATE_OPEN);
+  DCHECK_EQ(STATE_OPEN, state_);
 
   if (result > 0) {
     std::vector<char> data(recv_buffer_->data(), recv_buffer_->data() + result);
 
-    if (connected_peers_.find(recv_address_) == connected_peers_.end()) {
+    if (!ContainsKey(connected_peers_, recv_address_)) {
       P2PSocketHost::StunMessageType type;
       bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
       if (stun && IsRequestOrResponse(type)) {
@@ -168,14 +165,16 @@ void P2PSocketHostUdp::HandleReadResult(int result) {
 }
 
 void P2PSocketHostUdp::Send(const net::IPEndPoint& to,
-                            const std::vector<char>& data) {
+                            const std::vector<char>& data,
+                            net::DiffServCodePoint dscp,
+                            uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
     // sent by hasn't been processed the renderer.
     return;
   }
 
-  if (connected_peers_.find(to) == connected_peers_.end()) {
+  if (!ContainsKey(connected_peers_, to)) {
     P2PSocketHost::StunMessageType type;
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
@@ -193,18 +192,27 @@ void P2PSocketHostUdp::Send(const net::IPEndPoint& to,
   }
 
   if (send_pending_) {
-    send_queue_.push_back(PendingPacket(to, data, send_packet_count_));
+    send_queue_.push_back(PendingPacket(to, data, dscp, packet_id));
   } else {
-    PendingPacket packet(to, data, send_packet_count_);
+    PendingPacket packet(to, data, dscp, packet_id);
     DoSend(packet);
   }
-  ++send_packet_count_;
 }
 
 void P2PSocketHostUdp::DoSend(const PendingPacket& packet) {
-  TRACE_EVENT_ASYNC_BEGIN1("p2p", "Udp::DoSend",
-                           GetUniqueEventId(this, packet.id),
-                           "size", packet.size);
+  TRACE_EVENT_ASYNC_STEP1("p2p", "Send", packet.id, "UdpAsyncSendTo",
+                          "size", packet.size);
+  if (last_dscp_ != packet.dscp && last_dscp_ != net::DSCP_NO_CHANGE) {
+    int result = socket_->SetDiffServCodePoint(packet.dscp);
+    if (result == net::OK) {
+      last_dscp_ = packet.dscp;
+    } else if (!IsTransientError(result) && last_dscp_ != net::DSCP_CS0) {
+      // We receieved a non-transient error, and it seems we have
+      // not changed the DSCP in the past, disable DSCP as it unlikely
+      // to work in the future.
+      last_dscp_ = net::DSCP_NO_CHANGE;
+    }
+  }
   int result = socket_->SendTo(
       packet.data.get(),
       packet.size,
@@ -246,8 +254,7 @@ void P2PSocketHostUdp::OnSend(uint64 packet_id, int result) {
 }
 
 void P2PSocketHostUdp::HandleSendResult(uint64 packet_id, int result) {
-  TRACE_EVENT_ASYNC_END1("p2p", "Udp::DoSend",
-                         GetUniqueEventId(this, packet_id),
+  TRACE_EVENT_ASYNC_END1("p2p", "Send", packet_id,
                          "result", result);
   if (result > 0) {
     message_sender_->Send(new P2PMsg_OnSendComplete(id_));

@@ -105,6 +105,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool accelerated_compositing_for_overflow_scroll_enabled;
+  bool universal_accelerated_compositing_for_overflow_scroll_enabled;
   bool accelerated_compositing_for_scrollable_frames_enabled;
   bool composited_scrolling_for_frames_enabled;
   bool mock_scrollbars_enabled;
@@ -164,7 +165,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
 
 #if defined(OS_ANDROID)
   bool text_autosizing_enabled;
-  float font_scale_factor;
+  float text_autosizing_font_scale_factor;
   bool force_enable_zoom;
   bool double_tap_to_zoom_enabled;
   bool user_gesture_required_for_media_playback;
@@ -177,6 +178,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool viewport_meta_layout_size_quirk;
   bool viewport_meta_zero_values_quirk;
   bool ignore_main_frame_overflow_hidden_quirk;
+  bool report_screen_size_in_physical_pixels_quirk;
 #endif
 
   // We try to keep the default values the same as the default values in

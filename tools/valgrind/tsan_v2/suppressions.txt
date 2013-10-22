@@ -59,6 +59,9 @@ race:uprv_realloc_46
 # http://crbug.com/223955
 race:PassRefPtr
 
+# http://crbug.com/224617
+race:base::debug::TraceEventTestFixture_TraceSampling_Test::TestBody
+
 # http://crbug.com/239359
 race:media::TestInputCallback::OnData
 
@@ -92,6 +95,9 @@ race:webrtc::EventPosix::StartTimer
 # http://crbug.com/246974
 race:content::GpuWatchdogThread::CheckArmed
 
+# http://crbug.com/257396
+race:base::debug::TraceEventTestFixture_TraceSamplingScope_Test::TestBody
+
 # http://crbug.com/257543
 race:*GetObjectFromEntryAddress
 
@@ -109,9 +115,6 @@ race:CommandLine::current_process_commandline_
 
 # http://crbug.com/270037
 race:gLibCleanupFunctions
-
-# http://crbug.com/270675
-race:net::RuleBasedHostResolverProc::Resolve
 
 # http://crbug.com/272095
 race:base::g_top_manager
@@ -132,5 +135,5 @@ race:PostponeInterruptsScope
 # http://crbug.com/296883
 race:net::URLFetcherCore::Stop
 
-# http://crbug.com/304178
-race:localtime_r
+# http://crbug.com/305459
+race:base::debug::TraceEventTestFixture_TraceContinuousSampling_Test::TestBody

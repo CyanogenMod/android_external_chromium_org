@@ -12,11 +12,11 @@
 #include "ash/launcher/launcher.h"
 #include "ash/launcher/launcher_button.h"
 #include "ash/launcher/launcher_model.h"
-#include "ash/launcher/launcher_view.h"
 #include "ash/shelf/shelf_util.h"
+#include "ash/shelf/shelf_view.h"
 #include "ash/shell.h"
 #include "ash/test/launcher_test_api.h"
-#include "ash/test/launcher_view_test_api.h"
+#include "ash/test/shelf_view_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
@@ -50,6 +50,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "extensions/common/switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/views/apps_grid_view.h"
@@ -219,7 +220,7 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         profile())->extension_service();
     const Extension* extension =
-        service->GetExtensionById(last_loaded_extension_id_, false);
+        service->GetExtensionById(last_loaded_extension_id(), false);
     EXPECT_TRUE(extension);
 
     OpenApplication(AppLaunchParams(profile(),
@@ -236,7 +237,7 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
 
     // First get app_id.
     const Extension* extension =
-        service->GetExtensionById(last_loaded_extension_id_, false);
+        service->GetExtensionById(last_loaded_extension_id(), false);
     const std::string app_id = extension->id();
 
     // Then create a shortcut.
@@ -277,7 +278,7 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
   // Try to rip off |item_index|.
   void RipOffItemIndex(int index,
                        aura::test::EventGenerator* generator,
-                       ash::test::LauncherViewTestAPI* test,
+                       ash::test::ShelfViewTestAPI* test,
                        RipOffCommand command) {
     ash::internal::LauncherButton* button = test->GetButton(index);
     gfx::Point start_point = button->GetBoundsInScreen().CenterPoint();
@@ -848,11 +849,9 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchPinned) {
   EXPECT_EQ(++tab_count, tab_strip->count());
   EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
   WebContents* tab = tab_strip->GetActiveWebContents();
-  content::WindowedNotificationObserver close_observer(
-      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::Source<WebContents>(tab));
+  content::WebContentsDestroyedWatcher destroyed_watcher(tab);
   browser()->tab_strip_model()->CloseSelectedTabs();
-  close_observer.Wait();
+  destroyed_watcher.Wait();
   EXPECT_EQ(--tab_count, tab_strip->count());
   EXPECT_EQ(ash::STATUS_CLOSED, (*model_->ItemByID(shortcut_id)).status);
 }
@@ -867,11 +866,9 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchUnpinned) {
   ash::LauncherID shortcut_id = CreateShortcut("app1");
   EXPECT_EQ(ash::STATUS_ACTIVE, (*model_->ItemByID(shortcut_id)).status);
   WebContents* tab = tab_strip->GetActiveWebContents();
-  content::WindowedNotificationObserver close_observer(
-      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::Source<WebContents>(tab));
+  content::WebContentsDestroyedWatcher destroyed_watcher(tab);
   browser()->tab_strip_model()->CloseSelectedTabs();
-  close_observer.Wait();
+  destroyed_watcher.Wait();
   EXPECT_EQ(--tab_count, tab_strip->count());
   EXPECT_EQ(ash::STATUS_CLOSED, (*model_->ItemByID(shortcut_id)).status);
 }
@@ -884,7 +881,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, LaunchInBackground) {
   LoadAndLaunchExtension("app1", extension_misc::LAUNCH_TAB,
                          NEW_BACKGROUND_TAB);
   EXPECT_EQ(++tab_count, tab_strip->count());
-  ChromeLauncherController::instance()->LaunchApp(last_loaded_extension_id_,
+  ChromeLauncherController::instance()->LaunchApp(last_loaded_extension_id(),
                                                   ash::LAUNCH_FROM_UNKNOWN,
                                                   0);
 }
@@ -1548,8 +1545,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
   // Get a number of interfaces we need.
   aura::test::EventGenerator generator(
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
-  ash::test::LauncherViewTestAPI test(
-      ash::test::LauncherTestAPI(launcher_).launcher_view());
+  ash::test::ShelfViewTestAPI test(
+      ash::test::LauncherTestAPI(launcher_).shelf_view());
   AppListService* service = AppListService::Get();
 
   // There should be two items in our launcher by this time.
@@ -1558,7 +1555,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
 
   // Open the app list menu and check that the drag and drop host was set.
   gfx::Rect app_list_bounds =
-      test.launcher_view()->GetAppListButtonView()->GetBoundsInScreen();
+      test.shelf_view()->GetAppListButtonView()->GetBoundsInScreen();
   generator.MoveMouseTo(app_list_bounds.CenterPoint().x(),
                         app_list_bounds.CenterPoint().y());
   base::MessageLoop::current()->RunUntilIdle();
@@ -1590,7 +1587,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
 
   // Drag the item into the launcher and check that a new item gets created.
   const views::ViewModel* vm_launcher =
-      test.launcher_view()->view_model_for_test();
+      test.shelf_view()->view_model_for_test();
   views::View* launcher1 = vm_launcher->view_at(1);
   gfx::Rect bounds_launcher_1 = launcher1->GetBoundsInScreen();
   generator.MoveMouseTo(bounds_launcher_1.CenterPoint().x(),
@@ -1667,8 +1664,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragOffShelf) {
   aura::test::EventGenerator generator(
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
-  ash::test::LauncherViewTestAPI test(
-      ash::test::LauncherTestAPI(launcher_).launcher_view());
+  ash::test::ShelfViewTestAPI test(
+      ash::test::LauncherTestAPI(launcher_).shelf_view());
 
   // Create a known application and check that we have 3 items in the launcher.
   CreateShortcut("app1");
@@ -1765,8 +1762,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ClickItem) {
   // Get a number of interfaces we need.
   aura::test::EventGenerator generator(
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
-  ash::test::LauncherViewTestAPI test(
-      ash::test::LauncherTestAPI(launcher_).launcher_view());
+  ash::test::ShelfViewTestAPI test(
+      ash::test::LauncherTestAPI(launcher_).shelf_view());
   AppListService* service = AppListService::Get();
   // There should be two items in our launcher by this time.
   EXPECT_EQ(2, model_->item_count());
@@ -1774,7 +1771,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ClickItem) {
 
   // Open the app list menu and check that the drag and drop host was set.
   gfx::Rect app_list_bounds =
-      test.launcher_view()->GetAppListButtonView()->GetBoundsInScreen();
+      test.shelf_view()->GetAppListButtonView()->GetBoundsInScreen();
   generator.MoveMouseTo(app_list_bounds.CenterPoint().x(),
                         app_list_bounds.CenterPoint().y());
   generator.ClickLeftButton();
@@ -1866,8 +1863,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, OverflowBubble) {
   // No overflow yet.
   EXPECT_FALSE(launcher_->IsShowingOverflowBubble());
 
-  ash::test::LauncherViewTestAPI test(
-      ash::test::LauncherTestAPI(launcher_).launcher_view());
+  ash::test::ShelfViewTestAPI test(
+      ash::test::LauncherTestAPI(launcher_).shelf_view());
 
   int items_added = 0;
   while (!test.IsOverflowButtonVisible()) {

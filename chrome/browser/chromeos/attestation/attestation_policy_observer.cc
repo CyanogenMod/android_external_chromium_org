@@ -27,8 +27,6 @@
 
 namespace {
 
-const char kEnterpriseMachineKey[] = "attest-ent-machine";
-
 // The number of days before a certificate expires during which it is
 // considered 'expiring soon' and replacement is initiated.  The Chrome OS CA
 // issues certificates with an expiry of at least two years.  This value has
@@ -172,6 +170,7 @@ void AttestationPolicyObserver::Start() {
                  weak_factory_.GetWeakPtr());
   cryptohome_client_->TpmAttestationDoesKeyExist(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusBoolRedirectCallback,
                  on_does_exist,
@@ -200,6 +199,7 @@ void AttestationPolicyObserver::GetNewCertificate() {
 void AttestationPolicyObserver::GetExistingCertificate() {
   cryptohome_client_->TpmAttestationGetCertificate(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusStringCallback,
                  base::Bind(&AttestationPolicyObserver::CheckCertificateExpiry,
@@ -257,6 +257,7 @@ void AttestationPolicyObserver::GetKeyPayload(
     base::Callback<void(const std::string&)> callback) {
   cryptohome_client_->TpmAttestationGetKeyPayload(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       base::Bind(DBusStringCallback,
                  callback,
@@ -285,6 +286,7 @@ void AttestationPolicyObserver::MarkAsUploaded(const std::string& key_payload) {
   }
   cryptohome_client_->TpmAttestationSetKeyPayload(
       KEY_DEVICE,
+      std::string(),  // Not used.
       kEnterpriseMachineKey,
       new_payload,
       base::Bind(DBusBoolRedirectCallback,

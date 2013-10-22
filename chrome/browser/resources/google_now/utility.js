@@ -22,16 +22,26 @@
  *     when a task completes.
  */
 
-// TODO(vadimt): Figure out the server name. Use it in the manifest and for
-// NOTIFICATION_CARDS_URL. Meanwhile, to use the feature, you need to manually
-// set the server name via local storage.
+// TODO(vadimt): Use server name in the manifest.
 
 /**
  * Notification server URL.
  */
-var NOTIFICATION_CARDS_URL = localStorage['server_url'];
+var NOTIFICATION_CARDS_URL = 'https://www.googleapis.com/chromenow/v1beta1';
 
 var DEBUG_MODE = localStorage['debug_mode'];
+
+/**
+ * Initializes for debug or release modes of operation.
+ */
+function initializeDebug() {
+  if (DEBUG_MODE) {
+    NOTIFICATION_CARDS_URL =
+        localStorage['server_url'] || NOTIFICATION_CARDS_URL;
+  }
+}
+
+initializeDebug();
 
 /**
  * Builds an error object with a message that may be sent to the server.
@@ -89,8 +99,8 @@ function sendErrorReport(error) {
   if (topFrame) {
     // Examples of a frame:
     // 1. '\n    at someFunction (chrome-extension://
-    //     pmofbkohncoogjjhahejjfbppikbjigm/background.js:915:15)\n'
-    // 2. '\n    at chrome-extension://pmofbkohncoogjjhahejjfbppikbjigm/
+    //     pafkbggdmjlpgkdkcbjmhmfcdpncadgh/background.js:915:15)\n'
+    // 2. '\n    at chrome-extension://pafkbggdmjlpgkdkcbjmhmfcdpncadgh/
     //     utility.js:269:18\n'
     // 3. '\n    at Function.target.(anonymous function) (extensions::
     //     SafeBuiltins:19:14)\n'
@@ -107,7 +117,7 @@ function sendErrorReport(error) {
 
     var topFrameElements = errorLocation.split(':');
     // topFrameElements is an array that ends like:
-    // [N-3] //pmofbkohncoogjjhahejjfbppikbjigm/utility.js
+    // [N-3] //pafkbggdmjlpgkdkcbjmhmfcdpncadgh/utility.js
     // [N-2] 308
     // [N-1] 19
     if (topFrameElements.length >= 3) {

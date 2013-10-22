@@ -1335,6 +1335,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="ChromeNotifierService.Actions"
+    enum="ChromeNotifierServiceActionType">
+  <summary>
+    The actions to enable or disable services sending synced notifications.
+    Synced Notification Sending services can be individually disabled by the
+    user in the Chrome Notification center settings dialog.
+  </summary>
+</histogram>
+
 <histogram name="clickjacking.discard_download" units="ms">
   <summary>
     The length of time between a dangerous download appearing on the downloads
@@ -4885,6 +4894,22 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Geolocation.InfoBarDelegate.Event"
+    enum="GeolocationInfoBarDelegateEvent">
+  <summary>Events in GeolocationInfoBarDelegate.</summary>
+</histogram>
+
+<histogram name="Geolocation.InfoBarDelegateAndroid.Event"
+    enum="GeolocationInfoBarDelegateAndroidEvent">
+  <summary>Events in GeolocationInfoBarDelegateAndroid.</summary>
+</histogram>
+
+<histogram name="Geolocation.NetworkLocationRequest.AccessPoints">
+  <summary>
+    The number of wifi access points used to determine geolocation.
+  </summary>
+</histogram>
+
 <histogram name="Geolocation.NetworkLocationRequest.Event"
     enum="NetworkLocationRequestEvent">
   <summary>Events in NetworkLocationRequest.</summary>
@@ -6101,7 +6126,28 @@ other types of suffix sets.
 </histogram>
 
 <histogram name="Media.RTCVideoDecoderInitDecodeStatus" enum="BooleanSuccess">
+  <obsolete>
+    Renamed to Media.RTCVideoDecoderInitDecodeSuccess.
+  </obsolete>
   <summary>Results of attempts to RTCVideoDecoder::InitDecode().</summary>
+</histogram>
+
+<histogram name="Media.RTCVideoDecoderInitDecodeSuccess" enum="BooleanSuccess">
+  <summary>
+    Indicates whether we were successful in initializing hardware video decoder
+    for use in the RTC pipeline.
+  </summary>
+</histogram>
+
+<histogram name="Media.RTCVideoEncoderInitEncodeSuccess" enum="BooleanSuccess">
+  <summary>
+    Indicates whether we were successful in initializing hardware video encoder
+    for use in the RTC pipeline.
+  </summary>
+</histogram>
+
+<histogram name="Media.RTCVideoEncoderProfile" enum="VideoCodecProfile">
+  <summary>Video codec profile used in RTC video encoder.</summary>
 </histogram>
 
 <histogram name="Media.TimeToPipelineStarted" units="ms">
@@ -8351,6 +8397,25 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicSession.FinalTcpCwnd">
+  <summary>
+    The value of the TCP cubic sender's CWND when the session is closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.NumOpenStreams">
+  <summary>
+    The number of QUIC streams opened when a new QUIC stream is created.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.NumTotalStreams">
+  <summary>
+    The total number of streams created by the client when the session is
+    closed.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicSession.OutOfOrderGapReceived">
   <summary>
     The number of missing packets between the current received packet and the
@@ -8390,6 +8455,20 @@ other types of suffix sets.
   <summary>
     The network error code returned when attempting to read to a QUIC
     connection.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.RstStreamErrorCodeClient"
+    enum="QuicRstStreamErrorCodes">
+  <summary>
+    The QUIC error code which resulted in a stream being reset by the client.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.RstStreamErrorCodeServer"
+    enum="QuicRstStreamErrorCodes">
+  <summary>
+    The QUIC error code which resulted in a stream being reset by the server.
   </summary>
 </histogram>
 
@@ -13137,6 +13216,15 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Prerender.ModPagespeedHeader">
+  <obsolete>
+    Deprecated as of 10/2013.
+  </obsolete>
+  <summary>
+    Previous version of the Prerender.PagespeedHeader.* histograms.
+  </summary>
+</histogram>
+
 <histogram name="Prerender.OmniboxNavigationsCouldPrerender">
   <summary>
     A boolean that indicates whether the Omnibox navigation being committed
@@ -13165,6 +13253,36 @@ other types of suffix sets.
     given the text the user has entered and the Autocomplete suggestion
     currently selected. It is only incremented if Prerendering from the Omnibox
     is enabled.
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PagespeedHeader.ServerCounts"
+    enum="PagespeedHeaderServerType">
+  <summary>
+    The number of responses received bucketed into the range [0,4]: bucket 0 is
+    the total number of responses received; bucket 1 is the number of responses
+    received with an X-Mod-Pagespeed header [indicating a mod_pagespeed server];
+    bucket 2 is the number of responses received with an X-Page-Speed header and
+    a header value in the X-Mod-Pagespeed format (a.b.c.d-e) [indicating an
+    ngx_pagespeed server]; bucket 3 is the number of responses received with an
+    X-Page-Speed header and a header value in the PageSpeed Service format
+    (a_b_c) [indicating a PSS server]; and bucket 4 is the number of responses
+    received with an X-Page-Speed header and a header value in neither of the
+    preceding formats [indicating some other server; IISpeed is the only known
+    one at this stage].
+  </summary>
+</histogram>
+
+<histogram name="Prerender.PagespeedHeader.VersionCounts"
+    enum="PagespeedVersion">
+  <summary>
+    The number of responses received that either have an X-Mod-Pagespeed header
+    or have an X-Page-Speed header with a value in the X-Mod-Pagespeed format
+    (a.b.c.d-e), bucketed into the range [1,99]: bucket 1 is for header values
+    that aren't in the a.b.c.d-e format, the remaining buckets are an encoding
+    of the value: 2 + 2 * (max(c, 10) - 10) + (d &gt; 1 ? 1 : 0). The rationale
+    is that 'c' is incremented with each new release and 'd' is initially 0 but
+    is incremented for each patch to a release.
   </summary>
 </histogram>
 
@@ -13842,10 +13960,38 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="Renderer.GpuLatency" units="milliseconds">
+  <summary>
+    The delay between the compositor submitting a command to the GPU and that
+    command executing on the GPU. This delay is measured once per frame.
+  </summary>
+</histogram>
+
+<histogram name="Renderer.GpuLatencyOverestimate" units="milliseconds">
+  <summary>
+    The amount by which GPU latency was overestimated in a particular frame (0
+    if the latency was perfectly predicted or underestimated).
+  </summary>
+</histogram>
+
+<histogram name="Renderer.GpuLatencyUnderestimate" units="milliseconds">
+  <summary>
+    The amount by which GPU latency was underestimated in a particular frame (0
+    if the latency was perfectly predicted or overestimated).
+  </summary>
+</histogram>
+
 <histogram name="Renderer.PixelIncreaseFromTransitions">
   <summary>
     A lower-bound on the percentage increase in memory that would result from
     promoting all layers that have a webkit-transition on opacity or transform.
+  </summary>
+</histogram>
+
+<histogram name="Renderer.unloadEventsDurationMS" units="milliseconds">
+  <summary>
+    This measures how long all unload event handlers required to run whenever an
+    unload event is processed.
   </summary>
 </histogram>
 
@@ -15483,6 +15629,18 @@ other types of suffix sets.
   <summary>
     The number of URLs to be loaded on startup when a profile is loaded, if the
     startup page setting is set to load URLs.
+  </summary>
+</histogram>
+
+<histogram name="Settings.StartupURLsMigration" enum="StartupURLsMigration">
+  <summary>The startup URLs pref migration steps.</summary>
+</histogram>
+
+<histogram name="Settings.StartupURLsResetTime" units="milliseconds">
+  <summary>
+    The time elapsed in milliseconds in between startup URLs pref migration. A
+    value of 0 indicates that the last migration time was in the future due to
+    e.g. an incorrect system time.
   </summary>
 </histogram>
 
@@ -17820,6 +17978,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="SyncedNotification.Actions"
+    enum="SyncedNotificationActionType">
+  <summary>
+    The actions taken on synced notifications, recorded every time they happen.
+    This histogram will record every single event that happens separately.
+  </summary>
+</histogram>
+
 <histogram name="Tab.AgeUponRestoreFromColdStart" units="minutes">
   <summary>
     Age (time since the last display in previous sessions) of a tab being
@@ -19053,6 +19219,14 @@ other types of suffix sets.
   </summary>
 </histogram>
 
+<histogram name="WebFont.CacheHit" enum="WebFontCacheHit">
+  <summary>
+    Recorded upon web fonts load. Counts the number of times web font is loaded
+    from cache (disk cache or memory cache), fetched over network, or served
+    from data URL.
+  </summary>
+</histogram>
+
 <histogram name="WebFont.DownloadTime.0.Under10KB" units="milliseconds">
   <summary>
     The time it takes for a webfont download to finish, for webfonts of under
@@ -19328,6 +19502,13 @@ other types of suffix sets.
 
 <histogram name="WebRTC.webkitApiCount" enum="JavaScriptAPIName">
   <summary>Counts number of calls to WebRTC APIs from JavaScript.</summary>
+</histogram>
+
+<histogram name="Win8.PageLoad" enum="Win8PageLoadType">
+  <summary>
+    Count of page loads in each of the 2 different environments (metro/desktop)
+    on Windows 8.
+  </summary>
 </histogram>
 
 <histogram name="WinTimeTicks.FailedToChangeCores" enum="WindowsVersion">
@@ -20082,6 +20263,12 @@ other types of suffix sets.
   <int value="2" label="Initiated by WebStore Installer"/>
   <int value="3" label="Initiated by ImageBurner"/>
   <int value="4" label="Initiated by Plugin Installer"/>
+</enum>
+
+<enum name="ChromeNotifierServiceActionType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="First service enabled"/>
+  <int value="2" label="First service disabled"/>
 </enum>
 
 <enum name="ChromeOSUserImageId" type="int">
@@ -21722,6 +21909,7 @@ other types of suffix sets.
   <int value="518" label="AUTOTESTPRIVATE_SIMULATEASANMEMORYBUG"/>
   <int value="519" label="WALLPAPER_SETWALLPAPER"/>
   <int value="520" label="VIRTUALKEYBOARDPRIVATE_HIDEKEYBOARD"/>
+  <int value="521" label="SYSTEM_STORAGE_GETAVAILABLECAPACITY"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -22496,6 +22684,23 @@ other types of suffix sets.
   <int value="16385" label="FOLDER"/>
   <int value="32769" label="FILE"/>
   <int value="32770" label="PDF"/>
+</enum>
+
+<enum name="GeolocationInfoBarDelegateAndroidEvent" type="int">
+  <int value="0" label="User allowed the page to use geolocation">
+    For the Android platform the count for this event should be exactly the same
+    as the corresponding event in the GeolocationInfoBarDelegateEvent enum.
+  </int>
+  <int value="1" label="User opened geolocation settings"/>
+</enum>
+
+<enum name="GeolocationInfoBarDelegateEvent" type="int">
+  <int value="0" label="The bar was created"/>
+  <int value="1" label="User allowed use of geolocation"/>
+  <int value="2" label="User denied use of geolocation"/>
+  <int value="3" label="User dismissed the bar"/>
+  <int value="4" label="User clicked on link"/>
+  <int value="5" label="User ignored the bar"/>
 </enum>
 
 <enum name="GestureActionType" type="int">
@@ -23568,6 +23773,7 @@ other types of suffix sets.
   <int value="17" label="GetTestDirectory"/>
   <int value="18" label="NewLogger"/>
   <int value="19" label="SyncParent"/>
+  <int value="20" label="GetChildren"/>
 </enum>
 
 <enum name="LinkMonitorFailureType" type="int">
@@ -25032,6 +25238,120 @@ other types of suffix sets.
   <int value="4" label="Index"/>
 </enum>
 
+<enum name="PagespeedHeaderServerType" type="int">
+  <int value="0" label="Total responses"/>
+  <int value="1" label="mod_pagespeed server"/>
+  <int value="2" label="ngx_pagespeed server"/>
+  <int value="3" label="PageSpeed Service server"/>
+  <int value="4" label="Unknown server type"/>
+</enum>
+
+<enum name="PagespeedVersion" type="int">
+  <summary>
+    The version of PageSpeed. Values up to 1.6.29.x are in use as of 2013-10-01
+    while later values may adjust 'a' and/or 'b' arbitrarily.
+  </summary>
+  <int value="1" label="Unknown"/>
+  <int value="2" label="0.9.10.0"/>
+  <int value="3" label="0.9.10.x"/>
+  <int value="4" label="0.9.11.0"/>
+  <int value="5" label="0.9.11.x"/>
+  <int value="6" label="0.9.12.0"/>
+  <int value="7" label="0.9.12.x"/>
+  <int value="8" label="0.9.13.0"/>
+  <int value="9" label="0.9.13.x"/>
+  <int value="10" label="0.9.14.0"/>
+  <int value="11" label="0.9.14.x"/>
+  <int value="12" label="0.9.15.0"/>
+  <int value="13" label="0.9.15.x"/>
+  <int value="14" label="0.9.16.0"/>
+  <int value="15" label="0.9.16.x"/>
+  <int value="16" label="0.9.17.0"/>
+  <int value="17" label="0.9.17.x"/>
+  <int value="18" label="0.9.18.0"/>
+  <int value="19" label="0.9.18.x"/>
+  <int value="20" label="0.10.19.0"/>
+  <int value="21" label="0.10.19.x"/>
+  <int value="22" label="0.10.20.0"/>
+  <int value="23" label="0.10.20.x"/>
+  <int value="24" label="0.10.21.0"/>
+  <int value="25" label="0.10.21.x"/>
+  <int value="26" label="0.10.22.0"/>
+  <int value="27" label="0.10.22.x"/>
+  <int value="28" label="1.1.23.0"/>
+  <int value="29" label="1.1.23.x"/>
+  <int value="30" label="1.2.24.0"/>
+  <int value="31" label="1.2.24.x"/>
+  <int value="32" label="1.3.25.0"/>
+  <int value="33" label="1.3.25.x"/>
+  <int value="34" label="1.4.26.0"/>
+  <int value="35" label="1.4.26.x"/>
+  <int value="36" label="1.5.27.0"/>
+  <int value="37" label="1.5.27.x"/>
+  <int value="38" label="1.5.28.0"/>
+  <int value="39" label="1.5.28.x"/>
+  <int value="40" label="1.6.29.0"/>
+  <int value="41" label="1.6.29.x"/>
+  <int value="42" label="a.b.30.0"/>
+  <int value="43" label="a.b.30.x"/>
+  <int value="44" label="a.b.31.0"/>
+  <int value="45" label="a.b.31.x"/>
+  <int value="46" label="a.b.32.0"/>
+  <int value="47" label="a.b.32.x"/>
+  <int value="48" label="a.b.33.0"/>
+  <int value="49" label="a.b.33.x"/>
+  <int value="50" label="a.b.34.0"/>
+  <int value="51" label="a.b.34.x"/>
+  <int value="52" label="a.b.35.0"/>
+  <int value="53" label="a.b.35.x"/>
+  <int value="54" label="a.b.36.0"/>
+  <int value="55" label="a.b.36.x"/>
+  <int value="56" label="a.b.37.0"/>
+  <int value="57" label="a.b.37.x"/>
+  <int value="58" label="a.b.38.0"/>
+  <int value="59" label="a.b.38.x"/>
+  <int value="60" label="a.b.39.0"/>
+  <int value="61" label="a.b.39.x"/>
+  <int value="62" label="a.b.40.0"/>
+  <int value="63" label="a.b.40.x"/>
+  <int value="64" label="a.b.41.0"/>
+  <int value="65" label="a.b.41.x"/>
+  <int value="66" label="a.b.42.0"/>
+  <int value="67" label="a.b.42.x"/>
+  <int value="68" label="a.b.43.0"/>
+  <int value="69" label="a.b.43.x"/>
+  <int value="70" label="a.b.44.0"/>
+  <int value="71" label="a.b.44.x"/>
+  <int value="72" label="a.b.45.0"/>
+  <int value="73" label="a.b.45.x"/>
+  <int value="74" label="a.b.46.0"/>
+  <int value="75" label="a.b.46.x"/>
+  <int value="76" label="a.b.47.0"/>
+  <int value="77" label="a.b.47.x"/>
+  <int value="78" label="a.b.48.0"/>
+  <int value="79" label="a.b.48.x"/>
+  <int value="80" label="a.b.49.0"/>
+  <int value="81" label="a.b.49.x"/>
+  <int value="82" label="a.b.50.0"/>
+  <int value="83" label="a.b.50.x"/>
+  <int value="84" label="a.b.51.0"/>
+  <int value="85" label="a.b.51.x"/>
+  <int value="86" label="a.b.52.0"/>
+  <int value="87" label="a.b.52.x"/>
+  <int value="88" label="a.b.53.0"/>
+  <int value="89" label="a.b.53.x"/>
+  <int value="90" label="a.b.54.0"/>
+  <int value="91" label="a.b.54.x"/>
+  <int value="92" label="a.b.55.0"/>
+  <int value="93" label="a.b.55.x"/>
+  <int value="94" label="a.b.56.0"/>
+  <int value="95" label="a.b.56.x"/>
+  <int value="96" label="a.b.57.0"/>
+  <int value="97" label="a.b.57.x"/>
+  <int value="98" label="a.b.58.0"/>
+  <int value="99" label="a.b.58.x"/>
+</enum>
+
 <enum name="ParsedCookieStatus" type="int">
   <obsolete>
     Deprecated as of 9/2013. Experiment to measure control characters in cookies
@@ -25944,6 +26264,16 @@ other types of suffix sets.
   <int value="9" label="pps"/>
   <int value="10" label="ppsx"/>
   <int value="11" label="ppsm"/>
+</enum>
+
+<enum name="QuicRstStreamErrorCodes" type="int">
+  <int value="0" label="NO_ERROR"/>
+  <int value="1" label="ERROR_PROCESSING_STREAM"/>
+  <int value="2" label="MULTIPLE_TERMINATION_OFFSETS"/>
+  <int value="3" label="BAD_APPLICATION_PAYLOAD"/>
+  <int value="4" label="CONNECTION_ERROR"/>
+  <int value="5" label="PEER_GOING_AWAY"/>
+  <int value="6" label="CANCELLED"/>
 </enum>
 
 <enum name="RecentTabsAction" type="int">
@@ -27157,11 +27487,25 @@ other types of suffix sets.
   <int value="15" label="PROCEED_NEW_SITE"/>
 </enum>
 
+<enum name="StartupURLsMigration" type="int">
+  <int value="0" label="Performed migration"/>
+  <int value="1" label="No migration value"/>
+  <int value="2" label="Reset migration"/>
+</enum>
+
 <enum name="SuspendStatus" type="int">
   <int value="0" label="Success"/>
   <int value="1" label="Failure"/>
   <int value="2" label="Cancelled"/>
   <int value="3" label="Attempted"/>
+</enum>
+
+<enum name="SyncedNotificationActionType" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Notification clicked"/>
+  <int value="2" label="Notification button clicked"/>
+  <int value="3" label="Notification closed by user"/>
+  <int value="4" label="Notification closed by system"/>
 </enum>
 
 <enum name="TabRestoreResult" type="int">
@@ -27629,6 +27973,12 @@ other types of suffix sets.
   <int value="11" label="Require phone number"/>
 </enum>
 
+<enum name="WebFontCacheHit" type="int">
+  <int value="0" label="Miss"/>
+  <int value="1" label="Hit"/>
+  <int value="2" label="Served from data URL"/>
+</enum>
+
 <enum name="WebFontUsageType" type="int">
   <int value="0" label="Styled, and used"/>
   <int value="1" label="Styled, but not used"/>
@@ -27721,6 +28071,13 @@ other types of suffix sets.
   <int value="1" label="kStatusCodeTypeByClient"/>
   <int value="2" label="kStatusCodeTypeByUser"/>
   <int value="3" label="kStatusCodeTypeConsideredDead"/>
+</enum>
+
+<enum name="Win8PageLoadType" type="int">
+  <int value="0" label="Metro"/>
+  <int value="1" label="Desktop"/>
+  <int value="2" label="Metro Aura"/>
+  <int value="3" label="Desktop Aura"/>
 </enum>
 
 <enum name="WindowsVersion" type="int">
@@ -28155,6 +28512,7 @@ other types of suffix sets.
   <group name="CreateDir" label="ChromiumEnv::CreateDir"/>
   <group name="DeleteDir" label="ChromiumEnv::DeleteDir"/>
   <group name="DeleteFile" label="ChromiumEnv::DeleteFile"/>
+  <group name="GetChildren" label="ChromiumEnv::GetChildren"/>
   <group name="GetFileSize" label="ChromiumEnv::GetFileSize"/>
   <group name="LockFile" label="ChromiumEnv::LockFile"/>
   <group name="NewRandomAccessFile" label="ChromiumEnv::NewRandomAccessFile"/>

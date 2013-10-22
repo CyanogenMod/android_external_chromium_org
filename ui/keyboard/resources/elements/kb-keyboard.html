@@ -197,13 +197,15 @@
     };
 
     Polymer('kb-keyboard', {
-      lastPressedKey: null,
-      voiceInput_: null,
+      alt: null,
+      control: null,
       dblDetail_: null,
       dblTimer_: null,
-      swipeHandler: null,
-      shift: null,
       inputType: null,
+      lastPressedKey: null,
+      shift: null,
+      swipeHandler: null,
+      voiceInput_: null,
 
       /**
        * The default input type to keyboard layout map. The key must be one of
@@ -213,7 +215,7 @@
       inputTypeToLayoutMap: {
         number: "numeric",
         text: "qwerty",
-        password: "system-qwerty" //TODO(rsadam@): Add unit test for this.
+        password: "system-qwerty"
       },
 
       /**
@@ -285,15 +287,25 @@
           return;
         swipeStatus.offset_x += event.screenX - swipeStatus.pre_x;
         swipeStatus.offset_y += event.screenY - swipeStatus.pre_y;
-        if (Math.abs(swipeStatus.offset_x) > MIN_SWIPE_DIST ||
-            Math.abs(swipeStatus.offset_y) > MIN_SWIPE_DIST) {
+        // Inflates the initial minimal swipe distance that triggers swipe
+        // gesture. It can reduce the accidental cursor movements during fast
+        // typing. After entered swipe gesture mode, the minimal swipe distance
+        // is set to a smaller distance to allow for more responsive cursor
+        // movement.
+        var minSwipeDist =
+            swipeInProgress ? MIN_SWIPE_DIST : 2 * MIN_SWIPE_DIST;
+        if (Math.abs(swipeStatus.offset_x) > minSwipeDist ||
+            Math.abs(swipeStatus.offset_y) > minSwipeDist) {
           swipeInProgress = true;
-          this.lastPressedKey.classList.remove('active');
+          if (this.lastPressedKey) {
+            this.lastPressedKey.classList.remove('active');
+            this.lastPressedKey = null;
+          }
         }
-        if (swipeStatus.offset_x > MIN_SWIPE_DIST) {
+        if (swipeStatus.offset_x > minSwipeDist) {
           swipeStatus.swipeDirection |= SWIPE_DIRECTION.RIGHT;
           swipeStatus.offset_x = 0;
-        } else if (swipeStatus.offset_x < -MIN_SWIPE_DIST) {
+        } else if (swipeStatus.offset_x < -minSwipeDist) {
           swipeStatus.swipeDirection |= SWIPE_DIRECTION.LEFT;
           swipeStatus.offset_x = 0;
         }
@@ -301,10 +313,10 @@
         // degree. This can also be larger.
         if (Math.abs(event.screenY - swipeStatus.pre_y) >
             Math.abs(event.screenX - swipeStatus.pre_x)) {
-          if (swipeStatus.offset_y > MIN_SWIPE_DIST) {
+          if (swipeStatus.offset_y > minSwipeDist) {
             swipeStatus.swipeDirection |= SWIPE_DIRECTION.DOWN;
             swipeStatus.offset_y = 0;
-          } else if (swipeStatus.offset_y < -MIN_SWIPE_DIST) {
+          } else if (swipeStatus.offset_y < -minSwipeDist) {
             swipeStatus.swipeDirection |= SWIPE_DIRECTION.UP;
             swipeStatus.offset_y = 0;
           }
@@ -327,8 +339,10 @@
         if (this.skipEvent(detail))
           return;
 
-        if (this.lastPressedKey)
+        if (this.lastPressedKey) {
           this.lastPressedKey.classList.remove('active');
+          this.lastPressedKey.autoRelease();
+        }
         this.lastPressedKey = event.target;
         this.lastPressedKey.classList.add('active');
         repeatKey.cancel();
@@ -336,15 +350,16 @@
         var char = detail.char;
         switch(char) {
           case 'Shift':
-            // Removes caps-lock if caps-locked.
-            if (this.classList.contains('caps-locked')) {
-              this.classList.remove('caps-locked');
-            }
+          case 'Alt':
+          case 'Ctrl':
+            var modifier = char.toLowerCase() + "-active";
+            // Removes modifier if already active.
+            if (this.classList.contains(modifier))
+              this.classList.remove(modifier);
             break;
           default:
-            // Non-control key pressed, notify control keys.
-            // Control keys are shift, control and alt.
-            if(this.shift)
+            // Notify shift key.
+            if (this.shift)
               this.shift.onNonControlKeyDown();
             break;
         }
@@ -421,6 +436,14 @@
        *     kb-keyboard.
        */
       up: function(event) {
+        // When touch typing, it is very possible that finger moves slightly out
+        // of the key area before releases. The key should not be dropped in
+        // this case.
+        if (this.lastPressedKey &&
+            this.lastPressedKey.pointerId == event.pointerId) {
+          this.lastPressedKey.autoRelease();
+        }
+
         if (this.dblDetail_) {
           this.dblDetail_.clickCount++;
           if (this.dblDetail_.clickCount == 2) {
@@ -456,16 +479,29 @@
           return;
         if (swipeInProgress)
           return;
-        this.lastPressedKey.classList.remove('active');
+        if (detail.activeModifier) {
+          var modifier = detail.activeModifier.toLowerCase() + "-active";
+          this.classList.add(modifier);
+        }
+        // Adds the current keyboard modifiers to the detail.
+        if (this.ctrl)
+          detail.controlModifier = this.ctrl.isActive();
+        if (this.alt)
+          detail.altModifier = this.alt.isActive();
+        if (this.lastPressedKey)
+          this.lastPressedKey.classList.remove('active');
         // Keyset transition key. This is needed to transition from upper
         // to lower case when we are not in caps mode, as well as when
         // we're ending chording.
         this.changeKeyset(detail);
 
-        if (this.lastPressedKey.charValue != event.target.charValue)
+        if (this.lastPressedKey &&
+            this.lastPressedKey.charValue != event.target.charValue) {
           return;
+        }
         if (repeatKey.key == event.target) {
           repeatKey.cancel();
+          this.lastPressedKey = null;
           return;
         }
         var toLayoutId = detail.toLayout;
@@ -489,9 +525,9 @@
         }
         switch(char) {
           case 'Invalid':
-            swipeStatus.swipeFlags = 0;
-            return;
           case 'Shift':
+          case 'Ctrl':
+          case 'Alt':
             swipeStatus.swipeFlags = 0;
             return;
           case 'Microphone':
@@ -505,10 +541,15 @@
           default:
             break;
         }
-        if (char.length == 1)
-          this.keyTyped(detail);
-        else
+        if(!this.keyTyped(detail))
           insertText(char);
+        if (this.ctrl)
+          this.ctrl.onNonControlKeyUp();
+        if (this.alt)
+          this.alt.onNonControlKeyUp();
+        this.classList.remove('ctrl-active');
+        this.classList.remove('alt-active');
+        this.lastPressedKey = null;
       },
 
       /*
@@ -526,7 +567,8 @@
           this.classList.add('caps-locked');
           // Makes last pressed key inactive if transit to a new keyset on long
           // press.
-          this.lastPressedKey.classList.remove('active');
+          if (this.lastPressedKey)
+            this.lastPressedKey.classList.remove('active');
         }
       },
 
@@ -615,11 +657,21 @@
        * Generates fabricated key events to simulate typing on a
        * physical keyboard.
        * @param {Object} detail Attributes of the key being typed.
+       * @return {boolean} Whether the key type succeeded.
        */
       keyTyped: function(detail) {
         var builder = this.$.keyCodeMetadata;
-        sendKeyEvent(builder.createVirtualKeyEvent(detail, "keydown"));
-        sendKeyEvent(builder.createVirtualKeyEvent(detail, "keyup"));
+        if (this.ctrl)
+          detail.controlModifier = this.ctrl.isActive();
+        if (this.alt)
+          detail.altModifier = this.alt.isActive();
+        var downEvent = builder.createVirtualKeyEvent(detail, "keydown");
+        if (downEvent) {
+          sendKeyEvent(downEvent);
+          sendKeyEvent(builder.createVirtualKeyEvent(detail, "keyup"));
+          return true;
+        }
+        return false;
       },
 
       /**
@@ -639,9 +691,20 @@
              if (keysets[i].isDefault) {
                this.keyset = matches[REGEX_KEYSET_INDEX];
                this.classList.remove('caps-locked');
+               this.classList.remove('alt-active');
+               this.classList.remove('ctrl-active');
+               // Caches shift key.
                this.shift = this.querySelector('kb-shift-key');
                if (this.shift)
                  this.shift.reset();
+               // Caches control key.
+               this.ctrl = this.querySelector('kb-modifier-key[char=Ctrl');
+               if (this.ctrl)
+                 this.ctrl.reset();
+               // Caches alt key.
+               this.alt = this.querySelector('kb-modifier-key[char=Alt');
+               if (this.alt)
+                 this.alt.reset();
                this.isReady = true;
                this.fire('stateChange', {
                  state: 'keysetLoaded',

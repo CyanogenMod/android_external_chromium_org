@@ -146,8 +146,7 @@ IndexedDBDatabase::IndexedDBDatabase(const string16& name,
                 kInvalidId),
       identifier_(unique_identifier),
       factory_(factory),
-      running_version_change_transaction_(NULL),
-      closing_connection_(false) {
+      running_version_change_transaction_(NULL) {
   DCHECK(!metadata_.name.empty());
 }
 
@@ -1397,7 +1396,7 @@ void IndexedDBDatabase::CreateTransaction(
     const std::vector<int64>& object_store_ids,
     uint16 mode) {
 
-  DCHECK(connections_.has(connection));
+  DCHECK(connections_.count(connection));
   DCHECK(transactions_.find(transaction_id) == transactions_.end());
   if (transactions_.find(transaction_id) != transactions_.end())
     return;
@@ -1526,7 +1525,7 @@ void IndexedDBDatabase::RunVersionChangeTransaction(
     WebKit::WebIDBCallbacks::DataLoss data_loss) {
 
   DCHECK(callbacks);
-  DCHECK(connections_.has(connection.get()));
+  DCHECK(connections_.count(connection.get()));
   if (ConnectionCount() > 1) {
     DCHECK_NE(WebKit::WebIDBCallbacks::DataLossTotal, data_loss);
     // Front end ensures the event is not fired at connections that have
@@ -1644,13 +1643,14 @@ void IndexedDBDatabase::DeleteDatabaseFinal(
 }
 
 void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
-  DCHECK(connections_.has(connection));
+  DCHECK(connections_.count(connection));
+  DCHECK(connection->IsConnected());
+  DCHECK(connection->database() == this);
 
-  // Close outstanding transactions from the closing connection. This
+  // Abort outstanding transactions from the closing connection. This
   // can not happen if the close is requested by the connection itself
   // as the front-end defers the close until all transactions are
-  // complete, so something unusual has happened e.g. unexpected
-  // process termination.
+  // complete, but can occur on process termination or forced close.
   {
     TransactionMap transactions(transactions_);
     for (TransactionMap::const_iterator it = transactions.begin(),
@@ -1673,14 +1673,6 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
     pending_second_half_open_.reset();
   }
 
-  // process_pending_calls allows the inspector to process a pending open call
-  // and call close, reentering IndexedDBDatabase::close. Then the
-  // backend would be removed both by the inspector closing its connection, and
-  // by the connection that first called close.
-  // To avoid that situation, don't proceed in case of reentrancy.
-  if (closing_connection_)
-    return;
-  base::AutoReset<bool> ClosingConnection(&closing_connection_, true);
   ProcessPendingCalls();
 
   // TODO(jsbell): Add a test for the pending_open_calls_ cases below.

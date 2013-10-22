@@ -429,7 +429,7 @@ class ChromeTests:
     # http://crbug.com/260627: After the switch to content_shell from DRT, each
     # test now brings up 3 processes.  Under Valgrind, they become memory bound
     # and can eventually OOM if we don't reduce the total count.
-    jobs = max(1, int(multiprocessing.cpu_count() * 0.3))
+    jobs = max(1, int(multiprocessing.cpu_count() * 0.4))
     script_cmd = ["python", script, "-v",
                   "--run-singly",  # run a separate DumpRenderTree for each test
                   "--fully-parallel",
@@ -602,7 +602,8 @@ def _main():
 
   # bake target into build_dir.
   assert not options.build_dir.endswith(options.target)
-  options.build_dir = os.path.join(options.build_dir, options.target)
+  options.build_dir = os.path.join(os.path.abspath(options.build_dir),
+                                   options.target)
 
   if options.verbose:
     logging_utils.config_root(logging.DEBUG)

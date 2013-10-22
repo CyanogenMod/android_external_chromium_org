@@ -96,8 +96,10 @@ static const int kMaxStackedCount = 4;
 static const int kStackedPadding = 6;
 
 // See UpdateLayoutTypeFromMouseEvent() for a description of these.
+#if !defined(USE_ASH)
 const int kMouseMoveTimeMS = 200;
 const int kMouseMoveCountBeforeConsiderReal = 3;
+#endif
 
 // Amount of time we delay before resizing after a close from a touch.
 const int kTouchResizeLayoutTimeMS = 2000;
@@ -1639,7 +1641,6 @@ Tab* TabStrip::CreateTab() {
 }
 
 void TabStrip::StartInsertTabAnimation(int model_index) {
-  CHECK_LT(model_index, tabs_.view_size());
   PrepareForAnimation();
 
   // The TabStrip can now use its entire width to lay out Tabs.
@@ -1647,7 +1648,7 @@ void TabStrip::StartInsertTabAnimation(int model_index) {
   available_width_for_tabs_ = -1;
 
   GenerateIdealBounds();
-  CHECK_LT(model_index, tabs_.view_size());
+
   Tab* tab = tab_at(model_index);
   if (model_index == 0) {
     tab->SetBounds(0, ideal_bounds(model_index).y(), 0,

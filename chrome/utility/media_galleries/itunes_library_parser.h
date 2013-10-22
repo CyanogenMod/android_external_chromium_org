@@ -17,9 +17,6 @@ class ITunesLibraryParser {
   ITunesLibraryParser();
   ~ITunesLibraryParser();
 
-  // Returns the contents of the given iTunes library XML |file|.
-  static std::string ReadITunesLibraryXmlFile(const base::PlatformFile file);
-
   // Returns true if at least one track was found. Malformed track entries
   // are silently ignored.
   bool Parse(const std::string& xml);

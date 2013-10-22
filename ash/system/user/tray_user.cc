@@ -70,7 +70,6 @@ namespace {
 
 const int kUserDetailsVerticalPadding = 5;
 const int kUserCardVerticalPadding = 10;
-const int kInactiveUserCardVerticalPadding = 4;
 const int kProfileRoundedCornerRadius = 2;
 const int kUserIconSize = 27;
 const int kUserIconLargeSize = 32;
@@ -124,7 +123,7 @@ void SwitchUser(ash::MultiProfileIndex user_index) {
       ash::Shell::GetInstance()->session_state_delegate();
   ash::MultiProfileUMA::RecordSwitchActiveUser(
       ash::MultiProfileUMA::SWITCH_ACTIVE_USER_BY_TRAY);
-  delegate->SwitchActiveUser(delegate->GetUserEmail(user_index));
+  delegate->SwitchActiveUser(delegate->GetUserID(user_index));
 }
 
 }  // namespace

@@ -249,7 +249,6 @@ string16 GetValueForType(const DetailOutputMap& output,
     if (it->first->type == type)
       return it->second;
   }
-  NOTREACHED();
   return string16();
 }
 
@@ -935,11 +934,6 @@ bool AutofillDialogControllerImpl::SectionIsActive(DialogSection section)
   return section != SECTION_CC_BILLING;
 }
 
-bool AutofillDialogControllerImpl::IsSubmitPausedOn(
-    wallet::RequiredAction required_action) const {
-  return full_wallet_ && full_wallet_->HasRequiredAction(required_action);
-}
-
 void AutofillDialogControllerImpl::GetWalletItems() {
   ScopedViewUpdates updates(view_.get());
 
@@ -1151,10 +1145,6 @@ void AutofillDialogControllerImpl::ShowEditUiIfBadSuggestion(
   DetailInputs* inputs = MutableRequestedFieldsForSection(section);
   if (wrapper && IsEditingExistingData(section))
     wrapper->FillInputs(inputs);
-
-  for (DetailInputs::iterator it = inputs->begin(); it != inputs->end(); ++it) {
-    it->editable = InputIsEditable(*it, section);
-  }
 }
 
 bool AutofillDialogControllerImpl::InputWasEdited(ServerFieldType type,
@@ -1561,31 +1551,6 @@ gfx::Image AutofillDialogControllerImpl::ExtraSuggestionIconForSection(
       model->GetInfo(AutofillType(CREDIT_CARD_TYPE)));
 }
 
-// TODO(groby): Remove this deprecated method after Mac starts using
-// IconsForFields. http://crbug.com/292876
-gfx::Image AutofillDialogControllerImpl::IconForField(
-    ServerFieldType type, const string16& user_input) const {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  if (type == CREDIT_CARD_VERIFICATION_CODE)
-    return rb.GetImageNamed(IDR_CREDIT_CARD_CVC_HINT);
-
-  if (type == CREDIT_CARD_NUMBER) {
-    const int input_card_idr = CreditCard::IconResourceId(
-        CreditCard::GetCreditCardType(user_input));
-    if (input_card_idr != IDR_AUTOFILL_CC_GENERIC)
-      return rb.GetImageNamed(input_card_idr);
-
-    // When the credit card type is unknown, no image should be shown. However,
-    // to simplify the view code on Mac, save space for the credit card image by
-    // returning a transparent image of the appropriate size.
-    gfx::ImageSkia image = *rb.GetImageSkiaNamed(input_card_idr);
-    return
-        gfx::Image(gfx::ImageSkiaOperations::CreateTransparentImage(image, 0));
-  }
-
-  return gfx::Image();
-}
-
 FieldIconMap AutofillDialogControllerImpl::IconsForFields(
     const FieldValueMap& user_inputs) const {
   FieldIconMap result;
@@ -1620,6 +1585,41 @@ string16 AutofillDialogControllerImpl::TooltipForField(ServerFieldType type)
     return l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_TOOLTIP_PHONE_NUMBER);
 
   return string16();
+}
+
+bool AutofillDialogControllerImpl::InputIsEditable(
+    const DetailInput& input,
+    DialogSection section) {
+  if (section != SECTION_CC_BILLING)
+    return true;
+
+  if (input.type == CREDIT_CARD_NUMBER)
+    return !IsEditingExistingData(section);
+
+  // For CVC, only require (allow) input if the user has edited some other
+  // aspect of the card.
+  if (input.type == CREDIT_CARD_VERIFICATION_CODE &&
+      IsEditingExistingData(section)) {
+    DetailOutputMap output;
+    view_->GetUserInput(section, &output);
+    WalletInstrumentWrapper wrapper(ActiveInstrument());
+
+    for (DetailOutputMap::iterator iter = output.begin(); iter != output.end();
+         ++iter) {
+      if (iter->first->type == input.type)
+        continue;
+
+      AutofillType type(iter->first->type);
+      if (type.group() == CREDIT_CARD &&
+          iter->second != wrapper.GetInfo(type)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  return true;
 }
 
 // TODO(groby): Add more tests.
@@ -2052,8 +2052,26 @@ bool AutofillDialogControllerImpl::OnAccept() {
 
   // This must come before SetIsSubmitting().
   if (IsPayingWithWallet()) {
-    submitted_cardholder_name_ =
-        GetValueFromSection(SECTION_CC_BILLING, NAME_FULL);
+    // In the VERIFY_CVV case, hold onto the previously submitted cardholder
+    // name.
+    if (!IsSubmitPausedOn(wallet::VERIFY_CVV)) {
+      submitted_cardholder_name_ =
+          GetValueFromSection(SECTION_CC_BILLING, NAME_BILLING_FULL);
+
+      // Snag the last four digits of the backing card now as it could be wiped
+      // out if a CVC challenge happens.
+      if (ActiveInstrument()) {
+        backing_card_last_four_ = ActiveInstrument()->TypeAndLastFourDigits();
+      } else {
+        DetailOutputMap output;
+        view_->GetUserInput(SECTION_CC_BILLING, &output);
+        CreditCard card;
+        GetBillingInfoFromOutputs(output, &card, NULL, NULL);
+        backing_card_last_four_ = card.TypeAndLastFourDigits();
+      }
+    }
+    DCHECK(!submitted_cardholder_name_.empty());
+    DCHECK(!backing_card_last_four_.empty());
   }
 
   SetIsSubmitting(true);
@@ -2258,21 +2276,20 @@ void AutofillDialogControllerImpl::OnDidGetFullWallet(
       choose_another_instrument_or_address_ = true;
       SetIsSubmitting(false);
       GetWalletItems();
-      view_->UpdateNotificationArea();
-      view_->UpdateButtonStrip();
-      view_->UpdateOverlay();
       break;
 
     case wallet::VERIFY_CVV:
       SuggestionsUpdated();
-      view_->UpdateButtonStrip();
-      view_->UpdateNotificationArea();
       break;
 
     default:
       DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
-      break;
+      return;
   }
+
+  view_->UpdateNotificationArea();
+  view_->UpdateButtonStrip();
+  view_->UpdateOverlay();
 }
 
 void AutofillDialogControllerImpl::OnPassiveSigninSuccess(
@@ -2432,6 +2449,11 @@ bool AutofillDialogControllerImpl::RequestingCreditCardInfo() const {
 
 bool AutofillDialogControllerImpl::TransmissionWillBeSecure() const {
   return source_url_.SchemeIs(content::kHttpsScheme);
+}
+
+bool AutofillDialogControllerImpl::IsSubmitPausedOn(
+    wallet::RequiredAction required_action) const {
+  return full_wallet_ && full_wallet_->HasRequiredAction(required_action);
 }
 
 void AutofillDialogControllerImpl::ShowNewCreditCardBubble(
@@ -2884,13 +2906,7 @@ string16 AutofillDialogControllerImpl::GetValueFromSection(
 
   DetailOutputMap output;
   view_->GetUserInput(section, &output);
-  for (DetailOutputMap::iterator iter = output.begin(); iter != output.end();
-       ++iter) {
-    if (iter->first->type == type)
-      return iter->second;
-  }
-
-  return string16();
+  return GetValueForType(output, type);
 }
 
 SuggestionsMenuModel* AutofillDialogControllerImpl::
@@ -2983,18 +2999,6 @@ base::string16 AutofillDialogControllerImpl::CreditCardNumberValidityMessage(
 
   // Card number is good and supported.
   return base::string16();
-}
-
-bool AutofillDialogControllerImpl::InputIsEditable(
-    const DetailInput& input,
-    DialogSection section) const {
-  if (input.type != CREDIT_CARD_NUMBER || !IsPayingWithWallet())
-    return true;
-
-  if (IsEditingExistingData(section))
-    return false;
-
-  return true;
 }
 
 bool AutofillDialogControllerImpl::AllSectionsAreValid() {
@@ -3479,21 +3483,11 @@ void AutofillDialogControllerImpl::MaybeShowCreditCardBubble() {
   if (!full_wallet_ || !full_wallet_->billing_address())
     return;
 
-  base::string16 backing_last_four;
-  if (ActiveInstrument()) {
-    backing_last_four = ActiveInstrument()->TypeAndLastFourDigits();
-  } else {
-    DetailOutputMap output;
-    view_->GetUserInput(SECTION_CC_BILLING, &output);
-    CreditCard card;
-    GetBillingInfoFromOutputs(output, &card, NULL, NULL);
-    backing_last_four = card.TypeAndLastFourDigits();
-  }
 #if !defined(OS_ANDROID)
   GeneratedCreditCardBubbleController::Show(
       web_contents(),
       full_wallet_->TypeAndLastFourDigits(),
-      backing_last_four);
+      backing_card_last_four_);
 #endif
 }
 

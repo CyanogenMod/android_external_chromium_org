@@ -6,10 +6,13 @@
 #define MOJO_SHELL_APP_CONTAINER_H_
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "mojo/loader/job.h"
 #include "mojo/public/system/core.h"
 
 namespace base {
+class FilePath;
 class Thread;
 }
 
@@ -17,22 +20,24 @@ namespace mojo {
 namespace shell {
 
 // A container class that runs an app on its own thread.
-class AppContainer {
+class AppContainer : public loader::Job::Delegate {
  public:
   AppContainer();
-  ~AppContainer();
-
-  void LaunchApp(const base::FilePath& app_path);
+  virtual ~AppContainer();
 
  private:
-  void AppCompleted();
+  // From loader::Job::Delegate
+  virtual void DidCompleteLoad(const GURL& app_url,
+                               const base::FilePath& app_path) OVERRIDE;
 
-  base::WeakPtrFactory<AppContainer> weak_factory_;
+  void AppCompleted();
 
   scoped_ptr<base::Thread> thread_;
 
   // Following members are valid only on app thread.
   Handle shell_handle_;
+
+  base::WeakPtrFactory<AppContainer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AppContainer);
 };

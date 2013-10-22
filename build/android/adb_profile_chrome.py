@@ -9,6 +9,7 @@ import logging
 import optparse
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -19,6 +20,9 @@ from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
 from pylib import pexpect
+
+
+_DEFAULT_CHROME_CATEGORIES = '_DEFAULT_CHROME_CATEGORIES'
 
 
 def _GetTraceTimestamp():
@@ -218,7 +222,7 @@ def _PullTraces(controllers, output, compress):
     _ArchiveFiles(trace_files, result)
   elif output:
     result = output
-    os.rename(trace_files[0], result)
+    shutil.move(trace_files[0], result)
   else:
     result = trace_files[0]
 
@@ -287,15 +291,19 @@ def main():
   parser.add_option_group(cont_options)
 
   categories = optparse.OptionGroup(parser, 'Trace categories')
-  categories.add_option('-c', '--categories', help='Select categories to trace '
-                        'with comma-delimited wildcards, e.g., '
-                        '"*", "cat1*,-cat1a". Default is "*".', default='*',
-                        dest='chrome_categories')
+  categories.add_option('-c', '--categories', help='Select Chrome tracing '
+                        'categories with comma-delimited wildcards, '
+                        'e.g., "*", "cat1*,-cat1a". Omit this option to trace '
+                        'Chrome\'s default categories. Chrome tracing can be '
+                        'disabled with "--categories=\'\'".',
+                        metavar='CHROME_CATEGORIES', dest='chrome_categories',
+                        default=_DEFAULT_CHROME_CATEGORIES)
   categories.add_option('-s', '--systrace', help='Capture a systrace with the '
                         'chosen comma-delimited systrace categories. You can '
                         'also capture a combined Chrome + systrace by enabling '
                         'both types of categories. Use "list" to see the '
-                        'available categories.', metavar='SYS_CATEGORIES',
+                        'available categories. Systrace is disabled by '
+                        'default.', metavar='SYS_CATEGORIES',
                         dest='systrace_categories', default='')
   categories.add_option('--trace-cc', help='Enable extra trace categories for '
                         'compositor frame viewer data.', action='store_true')

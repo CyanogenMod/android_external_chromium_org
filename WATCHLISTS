@@ -17,6 +17,10 @@
     'accessibility': {
       'filepath': 'chrome/browser/accessibility/' \
                   '|content/browser/accessibility/' \
+                  '|content/browser/resources/accessibility/' \
+                  '|content/renderer/accessibility/' \
+                  '|content/test/data/accessibility/' \
+                  '|content/public/android/.*accessib' \
                   '|chrome/.*accessib' \
                   '|ui/base/accessibility/' \
                   '|ui/views/accessibility/'
@@ -51,9 +55,11 @@
     'apps': {
       'filepath': '^apps/',
     },
+    'ash': {
+      'filepath': 'ash/',
+    },
     'aura': {
-      'filepath': 'ui/aura/|'\
-                  'ash/',
+      'filepath': 'ui/aura/',
     },
     'aura_compositor': {
       'filepath':
@@ -242,7 +248,7 @@
                   'chrome/browser/google_apis/'
     },
     'drive_resource_metadata': {
-      'filepath': 'chrome/browser/chromeos/drive/drive_resource_metadata'
+      'filepath': 'chrome/browser/chromeos/drive/resource_metadata'
     },
     'extension': {
       'filepath': 'extension',
@@ -617,10 +623,8 @@
                           'yusukes+watch@chromium.org'],
     'accessibility': ['dmazzoni+watch@chromium.org',
                       'dtseng+watch@chromium.org',
-                      'ctguil+watch@chromium.org',
+                      'plundblad+watch@chromium.org',
                       'aboxhall+watch@chromium.org',
-                      'davidbarr+watch@chromium.org',
-                      'hashimoto+watch@chromium.org',
                       'yoshiki+watch@chromium.org',
                       'yuzo+watch@chromium.org'],
     'activity_log': ['felt@chromium.org'],
@@ -635,6 +639,9 @@
     'app_shortcuts': ['chrome-apps-syd-reviews@chromium.org'],
     'appcache': ['michaeln@chromium.org'],
     'apps': ['tfarina@chromium.org', 'chromium-apps-reviews@chromium.org'],
+    'ash': ['ben+ash@chromium.org',
+             'sadrul@chromium.org',
+             'kalyan.kondapally@intel.com'],
     'aura': ['ben+aura@chromium.org',
              'sadrul@chromium.org',
              'kalyan.kondapally@intel.com'],
@@ -801,9 +808,11 @@
     'textinput': ['penghuang+watch@chromium.org',
                   'suzhe@chromium.org',
                   'yusukes+watch@chromium.org',
-                  'nona+watch@chromium.org'],
+                  'nona+watch@chromium.org',
+                  'yukishiino+watch@chromium.org'],
     'textinput_chromeos': ['yusukes+watch@chromium.org',
-                           'nona+watch@chromium.org'],
+                           'nona+watch@chromium.org',
+                           'yukishiino+watch@chromium.org'],
     'tools_emacs': ['fischman+watch@chromium.org',
                     'dhollowa+watch@chromium.org'],
     'tracing': ['dsinclair+watch@chromium.org'],

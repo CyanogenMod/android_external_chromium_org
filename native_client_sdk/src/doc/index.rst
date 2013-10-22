@@ -17,13 +17,15 @@ Contents:
    sdk/release-notes.rst
    sdk/release-notes.rst
    devguide/index.rst
-   devguide/tutorial.rst
+   devguide/tutorial/index.rst
+   devguide/tutorial/tutorial-part1.rst
    devguide/devcycle/index.rst
    devguide/devcycle/building.rst
    devguide/devcycle/running.rst
    devguide/devcycle/debugging.rst
    devguide/devcycle/vs-addin.rst
    devguide/devcycle/dynamic-loading.rst
+   devguide/coding/index.rst
    devguide/coding/3D-graphics.rst
    devguide/coding/audio.rst
    devguide/coding/application-structure.rst
@@ -34,6 +36,7 @@ Contents:
    devguide/coding/url-loading.rst
    devguide/coding/view-focus-input-events.rst
    devguide/distributing.rst
+   community/index.rst
    community/application-gallery.rst
    community/middleware.rst
    community/security-contest/index.rst

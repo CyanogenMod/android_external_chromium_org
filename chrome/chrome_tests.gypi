@@ -192,13 +192,16 @@
         'browser/apps/web_view_interactive_browsertest.cc',
         'browser/autofill/autofill_interactive_uitest.cc',
         'browser/browser_keyevents_browsertest.cc',
+        'browser/extensions/api/extension_action/browser_action_interactive_test.cc',
         'browser/extensions/api/omnibox/omnibox_api_interactive_test.cc',
         'browser/extensions/api/tabs/tabs_interactive_test.cc',
         'browser/extensions/browsertest_util.cc',
         'browser/extensions/extension_apitest.cc',
         'browser/extensions/extension_browsertest.cc',
+        'browser/extensions/extension_test_notification_observer.cc',
         'browser/extensions/extension_crash_recovery_browsertest.cc',
         'browser/extensions/extension_function_test_utils.cc',
+        'browser/extensions/extension_commands_global_registry_apitest.cc',
         'browser/extensions/extension_keybinding_apitest.cc',
         'browser/extensions/extension_test_message_listener.cc',
         'browser/extensions/extension_test_message_listener.h',
@@ -210,7 +213,6 @@
         'browser/notifications/desktop_notifications_unittest.cc',
         'browser/notifications/desktop_notifications_unittest.h',
         'browser/notifications/notification_browsertest.cc',
-        'browser/printing/print_dialog_cloud_interative_uitest.cc',
         'browser/task_manager/task_manager_browsertest_util.cc',
         'browser/ui/autofill/autofill_popup_controller_interactive_uitest.cc',
         'browser/ui/browser_focus_uitest.cc',
@@ -380,6 +382,7 @@
             '../chromeos/chromeos.gyp:chromeos',
           ],
           'sources': [
+            'browser/chromeos/accessibility/sticky_keys_browsertest.cc',
             'browser/chromeos/input_method/textinput_browsertest.cc',
             'browser/chromeos/input_method/textinput_surroundingtext_browsertest.cc',
             'browser/chromeos/input_method/textinput_test_helper.cc',
@@ -457,9 +460,9 @@
               ],
             }],
             ['use_aura==1', {
-              'sources/': [
-                ['exclude', '^browser/ui/views/accessibility/browser_views_accessibility_browsertest.cc'],
-                ['exclude', '^browser/ui/views/native_widget_win_interactive_uitest.cc'],
+              'sources!': [
+                'browser/ui/views/accessibility/browser_views_accessibility_browsertest.cc',
+                'browser/ui/views/native_widget_win_interactive_uitest.cc',
               ],
             }],
           ],
@@ -1082,6 +1085,7 @@
         'browser/extensions/api/extension_action/page_as_browser_action_apitest.cc',
         'browser/extensions/api/extension_action/script_badge_apitest.cc',
         'browser/extensions/api/feedback_private/feedback_private_apitest.cc',
+        'browser/extensions/api/feedback_private/feedback_browsertest.cc',
         'browser/extensions/api/file_system/file_system_apitest.cc',
         'browser/extensions/api/font_settings/font_settings_apitest.cc',
         'browser/extensions/api/history/history_apitest.cc',
@@ -1118,6 +1122,7 @@
         'browser/extensions/api/sessions/sessions_apitest.cc',
         'browser/extensions/api/socket/socket_apitest.cc',
         'browser/extensions/api/sockets_tcp/sockets_tcp_apitest.cc',
+        'browser/extensions/api/sockets_tcp_server/sockets_tcp_server_apitest.cc',
         'browser/extensions/api/sockets_udp/sockets_udp_apitest.cc',
         'browser/extensions/api/storage/settings_apitest.cc',
         'browser/extensions/api/streams_private/streams_private_apitest.cc',
@@ -1165,6 +1170,8 @@
         'browser/extensions/extension_bindings_apitest.cc',
         'browser/extensions/extension_browsertest.cc',
         'browser/extensions/extension_browsertest.h',
+        'browser/extensions/extension_test_notification_observer.cc',
+        'browser/extensions/extension_test_notification_observer.h',
         'browser/extensions/extension_context_menu_browsertest.cc',
         'browser/extensions/extension_disabled_ui_browsertest.cc',
         'browser/extensions/extension_dom_clipboard_apitest.cc',
@@ -1243,6 +1250,7 @@
         'browser/media/chrome_webrtc_apprtc_browsertest.cc',
         'browser/media/chrome_webrtc_browsertest.cc',
         'browser/media/chrome_webrtc_audio_quality_browsertest.cc',
+        'browser/media/chrome_webrtc_typing_detection_browsertest.cc',
         'browser/media/chrome_webrtc_video_quality_browsertest.cc',
         'browser/media/encrypted_media_istypesupported_browsertest.cc',
         'browser/media/webrtc_browsertest_base.cc',
@@ -1346,6 +1354,10 @@
         'browser/ui/ash/shelf_browsertest.cc',
         'browser/ui/ash/volume_controller_browsertest_chromeos.cc',
         'browser/ui/autofill/autofill_dialog_controller_browsertest.cc',
+        'browser/ui/autofill/test_generated_credit_card_bubble_view.cc',
+        'browser/ui/autofill/test_generated_credit_card_bubble_view.h',
+        'browser/ui/autofill/test_generated_credit_card_bubble_controller.cc',
+        'browser/ui/autofill/test_generated_credit_card_bubble_controller.h',
         'browser/ui/blocked_content/popup_blocker_browsertest.cc',
         'browser/ui/bookmarks/bookmark_browsertest.cc',
         'browser/ui/browser_browsertest.cc',
@@ -1405,6 +1417,7 @@
         'browser/ui/views/frame/browser_view_browsertest.cc',
         'browser/ui/views/frame/immersive_mode_controller_ash_browsertest.cc',
         'browser/ui/views/location_bar/zoom_bubble_view_browsertest.cc',
+        'browser/ui/views/new_avatar_menu_button_browsertest.cc',
         'browser/ui/views/select_file_dialog_extension_browsertest.cc',
         'browser/ui/views/toolbar_view_browsertest.cc',
         'browser/ui/views/web_dialog_view_browsertest.cc',
@@ -1419,6 +1432,8 @@
         'browser/ui/webui/downloads_ui_browsertest.h',
         'browser/ui/webui/downloads_ui_browsertest.js',
         'browser/ui/webui/extensions/chromeos/kiosk_apps_browsertest.js',
+        'browser/ui/webui/extensions/extension_settings_browsertest.cc',
+        'browser/ui/webui/extensions/extension_settings_browsertest.h',
         'browser/ui/webui/extensions/extension_settings_browsertest.js',
         'browser/ui/webui/help/help_browsertest.js',
         'browser/ui/webui/identity_internals_ui_browsertest.cc',
@@ -1537,6 +1552,8 @@
         'test/remoting/key_code_conv.h',
         'test/remoting/key_code_map.h',
         'test/remoting/me2me_browsertest.cc',
+        'test/remoting/page_load_notification_observer.cc',
+        'test/remoting/page_load_notification_observer.h',
         'test/remoting/remote_desktop_browsertest.cc',
         'test/remoting/remote_desktop_browsertest.h',
         'test/remoting/waiter.cc',
@@ -1877,7 +1894,7 @@
           # npapi test plugin doesn't build on android or ios
           'dependencies': [
             # build time dependency.
-            '../content/content.gyp:copy_npapi_test_plugin',
+            '../content/content_shell_and_tests.gyp:copy_npapi_test_plugin',
             '../v8/tools/gyp/v8.gyp:v8_shell#host',
           ],
         }],
@@ -1898,7 +1915,6 @@
           'sources/': [
             ['exclude', '^browser/extensions/api/cloud_print_private/cloud_print_private_apitest.cc'],
             ['exclude', '^browser/printing/cloud_print/test/.*'],
-            ['exclude', '^browser/printing/print_dialog_cloud_interative_uitest.cc'],
             ['exclude', '^browser/printing/printing_layout_browsertest.cc'],
             ['exclude', '^browser/printing/print_preview_dialog_controller_browsertest.cc'],
             ['exclude', '^browser/ui/webui/print_preview/print_preview_ui_browsertest.cc'],
@@ -1971,6 +1987,7 @@
         'browser/extensions/browsertest_util.cc',
         'browser/extensions/extension_apitest.cc',
         'browser/extensions/extension_browsertest.cc',
+        'browser/extensions/extension_test_notification_observer.cc',
         'test/base/chrome_render_view_test.cc',
         'test/base/chrome_render_view_test.h',
         'test/base/chrome_test_launcher.cc',
@@ -2505,182 +2522,10 @@
       ],
     },
     {
-      # Executable that contains all the tests to be run on the GPU bots.
-      'target_name': 'gpu_tests',
-      'type': 'executable',
-      'dependencies': [
-        # Runtime dependencies
-        '../third_party/mesa/mesa.gyp:osmesa',
-      ],
-      'includes': [
-        'test/gpu/test_support_gpu.gypi'
-      ],
-      'sources': [
-        'test/gpu/gpu_feature_browsertest.cc',
-      ],
-    },
-  ],
-  'conditions': [
-    ['OS=="mac"', {
-      'targets': [
-        {
-          # This is the mac equivalent of the security_tests target below. It
-          # generates a framework bundle which bundles tests to be run in a
-          # renderer process. The test code is built as a framework so it can be
-          # run in the context of a renderer without shipping the code to end
-          # users.
-          'target_name': 'renderer_sandbox_tests',
-          'type': 'shared_library',
-          'product_name': 'Renderer Sandbox Tests',
-          'mac_bundle': 1,
-          'xcode_settings': {
-            'INFOPLIST_FILE': 'test/security_tests/sandbox_tests_mac-Info.plist',
-          },
-          'sources': [
-            'test/security_tests/renderer_sandbox_tests_mac.mm',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Cocoa.framework',
-            ],
-          },
-        },  # target renderer_sandbox_tests
-        {
-          # Tests for Mac app launcher.
-          'target_name': 'app_mode_app_tests',
-          'type': 'executable',
-          'product_name': 'app_mode_app_tests',
-          'dependencies': [
-            '../base/base.gyp:test_support_base',
-            '../chrome/common_constants.gyp:common_constants',
-            '../testing/gtest.gyp:gtest',
-            'chrome.gyp:chrome',  # run time dependency
-            'app_mode_app_support',
-          ],
-          'sources': [
-            'common/mac/app_mode_chrome_locator_unittest.mm',
-            'test/base/app_mode_app_tests.cc',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
-              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
-            ],
-          },
-        },  # target app_mode_app_tests
-      ],
-    }],
-    ['OS!="mac"', {
-      'targets': [
-        {
-          'target_name': 'perf_tests',
-          'type': 'executable',
-          'dependencies': [
-            'browser',
-            'chrome_resources.gyp:chrome_resources',
-            'chrome_resources.gyp:chrome_strings',
-            'common',
-            'renderer',
-            '../content/content.gyp:content_gpu',
-            '../content/content.gyp:test_support_content',
-            '../base/base.gyp:base',
-            '../base/base.gyp:test_support_base',
-            '../base/base.gyp:test_support_perf',
-            '../skia/skia.gyp:skia',
-            '../testing/gtest.gyp:gtest',
-            '../webkit/glue/webkit_glue.gyp:glue',
-          ],
-          'sources': [
-            'test/perf/perftests.cc',
-            'test/perf/url_parse_perftest.cc',
-            '../content/browser/net/sqlite_persistent_cookie_store_perftest.cc',
-          ],
-          'conditions': [
-            ['use_x11==1', {
-              'dependencies': [
-                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
-              ],
-            }],
-            ['toolkit_uses_gtk == 1', {
-              'dependencies': [
-                '../build/linux/system.gyp:gtk',
-              ],
-            }],
-            ['OS=="win"', {
-              'configurations': {
-                'Debug_Base': {
-                  'msvs_settings': {
-                    'VCLinkerTool': {
-                      'LinkIncremental': '<(msvs_large_module_debug_link_mode)',
-                    },
-                  },
-                },
-              },
-              'conditions': [
-                ['win_use_allocator_shim==1', {
-                  'dependencies': [
-                    '<(allocator_target)',
-                  ],
-                }],
-              ],
-            }],
-            ['toolkit_views==1', {
-              'dependencies': [
-                '../ui/views/views.gyp:views',
-              ],
-            }],
-            ['os_posix == 1 and OS != "mac" and OS != "android"', {
-              'conditions': [
-                ['linux_use_tcmalloc==1', {
-                  'dependencies': [
-                    '../base/allocator/allocator.gyp:allocator',
-                  ],
-                }],
-              ],
-            }],
-            ['OS=="linux" and enable_webrtc==1', {
-              'dependencies': [
-                # TODO(tommi): Figure out why the 32bit lucid builder fails to
-                # find this dependency for this target (other builders pick it up
-                # correctly).  crbug.com/231068.
-                '../third_party/libjingle/libjingle.gyp:libpeerconnection',
-              ],
-            }],
-          ],
-        },
-      ],
-    },],  # OS!="mac"
-    ['OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'security_tests',
-          'type': 'shared_library',
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'test/security_tests/ipc_security_tests.cc',
-            'test/security_tests/ipc_security_tests.h',
-            'test/security_tests/security_tests.cc',
-            '../sandbox/win/tests/validation_tests/commands.cc',
-            '../sandbox/win/tests/validation_tests/commands.h',
-          ],
-        },
-      ]},  # 'targets'
-    ],  # OS=="win"
-    # If you change this condition, make sure you also change it in all.gyp
-    # for the chromium_builder_qa target.
-    ['enable_automation==1 and (OS=="mac" or ((OS=="win" or os_posix==1) and target_arch==python_arch))', {
-      'targets': [
-        {
-          # Documentation: http://dev.chromium.org/developers/testing/pyauto
-          'target_name': 'pyautolib',
+      # Documentation: http://dev.chromium.org/developers/testing/pyauto
+      'target_name': 'pyautolib',
+      'conditions': [
+        ['enable_automation==1 and (OS=="mac" or ((OS=="win" or os_posix==1) and target_arch==python_arch))', {
           'type': 'loadable_module',
           'product_prefix': '_',
           'dependencies': [
@@ -2827,20 +2672,179 @@
               'msvs_cygwin_shell': 1,
             },
           ],  # actions
-        },  # target 'pyautolib'
-        {
-          # Required for WebRTC PyAuto tests.
-          'target_name': 'webrtc_test_tools',
+        }, {
           'type': 'none',
-          'dependencies': [
-            'pyautolib',
-            '../third_party/libjingle/libjingle.gyp:peerconnection_server',
-            '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
-            '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
+        }],
+      ], # conditions
+    },  # target 'pyautolib'
+    {
+      # Required for WebRTC PyAuto tests.
+      'target_name': 'webrtc_test_tools',
+      'type': 'none',
+      'dependencies': [
+        'pyautolib',
+        '../third_party/libjingle/libjingle.gyp:peerconnection_server',
+        '../third_party/webrtc/tools/tools.gyp:frame_analyzer',
+        '../third_party/webrtc/tools/tools.gyp:rgba_to_i420_converter',
+      ],
+    },  # target 'webrtc_test_tools'
+  ],
+  'conditions': [
+    ['OS=="mac"', {
+      'targets': [
+        {
+          # This is the mac equivalent of the security_tests target below. It
+          # generates a framework bundle which bundles tests to be run in a
+          # renderer process. The test code is built as a framework so it can be
+          # run in the context of a renderer without shipping the code to end
+          # users.
+          'target_name': 'renderer_sandbox_tests',
+          'type': 'shared_library',
+          'product_name': 'Renderer Sandbox Tests',
+          'mac_bundle': 1,
+          'xcode_settings': {
+            'INFOPLIST_FILE': 'test/security_tests/sandbox_tests_mac-Info.plist',
+          },
+          'sources': [
+            'test/security_tests/renderer_sandbox_tests_mac.mm',
           ],
-        },  # target 'webrtc_test_tools'
-      ]  # targets
+          'include_dirs': [
+            '..',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Cocoa.framework',
+            ],
+          },
+        },  # target renderer_sandbox_tests
+        {
+          # Tests for Mac app launcher.
+          'target_name': 'app_mode_app_tests',
+          'type': 'executable',
+          'product_name': 'app_mode_app_tests',
+          'dependencies': [
+            '../base/base.gyp:test_support_base',
+            '../chrome/common_constants.gyp:common_constants',
+            '../testing/gtest.gyp:gtest',
+            'chrome.gyp:chrome',  # run time dependency
+            'app_mode_app_support',
+          ],
+          'sources': [
+            'common/mac/app_mode_chrome_locator_unittest.mm',
+            'test/base/app_mode_app_tests.cc',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
+              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+            ],
+          },
+        },  # target app_mode_app_tests
+      ],
     }],
+    ['OS!="mac"', {
+      'targets': [
+        {
+          'target_name': 'perf_tests',
+          'type': 'executable',
+          'dependencies': [
+            'browser',
+            'chrome_resources.gyp:chrome_resources',
+            'chrome_resources.gyp:chrome_strings',
+            'common',
+            'renderer',
+            '../content/content.gyp:content_gpu',
+            '../content/content_shell_and_tests.gyp:test_support_content',
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
+            '../base/base.gyp:test_support_perf',
+            '../skia/skia.gyp:skia',
+            '../testing/gtest.gyp:gtest',
+            '../webkit/glue/webkit_glue.gyp:glue',
+          ],
+          'sources': [
+            'test/perf/perftests.cc',
+            'test/perf/url_parse_perftest.cc',
+            '../content/browser/net/sqlite_persistent_cookie_store_perftest.cc',
+          ],
+          'conditions': [
+            ['use_x11==1', {
+              'dependencies': [
+                '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
+            ['toolkit_uses_gtk == 1', {
+              'dependencies': [
+                '../build/linux/system.gyp:gtk',
+              ],
+            }],
+            ['OS=="win"', {
+              'configurations': {
+                'Debug_Base': {
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'LinkIncremental': '<(msvs_large_module_debug_link_mode)',
+                    },
+                  },
+                },
+              },
+              'conditions': [
+                ['win_use_allocator_shim==1', {
+                  'dependencies': [
+                    '<(allocator_target)',
+                  ],
+                }],
+              ],
+            }],
+            ['toolkit_views==1', {
+              'dependencies': [
+                '../ui/views/views.gyp:views',
+              ],
+            }],
+            ['os_posix == 1 and OS != "mac" and OS != "android"', {
+              'conditions': [
+                ['linux_use_tcmalloc==1', {
+                  'dependencies': [
+                    '../base/allocator/allocator.gyp:allocator',
+                  ],
+                }],
+              ],
+            }],
+            ['OS=="linux" and enable_webrtc==1', {
+              'dependencies': [
+                # TODO(tommi): Figure out why the 32bit lucid builder fails to
+                # find this dependency for this target (other builders pick it up
+                # correctly).  crbug.com/231068.
+                '../third_party/libjingle/libjingle.gyp:libpeerconnection',
+              ],
+            }],
+          ],
+        },
+      ],
+    },],  # OS!="mac"
+    ['OS=="win"', {
+      'targets': [
+        {
+          'target_name': 'security_tests',
+          'type': 'shared_library',
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'test/security_tests/ipc_security_tests.cc',
+            'test/security_tests/ipc_security_tests.h',
+            'test/security_tests/security_tests.cc',
+            '../sandbox/win/tests/validation_tests/commands.cc',
+            '../sandbox/win/tests/validation_tests/commands.h',
+          ],
+        },
+      ]},  # 'targets'
+    ],  # OS=="win"
+    # If you change this condition, make sure you also change it in all.gyp
+    # for the chromium_builder_qa target.
     # To enable the coverage targets, do
     #    GYP_DEFINES='coverage=1' gclient sync
     # To match the coverage buildbot more closely, do this:
@@ -2904,7 +2908,7 @@
             '../printing/printing.gyp:printing_unittests',
             '../remoting/remoting.gyp:remoting_unittests',
             '../sql/sql.gyp:sql_unittests',
-            '../content/content.gyp:content_unittests',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             'unit_tests',
             '../sync/sync.gyp:sync_unit_tests',
           ],  # 'dependencies'
@@ -2927,7 +2931,7 @@
                 'interactive_ui_tests',
                 # Disabled from running in coverage_posix.py.
                 # We need to build this during compile step, so enabling here.
-                '../content/content.gyp:content_browsertests',
+                '../content/content_shell_and_tests.gyp:content_browsertests',
                 '../courgette/courgette.gyp:courgette_unittests',
                 '../crypto/crypto.gyp:crypto_unittests',
                 '../jingle/jingle.gyp:jingle_unittests',
@@ -2936,11 +2940,11 @@
                 '../url/url.gyp:url_unittests',
                 'browser_tests',
                 'chromedriver_unittests',
-                'gpu_tests',
                 'performance_ui_tests',
                 'pyautolib',
                 'sync_integration_tests',
-              ]}],
+              ],
+            }],
             ['OS=="mac"', {
               'dependencies': [
               # Placeholder; empty for now.
@@ -3037,7 +3041,7 @@
             'chrome_java_test_support',
             '../base/base.gyp:base',
             '../base/base.gyp:base_java_test_support',
-            '../content/content.gyp:content_java_test_support',
+            '../content/content_shell_and_tests.gyp:content_java_test_support',
             '../sync/sync.gyp:sync_javatests',
           ],
           'variables': {
@@ -3078,7 +3082,7 @@
           },
           'dependencies': [
             'chrome_java',
-            '../content/content.gyp:content_java_test_support',
+            '../content/content_shell_and_tests.gyp:content_java_test_support',
             '../sync/sync.gyp:sync_java',
             '../sync/sync.gyp:sync_java_test_support',
           ],

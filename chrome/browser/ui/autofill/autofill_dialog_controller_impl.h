@@ -131,14 +131,12 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual string16 LabelForSection(DialogSection section) const OVERRIDE;
   virtual SuggestionState SuggestionStateForSection(
       DialogSection section) OVERRIDE;
-  // TODO(groby): Remove this deprecated method after Mac starts using
-  // IconsForFields. http://crbug.com/292876
-  virtual gfx::Image IconForField(ServerFieldType type,
-                                  const string16& user_input) const OVERRIDE;
   virtual FieldIconMap IconsForFields(const FieldValueMap& user_inputs)
       const OVERRIDE;
   virtual bool FieldControlsIcons(ServerFieldType type) const OVERRIDE;
   virtual string16 TooltipForField(ServerFieldType type) const OVERRIDE;
+  virtual bool InputIsEditable(const DetailInput& input, DialogSection section)
+      OVERRIDE;
   virtual string16 InputValidityMessage(DialogSection section,
                                         ServerFieldType type,
                                         const string16& value) OVERRIDE;
@@ -284,6 +282,9 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // Whether the information input in this dialog will be securely transmitted
   // to the requesting site.
   virtual bool TransmissionWillBeSecure() const;
+
+  // Whether submission is currently waiting for |action| to be handled.
+  bool IsSubmitPausedOn(wallet::RequiredAction action) const;
 
   // Shows a new credit card saved bubble and passes ownership of |new_card| and
   // |billing_profile| to the bubble. Exposed for testing.
@@ -463,9 +464,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   base::string16 CreditCardNumberValidityMessage(
       const base::string16& number) const;
 
-  // Whether a particular DetailInput in |section| should be edited or not.
-  bool InputIsEditable(const DetailInput& input, DialogSection section) const;
-
   // Whether all of the input fields currently showing in the dialog have valid
   // contents. This validates only by checking "sure" messages, i.e. messages
   // that would have been displayed to the user during editing, as opposed to
@@ -520,9 +518,6 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // actions returned by Save or Update calls to Wallet.
   void HandleSaveOrUpdateRequiredActions(
       const std::vector<wallet::RequiredAction>& required_actions);
-
-  // Whether submission is currently waiting for |action| to be handled.
-  bool IsSubmitPausedOn(wallet::RequiredAction action) const;
 
   // Shows a card generation overlay if necessary, then calls DoFinishSubmit.
   void FinishSubmit();
@@ -732,6 +727,10 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // show a bubble as the dialog closes to confirm a user's new card info was
   // saved. Never populated while incognito (as nothing's actually saved).
   scoped_ptr<CreditCard> newly_saved_card_;
+
+  // The last four digits of the backing card used for the current run of the
+  // dialog. Only applies to Wallet and is populated on submit.
+  base::string16 backing_card_last_four_;
 
   // The timer that delays enabling submit button for a short period of time on
   // startup.

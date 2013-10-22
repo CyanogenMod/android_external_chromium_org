@@ -157,7 +157,7 @@ _BANNED_CPP_FUNCTIONS = (
       ),
       True,
       (
-        r"^components[\\\/]breakpad[\\\/]breakpad_mac\.mm$",
+        r"^components[\\\/]breakpad[\\\/]app[\\\/]breakpad_mac\.mm$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_browser_main\.cc$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
@@ -1059,7 +1059,7 @@ def GetPreferredTrySlaves(project, change):
       'win7_aura',
       'win_rel',
       'win:compile',
-      'win_x64_rel:compile',
+      'win_x64_rel:base_unittests',
   ]
 
   # Match things like path/aura/file.cc and path/file_aura.cc.

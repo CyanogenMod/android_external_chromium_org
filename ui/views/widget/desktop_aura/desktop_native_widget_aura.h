@@ -28,16 +28,15 @@ namespace views {
 namespace corewm {
 class CompoundEventFilter;
 class InputMethodEventFilter;
-class ScopedCaptureClient;
 class ShadowController;
 class TooltipController;
 class VisibilityController;
 class WindowModalityController;
 }
 
+class DesktopCaptureClient;
 class DesktopRootWindowHost;
 class DropHelper;
-class NativeWidgetAuraWindowObserver;
 class TooltipManagerAura;
 class WindowReorderer;
 
@@ -160,7 +159,6 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   virtual bool IsMouseEventsEnabled() const OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual gfx::Rect GetWorkAreaBoundsInScreen() const OVERRIDE;
-  virtual void SetInactiveRenderingDisabled(bool value) OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
       const gfx::Vector2d& drag_offset,
       Widget::MoveLoopSource source,
@@ -234,7 +232,7 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // See class documentation for Widget in widget.h for a note about ownership.
   Widget::InitParams::Ownership ownership_;
 
-  scoped_ptr<corewm::ScopedCaptureClient> capture_client_;
+  scoped_ptr<DesktopCaptureClient> capture_client_;
 
   // The NativeWidget owns the RootWindow. Required because the RootWindow owns
   // its RootWindowHost, so DesktopRootWindowHost can't own it.
@@ -244,22 +242,19 @@ class VIEWS_EXPORT DesktopNativeWidgetAura
   // instance.
   base::WeakPtrFactory<DesktopNativeWidgetAura> close_widget_factory_;
 
-  scoped_ptr<NativeWidgetAuraWindowObserver> active_window_observer_;
-
   // Can we be made active?
   bool can_activate_;
 
   // Ownership passed to RootWindow on Init.
   DesktopRootWindowHost* desktop_root_window_host_;
 
-  // The content of |root_window_|. WARNING: this may be NULL if deleted out
-  // from under us.
-  aura::Window* window_;
-
-  // Contains the content window defined above. Ensures that ZOrder changes
-  // occurring in the content window hierarchy don't affect the other children
-  // of the root window.
+  // Child of the root, contains |content_window_|.
   aura::Window* content_window_container_;
+
+  // Child of |content_window_container_|. This is the return value from
+  // GetNativeView().
+  // WARNING: this may be NULL, in particular during shutdown it becomes NULL.
+  aura::Window* content_window_;
 
   internal::NativeWidgetDelegate* native_widget_delegate_;
 

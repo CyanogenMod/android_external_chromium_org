@@ -14,6 +14,22 @@
 
 namespace content {
 
+namespace {
+
+bool RemoveStreamDeviceFromArray(const StreamDeviceInfo device_info,
+                                 StreamDeviceInfoArray* array) {
+  for (StreamDeviceInfoArray::iterator device_it = array->begin();
+       device_it != array->end(); ++device_it) {
+    if (StreamDeviceInfo::IsEqual(*device_it, device_info)) {
+      array->erase(device_it);
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
 // A request is identified by pair (request_id, handler), or ipc_request.
 // There could be multiple clients making requests and each has its own
 // request_id sequence.
@@ -120,17 +136,32 @@ void MediaStreamDispatcher::CancelGenerateStream(
   }
 }
 
-void MediaStreamDispatcher::StopStream(const std::string& label) {
-  DCHECK(main_loop_->BelongsToCurrentThread());
-  DVLOG(1) << "MediaStreamDispatcher::StopStream"
-           << ", {label = " << label << "}";
+void MediaStreamDispatcher::StopStreamDevice(
+    const StreamDeviceInfo& device_info) {
+  DVLOG(1) << "MediaStreamDispatcher::StopStreamDevice"
+           << ", {device_id = " << device_info.device.id << "}";
 
-  LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
-    return;
+  // Remove |device_info| from all streams in |label_stream_map_|.
+  bool device_found = false;
+  LabelStreamMap::iterator stream_it = label_stream_map_.begin();
+  while (stream_it != label_stream_map_.end()) {
+    StreamDeviceInfoArray& audio_array = stream_it->second.audio_array;
+    StreamDeviceInfoArray& video_array = stream_it->second.video_array;
 
-  Send(new MediaStreamHostMsg_StopGeneratedStream(routing_id(), label));
-  label_stream_map_.erase(it);
+    if (RemoveStreamDeviceFromArray(device_info, &audio_array) ||
+        RemoveStreamDeviceFromArray(device_info, &video_array)) {
+      device_found = true;
+      if (audio_array.empty() && video_array.empty()) {
+        label_stream_map_.erase(stream_it++);
+        continue;
+      }
+    }
+    ++stream_it;
+  }
+  DCHECK(device_found);
+
+  Send(new MediaStreamHostMsg_StopStreamDevice(routing_id(),
+                                               device_info.device.id));
 }
 
 void MediaStreamDispatcher::EnumerateDevices(
@@ -187,7 +218,7 @@ void MediaStreamDispatcher::RemoveEnumerationRequest(
       if (requests->empty() && state->cached_devices) {
         // No more request and has a label, try to stop the label
         // and invalidate the state.
-        Send(new MediaStreamHostMsg_StopGeneratedStream(
+        Send(new MediaStreamHostMsg_CancelEnumerateDevices(
             routing_id(), state->cached_devices->label));
         state->ipc_id = -1;
         state->cached_devices.reset();
@@ -222,10 +253,16 @@ void MediaStreamDispatcher::CancelOpenDevice(
 
 void MediaStreamDispatcher::CloseDevice(const std::string& label) {
   DCHECK(main_loop_->BelongsToCurrentThread());
+  DCHECK(!label.empty());
   DVLOG(1) << "MediaStreamDispatcher::CloseDevice"
            << ", {label = " << label << "}";
 
-  StopStream(label);
+  LabelStreamMap::iterator it = label_stream_map_.find(label);
+  if (it == label_stream_map_.end())
+    return;
+  label_stream_map_.erase(it);
+
+  Send(new MediaStreamHostMsg_CloseDevice(routing_id(), label));
 }
 
 bool MediaStreamDispatcher::Send(IPC::Message* message) {
@@ -335,7 +372,7 @@ void MediaStreamDispatcher::OnDevicesEnumerated(
     // enumerated response is on the way. Have to stop the |label| because
     // this might be the first enumerated device list is received. This also
     // lead to same label being stopped multiple times.
-    Send(new MediaStreamHostMsg_StopGeneratedStream(routing_id(), label));
+    Send(new MediaStreamHostMsg_CancelEnumerateDevices(routing_id(), label));
     return;
   }
 
@@ -420,10 +457,10 @@ void MediaStreamDispatcher::OnDeviceOpenFailed(int request_id) {
 int MediaStreamDispatcher::audio_session_id(const std::string& label,
                                             int index) {
   LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
+  if (it == label_stream_map_.end() ||
+      it->second.audio_array.size() <= static_cast<size_t>(index)) {
     return StreamDeviceInfo::kNoId;
-
-  DCHECK_GT(it->second.audio_array.size(), static_cast<size_t>(index));
+  }
   return it->second.audio_array[index].session_id;
 }
 
@@ -434,10 +471,10 @@ bool MediaStreamDispatcher::IsStream(const std::string& label) {
 int MediaStreamDispatcher::video_session_id(const std::string& label,
                                             int index) {
   LabelStreamMap::iterator it = label_stream_map_.find(label);
-  if (it == label_stream_map_.end())
+  if (it == label_stream_map_.end() ||
+      it->second.video_array.size() <= static_cast<size_t>(index)) {
     return StreamDeviceInfo::kNoId;
-
-  DCHECK_GT(it->second.video_array.size(), static_cast<size_t>(index));
+  }
   return it->second.video_array[index].session_id;
 }
 

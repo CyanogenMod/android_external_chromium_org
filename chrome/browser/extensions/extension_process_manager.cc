@@ -20,6 +20,7 @@
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,6 +41,8 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/renderer_preferences.h"
 #include "extensions/browser/view_type_utils.h"
 
@@ -54,6 +57,9 @@ using extensions::BackgroundInfo;
 using extensions::BackgroundManifestHandler;
 using extensions::Extension;
 using extensions::ExtensionHost;
+
+class RenderViewHostDestructionObserver;
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(RenderViewHostDestructionObserver);
 
 namespace {
 
@@ -110,6 +116,33 @@ static void CreateBackgroundHostForExtensionLoad(
 }
 
 }  // namespace
+
+class RenderViewHostDestructionObserver
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<RenderViewHostDestructionObserver> {
+ public:
+  virtual ~RenderViewHostDestructionObserver() {}
+
+ private:
+  explicit RenderViewHostDestructionObserver(WebContents* web_contents)
+      : WebContentsObserver(web_contents) {
+    Profile* profile =
+        Profile::FromBrowserContext(web_contents->GetBrowserContext());
+    process_manager_ =
+        extensions::ExtensionSystem::Get(profile)->process_manager();
+  }
+
+  friend class content::WebContentsUserData<RenderViewHostDestructionObserver>;
+
+  // content::WebContentsObserver overrides.
+  virtual void RenderViewDeleted(RenderViewHost* render_view_host) OVERRIDE {
+    process_manager_->UnregisterRenderViewHost(render_view_host);
+  }
+
+  ExtensionProcessManager* process_manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(RenderViewHostDestructionObserver);
+};
 
 struct ExtensionProcessManager::BackgroundPageData {
   // The count of things keeping the lazy background page alive.
@@ -654,6 +687,11 @@ void ExtensionProcessManager::Observe(
       RVHPair* switched_details = content::Details<RVHPair>(details).ptr();
       if (switched_details->first)
         UnregisterRenderViewHost(switched_details->first);
+
+      // The above will unregister a RVH when it gets swapped out with a new
+      // one. However we need to watch the WebContents to know when a RVH is
+      // deleted because the WebContents has gone away.
+      RenderViewHostDestructionObserver::CreateForWebContents(contents);
       RegisterRenderViewHost(switched_details->second);
       break;
     }
@@ -916,7 +954,7 @@ bool IncognitoExtensionProcessManager::IsIncognitoEnabled(
     const Extension* extension) {
   // Keep in sync with duplicate in extension_info_map.cc.
   ExtensionService* service = GetProfile()->GetExtensionService();
-  return service && service->IsIncognitoEnabled(extension->id());
+  return extension_util::IsIncognitoEnabled(extension->id(), service);
 }
 
 void IncognitoExtensionProcessManager::Observe(

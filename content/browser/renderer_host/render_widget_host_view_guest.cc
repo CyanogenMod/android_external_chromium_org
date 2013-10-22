@@ -51,15 +51,18 @@ RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHostView* platform_view)
     : host_(RenderWidgetHostImpl::From(widget_host)),
       guest_(guest),
-      is_hidden_(false),
       platform_view_(static_cast<RenderWidgetHostViewPort*>(platform_view)) {
 #if defined(OS_WIN) || defined(USE_AURA)
-  gesture_recognizer_.reset(ui::GestureRecognizer::Create(this));
+  gesture_recognizer_.reset(ui::GestureRecognizer::Create());
+  gesture_recognizer_->AddGestureEventHelper(this);
 #endif  // defined(OS_WIN) || defined(USE_AURA)
   host_->SetView(this);
 }
 
 RenderWidgetHostViewGuest::~RenderWidgetHostViewGuest() {
+#if defined(OS_WIN) || defined(USE_AURA)
+  gesture_recognizer_->RemoveGestureEventHelper(this);
+#endif  // defined(OS_WIN) || defined(USE_AURA)
 }
 
 RenderWidgetHost* RenderWidgetHostViewGuest::GetRenderWidgetHost() const {
@@ -74,17 +77,15 @@ void RenderWidgetHostViewGuest::WasShown() {
   // first place: http://crbug.com/273089.
   //
   // |guest_| is NULL during test.
-  if (!is_hidden_ || (guest_ && guest_->is_in_destruction()))
+  if ((guest_ && guest_->is_in_destruction()) || !host_->is_hidden())
     return;
-  is_hidden_ = false;
   host_->WasShown();
 }
 
 void RenderWidgetHostViewGuest::WasHidden() {
   // |guest_| is NULL during test.
-  if (is_hidden_ || (guest_ && guest_->is_in_destruction()))
+  if ((guest_ && guest_->is_in_destruction()) || host_->is_hidden())
     return;
-  is_hidden_ = true;
   host_->WasHidden();
 }
 
@@ -135,7 +136,7 @@ void RenderWidgetHostViewGuest::Hide() {
 }
 
 bool RenderWidgetHostViewGuest::IsShowing() {
-  return !is_hidden_;
+  return !host_->is_hidden();
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
@@ -507,21 +508,26 @@ void RenderWidgetHostViewGuest::DestroyGuestView() {
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-bool RenderWidgetHostViewGuest::DispatchLongPressGestureEvent(
-    ui::GestureEvent* event) {
-  return ForwardGestureEventToRenderer(event);
+bool RenderWidgetHostViewGuest::CanDispatchToConsumer(
+    ui::GestureConsumer* consumer) {
+  CHECK_EQ(static_cast<RenderWidgetHostViewGuest*>(consumer), this);
+  return true;
 }
 
-bool RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
+void RenderWidgetHostViewGuest::DispatchLongPressGestureEvent(
+    ui::GestureEvent* event) {
+  ForwardGestureEventToRenderer(event);
+}
+
+void RenderWidgetHostViewGuest::DispatchCancelTouchEvent(
     ui::TouchEvent* event) {
   if (!host_)
-    return false;
+    return;
 
   WebKit::WebTouchEvent cancel_event;
   cancel_event.type = WebKit::WebInputEvent::TouchCancel;
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   host_->ForwardTouchEventWithLatencyInfo(cancel_event, *event->latency());
-  return true;
 }
 
 bool RenderWidgetHostViewGuest::ForwardGestureEventToRenderer(

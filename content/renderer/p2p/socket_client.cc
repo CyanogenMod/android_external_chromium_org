@@ -8,6 +8,18 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "content/common/p2p_messages.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
+#include "crypto/random.h"
+
+namespace {
+
+uint64 GetUniqueId(uint32 random_socket_id, uint32 packet_id) {
+  uint64 uid = random_socket_id;
+  uid <<= 32;
+  uid |= packet_id;
+  return uid;
+}
+
+}  // namespace
 
 namespace content {
 
@@ -16,7 +28,10 @@ P2PSocketClient::P2PSocketClient(P2PSocketDispatcher* dispatcher)
       ipc_message_loop_(dispatcher->message_loop()),
       delegate_message_loop_(base::MessageLoopProxy::current()),
       socket_id_(0), delegate_(NULL),
-      state_(STATE_UNINITIALIZED) {
+      state_(STATE_UNINITIALIZED),
+      random_socket_id_(0),
+      next_packet_id_(0) {
+  crypto::RandBytes(&random_socket_id_, sizeof(random_socket_id_));
 }
 
 P2PSocketClient::~P2PSocketClient() {
@@ -48,8 +63,10 @@ void P2PSocketClient::DoInit(P2PSocketType type,
       type, socket_id_, local_address, remote_address));
 }
 
-void P2PSocketClient::Send(const net::IPEndPoint& address,
-                           const std::vector<char>& data) {
+void P2PSocketClient::SendWithDscp(
+    const net::IPEndPoint& address,
+    const std::vector<char>& data,
+    net::DiffServCodePoint dscp) {
   if (!ipc_message_loop_->BelongsToCurrentThread()) {
     ipc_message_loop_->PostTask(
         FROM_HERE, base::Bind(&P2PSocketClient::Send, this, address, data));
@@ -59,8 +76,16 @@ void P2PSocketClient::Send(const net::IPEndPoint& address,
   // Can send data only when the socket is open.
   DCHECK(state_ == STATE_OPEN || state_ == STATE_ERROR);
   if (state_ == STATE_OPEN) {
-    dispatcher_->SendP2PMessage(new P2PHostMsg_Send(socket_id_, address, data));
+    uint64 unique_id = GetUniqueId(random_socket_id_, ++next_packet_id_);
+    TRACE_EVENT_ASYNC_BEGIN0("p2p", "Send", unique_id);
+    dispatcher_->SendP2PMessage(new P2PHostMsg_Send(socket_id_, address, data,
+                                                    dscp, unique_id));
   }
+}
+
+void P2PSocketClient::Send(const net::IPEndPoint& address,
+                           const std::vector<char>& data) {
+  SendWithDscp(address, data, net::DSCP_DEFAULT);
 }
 
 void P2PSocketClient::Close() {

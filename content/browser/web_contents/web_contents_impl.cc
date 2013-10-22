@@ -34,6 +34,8 @@
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/message_port_message_filter.h"
+#include "content/browser/message_port_service.h"
 #include "content/browser/power_save_blocker_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -414,6 +416,17 @@ WebContentsImpl::~WebContentsImpl() {
   }
 #endif
 
+  RenderViewHost* pending_rvh = render_manager_.pending_render_view_host();
+  if (pending_rvh) {
+    FOR_EACH_OBSERVER(WebContentsObserver,
+                      observers_,
+                      RenderViewDeleted(pending_rvh));
+  }
+
+  FOR_EACH_OBSERVER(WebContentsObserver,
+                    observers_,
+                    RenderViewDeleted(render_manager_.current_host()));
+
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
                     WebContentsImplDestroyed());
@@ -521,10 +534,26 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
   if (command_line.HasSwitch(switches::kDisableAcceleratedOverflowScroll))
     prefs.accelerated_compositing_for_overflow_scroll_enabled = false;
 
-  prefs.accelerated_compositing_for_scrollable_frames_enabled =
-      command_line.HasSwitch(switches::kEnableAcceleratedScrollableFrames);
-  prefs.composited_scrolling_for_frames_enabled =
-      command_line.HasSwitch(switches::kEnableCompositedScrollingForFrames);
+  prefs.accelerated_compositing_for_scrollable_frames_enabled = false;
+  if (command_line.HasSwitch(switches::kEnableAcceleratedScrollableFrames))
+    prefs.accelerated_compositing_for_scrollable_frames_enabled = true;
+  if (command_line.HasSwitch(switches::kDisableAcceleratedScrollableFrames))
+    prefs.accelerated_compositing_for_scrollable_frames_enabled = false;
+
+  prefs.composited_scrolling_for_frames_enabled = false;
+  if (command_line.HasSwitch(switches::kEnableCompositedScrollingForFrames))
+    prefs.composited_scrolling_for_frames_enabled = true;
+  if (command_line.HasSwitch(switches::kDisableCompositedScrollingForFrames))
+    prefs.composited_scrolling_for_frames_enabled = false;
+
+  prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = false;
+  if (command_line.HasSwitch(
+          switches::kEnableUniversalAcceleratedOverflowScroll))
+    prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = true;
+  if (command_line.HasSwitch(
+          switches::kDisableUniversalAcceleratedOverflowScroll))
+    prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = false;
+
   prefs.show_paint_rects =
       command_line.HasSwitch(switches::kShowPaintRects);
   prefs.accelerated_compositing_enabled =
@@ -562,9 +591,10 @@ WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
     prefs.pinch_virtual_viewport_enabled = true;
     prefs.pinch_overlay_scrollbar_thickness = 10;
   }
+  prefs.use_solid_color_scrollbars = command_line.HasSwitch(
+      switches::kEnableOverlayScrollbars);
 
 #if defined(OS_ANDROID)
-  prefs.use_solid_color_scrollbars = true;
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
       switches::kDisableGestureRequirementForMediaPlayback);
   prefs.user_gesture_required_for_media_fullscreen = !command_line.HasSwitch(
@@ -697,8 +727,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(ViewHostMsg_RegisterProtocolHandler,
                         OnRegisterProtocolHandler)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Find_Reply, OnFindReply)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidProgrammaticallyScroll,
-                        OnDidProgrammaticallyScroll)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CrashedPlugin, OnCrashedPlugin)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AppCacheAccessed, OnAppCacheAccessed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenColorChooser, OnOpenColorChooser)
@@ -1203,6 +1231,10 @@ void WebContentsImpl::Observe(int type,
 }
 
 void WebContentsImpl::Init(const WebContents::CreateParams& params) {
+  // This is set before initializing the render_manager_ since render_manager_
+  // init calls back into us via its delegate to ask if it should be hidden.
+  should_normally_be_visible_ = !params.initially_hidden;
+
   render_manager_.Init(
       params.browser_context, params.site_instance, params.routing_id,
       params.main_frame_routing_id);
@@ -2191,6 +2223,13 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
                                             GetBrowserContext()));
       entry->set_site_instance(
           static_cast<SiteInstanceImpl*>(GetSiteInstance()));
+      // TODO(creis): If there's a pending entry already, find a safe way to
+      // update it instead of replacing it and copying over things like this.
+      if (pending_entry &&
+          NavigationEntryImpl::FromNavigationEntry(pending_entry)->
+              should_replace_entry()) {
+        entry->set_should_replace_entry(true);
+      }
       controller_.SetPendingEntry(entry);
       NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
     }
@@ -2297,6 +2336,7 @@ void WebContentsImpl::DidFailProvisionalLoadWithError(
   FOR_EACH_OBSERVER(WebContentsObserver,
                     observers_,
                     DidFailProvisionalLoad(params.frame_id,
+                                           params.frame_unique_name,
                                            params.is_main_frame,
                                            validated_url,
                                            params.error_code,
@@ -2468,12 +2508,6 @@ void WebContentsImpl::OnFindReply(int request_id,
     delegate_->FindReply(this, request_id, number_of_matches, selection_rect,
                          active_match_ordinal, final_update);
   }
-}
-
-void WebContentsImpl::OnDidProgrammaticallyScroll(
-    const gfx::Vector2d& scroll_point) {
-  if (delegate_)
-    delegate_->DidProgrammaticallyScroll(this, scroll_point);
 }
 
 #if defined(OS_ANDROID)
@@ -3069,8 +3103,13 @@ void WebContentsImpl::DidNavigate(
     }
     // Notify observers about the commit of the provisional load.
     FOR_EACH_OBSERVER(WebContentsObserver, observers_,
-                      DidCommitProvisionalLoadForFrame(params.frame_id,
-                      is_main_frame, params.url, transition_type, rvh));
+                      DidCommitProvisionalLoadForFrame(
+                          params.frame_id,
+                          params.frame_unique_name,
+                          is_main_frame,
+                          params.url,
+                          transition_type,
+                          rvh));
   }
 
   if (!did_navigate)
@@ -3361,6 +3400,21 @@ void WebContentsImpl::RouteMessageEvent(
     return;
 
   ViewMsg_PostMessage_Params new_params(params);
+
+  if (!params.message_port_ids.empty()) {
+    MessagePortMessageFilter* message_port_message_filter =
+        static_cast<RenderProcessHostImpl*>(GetRenderProcessHost())
+            ->message_port_message_filter();
+    std::vector<int> new_routing_ids(params.message_port_ids.size());
+    for (size_t i = 0; i < params.message_port_ids.size(); ++i) {
+      new_routing_ids[i] = message_port_message_filter->GetNextRoutingID();
+      MessagePortService::GetInstance()->UpdateMessagePort(
+          params.message_port_ids[i],
+          message_port_message_filter,
+          new_routing_ids[i]);
+    }
+    new_params.new_routing_ids = new_routing_ids;
+  }
 
   // If there is a source_routing_id, translate it to the routing ID for
   // the equivalent swapped out RVH in the target process.  If we need

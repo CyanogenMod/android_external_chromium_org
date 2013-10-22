@@ -66,9 +66,6 @@ namespace chromeos {
 
 namespace {
 
-// Major version where we still show GSG as "Release Notes" after the update.
-const long int kReleaseNotesTargetRelease = 19;
-
 // URL for account creation.
 const char kCreateAccountURL[] =
     "https://accounts.google.com/NewAccount?service=mail";
@@ -83,9 +80,6 @@ const long int kAuthCacheTransferDelayMs = 2000;
 
 // Delay for restarting the ui if safe-mode login has failed.
 const long int kSafeModeRestartUiDelayMs = 30000;
-
-// Delay for rebooting machine if TPM critical error was encountered.
-const long int kCriticalErrorRebootDelayMs = 3500;
 
 // Makes a call to the policy subsystem to reload the policy when we detect
 // authentication change.
@@ -749,10 +743,7 @@ void ExistingUserController::OnLoginFailure(const LoginFailure& failure) {
   display_email_.clear();
 }
 
-void ExistingUserController::OnLoginSuccess(
-    const UserContext& user_context,
-    bool pending_requests,
-    bool using_oauth) {
+void ExistingUserController::OnLoginSuccess(const UserContext& user_context) {
   is_login_in_progress_ = false;
   offline_failed_ = false;
   login_display_->set_signin_completed(true);
@@ -778,7 +769,6 @@ void ExistingUserController::OnLoginSuccess(
   // Will call OnProfilePrepared() in the end.
   LoginUtils::Get()->PrepareProfile(user_context,
                                     display_email_,
-                                    using_oauth,
                                     has_cookies,
                                     false,          // Start session for user.
                                     this);
@@ -824,13 +814,9 @@ void ExistingUserController::OnProfilePrepared(Profile* profile) {
     LoginUtils::Get()->DoBrowserLaunch(profile, host_);
     host_ = NULL;
   }
-  // Inform |login_status_consumer_| about successful login. Set most
-  // parameters to empty since they're not needed.
-  if (login_status_consumer_) {
-    login_status_consumer_->OnLoginSuccess(UserContext(),
-                                           false,    // pending_requests
-                                           false);   // using_oauth
-  }
+  // Inform |login_status_consumer_| about successful login.
+  if (login_status_consumer_)
+    login_status_consumer_->OnLoginSuccess(UserContext());
   login_display_->OnFadeOut();
 }
 

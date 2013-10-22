@@ -315,7 +315,13 @@ TEST_PPAPI_OUT_OF_PROCESS(ImageData)
 TEST_PPAPI_NACL(ImageData)
 
 TEST_PPAPI_IN_PROCESS(BrowserFont)
-TEST_PPAPI_OUT_OF_PROCESS(BrowserFont)
+// crbug.com/308949
+#if defined(OS_WIN)
+#define MAYBE_OUT_BrowserFont DISABLED_BrowserFont
+#else
+#define MAYBE_OUT_BrowserFont BrowserFont
+#endif
+TEST_PPAPI_OUT_OF_PROCESS(MAYBE_OUT_BrowserFont)
 
 TEST_PPAPI_IN_PROCESS(Buffer)
 TEST_PPAPI_OUT_OF_PROCESS(Buffer)
@@ -561,7 +567,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(URLLoader)) {
+// http://crbug.com/308906
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_URLLoader) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -675,6 +682,10 @@ TEST_PPAPI_OUT_OF_PROCESS(Crypto)
 TEST_PPAPI_IN_PROCESS(Var)
 TEST_PPAPI_OUT_OF_PROCESS(Var)
 TEST_PPAPI_NACL(Var)
+
+TEST_PPAPI_IN_PROCESS(VarResource)
+TEST_PPAPI_OUT_OF_PROCESS(VarResource)
+TEST_PPAPI_NACL(VarResource)
 
 // Flaky on mac, http://crbug.com/121107
 #if defined(OS_MACOSX)
@@ -822,7 +833,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
       LIST_TEST(FileIO_Mmap)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileIO)) {
+// http://crbug.com/308905
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -903,7 +915,8 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
       LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(FileRef)) {
+// http://crbug.com/308908
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileRef) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)

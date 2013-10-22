@@ -38,6 +38,7 @@ class _RunState(object):
 
   def StartBrowser(self, test, page_set, page, possible_browser,
                    credentials_path, archive_path):
+    started_browser = not self.browser
     # Create a browser.
     if not self.browser:
       assert not self.tab
@@ -88,17 +89,21 @@ class _RunState(object):
       if len(self.browser.tabs) == 0:
         self.browser.tabs.New()
 
-      # Ensure only one tab is open.
-      while len(self.browser.tabs) > 1:
-        self.browser.tabs[-1].Close()
+      # Ensure only one tab is open, unless the test is a multi-tab test.
+      if not test.is_multi_tab_test:
+        while len(self.browser.tabs) > 1:
+          self.browser.tabs[-1].Close()
 
       # Must wait for tab to commit otherwise it can commit after the next
       # navigation has begun and RenderViewHostManager::DidNavigateMainFrame()
       # will cancel the next navigation because it's pending. This manifests as
       # the first navigation in a PageSet freezing indefinitly because the
       # navigation was silently cancelled when |self.browser.tabs[0]| was
-      # committed.
-      self.browser.tabs[0].WaitForDocumentReadyStateToBeComplete()
+      # committed. Only do this when we just started the browser, otherwise
+      # there are cases where previous pages in a PageSet never complete
+      # loading so we'll wait forever.
+      if started_browser:
+        self.browser.tabs[0].WaitForDocumentReadyStateToBeComplete()
 
     if not self.tab:
       self.tab = self.browser.tabs[0]
@@ -220,7 +225,12 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
         _CheckThermalThrottling(state.browser.platform)
       except exceptions.TabCrashException:
         _LogStackTrace('Tab crashed: %s' % page.url, state.browser)
-        state.StopBrowser()
+        if test.is_multi_tab_test:
+          logging.error('Stopping multi-tab test after tab %s crashed'
+                        % page.url)
+          raise
+        else:
+          state.StopBrowser()
 
       if finder_options.profiler:
         state.StopProfiling()
@@ -236,6 +246,10 @@ def _PrepareAndRunPage(test, page_set, expectations, finder_options,
       tries -= 1
       if not tries:
         logging.error('Lost connection to browser 3 times. Failing.')
+        raise
+      if test.is_multi_tab_test:
+        logging.error(
+          'Lost connection to browser during multi-tab test. Failing.')
         raise
   results_for_current_run.StopTest(page)
 
@@ -298,6 +312,7 @@ def Run(test, page_set, expectations, finder_options):
   # TODO(dtu): Move results creation and results_for_current_run into RunState.
 
   try:
+    # TODO(dtu): state.tab is always None here, maybe we should not pass it?
     test.WillRunTest(state.tab)
     state.repeat_state = page_runner_repeat.PageRunnerRepeatState(
                              finder_options.repeat_options)
@@ -405,7 +420,8 @@ def _RunPage(test, page, state, expectation, results, finder_options):
   logging.info('Running %s' % page.url)
 
   page_state = PageState()
-  tab = state.tab
+  tab = test.TabForPage(page, state.tab)
+  state.tab = tab
 
   def ProcessError():
     logging.error('%s:\n%s', page.url, traceback.format_exc())

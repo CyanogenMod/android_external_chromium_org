@@ -198,7 +198,7 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
 
   int text_size_percent = Java_AwSettings_getTextSizePercentLocked(env, obj);
   if (web_prefs->text_autosizing_enabled) {
-    web_prefs->font_scale_factor = text_size_percent / 100.0f;
+    web_prefs->text_autosizing_font_scale_factor = text_size_percent / 100.0f;
     web_prefs->force_enable_zoom = text_size_percent >= 130;
     // Use the default zoom factor value when Text Autosizer is turned on.
     render_view_host_ext->SetTextZoomFactor(1);
@@ -302,6 +302,7 @@ void AwSettings::PopulateWebPreferences(WebPreferences* web_prefs) {
   web_prefs->viewport_meta_layout_size_quirk = support_quirks;
   web_prefs->viewport_meta_zero_values_quirk = support_quirks;
   web_prefs->ignore_main_frame_overflow_hidden_quirk = support_quirks;
+  web_prefs->report_screen_size_in_physical_pixels_quirk = support_quirks;
 
   web_prefs->password_echo_enabled =
       Java_AwSettings_getPasswordEchoEnabled(env, obj);

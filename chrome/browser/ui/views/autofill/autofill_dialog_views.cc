@@ -484,12 +484,25 @@ AutofillDialogViews::ErrorBubble::ErrorBubble(views::View* anchor,
                                               views::View* anchor_container,
                                               const base::string16& message)
     : anchor_(anchor),
-      anchor_container_(anchor_container) {
+      anchor_container_(anchor_container),
+      show_above_anchor_(
+          anchor->GetClassName() == views::Combobox::kViewClassName) {
   DCHECK(anchor_container_->Contains(anchor));
-
   SetAnchorView(anchor_);
-  set_arrow(ShouldArrowGoOnTheRight() ? views::BubbleBorder::TOP_RIGHT :
-                                        views::BubbleBorder::TOP_LEFT);
+
+  // TODO(dbeam): currently we assume that combobox menus always show downward
+  // (which isn't true). If the invalid combobox is low enough on the screen,
+  // its menu will actually show upward and obscure the bubble. Figure out when
+  // this might happen and adjust |show_above_anchor_| accordingly. This is not
+  // that big of deal because it rarely happens in practice.
+  if (show_above_anchor_) {
+    set_arrow(ShouldArrowGoOnTheRight() ? views::BubbleBorder::BOTTOM_RIGHT :
+                                          views::BubbleBorder::BOTTOM_LEFT);
+  } else {
+    set_arrow(ShouldArrowGoOnTheRight() ? views::BubbleBorder::TOP_RIGHT :
+                                          views::BubbleBorder::TOP_LEFT);
+  }
+
   set_margins(gfx::Insets(kErrorBubbleVerticalMargin,
                           kErrorBubbleHorizontalMargin,
                           kErrorBubbleVerticalMargin,
@@ -523,7 +536,7 @@ void AutofillDialogViews::ErrorBubble::UpdatePosition() {
   if (!anchor_->GetVisibleBounds().IsEmpty()) {
     SizeToContents();
     widget_->SetVisibilityChangedAnimationsEnabled(true);
-    widget_->Show();
+    widget_->ShowInactive();
   } else {
     widget_->SetVisibilityChangedAnimationsEnabled(false);
     widget_->Hide();
@@ -540,6 +553,10 @@ gfx::Size AutofillDialogViews::ErrorBubble::GetPreferredSize() {
 gfx::Rect AutofillDialogViews::ErrorBubble::GetBubbleBounds() {
   gfx::Rect bounds = views::BubbleDelegateView::GetBubbleBounds();
   gfx::Rect anchor_bounds = anchor_->GetBoundsInScreen();
+
+  if (show_above_anchor_)
+    bounds.set_y(anchor_bounds.y() - GetBubbleFrameView()->height());
+
   anchor_bounds.Inset(-GetBubbleFrameView()->bubble_border()->GetInsets());
   bounds.set_x(ShouldArrowGoOnTheRight() ?
       anchor_bounds.right() - bounds.width() - kBubbleBorderVisibleWidth :
@@ -646,6 +663,46 @@ void AutofillDialogViews::AccountChooser::OnMenuButtonClicked(
                               0) == views::MenuRunner::MENU_DELETED) {
     return;
   }
+}
+
+void AutofillDialogViews::ShowDialogInMode(DialogMode dialog_mode) {
+  std::vector<views::View*> visible;
+
+  if (dialog_mode == LOADING) {
+    visible.push_back(loading_shield_);
+  } else if (dialog_mode == SIGN_IN) {
+    visible.push_back(sign_in_web_view_);
+  } else {
+    DCHECK_EQ(DETAIL_INPUT, dialog_mode);
+    visible.push_back(notification_area_);
+    visible.push_back(scrollable_area_);
+  }
+
+  for (size_t i = 0; i < visible.size(); ++i) {
+    DCHECK_GE(GetIndexOf(visible[i]), 0);
+  }
+
+  for (int i = 0; i < child_count(); ++i) {
+    views::View* child = child_at(i);
+    child->SetVisible(
+        std::find(visible.begin(), visible.end(), child) != visible.end());
+  }
+}
+
+views::View* AutofillDialogViews::GetLoadingShieldForTesting() {
+  return loading_shield_;
+}
+
+views::WebView* AutofillDialogViews::GetSignInWebViewForTesting() {
+  return sign_in_web_view_;
+}
+
+views::View* AutofillDialogViews::GetNotificationAreaForTesting() {
+  return notification_area_;
+}
+
+views::View* AutofillDialogViews::GetScrollableAreaForTesting() {
+  return scrollable_area_;
 }
 
 void AutofillDialogViews::AccountChooser::LinkClicked(views::Link* source,
@@ -877,9 +934,10 @@ void AutofillDialogViews::OnWidgetClosing(views::Widget* widget) {
 void AutofillDialogViews::OnWidgetBoundsChanged(views::Widget* widget,
                                                 const gfx::Rect& new_bounds) {
   // Notify the web contents of its new auto-resize limits.
-  if (sign_in_delegate_ && sign_in_webview_->visible())
+  if (sign_in_delegate_ && sign_in_web_view_->visible()) {
     sign_in_delegate_->UpdateLimitsAndEnableAutoResize(
         GetMinimumSignInViewSize(), GetMaximumSignInViewSize());
+  }
   HideErrorBubble();
 }
 
@@ -1265,7 +1323,7 @@ AutofillDialogViews::AutofillDialogViews(AutofillDialogViewDelegate* delegate)
       window_(NULL),
       notification_area_(NULL),
       account_chooser_(NULL),
-      sign_in_webview_(NULL),
+      sign_in_web_view_(NULL),
       scrollable_area_(NULL),
       details_container_(NULL),
       loading_shield_(NULL),
@@ -1358,9 +1416,11 @@ void AutofillDialogViews::UpdateAccountChooser() {
     if (show_loading) {
       loading_shield_height_ = std::max(kInitialLoadingShieldHeight,
                                         GetContentsBounds().height());
+      ShowDialogInMode(LOADING);
+    } else {
+      ShowDialogInMode(DETAIL_INPUT);
     }
 
-    loading_shield_->SetVisible(show_loading);
     InvalidateLayout();
     ContentsPreferredSizeChanged();
   }
@@ -1398,7 +1458,6 @@ void AutofillDialogViews::UpdateButtonStrip() {
 }
 
 void AutofillDialogViews::UpdateOverlay() {
-  DialogOverlayState overlay_state = delegate_->GetDialogOverlay();
   overlay_view_->UpdateState();
 }
 
@@ -1438,7 +1497,7 @@ void AutofillDialogViews::FillSection(DialogSection section,
   // If the Autofill data comes from a credit card, make sure to overwrite the
   // CC comboboxes (even if they already have something in them). If the
   // Autofill data comes from an AutofillProfile, leave the comboboxes alone.
-  if ((section == SECTION_CC || section == SECTION_CC_BILLING) &&
+  if (section == GetCreditCardSection() &&
       AutofillType(originating_input.type).group() == CREDIT_CARD) {
     for (ComboboxMap::const_iterator it = group->comboboxes.begin();
          it != group->comboboxes.end(); ++it) {
@@ -1465,9 +1524,7 @@ void AutofillDialogViews::GetUserInput(DialogSection section,
 }
 
 base::string16 AutofillDialogViews::GetCvc() {
-  DialogSection billing_section = delegate_->SectionIsActive(SECTION_CC) ?
-      SECTION_CC : SECTION_CC_BILLING;
-  return GroupForSection(billing_section)->suggested_info->
+  return GroupForSection(GetCreditCardSection())->suggested_info->
       decorated_textfield()->text();
 }
 
@@ -1498,20 +1555,21 @@ const content::NavigationController* AutofillDialogViews::ShowSignIn() {
 
   sign_in_delegate_.reset(
       new AutofillDialogSignInDelegate(
-          this, sign_in_webview_->GetWebContents(),
+          this, sign_in_web_view_->GetWebContents(),
           delegate_->GetWebContents()->GetDelegate(),
           GetMinimumSignInViewSize(), GetMaximumSignInViewSize()));
-  sign_in_webview_->LoadInitialURL(wallet::GetSignInUrl());
+  sign_in_web_view_->LoadInitialURL(wallet::GetSignInUrl());
 
-  sign_in_webview_->SetVisible(true);
-  sign_in_webview_->RequestFocus();
+  ShowDialogInMode(SIGN_IN);
+  sign_in_web_view_->RequestFocus();
+
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
-  return &sign_in_webview_->web_contents()->GetController();
+  return &sign_in_web_view_->web_contents()->GetController();
 }
 
 void AutofillDialogViews::HideSignIn() {
-  sign_in_webview_->SetVisible(false);
+  ShowDialogInMode(DETAIL_INPUT);
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
 }
@@ -1530,7 +1588,7 @@ TestableAutofillDialogView* AutofillDialogViews::GetTestableView() {
 }
 
 void AutofillDialogViews::OnSignInResize(const gfx::Size& pref_size) {
-  sign_in_webview_->SetPreferredSize(pref_size);
+  sign_in_web_view_->SetPreferredSize(pref_size);
   ContentsPreferredSizeChanged();
 }
 
@@ -1609,8 +1667,8 @@ gfx::Size AutofillDialogViews::GetMinimumSize() {
 
 void AutofillDialogViews::Layout() {
   const gfx::Rect content_bounds = GetContentsBounds();
-  if (sign_in_webview_->visible()) {
-    sign_in_webview_->SetBoundsRect(content_bounds);
+  if (sign_in_web_view_->visible()) {
+    sign_in_web_view_->SetBoundsRect(content_bounds);
     return;
   }
 
@@ -1800,6 +1858,7 @@ void AutofillDialogViews::OnDidChangeFocus(
 void AutofillDialogViews::OnSelectedIndexChanged(views::Combobox* combobox) {
   DetailsGroup* group = GroupForView(combobox);
   ValidateGroup(*group, VALIDATE_EDIT);
+  SetEditabilityForSection(group->section);
 }
 
 void AutofillDialogViews::StyledLabelLinkClicked(const gfx::Range& range,
@@ -1852,8 +1911,8 @@ gfx::Size AutofillDialogViews::CalculatePreferredSize(bool get_minimum_size) {
   // The width is always set by the scroll area.
   const int width = scroll_size.width();
 
-  if (sign_in_webview_->visible()) {
-    const gfx::Size size = static_cast<views::View*>(sign_in_webview_)->
+  if (sign_in_web_view_->visible()) {
+    const gfx::Size size = static_cast<views::View*>(sign_in_web_view_)->
         GetPreferredSize();
     return gfx::Size(width + insets.width(), size.height() + insets.height());
   }
@@ -1904,6 +1963,14 @@ gfx::Size AutofillDialogViews::GetMaximumSignInViewSize() const {
   return gfx::Size(width, height);
 }
 
+DialogSection AutofillDialogViews::GetCreditCardSection() const {
+  if (delegate_->SectionIsActive(SECTION_CC))
+    return SECTION_CC;
+
+  DCHECK(delegate_->SectionIsActive(SECTION_CC_BILLING));
+  return SECTION_CC_BILLING;
+}
+
 void AutofillDialogViews::InitChildViews() {
   button_strip_extra_view_ = new LayoutPropagationView();
   button_strip_extra_view_->SetLayoutManager(
@@ -1936,15 +2003,15 @@ void AutofillDialogViews::InitChildViews() {
   AddChildView(scrollable_area_);
 
   loading_shield_ = new LoadingAnimationView(delegate_->SpinnerText());
-  loading_shield_->SetVisible(false);
   AddChildView(loading_shield_);
 
-  sign_in_webview_ = new views::WebView(delegate_->profile());
-  sign_in_webview_->SetVisible(false);
-  AddChildView(sign_in_webview_);
+  sign_in_web_view_ = new views::WebView(delegate_->profile());
+  AddChildView(sign_in_web_view_);
 
   overlay_view_ = new OverlayView(delegate_);
   overlay_view_->SetVisible(false);
+
+  ShowDialogInMode(DETAIL_INPUT);
 }
 
 views::View* AutofillDialogViews::CreateDetailsContainer() {
@@ -2099,7 +2166,6 @@ void AutofillDialogViews::UpdateSectionImpl(
 
     if (text_mapping != group->textfields.end()) {
       DecoratedTextfield* decorated = text_mapping->second;
-      decorated->SetEnabled(input.editable);
       if (decorated->text().empty() || clobber_inputs)
         decorated->SetText(iter->initial_value);
     }
@@ -2107,7 +2173,6 @@ void AutofillDialogViews::UpdateSectionImpl(
     ComboboxMap::iterator combo_mapping = group->comboboxes.find(&input);
     if (combo_mapping != group->comboboxes.end()) {
       views::Combobox* combobox = combo_mapping->second;
-      combobox->SetEnabled(input.editable);
       if (combobox->selected_index() == combobox->model()->GetDefaultIndex() ||
           clobber_inputs) {
         for (int i = 0; i < combobox->model()->GetItemCount(); ++i) {
@@ -2121,6 +2186,7 @@ void AutofillDialogViews::UpdateSectionImpl(
   }
 
   SetIconsForSection(section);
+  SetEditabilityForSection(section);
   UpdateDetailsGroupState(*group);
 }
 
@@ -2230,7 +2296,7 @@ void AutofillDialogViews::MarkInputsInvalid(
         ++it;
     }
 
-    if (section == SECTION_CC) {
+    if (section == GetCreditCardSection()) {
       // Special case CVC as it's not part of |group->manual_input|.
       const ValidityMessage& message =
           messages.GetMessageOrDefault(CREDIT_CARD_VERIFICATION_CODE);
@@ -2252,14 +2318,14 @@ bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
   if (group.manual_input->visible()) {
     for (TextfieldMap::const_iterator iter = group.textfields.begin();
          iter != group.textfields.end(); ++iter) {
-      if (!iter->first->editable)
+      if (!iter->second->editable())
         continue;
 
       detail_outputs[iter->first] = iter->second->text();
     }
     for (ComboboxMap::const_iterator iter = group.comboboxes.begin();
          iter != group.comboboxes.end(); ++iter) {
-      if (!iter->first->editable)
+      if (!iter->second->enabled())
         continue;
 
       views::Combobox* combobox = iter->second;
@@ -2267,12 +2333,14 @@ bool AutofillDialogViews::ValidateGroup(const DetailsGroup& group,
           combobox->model()->GetItemAt(combobox->selected_index());
       detail_outputs[iter->first] = item;
     }
-  } else if (group.section == SECTION_CC) {
+  } else if (group.section == GetCreditCardSection()) {
     DecoratedTextfield* decorated_cvc =
         group.suggested_info->decorated_textfield();
-    cvc_input.reset(new DetailInput);
-    cvc_input->type = CREDIT_CARD_VERIFICATION_CODE;
-    detail_outputs[cvc_input.get()] = decorated_cvc->text();
+    if (decorated_cvc->visible()) {
+      cvc_input.reset(new DetailInput);
+      cvc_input->type = CREDIT_CARD_VERIFICATION_CODE;
+      detail_outputs[cvc_input.get()] = decorated_cvc->text();
+    }
   }
 
   ValidityMessages validity = delegate_->InputsAreValid(group.section,
@@ -2352,6 +2420,8 @@ void AutofillDialogViews::TextfieldEditedOrActivated(
 
   if (delegate_->FieldControlsIcons(type))
     SetIconsForSection(group->section);
+
+  SetEditabilityForSection(group->section);
 }
 
 void AutofillDialogViews::UpdateButtonStripExtraView() {
@@ -2464,6 +2534,31 @@ void AutofillDialogViews::SetIconsForSection(DialogSection section) {
       textfield->SetIcon(field_icon_it->second);
     else
       textfield->SetTooltipIcon(delegate_->TooltipForField(field_type));
+  }
+}
+
+void AutofillDialogViews::SetEditabilityForSection(DialogSection section) {
+  const DetailInputs& inputs =
+      delegate_->RequestedFieldsForSection(section);
+  DetailsGroup* group = GroupForSection(section);
+
+  for (DetailInputs::const_iterator iter = inputs.begin();
+       iter != inputs.end(); ++iter) {
+    const DetailInput& input = *iter;
+    bool editable = delegate_->InputIsEditable(input, section);
+
+    TextfieldMap::iterator text_mapping = group->textfields.find(&input);
+    if (text_mapping != group->textfields.end()) {
+      DecoratedTextfield* decorated = text_mapping->second;
+      decorated->SetEditable(editable);
+      continue;
+    }
+
+    ComboboxMap::iterator combo_mapping = group->comboboxes.find(&input);
+    if (combo_mapping != group->comboboxes.end()) {
+      views::Combobox* combobox = combo_mapping->second;
+      combobox->SetEnabled(editable);
+    }
   }
 }
 

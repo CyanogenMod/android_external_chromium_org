@@ -149,9 +149,6 @@
     '../third_party/skia/include/utils/SkProxyCanvas.h',
   ],
   'include_dirs': [
-    '..',
-    'config',
-    '../third_party/skia/include/config',
     '../third_party/skia/include/core',
     '../third_party/skia/include/effects',
     '../third_party/skia/include/images',
@@ -162,6 +159,7 @@
     '../third_party/skia/include/ports',
     '../third_party/skia/include/utils',
     '../third_party/skia/src/core',
+    '../third_party/skia/src/opts',
     '../third_party/skia/src/image',
     '../third_party/skia/src/ports',
     '../third_party/skia/src/sfnt',
@@ -221,7 +219,7 @@
 
     # For POSIX platforms, prefer the Mutex implementation provided by Skia
     # since it does not generate static initializers.
-    [ 'OS == "android" or OS == "linux" or OS == "mac" or OS == "ios"', {
+    [ 'os_posix == 1', {
       'defines+': [
         'SK_USE_POSIX_THREADS',
       ],
@@ -428,6 +426,8 @@
 
     'IGNORE_ROT_AA_RECT_OPT',
 
+    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
+
     'SKIA_IGNORE_GPU_MIPMAPS',
 
     # this flag forces Skia not to use typographic metrics with GDI.
@@ -441,8 +441,6 @@
       #temporary until we can hide SkFontHost
       '../third_party/skia/src/core',
 
-      'config',
-      '../third_party/skia/include/config',
       '../third_party/skia/include/core',
       '../third_party/skia/include/effects',
       '../third_party/skia/include/pdf',

@@ -42,9 +42,9 @@
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "chromeos/login/login_state.h"
@@ -84,19 +84,10 @@ using ::testing::SetArgPointee;
 using ::testing::_;
 using content::BrowserThread;
 
-const char kTrue[] = "true";
-const char kFalse[] = "false";
 const char kDomain[] = "domain.com";
 const char kUsername[] = "user@domain.com";
-const char kMode[] = "enterprise";
 const char kDeviceId[] = "100200300";
 const char kUsernameOtherDomain[] = "user@other.com";
-const char kAttributeOwned[] = "enterprise.owned";
-const char kAttributeOwner[] = "enterprise.user";
-const char kAttributeConsumerKiosk[] = "consumer.app_kiosk_enabled";
-const char kAttrEnterpriseDomain[] = "enterprise.domain";
-const char kAttrEnterpriseMode[] = "enterprise.mode";
-const char kAttrEnterpriseDeviceId[] = "enterprise.device_id";
 
 const char kOAuthTokenCookie[] = "oauth_token=1234";
 
@@ -213,9 +204,9 @@ class LoginUtilsTest : public testing::Test,
     // DBusThreadManager should be initialized before io_thread_state_, as
     // DBusThreadManager is used from chromeos::ProxyConfigServiceImpl,
     // which is part of io_thread_state_.
-    DBusThreadManager::InitializeForTesting(&mock_dbus_thread_manager_);
+    DBusThreadManager::InitializeForTesting(&fake_dbus_thread_manager_);
 
-    CryptohomeLibrary::Initialize();
+    SystemSaltGetter::Initialize();
     LoginState::Initialize();
 
     EXPECT_CALL(mock_statistics_provider_, GetMachineStatistic(_, _))
@@ -279,7 +270,7 @@ class LoginUtilsTest : public testing::Test,
 
     input_method::Shutdown();
     LoginState::Shutdown();
-    CryptohomeLibrary::Shutdown();
+    SystemSaltGetter::Shutdown();
 
     // These trigger some tasks that have to run while BrowserThread::UI
     // exists. Delete all the profiles before deleting the connector.
@@ -356,9 +347,7 @@ class LoginUtilsTest : public testing::Test,
     FAIL() << "OnLoginFailure not expected";
   }
 
-  virtual void OnLoginSuccess(const UserContext& user_context,
-                              bool pending_requests,
-                              bool using_oauth) OVERRIDE {
+  virtual void OnLoginSuccess(const UserContext& user_context) OVERRIDE {
     FAIL() << "OnLoginSuccess not expected";
   }
 
@@ -403,8 +392,8 @@ class LoginUtilsTest : public testing::Test,
     const bool kHasCookies = false;
     const bool kHasActiveSession = false;
     LoginUtils::Get()->PrepareProfile(
-        UserContext(username, "password", std::string(), username),
-        std::string(), kUsingOAuth, kHasCookies, kHasActiveSession, this);
+        UserContext(username, "password", std::string(), username, kUsingOAuth),
+        std::string(), kHasCookies, kHasActiveSession, this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
 
@@ -478,7 +467,7 @@ class LoginUtilsTest : public testing::Test,
   scoped_ptr<content::TestBrowserThread> io_thread_;
   scoped_ptr<IOThread> io_thread_state_;
 
-  MockDBusThreadManagerWithoutGMock mock_dbus_thread_manager_;
+  FakeDBusThreadManager fake_dbus_thread_manager_;
   input_method::MockInputMethodManager* mock_input_method_manager_;
   disks::MockDiskMountManager mock_disk_mount_manager_;
   net::TestURLFetcherFactory test_url_fetcher_factory_;
@@ -489,7 +478,7 @@ class LoginUtilsTest : public testing::Test,
 
   policy::BrowserPolicyConnector* connector_;
 
-  // Initialized after |mock_dbus_thread_manager_| is set up.
+  // Initialized after |fake_dbus_thread_manager_| is set up.
   scoped_ptr<ScopedTestDeviceSettingsService> test_device_settings_service_;
   scoped_ptr<ScopedTestCrosSettings> test_cros_settings_;
   scoped_ptr<ScopedTestUserManager> test_user_manager_;

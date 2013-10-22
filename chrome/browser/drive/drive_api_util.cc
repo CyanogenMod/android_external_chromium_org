@@ -33,6 +33,8 @@ const char kGooglePresentationMimeType[] =
 const char kGoogleSpreadsheetMimeType[] =
     "application/vnd.google-apps.spreadsheet";
 const char kGoogleTableMimeType[] = "application/vnd.google-apps.table";
+const char kGoogleFormMimeType[] = "application/vnd.google-apps.form";
+const char kDriveFolderMimeType[] = "application/vnd.google-apps.folder";
 
 ScopedVector<std::string> CopyScopedVectorString(
     const ScopedVector<std::string>& source) {
@@ -119,6 +121,9 @@ ConvertInstalledAppToAppResource(
 
   return resource.Pass();
 }
+
+// Returns the argument string.
+std::string Identity(const std::string& resource_id) { return resource_id; }
 
 }  // namespace
 
@@ -231,6 +236,10 @@ std::string CanonicalizeResourceId(const std::string& resource_id) {
   return resource_id;
 }
 
+ResourceIdCanonicalizer GetIdentityResourceIdCanonicalizer() {
+  return base::Bind(&Identity);
+}
+
 const char kDocsListScope[] = "https://docs.google.com/feeds/";
 const char kDriveAppsScope[] = "https://www.googleapis.com/auth/drive.apps";
 
@@ -307,7 +316,10 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   }
 
   file->set_download_url(entry.download_url());
-  file->set_mime_type(entry.content_mime_type());
+  if (entry.is_folder())
+    file->set_mime_type(kDriveFolderMimeType);
+  else
+    file->set_mime_type(entry.content_mime_type());
 
   file->set_md5_checksum(entry.file_md5());
   file->set_file_size(entry.file_size());
@@ -378,6 +390,8 @@ google_apis::DriveEntryKind GetKind(
     return google_apis::ENTRY_KIND_DRAWING;
   if (mime_type == kGoogleTableMimeType)
     return google_apis::ENTRY_KIND_TABLE;
+  if (mime_type == kGoogleFormMimeType)
+    return google_apis::ENTRY_KIND_FORM;
   if (mime_type == "application/pdf")
     return google_apis::ENTRY_KIND_PDF;
   return google_apis::ENTRY_KIND_FILE;

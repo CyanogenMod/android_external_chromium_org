@@ -101,6 +101,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void SetTransparent(bool transparent);
 
   WindowDelegate* delegate() { return delegate_; }
+  const WindowDelegate* delegate() const { return delegate_; }
 
   const gfx::Rect& bounds() const;
 
@@ -351,6 +352,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   std::string GetDebugInfo() const;
   void PrintWindowHierarchy(int depth) const;
 #endif
+
+ protected:
+  // Deletes (or removes if not owned by parent) all child windows. Intended for
+  // use from the destructor.
+  void RemoveOrDestroyChildren();
 
  private:
   friend class test::WindowTestApi;

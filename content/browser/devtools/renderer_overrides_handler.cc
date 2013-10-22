@@ -56,6 +56,7 @@ static const char kPng[] = "png";
 static const char kJpeg[] = "jpeg";
 static int kDefaultScreenshotQuality = 80;
 static int kFrameRateThresholdMs = 100;
+static int kCaptureRetryLimit = 2;
 
 void ParseGenericInputParams(base::DictionaryValue* params,
                              WebInputEvent* event) {
@@ -80,6 +81,7 @@ void ParseGenericInputParams(base::DictionaryValue* params,
 
 RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
     : agent_(agent),
+      capture_retry_count_(0),
       weak_factory_(this) {
   RegisterCommandHandler(
       devtools::DOM::setFileInputFiles::kName,
@@ -119,6 +121,11 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
       devtools::Page::captureScreenshot::kName,
       base::Bind(
           &RendererOverridesHandler::PageCaptureScreenshot,
+          base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Page::canScreencast::kName,
+      base::Bind(
+          &RendererOverridesHandler::PageCanScreencast,
           base::Unretained(this)));
   RegisterCommandHandler(
       devtools::Page::startScreencast::kName,
@@ -203,9 +210,6 @@ void RendererOverridesHandler::ParseCaptureParameters(
     std::string* format,
     int* quality,
     double* scale) {
-  RenderViewHost* host = agent_->GetRenderViewHost();
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-
   *quality = kDefaultScreenshotQuality;
   *scale = 1;
   double max_width = -1;
@@ -222,12 +226,15 @@ void RendererOverridesHandler::ParseCaptureParameters(
                       &max_height);
   }
 
-  float device_sf = last_compositor_frame_metadata_.device_scale_factor;
-
-  if (max_width > 0)
-    *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
-  if (max_height > 0)
-    *scale = std::min(*scale, max_height / view_bounds.height() / device_sf);
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (host->GetView()) {
+    gfx::Rect view_bounds = host->GetView()->GetViewBounds();
+    float device_sf = last_compositor_frame_metadata_.device_scale_factor;
+    if (max_width > 0)
+      *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
+    if (max_height > 0)
+      *scale = std::min(*scale, max_height / view_bounds.height() / device_sf);
+  }
 
   if (format->empty())
     *format = kPng;
@@ -458,6 +465,18 @@ RendererOverridesHandler::PageCaptureScreenshot(
 }
 
 scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::PageCanScreencast(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  base::DictionaryValue* result = new base::DictionaryValue();
+#if defined(OS_ANDROID)
+  result->SetBoolean(devtools::kResult, true);
+#else
+  result->SetBoolean(devtools::kResult, false);
+#endif  // defined(OS_ANDROID)
+  return command->SuccessResponse(result);
+}
+
+scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageStartScreencast(
     scoped_refptr<DevToolsProtocol::Command> command) {
   screencast_command_ = command;
@@ -489,6 +508,13 @@ void RendererOverridesHandler::ScreenshotCaptured(
     if (command) {
       SendAsyncResponse(
           command->InternalErrorResponse("Unable to capture screenshot"));
+    } else if (capture_retry_count_) {
+      --capture_retry_count_;
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&RendererOverridesHandler::InnerSwapCompositorFrame,
+                     weak_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(kFrameRateThresholdMs));
     }
     return;
   }
@@ -767,6 +793,8 @@ void RendererOverridesHandler::PageQueryUsageAndQuotaCompleted(
 }
 
 void RendererOverridesHandler::NotifyScreencastVisibility(bool visible) {
+  if (visible)
+    capture_retry_count_ = kCaptureRetryLimit;
   base::DictionaryValue* params = new base::DictionaryValue();
   params->SetBoolean(
       devtools::Page::screencastVisibilityChanged::kParamVisible, visible);

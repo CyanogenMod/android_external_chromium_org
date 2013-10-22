@@ -466,15 +466,13 @@ void ValidateAllTraceMacrosCreatedData(const ListValue& trace_parsed) {
   EXPECT_FIND_("TRACE_EVENT_INSTANT_ETW call");
   EXPECT_FIND_("TRACE_EVENT0 call");
   {
-    std::string ph_begin;
+    std::string ph;
     std::string ph_end;
     EXPECT_TRUE((item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call")));
-    EXPECT_TRUE((item && item->GetString("ph", &ph_begin)));
-    EXPECT_TRUE((item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call",
+    EXPECT_TRUE((item && item->GetString("ph", &ph)));
+    EXPECT_EQ("X", ph);
+    EXPECT_FALSE((item = FindTraceEntry(trace_parsed, "TRACE_EVENT0 call",
                                        item)));
-    EXPECT_TRUE((item && item->GetString("ph", &ph_end)));
-    EXPECT_EQ("B", ph_begin);
-    EXPECT_EQ("E", ph_end);
   }
   EXPECT_FIND_("TRACE_EVENT1 call");
   EXPECT_SUB_FIND_("name1");
@@ -1277,20 +1275,26 @@ TEST_F(TraceEventTestFixture, StaticStringVsString) {
   // Make sure old events are flushed:
   EndTraceAndFlush();
   EXPECT_EQ(0u, tracer->GetEventsSize());
+  const unsigned char* category_group_enabled =
+      TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED("cat");
 
   {
     BeginTrace();
     // Test that string arguments are copied.
-    TRACE_EVENT2("cat", "name1",
-                 "arg1", std::string("argval"), "arg2", std::string("argval"));
+    base::debug::TraceEventHandle handle1 =
+        trace_event_internal::AddTraceEvent(
+            TRACE_EVENT_PHASE_INSTANT, category_group_enabled, "name1", 0, 0,
+            "arg1", std::string("argval"), "arg2", std::string("argval"));
     // Test that static TRACE_STR_COPY string arguments are copied.
-    TRACE_EVENT2("cat", "name2",
-                 "arg1", TRACE_STR_COPY("argval"),
-                 "arg2", TRACE_STR_COPY("argval"));
+    base::debug::TraceEventHandle handle2 =
+        trace_event_internal::AddTraceEvent(
+            TRACE_EVENT_PHASE_INSTANT, category_group_enabled, "name2", 0, 0,
+            "arg1", TRACE_STR_COPY("argval"),
+            "arg2", TRACE_STR_COPY("argval"));
     size_t num_events = tracer->GetEventsSize();
     EXPECT_GT(num_events, 1u);
-    const TraceEvent* event1 = tracer->GetEventAt(0);
-    const TraceEvent* event2 = tracer->GetEventAt(1);
+    const TraceEvent* event1 = tracer->GetEventByHandle(handle1);
+    const TraceEvent* event2 = tracer->GetEventByHandle(handle2);
     ASSERT_TRUE(event1);
     ASSERT_TRUE(event2);
     EXPECT_STREQ("name1", event1->name());
@@ -1305,18 +1309,22 @@ TEST_F(TraceEventTestFixture, StaticStringVsString) {
   {
     BeginTrace();
     // Test that static literal string arguments are not copied.
-    TRACE_EVENT2("cat", "name1",
-                 "arg1", "argval", "arg2", "argval");
+    base::debug::TraceEventHandle handle1 =
+        trace_event_internal::AddTraceEvent(
+            TRACE_EVENT_PHASE_INSTANT, category_group_enabled, "name1", 0, 0,
+            "arg1", "argval", "arg2", "argval");
     // Test that static TRACE_STR_COPY NULL string arguments are not copied.
     const char* str1 = NULL;
     const char* str2 = NULL;
-    TRACE_EVENT2("cat", "name2",
-                 "arg1", TRACE_STR_COPY(str1),
-                 "arg2", TRACE_STR_COPY(str2));
+    base::debug::TraceEventHandle handle2 =
+        trace_event_internal::AddTraceEvent(
+            TRACE_EVENT_PHASE_INSTANT, category_group_enabled, "name2", 0, 0,
+            "arg1", TRACE_STR_COPY(str1),
+            "arg2", TRACE_STR_COPY(str2));
     size_t num_events = tracer->GetEventsSize();
     EXPECT_GT(num_events, 1u);
-    const TraceEvent* event1 = tracer->GetEventAt(0);
-    const TraceEvent* event2 = tracer->GetEventAt(1);
+    const TraceEvent* event1 = tracer->GetEventByHandle(handle1);
+    const TraceEvent* event2 = tracer->GetEventByHandle(handle2);
     ASSERT_TRUE(event1);
     ASSERT_TRUE(event2);
     EXPECT_STREQ("name1", event1->name());
@@ -1871,7 +1879,7 @@ TEST_F(TraceEventTestFixture, ConvertableTypes) {
   EndTraceAndFlush();
 
   // One arg version.
-  DictionaryValue* dict = FindNamePhase("bar", "B");
+  DictionaryValue* dict = FindNamePhase("bar", "X");
   ASSERT_TRUE(dict);
 
   const DictionaryValue* args_dict = NULL;
@@ -1888,7 +1896,7 @@ TEST_F(TraceEventTestFixture, ConvertableTypes) {
   EXPECT_EQ(1, foo_val);
 
   // Two arg version.
-  dict = FindNamePhase("baz", "B");
+  dict = FindNamePhase("baz", "X");
   ASSERT_TRUE(dict);
 
   args_dict = NULL;
@@ -1906,7 +1914,7 @@ TEST_F(TraceEventTestFixture, ConvertableTypes) {
   ASSERT_TRUE(value->GetAsDictionary(&convertable_dict));
 
   // Convertable with other types.
-  dict = FindNamePhase("string_first", "B");
+  dict = FindNamePhase("string_first", "X");
   ASSERT_TRUE(dict);
 
   args_dict = NULL;
@@ -1925,7 +1933,7 @@ TEST_F(TraceEventTestFixture, ConvertableTypes) {
   EXPECT_TRUE(convertable_dict->GetInteger("foo", &foo_val));
   EXPECT_EQ(1, foo_val);
 
-  dict = FindNamePhase("string_second", "B");
+  dict = FindNamePhase("string_second", "X");
   ASSERT_TRUE(dict);
 
   args_dict = NULL;
@@ -2216,6 +2224,70 @@ TEST_F(TraceEventTestFixture, CategoryFilter) {
       ""));
   EXPECT_FALSE(CategoryFilter::IsEmptyOrContainsLeadingOrTrailingWhitespace(
       "good_category"));
+}
+
+void BlockUntilStopped(WaitableEvent* task_start_event,
+                       WaitableEvent* task_stop_event) {
+  task_start_event->Signal();
+  task_stop_event->Wait();
+}
+
+TEST_F(TraceEventTestFixture, SetCurrentThreadBlocksMessageLoopBeforeTracing) {
+  BeginTrace();
+
+  Thread thread("1");
+  WaitableEvent task_complete_event(false, false);
+  thread.Start();
+  thread.message_loop()->PostTask(
+      FROM_HERE, Bind(&TraceLog::SetCurrentThreadBlocksMessageLoop,
+                      Unretained(TraceLog::GetInstance())));
+
+  thread.message_loop()->PostTask(
+      FROM_HERE, Bind(&TraceWithAllMacroVariants, &task_complete_event));
+  task_complete_event.Wait();
+
+  WaitableEvent task_start_event(false, false);
+  WaitableEvent task_stop_event(false, false);
+  thread.message_loop()->PostTask(
+      FROM_HERE, Bind(&BlockUntilStopped, &task_start_event, &task_stop_event));
+  task_start_event.Wait();
+
+  EndTraceAndFlush();
+  ValidateAllTraceMacrosCreatedData(trace_parsed_);
+
+  task_stop_event.Signal();
+  thread.Stop();
+}
+
+void SetBlockingFlagAndBlockUntilStopped(WaitableEvent* task_start_event,
+                                         WaitableEvent* task_stop_event) {
+  TraceLog::GetInstance()->SetCurrentThreadBlocksMessageLoop();
+  BlockUntilStopped(task_start_event, task_stop_event);
+}
+
+TEST_F(TraceEventTestFixture, SetCurrentThreadBlocksMessageLoopAfterTracing) {
+  BeginTrace();
+
+  Thread thread("1");
+  WaitableEvent task_complete_event(false, false);
+  thread.Start();
+
+  thread.message_loop()->PostTask(
+      FROM_HERE, Bind(&TraceWithAllMacroVariants, &task_complete_event));
+  task_complete_event.Wait();
+
+  WaitableEvent task_start_event(false, false);
+  WaitableEvent task_stop_event(false, false);
+  thread.message_loop()->PostTask(
+      FROM_HERE, Bind(&SetBlockingFlagAndBlockUntilStopped,
+                      &task_start_event, &task_stop_event));
+  task_start_event.Wait();
+
+  EndTraceAndFlush();
+  ValidateAllTraceMacrosCreatedData(trace_parsed_);
+
+  task_stop_event.Signal();
+  thread.Stop();
 }
 
 }  // namespace debug

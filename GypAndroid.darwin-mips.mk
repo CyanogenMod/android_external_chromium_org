@@ -109,7 +109,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/injected_script_source.targ
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_instrumentation_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_overlay_page.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_protocol_sources.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/make_derived_sources.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/make_core_derived_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_dom.target.darwin-mips.mk
@@ -140,6 +140,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.darwin-mips.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/make_platform_derived_sources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/picker_resources.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-mips.mk

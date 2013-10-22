@@ -4,14 +4,17 @@ examples/api/audio/*
 examples/api/core/*
 examples/api/file_io/*
 examples/api/gamepad/*
+examples/api/graphics_2d/*
 examples/api/graphics_3d/*
 examples/api/input_event/*
 [win]examples/api/make.bat
 examples/api/Makefile
+examples/api/mouse_cursor/*
 examples/api/mouse_lock/*
 examples/api/socket/*
 examples/api/url_loader/*
 examples/api/var_array_buffer/*
+examples/api/var_dictionary/*
 examples/api/websocket/*
 examples/button_close.png
 examples/button_close_hover.png

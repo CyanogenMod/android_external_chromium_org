@@ -59,7 +59,7 @@ bool TooltipWin::EnsureTooltipWindow() {
     return true;
 
   tooltip_hwnd_ = CreateWindowEx(
-      WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles() | WS_EX_TOPMOST,
+      WS_EX_TRANSPARENT | l10n_util::GetExtendedTooltipStyles(),
       TOOLTIPS_CLASS, NULL, TTS_NOPREFIX | WS_POPUP, 0, 0, 0, 0,
       parent_hwnd_, NULL, NULL, NULL);
   if (!tooltip_hwnd_) {
@@ -102,6 +102,12 @@ void TooltipWin::SetText(aura::Window* window,
 
   // See comment in header for details on why |location_| is needed.
   location_ = location;
+
+  // Without this we get a flicker of the tooltip appearing at 0x0. Not sure
+  // why.
+  SetWindowPos(tooltip_hwnd_, NULL, 0, 0, 0, 0,
+               SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE |
+               SWP_NOREPOSITION | SWP_NOSIZE | SWP_NOZORDER);
 
   base::string16 adjusted_text(tooltip_text);
   base::i18n::AdjustStringForLocaleDirection(&adjusted_text);

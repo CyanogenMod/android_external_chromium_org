@@ -17,11 +17,13 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/async_policy_provider.h"
 #include "chrome/browser/policy/cloud/cloud_policy_client.h"
@@ -36,6 +38,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/policy/core/common/policy_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_client.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -70,7 +73,7 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/cryptohome/cryptohome_library.h"
+#include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/network/network_handler.h"
@@ -98,6 +101,14 @@ const char kDefaultDeviceManagementServerUrl[] =
 // Used in BrowserPolicyConnector::SetPolicyProviderForTesting.
 ConfigurationPolicyProvider* g_testing_provider = NULL;
 
+// Helper that returns a new SequencedTaskRunner backed by the blocking pool.
+// Each SequencedTaskRunner returned is independent from the others.
+scoped_refptr<base::SequencedTaskRunner> GetBackgroundTaskRunner() {
+  base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
+  CHECK(pool);
+  return pool->GetSequencedTaskRunnerWithShutdownBehavior(
+      pool->GetSequenceToken(), base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
+}
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 base::FilePath GetManagedPolicyPath() {
@@ -198,11 +209,11 @@ BrowserPolicyConnector::BrowserPolicyConnector()
   platform_provider_.reset(CreatePlatformProvider());
 
 #if defined(OS_CHROMEOS)
-  // CryptohomeLibrary or DBusThreadManager may be uninitialized on unit tests.
+  // SystemSaltGetter or DBusThreadManager may be uninitialized on unit tests.
 
-  // TODO(satorux): Remove CryptohomeLibrary::IsInitialized() when it's ready
+  // TODO(satorux): Remove SystemSaltGetter::IsInitialized() when it's ready
   // (removing it now breaks tests). crbug.com/141016.
-  if (chromeos::CryptohomeLibrary::IsInitialized() &&
+  if (chromeos::SystemSaltGetter::IsInitialized() &&
       chromeos::DBusThreadManager::IsInitialized()) {
     chromeos::CryptohomeClient* cryptohome_client =
         chromeos::DBusThreadManager::Get()->GetCryptohomeClient();
@@ -216,11 +227,13 @@ BrowserPolicyConnector::BrowserPolicyConnector()
     scoped_ptr<DeviceCloudPolicyStoreChromeOS> device_cloud_policy_store(
         new DeviceCloudPolicyStoreChromeOS(
             chromeos::DeviceSettingsService::Get(),
-            install_attributes_.get()));
+            install_attributes_.get(),
+            GetBackgroundTaskRunner()));
     device_cloud_policy_manager_.reset(
         new DeviceCloudPolicyManagerChromeOS(
             device_cloud_policy_store.Pass(),
             base::MessageLoopProxy::current(),
+            GetBackgroundTaskRunner(),
             install_attributes_.get()));
   }
 #endif
@@ -281,7 +294,9 @@ void BrowserPolicyConnector::Init(
         new DeviceLocalAccountPolicyService(
             chromeos::DBusThreadManager::Get()->GetSessionManagerClient(),
             chromeos::DeviceSettingsService::Get(),
-            chromeos::CrosSettings::Get()));
+            chromeos::CrosSettings::Get(),
+            GetBackgroundTaskRunner(),
+            GetBackgroundTaskRunner()));
     device_local_account_policy_service_->Connect(
         device_management_service_.get());
   }
@@ -502,7 +517,7 @@ bool BrowserPolicyConnector::IsNonEnterpriseUser(const std::string& username) {
 // static
 void BrowserPolicyConnector::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(
-      prefs::kUserPolicyRefreshRate,
+      policy_prefs::kUserPolicyRefreshRate,
       CloudPolicyRefreshScheduler::kDefaultRefreshDelayMs);
 #if defined(OS_CHROMEOS)
   registry->RegisterIntegerPref(

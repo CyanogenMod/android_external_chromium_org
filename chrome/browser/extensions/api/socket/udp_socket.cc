@@ -71,6 +71,10 @@ int UDPSocket::Bind(const std::string& address, int port) {
 void UDPSocket::Disconnect() {
   is_connected_ = false;
   socket_.Close();
+  read_callback_.Reset();
+  recv_from_callback_.Reset();
+  send_to_callback_.Reset();
+  multicast_groups_.clear();
 }
 
 void UDPSocket::Read(int count,
@@ -295,28 +299,8 @@ ResumableUDPSocket::ResumableUDPSocket(const std::string& owner_extension_id)
       buffer_size_(0) {
 }
 
-const std::string& ResumableUDPSocket::name() const {
-  return name_;
-}
-
-void ResumableUDPSocket::set_name(const std::string& name) {
-  name_ = name;
-}
-
-bool ResumableUDPSocket::persistent() const {
-  return persistent_;
-}
-
-void ResumableUDPSocket::set_persistent(bool persistent) {
-  persistent_ = persistent;
-}
-
-int ResumableUDPSocket::buffer_size() const {
-  return buffer_size_;
-}
-
-void ResumableUDPSocket::set_buffer_size(int buffer_size) {
-  buffer_size_ = buffer_size;
+bool ResumableUDPSocket::IsPersistent() const {
+  return persistent();
 }
 
 }  // namespace extensions

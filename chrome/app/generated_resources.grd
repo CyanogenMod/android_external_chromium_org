@@ -1199,6 +1199,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_ENCODING_AUTO_DETECT" desc="The text label of the Auto Detect submenu">
           Auto detect
         </message>
+        <message name="IDC_VISIT_DESKTOP_OF_LRU_USER" desc="The text label of the menu item which allows the user to move a window from one users desktop to another.">
+          Teleport window to '<ph name="USER_NAME">$1<ex>User name</ex></ph>' 
+        </message>
       </if>
       <message name="IDS_ACCNAME_ZOOM_PLUS2" desc="The accessible description of the Make Text Larger menu item in the merged menu">
         Make Text Larger
@@ -1367,6 +1370,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         <message name="IDS_DEV_TOOLS_CONSOLE" desc="The text label of the JavaScript console menu item">
           &amp;JavaScript console
         </message>
+        <message name="IDS_DEV_TOOLS_DEVICES" desc="The text label of the Inspect Devices menu item">
+          &amp;Inspect devices
+        </message>
         <message name="IDS_TASK_MANAGER" desc="The text label of the Task Manager menu item">
           &amp;Task manager
         </message>
@@ -1389,6 +1395,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
         </message>
         <message name="IDS_DEV_TOOLS_CONSOLE" desc="In Title Case: The text label of the JavaScript console menu item">
           &amp;JavaScript Console
+        </message>
+        <message name="IDS_DEV_TOOLS_DEVICES" desc="The text label of the Inspect Devices menu item">
+          &amp;Inspect Devices
         </message>
         <message name="IDS_TASK_MANAGER" desc="In Title Case: The text label of the Task Manager menu item">
           &amp;Task Manager
@@ -1823,14 +1832,6 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
           Extensions, apps, and themes can harm your computer. Are you sure you want to continue?
         </message>
       </if>
-      <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_URL"
-         desc="Message shown to the user to validate the download when the download url is classified to lead to malware by the safebrowsing database.">
-        This file appears malicious.
-      </message>
-      <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT"
-         desc="Message shown to the user to validate the download when the download content is classified to lead to malware by safebrowsing.">
-        <ph name="FILE_NAME">$1<ex>malware.exe</ex></ph> appears malicious.
-      </message>
       <message name="IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT"
          desc="Message shown to the user to validate the download when the download content is classified as uncommon by safebrowsing.">
         <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> is not commonly downloaded and could be dangerous.
@@ -1839,17 +1840,39 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
                desc="Title for the confirmation dialog asking whether the user really meant to keep a dangerous download">
         Confirm Download
       </message>
+      <message name="IDS_RESTORE_KEEP_DANGEROUS_DOWNLOAD_TITLE"
+               desc="Title for the confirmation dialog asking whether the user really meant to keep a dangerous download">
+        Recover malware?
+      </message>
       <message name="IDS_PROMPT_CONFIRM_KEEP_DANGEROUS_DOWNLOAD"
                desc="Prompt text for the confirmation dialog asking whether the user really meant to keep a dangerous download">
         This might hurt. Don't say we didn't warn you...
+      </message>
+      <message name="IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD"
+               desc="Prompt text for the confirmation dialog asking whether the user really meant to keep a malicious download">
+        This file will harm your computer.
+
+Even if you have downloaded files from this website before, the website might have been hacked. Instead of recovering this file, you can retry the download later.
       </message>
       <message name="IDS_CONFIRM_DOWNLOAD_AGAIN"
                desc="Text for the button used to confirm the dialog asking whether the user really meant to keep dangerous download.">
         Keep anyway
       </message>
+      <message name="IDS_CONFIRM_DOWNLOAD_AGAIN_MALICIOUS"
+               desc="The text for the button used to confirm that the user DOES want to keep malware. Don't translate the English string literally; for translations, translate 'Recover anyway'">
+        Hurt me plenty
+      </message>
+      <message name="IDS_CONFIRM_CANCEL_AGAIN_MALICIOUS"
+               desc="Text for the button used to indicate that the user does NOT want to restore a malicious download.">
+        Be safe
+      </message>
       <message name="IDS_CONFIRM_DOWNLOAD"
                desc="Text for the button used to validate the downloading of a dangerous download.">
         Keep
+      </message>
+      <message name="IDS_CONFIRM_DOWNLOAD_RESTORE"
+               desc="Text for the button used to validate the downloading of a dangerous download.">
+        Recover malicious file
       </message>
       <message name="IDS_CONTINUE_EXTENSION_DOWNLOAD"
                desc="Text for the button used to validate the installation of an extension.">
@@ -1859,9 +1882,17 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
                desc="Text for the button used to stop a dangerous download.">
         Discard
       </message>
+      <message name="IDS_DISMISS_DOWNLOAD"
+               desc="Text for the button used to dismiss a malicious download notification.">
+        Dismiss
+      </message>
       <message name="IDS_REPORT_AND_DISCARD_DOWNLOAD"
                desc="Text for the button used to upload a malicious file to Google for analysis and then discard it.">
         Report &amp; Discard
+      </message>
+      <message name="IDS_REPORT_AND_DISMISS_DOWNLOAD"
+               desc="Text for the button used to dismiss a malicious download notification and upload the file to Google for analysis.">
+        Report &amp; Dismiss
       </message>
 
       <!-- Download Tab Items -->
@@ -3993,10 +4024,10 @@ Make sure you do not expose any sensitive information.
         The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" was automatically removed.
       </message>
       <message name="IDS_APP_ALERT_ITEM_EXTERNAL" desc="A statement that an external packaged app has been newly installed. End users have no idea what an 'external' app is, so we simply call them apps.">
-        The app "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been added.
+        The app "<ph name="EXTENSION_NAME">$1<ex>Gmail</ex></ph>" has been added.
       </message>
       <message name="IDS_APP_ALERT_ITEM_BLACKLISTED" desc="A statement that a packaged app has been newly blacklisted. http://www.google.com/support/chrome/bin/answer.py?hl=en&amp;answer=1210215 contains the language on which we're basing the phrasing.">
-        The app "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" was automatically removed.
+        The app "<ph name="EXTENSION_NAME">$1<ex>Gmail</ex></ph>" was automatically removed.
       </message>
       <message name="IDS_EXTENSION_ALERT_ITEM_OK" desc="The title of the default button acknowledging the information presented.">
         OK
@@ -4006,6 +4037,12 @@ Make sure you do not expose any sensitive information.
       </message>
 
       <!-- Extension/App install dialog strings -->
+      <message name="IDS_EXTENSION_PROMPT_APP_CONNECT_FROM_INCOGNITO" desc="Shown when a website tries to connect to an app from incognito mode, prompting the user to allow or deny the request.">
+        Allow <ph name="ORIGIN">$1<ex>http://www.google.com</ex></ph> to communicate with the app "<ph name="EXTENSION_NAME">$2<ex>Gmail</ex></ph>"?
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_EXTENSION_CONNECT_FROM_INCOGNITO" desc="Shown when a website tries to connect to an extension from incognito mode, prompting the user to allow or deny the request.">
+        Allow <ph name="ORIGIN">$1<ex>http://www.google.com</ex></ph> to communicate with the extension "<ph name="EXTENSION_NAME">$2<ex>Gmail Checker</ex></ph>"?
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO" desc="Second line in the content area of the extension or app installation prompt. Note that the exact wording is important. This should mean that the extension or app _can_ access the listed privileges, but not necessarily that it will or needs to.">
         It can:
       </message>
@@ -4228,7 +4265,7 @@ Make sure you do not expose any sensitive information.
         Manipulate privacy-related settings
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_SIGNED_IN_DEVICES" desc="Permission string for access to privacy settings.">
-        Access signed in devices
+        Access the list of your signed-in devices
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_USB" desc="Permission string for access to USB devices.">
         Access USB devices
@@ -4263,6 +4300,9 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN" desc="Permission string for access to downloads.">
         Open downloaded files
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_IDENTITY_EMAIL" desc="Permission string for access to profile email address.">
+        View email addresses signed in to your profile
+      </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_WALLPAPER" desc="Permission string for access to wallpaper.">
         Change your wallpaper
       </message>
@@ -4280,9 +4320,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_READ" desc="Permission string for access to read all of the user's media galleries.">
         Access photos, music, and other media from your computer.
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_MEDIA_GALLERIES_WRITE" desc="Permission string for access to write to all of the user's media galleries.">
-        Change photos, music, and other media from your computer.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_SERIAL" desc="Permission string for access to serial devices.">
         Use serial devices attached to your computer
@@ -4863,9 +4900,19 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_DELETE_SHORTCUT" desc="The text shown when you hover over the X inside the input text field.">
         Delete shortcut
       </message>
-      <message name="IDS_EXTENSION_COMMANDS_GENERIC_ACTIVATE" desc="The generic 'activate extension' text used as description for some commands">
+      <message name="IDS_EXTENSION_COMMANDS_GENERIC_ACTIVATE" desc="The generic 'activate extension' text used as description for some commands.">
         Activate the extension
       </message>
+      <message name="IDS_EXTENSION_COMMANDS_GLOBAL" desc="The tooltip for commands that are global in nature.">
+        This keyboard shortcut is active at all times (not just when Chrome has focus). Click to change.
+      </message>
+      <message name="IDS_EXTENSION_COMMANDS_NOT_GLOBAL" desc="The tooltip for commands that are not global in nature.">
+        This keyboard shortcut is only active when Chrome has focus. Click to change.
+      </message>
+      <message name="IDS_EXTENSION_COMMANDS_NOT_GLOBAL_PERMANENT" desc="The tooltip for commands that are not global in nature and never can be.">
+        This keyboard shortcut is only active when Chrome has focus.
+      </message>
+
       <message name="IDS_EXTENSION_PACK_DIALOG_TITLE" desc="Title of pack extension dialog">
         Pack Extension
       </message>
@@ -5719,6 +5766,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_FORCE_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION" desc="Description of the 'Accelerated overflow scroll mode' lab.">
         When possible, puts the scrolling contents of an overflow scrolling element onto a composited layer for faster scrolling.
       </message>
+      <message name="IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_NAME" desc="Name of the 'Universal accelerated overflow scroll mode' lab.">
+        Universal accelerated overflow scroll
+      </message>
+      <message name="IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION" desc="Description of the 'Universal accelerated overflow scroll mode' lab.">
+        Puts scrolling content in composited layers, even in those cases where promoting the overflow scrolling element to a stacking context and a containing block would have broken stacking or clipping.
+      </message>
       <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_CANVAS_FEATURES_NAME" desc="Name of the 'Enable experimental canvas features' lab.">
         Enable experimental canvas features
       </message>
@@ -6492,6 +6545,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION" desc="Description for the flag to enable sticky keys.">
           StickyKeys allows the user to press and release a modifier key, such as Shift, Ctrl, or Alt, and have it remain active until any other key is pressed.
         </message>
+        <message name="IDS_FLAGS_ENABLE_AUTOCLICK_NAME" desc="Name for the flag to enable autoclick.">
+          Enable autoclick.
+        </message>
+        <message name="IDS_FLAGS_ENABLE_AUTOCLICK_DESCRIPTION" desc="Description for the flag to enable autoclick.">
+          Enables an accessibility setting which automatically triggers a click when the mouse pointer stops.
+        </message>
         <message name="IDS_FLAGS_ENABLE_SAML_SIGNIN_NAME" desc="Name for the flag to enable SAML signin support.">
           Enable SAML signin.
         </message>
@@ -6743,11 +6802,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_TRANSLATE_SETTINGS_DESCRIPTION" desc="Description of the flag to translate setting.">
         Enable Translate settings in chrome://settings/languages where the user can configure which language should be translated.
       </message>
-      <message name="IDS_FLAGS_DISABLE_APP_LIST_NAME" desc="Name of the flag to disable the app list on startup.">
-        Disable the app launcher on startup.
+      <message name="IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_NAME" desc="Name of the flag to reset the app launcher install state.">
+        Reset the app launcher install state on every restart.
       </message>
-      <message name="IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION" desc="Description of the flag to disable the app list on startup.">
-        Disable the app launcher on startup. While this flag is set the launcher will be disabled every time Chrome starts. This is used for testing the app launcher install flow.
+      <message name="IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_DESCRIPTION" desc="Description of the flag to reset the app launcher install state.">
+        Reset the app launcher install state on every restart. While this flag is set, Chrome will forget the launcher has been installed each time it starts. This is used for testing the app launcher install flow.
       </message>
       <if expr="pp_ifdef('enable_app_list')">
         <message name="IDS_FLAGS_ENABLE_APP_LIST_START_PAGE_NAME" desc="Name of the flag to enable the start page of app launcher.">
@@ -6785,11 +6844,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_HIDPI_DESCRIPTION" desc="Description of flag to enable/disable HiDPI Support.">
         If enabled, application size and layout will adapt to the operating system's DPI settings.
       </message>
+      <message name="IDS_FLAGS_ENABLE_ACCELERATED_SCROLLABLE_FRAMES_NAME" desc="Name of the flag to enable accelerated scrollable frames.">
+        Enable accelerated scrollable frames.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_ACCELERATED_SCROLLABLE_FRAMES_DESCRIPTION" desc="Description for the flag to enable accelerated scrollable frames.">
+        Enables accelerated compositing for scrollable frames.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_COMPOSITED_SCROLLING_FOR_FRAMES_NAME" desc="Name of the flag to enable composited scrolling for frames.">
+        Enable composited scrolling for frames.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_COMPOSITED_SCROLLING_FOR_FRAMES_DESCRIPTION" desc="Description for the flag to enable composited scrolling for frames.">
+        Enable accelerated scrolling by the compositer for frames.
+      </message>
       <message name="IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_NAME" desc="Name of the flag to enable streamlined hosted apps.">
         Enable experimental streamlined hosted apps.
       </message>
       <message name="IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_DESCRIPTION" desc="Description for the flag to enable streamlined hosted apps.">
         Enables an experimental, more streamlined hosted app experience.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EPHEMERAL_APPS_NAME" desc="Name of the flag to enable ephemeral apps.">
+        Enable experimental ephemeral apps.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_EPHEMERAL_APPS_DESCRIPTION" desc="Description for the flag to enable ephemeral apps.">
+        Enables experimentation with ephemeral apps, which are launched without installing in Chrome.
       </message>
       <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_NAME" desc="Name of the flag to enable streamlined ServiceWorker.">
         Enable support for ServiceWorker.
@@ -6839,12 +6916,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_WEBRTC_LOGS_NO_LOGS_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when there are no uploaded logs">
         You have no recently uploaded WebRTC logs.
-      </message>
-      <message name="IDS_WEBRTC_LOGS_DISABLED_HEADER" desc="The header for chrome://webrtc-logs when uploading is disabled">
-        Log capturing and uploading is disabled.
-      </message>
-      <message name="IDS_WEBRTC_LOGS_DISABLED_MESSAGE" desc="The explanatory message for chrome://webrtc-logs when uploading is disabled">
-        This page only shows information on your recently uploaded WebRTC logs if you <ph name="BEGIN_LINK">&lt;a href="https://www.google.com/support/chrome/bin/answer.py?answer=96817"&gt;</ph>enable crash reporting<ph name="END_LINK">&lt;/a&gt;</ph>.
       </message>
 
       <!-- Custom dictionary page -->
@@ -9408,29 +9479,65 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Stop sharing
       </message>
 
-      <!-- SSL Blocking Page -->
-      <message name="IDS_SSL_BLOCKING_PAGE_TITLE" desc="The title of the SSL blocking page.">
+      <!-- SSL Road Block (Overridable) Page -->
+      <message name="IDS_SSL_OVERRIDABLE_PAGE_TITLE" desc="The title of the overridable SSL interstitial.">
         SSL Error
       </message>
-      <message name="IDS_SSL_BLOCKING_PAGE_PROCEED" desc="Proceed button text of the SSL blocking page.">
+      <message name="IDS_SSL_OVERRIDABLE_PAGE_PROCEED" desc="Proceed button text of the overridable SSL interstitial.">
         Proceed anyway
       </message>
-      <message name="IDS_SSL_BLOCKING_PAGE_EXIT" desc="'Back' button text of the SSL blocking page.">
+      <message name="IDS_SSL_OVERRIDABLE_PAGE_EXIT" desc="'Back' button text of the overridable SSL interstitial.">
         Back to safety
       </message>
-      <message name="IDS_SSL_BLOCKING_PAGE_SHOULD_NOT_PROCEED" desc="Message advising the user not to proceed past the SSL blocking page.">
+      <message name="IDS_SSL_OVERRIDABLE_PAGE_SHOULD_NOT_PROCEED" desc="Message advising the user not to proceed past the SSL interstitial.">
         You should not proceed, &lt;strong&gt;especially&lt;/strong&gt; if you have never seen this warning before for this site.
       </message>
 
-      <!-- SSL Error Page -->
-      <message name="IDS_SSL_ERROR_PAGE_TITLE" desc="The title of the SSL error page.">
-        Security Error
+      <!-- SSL Blocking (Non-Overridable) Page -->
+      <message name="IDS_SSL_BLOCKING_PAGE_TITLE" desc="The title of the non-overridable SSL error.">
+        SSL Error
       </message>
-      <message name="IDS_SSL_ERROR_PAGE_BACK" desc="Back button text of the SSL error page.">
-        Back
+      <message name="IDS_SSL_BLOCKING_PAGE_HEADLINE" desc="Headline of the non-overridable SSL error.">
+        Cannot connect to the real <ph name="SITE">$1<ex>google.com</ex></ph>
       </message>
-      <message name="IDS_SSL_ERROR_PAGE_CANNOT_PROCEED" desc="Message advising the user that they cannot proceed past the SSL error page.">
-        You cannot proceed because the website operator has requested heightened security for this domain.
+      <message name="IDS_SSL_BLOCKING_PAGE_BODY_TEXT" desc="The main body text of the non-overridable SSL error.">
+        &lt;p&gt;Something is currently interfering with your secure connection to <ph name="SITE">$1<ex>google.com</ex></ph>.&lt;/p&gt; &lt;p&gt;<ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Try to reload this page in a few minutes or after switching to a new network.<ph name="END_BOLD">&lt;/strong&gt;</ph> If you have recently connected to a new Wi-Fi network, finish logging in before reloading.&lt;/p&gt; &lt;p&gt;If you were to visit <ph name="SITE">$1<ex>google.com</ex></ph> right now, you might share private information with an attacker. To protect your privacy, Chrome will not load the page until it can establish a secure connection to the real <ph name="SITE">$1<ex>google.com</ex></ph>.&lt;/p&gt;
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_MORE_TITLE" desc="Headline for the explanation shown if the user clicks the More button.">
+        What does this mean?
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_MORE_TEXT" desc="Body text for the explanation shown if user clicks on the More button.">
+        &lt;p&gt;<ph name="SITE">$1<ex>google.com</ex></ph> normally uses encryption (SSL) to protect your information. When Chrome tried to connect to <ph name="SITE">$1<ex>google.com</ex></ph> this time, <ph name="SITE">$1<ex>google.com</ex></ph> returned unusual and incorrect credentials. Either an attacker is trying to pretend to be <ph name="SITE">$1<ex>google.com</ex></ph>, or a Wi-Fi login screen has interrupted the connection. Your information is still secure because Chrome stopped the connection before any data was exchanged.&lt;/p&gt; &lt;p&gt;Network errors and attacks are usually temporary, so this page will probably work later. You can also try switching to another network.&lt;/p&gt;
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_TECH_TITLE" desc="Headline for the technical details shown if the user clicks the More button.">
+        Technical details
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_HSTS" desc="Description of an HSTS failure.">
+        <ph name="SITE">$1<ex>google.com</ex></ph> has asked Chrome to block any certificates with errors, but the certificate that Chrome received during this connection attempt has an error.
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_REVOKED" desc="Description of a certificate revocation failure.">
+        The certificate that Chrome received during this connection attempt has been revoked.
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_FORMATTED" desc="Description of an invalid certificate error.">
+        The certificate that Chrome received during this connection attempt is not formatted correctly, so Chrome cannot use it to protect your information.
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_PINNING" desc="Description of a certificate pinning failure.">
+        <ph name="SITE">$1<ex>google.com</ex></ph> provided Chrome with a list of pre-approved certificate credentials. Chrome did not receive any of the pre-approved credentials during this connection attempt, which indicates that an attacker is trying to impersonate <ph name="SITE">$1<ex>google.com</ex></ph>.
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_WEAK_DH" desc="Description of an error shown when the server has a weak Diffie-Hellman public key. Diffie-Hellman is a name that should be left untrauslated. 'key' here is used as the technical name for a large number with certain mathematical properties that allow it to be used to encrypt and decrypt data. 'weak means that the number is too small to resist an exhaustive attempt to break the required secrecy.">
+        <ph name="SITE">$1<ex>google.com</ex></ph> is using a weak ephemeral Diffie-Hellman public key, which means that Chrome cannot verify the server's identity.
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_ERROR" desc="This provides the technical term for the type of error that we have encountered.">
+        Error type: <ph name="ERROR_TYPE">$1<ex>HSTS failure</ex></ph>
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_SUBJECT" desc="The 'subject' is who the certificate was issued to.">
+        Subject: <ph name="SUBJECT">$1<ex>a248.e.akamai.net</ex></ph>
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_ISSUER" desc="The 'issuer' is authority who vouches for the certificate.">
+        Issuer: <ph name="ISSUER">$1<ex>GTE CyberTrust Global Root</ex></ph>
+      </message>
+      <message name="IDS_SSL_BLOCKING_PAGE_HASHES" desc="Technical detail of the error.">
+        Public key hashes: <ph name="HASHES">$1<ex>9FEE18CC4302340DDE234345345345</ex></ph>
       </message>
 
       <!-- Misc strings for SSL UI -->
@@ -11270,6 +11377,10 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_NUMBERED_PROFILE_NAME" desc="The name given to a newly created profile. Displayed in wrench menu and settings UI.">
         User <ph name="VALUE">$1<ex>1</ex></ph>
       </message>
+      <message name="IDS_GUEST_PROFILE_NAME" desc="The name given to the guest
+      browsing profile. Displayed in the avatar menu bubble and button UI.">
+        Guest
+      </message>
 
       <message name="IDS_DEFAULT_AVATAR_NAME_8" desc="The default name given to a newly created profile with the female spy avatar.">
         Agent X
@@ -12072,9 +12183,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_ACTION_LISTEN" desc="Title of the action to play an audio file.">
         Listen
       </message>
-      <message name="IDS_FILE_BROWSER_INSTALL_CRX" desc="Title of the action for installing extension from CRX file.">
-        Open
-      </message>
 
       <message name="IDS_FILE_BROWSER_GALLERY_NO_IMAGES" desc="In the Gallery, the message that there are no images in this directory.">
         No images in this directory.
@@ -12280,6 +12388,22 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_PHOTO_IMPORT_MY_PHOTOS_DIRECTORY_NAME" desc="Directory name for storing photos.">
         My Photos
+      </message>
+
+      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_TITLE" desc="Title of the conflict dialog shown when a file transfer operation is conflicted.">
+        Conflict
+      </message>
+      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_MESSAGE" desc="Message of the conflict dialog shown when a file transfer operation is conflicted.">
+        A file named "<ph name="FILENAME">$1<ex>photo.jpg</ex></ph>" already exists. What do you want to do?
+      </message>
+      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_KEEP_BOTH" desc="Label of a button to keep both entries after the file transfer operation.">
+        Keep both
+      </message>
+      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_REPLACE" desc="Label of a button to replace the old entry with the new entry.">
+        Replace
+      </message>
+      <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_APPLY_TO_ALL" desc="Label of checkbox in the conflict dialog box to apply the user selection to all entries.">
+        Apply to all
       </message>
 
       <message name="IDS_FILE_BROWSER_CONFIRM_OVERWRITE_FILE" desc="Asks the user if they are sure they want to overwrite an existing file with another one.">
@@ -12749,6 +12873,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_GTABLE_DOCUMENT_FILE_TYPE" desc="Google table file type">
         Google table
+      </message>
+      <message name="IDS_FILE_BROWSER_GFORM_DOCUMENT_FILE_TYPE" desc="Google form file type">
+        Google form
       </message>
       <message name="IDS_FILE_BROWSER_GLINK_DOCUMENT_FILE_TYPE" desc="Google Drive link file type">
         Google Drive link
@@ -13459,6 +13586,53 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       </if>
 
+      <!-- Translate Bubble -->
+      <message name="IDS_TRANSLATE_BUBBLE_BEFORE_TRANSLATE" desc="Text to show for the translate bubble label when that page is in specified language and ask if should translate.">
+        Would you like to translate this page?
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_ADVANCED" desc="Text to show for the translate bubble link label to jump to the advanced panel.">
+        Advanced
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_ACCEPT" desc="Text to show for the translate bubble button to accept translation.">
+        Translate
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_DENY" desc="Text to show for the translate bubble menu item to deny translation.">
+        Nope
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_LANG" desc="Text to show for the translate bubble menu item to never translate the specified language">
+        Never translate <ph name="language">$1<ex>French</ex></ph>
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_SITE" desc="Text to show for the translate bubble menu item to never translate the current site">
+        Never translate this site
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_TRANSLATING" desc="Text to show for the translate bubble label when page is currently being translated by servers">
+        This page is being translated ...
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_TRANSLATED" desc="Text to show for the translate bubble label when the page has been translated from one language to another">
+        This page has been translated.
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_REVERT" desc="Text to show for the translate bubble button to revert translation of translated page">
+        Show original
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_TRY_AGAIN" desc="Text to show for the translate bubble button to try to translate the page again">
+        Try again
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_ALWAYS" desc="Text to show for the translate bubble checkbox to always translate from one language to another">
+        Always translate <ph name="original_language">$1<ex>French</ex></ph> to <ph name="target_language">$2<ex>German</ex></ph>
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_COULD_NOT_TRANSLATE" desc="Text to show for the translate bubble label when the page could not be translated.">
+        This page could not be translated.
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_PAGE_LANGUAGE" desc="Text to show for the translate bubble label next to the combobox of the page language">
+        Page language:
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_TRANSLATION_LANGUAGE" desc="Text to show for the translate bubble label next to the combobox of the target language for Translate">
+        Translation language:
+      </message>
+      <message name="IDS_TRANSLATE_BUBBLE_LEARN_MORE" desc="Text to show for the translate bubble link label next to jump to the help page.">
+        Learn more
+      </message>
+
       <!-- Desktop notifications -->
       <message name="IDS_NOTIFICATION_BALLOON_DISMISS_LABEL" desc="Text on the button which dismisses the balloon.">
         Dismiss
@@ -13501,6 +13675,15 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_NOTIFICATION_POSITION_UPPER_RIGHT" desc="Menu label for positioning in upper right corner">
         Upper right
+      </message>
+      <message name="IDS_NOTIFICATION_WELCOME_BODY" desc="Notification body for the Welcome Notification">
+        With Google Now, stay connected to what you need to know, across all devices.
+      </message>
+      <message name="IDS_NOTIFICATION_WELCOME_DISPLAY_SOURCE" desc="Display source for the Welcome Notification">
+        Notifications
+      </message>
+      <message name="IDS_NOTIFICATION_WELCOME_TITLE" desc="Notification title for the Welcome Notification">
+        Chrome notifications just got better!
       </message>
       <if expr="is_macosx">
         <message name="IDS_MESSAGE_CENTER_FOOTER_WITH_PRODUCT_TITLE" desc="The label in the footer of the message center tray, with the product title.">
@@ -14816,6 +14999,12 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_NEW_PROFILE_MANAGEMENT_DESCRIPTION" desc="Description for the flag to enable the new profile management">
       Enables the new profile management system, including profile sign-out and the new avatar menu UI.
     </message>
+    <message name="IDS_FLAGS_ENABLE_INLINE_SIGNIN_NAME" desc="Title for the flag to enable inline signin flows.">
+      Enable inline signin flows
+    </message>
+    <message name="IDS_FLAGS_ENABLE_INLINE_SIGNIN_DESCRIPTION" desc="Description for the flag to enable inline signin flows">
+      Enables inline sign flows, still using the existing gaia template.
+    </message>
     <message name="IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_NAME" desc="Title for the flag to enable the gaia profile information">
       Enable GAIA profile name and icon
     </message>
@@ -14940,9 +15129,6 @@ Do you accept?
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_READ_ONLY" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has read-only access to the listed folders.">
       "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can read images, video, and sound files in the checked locations.
-    </message>
-    <message name="IDS_MEDIA_GALLERIES_DIALOG_SUBTEXT_WRITE_ONLY" desc="Explanatory text for the media gallery access permission. Indicates than the specified (by name) extension has write-only access to the listed folders.">
-      "<ph name="EXTENSION">$1<ex>PhotoEditor</ex></ph>" can write images, video, and sound files in the checked locations.
     </message>
     <message name="IDS_MEDIA_GALLERIES_UNATTACHED_LOCATIONS" desc="Header for media gallery permissions to locations not currently attached, i.e. removable devices which aren't plugged in">
       Unattached locations
@@ -15088,16 +15274,16 @@ Do you accept?
       <message name="IDS_DIAGNOSTICS_CHOOSE_ADAPTER" desc="Prompts to choose the network adapter to be tested.">
         Choose the adapter you would like to use to connect to the internet...
       </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_WLAN0" desc="Adapter name for wlan0 interface.">
+      <message name="IDS_DIAGNOSTICS_ADAPTER_WIFI" desc="Adapter name for Wi-Fi interface.">
         Wi-Fi
       </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_ETH0" desc="Adapter name for eth0 interface.">
+      <message name="IDS_DIAGNOSTICS_ADAPTER_ETHERNET1" desc="Adapter name for first ethernet interface.">
         Ethernet 1
       </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_ETH1" desc="Adapter name for eth1 interface.">
+      <message name="IDS_DIAGNOSTICS_ADAPTER_ETHERNET2" desc="Adapter name for second ethernet interface.">
         Ethernet 2
       </message>
-      <message name="IDS_DIAGNOSTICS_ADAPTER_WWAN0" desc="Adapter name for wwan0 interface.">
+      <message name="IDS_DIAGNOSTICS_ADAPTER_3G" desc="Adapter name for 3G interface.">
         3G
       </message>
       <message name="IDS_DIAGNOSTICS_TESTING_HARDWARE" desc="Indicates testing network hardware.">

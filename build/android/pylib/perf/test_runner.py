@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Runs a perf test on a single device.
+"""Runs perf tests.
 
 Our buildbot infrastructure requires each slave to run steps serially.
 This is sub-optimal for android, where these steps can run independently on
@@ -37,19 +37,18 @@ be ignored:
 ]
 
 Note that script_to_execute necessarily have to take at least the following
-options:
+option:
   --device: the serial number to be passed to all adb commands.
-  --keep_test_server_ports: indicates it's being run as a shard, and shouldn't
-  reset test server port allocation.
 """
 
 import datetime
 import logging
-import pickle
 import os
+import pickle
 import sys
 
 from pylib import constants
+from pylib import forwarder
 from pylib import pexpect
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
@@ -96,10 +95,23 @@ class TestRunner(base_test_runner.BaseTestRunner):
     self._flaky_tests = flaky_tests
 
   @staticmethod
+  def _IsBetter(result):
+    if result['actual_exit_code'] == 0:
+      return True
+    pickled = os.path.join(constants.PERF_OUTPUT_DIR,
+                           result['name'])
+    if not os.path.exists(pickled):
+      return True
+    with file(pickled, 'r') as f:
+      previous = pickle.loads(f.read())
+    return result['actual_exit_code'] < previous['actual_exit_code']
+
+  @staticmethod
   def _SaveResult(result):
-    with file(os.path.join(constants.PERF_OUTPUT_DIR,
-                           result['name']), 'w') as f:
-      f.write(pickle.dumps(result))
+    if TestRunner._IsBetter(result):
+      with file(os.path.join(constants.PERF_OUTPUT_DIR,
+                             result['name']), 'w') as f:
+        f.write(pickle.dumps(result))
 
   def _LaunchPerfTest(self, test_name):
     """Runs a perf test.
@@ -110,7 +122,14 @@ class TestRunner(base_test_runner.BaseTestRunner):
     Returns:
       A tuple containing (Output, base_test_result.ResultType)
     """
-    cmd = ('%s --device %s --keep_test_server_ports' %
+    try:
+      logging.warning('Unmapping device ports')
+      forwarder.Forwarder.UnmapAllDevicePorts(self.adb)
+      self.adb.RestartAdbdOnDevice()
+    except Exception as e:
+      logging.error('Exception when tearing down device %s', e)
+
+    cmd = ('%s --device %s' %
            (self._tests[test_name], self.device))
     logging.info('%s : %s', test_name, cmd)
     start_time = datetime.datetime.now()
@@ -135,6 +154,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     result_type = base_test_result.ResultType.FAIL
     if exit_code == 0:
       result_type = base_test_result.ResultType.PASS
+    actual_exit_code = exit_code
     if test_name in self._flaky_tests:
       # The exit_code is used at the second stage when printing the
       # test output. If the test is flaky, force to "0" to get that step green
@@ -146,6 +166,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
         'name': test_name,
         'output': output,
         'exit_code': exit_code,
+        'actual_exit_code': actual_exit_code,
         'result_type': result_type,
         'total_time': (end_time - start_time).seconds,
         'device': self.device,

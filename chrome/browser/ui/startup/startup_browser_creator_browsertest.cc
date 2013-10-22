@@ -109,7 +109,7 @@ class StartupBrowserCreatorTest : public ExtensionBrowserTest {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
     *out_app_extension = service->GetExtensionById(
-        last_loaded_extension_id_, false);
+        last_loaded_extension_id(), false);
     ASSERT_TRUE(*out_app_extension);
 
     // Code that opens a new browser assumes we start with exactly one.
@@ -960,16 +960,12 @@ class ManagedModeBrowserCreatorTest : public InProcessBrowserTest {
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     InProcessBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnableManagedUsers);
+    command_line->AppendSwitch(switches::kNewProfileIsSupervised);
   }
 };
 
 IN_PROC_BROWSER_TEST_F(ManagedModeBrowserCreatorTest,
                        StartupManagedModeProfile) {
-  // Make this a managed profile.
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(browser()->profile());
-  managed_user_service->InitForTesting();
-
   StartupBrowserCreator browser_creator;
 
   // Do a simple non-process-startup browser launch.

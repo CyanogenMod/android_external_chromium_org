@@ -79,8 +79,6 @@
         'env.cc',
         'env.h',
         'env_observer.h',
-        'focus_manager.cc',
-        'focus_manager.h',
         'input_state_lookup.cc',
         'input_state_lookup.h',
         'input_state_lookup_win.cc',
@@ -126,6 +124,11 @@
           'sources!': [
             'input_state_lookup.cc',
           ],
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'ForcedIncludeFiles': [ 'build/intsafe_workaround.h' ],
+            },
+          },
         }],
       ],
     },
@@ -159,6 +162,8 @@
         'test/test_cursor_client.h',
         'test/test_event_handler.cc',
         'test/test_event_handler.h',
+        'test/test_focus_client.cc',
+        'test/test_focus_client.h',
         'test/test_screen.cc',
         'test/test_screen.h',
         'test/test_stacking_client.cc',

@@ -36,6 +36,7 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
+#include "google_apis/gaia/gaia_constants.h"
 #endif
 
 namespace extensions {
@@ -215,18 +216,11 @@ void IdentityGetAuthTokenFunction::StartMintToken(
 #if defined(OS_CHROMEOS)
         // Always force minting token for ChromeOS kiosk app.
         if (chromeos::UserManager::Get()->IsLoggedInAsKioskApp()) {
+          gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE;
           if (g_browser_process->browser_policy_connector()->
                   IsEnterpriseManaged()) {
-            OAuth2TokenService::ScopeSet scope_set(oauth2_info.scopes.begin(),
-                                                   oauth2_info.scopes.end());
-            chromeos::DeviceOAuth2TokenService* token_service =
-                chromeos::DeviceOAuth2TokenServiceFactory::Get();
-            device_token_request_ =
-                token_service->StartRequest(token_service->GetRobotAccountId(),
-                                            scope_set,
-                                            this);
+            StartDeviceLoginAccessTokenRequest();
           } else {
-            gaia_mint_token_mode_ = OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE;
             StartLoginAccessTokenRequest();
           }
           return;
@@ -386,36 +380,31 @@ void IdentityGetAuthTokenFunction::OnGetTokenSuccess(
     const OAuth2TokenService::Request* request,
     const std::string& access_token,
     const base::Time& expiration_time) {
-  if (login_token_request_.get() == request) {
-    login_token_request_.reset();
-    StartGaiaRequest(access_token);
-  } else {
-    DCHECK_EQ(device_token_request_.get(), request);
-    device_token_request_.reset();
-
-    const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
-    IdentityTokenCacheValue token(access_token,
-                                  expiration_time - base::Time::Now());
-    IdentityAPI::GetFactoryInstance()->GetForProfile(profile())->SetCachedToken(
-        GetExtension()->id(), oauth2_info.scopes, token);
-
-    CompleteMintTokenFlow();
-    CompleteFunctionWithResult(access_token);
-  }
+  login_token_request_.reset();
+  StartGaiaRequest(access_token);
 }
 
 void IdentityGetAuthTokenFunction::OnGetTokenFailure(
     const OAuth2TokenService::Request* request,
     const GoogleServiceAuthError& error) {
-  if (login_token_request_.get() == request) {
-    login_token_request_.reset();
-  } else {
-    DCHECK_EQ(device_token_request_.get(), request);
-    device_token_request_.reset();
-  }
-
+  login_token_request_.reset();
   OnGaiaFlowFailure(GaiaWebAuthFlow::SERVICE_AUTH_ERROR, error, std::string());
 }
+
+#if defined(OS_CHROMEOS)
+void IdentityGetAuthTokenFunction::StartDeviceLoginAccessTokenRequest() {
+  chromeos::DeviceOAuth2TokenService* service =
+      chromeos::DeviceOAuth2TokenServiceFactory::Get();
+  // Since robot account refresh tokens are scoped down to [any-api] only,
+  // request access token for [any-api] instead of login.
+  OAuth2TokenService::ScopeSet scopes;
+  scopes.insert(GaiaConstants::kAnyApiOAuth2Scope);
+  login_token_request_ =
+      service->StartRequest(service->GetRobotAccountId(),
+                            scopes,
+                            this);
+}
+#endif
 
 void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
   ProfileOAuth2TokenService* service =
@@ -666,13 +655,12 @@ const base::Time& IdentityTokenCacheValue::expiration_time() const {
 
 IdentityAPI::IdentityAPI(Profile* profile)
     : profile_(profile),
-      error_(GoogleServiceAuthError::NONE) {
-  SigninGlobalError::GetForProfile(profile_)->AddProvider(this);
-  ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->AddObserver(this);
+      account_tracker_(profile),
+      identity_event_router_(profile) {
+  account_tracker_.AddObserver(this);
 }
 
-IdentityAPI::~IdentityAPI() {
-}
+IdentityAPI::~IdentityAPI() {}
 
 IdentityMintRequestQueue* IdentityAPI::mint_queue() {
     return &mint_queue_;
@@ -720,14 +708,14 @@ const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
 }
 
 void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {
-  error_ = error;
-  SigninGlobalError::GetForProfile(profile_)->AuthStatusChanged();
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
+  account_tracker_.ReportAuthError(token_service->GetPrimaryAccountId(), error);
 }
 
 void IdentityAPI::Shutdown() {
-  SigninGlobalError::GetForProfile(profile_)->RemoveProvider(this);
-  ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
-      RemoveObserver(this);
+  account_tracker_.RemoveObserver(this);
+  account_tracker_.Shutdown();
 }
 
 static base::LazyInstance<ProfileKeyedAPIFactory<IdentityAPI> >
@@ -738,24 +726,18 @@ ProfileKeyedAPIFactory<IdentityAPI>* IdentityAPI::GetFactoryInstance() {
   return &g_factory.Get();
 }
 
-std::string IdentityAPI::GetAccountId() const {
-  return ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
-      GetPrimaryAccountId();
-}
+void IdentityAPI::OnAccountAdded(const AccountIds& ids) {}
 
-GoogleServiceAuthError IdentityAPI::GetAuthStatus() const {
-  return error_;
-}
+void IdentityAPI::OnAccountRemoved(const AccountIds& ids) {}
 
-void IdentityAPI::OnRefreshTokenAvailable(const std::string& account_id) {
-  error_ = GoogleServiceAuthError::AuthErrorNone();
+void IdentityAPI::OnAccountSignInChanged(const AccountIds& ids,
+                                         bool is_signed_in) {
+  identity_event_router_.DispatchSignInEvent(ids.gaia, ids.email, is_signed_in);
 }
 
 template <>
 void ProfileKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies() {
   DependsOn(ExtensionSystemFactory::GetInstance());
-  // Need dependency on ProfileOAuth2TokenServiceFactory because it owns
-  // the SigninGlobalError instance.
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 

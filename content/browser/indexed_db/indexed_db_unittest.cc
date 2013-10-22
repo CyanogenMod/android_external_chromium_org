@@ -46,6 +46,8 @@ class IndexedDBTest : public testing::Test {
  private:
   BrowserThreadImpl file_thread_;
   BrowserThreadImpl io_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBTest);
 };
 
 TEST_F(IndexedDBTest, ClearSessionOnlyDatabases) {
@@ -126,6 +128,10 @@ class MockConnection : public IndexedDBConnection {
   virtual void ForceClose() OVERRIDE {
     ASSERT_TRUE(expect_force_close_);
     force_close_called_ = true;
+  }
+
+  virtual bool IsConnected() OVERRIDE {
+    return !force_close_called_;
   }
 
  private:

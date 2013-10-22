@@ -41,6 +41,7 @@
 #include "chrome/browser/chromeos/login/parallel_authenticator.h"
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -104,8 +105,7 @@ class LoginUtilsImpl
       public base::SupportsWeakPtr<LoginUtilsImpl> {
  public:
   LoginUtilsImpl()
-      : using_oauth_(false),
-        has_web_auth_cookies_(false),
+      : has_web_auth_cookies_(false),
         delegate_(NULL),
         should_restore_auth_session_(false),
         exit_after_session_restore_(false),
@@ -124,7 +124,6 @@ class LoginUtilsImpl
   virtual void PrepareProfile(
       const UserContext& user_context,
       const std::string& display_email,
-      bool using_oauth,
       bool has_cookies,
       bool has_active_session,
       LoginUtils::Delegate* delegate) OVERRIDE;
@@ -193,7 +192,6 @@ class LoginUtilsImpl
   void AttemptExit(Profile* profile);
 
   UserContext user_context_;
-  bool using_oauth_;
 
   // True if the authentication profile's cookie jar should contain
   // authentication cookies from the authentication extension log in flow.
@@ -315,7 +313,6 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
 void LoginUtilsImpl::PrepareProfile(
     const UserContext& user_context,
     const std::string& display_email,
-    bool using_oauth,
     bool has_cookies,
     bool has_active_session,
     LoginUtils::Delegate* delegate) {
@@ -347,7 +344,6 @@ void LoginUtilsImpl::PrepareProfile(
 
   user_context_ = user_context;
 
-  using_oauth_ = using_oauth;
   has_web_auth_cookies_ = has_cookies;
   delegate_ = delegate;
   InitSessionRestoreStrategy();
@@ -374,7 +370,8 @@ void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
   if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
     User* active_user = UserManager::Get()->GetActiveUser();
     std::string managed_user_sync_id =
-        UserManager::Get()->GetManagedUserSyncId(active_user->email());
+        UserManager::Get()->GetSupervisedUserManager()->
+            GetUserSyncId(active_user->email());
 
     // TODO(ibraaaa): Remove that when 97% of our users are using M31.
     // http://crbug.com/276163
@@ -461,7 +458,7 @@ void LoginUtilsImpl::UserProfileInitialized(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserProfileGotten", false);
 
-  if (using_oauth_) {
+  if (user_context_.using_oauth) {
     // Transfer proxy authentication cache, cookies (optionally) and server
     // bound certs from the profile that was used for authentication.  This
     // profile contains cookies that auth extension should have already put in

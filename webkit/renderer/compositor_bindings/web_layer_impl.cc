@@ -191,8 +191,12 @@ void WebLayerImpl::setAnimationDelegate(
 }
 
 bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
-  return layer_->AddAnimation(
-      static_cast<WebAnimationImpl*>(animation)->CloneToAnimation());
+  bool result = layer_->AddAnimation(
+      static_cast<WebAnimationImpl*>(animation)->PassAnimation());
+#if defined(ANIMATION_OWNERSHIP_TRANSFER)
+  delete animation;
+#endif
+  return result;
 }
 
 void WebLayerImpl::removeAnimation(int animation_id) {
@@ -246,6 +250,18 @@ void WebLayerImpl::setScrollable(bool scrollable) {
 }
 
 bool WebLayerImpl::scrollable() const { return layer_->scrollable(); }
+
+void WebLayerImpl::setUserScrollable(bool horizontal, bool vertical) {
+  layer_->SetUserScrollable(horizontal, vertical);
+}
+
+bool WebLayerImpl::userScrollableHorizontal() const {
+  return layer_->user_scrollable_horizontal();
+}
+
+bool WebLayerImpl::userScrollableVertical() const {
+  return layer_->user_scrollable_vertical();
+}
 
 void WebLayerImpl::setHaveWheelEventHandlers(bool have_wheel_event_handlers) {
   layer_->SetHaveWheelEventHandlers(have_wheel_event_handlers);

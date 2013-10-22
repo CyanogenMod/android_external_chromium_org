@@ -1036,10 +1036,10 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestFrameTimeUpdatesAfterDraw);
 
 // Verifies that StartPageScaleAnimation events propagate correctly
 // from LayerTreeHost to LayerTreeHostImpl in the MT compositor.
-class LayerTreeHostTestStartPageScaleAnimation
+class DISABLED_LayerTreeHostTestStartPageScaleAnimation
     : public LayerTreeHostTest {
  public:
-  LayerTreeHostTestStartPageScaleAnimation() {}
+  DISABLED_LayerTreeHostTestStartPageScaleAnimation() {}
 
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
@@ -1099,7 +1099,8 @@ class LayerTreeHostTestStartPageScaleAnimation
   scoped_refptr<FakeContentLayer> scroll_layer_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestStartPageScaleAnimation);
+// Disabled. See: crbug.com/280508
+MULTI_THREAD_NOIMPL_TEST_F(DISABLED_LayerTreeHostTestStartPageScaleAnimation);
 
 class LayerTreeHostTestSetVisible : public LayerTreeHostTest {
  public:
@@ -1446,7 +1447,7 @@ class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
   int drew_frame_;
 };
 
-MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestDirectRendererAtomicCommit);
 
 class LayerTreeHostTestDelegatingRendererAtomicCommit
@@ -1499,7 +1500,7 @@ class LayerTreeHostTestDelegatingRendererAtomicCommit
   }
 };
 
-MULTI_THREAD_DELEGATING_RENDERER_TEST_F(
+MULTI_THREAD_DELEGATING_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestDelegatingRendererAtomicCommit);
 
 static void SetLayerPropertiesForTesting(Layer* layer,
@@ -1840,7 +1841,7 @@ class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
 };
 
 // Surfaces don't exist with a delegated renderer.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit);
 
 class EvictionTestLayer : public Layer {
@@ -2064,7 +2065,7 @@ class LayerTreeHostTestEvictTextures : public LayerTreeHostTest {
   int num_commits_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestEvictTextures);
+MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestEvictTextures);
 
 class LayerTreeHostTestContinuousCommit : public LayerTreeHostTest {
  public:
@@ -2155,7 +2156,7 @@ class LayerTreeHostTestContinuousInvalidate : public LayerTreeHostTest {
   int num_draw_layers_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestContinuousInvalidate);
+MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestContinuousInvalidate);
 
 class LayerTreeHostTestDeferCommits : public LayerTreeHostTest {
  public:
@@ -2390,7 +2391,7 @@ class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
   int num_commits_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(
+SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
     LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted);
 
 class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
@@ -2936,12 +2937,6 @@ TEST_F(LayerTreeHostTestAsyncReadback,
   RunTest(true, false, false);
 }
 
-TEST_F(LayerTreeHostTestAsyncReadback,
-       GLRenderer_RunMultiThread_ImplSidePainting) {
-  use_gl_renderer_ = true;
-  RunTest(true, false, true);
-}
-
 TEST_F(LayerTreeHostTestAsyncReadback, SoftwareRenderer_RunSingleThread) {
   use_gl_renderer_ = false;
   RunTest(false, false, false);
@@ -2951,12 +2946,6 @@ TEST_F(LayerTreeHostTestAsyncReadback,
        SoftwareRenderer_RunMultiThread_MainThreadPainting) {
   use_gl_renderer_ = false;
   RunTest(true, false, false);
-}
-
-TEST_F(LayerTreeHostTestAsyncReadback,
-       SoftwareRenderer_RunMultiThread_ImplSidePainting) {
-  use_gl_renderer_ = false;
-  RunTest(true, false, true);
 }
 
 class LayerTreeHostTestAsyncReadbackLayerDestroyed : public LayerTreeHostTest {
@@ -3148,7 +3137,7 @@ class LayerTreeHostTestAsyncReadbackInHiddenSubtree : public LayerTreeHostTest {
 };
 
 // No output to copy for delegated renderers.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestAsyncReadbackInHiddenSubtree);
 
 class LayerTreeHostTestHiddenSurfaceNotAllocatedForSubtreeCopyRequest
@@ -3346,7 +3335,7 @@ class LayerTreeHostTestAsyncTwoReadbacksWithoutDraw : public LayerTreeHostTest {
 };
 
 // No output to copy for delegated renderers.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestAsyncTwoReadbacksWithoutDraw);
 
 class LayerTreeHostTestAsyncReadbackLostOutputSurface
@@ -3481,7 +3470,7 @@ class LayerTreeHostTestAsyncReadbackLostOutputSurface
 };
 
 // No output to copy for delegated renderers.
-SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
     LayerTreeHostTestAsyncReadbackLostOutputSurface);
 
 class LayerTreeHostTestNumFramesPending : public LayerTreeHostTest {
@@ -3560,7 +3549,6 @@ class LayerTreeHostTestDeferredInitialize : public LayerTreeHostTest {
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
     // PictureLayer can only be used with impl side painting enabled.
     settings->impl_side_painting = true;
-    settings->solid_color_scrollbars = true;
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -4920,7 +4908,7 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
   int num_commits_;
 };
 
-SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestMemoryLimits);
+SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(LayerTreeHostTestMemoryLimits);
 
 class LayerSetsNeedsFilterContext : public Layer {
  public:

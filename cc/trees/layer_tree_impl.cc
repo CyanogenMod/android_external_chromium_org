@@ -311,8 +311,6 @@ void LayerTreeImpl::ClearViewportLayers() {
 // of login that works for both scrollbar layer types. This is already planned
 // as part of the larger pinch-zoom re-factoring viewport.
 void LayerTreeImpl::UpdateSolidColorScrollbars() {
-  DCHECK(settings().solid_color_scrollbars);
-
   LayerImpl* root_scroll = RootScrollLayer();
   DCHECK(root_scroll);
   DCHECK(IsActiveTree());
@@ -343,9 +341,9 @@ void LayerTreeImpl::UpdateDrawProperties() {
   if (IsActiveTree() && RootScrollLayer() && RootContainerLayer())
     UpdateRootScrollLayerSizeDelta();
 
-  if (settings().solid_color_scrollbars &&
-      IsActiveTree() &&
-      RootScrollLayer()) {
+  if (IsActiveTree() &&
+      RootContainerLayer()
+      && !RootContainerLayer()->masks_to_bounds()) {
     UpdateSolidColorScrollbars();
   }
 
@@ -383,6 +381,37 @@ void LayerTreeImpl::UpdateDrawProperties() {
         settings().layer_transforms_should_scale_layer_contents,
         &render_surface_layer_list_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+  }
+
+  {
+    TRACE_EVENT2("cc",
+                 "LayerTreeImpl::UpdateTilePriorities",
+                 "IsActive",
+                 IsActiveTree(),
+                 "SourceFrameNumber",
+                 source_frame_number_);
+    // LayerIterator is used here instead of CallFunctionForSubtree to only
+    // UpdateTilePriorities on layers that will be visible (and thus have valid
+    // draw properties) and not because any ordering is required.
+    typedef LayerIterator<LayerImpl,
+                          LayerImplList,
+                          RenderSurfaceImpl,
+                          LayerIteratorActions::FrontToBack> LayerIteratorType;
+    LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
+    for (LayerIteratorType it =
+             LayerIteratorType::Begin(&render_surface_layer_list_);
+         it != end;
+         ++it) {
+      if (!it.represents_itself())
+        continue;
+      LayerImpl* layer = *it;
+
+      layer->UpdateTilePriorities();
+      if (layer->mask_layer())
+        layer->mask_layer()->UpdateTilePriorities();
+      if (layer->replica_layer() && layer->replica_layer()->mask_layer())
+        layer->replica_layer()->mask_layer()->UpdateTilePriorities();
+    }
   }
 
   DCHECK(!needs_update_draw_properties_) <<

@@ -42,8 +42,8 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/chromeos_test_utils.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -352,7 +352,7 @@ IN_PROC_BROWSER_TEST_F(WizardControllerFlowTest,
       WizardController::default_controller()->GetEnrollmentScreen();
   EXPECT_EQ(screen, WizardController::default_controller()->current_screen());
   // This is the main expectation: after auto-enrollment, login is resumed.
-  EXPECT_CALL(mock_consumer, OnLoginSuccess(_, _, _)).Times(1);
+  EXPECT_CALL(mock_consumer, OnLoginSuccess(_)).Times(1);
   OnExit(ScreenObserver::ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED);
   // Prevent browser launch when the profile is prepared:
   browser_shutdown::SetTryingToQuit(true);
@@ -408,11 +408,11 @@ class WizardControllerBrokenLocalStateTest : public WizardControllerTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     WizardControllerTest::SetUpInProcessBrowserTestFixture();
 
-    MockDBusThreadManagerWithoutGMock* mock_dbus_thread_manager =
-        new MockDBusThreadManagerWithoutGMock();
+    FakeDBusThreadManager* fake_dbus_thread_manager =
+        new FakeDBusThreadManager();
     fake_session_manager_client_ =
-        mock_dbus_thread_manager->fake_session_manager_client();
-    DBusThreadManager::InitializeForTesting(mock_dbus_thread_manager);
+        fake_dbus_thread_manager->fake_session_manager_client();
+    DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {

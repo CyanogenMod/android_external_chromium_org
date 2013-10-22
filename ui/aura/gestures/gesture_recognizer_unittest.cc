@@ -34,7 +34,7 @@ namespace test {
 namespace {
 
 std::string WindowIDAsString(ui::GestureConsumer* consumer) {
-  return consumer && !consumer->ignores_events() ?
+  return consumer ?
       base::IntToString(static_cast<Window*>(consumer)->id()) : "?";
 }
 
@@ -453,8 +453,8 @@ class TestOneShotGestureSequenceTimer
 
 class TimerTestGestureSequence : public ui::GestureSequence {
  public:
-  explicit TimerTestGestureSequence(ui::GestureEventHelper* helper)
-      : ui::GestureSequence(helper) {
+  explicit TimerTestGestureSequence(ui::GestureSequenceDelegate* delegate)
+      : ui::GestureSequence(delegate) {
   }
 
   void ForceTimeout() {
@@ -476,8 +476,7 @@ class TimerTestGestureSequence : public ui::GestureSequence {
 
 class TestGestureRecognizer : public ui::GestureRecognizerImpl {
  public:
-  explicit TestGestureRecognizer(RootWindow* root_window)
-      : GestureRecognizerImpl(root_window) {
+  TestGestureRecognizer() : GestureRecognizerImpl() {
   }
 
   ui::GestureSequence* GetGestureSequenceForTesting(Window* window) {
@@ -490,13 +489,12 @@ class TestGestureRecognizer : public ui::GestureRecognizerImpl {
 
 class TimerTestGestureRecognizer : public TestGestureRecognizer {
  public:
-  explicit TimerTestGestureRecognizer(RootWindow* root_window)
-      : TestGestureRecognizer(root_window) {
+  TimerTestGestureRecognizer() : TestGestureRecognizer() {
   }
 
   virtual ui::GestureSequence* CreateSequence(
-      ui::GestureEventHelper* helper) OVERRIDE {
-    return new TimerTestGestureSequence(helper);
+      ui::GestureSequenceDelegate* delegate) OVERRIDE {
+    return new TimerTestGestureSequence(delegate);
   }
 
  private:
@@ -506,6 +504,26 @@ class TimerTestGestureRecognizer : public TestGestureRecognizer {
 base::TimeDelta GetTime() {
   return ui::EventTimeForNow();
 }
+
+class ScopedGestureRecognizerSetter {
+ public:
+  // Takes ownership of |new_gr|.
+  explicit ScopedGestureRecognizerSetter(ui::GestureRecognizer* new_gr)
+      : new_gr_(new_gr) {
+    original_gr_ = ui::GestureRecognizer::Get();
+    ui::SetGestureRecognizerForTesting(new_gr_.get());
+  }
+
+  virtual ~ScopedGestureRecognizerSetter() {
+    ui::SetGestureRecognizerForTesting(original_gr_);
+  }
+
+ private:
+  ui::GestureRecognizer* original_gr_;
+  scoped_ptr<ui::GestureRecognizer> new_gr_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedGestureRecognizerSetter);
+};
 
 class TimedEvents {
  private:
@@ -621,6 +639,26 @@ class TestEventHandler : public ui::EventHandler {
   int touch_cancelled_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TestEventHandler);
+};
+
+// Removes the target window from its parent when it receives a touch-cancel
+// event.
+class RemoveOnTouchCancelHandler : public TestEventHandler {
+ public:
+  RemoveOnTouchCancelHandler() {}
+  virtual ~RemoveOnTouchCancelHandler() {}
+
+ private:
+  // ui::EventHandler:
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE {
+    TestEventHandler::OnTouchEvent(event);
+    if (event->type() == ui::ET_TOUCH_CANCELLED) {
+      Window* target = static_cast<Window*>(event->target());
+      target->parent()->RemoveChild(target);
+    }
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(RemoveOnTouchCancelHandler);
 };
 
 }  // namespace
@@ -1254,9 +1292,9 @@ TEST_F(GestureRecognizerTest, GestureEventLongPress) {
   delegate->Reset();
 
   TimerTestGestureRecognizer* gesture_recognizer =
-      new TimerTestGestureRecognizer(root_window());
+      new TimerTestGestureRecognizer();
 
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
                         kTouchId, tes.Now());
@@ -1300,12 +1338,12 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressCancelledByScroll) {
   delegate->Reset();
 
   TimerTestGestureRecognizer* gesture_recognizer =
-      new TimerTestGestureRecognizer(root_window());
+      new TimerTestGestureRecognizer();
   TimerTestGestureSequence* gesture_sequence =
       static_cast<TimerTestGestureSequence*>(
           gesture_recognizer->GetGestureSequenceForTesting(window.get()));
 
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
                         kTouchId, tes.Now());
@@ -1346,9 +1384,9 @@ TEST_F(GestureRecognizerTest, GestureEventLongTap) {
   delegate->Reset();
 
   TimerTestGestureRecognizer* gesture_recognizer =
-      new TimerTestGestureRecognizer(root_window());
+      new TimerTestGestureRecognizer();
 
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   ui::TouchEvent press1(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
                         kTouchId, tes.Now());
@@ -1392,12 +1430,12 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressCancelledBySecondTap) {
       delegate.get(), -1234, bounds, root_window()));
 
   TimerTestGestureRecognizer* gesture_recognizer =
-      new TimerTestGestureRecognizer(root_window());
+      new TimerTestGestureRecognizer();
   TimerTestGestureSequence* gesture_sequence =
       static_cast<TimerTestGestureSequence*>(
           gesture_recognizer->GetGestureSequenceForTesting(window.get()));
 
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   delegate->Reset();
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
@@ -2058,10 +2096,9 @@ TEST_F(GestureRecognizerTest, GestureEventIgnoresDisconnectedEvents) {
 // Check that a touch is locked to the window of the closest current touch
 // within max_separation_for_gesture_touches_in_pixels
 TEST_F(GestureRecognizerTest, GestureEventTouchLockSelectsCorrectWindow) {
-  ui::GestureRecognizer* gesture_recognizer =
-      new ui::GestureRecognizerImpl(root_window());
+  ui::GestureRecognizer* gesture_recognizer = new ui::GestureRecognizerImpl();
   TimedEvents tes;
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   ui::GestureConsumer* target;
   const int kNumWindows = 4;
@@ -2146,9 +2183,9 @@ TEST_F(GestureRecognizerTest, GestureEventTouchLockSelectsCorrectWindow) {
 // by the root window's gesture sequence.
 TEST_F(GestureRecognizerTest, GestureEventOutsideRootWindowTap) {
   TestGestureRecognizer* gesture_recognizer =
-      new TestGestureRecognizer(root_window());
+      new TestGestureRecognizer();
   TimedEvents tes;
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   scoped_ptr<aura::Window> window(CreateTestWindowWithBounds(
       gfx::Rect(-100, -100, 2000, 2000), root_window()));
@@ -2298,8 +2335,8 @@ TEST_F(GestureRecognizerTest, CaptureSendsGestureEnd) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TestGestureRecognizer* gesture_recognizer =
-      new TestGestureRecognizer(root_window());
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+      new TestGestureRecognizer();
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
       delegate.get(), -1234, gfx::Rect(10, 10, 300, 300), root_window()));
@@ -2378,8 +2415,8 @@ TEST_F(GestureRecognizerTest, PressDoesNotCrash) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TestGestureRecognizer* gesture_recognizer =
-      new TestGestureRecognizer(root_window());
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+      new TestGestureRecognizer();
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
   TimedEvents tes;
 
   scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
@@ -2815,9 +2852,9 @@ TEST_F(GestureRecognizerTest, FlushAllOnHide) {
   root_window()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press2);
   window->Hide();
   EXPECT_EQ(NULL,
-            root_window()->gesture_recognizer()->GetTouchLockedTarget(&press1));
+      ui::GestureRecognizer::Get()->GetTouchLockedTarget(&press1));
   EXPECT_EQ(NULL,
-            root_window()->gesture_recognizer()->GetTouchLockedTarget(&press2));
+      ui::GestureRecognizer::Get()->GetTouchLockedTarget(&press2));
 }
 
 TEST_F(GestureRecognizerTest, LongPressTimerStopsOnPreventDefaultedTouchMoves) {
@@ -2831,12 +2868,12 @@ TEST_F(GestureRecognizerTest, LongPressTimerStopsOnPreventDefaultedTouchMoves) {
   TimedEvents tes;
 
   TimerTestGestureRecognizer* gesture_recognizer =
-      new TimerTestGestureRecognizer(root_window());
+      new TimerTestGestureRecognizer();
   TimerTestGestureSequence* gesture_sequence =
       static_cast<TimerTestGestureSequence*>(
           gesture_recognizer->GetGestureSequenceForTesting(window.get()));
 
-  root_window()->SetGestureRecognizerForTesting(gesture_recognizer);
+  ScopedGestureRecognizerSetter gr_setter(gesture_recognizer);
 
   delegate->Reset();
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
@@ -3442,6 +3479,48 @@ TEST_F(GestureRecognizerTest, GestureEventConsumedTouchMoveCanFireTapCancel) {
   EXPECT_FALSE(delegate->scroll_begin());
   EXPECT_FALSE(delegate->scroll_update());
   EXPECT_FALSE(delegate->scroll_end());
+}
+
+TEST_F(GestureRecognizerTest,
+       TransferEventDispatchesTouchCancel) {
+  scoped_ptr<GestureEventConsumeDelegate> delegate(
+      new GestureEventConsumeDelegate());
+  TimedEvents tes;
+  const int kWindowWidth = 800;
+  const int kWindowHeight = 600;
+  const int kTouchId = 2;
+  gfx::Rect bounds(0, 0, kWindowWidth, kWindowHeight);
+  scoped_ptr<aura::Window> window(CreateTestWindowWithDelegate(
+      delegate.get(), -1234, bounds, root_window()));
+  scoped_ptr<RemoveOnTouchCancelHandler>
+      handler(new RemoveOnTouchCancelHandler());
+  window->AddPreTargetHandler(handler.get());
+
+  // Start a gesture sequence on |window|. Then transfer the events to NULL.
+  // Make sure |window| receives a touch-cancel event.
+  delegate->Reset();
+  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(101, 201),
+                       kTouchId, tes.Now());
+  ui::TouchEvent p2(ui::ET_TOUCH_PRESSED, gfx::Point(50, 50), 1, tes.Now());
+  root_window()->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  root_window()->AsRootWindowHostDelegate()->OnHostTouchEvent(&p2);
+  EXPECT_FALSE(delegate->tap());
+  EXPECT_TRUE(delegate->tap_down());
+  EXPECT_TRUE(delegate->tap_cancel());
+  EXPECT_TRUE(delegate->begin());
+  EXPECT_EQ(2, handler->touch_pressed_count());
+  delegate->Reset();
+  handler->Reset();
+
+  ui::GestureRecognizer* gesture_recognizer = ui::GestureRecognizer::Get();
+  EXPECT_EQ(window.get(),
+            gesture_recognizer->GetTouchLockedTarget(&press));
+  gesture_recognizer->TransferEventsTo(window.get(), NULL);
+  EXPECT_EQ(NULL,
+            gesture_recognizer->GetTouchLockedTarget(&press));
+  // The event-handler removes |window| from its parent on the first
+  // touch-cancel event, so it won't receive the second touch-cancel event.
+  EXPECT_EQ(1, handler->touch_cancelled_count());
 }
 
 }  // namespace test

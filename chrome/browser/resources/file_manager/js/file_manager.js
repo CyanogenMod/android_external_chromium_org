@@ -15,6 +15,28 @@
  */
 function FileManager() {
   this.initializeQueue_ = new AsyncUtil.Group();
+
+  /**
+   * Current list type.
+   * @type {ListType}
+   * @private
+   */
+  this.listType_ = null;
+
+  /**
+   * Whether to suppress the focus moving or not.
+   * This is used to filter out focusing by mouse.
+   * @type {boolean}
+   * @private
+   */
+  this.suppressFocus_ = false;
+
+  /**
+   * SelectionHandler.
+   * @type {SelectionHandler}
+   * @private
+   */
+  this.selectionHandler_ = null;
 }
 
 /**
@@ -161,8 +183,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     // Get startup preferences.
     this.viewOptions_ = {};
     group.add(function(done) {
-      this.dialogType = this.params_.type || DialogType.FULL_PAGE;
-      this.startupPrefName_ = 'file-manager-' + this.dialogType;
       util.platform.getPreference(this.startupPrefName_, function(value) {
         // Load the global default options.
         try {
@@ -251,7 +271,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     dm.addEventListener('scan-cancelled', this.onScanCancelled_.bind(this));
     dm.addEventListener('scan-updated', this.onScanUpdated_.bind(this));
     dm.addEventListener('rescan-completed',
-                        this.refreshCurrentDirectoryMetadata_.bind(this));
+                        this.onRescanCompleted_.bind(this));
 
     var sm = this.directoryModel_.getFileListSelection();
     sm.addEventListener('change', function() {
@@ -461,10 +481,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   FileManager.prototype.onMaximize = function() {
-    // Do not maximize when running via chrome://files in a browser.
-    if (util.platform.runningInBrowser())
-      return;
-
     var appWindow = chrome.app.window.current();
     if (appWindow.isMaximized())
       appWindow.restore();
@@ -473,10 +489,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   FileManager.prototype.onClose = function() {
-    // Do not close when running via chrome://files in a browser.
-    if (util.platform.runningInBrowser())
-      return;
-
     window.close();
   };
 
@@ -546,6 +558,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
   FileManager.prototype.initializeUI = function(dialogDom, callback) {
     this.dialogDom_ = dialogDom;
+    this.document_ = this.dialogDom_.ownerDocument;
 
     this.initializeQueue_.add(
         this.initEssentialUI_.bind(this),
@@ -580,6 +593,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
                      {};
       this.defaultPath = this.params_.defaultPath;
     }
+
+    // Initialize the member variables that depend this.params_.
+    this.dialogType = this.params_.type || DialogType.FULL_PAGE;
+    this.startupPrefName_ = 'file-manager-' + this.dialogType;
+    this.fileTypes_ = this.params_.typeList || [];
+
     callback();
   };
 
@@ -653,20 +672,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.initEssentialUI_ = function(callback) {
-    this.listType_ = null;
-
-    this.filesystemObserverId_ = null;
-    this.driveObserverId_ = null;
-
-    this.document_ = this.dialogDom_.ownerDocument;
-    this.dialogType = this.params_.type || DialogType.FULL_PAGE;
-    this.startupPrefName_ = 'file-manager-' + this.dialogType;
-
-    // Used to filter out focusing by mouse.
-    this.suppressFocus_ = false;
-
     // Optional list of file types.
-    this.fileTypes_ = this.params_.typeList || [];
     metrics.recordEnum('Create', this.dialogType,
         [DialogType.SELECT_FOLDER,
          DialogType.SELECT_UPLOAD_FOLDER,
@@ -675,34 +681,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
          DialogType.SELECT_OPEN_MULTI_FILE,
          DialogType.FULL_PAGE]);
 
-    this.selectionHandler_ = null;
-
+    // Create the metadata cache.
     this.metadataCache_ = MetadataCache.createFull();
 
-    this.hasFooterPanel_ =
-        this.dialogType == DialogType.SELECT_SAVEAS_FILE ||
-        this.dialogType == DialogType.SELECT_FOLDER;
-
-    // If the footer panel exists, the buttons are placed there. Otherwise,
-    // the buttons are on the preview panel.
-    var parentPanelOfButtons = this.dialogDom_.querySelector(
-        !this.hasFooterPanel_ ? '.preview-panel' : '.dialog-footer');
-    parentPanelOfButtons.classList.add('button-panel');
-    this.fileTypeSelector_ = parentPanelOfButtons.querySelector('.file-type');
-    this.okButton_ = parentPanelOfButtons.querySelector('.ok');
-    this.cancelButton_ = parentPanelOfButtons.querySelector('.cancel');
-
-    // Pre-populate the static localized strings.
-    i18nTemplate.process(this.document_, loadTimeData);
-
-    // Initialize the header.
-    this.dialogDom_.querySelector('#app-name').innerText =
-        chrome.runtime.getManifest().name;
-
-    this.initDialogType_();
-
     // Create the root view of FileManager.
-    this.ui_ = new FileManagerUI(this.dialogDom_);
+    this.ui_ = new FileManagerUI(this.dialogDom_, this.dialogType);
+    this.fileTypeSelector_ = this.ui_.fileTypeSelector;
+    this.okButton_ = this.ui_.okButton;
+    this.cancelButton_ = this.ui_.cancelButton;
 
     // Show the window as soon as the UI pre-initialization is done.
     if (this.dialogType == DialogType.FULL_PAGE &&
@@ -797,13 +783,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
           initialItems[i],
           this.backgroundPage_.progressCenter.getSummarizedItem());
     }
-    this.backgroundPage_.progressCenter.addEventListener(
-        ProgressCenterEvent.ITEM_ADDED,
-        function(event) {
-          this.progressCenterPanel_.updateItem(
-              event.item,
-              this.backgroundPage_.progressCenter.getSummarizedItem());
-        }.bind(this));
     this.backgroundPage_.progressCenter.addEventListener(
         ProgressCenterEvent.ITEM_UPDATED,
         function(event) {
@@ -1114,8 +1093,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     for (var i = 0; i < cm.totalSize; i++) {
       prefs.columns.push(cm.getWidth(i));
     }
-    if (DialogType.isModal(this.dialogType))
-      prefs.listType = this.listType;
     // Save the global default.
     util.platform.setPreference(this.startupPrefName_, JSON.stringify(prefs));
 
@@ -1573,50 +1550,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
       }
     }.bind(this));
-  };
-
-  /**
-   * Tweak the UI to become a particular kind of dialog, as determined by the
-   * dialog type parameter passed to the constructor.
-   *
-   * @private
-   */
-  FileManager.prototype.initDialogType_ = function() {
-    var defaultTitle;
-    var okLabel = str('OPEN_LABEL');
-
-    switch (this.dialogType) {
-      case DialogType.SELECT_FOLDER:
-        defaultTitle = str('SELECT_FOLDER_TITLE');
-        break;
-
-      case DialogType.SELECT_UPLOAD_FOLDER:
-        defaultTitle = str('SELECT_UPLOAD_FOLDER_TITLE');
-        okLabel = str('UPLOAD_LABEL');
-        break;
-
-      case DialogType.SELECT_OPEN_FILE:
-        defaultTitle = str('SELECT_OPEN_FILE_TITLE');
-        break;
-
-      case DialogType.SELECT_OPEN_MULTI_FILE:
-        defaultTitle = str('SELECT_OPEN_MULTI_FILE_TITLE');
-        break;
-
-      case DialogType.SELECT_SAVEAS_FILE:
-        defaultTitle = str('SELECT_SAVEAS_FILE_TITLE');
-        okLabel = str('SAVE_LABEL');
-        break;
-
-      case DialogType.FULL_PAGE:
-        break;
-
-      default:
-        throw new Error('Unknown dialog type: ' + this.dialogType);
-    }
-
-    this.okButton_.textContent = okLabel;
-    this.dialogDom_.setAttribute('type', this.dialogType);
   };
 
   /**
@@ -2732,6 +2665,15 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
+   * Handle the 'rescan-completed' from the DirectoryModel.
+   * @private
+   */
+  FileManager.prototype.onRescanCompleted_ = function() {
+    this.refreshCurrentDirectoryMetadata_();
+    this.selectionHandler_.onFileSelectionChanged();
+  };
+
+  /**
    * @private
    */
   FileManager.prototype.cancelSpinnerTimeout_ = function() {
@@ -3666,6 +3608,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       }
 
       this.defaultActionMenuItem_.label = defaultItem.title;
+      this.defaultActionMenuItem_.disabled = !!defaultItem.disabled;
       this.defaultActionMenuItem_.taskId = defaultItem.taskId;
     }
 
@@ -3674,6 +3617,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.openWithCommand_.canExecuteChange();
     this.openWithCommand_.setHidden(!(defaultItem && isMultiple));
+    this.openWithCommand_.disabled = defaultItem && !!defaultItem.disabled;
+
     this.defaultActionMenuItem_.hidden = !defaultItem;
     defaultActionSeparator.hidden = !defaultItem;
   };

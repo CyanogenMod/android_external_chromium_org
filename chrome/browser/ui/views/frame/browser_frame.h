@@ -16,6 +16,7 @@ class AvatarMenuButton;
 class BrowserRootView;
 class BrowserView;
 class NativeBrowserFrame;
+class NewAvatarButton;
 class NonClientFrameView;
 class SystemMenuModelBuilder;
 
@@ -98,7 +99,10 @@ class BrowserFrame
 
   AvatarMenuButton* GetAvatarMenuButton();
 
+  NewAvatarButton* GetNewAvatarMenuButton();
+
   // Returns the menu model. BrowserFrame owns the returned model.
+  // Note that in multi user mode this will upon each call create a new model.
   ui::MenuModel* GetSystemMenuModel();
 
  private:

@@ -4,13 +4,11 @@
 
 #include "chrome/browser/ui/views/app_list/win/app_list_controller_delegate_win.h"
 
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/ui/app_list/app_list_icon_win.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/views/app_list/win/app_list_service_win.h"
-#include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "net/base/url_util.h"
@@ -60,29 +58,8 @@ void AppListControllerDelegateWin::OnCloseExtensionPrompt() {
   service_->set_can_close(true);
 }
 
-bool AppListControllerDelegateWin::CanDoCreateShortcutsFlow(
-    bool is_platform_app) {
+bool AppListControllerDelegateWin::CanDoCreateShortcutsFlow() {
   return true;
-}
-
-void AppListControllerDelegateWin::DoCreateShortcutsFlow(
-    Profile* profile,
-    const std::string& extension_id) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  DCHECK(service);
-  const extensions::Extension* extension = service->GetInstalledExtension(
-      extension_id);
-  DCHECK(extension);
-
-  gfx::NativeWindow parent_hwnd = GetAppListWindow();
-  if (!parent_hwnd)
-    return;
-  OnShowExtensionPrompt();
-  chrome::ShowCreateChromeAppShortcutsDialog(
-      parent_hwnd, profile, extension,
-      base::Bind(&AppListControllerDelegateWin::OnCloseExtensionPrompt,
-                 base::Unretained(this)));
 }
 
 void AppListControllerDelegateWin::CreateNewWindow(Profile* profile,
@@ -108,6 +85,7 @@ void AppListControllerDelegateWin::LaunchApp(
   AppListServiceImpl::RecordAppListAppLaunch();
 
   AppLaunchParams params(profile, extension, NEW_FOREGROUND_TAB);
+  params.desktop_type = chrome::HOST_DESKTOP_TYPE_NATIVE;
 
   if (source != LAUNCH_FROM_UNKNOWN &&
       extension->id() == extension_misc::kWebStoreAppId) {

@@ -981,7 +981,7 @@ bool NativeTextfieldViews::CanComposeInline() const {
   return true;
 }
 
-gfx::Rect NativeTextfieldViews::GetCaretBounds() {
+gfx::Rect NativeTextfieldViews::GetCaretBounds() const {
   // TextInputClient::GetCaretBounds is expected to return a value in screen
   // coordinates.
   gfx::Rect rect = GetRenderText()->GetUpdatedCursorBounds();
@@ -989,8 +989,9 @@ gfx::Rect NativeTextfieldViews::GetCaretBounds() {
   return rect;
 }
 
-bool NativeTextfieldViews::GetCompositionCharacterBounds(uint32 index,
-                                                         gfx::Rect* rect) {
+bool NativeTextfieldViews::GetCompositionCharacterBounds(
+    uint32 index,
+    gfx::Rect* rect) const {
   DCHECK(rect);
   if (!HasCompositionText())
     return false;
@@ -1019,11 +1020,11 @@ bool NativeTextfieldViews::GetCompositionCharacterBounds(uint32 index,
   return true;
 }
 
-bool NativeTextfieldViews::HasCompositionText() {
+bool NativeTextfieldViews::HasCompositionText() const {
   return model_->HasCompositionText();
 }
 
-bool NativeTextfieldViews::GetTextRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetTextRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1031,7 +1032,7 @@ bool NativeTextfieldViews::GetTextRange(gfx::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
 
@@ -1039,7 +1040,7 @@ bool NativeTextfieldViews::GetCompositionTextRange(gfx::Range* range) {
   return true;
 }
 
-bool NativeTextfieldViews::GetSelectionRange(gfx::Range* range) {
+bool NativeTextfieldViews::GetSelectionRange(gfx::Range* range) const {
   if (!ImeEditingAllowed())
     return false;
   *range = GetSelectedRange();
@@ -1072,7 +1073,7 @@ bool NativeTextfieldViews::DeleteRange(const gfx::Range& range) {
 
 bool NativeTextfieldViews::GetTextFromRange(
     const gfx::Range& range,
-    string16* text) {
+    string16* text) const {
   if (!ImeEditingAllowed() || !range.IsValid())
     return false;
 
@@ -1170,9 +1171,9 @@ void NativeTextfieldViews::PaintTextAndCursor(gfx::Canvas* canvas) {
 
   // Draw placeholder text if needed.
   if (model_->GetText().empty() &&
-      !textfield_->placeholder_text().empty()) {
+      !textfield_->GetPlaceholderText().empty()) {
     canvas->DrawStringInt(
-        textfield_->placeholder_text(),
+        textfield_->GetPlaceholderText(),
         GetRenderText()->GetPrimaryFont(),
         textfield_->placeholder_text_color(),
         GetRenderText()->display_rect());

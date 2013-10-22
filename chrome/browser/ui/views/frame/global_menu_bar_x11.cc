@@ -127,8 +127,7 @@ const int MENU_SEPARATOR =-1;
 const int MENU_END = -2;
 const int MENU_DISABLED_ID = -3;
 
-// These tag values are used to refer to menu itesm.
-const int TAG_NORMAL = 0;
+// These tag values are used to refer to menu items.
 const int TAG_MOST_VISITED = 1;
 const int TAG_RECENTLY_CLOSED = 2;
 const int TAG_MOST_VISITED_HEADER = 3;
@@ -228,6 +227,7 @@ GlobalMenuBarCommand tools_menu[] = {
   { IDS_VIEW_SOURCE, IDC_VIEW_SOURCE },
   { IDS_DEV_TOOLS, IDC_DEV_TOOLS },
   { IDS_DEV_TOOLS_CONSOLE, IDC_DEV_TOOLS_CONSOLE },
+  { IDS_DEV_TOOLS_DEVICES, IDC_DEV_TOOLS_DEVICES },
 
   { MENU_END, MENU_END }
 };

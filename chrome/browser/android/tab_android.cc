@@ -135,7 +135,6 @@ TabAndroid* TabAndroid::GetNativeTab(JNIEnv* env, jobject obj) {
 TabAndroid::TabAndroid(JNIEnv* env, jobject obj)
     : weak_java_tab_(env, obj),
       session_tab_id_(),
-      android_tab_id_(-1),
       synced_tab_delegate_(new browser_sync::SyncedTabDelegateAndroid(this)) {
   Java_TabBase_setNativePtr(env, obj, reinterpret_cast<jint>(this));
 }
@@ -147,6 +146,40 @@ TabAndroid::~TabAndroid() {
     return;
 
   Java_TabBase_clearNativePtr(env, obj.obj());
+}
+
+int TabAndroid::GetAndroidId() const {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
+  if (obj.is_null())
+    return -1;
+  return Java_TabBase_getId(env, obj.obj());
+}
+
+string16 TabAndroid::GetTitle() const {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
+  if (obj.is_null())
+    return string16();
+  return base::android::ConvertJavaStringToUTF16(
+      Java_TabBase_getTitle(env, obj.obj()));
+}
+
+GURL TabAndroid::GetURL() const {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
+  if (obj.is_null())
+    return GURL::EmptyGURL();
+  return GURL(base::android::ConvertJavaStringToUTF8(
+      Java_TabBase_getUrl(env, obj.obj())));
+}
+
+bool TabAndroid::RestoreIfNeeded() {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_tab_.get(env);
+  if (obj.is_null())
+    return false;
+  return Java_TabBase_restoreIfNeeded(env, obj.obj());
 }
 
 content::ContentViewCore* TabAndroid::GetContentViewCore() const {
@@ -224,12 +257,9 @@ void TabAndroid::Observe(int type,
 
 void TabAndroid::InitWebContents(JNIEnv* env,
                                  jobject obj,
-                                 jint tab_id,
                                  jboolean incognito,
                                  jobject jcontent_view_core,
                                  jobject jweb_contents_delegate) {
-  android_tab_id_ = tab_id;
-
   content::ContentViewCore* content_view_core =
       content::ContentViewCore::GetNativeContentViewCore(env,
                                                          jcontent_view_core);

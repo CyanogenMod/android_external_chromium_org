@@ -106,9 +106,13 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    cache_->StoreOnUIThread(
-        id, md5, source_path,
-        FileCache::FILE_OPERATION_COPY,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::Store,
+                   base::Unretained(cache_.get()),
+                   id, md5, source_path,
+                   FileCache::FILE_OPERATION_COPY),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
 
@@ -125,8 +129,12 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_error_ = expected_error;
 
     FileError error = FILE_ERROR_OK;
-    cache_->RemoveOnUIThread(
-        id,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::Remove,
+                   base::Unretained(cache_.get()),
+                   id),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
     VerifyRemoveFromCache(error, id);
@@ -179,8 +187,12 @@ class FileCacheTestOnUIThread : public testing::Test {
     expected_cache_state_ = expected_cache_state;
 
     FileError error = FILE_ERROR_OK;
-    cache_->MarkDirtyOnUIThread(
-        id,
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::MarkDirty,
+                   base::Unretained(cache_.get()),
+                   id),
         google_apis::test_util::CreateCopyResultCallback(&error));
     test_util::RunBlockingPoolTask();
 
@@ -310,9 +322,14 @@ class FileCacheTestOnUIThread : public testing::Test {
   bool GetCacheEntryFromOriginThread(const std::string& id,
                                      FileCacheEntry* cache_entry) {
     bool result = false;
-    cache_->GetCacheEntryOnUIThread(
-        id,
-        google_apis::test_util::CreateCopyResultCallback(&result, cache_entry));
+    base::PostTaskAndReplyWithResult(
+        blocking_task_runner_,
+        FROM_HERE,
+        base::Bind(&internal::FileCache::GetCacheEntry,
+                   base::Unretained(cache_.get()),
+                   id,
+                   cache_entry),
+        google_apis::test_util::CreateCopyResultCallback(&result));
     test_util::RunBlockingPoolTask();
     return result;
   }
@@ -721,8 +738,8 @@ class FileCacheTest : public testing::Test {
     ASSERT_TRUE(cache_->Initialize());
   }
 
-  static void RenameCacheFilesToNewFormat(FileCache* cache) {
-    cache->RenameCacheFilesToNewFormat();
+  static bool RenameCacheFilesToNewFormat(FileCache* cache) {
+    return cache->RenameCacheFilesToNewFormat();
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
@@ -892,7 +909,6 @@ TEST_F(FileCacheTest, CanonicalizeIDs) {
   EXPECT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(), &file));
   EXPECT_EQ(FILE_ERROR_OK,
             cache_->Store(id, md5, file, FileCache::FILE_OPERATION_COPY));
-  EXPECT_TRUE(base::PathExists(file_directory.AppendASCII(id)));
 
   // Canonicalize IDs.
   EXPECT_TRUE(cache_->CanonicalizeIDs(id_canonicalizer));
@@ -901,16 +917,15 @@ TEST_F(FileCacheTest, CanonicalizeIDs) {
   FileCacheEntry entry;
   EXPECT_FALSE(cache_->GetCacheEntry(id, &entry));
   EXPECT_TRUE(cache_->GetCacheEntry(canonicalized_id, &entry));
-  EXPECT_TRUE(base::PathExists(file_directory.AppendASCII(canonicalized_id)));
 }
 
 TEST_F(FileCacheTest, RenameCacheFilesToNewFormat) {
   const base::FilePath file_directory =
       temp_dir_.path().AppendASCII(kCacheFileDirectory);
 
-  // File with an old style "<ID>.<MD5>" name.
+  // File with an old style "<prefix>:<ID>.<MD5>" name.
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
-      file_directory.AppendASCII("id_koo.md5"), "koo"));
+      file_directory.AppendASCII("file:id_koo.md5"), "koo"));
 
   // File with multiple extensions should be removed.
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(
@@ -919,27 +934,27 @@ TEST_F(FileCacheTest, RenameCacheFilesToNewFormat) {
       file_directory.AppendASCII("id_kyu.md5"), "kyu"));
 
   // Rename and verify the result.
-  RenameCacheFilesToNewFormat(cache_.get());
+  EXPECT_TRUE(RenameCacheFilesToNewFormat(cache_.get()));
   std::string contents;
   EXPECT_TRUE(base::ReadFileToString(file_directory.AppendASCII("id_koo"),
-                                          &contents));
+                                     &contents));
   EXPECT_EQ("koo", contents);
   contents.clear();
   EXPECT_TRUE(base::ReadFileToString(file_directory.AppendASCII("id_kyu"),
-                                          &contents));
+                                     &contents));
   EXPECT_EQ("kyu", contents);
 
   // Rename again.
-  RenameCacheFilesToNewFormat(cache_.get());
+  EXPECT_TRUE(RenameCacheFilesToNewFormat(cache_.get()));
 
   // Files with new style names are not affected.
   contents.clear();
   EXPECT_TRUE(base::ReadFileToString(file_directory.AppendASCII("id_koo"),
-                                          &contents));
+                                     &contents));
   EXPECT_EQ("koo", contents);
   contents.clear();
   EXPECT_TRUE(base::ReadFileToString(file_directory.AppendASCII("id_kyu"),
-                                          &contents));
+                                     &contents));
   EXPECT_EQ("kyu", contents);
 }
 

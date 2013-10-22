@@ -27,6 +27,9 @@
 
 class CommandLine;
 
+namespace app_list {
+class AppListView;
+}
 namespace aura {
 class EventFilter;
 class RootWindow;
@@ -78,6 +81,7 @@ class AutoclickController;
 class CapsLockDelegate;
 class DesktopBackgroundController;
 class DisplayController;
+class FirstRunHelper;
 class HighContrastController;
 class Launcher;
 class LauncherDelegate;
@@ -234,6 +238,9 @@ class ASH_EXPORT Shell
   // Returns app list window or NULL if it is not visible.
   aura::Window* GetAppListWindow();
 
+  // Returns app list view or NULL if it is not visible.
+  app_list::AppListView* GetAppListView();
+
   // Returns true if a system-modal dialog window is currently open.
   bool IsSystemModalWindowOpen() const;
 
@@ -274,7 +281,7 @@ class ASH_EXPORT Shell
   // Initializes |launcher_|.  Does nothing if it's already initialized.
   void CreateLauncher();
 
-  // Show launcher view if it was created hidden (before session has started).
+  // Show shelf view if it was created hidden (before session has started).
   void ShowLauncher();
 
   // Adds/removes observer.
@@ -454,9 +461,6 @@ class ASH_EXPORT Shell
     browser_context_ = browser_context;
   }
 
-  // Initializes the root window to be used for a secondary display.
-  void InitRootWindowForSecondaryDisplay(aura::RootWindow* root);
-
   // Starts the animation that occurs on first login.
   void DoInitialWorkspaceAnimation();
 
@@ -499,6 +503,12 @@ class ASH_EXPORT Shell
     return is_touch_hud_projection_enabled_;
   }
 
+#if defined(OS_CHROMEOS)
+  // Creates instance of FirstRunHelper. Caller is responsible for deleting
+  // returned object.
+  ash::FirstRunHelper* CreateFirstRunHelper();
+#endif  // defined(OS_CHROMEOS)
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtendedDesktopTest, TestCursor);
   FRIEND_TEST_ALL_PREFIXES(WindowManagerTest, MouseEventCursors);
@@ -519,11 +529,8 @@ class ASH_EXPORT Shell
   // Initializes virtual keyboard controller and attaches it to |root|.
   void InitKeyboard(internal::RootWindowController* root);
 
-  // Initializes the root window and root window controller so that it
-  // can host browser windows. |first_run_after_boot| is true for the
-  // primary display only first time after boot.
-  void InitRootWindowController(internal::RootWindowController* root,
-                                bool first_run_after_boot);
+  // Initializes the root window so that it can host browser windows.
+  void InitRootWindow(aura::RootWindow* root_window);
 
   // ash::internal::SystemModalContainerEventFilterDelegate overrides:
   virtual bool CanWindowReceiveEvents(aura::Window* window) OVERRIDE;

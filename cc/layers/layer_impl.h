@@ -59,6 +59,10 @@ enum DrawMode {
 
 class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
  public:
+  typedef LayerImplList RenderSurfaceListType;
+  typedef LayerImplList LayerListType;
+  typedef RenderSurfaceImpl RenderSurfaceType;
+
   static scoped_ptr<LayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new LayerImpl(tree_impl, id));
   }
@@ -267,10 +271,10 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   void CreateRenderSurface();
   void ClearRenderSurface();
 
-  DrawProperties<LayerImpl, RenderSurfaceImpl>& draw_properties() {
+  DrawProperties<LayerImpl>& draw_properties() {
     return draw_properties_;
   }
-  const DrawProperties<LayerImpl, RenderSurfaceImpl>& draw_properties() const {
+  const DrawProperties<LayerImpl>& draw_properties() const {
     return draw_properties_;
   }
 
@@ -369,6 +373,13 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   void SetScrollable(bool scrollable) { scrollable_ = scrollable; }
   bool scrollable() const { return scrollable_; }
+
+  void set_user_scrollable_horizontal(bool scrollable) {
+    user_scrollable_horizontal_ = scrollable;
+  }
+  void set_user_scrollable_vertical(bool scrollable) {
+    user_scrollable_vertical_ = scrollable;
+  }
 
   void ApplySentScrollDeltasFromAbortedCommit();
   void ApplyScrollDeltasSinceBeginFrame();
@@ -540,6 +551,8 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
   bool scrollable_;
   bool should_scroll_on_main_thread_;
   bool have_wheel_event_handlers_;
+  bool user_scrollable_horizontal_;
+  bool user_scrollable_vertical_;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   SkColor background_color_;
@@ -613,7 +626,7 @@ class CC_EXPORT LayerImpl : LayerAnimationValueObserver {
 
   // Group of properties that need to be computed based on the layer tree
   // hierarchy before layers can be drawn.
-  DrawProperties<LayerImpl, RenderSurfaceImpl> draw_properties_;
+  DrawProperties<LayerImpl> draw_properties_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);
 };

@@ -192,13 +192,17 @@ class BrowserView : public BrowserWindow,
   // incognito.
   bool IsOffTheRecord() const;
 
-  // Returns the resource ID to use for the OTR icon, which depends on
-  // which layout is being shown and whether we are full-screen.
-  int GetOTRIconResourceID() const;
-
   // Returns true if the profile associated with this Browser window is
   // a guest session.
   bool IsGuestSession() const;
+
+  // Returns true if the profile associated with this Browser window is
+  // not off the record or a guest session.
+  bool IsRegularOrGuestSession() const;
+
+  // Returns the resource ID to use for the OTR icon, which depends on
+  // which layout is being shown and whether we are full-screen.
+  int GetOTRIconResourceID() const;
 
   // Returns the resource ID to use for the Guest icon, which may depend on
   // which layout is being shown and whether we are full-screen.
@@ -350,8 +354,6 @@ class BrowserView : public BrowserWindow,
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void ShowCreateChromeAppShortcutsDialog(
-      Profile*, const extensions::Extension* app) OVERRIDE;
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;

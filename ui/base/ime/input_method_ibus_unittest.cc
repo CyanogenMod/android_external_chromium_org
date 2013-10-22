@@ -16,7 +16,6 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/ibus/ibus_text.h"
 #include "chromeos/dbus/ibus/mock_ibus_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #include "chromeos/ime/ibus_bridge.h"
 #include "chromeos/ime/mock_ime_candidate_window_handler.h"
 #include "chromeos/ime/mock_ime_engine_handler.h"
@@ -28,16 +27,12 @@
 
 namespace ui {
 namespace {
-const int kCreateInputContextMaxTrialCount = 10;
 const uint32 kTestIBusKeyVal1 = 97;
 const uint32 kTestIBusKeyVal2 = 30;
-const uint32 kTestIBusKeyVal3 = 0;
 const uint32 kTestIBusKeyCode1 = 98;
 const uint32 kTestIBusKeyCode2 = 48;
-const uint32 kTestIBusKeyCode3 = 1;
 const uint32 kTestIBusState1 = 99;
 const uint32 kTestIBusState2 = 46;
-const uint32 kTestIBusState3 = 8;
 
 typedef chromeos::IBusEngineHandlerInterface::KeyEventDoneCallback
     KeyEventCallback;
@@ -371,30 +366,33 @@ class InputMethodIBusTest : public internal::InputMethodDelegate,
   virtual bool CanComposeInline() const OVERRIDE {
     return can_compose_inline_;
   }
-  virtual gfx::Rect GetCaretBounds() OVERRIDE {
+  virtual gfx::Rect GetCaretBounds() const OVERRIDE {
     return caret_bounds_;
   }
   virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) OVERRIDE {
+                                             gfx::Rect* rect) const OVERRIDE {
     return false;
   }
-  virtual bool HasCompositionText() OVERRIDE {
+  virtual bool HasCompositionText() const OVERRIDE {
     CompositionText empty;
     return composition_text_ != empty;
   }
-  virtual bool GetTextRange(gfx::Range* range) OVERRIDE {
+  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE {
     *range = text_range_;
     return true;
   }
-  virtual bool GetCompositionTextRange(gfx::Range* range) OVERRIDE { return false; }
-  virtual bool GetSelectionRange(gfx::Range* range) OVERRIDE {
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE {
+    return false;
+  }
+  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE {
     *range = selection_range_;
     return true;
   }
 
   virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE { return false; }
   virtual bool DeleteRange(const gfx::Range& range) OVERRIDE { return false; }
-  virtual bool GetTextFromRange(const gfx::Range& range, string16* text) OVERRIDE {
+  virtual bool GetTextFromRange(const gfx::Range& range,
+                                string16* text) const OVERRIDE {
     *text = surrounding_text_.substr(range.GetMin(), range.length());
     return true;
   }

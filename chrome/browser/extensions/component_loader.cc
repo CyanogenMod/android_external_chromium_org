@@ -435,12 +435,18 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 #endif
   }
 
+  // If (!enable_background_extensions_during_testing || this isn't a test)
+  //   install_feedback = false;
+  bool install_feedback = enable_background_extensions_during_testing;
 #if defined(GOOGLE_CHROME_BUILD)
-    Add(IDR_FEEDBACK_MANIFEST, base::FilePath(FILE_PATH_LITERAL("feedback")));
+  install_feedback = true;
 #endif  // defined(GOOGLE_CHROME_BUILD)
+  if (install_feedback)
+    Add(IDR_FEEDBACK_MANIFEST, base::FilePath(FILE_PATH_LITERAL("feedback")));
 
 #if defined(OS_CHROMEOS)
-  if (!skip_session_components) {
+  if (!skip_session_components &&
+      !command_line->HasSwitch(chromeos::switches::kGuestSession)) {
     Add(IDR_WALLPAPERMANAGER_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("chromeos/wallpaper_manager")));
 
@@ -500,11 +506,13 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   std::string enable_prefix(kEnablePrefix);
   std::string field_trial_result =
       base::FieldTrialList::FindFullName(kFieldTrialName);
-  if ((field_trial_result.compare(
+  if (((field_trial_result.compare(
           0,
           enable_prefix.length(),
-          enable_prefix) == 0) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
+          enable_prefix) == 0) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGoogleNowIntegration)) ||
+       CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableGoogleNowIntegration)) {
     Add(IDR_GOOGLE_NOW_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("google_now")));

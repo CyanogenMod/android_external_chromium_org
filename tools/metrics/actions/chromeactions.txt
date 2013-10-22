@@ -446,6 +446,7 @@
 0xb685d7994214aa1f	ForwardMenu_HistoryClick9
 0xb8ea5cd4ac9a7a71	ForwardMenu_Popup
 0x87bdcab6bfd481db	ForwardMenu_ShowFullHistory
+0x78646175083b9abe	Gesture_Overview
 0x5f075ae3e1f9d038	Go
 0xab2334cdb766e7c7	GoogleNow.ButtonClicked0
 0xc06f4ecf7cf01b27	GoogleNow.ButtonClicked1
@@ -579,6 +580,7 @@
 0x883d075e3e6d670c	InsertTab
 0xb8890ced118a58f6	InsertText
 0x1342e1e52f335f69	InsertUnorderedList
+0x57267fa8e684477a	InspectDevices
 0xb7c371f7dd19c6fd	InstallSite
 0x9ee757dac968cead	InstantExtended.MostVisitedClicked
 0x3545f6127f5688ab	InstantExtended.ShowNTP
@@ -1077,6 +1079,7 @@
 0x6b52c76dc897d0ac	MinButton_Clk
 0x7b262d2127dd8256	Minimize_UsingKey
 0xfa4408343dc15b72	MixedScript_LoadAnyway_Bubble
+0x3f09ed78b409184e	MobileActionBarShown
 0x3dce569ec6ea9080	MobileBeamCallbackSuccess
 0x90e5a607c36178ce	MobileBeamInvalidAppState
 0xbc28c6539da4d688	MobileBreakpadUploadAttempt
@@ -1215,8 +1218,10 @@
 0x95c990454684cb1d	NewTabPage_ReopenTab
 0xab4d417c5ca44904	NewTab_Button
 0xbdc9ec125e7a3ade	NewWindow
+0x56e2be5803efccc1	Notifications.Mute
 0xa86d43452b05bf72	Notifications.ShowMessageCenter
 0x9a102e132f96503f	Notifications.ShowSettings
+0xd2175e238a75b56a	Notifications.Unmute
 0xa72c673a1f44d11f	OmniboxDestinationURLIsSearchOnDSP
 0x6048dbd4f2f2ca50	OmniboxDestinationURLMatchesDefaultSearchProvider
 0x268376698078c71b	OmniboxInputInProgress
@@ -1570,6 +1575,8 @@
 0x2fbe99005588ef01	StartupTick
 0x11a755d598c0c417	Stop
 0x926a51baad949d12	Strikethrough
+0x197787e3bdf50f03	SyncedNotifications.SendingServiceDisabled
+0xb789d5822bf411fe	SyncedNotifications.SendingServiceEnabled
 0xc3100ff8c8a00184	SystemBack
 0x4c211ce58592c3e6	SystemBackForNavigation
 0x4d56afb0a9837d41	TabContextMenu_BookmarkAllTabs

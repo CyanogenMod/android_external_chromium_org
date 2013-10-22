@@ -10,26 +10,24 @@
 #include "chrome/browser/chromeos/attestation/attestation_ca_client.h"
 #include "chrome/browser/chromeos/attestation/attestation_signed_data.pb.h"
 #include "chrome/browser/chromeos/attestation/platform_verification_dialog.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/attestation/attestation_flow.h"
 #include "chromeos/cryptohome/async_method_caller.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/system/statistics_provider.h"
 #include "components/user_prefs/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 
 namespace {
-// A switch which allows consent to be given on the command line.
-// TODO(dkrahn): Remove this when UI has been implemented (crbug.com/270908).
-const char kAutoApproveSwitch[] =
-    "auto-approve-platform-verification-consent-prompts";
 
 // A callback method to handle DBus errors.
 void DBusCallback(const base::Callback<void(bool)>& on_success,
@@ -67,12 +65,7 @@ class DefaultDelegate : public PlatformVerificationFlow::Delegate {
       content::WebContents* web_contents,
       const PlatformVerificationFlow::Delegate::ConsentCallback& callback)
       OVERRIDE {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(kAutoApproveSwitch)) {
-      LOG(WARNING) << "PlatformVerificationFlow: Automatic approval enabled.";
-      callback.Run(PlatformVerificationFlow::CONSENT_RESPONSE_ALLOW);
-    } else {
-      PlatformVerificationDialog::ShowDialog(web_contents, callback);
-    }
+    PlatformVerificationDialog::ShowDialog(web_contents, callback);
   }
 
  private:
@@ -84,7 +77,6 @@ PlatformVerificationFlow::PlatformVerificationFlow()
       async_caller_(cryptohome::AsyncMethodCaller::GetInstance()),
       cryptohome_client_(DBusThreadManager::Get()->GetCryptohomeClient()),
       user_manager_(UserManager::Get()),
-      statistics_provider_(system::StatisticsProvider::GetInstance()),
       delegate_(NULL),
       testing_prefs_(NULL),
       weak_factory_(this) {
@@ -104,13 +96,11 @@ PlatformVerificationFlow::PlatformVerificationFlow(
     cryptohome::AsyncMethodCaller* async_caller,
     CryptohomeClient* cryptohome_client,
     UserManager* user_manager,
-    system::StatisticsProvider* statistics_provider,
     Delegate* delegate)
     : attestation_flow_(attestation_flow),
       async_caller_(async_caller),
       cryptohome_client_(cryptohome_client),
       user_manager_(user_manager),
-      statistics_provider_(statistics_provider),
       delegate_(delegate),
       testing_prefs_(NULL),
       weak_factory_(this) {
@@ -141,28 +131,6 @@ void PlatformVerificationFlow::ChallengePlatformKey(
                  callback),
       base::Bind(&ReportError, callback, INTERNAL_ERROR));
   cryptohome_client_->TpmAttestationIsEnrolled(dbus_callback);
-}
-
-void PlatformVerificationFlow::CheckPlatformState(
-    const base::Callback<void(bool result)>& callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  std::string stat_value;
-  if (!statistics_provider_->GetMachineStatistic(system::kDevSwitchBootMode,
-                                                 &stat_value)) {
-    LOG(ERROR) << __func__ << ": Failed to get boot mode statistic.";
-    callback.Run(false);
-    return;
-  }
-  if (stat_value != "0") {
-    LOG(INFO) << __func__ << ": Statistic indicates developer mode.";
-    callback.Run(false);
-    return;
-  }
-  BoolDBusMethodCallback dbus_callback = base::Bind(
-      &DBusCallback,
-      callback,
-      base::Bind(callback, false));
-  cryptohome_client_->TpmAttestationIsPrepared(dbus_callback);
 }
 
 void PlatformVerificationFlow::CheckConsent(content::WebContents* web_contents,
@@ -238,21 +206,29 @@ void PlatformVerificationFlow::OnConsentResponse(
 
   // At this point all user interaction is complete and we can proceed with the
   // certificate request.
+  chromeos::User* user = GetUser(web_contents);
+  if (!user) {
+    ReportError(callback, INTERNAL_ERROR);
+    LOG(ERROR) << "Profile does not map to a valid user.";
+    return;
+  }
   AttestationFlow::CertificateCallback certificate_callback = base::Bind(
       &PlatformVerificationFlow::OnCertificateReady,
       weak_factory_.GetWeakPtr(),
+      user->email(),
       service_id,
       challenge,
       callback);
   attestation_flow_->GetCertificate(
       PROFILE_CONTENT_PROTECTION_CERTIFICATE,
-      user_manager_->GetActiveUser()->email(),
+      user->email(),
       service_id,
       false,  // Don't force a new key.
       certificate_callback);
 }
 
 void PlatformVerificationFlow::OnCertificateReady(
+    const std::string& user_id,
     const std::string& service_id,
     const std::string& challenge,
     const ChallengeCallback& callback,
@@ -272,6 +248,7 @@ void PlatformVerificationFlow::OnCertificateReady(
   std::string key_name = kContentProtectionKeyPrefix;
   key_name += service_id;
   async_caller_->TpmAttestationSignSimpleChallenge(KEY_USER,
+                                                   user_id,
                                                    key_name,
                                                    challenge,
                                                    cryptohome_callback);
@@ -313,6 +290,13 @@ const GURL& PlatformVerificationFlow::GetURL(
   if (!testing_url_.is_empty())
     return testing_url_;
   return web_contents->GetLastCommittedURL();
+}
+
+User* PlatformVerificationFlow::GetUser(content::WebContents* web_contents) {
+  if (!web_contents)
+    return user_manager_->GetActiveUser();
+  return user_manager_->GetUserByProfile(
+      Profile::FromBrowserContext(web_contents->GetBrowserContext()));
 }
 
 bool PlatformVerificationFlow::IsAttestationEnabled(

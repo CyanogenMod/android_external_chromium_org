@@ -16,6 +16,7 @@
 #include "chrome/browser/chromeos/drive/drive.pb.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chromeos/chromeos_constants.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -69,16 +70,6 @@ void RunGetFileFromCacheCallback(const GetFileFromCacheCallback& callback,
   callback.Run(error, *file_path);
 }
 
-// Runs callback with pointers dereferenced.
-// Used to implement GetCacheEntry().
-void RunGetCacheEntryCallback(const GetCacheEntryCallback& callback,
-                              FileCacheEntry* cache_entry,
-                              bool success) {
-  DCHECK(cache_entry);
-  DCHECK(!callback.is_null());
-  callback.Run(success, *cache_entry);
-}
-
 }  // namespace
 
 FileCache::FileCache(ResourceMetadataStorage* storage,
@@ -112,23 +103,6 @@ void FileCache::AssertOnSequencedWorkerPool() {
 
 bool FileCache::IsUnderFileCacheDirectory(const base::FilePath& path) const {
   return cache_file_directory_.IsParent(path);
-}
-
-void FileCache::GetCacheEntryOnUIThread(const std::string& id,
-                                        const GetCacheEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  FileCacheEntry* cache_entry = new FileCacheEntry;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&FileCache::GetCacheEntry,
-                 base::Unretained(this),
-                 id,
-                 cache_entry),
-      base::Bind(
-          &RunGetCacheEntryCallback, callback, base::Owned(cache_entry)));
 }
 
 bool FileCache::GetCacheEntry(const std::string& id, FileCacheEntry* entry) {
@@ -192,25 +166,6 @@ FileError FileCache::GetFile(const std::string& id,
 
   *cache_file_path = GetCacheFilePath(id);
   return FILE_ERROR_OK;
-}
-
-void FileCache::StoreOnUIThread(const std::string& id,
-                                const std::string& md5,
-                                const base::FilePath& source_path,
-                                FileOperationType file_operation_type,
-                                const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::PostTaskAndReplyWithResult(blocking_task_runner_.get(),
-                                   FROM_HERE,
-                                   base::Bind(&FileCache::Store,
-                                              base::Unretained(this),
-                                              id,
-                                              md5,
-                                              source_path,
-                                              file_operation_type),
-                                   callback);
 }
 
 FileError FileCache::Store(const std::string& id,
@@ -341,18 +296,6 @@ void FileCache::MarkAsUnmountedOnUIThread(
       callback);
 }
 
-void FileCache::MarkDirtyOnUIThread(const std::string& id,
-                                    const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&FileCache::MarkDirty, base::Unretained(this), id),
-      callback);
-}
-
 FileError FileCache::MarkDirty(const std::string& id) {
   AssertOnSequencedWorkerPool();
 
@@ -397,18 +340,6 @@ FileError FileCache::ClearDirty(const std::string& id, const std::string& md5) {
   cache_entry.set_is_dirty(false);
   return storage_->PutCacheEntry(id, cache_entry) ?
       FILE_ERROR_OK : FILE_ERROR_FAILED;
-}
-
-void FileCache::RemoveOnUIThread(const std::string& id,
-                                 const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&FileCache::Remove, base::Unretained(this), id),
-      callback);
 }
 
 FileError FileCache::Remove(const std::string& id) {
@@ -461,7 +392,8 @@ bool FileCache::ClearAll() {
 bool FileCache::Initialize() {
   AssertOnSequencedWorkerPool();
 
-  RenameCacheFilesToNewFormat();
+  if (!RenameCacheFilesToNewFormat())
+    return false;
 
   if (storage_->cache_file_scan_is_needed()) {
     CacheMap cache_map;
@@ -494,11 +426,8 @@ bool FileCache::CanonicalizeIDs(
   for (; !it->IsAtEnd(); it->Advance()) {
     const std::string id_canonicalized = id_canonicalizer.Run(it->GetID());
     if (id_canonicalized != it->GetID()) {
-      // Replace the existing entry and rename the file when needed.
-      const base::FilePath path_old = GetCacheFilePath(it->GetID());
-      const base::FilePath path_new = GetCacheFilePath(id_canonicalized);
+      // Replace the existing entry.
       if (!storage_->RemoveCacheEntry(it->GetID()) ||
-          (base::PathExists(path_old) && !base::Move(path_old, path_new)) ||
           !storage_->PutCacheEntry(id_canonicalized, it->GetValue()))
         return false;
     }
@@ -595,27 +524,25 @@ bool FileCache::HasEnoughSpaceFor(int64 num_bytes,
   return (free_space >= num_bytes);
 }
 
-void FileCache::RenameCacheFilesToNewFormat() {
-  // First, remove all files with multiple extensions just in case.
-  {
-    base::FileEnumerator enumerator(cache_file_directory_,
-                                    false,  // not recursive
-                                    base::FileEnumerator::FILES,
-                                    "*.*.*");
-    for (base::FilePath current = enumerator.Next(); !current.empty();
-         current = enumerator.Next())
-      base::DeleteFile(current, false /* recursive */);
+bool FileCache::RenameCacheFilesToNewFormat() {
+  base::FileEnumerator enumerator(cache_file_directory_,
+                                  false,  // not recursive
+                                  base::FileEnumerator::FILES);
+  for (base::FilePath current = enumerator.Next(); !current.empty();
+       current = enumerator.Next()) {
+    base::FilePath new_path = current.RemoveExtension();
+    if (!new_path.Extension().empty()) {
+      // Delete files with multiple extensions.
+      if (!base::DeleteFile(current, false /* recursive */))
+        return false;
+      continue;
+    }
+    const std::string& id = GetIdFromPath(new_path);
+    new_path = GetCacheFilePath(util::CanonicalizeResourceId(id));
+    if (new_path != current && !base::Move(current, new_path))
+      return false;
   }
-
-  // Rename files.
-  {
-    base::FileEnumerator enumerator(cache_file_directory_,
-                                    false,  // not recursive
-                                    base::FileEnumerator::FILES);
-    for (base::FilePath current = enumerator.Next(); !current.empty();
-         current = enumerator.Next())
-      base::Move(current, current.RemoveExtension());
-  }
+  return true;
 }
 
 }  // namespace internal

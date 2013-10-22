@@ -109,8 +109,6 @@ class ClientMapEntryUpdater : public content::WebContentsObserver {
                         jobject jdelegate);
 
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) OVERRIDE;
   virtual void RenderViewDeleted(RenderViewHost* render_view_host) OVERRIDE;
   virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
 
@@ -138,18 +136,11 @@ void ClientMapEntryUpdater::RenderViewCreated(RenderViewHost* rvh) {
       GetRenderViewHostIdPair(rvh), client_data);
 }
 
-void ClientMapEntryUpdater::RenderViewForInterstitialPageCreated(
-    RenderViewHost* rvh) {
-  RenderViewCreated(rvh);
-}
-
 void ClientMapEntryUpdater::RenderViewDeleted(RenderViewHost* rvh) {
   RvhToIoThreadClientMap::GetInstance()->Erase(GetRenderViewHostIdPair(rvh));
 }
 
 void ClientMapEntryUpdater::WebContentsDestroyed(WebContents* web_contents) {
-  if (web_contents->GetRenderViewHost())
-    RenderViewDeleted(web_contents->GetRenderViewHost());
   delete this;
 }
 

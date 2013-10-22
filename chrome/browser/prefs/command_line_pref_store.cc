@@ -70,8 +70,6 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
       { chromeos::switches::kEnableTouchpadThreeFingerClick,
           prefs::kEnableTouchpadThreeFingerClick, true },
 #endif
-      { switches::kDisableCloudPolicyOnSignin,
-          prefs::kDisableCloudPolicyOnSignin, true },
       { switches::kDisableAsyncDns, prefs::kBuiltInDnsClientEnabled, false },
       { switches::kEnableAsyncDns, prefs::kBuiltInDnsClientEnabled, true },
 };

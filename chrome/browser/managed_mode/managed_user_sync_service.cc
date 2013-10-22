@@ -36,7 +36,11 @@ using sync_pb::ManagedUserSpecifics;
 
 namespace {
 
+#if defined(OS_CHROMEOS)
+const char kChromeOSAvatarPrefix[] = "chromeos-avatar-index:";
+#else
 const char kChromeAvatarPrefix[] = "chrome-avatar-index:";
+#endif
 
 SyncData CreateLocalSyncData(const std::string& id,
                              const std::string& name,
@@ -120,10 +124,14 @@ bool ManagedUserSyncService::GetAvatarIndex(const std::string& avatar_str,
     *avatar_index = kNoAvatar;
     return true;
   }
-
-  size_t prefix_len = strlen(kChromeAvatarPrefix);
+#if defined(OS_CHROMEOS)
+  const char* prefix = kChromeOSAvatarPrefix;
+#else
+  const char* prefix = kChromeAvatarPrefix;
+#endif
+  size_t prefix_len = strlen(prefix);
   if (avatar_str.size() <= prefix_len ||
-      avatar_str.substr(0, prefix_len) != kChromeAvatarPrefix) {
+      avatar_str.substr(0, prefix_len) != prefix) {
     return false;
   }
 
@@ -132,7 +140,12 @@ bool ManagedUserSyncService::GetAvatarIndex(const std::string& avatar_str,
 
 // static
 std::string ManagedUserSyncService::BuildAvatarString(int avatar_index) {
-  return base::StringPrintf("%s%d", kChromeAvatarPrefix, avatar_index);
+#if defined(OS_CHROMEOS)
+  const char* prefix = kChromeOSAvatarPrefix;
+#else
+  const char* prefix = kChromeAvatarPrefix;
+#endif
+  return base::StringPrintf("%s%d", prefix, avatar_index);
 }
 
 void ManagedUserSyncService::AddObserver(
@@ -155,19 +168,14 @@ void ManagedUserSyncService::AddManagedUser(const std::string& id,
   value->SetString(kName, name);
   value->SetString(kMasterKey, master_key);
   std::string chrome_avatar;
-#if defined(CHROME_OS)
-  // This is a dummy value that is passed when a supervised user is created on
-  // Chrome OS.
-  // TODO(ibraaaa): update this to use the correct avatar index
-  // once avatar syncing for supervised users is implemented on Chrome OS.
-  DCHECK_EQ(avatar_index, -111);
+  std::string chromeos_avatar;
+#if defined(OS_CHROMEOS)
+  chromeos_avatar = BuildAvatarString(avatar_index);
 #else
   chrome_avatar = BuildAvatarString(avatar_index);
 #endif
   value->SetString(kChromeAvatar, chrome_avatar);
-  // TODO(ibraaaa): this should be updated to allow supervised
-  // users avatar syncing on Chrome OS.
-  value->SetString(kChromeOsAvatar, std::string());
+  value->SetString(kChromeOsAvatar, chromeos_avatar);
   DCHECK(!dict->HasKey(id));
   dict->SetWithoutPathExpansion(id, value);
 
@@ -180,7 +188,7 @@ void ManagedUserSyncService::AddManagedUser(const std::string& id,
       FROM_HERE,
       SyncChange::ACTION_ADD,
       CreateLocalSyncData(id, name, false, master_key,
-                          chrome_avatar, std::string())));
+                          chrome_avatar, chromeos_avatar)));
   SyncError error =
       sync_processor_->ProcessSyncChanges(FROM_HERE, change_list);
   DCHECK(!error.IsSet()) << error.ToString();

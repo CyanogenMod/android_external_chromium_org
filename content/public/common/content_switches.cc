@@ -90,6 +90,10 @@ const char kDisableAcceleratedLayers[]      = "disable-accelerated-layers";
 const char kDisableAcceleratedOverflowScroll[] =
     "disable-accelerated-overflow-scroll";
 
+// Disable accelerated compositing for scrollable frames.
+const char kDisableAcceleratedScrollableFrames[] =
+     "disable-accelerated-scrollable-frames";
+
 // Disables the hardware acceleration of plugins.
 const char kDisableAcceleratedPlugins[]     = "disable-accelerated-plugins";
 
@@ -117,6 +121,10 @@ const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 // Enables browser plugin compositing experiment.
 const char kDisableBrowserPluginCompositing[] =
     "disable-browser-plugin-compositing";
+
+// Disable accelerated scrolling by the compositor for frames.
+const char kDisableCompositedScrollingForFrames[] =
+     "disable-composited-scrolling-for-frames";
 
 // See comment for kEnableCompositingForFixedPosition.
 const char kDisableCompositingForFixedPosition[] =
@@ -146,6 +154,11 @@ const char kDisableDeviceOrientation[]      = "disable-device-orientation";
 
 // Handles URL requests by NPAPI plugins through the renderer.
 const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
+
+// Disable the per-domain blocking for 3D APIs after GPU reset.
+// This switch is intended only for tests.
+extern const char kDisableDomainBlockingFor3DAPIs[] =
+    "disable-domain-blocking-for-3d-apis";
 
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
@@ -280,6 +293,11 @@ const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
 // Disables the threaded HTML parser in Blink
 const char kDisableThreadedHTMLParser[]     = "disable-threaded-html-parser";
+
+// Disable accelerated overflow scrolling in corner cases (that would not be
+// handled by enable-accelerated-overflow-scroll).
+const char kDisableUniversalAcceleratedOverflowScroll[] =
+    "disable-universal-accelerated-overflow-scroll";
 
 // Disable web audio API.
 const char kDisableWebAudio[]               = "disable-webaudio";
@@ -529,6 +547,10 @@ const char kEnableTextServicesFramework[]   = "enable-text-services-framework";
 
 // Enable multithreaded GPU compositing of web content.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
+
+// Enable accelerated overflow scrolling in all cases.
+const char kEnableUniversalAcceleratedOverflowScroll[] =
+    "enable-universal-accelerated-overflow-scroll";
 
 // Enable screen capturing support for MediaStream API.
 const char kEnableUserMediaScreenCapturing[] =

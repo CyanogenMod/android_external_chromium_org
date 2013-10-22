@@ -295,6 +295,7 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/gpu/GrAddPathRenderers_default.cpp \
 	third_party/skia/src/gpu/GrAllocPool.cpp \
 	third_party/skia/src/gpu/GrAtlas.cpp \
+	third_party/skia/src/gpu/GrBitmapTextContext.cpp \
 	third_party/skia/src/gpu/GrBlend.cpp \
 	third_party/skia/src/gpu/GrBufferAllocPool.cpp \
 	third_party/skia/src/gpu/GrCacheID.cpp \
@@ -435,6 +436,7 @@ MY_DEFS_Debug := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
@@ -455,9 +457,6 @@ MY_DEFS_Debug := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Debug := \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \
@@ -468,11 +467,14 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/src/opts \
 	$(LOCAL_PATH)/third_party/skia/src/image \
 	$(LOCAL_PATH)/third_party/skia/src/ports \
 	$(LOCAL_PATH)/third_party/skia/src/sfnt \
 	$(LOCAL_PATH)/third_party/skia/src/utils \
 	$(LOCAL_PATH)/third_party/skia/src/lazy \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/gpu \
 	$(LOCAL_PATH)/third_party/expat/files/lib \
@@ -555,6 +557,7 @@ MY_DEFS_Release := \
 	'-DSK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0' \
 	'-DSK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK' \
 	'-DIGNORE_ROT_AA_RECT_OPT' \
+	'-DSK_IGNORE_QUAD_RR_CORNERS_OPT' \
 	'-DSKIA_IGNORE_GPU_MIPMAPS' \
 	'-DSK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS' \
 	'-DSK_DEFAULT_FONT_CACHE_LIMIT=(1*1024*1024)' \
@@ -575,9 +578,6 @@ MY_DEFS_Release := \
 
 # Include paths placed before CFLAGS/CPPFLAGS
 LOCAL_C_INCLUDES_Release := \
-	$(LOCAL_PATH) \
-	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/images \
@@ -588,11 +588,14 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
 	$(LOCAL_PATH)/third_party/skia/src/core \
+	$(LOCAL_PATH)/third_party/skia/src/opts \
 	$(LOCAL_PATH)/third_party/skia/src/image \
 	$(LOCAL_PATH)/third_party/skia/src/ports \
 	$(LOCAL_PATH)/third_party/skia/src/sfnt \
 	$(LOCAL_PATH)/third_party/skia/src/utils \
 	$(LOCAL_PATH)/third_party/skia/src/lazy \
+	$(LOCAL_PATH) \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/third_party/skia/include/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/gpu \
 	$(LOCAL_PATH)/third_party/expat/files/lib \

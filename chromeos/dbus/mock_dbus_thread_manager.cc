@@ -10,16 +10,16 @@
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
 #include "chromeos/dbus/fake_bluetooth_input_client.h"
 #include "chromeos/dbus/fake_bluetooth_profile_manager_client.h"
+#include "chromeos/dbus/fake_gsm_sms_client.h"
+#include "chromeos/dbus/fake_shill_device_client.h"
+#include "chromeos/dbus/fake_shill_ipconfig_client.h"
 #include "chromeos/dbus/ibus/mock_ibus_client.h"
 #include "chromeos/dbus/ibus/mock_ibus_engine_factory_service.h"
 #include "chromeos/dbus/ibus/mock_ibus_engine_service.h"
 #include "chromeos/dbus/mock_cryptohome_client.h"
-#include "chromeos/dbus/mock_shill_device_client.h"
-#include "chromeos/dbus/mock_shill_ipconfig_client.h"
 #include "chromeos/dbus/mock_shill_manager_client.h"
 #include "chromeos/dbus/mock_shill_profile_client.h"
 #include "chromeos/dbus/mock_shill_service_client.h"
-#include "chromeos/dbus/mock_gsm_sms_client.h"
 #include "chromeos/dbus/mock_session_manager_client.h"
 #include "chromeos/dbus/power_policy_controller.h"
 
@@ -47,20 +47,20 @@ std::vector<uint8>* GetMockSystemSalt() {
 }  // namespace
 
 MockDBusThreadManager::MockDBusThreadManager()
-    : fake_bluetooth_adapter_client_(new FakeBluetoothAdapterClient()),
+    : fake_bluetooth_adapter_client_(new FakeBluetoothAdapterClient),
       fake_bluetooth_agent_manager_client_(
-          new FakeBluetoothAgentManagerClient()),
-      fake_bluetooth_device_client_(new FakeBluetoothDeviceClient()),
-      fake_bluetooth_input_client_(new FakeBluetoothInputClient()),
+          new FakeBluetoothAgentManagerClient),
+      fake_bluetooth_device_client_(new FakeBluetoothDeviceClient),
+      fake_bluetooth_input_client_(new FakeBluetoothInputClient),
       fake_bluetooth_profile_manager_client_(
-          new FakeBluetoothProfileManagerClient()),
+          new FakeBluetoothProfileManagerClient),
+      fake_gsm_sms_client_(new FakeGsmSMSClient),
+      fake_shill_device_client_(new FakeShillDeviceClient),
+      fake_shill_ipconfig_client_(new FakeShillIPConfigClient),
       mock_cryptohome_client_(new MockCryptohomeClient),
-      mock_shill_device_client_(new MockShillDeviceClient),
-      mock_shill_ipconfig_client_(new MockShillIPConfigClient),
       mock_shill_manager_client_(new MockShillManagerClient),
       mock_shill_profile_client_(new MockShillProfileClient),
       mock_shill_service_client_(new MockShillServiceClient),
-      mock_gsm_sms_client_(new MockGsmSMSClient),
       mock_session_manager_client_(new MockSessionManagerClient) {
   EXPECT_CALL(*this, GetCryptohomeClient())
       .WillRepeatedly(Return(mock_cryptohome_client()));
@@ -75,9 +75,9 @@ MockDBusThreadManager::MockDBusThreadManager()
   EXPECT_CALL(*this, GetBluetoothProfileManagerClient())
       .WillRepeatedly(Return(fake_bluetooth_profile_manager_client()));
   EXPECT_CALL(*this, GetShillDeviceClient())
-      .WillRepeatedly(Return(mock_shill_device_client()));
+      .WillRepeatedly(Return(fake_shill_device_client()));
   EXPECT_CALL(*this, GetShillIPConfigClient())
-      .WillRepeatedly(Return(mock_shill_ipconfig_client()));
+      .WillRepeatedly(Return(fake_shill_ipconfig_client()));
   EXPECT_CALL(*this, GetShillManagerClient())
       .WillRepeatedly(Return(mock_shill_manager_client()));
   EXPECT_CALL(*this, GetShillProfileClient())
@@ -85,7 +85,7 @@ MockDBusThreadManager::MockDBusThreadManager()
   EXPECT_CALL(*this, GetShillServiceClient())
       .WillRepeatedly(Return(mock_shill_service_client()));
   EXPECT_CALL(*this, GetGsmSMSClient())
-      .WillRepeatedly(Return(mock_gsm_sms_client()));
+      .WillRepeatedly(Return(fake_gsm_sms_client()));
   EXPECT_CALL(*this, GetSessionManagerClient())
       .WillRepeatedly(Return(mock_session_manager_client_.get()));
 

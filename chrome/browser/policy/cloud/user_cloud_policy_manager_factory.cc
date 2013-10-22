@@ -4,14 +4,13 @@
 
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/sequenced_task_runner.h"
 #include "chrome/browser/policy/cloud/cloud_external_data_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_store.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_switches.h"
 #include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 
 namespace policy {
@@ -29,9 +28,12 @@ UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetForProfile(
 
 // static
 scoped_ptr<UserCloudPolicyManager>
-    UserCloudPolicyManagerFactory::CreateForProfile(Profile* profile,
-                                                    bool force_immediate_load) {
-  return GetInstance()->CreateManagerForProfile(profile, force_immediate_load);
+UserCloudPolicyManagerFactory::CreateForProfile(
+    Profile* profile,
+    bool force_immediate_load,
+    scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
+  return GetInstance()->CreateManagerForProfile(
+      profile, force_immediate_load, background_task_runner);
 }
 
 UserCloudPolicyManagerFactory::UserCloudPolicyManagerFactory()
@@ -52,12 +54,10 @@ UserCloudPolicyManager* UserCloudPolicyManagerFactory::GetManagerForProfile(
 scoped_ptr<UserCloudPolicyManager>
     UserCloudPolicyManagerFactory::CreateManagerForProfile(
         Profile* profile,
-        bool force_immediate_load) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableCloudPolicyOnSignin)) {
-    return scoped_ptr<UserCloudPolicyManager>();
-  }
-  scoped_ptr<UserCloudPolicyStore> store(UserCloudPolicyStore::Create(profile));
+        bool force_immediate_load,
+        scoped_refptr<base::SequencedTaskRunner> background_task_runner) {
+  scoped_ptr<UserCloudPolicyStore> store(
+      UserCloudPolicyStore::Create(profile, background_task_runner));
   if (force_immediate_load)
     store->LoadImmediately();
   scoped_ptr<UserCloudPolicyManager> manager(

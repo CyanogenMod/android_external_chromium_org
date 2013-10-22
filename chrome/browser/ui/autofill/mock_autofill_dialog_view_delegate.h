@@ -49,23 +49,21 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_METHOD1(SuggestionStateForSection, SuggestionState(DialogSection));
   MOCK_METHOD1(EditClickedForSection, void(DialogSection section));
   MOCK_METHOD1(EditCancelledForSection, void(DialogSection section));
-  // TODO(groby): Remove this deprecated method after Mac starts using
-  // IconsForFields. http://crbug.com/292876
-  MOCK_CONST_METHOD2(IconForField,
-                     gfx::Image(ServerFieldType, const string16&));
   MOCK_CONST_METHOD1(IconsForFields, FieldIconMap(const FieldValueMap&));
   MOCK_CONST_METHOD1(FieldControlsIcons, bool(ServerFieldType));
   MOCK_CONST_METHOD1(TooltipForField, base::string16(ServerFieldType));
+  MOCK_METHOD2(InputIsEditable, bool(const DetailInput& input,
+                                     DialogSection section));
   MOCK_METHOD3(InputValidityMessage,
       string16(DialogSection, ServerFieldType, const string16&));
   MOCK_METHOD2(InputsAreValid, ValidityMessages(DialogSection,
                                                 const DetailOutputMap&));
-  MOCK_METHOD6(UserEditedOrActivatedInput,void(DialogSection,
-                                               const DetailInput*,
-                                               gfx::NativeView,
-                                               const gfx::Rect&,
-                                               const string16&,
-                                               bool was_edit));
+  MOCK_METHOD6(UserEditedOrActivatedInput, void(DialogSection,
+                                                const DetailInput*,
+                                                gfx::NativeView,
+                                                const gfx::Rect&,
+                                                const string16&,
+                                                bool was_edit));
   MOCK_METHOD1(HandleKeyPressEventInInput,
                bool(const content::NativeWebKeyboardEvent& event));
   MOCK_METHOD0(FocusMoved, void());
@@ -82,6 +80,9 @@ class MockAutofillDialogViewDelegate : public AutofillDialogViewDelegate {
   MOCK_METHOD0(OnAccept, bool());
   MOCK_METHOD0(profile, Profile*());
   MOCK_METHOD0(GetWebContents, content::WebContents*());
+
+  // Set which web contents initiated showing the dialog.
+  void SetWebContents(content::WebContents* contents);
 
  private:
   DetailInputs default_inputs_;

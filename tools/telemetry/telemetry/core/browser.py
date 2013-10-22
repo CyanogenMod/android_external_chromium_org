@@ -235,12 +235,12 @@ class Browser(object):
       raise Exception('The %s profiler is not '
                       'supported on this platform.' % profiler_name)
 
-    if not profiler_name in self._profilers_states:
-      self._profilers_states[profiler_name] = {}
+    if not profiler_class in self._profilers_states:
+      self._profilers_states[profiler_class] = {}
 
     self._active_profilers.append(
         profiler_class(self._browser_backend, self._platform_backend,
-            base_output_file, self._profilers_states[profiler_name]))
+            base_output_file, self._profilers_states[profiler_class]))
 
   def StopProfiling(self):
     """Stops all active profilers and saves their results.
@@ -276,7 +276,12 @@ class Browser(object):
 
   def Close(self):
     """Closes this browser."""
+    for profiler_class in self._profilers_states:
+      profiler_class.WillCloseBrowser(self._browser_backend,
+                                      self._platform_backend)
+
     self._platform.SetFullPerformanceModeEnabled(False)
+
     if self._wpr_server:
       self._wpr_server.Close()
       self._wpr_server = None
@@ -297,6 +302,16 @@ class Browser(object):
     if isinstance(paths, basestring):
       paths = set([paths])
     paths = set(os.path.realpath(p) for p in paths)
+
+    # If any path is in a subdirectory of another, remove the subdirectory.
+    duplicates = set()
+    for parent_path in paths:
+      for sub_path in paths:
+        if parent_path == sub_path:
+          continue
+        if os.path.commonprefix((parent_path, sub_path)) == parent_path:
+          duplicates.add(sub_path)
+    paths -= duplicates
 
     if self._http_server:
       if paths and self._http_server.paths == paths:

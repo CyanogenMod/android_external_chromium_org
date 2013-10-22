@@ -23,6 +23,7 @@
             'json_schema/json_schema_validator_unittest_base.cc',
             'json_schema/json_schema_validator_unittest_base.h',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
+            'precache/core/precache_fetcher_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'test/run_all_unittests.cc',
             'translate/common/translate_metrics_unittest.cc',
@@ -67,12 +68,16 @@
             'json_schema',
 
             # Dependencies of intercept_navigation_resource_throttle_unittest.cc
-            '../content/content.gyp:test_support_content',
+            '../content/content_shell_and_tests.gyp:test_support_content',
             '../skia/skia.gyp:skia',
             'navigation_interception',
-            
+
             # Dependencies of policy
             'policy_component',
+
+            # Dependencies of precache
+            'precache_core',
+            'precache_core_proto',
 
             # Dependencies of sessions
             '../third_party/protobuf/protobuf.gyp:protobuf_lite',
@@ -92,6 +97,7 @@
             '../content/content_resources.gyp:content_resources',
 
             'web_modal',
+            'web_modal_test_support',
           ],
           'conditions': [
             ['OS == "ios"', {
@@ -116,6 +122,7 @@
               ],
               'dependencies!': [
                 'web_modal',
+                'web_modal_test_support',
               ],
             }],
             ['OS == "android" and gtest_target_type == "shared_library"', {
@@ -155,7 +162,7 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/base.gyp:test_support_perf',
-            '../content/content.gyp:test_support_content',
+            '../content/content_shell_and_tests.gyp:test_support_content',
             '../testing/gtest.gyp:gtest',
             '../ui/compositor/compositor.gyp:compositor',
             'visitedlink_browser',

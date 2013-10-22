@@ -167,6 +167,26 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void OnMenuButtonClicked(views::View* source,
                                    const gfx::Point& point) OVERRIDE;
 
+ protected:
+  // What the entire dialog should be doing (e.g. gathering info from the user,
+  // asking the user to sign in, etc.).
+  enum DialogMode {
+    DETAIL_INPUT,
+    LOADING,
+    SIGN_IN,
+  };
+
+  // Changes the function of the whole dialog. Currently this can show a loading
+  // shield, an embedded sign in web view, or the more typical detail input mode
+  // (suggestions and form inputs).
+  void ShowDialogInMode(DialogMode dialog_mode);
+
+  // Exposed for testing.
+  views::View* GetLoadingShieldForTesting();
+  views::WebView* GetSignInWebViewForTesting();
+  views::View* GetNotificationAreaForTesting();
+  views::View* GetScrollableAreaForTesting();
+
  private:
   // A class that creates and manages a widget for error messages.
   class ErrorBubble : public views::BubbleDelegateView {
@@ -206,6 +226,9 @@ class AutofillDialogViews : public AutofillDialogView,
     // Used to determine the width of the bubble and whether to stick to the
     // right edge of |anchor_|. Must contain |anchor_|.
     views::View* const anchor_container_;  // Weak.
+
+    // Whether the bubble should be shown above the anchor (default is below).
+    const bool show_above_anchor_;
 
     DISALLOW_COPY_AND_ASSIGN(ErrorBubble);
   };
@@ -504,6 +527,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // Returns the maximum size of the sign in view for this dialog.
   gfx::Size GetMaximumSignInViewSize() const;
 
+  // Returns which section should currently be used for credit card info.
+  DialogSection GetCreditCardSection() const;
+
   void InitChildViews();
 
   // Creates and returns a view that holds all detail sections.
@@ -518,10 +544,6 @@ class AutofillDialogViews : public AutofillDialogView,
   // Creates a detail section (Shipping, Email, etc.) with the given label,
   // inputs View, and suggestion model. Relevant pointers are stored in |group|.
   void CreateDetailsSection(DialogSection section);
-
-  // Like CreateDetailsSection, but creates the combined billing/cc section,
-  // which is somewhat more complicated than the others.
-  void CreateBillingSection();
 
   // Creates the view that holds controls for inputing or selecting data for
   // a given section.
@@ -603,6 +625,10 @@ class AutofillDialogViews : public AutofillDialogView,
   // sets the credit card and CVC icons according to the credit card number.
   void SetIconsForSection(DialogSection section);
 
+  // Iterates over all the inputs in |section| and sets their enabled/disabled
+  // state.
+  void SetEditabilityForSection(DialogSection section);
+
   // The delegate that drives this view. Weak pointer, always non-NULL.
   AutofillDialogViewDelegate* const delegate_;
 
@@ -634,7 +660,7 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // A WebView to that navigates to a Google sign-in page to allow the user to
   // sign-in.
-  views::WebView* sign_in_webview_;
+  views::WebView* sign_in_web_view_;
 
   // View that wraps |details_container_| and makes it scroll vertically.
   views::ScrollView* scrollable_area_;

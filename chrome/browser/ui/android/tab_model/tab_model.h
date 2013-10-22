@@ -47,6 +47,9 @@ class TabModel : public content::NotificationObserver,
   virtual content::WebContents* GetWebContentsAt(int index) const = 0;
   virtual TabAndroid* GetTabAt(int index) const = 0;
 
+  virtual void SetActiveIndex(int index) = 0;
+  virtual void CloseTabAt(int index) = 0;
+
   // Used for restoring tabs from synced foreign sessions.
   virtual void CreateTab(content::WebContents* web_contents) = 0;
 

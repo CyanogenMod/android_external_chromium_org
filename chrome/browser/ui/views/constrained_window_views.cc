@@ -101,6 +101,10 @@ void UpdateModalDialogPosition(
     views::Widget* widget,
     web_modal::ModalDialogHost* dialog_host,
     const gfx::Size& size) {
+  // Do not forcibly update the dialog widget position if it is being dragged.
+  if (widget->HasCapture())
+    return;
+
   gfx::Point position = dialog_host->GetDialogPosition(size);
   views::Border* border =
       widget->non_client_view()->frame_view()->border();
@@ -319,9 +323,6 @@ namespace {
 // The frame border is only visible in restored mode and is hardcoded to 4 px on
 // each side regardless of the system window border size.
 const int kFrameBorderThickness = 4;
-// Various edges of the frame border have a 1 px shadow along their edges; in a
-// few cases we shift elements based on this amount for visual appeal.
-const int kFrameShadowThickness = 1;
 // In the window corners, the resize areas don't actually expand bigger, but the
 // 16 px at the end of each edge triggers diagonal resizing.
 const int kResizeAreaCornerSize = 16;
@@ -647,8 +648,7 @@ views::NonClientFrameView* CreateConstrainedStyleNonClientFrameView(
                                                           force_opaque_border);
   }
 #if defined(USE_ASH)
-  ash::CustomFrameViewAsh* frame = new ash::CustomFrameViewAsh;
-  frame->Init(widget);
+  ash::CustomFrameViewAsh* frame = new ash::CustomFrameViewAsh(widget);
   // Always use "active" look.
   frame->SetInactiveRenderingDisabled(true);
   return frame;

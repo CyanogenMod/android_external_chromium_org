@@ -24,6 +24,7 @@
 #include "ash/display/resolution_notification_controller.h"
 #include "ash/display/screen_position_controller.h"
 #include "ash/drag_drop/drag_drop_controller.h"
+#include "ash/first_run/first_run_helper_impl.h"
 #include "ash/focus_cycler.h"
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/host/root_window_host_factory.h"
@@ -82,7 +83,6 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/user_action_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/focus_manager.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -266,15 +266,8 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
 
   aura::RootWindow* root =
       wm::GetRootWindowMatching(gfx::Rect(location_in_screen, gfx::Size()));
-  // TODO(oshima): The root and root window controller shouldn't be
-  // NULL even for the out-of-bounds |location_in_screen| (It should
-  // return the primary root). Investigate why/how this is
-  // happening. crbug.com/165214.
-  internal::RootWindowController* rwc = internal::GetRootWindowController(root);
-  CHECK(rwc) << "root=" << root
-             << ", location:" << location_in_screen.ToString();
-  if (rwc)
-    rwc->ShowContextMenu(location_in_screen, source_type);
+  internal::GetRootWindowController(root)->
+      ShowContextMenu(location_in_screen, source_type);
 }
 
 void Shell::ToggleAppList(aura::Window* window) {
@@ -293,6 +286,10 @@ bool Shell::GetAppListTargetVisibility() const {
 
 aura::Window* Shell::GetAppListWindow() {
   return app_list_controller_.get() ? app_list_controller_->GetWindow() : NULL;
+}
+
+app_list::AppListView* Shell::GetAppListView() {
+  return app_list_controller_.get() ? app_list_controller_->GetView() : NULL;
 }
 
 bool Shell::IsSystemModalWindowOpen() const {
@@ -316,9 +313,7 @@ bool Shell::IsSystemModalWindowOpen() const {
 views::NonClientFrameView* Shell::CreateDefaultNonClientFrameView(
     views::Widget* widget) {
   // Use translucent-style window frames for dialogs.
-  CustomFrameViewAsh* frame_view = new CustomFrameViewAsh;
-  frame_view->Init(widget);
-  return frame_view;
+  return new CustomFrameViewAsh(widget);
 }
 
 void Shell::RotateFocus(Direction direction) {
@@ -523,26 +518,11 @@ void Shell::SetTouchHudProjectionEnabled(bool enabled) {
                     OnTouchHudProjectionToggled(enabled));
 }
 
-void Shell::InitRootWindowForSecondaryDisplay(aura::RootWindow* root) {
-  internal::RootWindowController* controller =
-      new internal::RootWindowController(root);
-  // Pass false for the |is_first_run_after_boot| parameter so we'll show a
-  // black background on this display instead of trying to mimic the boot splash
-  // screen.
-  InitRootWindowController(controller, false);
-
-  controller->root_window_layout()->OnWindowResized();
-  desktop_background_controller_->OnRootWindowAdded(root);
-  high_contrast_controller_->OnRootWindowAdded(root);
-  root->ShowRootWindow();
-  // Activate new root for testing.
-  // TODO(oshima): remove this.
-  target_root_window_ = root;
-
-  // Create a launcher if a user is already logged.
-  if (Shell::GetInstance()->session_state_delegate()->NumberOfLoggedInUsers())
-    controller->shelf()->CreateLauncher();
+#if defined(OS_CHROMEOS)
+ash::FirstRunHelper* Shell::CreateFirstRunHelper() {
+  return new ash::FirstRunHelperImpl;
 }
+#endif  // defined(OS_CHROMEOS)
 
 void Shell::DoInitialWorkspaceAnimation() {
   return GetPrimaryRootWindowController()->workspace_controller()->
@@ -869,24 +849,21 @@ void Shell::Init() {
   system_tray_delegate_.reset(delegate()->CreateSystemTrayDelegate());
   DCHECK(system_tray_delegate_.get());
 
-  internal::RootWindowController* root_window_controller =
-      new internal::RootWindowController(root_window);
-  InitRootWindowController(root_window_controller,
-                           delegate_->IsFirstRunAfterBoot());
-  InitKeyboard(root_window_controller);
-
   locale_notification_controller_.reset(
       new internal::LocaleNotificationController);
 
   // Initialize system_tray_delegate_ after StatusAreaWidget is created.
   system_tray_delegate_->Initialize();
 
+  // TODO(oshima): Initialize all RootWindowControllers once, and
+  // initialize controller/delegates above when initializing the
+  // primary root window controller.
+  internal::RootWindowController::CreateForPrimaryDisplay(root_window);
+
   display_controller_->InitSecondaryDisplays();
 
-  // Force Layout
-  root_window_controller->root_window_layout()->OnWindowResized();
-
-  // It needs to be created after OnWindowResized has been called, otherwise the
+  // It needs to be created after RootWindowController has been created
+  // (which calls OnWindowResized has been called, otherwise the
   // widget will not paint when restoring after a browser crash.  Also it needs
   // to be created after InitSecondaryDisplays() to initialize the wallpapers in
   // the correct size.
@@ -941,11 +918,7 @@ void Shell::InitKeyboard(internal::RootWindowController* root) {
   }
 }
 
-void Shell::InitRootWindowController(
-    internal::RootWindowController* controller,
-    bool first_run_after_boot) {
-
-  aura::RootWindow* root_window = controller->root_window();
+void Shell::InitRootWindow(aura::RootWindow* root_window) {
   DCHECK(activation_client_);
   DCHECK(visibility_controller_.get());
   DCHECK(drag_drop_controller_.get());
@@ -971,8 +944,6 @@ void Shell::InitRootWindowController(
   }
   if (user_action_client_)
     aura::client::SetUserActionClient(root_window, user_action_client_.get());
-
-  controller->Init(first_run_after_boot);
 }
 
 bool Shell::CanWindowReceiveEvents(aura::Window* window) {

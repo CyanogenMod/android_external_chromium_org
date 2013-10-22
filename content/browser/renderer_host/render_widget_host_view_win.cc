@@ -393,7 +393,6 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       imm32_manager_(new ui::IMM32Manager),
       ime_notification_(false),
       capture_enter_key_(false),
-      is_hidden_(false),
       about_to_validate_and_paint_(false),
       close_on_deactivate_(false),
       being_destroyed_(false),
@@ -411,14 +410,16 @@ RenderWidgetHostViewWin::RenderWidgetHostViewWin(RenderWidgetHost* widget)
       pointer_down_context_(false),
       last_touch_location_(-1, -1),
       touch_events_enabled_(ui::AreTouchEventsEnabled()),
-      gesture_recognizer_(ui::GestureRecognizer::Create(this)) {
+      gesture_recognizer_(ui::GestureRecognizer::Create()) {
   render_widget_host_->SetView(this);
   registrar_.Add(this,
                  NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  NotificationService::AllBrowserContextsAndSources());
+  gesture_recognizer_->AddGestureEventHelper(this);
 }
 
 RenderWidgetHostViewWin::~RenderWidgetHostViewWin() {
+  gesture_recognizer_->RemoveGestureEventHelper(this);
   UnlockMouse();
   ResetTooltip();
 }
@@ -456,34 +457,34 @@ RenderWidgetHost* RenderWidgetHostViewWin::GetRenderWidgetHost() const {
 }
 
 void RenderWidgetHostViewWin::WasShown() {
-  if (!is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
+    return;
+
+  if (!render_widget_host_->is_hidden())
     return;
 
   if (web_contents_switch_paint_time_.is_null())
     web_contents_switch_paint_time_ = TimeTicks::Now();
-  is_hidden_ = false;
 
-  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
-  // of closing.
-  if (render_widget_host_)
-    render_widget_host_->WasShown();
+  render_widget_host_->WasShown();
 }
 
 void RenderWidgetHostViewWin::WasHidden() {
-  if (is_hidden_)
+  // |render_widget_host_| may be NULL if the WebContentsImpl is in the process
+  // of closing.
+  if (!render_widget_host_)
     return;
 
-  // If we receive any more paint messages while we are hidden, we want to
-  // ignore them so we don't re-allocate the backing store.  We will paint
-  // everything again when we become selected again.
-  is_hidden_ = true;
+  if (render_widget_host_->is_hidden())
+    return;
 
   ResetTooltip();
 
-  // If we have a renderer, then inform it that we are being hidden so it can
-  // reduce its resource utilization.
-  if (render_widget_host_)
-    render_widget_host_->WasHidden();
+  // Inform the renderer that we are being hidden so it can reduce its resource
+  // utilization.
+  render_widget_host_->WasHidden();
 
   if (accelerated_surface_)
     accelerated_surface_->WasHidden();
@@ -499,7 +500,7 @@ void RenderWidgetHostViewWin::SetSize(const gfx::Size& size) {
 }
 
 void RenderWidgetHostViewWin::SetBounds(const gfx::Rect& rect) {
-  if (is_hidden_ || being_destroyed_)
+  if (being_destroyed_ || render_widget_host_->is_hidden())
     return;
 
   // No SWP_NOREDRAW as autofill popups can move and the underneath window
@@ -762,7 +763,7 @@ void RenderWidgetHostViewWin::DidUpdateBackingStore(
     const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("content", "RenderWidgetHostViewWin::DidUpdateBackingStore");
   software_latency_info_.MergeWith(latency_info);
-  if (is_hidden_)
+  if (render_widget_host_->is_hidden())
     return;
 
   // Schedule invalidations first so that the ScrollWindowEx call is closer to
@@ -836,7 +837,7 @@ void RenderWidgetHostViewWin::Destroy() {
 }
 
 void RenderWidgetHostViewWin::SetTooltipText(const string16& tooltip_text) {
-  if (!is_hidden_)
+  if (!render_widget_host_->is_hidden())
     EnsureTooltip();
 
   // Clamp the tooltip length to kMaxTooltipLength so that we don't
@@ -944,16 +945,22 @@ void RenderWidgetHostViewWin::UpdateDesiredTouchMode() {
   }
 }
 
-bool RenderWidgetHostViewWin::DispatchLongPressGestureEvent(
-    ui::GestureEvent* event) {
-  return ForwardGestureEventToRenderer(event);
+bool RenderWidgetHostViewWin::CanDispatchToConsumer(
+    ui::GestureConsumer* consumer) {
+  CHECK_EQ(static_cast<RenderWidgetHostViewWin*>(consumer), this);
+  return true;
 }
 
-bool RenderWidgetHostViewWin::DispatchCancelTouchEvent(
+void RenderWidgetHostViewWin::DispatchLongPressGestureEvent(
+    ui::GestureEvent* event) {
+  ForwardGestureEventToRenderer(event);
+}
+
+void RenderWidgetHostViewWin::DispatchCancelTouchEvent(
     ui::TouchEvent* event) {
   if (!render_widget_host_ || !touch_events_enabled_ ||
       !render_widget_host_->ShouldForwardTouchEvent()) {
-    return false;
+    return;
   }
   DCHECK(event->type() == WebKit::WebInputEvent::TouchCancel);
   WebKit::WebTouchEvent cancel_event;
@@ -961,7 +968,6 @@ bool RenderWidgetHostViewWin::DispatchCancelTouchEvent(
   cancel_event.timeStampSeconds = event->time_stamp().InSecondsF();
   render_widget_host_->ForwardTouchEventWithLatencyInfo(
       cancel_event, *event->latency());
-  return true;
 }
 
 void RenderWidgetHostViewWin::SetHasHorizontalScrollbar(
@@ -1061,7 +1067,7 @@ bool RenderWidgetHostViewWin::CanComposeInline() const {
   return false;
 }
 
-gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
+gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return gfx::Rect(0, 0, 0, 0);
@@ -1072,7 +1078,7 @@ gfx::Rect RenderWidgetHostViewWin::GetCaretBounds() {
 }
 
 bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
-    uint32 index, gfx::Rect* rect) {
+    uint32 index, gfx::Rect* rect) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1086,7 +1092,7 @@ bool RenderWidgetHostViewWin::GetCompositionCharacterBounds(
   return true;
 }
 
-bool RenderWidgetHostViewWin::HasCompositionText() {
+bool RenderWidgetHostViewWin::HasCompositionText() const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1096,7 +1102,7 @@ bool RenderWidgetHostViewWin::HasCompositionText() {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1106,7 +1112,7 @@ bool RenderWidgetHostViewWin::GetTextRange(gfx::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1116,7 +1122,7 @@ bool RenderWidgetHostViewWin::GetCompositionTextRange(gfx::Range* range) {
   return false;
 }
 
-bool RenderWidgetHostViewWin::GetSelectionRange(gfx::Range* range) {
+bool RenderWidgetHostViewWin::GetSelectionRange(gfx::Range* range) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -1147,7 +1153,7 @@ bool RenderWidgetHostViewWin::DeleteRange(const gfx::Range& range) {
 }
 
 bool RenderWidgetHostViewWin::GetTextFromRange(const gfx::Range& range,
-                                               string16* text) {
+                                               string16* text) const {
   if (!base::win::IsTSFAwareRequired()) {
     NOTREACHED();
     return false;
@@ -2777,7 +2783,7 @@ LRESULT RenderWidgetHostViewWin::OnSessionChange(UINT message,
       break;
     case WTS_SESSION_UNLOCK:
       // Force a repaint to update the window contents.
-      if (!is_hidden_)
+      if (!render_widget_host_->is_hidden())
         InvalidateRect(NULL, FALSE);
       accelerated_surface_->SetIsSessionLocked(false);
       break;

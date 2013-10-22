@@ -380,14 +380,18 @@ void ContentViewCoreImpl::UpdateFrameInfo(
     const gfx::Vector2dF& controls_offset,
     const gfx::Vector2dF& content_offset,
     float overdraw_bottom_height) {
-  if (window_android_)
-      window_android_->set_content_offset(
-          gfx::ScaleVector2d(content_offset, dpi_scale_));
-
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
+
+  if (window_android_) {
+    gfx::Vector2dF window_offset(
+        Java_ContentViewCore_getLocationInWindowX(env, obj.obj()),
+        Java_ContentViewCore_getLocationInWindowY(env, obj.obj()));
+    window_android_->set_content_offset(
+        gfx::ScaleVector2d(content_offset, dpi_scale_) + window_offset);
+  }
 
   Java_ContentViewCore_updateFrameInfo(
       env, obj.obj(),
@@ -1165,6 +1169,15 @@ void ContentViewCoreImpl::GoToNavigationIndex(JNIEnv* env,
                                               jint index) {
   web_contents_->GetController().GoToIndex(index);
   UpdateTabCrashedFlag();
+}
+
+void ContentViewCoreImpl::LoadIfNecessary(JNIEnv* env, jobject obj) {
+  web_contents_->GetController().LoadIfNecessary();
+  UpdateTabCrashedFlag();
+}
+
+void ContentViewCoreImpl::RequestRestoreLoad(JNIEnv* env, jobject obj) {
+  web_contents_->GetController().SetNeedsReload();
 }
 
 void ContentViewCoreImpl::StopLoading(JNIEnv* env, jobject obj) {

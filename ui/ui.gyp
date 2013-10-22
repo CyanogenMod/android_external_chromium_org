@@ -399,7 +399,7 @@
             '../build/linux/system.gyp:glib',
           ],
           'conditions': [
-            ['toolkit_views==0', {
+            ['toolkit_views==0 and use_aura==0', {
               # Note: because of gyp predence rules this has to be defined as
               # 'sources/' rather than 'sources!'.
               'sources/': [
@@ -460,6 +460,9 @@
                 'd3d10_1.lib',
                 'dwmapi.lib',
               ],
+            },
+            'VCCLCompilerTool': {
+              'ForcedIncludeFiles': [ 'build/intsafe_workaround.h' ],
             },
           },
           'link_settings': {

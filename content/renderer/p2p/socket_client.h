@@ -55,6 +55,12 @@ class P2PSocketClient : public base::RefCountedThreadSafe<P2PSocketClient> {
   // Send the |data| to the |address|.
   void Send(const net::IPEndPoint& address, const std::vector<char>& data);
 
+  // Send the |data| to the |address| using Differentiated Services Code Point
+  // |dscp|.
+  void SendWithDscp(const net::IPEndPoint& address,
+                    const std::vector<char>& data,
+                    net::DiffServCodePoint dscp);
+
   // Must be called before the socket is destroyed. The delegate may
   // not be called after |closed_task| is executed.
   void Close();
@@ -115,6 +121,10 @@ class P2PSocketClient : public base::RefCountedThreadSafe<P2PSocketClient> {
   int socket_id_;
   Delegate* delegate_;
   State state_;
+
+  // These two fields are used to identify packets for tracing.
+  uint32 random_socket_id_;
+  uint32 next_packet_id_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketClient);
 };

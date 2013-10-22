@@ -257,8 +257,11 @@ class WebMediaPlayerImpl
   // painted.
   void FrameReady(const scoped_refptr<media::VideoFrame>& frame);
 
-  // Sets playback rate on |pipeline_| and (if it exists) |data_source_|.
-  void SetPlaybackRate(float playback_rate);
+  // Called when a paint or a new frame arrives to indicate that we are
+  // no longer waiting for |current_frame_| to be painted.
+  // |painting_frame| is set to true if |current_frame_| is being painted.
+  // False indicates |current_frame_| is being replaced with a new frame.
+  void DoneWaitingForPaint(bool painting_frame);
 
   WebKit::WebFrame* frame_;
 

@@ -50,12 +50,12 @@ class VideoReceiver : public base::NonThreadSafe,
   void GetEncodedVideoFrame(const VideoFrameEncodedCallback& callback);
 
   // Insert a RTP packet to the video receiver.
-  void IncomingPacket(const uint8* packet, int length,
+  void IncomingPacket(const uint8* packet, size_t length,
                       const base::Closure callback);
 
  protected:
   void IncomingRtpPacket(const uint8* payload_data,
-                         int payload_size,
+                         size_t payload_size,
                          const RtpCastHeader& rtp_header);
 
   void DecodeVideoFrameThread(
@@ -89,8 +89,10 @@ class VideoReceiver : public base::NonThreadSafe,
 
   // Schedule timing for the next RTCP report.
   void ScheduleNextRtcpReport();
+
   // Actually send the next cast message.
   void SendNextCastMessage();
+
   // Actually send the next RTCP report.
   void SendNextRtcpReport();
 
@@ -100,6 +102,7 @@ class VideoReceiver : public base::NonThreadSafe,
   const VideoCodec codec_;
   const uint32 incoming_ssrc_;
   base::TimeDelta target_delay_delta_;
+  base::TimeDelta frame_delay_;
   scoped_ptr<LocalRtpVideoData> incoming_payload_callback_;
   scoped_ptr<LocalRtpVideoFeedback> incoming_payload_feedback_;
   RtpReceiver rtp_receiver_;

@@ -31,6 +31,8 @@ extern const char kRestoreOnStartupMigrated[];
 extern const char kSessionExitedCleanly[];
 extern const char kSessionExitType[];
 extern const char kURLsToRestoreOnStartup[];
+extern const char kURLsToRestoreOnStartupOld[];
+extern const char kRestoreStartupURLsMigrationTime[];
 extern const char kForceEphemeralProfiles[];
 
 // For OS_CHROMEOS we maintain kApplicationLocale property in both local state
@@ -42,30 +44,6 @@ extern const char kApplicationLocaleBackup[];
 extern const char kApplicationLocaleAccepted[];
 extern const char kOwnerLocale[];
 #endif
-
-// Obselete keys, kept only for migration code to the new keys. See
-// http://crbug.com/123812
-extern const char kGlobalDefaultCharset[];
-extern const char kWebKitGlobalDefaultFontSize[];
-extern const char kWebKitGlobalDefaultFixedFontSize[];
-extern const char kWebKitGlobalMinimumFontSize[];
-extern const char kWebKitGlobalMinimumLogicalFontSize[];
-extern const char kWebKitGlobalJavascriptEnabled[];
-extern const char kWebKitGlobalJavascriptCanOpenWindowsAutomatically[];
-extern const char kWebKitGlobalLoadsImagesAutomatically[];
-extern const char kWebKitGlobalPluginsEnabled[];
-extern const char kWebKitGlobalStandardFontFamily[];
-extern const char kWebKitGlobalFixedFontFamily[];
-extern const char kWebKitGlobalSerifFontFamily[];
-extern const char kWebKitGlobalSansSerifFontFamily[];
-extern const char kWebKitGlobalCursiveFontFamily[];
-extern const char kWebKitGlobalFantasyFontFamily[];
-extern const char kWebKitOldStandardFontFamily[];
-extern const char kWebKitOldFixedFontFamily[];
-extern const char kWebKitOldSerifFontFamily[];
-extern const char kWebKitOldSansSerifFontFamily[];
-extern const char kWebKitOldCursiveFontFamily[];
-extern const char kWebKitOldFantasyFontFamily[];
 
 extern const char kDefaultCharset[];
 extern const char kAcceptLanguages[];
@@ -148,6 +126,7 @@ extern const char kWebKitAllowDisplayingInsecureContent[];
 extern const char kWebKitAllowRunningInsecureContent[];
 #if defined(OS_ANDROID)
 extern const char kWebKitFontScaleFactor[];
+extern const char kWebKitFontScaleFactorQuirk[];
 extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
 #endif
@@ -251,6 +230,7 @@ extern const char kScreenMagnifierType[];
 extern const char kScreenMagnifierScale[];
 extern const char kVirtualKeyboardEnabled[];
 extern const char kAutoclickEnabled[];
+extern const char kAutoclickDelayMs[];
 extern const char kShouldAlwaysShowAccessibilityMenu[];
 extern const char kLabsAdvancedFilesystemEnabled[];
 extern const char kLabsMediaplayerEnabled[];
@@ -748,6 +728,8 @@ extern const char kAudioCaptureAllowedUrls[];
 extern const char kVideoCaptureAllowed[];
 extern const char kVideoCaptureAllowedUrls[];
 
+extern const char kHotwordSearchEnabled[];
+
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
 #endif
@@ -831,8 +813,6 @@ extern const char kHardwareAccelerationModeEnabled[];
 extern const char kHardwareAccelerationModePrevious[];
 
 extern const char kDevicePolicyRefreshRate[];
-extern const char kUserPolicyRefreshRate[];
-extern const char kDisableCloudPolicyOnSignin[];
 
 extern const char kFactoryResetRequested[];
 

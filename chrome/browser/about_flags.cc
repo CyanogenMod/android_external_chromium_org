@@ -397,6 +397,15 @@ const Experiment kExperiments[] = {
                                switches::kDisableAcceleratedOverflowScroll)
   },
   {
+    "force-universal-accelerated-composited-scrolling",
+     IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_NAME,
+     IDS_FLAGS_FORCE_UNIVERSAL_ACCELERATED_OVERFLOW_SCROLL_MODE_DESCRIPTION,
+     kOsAll,
+     ENABLE_DISABLE_VALUE_TYPE(
+         switches::kEnableUniversalAcceleratedOverflowScroll,
+         switches::kDisableUniversalAcceleratedOverflowScroll)
+  },
+  {
     "present-with-GDI",
     IDS_FLAGS_PRESENT_WITH_GDI_NAME,
     IDS_FLAGS_PRESENT_WITH_GDI_DESCRIPTION,
@@ -1499,7 +1508,9 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME,
     IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_DESCRIPTION,
     kOsWin | kOsCrOS | kOsMac,
-    SINGLE_VALUE_TYPE(switches::kEnableGoogleNowIntegration)
+    ENABLE_DISABLE_VALUE_TYPE(
+        switches::kEnableGoogleNowIntegration,
+        switches::kDisableGoogleNowIntegration)
   },
 #endif
 #if defined(OS_CHROMEOS)
@@ -1643,6 +1654,13 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableStickyKeys,
                               switches::kDisableStickyKeys)
   },
+  {
+    "ash-enable-autoclick",
+    IDS_FLAGS_ENABLE_AUTOCLICK_NAME,
+    IDS_FLAGS_ENABLE_AUTOCLICK_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(ash::switches::kAshEnableAutoclick)
+  },
 #endif
   {
     "enable-web-midi",
@@ -1659,6 +1677,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kNewProfileManagement)
   },
   {
+    "enable-inline-signin",
+    IDS_FLAGS_ENABLE_INLINE_SIGNIN_NAME,
+    IDS_FLAGS_ENABLE_INLINE_SIGNIN_DESCRIPTION,
+    kOsMac | kOsWin | kOsLinux,
+    SINGLE_VALUE_TYPE(switches::kEnableInlineSignin)
+  },
+  {
     "enable-gaia-profile-info",
     IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_NAME,
     IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_DESCRIPTION,
@@ -1667,10 +1692,10 @@ const Experiment kExperiments[] = {
   },
   {
     "disable-app-launcher",
-    IDS_FLAGS_DISABLE_APP_LIST_NAME,
-    IDS_FLAGS_DISABLE_APP_LIST_DESCRIPTION,
+    IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_NAME,
+    IDS_FLAGS_RESET_APP_LIST_INSTALL_STATE_DESCRIPTION,
     kOsMac | kOsWin,
-    SINGLE_VALUE_TYPE(switches::kDisableAppList)
+    SINGLE_VALUE_TYPE(switches::kResetAppListInstallState)
   },
 #if defined(ENABLE_APP_LIST)
   {
@@ -1751,11 +1776,34 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(cc::switches::kDisableCompositorTouchHitTesting),
   },
   {
+    "enable-accelerated-scrollable-frames",
+     IDS_FLAGS_ENABLE_ACCELERATED_SCROLLABLE_FRAMES_NAME,
+     IDS_FLAGS_ENABLE_ACCELERATED_SCROLLABLE_FRAMES_DESCRIPTION,
+     kOsAll,
+     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableAcceleratedScrollableFrames,
+                               switches::kDisableAcceleratedScrollableFrames)
+  },
+  {
+    "enable-composited-scrolling-for-frames",
+     IDS_FLAGS_ENABLE_COMPOSITED_SCROLLING_FOR_FRAMES_NAME,
+     IDS_FLAGS_ENABLE_COMPOSITED_SCROLLING_FOR_FRAMES_DESCRIPTION,
+     kOsAll,
+     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableCompositedScrollingForFrames,
+                               switches::kDisableCompositedScrollingForFrames)
+  },
+  {
     "enable-streamlined-hosted-apps",
     IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_NAME,
     IDS_FLAGS_ENABLE_STREAMLINED_HOSTED_APPS_DESCRIPTION,
     kOsWin | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableStreamlinedHostedApps)
+  },
+  {
+    "enable-ephemeral-apps",
+    IDS_FLAGS_ENABLE_EPHEMERAL_APPS_NAME,
+    IDS_FLAGS_ENABLE_EPHEMERAL_APPS_DESCRIPTION,
+    kOsWin | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnableEphemeralApps)
   },
   {
     "enable-service-worker",

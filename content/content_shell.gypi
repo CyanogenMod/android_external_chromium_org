@@ -21,22 +21,21 @@
     {
       'target_name': 'content_shell_lib',
       'type': 'static_library',
-      'defines!': ['CONTENT_IMPLEMENTATION'],
       'defines': ['CONTENT_SHELL_VERSION="<(content_shell_version)"'],
       'variables': {
         'chromium_code': 1,
       },
       'dependencies': [
-        'content_app_both',
-        'content_browser',
-        'content_common',
-        'content_gpu',
-        'content_plugin',
-        'content_ppapi_plugin',
-        'content_renderer',
+        'content.gyp:content_app_both',
+        'content.gyp:content_browser',
+        'content.gyp:content_common',
+        'content.gyp:content_gpu',
+        'content.gyp:content_plugin',
+        'content.gyp:content_ppapi_plugin',
+        'content.gyp:content_renderer',
+        'content.gyp:content_utility',
+        'content.gyp:content_worker',
         'content_shell_resources',
-        'content_utility',
-        'content_worker',
         'test_support_content',
         'content_resources.gyp:content_resources',
         '../base/base.gyp:base',
@@ -130,6 +129,7 @@
         'shell/browser/shell_speech_recognition_manager_delegate.h',
         'shell/browser/shell_url_request_context_getter.cc',
         'shell/browser/shell_url_request_context_getter.h',
+        'shell/browser/shell_views.cc',
         'shell/browser/shell_web_contents_view_delegate_android.cc',
         'shell/browser/shell_web_contents_view_delegate_creator.h',
         'shell/browser/shell_web_contents_view_delegate_gtk.cc',
@@ -218,14 +218,32 @@
           'dependencies': [
             '../ui/aura/aura.gyp:aura',
             '../ui/base/strings/ui_strings.gyp:ui_strings',
-            '../ui/views/controls/webview/webview.gyp:webview',
-            '../ui/views/views.gyp:views',
-            '../ui/views/views.gyp:views_test_support',
-            '../ui/ui.gyp:ui_resources',
           ],
           'sources/': [
             ['exclude', 'shell/browser/shell_gtk.cc'],
             ['exclude', 'shell/browser/shell_win.cc'],
+          ],
+          'conditions': [
+            ['toolkit_views==1', {
+              'dependencies': [
+                '../ui/views/controls/webview/webview.gyp:webview',
+                '../ui/views/views.gyp:views',
+                '../ui/views/views.gyp:views_test_support',
+                '../ui/ui.gyp:ui_resources',
+              ],
+              'sources/': [
+                ['exclude', 'shell/browser/shell_aura.cc'],
+              ],
+            }, {
+              'sources/': [
+                ['exclude', 'shell/browser/shell_views.cc'],
+              ],
+            }],
+          ],
+        }, {
+          'sources/': [
+            ['exclude', 'shell/browser/shell_aura.cc'],
+            ['exclude', 'shell/browser/shell_views.cc'],
           ],
         }],  # use_aura==1
         ['chromeos==1', {
@@ -355,7 +373,6 @@
       'target_name': 'content_shell',
       'type': 'executable',
       'mac_bundle': 1,
-      'defines!': ['CONTENT_IMPLEMENTATION'],
       'variables': {
         'chromium_code': 1,
       },
@@ -694,7 +711,7 @@
           'target_name': 'content_shell_java',
           'type': 'none',
           'dependencies': [
-            'content_java',
+            'content.gyp:content_java',
           ],
           'variables': {
             'java_in_dir': '../content/shell/android/java',
@@ -721,7 +738,7 @@
           'target_name': 'content_shell_apk',
           'type': 'none',
           'dependencies': [
-            'content_java',
+            'content.gyp:content_java',
             'content_java_test_support',
             'content_shell_java',
             'libcontent_shell_content_view',

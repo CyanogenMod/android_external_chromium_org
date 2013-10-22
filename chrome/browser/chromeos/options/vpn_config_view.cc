@@ -39,9 +39,6 @@
 
 namespace {
 
-// Root CA certificates that are built into Chrome use this token name.
-const char* const kRootCertificateTokenName = "Builtin Object Token";
-
 enum ProviderTypeIndex {
   PROVIDER_TYPE_INDEX_L2TP_IPSEC_PSK = 0,
   PROVIDER_TYPE_INDEX_L2TP_IPSEC_USER_CERT = 1,
@@ -376,6 +373,14 @@ bool VPNConfigView::Login() {
 
     SetConfigProperties(&properties);
     bool shared = !LoginState::Get()->IsUserAuthenticated();
+
+    bool only_policy_autoconnect =
+        onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!shared);
+    if (only_policy_autoconnect) {
+      properties.SetBooleanWithoutPathExpansion(shill::kAutoConnectProperty,
+                                                false);
+    }
+
     ash::network_connect::CreateConfigurationAndConnect(&properties, shared);
   } else {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->

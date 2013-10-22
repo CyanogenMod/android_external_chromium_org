@@ -13,7 +13,8 @@
 namespace chromeos {
 
 FakeCryptohomeClient::FakeCryptohomeClient()
-    : async_call_id_(1),
+    : service_is_available_(true),
+      async_call_id_(1),
       tpm_is_ready_counter_(0),
       unmount_result_(true),
       locked_(false),
@@ -34,6 +35,16 @@ void FakeCryptohomeClient::SetAsyncCallStatusHandlers(
 void FakeCryptohomeClient::ResetAsyncCallStatusHandlers() {
   async_call_status_handler_.Reset();
   async_call_status_data_handler_.Reset();
+}
+
+void FakeCryptohomeClient::WaitForServiceToBeAvailable(
+    const WaitForServiceToBeAvailableCallback& callback) {
+  if (service_is_available_) {
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(callback, true));
+  } else {
+    pending_wait_for_service_to_be_available_callbacks_.push_back(callback);
+  }
 }
 
 void FakeCryptohomeClient::IsMounted(
@@ -275,7 +286,7 @@ void FakeCryptohomeClient::AsyncTpmAttestationEnroll(
 
 void FakeCryptohomeClient::AsyncTpmAttestationCreateCertRequest(
     attestation::AttestationCertificateProfile certificate_profile,
-    const std::string& user_email,
+    const std::string& user_id,
     const std::string& request_origin,
     const AsyncMethodCallback& callback) {
   ReturnAsyncMethodResult(callback, true);
@@ -284,6 +295,7 @@ void FakeCryptohomeClient::AsyncTpmAttestationCreateCertRequest(
 void FakeCryptohomeClient::AsyncTpmAttestationFinishCertRequest(
     const std::string& pca_response,
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const AsyncMethodCallback& callback) {
   ReturnAsyncMethodResult(callback, true);
@@ -291,6 +303,7 @@ void FakeCryptohomeClient::AsyncTpmAttestationFinishCertRequest(
 
 void FakeCryptohomeClient::TpmAttestationDoesKeyExist(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const BoolDBusMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
@@ -299,6 +312,7 @@ void FakeCryptohomeClient::TpmAttestationDoesKeyExist(
 
 void FakeCryptohomeClient::TpmAttestationGetCertificate(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const DataMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
@@ -308,6 +322,7 @@ void FakeCryptohomeClient::TpmAttestationGetCertificate(
 
 void FakeCryptohomeClient::TpmAttestationGetPublicKey(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const DataMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
@@ -317,6 +332,7 @@ void FakeCryptohomeClient::TpmAttestationGetPublicKey(
 
 void FakeCryptohomeClient::TpmAttestationRegisterKey(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const AsyncMethodCallback& callback) {
   ReturnAsyncMethodResult(callback, true);
@@ -324,6 +340,7 @@ void FakeCryptohomeClient::TpmAttestationRegisterKey(
 
 void FakeCryptohomeClient::TpmAttestationSignEnterpriseChallenge(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const std::string& domain,
     const std::string& device_id,
@@ -335,6 +352,7 @@ void FakeCryptohomeClient::TpmAttestationSignEnterpriseChallenge(
 
 void FakeCryptohomeClient::TpmAttestationSignSimpleChallenge(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const std::string& challenge,
     const AsyncMethodCallback& callback) {
@@ -343,6 +361,7 @@ void FakeCryptohomeClient::TpmAttestationSignSimpleChallenge(
 
 void FakeCryptohomeClient::TpmAttestationGetKeyPayload(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const DataMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
@@ -352,11 +371,22 @@ void FakeCryptohomeClient::TpmAttestationGetKeyPayload(
 
 void FakeCryptohomeClient::TpmAttestationSetKeyPayload(
     attestation::AttestationKeyType key_type,
+    const std::string& user_id,
     const std::string& key_name,
     const std::string& payload,
     const BoolDBusMethodCallback& callback) {
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(callback, DBUS_METHOD_CALL_SUCCESS, false));
+}
+
+void FakeCryptohomeClient::SetServiceIsAvailable(bool is_available) {
+  service_is_available_ = is_available;
+  if (is_available) {
+    std::vector<WaitForServiceToBeAvailableCallback> callbacks;
+    callbacks.swap(pending_wait_for_service_to_be_available_callbacks_);
+    for (size_t i = 0; i < callbacks.size(); ++i)
+      callbacks[i].Run(is_available);
+  }
 }
 
 // static

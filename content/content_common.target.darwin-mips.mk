@@ -82,7 +82,6 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/client/context_provider_command_buffer.cc \
 	content/common/gpu/client/gl_helper.cc \
 	content/common/gpu/client/gl_helper_scaling.cc \
-	content/common/gpu/client/gl_surface_capturer_host.cc \
 	content/common/gpu/client/gpu_channel_host.cc \
 	content/common/gpu/client/gpu_video_decode_accelerator_host.cc \
 	content/common/gpu/client/gpu_video_encode_accelerator_host.cc \
@@ -97,14 +96,12 @@ LOCAL_SRC_FILES := \
 	content/common/gpu/gpu_surface_lookup.cc \
 	content/common/gpu/image_transport_surface.cc \
 	content/common/gpu/image_transport_surface_android.cc \
-	content/common/gpu/media/gl_surface_capturer.cc \
 	content/common/gpu/media/gpu_video_decode_accelerator.cc \
 	content/common/gpu/media/gpu_video_encode_accelerator.cc \
-	content/common/gpu/media/video_decode_accelerator_impl.cc \
 	content/common/gpu/media/h264_bit_reader.cc \
 	content/common/gpu/media/h264_parser.cc \
+	content/common/gpu/media/video_decode_accelerator_impl.cc \
 	content/common/gpu/stream_texture_manager_android.cc \
-	content/common/gpu/surface_capturer.cc \
 	content/common/gpu/sync_point_manager.cc \
 	content/common/gpu/texture_image_transport_surface.cc \
 	content/common/indexed_db/indexed_db_key.cc \
@@ -226,8 +223,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/pdf \
@@ -237,6 +232,7 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \
@@ -342,8 +338,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/khronos \
 	$(LOCAL_PATH)/gpu \
 	$(LOCAL_PATH)/third_party/skia/src/core \
-	$(LOCAL_PATH)/skia/config \
-	$(LOCAL_PATH)/third_party/skia/include/config \
 	$(LOCAL_PATH)/third_party/skia/include/core \
 	$(LOCAL_PATH)/third_party/skia/include/effects \
 	$(LOCAL_PATH)/third_party/skia/include/pdf \
@@ -353,6 +347,7 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/skia/include/pipe \
 	$(LOCAL_PATH)/third_party/skia/include/ports \
 	$(LOCAL_PATH)/third_party/skia/include/utils \
+	$(LOCAL_PATH)/skia/config \
 	$(LOCAL_PATH)/skia/ext \
 	$(PWD)/external/icu4c/common \
 	$(PWD)/external/icu4c/i18n \

@@ -54,6 +54,10 @@ class OOMKillerProfiler(profiler.Profiler):
       return android_browser_finder.CanFindAvailableBrowsers()
     return browser_type.startswith('android')
 
+  @classmethod
+  def WillCloseBrowser(cls, browser_backend, platform_backend):
+    browser_backend.adb.CloseApplication('org.chromium.memconsumer')
+
   def CollectProfile(self):
     missing_applications = self._MissingApplications()
     if not len(missing_applications):
@@ -61,9 +65,10 @@ class OOMKillerProfiler(profiler.Profiler):
     raise UnableToFindApplicationException(', '.join(missing_applications))
 
   def _MissingApplications(self):
+    # TODO(qsr): Add com.android.launcher to the list, when the reason why the
+    # launcher is often killed is understood.
     must_have_apps = [
         'org.chromium.memconsumer',
-        'com.android.launcher',
     ]
     return [app for app in must_have_apps if
             not self._platform_backend.IsApplicationRunning(app)]

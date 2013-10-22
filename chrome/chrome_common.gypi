@@ -251,6 +251,8 @@
         'common/extensions/permissions/chrome_api_permissions.h',
         'common/extensions/permissions/chrome_scheme_hosts.cc',
         'common/extensions/permissions/chrome_scheme_hosts.h',
+        'common/extensions/permissions/chrome_permission_message_provider.cc',
+        'common/extensions/permissions/chrome_permission_message_provider.h',
         'common/extensions/permissions/media_galleries_permission.cc',
         'common/extensions/permissions/media_galleries_permission.h',
         'common/extensions/permissions/media_galleries_permission_data.cc',
@@ -282,8 +284,6 @@
         'common/extensions/web_accessible_resources_handler.h',
         'common/extensions/webview_handler.cc',
         'common/extensions/webview_handler.h',
-        'common/external_ipc_fuzzer.cc',
-        'common/external_ipc_fuzzer.h',
         'common/favicon/favicon_types.cc',
         'common/favicon/favicon_types.h',
         'common/favicon/favicon_url_parser.cc',
@@ -444,11 +444,15 @@
           'sources': [
             'common/media_galleries/itunes_library.cc',
             'common/media_galleries/itunes_library.h',
-            'common/media_galleries/itunes_xml_utils.cc',
-            'common/media_galleries/itunes_xml_utils.h',
             'common/media_galleries/picasa_types.cc',
             'common/media_galleries/picasa_types.h',
             'common/media_galleries/pmp_constants.h',
+          ],
+        }],
+        ['OS=="mac"', {
+          'sources': [
+            'common/media_galleries/iphoto_library.cc',
+            'common/media_galleries/iphoto_library.h',
           ],
         }],
         ['OS != "ios"', {
@@ -472,7 +476,6 @@
             ['exclude', '^common/common_param_traits'],
             ['exclude', '^common/custom_handlers/'],
             ['exclude', '^common/extensions/'],
-            ['exclude', '^common/external_ipc_fuzzer\\.'],
             ['exclude', '^common/logging_chrome\\.'],
             ['exclude', '^common/multi_process_'],
             ['exclude', '^common/nacl_'],

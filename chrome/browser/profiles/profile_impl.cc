@@ -408,16 +408,16 @@ ProfileImpl::ProfileImpl(
 #if defined(OS_CHROMEOS)
   cloud_policy_manager_ =
       policy::UserCloudPolicyManagerFactoryChromeOS::CreateForProfile(
-          this, force_immediate_policy_load);
+          this, force_immediate_policy_load, sequenced_task_runner);
 #else
   cloud_policy_manager_ =
       policy::UserCloudPolicyManagerFactory::CreateForProfile(
-          this, force_immediate_policy_load);
+          this, force_immediate_policy_load, sequenced_task_runner);
 #endif
 #endif
   profile_policy_connector_ =
       policy::ProfilePolicyConnectorFactory::CreateForProfile(
-          this, force_immediate_policy_load, sequenced_task_runner);
+          this, force_immediate_policy_load);
 
   DCHECK(create_mode == CREATE_MODE_ASYNCHRONOUS ||
          create_mode == CREATE_MODE_SYNCHRONOUS);
@@ -491,6 +491,10 @@ void ProfileImpl::DoFinalInit() {
   pref_change_registrar_.Add(
       prefs::kProfileName,
       base::Bind(&ProfileImpl::UpdateProfileNameCache,
+                 base::Unretained(this)));
+  pref_change_registrar_.Add(
+      prefs::kForceEphemeralProfiles,
+      base::Bind(&ProfileImpl::UpdateProfileIsEphemeralCache,
                  base::Unretained(this)));
 
   // It would be nice to use PathService for fetching this directory, but
@@ -782,6 +786,8 @@ void ProfileImpl::OnPrefsLoaded(bool success) {
   // Force this to true in case we fallback and use it.
   // TODO(sky): remove this in a couple of releases (m28ish).
   prefs_->SetBoolean(prefs::kSessionExitedCleanly, true);
+
+  g_browser_process->profile_manager()->InitProfileUserPrefs(this);
 
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       this);
@@ -1186,6 +1192,16 @@ void ProfileImpl::UpdateProfileAvatarCache() {
     size_t avatar_index =
         GetPrefs()->GetInteger(prefs::kProfileAvatarIndex);
     cache.SetAvatarIconOfProfileAtIndex(index, avatar_index);
+  }
+}
+
+void ProfileImpl::UpdateProfileIsEphemeralCache() {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+  size_t index = cache.GetIndexOfProfileWithPath(GetPath());
+  if (index != std::string::npos) {
+    bool is_ephemeral = GetPrefs()->GetBoolean(prefs::kForceEphemeralProfiles);
+    cache.SetProfileIsEphemeralAtIndex(index, is_ephemeral);
   }
 }
 

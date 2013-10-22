@@ -181,22 +181,7 @@ struct EVENTS_EXPORT GestureEventDetails {
 // gesture-recognizer.
 class EVENTS_EXPORT GestureConsumer {
  public:
-  GestureConsumer()
-      : ignores_events_(false) {
-  }
-
-  explicit GestureConsumer(bool ignores_events)
-      : ignores_events_(ignores_events) {
-  }
-
   virtual ~GestureConsumer() {}
-
-  // TODO: this is a hack! GestureRecognizer should never expose the internal
-  // marker object that implements this.
-  bool ignores_events() { return ignores_events_; }
-
- private:
-  const bool ignores_events_;
 };
 
 // GestureEventHelper creates implementation-specific gesture events and
@@ -206,8 +191,10 @@ class EVENTS_EXPORT GestureEventHelper {
   virtual ~GestureEventHelper() {
   }
 
-  virtual bool DispatchLongPressGestureEvent(GestureEvent* event) = 0;
-  virtual bool DispatchCancelTouchEvent(TouchEvent* event) = 0;
+  // Returns true if this helper can dispatch events to |consumer|.
+  virtual bool CanDispatchToConsumer(GestureConsumer* consumer) = 0;
+  virtual void DispatchLongPressGestureEvent(GestureEvent* event) = 0;
+  virtual void DispatchCancelTouchEvent(TouchEvent* event) = 0;
 };
 
 }  // namespace ui

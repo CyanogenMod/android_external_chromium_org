@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 
+#include <string>
+
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -12,6 +14,7 @@
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,6 +43,11 @@ bool IsInExtensionList(const Extension* extension,
 }
 
 }  // namespace
+
+bool ExtensionToolbarModel::Observer::BrowserActionShowPopup(
+    const extensions::Extension* extension) {
+  return false;
+}
 
 ExtensionToolbarModel::ExtensionToolbarModel(ExtensionService* service)
     : service_(service),
@@ -128,7 +136,8 @@ void ExtensionToolbarModel::MoveBrowserAction(const Extension* extension,
 ExtensionToolbarModel::Action ExtensionToolbarModel::ExecuteBrowserAction(
     const Extension* extension,
     Browser* browser,
-    GURL* popup_url_out) {
+    GURL* popup_url_out,
+    bool should_grant) {
   content::WebContents* web_contents = NULL;
   int tab_id = 0;
   if (!ExtensionTabUtil::GetDefaultTab(browser, &web_contents, &tab_id))
@@ -142,8 +151,10 @@ ExtensionToolbarModel::Action ExtensionToolbarModel::ExecuteBrowserAction(
   if (!browser_action->GetIsVisible(tab_id))
     return ACTION_NONE;
 
-  extensions::TabHelper::FromWebContents(web_contents)->
-      active_tab_permission_granter()->GrantIfRequested(extension);
+  if (should_grant) {
+    extensions::TabHelper::FromWebContents(web_contents)->
+        active_tab_permission_granter()->GrantIfRequested(extension);
+  }
 
   if (browser_action->HasPopup(tab_id)) {
     if (popup_url_out)
@@ -402,7 +413,7 @@ int ExtensionToolbarModel::IncognitoIndexToOriginal(int incognito_index) {
   for (ExtensionList::iterator iter = toolbar_items_.begin();
        iter != toolbar_items_.end();
        ++iter, ++original_index) {
-    if (service_->IsIncognitoEnabled((*iter)->id())) {
+    if (extension_util::IsIncognitoEnabled((*iter)->id(), service_)) {
       if (incognito_index == i)
         break;
       ++i;
@@ -418,7 +429,7 @@ int ExtensionToolbarModel::OriginalIndexToIncognito(int original_index) {
        ++iter, ++i) {
     if (original_index == i)
       break;
-    if (service_->IsIncognitoEnabled((*iter)->id()))
+    if (extension_util::IsIncognitoEnabled((*iter)->id(), service_))
       ++incognito_index;
   }
   return incognito_index;
@@ -453,4 +464,16 @@ void ExtensionToolbarModel::OnExtensionToolbarPrefChange() {
         base::Bind(&ExtensionToolbarModel::UpdatePrefs,
                    weak_ptr_factory_.GetWeakPtr()));
   }
+}
+
+bool ExtensionToolbarModel::ShowBrowserActionPopup(
+    const extensions::Extension* extension) {
+  ObserverListBase<Observer>::Iterator it(observers_);
+  Observer* obs = NULL;
+  while ((obs = it.GetNext()) != NULL) {
+    // Stop after first popup since it should only show in the active window.
+    if (obs->BrowserActionShowPopup(extension))
+      return true;
+  }
+  return false;
 }

@@ -6,6 +6,7 @@
 
 #include <set>
 
+#include "base/logging.h"
 #include "tools/gn/config_values_extractors.h"
 #include "tools/gn/err.h"
 #include "tools/gn/escape.h"
@@ -16,67 +17,59 @@ namespace {
 
 // This functor is used to capture the output of RecursiveTargetConfigToStream
 // in an vector.
-struct StringAccumulator {
-  StringAccumulator(std::vector<std::string>* result_in) : result(result_in) {}
+template<typename T>
+struct Accumulator {
+  Accumulator(std::vector<T>* result_in) : result(result_in) {}
 
-  void operator()(const std::string& s, std::ostream&) const {
+  void operator()(const T& s, std::ostream&) const {
     result->push_back(s);
   }
 
-  std::vector<std::string>* result;
+  std::vector<T>* result;
 };
+
+// Standalone version of GypBinaryTargetWriter::Indent for use by standalone
+// functions.
+std::ostream& Indent(std::ostream& out, int spaces) {
+  const char kSpaces[81] =
+      "                                        "
+      "                                        ";
+  CHECK(static_cast<size_t>(spaces) <= arraysize(kSpaces) - 1);
+  out.write(kSpaces, spaces);
+  return out;
+}
+
+// Writes the given array values. The array should already be declared with the
+// opening "[" written to the output. The function will not write the
+// terminating "]" either.
+void WriteArrayValues(std::ostream& out,
+                      const std::vector<std::string>& values) {
+  EscapeOptions options;
+  options.mode = ESCAPE_JSON;
+  for (size_t i = 0; i < values.size(); i++) {
+    out << " '";
+    EscapeStringToStream(out, values[i], options);
+    out << "',";
+  }
+}
 
 // Writes the given array with the given name. The indent should be the
 // indenting for the name, the values will be indented 2 spaces from there.
 // Writes nothing if there is nothing in the array.
-void WriteArray(std::ostream& out,
-                const char* name,
-                const std::vector<std::string>& values,
-                int indent) {
+void WriteNamedArray(std::ostream& out,
+                     const char* name,
+                     const std::vector<std::string>& values,
+                     int indent) {
   if (values.empty())
     return;
 
   EscapeOptions options;
   options.mode = ESCAPE_JSON;
 
-  std::string indent_str(indent, ' ');
-  out << indent_str << "'" << name << "': [";
-  for (size_t i = 0; i < values.size(); i++) {
-    out << " '";
-    EscapeStringToStream(out, values[i], options);
-    out << "',";
-  }
+  Indent(out, indent) << "'" << name << "': [";
+  WriteArrayValues(out, values);
   out << " ],\n";
 }
-
-struct StringWriter {
-  StringWriter() {
-    options.mode = ESCAPE_JSON;
-  }
-
-  void operator()(const std::string& s, std::ostream& out) const {
-    out << " '";
-    EscapeStringToStream(out, s, options);
-    out << "',";
-  }
-
-  EscapeOptions options;
-};
-
-struct IncludeWriter {
-  IncludeWriter(const GypHelper& h) : helper(h) {
-    options.mode = ESCAPE_JSON;
-  }
-
-  void operator()(const SourceDir& d, std::ostream& out) const {
-    out << " '";
-    EscapeStringToStream(out, helper.GetDirReference(d, false), options);
-    out << "',";
-  }
-
-  const GypHelper& helper;
-  EscapeOptions options;
-};
 
 // Returns the value from the already-filled in cflags_* for the optimization
 // level to set in the GYP file. Additionally, this removes the flag from the
@@ -100,46 +93,67 @@ std::string GetVCOptimization(std::vector<std::string>* cflags) {
   return "'2'";  // Default value.
 }
 
+// Finds all values from the given getter from all configs in the given list,
+// and adds them to the given result vector.
+template<typename T>
+void FillConfigListValues(
+    const std::vector<const Config*>& configs,
+    const std::vector<T>& (ConfigValues::* getter)() const,
+    std::vector<T>* result) {
+  for (size_t config_i = 0; config_i < configs.size(); config_i++) {
+    const std::vector<T>& values =
+        (configs[config_i]->config_values().*getter)();
+    for (size_t val_i = 0; val_i < values.size(); val_i++)
+      result->push_back(values[val_i]);
+  }
+}
+
+const int kExtraIndent = 2;
+
 }  // namespace
 
-GypBinaryTargetWriter::GypBinaryTargetWriter(const Target* debug_target,
-                                             const Target* release_target,
+GypBinaryTargetWriter::Flags::Flags() {}
+GypBinaryTargetWriter::Flags::~Flags() {}
+
+GypBinaryTargetWriter::GypBinaryTargetWriter(const TargetGroup& group,
                                              std::ostream& out)
-    : GypTargetWriter(debug_target, out),
-      release_target_(release_target) {
+    : GypTargetWriter(group.debug, out),
+      group_(group) {
 }
 
 GypBinaryTargetWriter::~GypBinaryTargetWriter() {
 }
 
 void GypBinaryTargetWriter::Run() {
-  out_ << "    {\n";
+  int indent = 4;
 
-  WriteName();
-  WriteType();
+  Indent(indent) << "{\n";
 
-  out_ << "      'configurations': {\n";
-  out_ << "        'Debug': {\n";
-  WriteFlags(target_);
-  out_ << "        },\n";
-  out_ << "        'Release': {\n";
-  WriteFlags(release_target_);
-  out_ << "        },\n";
-  out_ << "        'Debug_x64': {},\n";
-  out_ << "        'Release_x64': {},\n";
-  out_ << "      },\n";
+  WriteName(indent + kExtraIndent);
+  WriteType(indent + kExtraIndent);
 
-  WriteSources();
-  WriteDeps();
+  if (target_->settings()->IsLinux()) {
+    WriteLinuxConfiguration(indent + kExtraIndent);
+  } else if (target_->settings()->IsWin()) {
+    WriteVCConfiguration(indent + kExtraIndent);
+  } else if (target_->settings()->IsMac()) {
+    // TODO(brettw) mac.
+    NOTREACHED();
+    //WriteMacConfiguration();
+  }
+  WriteDirectDependentSettings(indent + kExtraIndent);
+  WriteAllDependentSettings(indent + kExtraIndent);
 
-  out_ << "    },\n";
+  Indent(indent) << "},\n";
 }
 
-void GypBinaryTargetWriter::WriteName() {
+std::ostream& GypBinaryTargetWriter::Indent(int spaces) {
+  return ::Indent(out_, spaces);
+}
+
+void GypBinaryTargetWriter::WriteName(int indent) {
   std::string name = helper_.GetNameForTarget(target_);
-  out_ << "      'target_name': '";
-  out_ << name;
-  out_ << "',\n";
+  Indent(indent) << "'target_name': '" << name << "',\n";
 
   std::string product_name;
   if (target_->output_name().empty())
@@ -151,11 +165,11 @@ void GypBinaryTargetWriter::WriteName() {
   // another "lib" on Linux, but GYP doesn't. We need to rename applicable
   // targets here.
 
-  out_ << "      'product_name': '" << product_name << "',\n";
+  Indent(indent) << "'product_name': '" << product_name << "',\n";
 }
 
-void GypBinaryTargetWriter::WriteType() {
-  out_ << "      'type': ";
+void GypBinaryTargetWriter::WriteType(int indent) {
+  Indent(indent) << "'type': ";
   switch (target_->output_type()) {
     case Target::EXECUTABLE:
       out_ << "'executable',\n";
@@ -174,61 +188,106 @@ void GypBinaryTargetWriter::WriteType() {
   }
 
   if (target_->hard_dep())
-    out_ << "      'hard_dependency': 1,\n";
+    Indent(indent) << "'hard_dependency': 1,\n";
 }
 
-void GypBinaryTargetWriter::WriteFlags(const Target* target) {
-  WriteDefines(target);
-  WriteIncludes(target);
-  if (target->settings()->IsWin())
-    WriteVCFlags(target);
+void GypBinaryTargetWriter::WriteVCConfiguration(int indent) {
+  Indent(indent) << "'configurations': {\n";
+
+  Indent(indent + kExtraIndent) << "'Debug': {\n";
+  Flags debug_flags(FlagsFromTarget(group_.debug));
+  WriteVCFlags(debug_flags, indent + kExtraIndent * 2);
+  Indent(indent + kExtraIndent) << "},\n";
+
+  Indent(indent + kExtraIndent) << "'Release': {\n";
+  Flags release_flags(FlagsFromTarget(group_.release));
+  WriteVCFlags(release_flags, indent + kExtraIndent * 2);
+  Indent(indent + kExtraIndent) << "},\n";
+
+  Indent(indent + kExtraIndent) << "'Debug_x64': {},\n";
+  Indent(indent + kExtraIndent) << "'Release_x64': {},\n";
+  Indent(indent) << "},\n";
+
+  WriteSources(target_, indent);
+  WriteDeps(target_, indent);
 }
 
-void GypBinaryTargetWriter::WriteDefines(const Target* target) {
-  out_ << "          'defines': [";
-  RecursiveTargetConfigToStream<std::string>(target, &ConfigValues::defines,
-                                             StringWriter(), out_);
-  out_ << " ],\n";
+void GypBinaryTargetWriter::WriteLinuxConfiguration(int indent) {
+  // The Linux stuff works differently. On Linux we support cross-compiles and
+  // all ninja generators know to look for target conditions. Other platforms'
+  // generators don't all do this, so we can't have the same GYP structure.
+  Indent(indent) << "'target_conditions': [\n";
+  // The host toolset is configured for the current computer, we will only have
+  // this when doing cross-compiles.
+  if (group_.host_debug && group_.host_release) {
+    Indent(indent + kExtraIndent) << "['_toolset == \"host\"', {\n";
+    Indent(indent + kExtraIndent * 2) << "'configurations': {\n";
+    Indent(indent + kExtraIndent * 3) << "'Debug': {\n";
+    WriteLinuxFlagsForTarget(group_.host_debug, indent + kExtraIndent * 4);
+    Indent(indent + kExtraIndent * 3) << "},\n";
+    Indent(indent + kExtraIndent * 3) << "'Release': {\n";
+    WriteLinuxFlagsForTarget(group_.host_release, indent + kExtraIndent * 4);
+    Indent(indent + kExtraIndent * 3) << "},\n";
+    Indent(indent + kExtraIndent * 2) << "}\n";
+
+    // The sources are per-toolset but shared between debug & release.
+    WriteSources(group_.host_debug, indent + kExtraIndent * 2);
+
+    Indent(indent + kExtraIndent) << "],\n";
+  }
+
+  // The target toolset is the "regular" one.
+  Indent(indent + kExtraIndent) << "['_toolset == \"target\"', {\n";
+  Indent(indent + kExtraIndent * 2) << "'configurations': {\n";
+  Indent(indent + kExtraIndent * 3) << "'Debug': {\n";
+  WriteLinuxFlagsForTarget(group_.debug, indent + kExtraIndent * 4);
+  Indent(indent + kExtraIndent * 3) << "},\n";
+  Indent(indent + kExtraIndent * 3) << "'Release': {\n";
+  WriteLinuxFlagsForTarget(group_.release, indent + kExtraIndent * 4);
+  Indent(indent + kExtraIndent * 3) << "},\n";
+  Indent(indent + kExtraIndent * 2) << "},\n";
+
+  WriteSources(target_, indent + kExtraIndent * 2);
+
+  Indent(indent + kExtraIndent) << "},],\n";
+  Indent(indent) << "],\n";
+
+  // Deps in GYP can not vary based on the toolset.
+  WriteDeps(target_, indent);
 }
 
-void GypBinaryTargetWriter::WriteIncludes(const Target* target) {
-  out_ << "          'include_dirs': [";
-  RecursiveTargetConfigToStream<SourceDir>(target, &ConfigValues::include_dirs,
-                                           IncludeWriter(helper_), out_);
-  out_ << " ],\n";
-}
+void GypBinaryTargetWriter::WriteVCFlags(Flags& flags, int indent) {
+  // Defines and includes go outside of the msvs settings.
+  WriteNamedArray(out_, "defines", flags.defines, indent);
+  WriteIncludeDirs(flags, indent);
 
-void GypBinaryTargetWriter::WriteVCFlags(const Target* target) {
   // C flags.
-  out_ << "          'msvs_settings': {\n";
-  out_ << "            'VCCLCompilerTool': {\n";
+  Indent(indent) << "'msvs_settings': {\n";
+  Indent(indent + kExtraIndent) << "'VCCLCompilerTool': {\n";
 
-  std::vector<std::string> cflags;
-  StringAccumulator acc(&cflags);
-  RecursiveTargetConfigToStream<std::string>(target, &ConfigValues::cflags,
-                                             acc, out_);
   // GYP always uses the VC optimization flag to add a /O? on Visual Studio.
   // This can produce duplicate values. So look up the GYP value corresponding
   // to the flags used, and set the same one.
-  std::string optimization = GetVCOptimization(&cflags);
-  WriteArray(out_, "AdditionalOptions", cflags, 14);
+  std::string optimization = GetVCOptimization(&flags.cflags);
+  WriteNamedArray(out_, "AdditionalOptions", flags.cflags,
+                  indent + kExtraIndent * 2);
   // TODO(brettw) cflags_c and cflags_cc!
-  out_ << "              'Optimization': " << optimization << ",\n";
-  out_ << "            },\n";
+  Indent(indent + kExtraIndent * 2) << "'Optimization': "
+                                    << optimization << ",\n";
+  Indent(indent + kExtraIndent) << "},\n";
 
   // Linker tool stuff.
-  out_ << "            'VCLinkerTool': {\n";
+  Indent(indent + kExtraIndent) << "'VCLinkerTool': {\n";
 
   // ...Library dirs.
   EscapeOptions escape_options;
   escape_options.mode = ESCAPE_JSON;
-  const OrderedSet<SourceDir> all_lib_dirs = target->all_lib_dirs();
-  if (!all_lib_dirs.empty()) {
-    out_ << "              'AdditionalLibraryDirectories': [";
-    for (size_t i = 0; i < all_lib_dirs.size(); i++) {
+  if (!flags.lib_dirs.empty()) {
+    Indent(indent + kExtraIndent * 2) << "'AdditionalLibraryDirectories': [";
+    for (size_t i = 0; i < flags.lib_dirs.size(); i++) {
       out_ << " '";
       EscapeStringToStream(out_,
-                           helper_.GetDirReference(all_lib_dirs[i], false),
+                           helper_.GetDirReference(flags.lib_dirs[i], false),
                            escape_options);
       out_ << "',";
     }
@@ -236,56 +295,190 @@ void GypBinaryTargetWriter::WriteVCFlags(const Target* target) {
   }
 
   // ...Libraries.
-  const OrderedSet<std::string> all_libs = target->all_libs();
-  if (!all_libs.empty()) {
-    out_ << "              'AdditionalDependencies': [";
-    for (size_t i = 0; i < all_libs.size(); i++) {
-      out_ << " '";
-      EscapeStringToStream(out_, all_libs[i], escape_options);
-      out_ << "',";
-    }
-    out_ << " ],\n";
-  }
+  WriteNamedArray(out_, "AdditionalDependencies", flags.libs,
+                  indent + kExtraIndent * 2);
 
   // ...LD flags.
   // TODO(brettw) EnableUAC defaults to on and needs to be set. Also
   // UACExecutionLevel and UACUIAccess depends on that and defaults to 0/false.
-  std::vector<std::string> ldflags;
-  acc.result = &ldflags;
-  RecursiveTargetConfigToStream<std::string>(target, &ConfigValues::ldflags,
-                                             acc, out_);
-  WriteArray(out_, "AdditionalOptions", ldflags, 14);
-  out_ << "            },\n";
-
-  out_ << "          },\n";
+  WriteNamedArray(out_, "AdditionalOptions", flags.ldflags, 14);
+  Indent(indent + kExtraIndent) << "},\n";
+  Indent(indent) << "},\n";
 }
 
-void GypBinaryTargetWriter::WriteSources() {
-  out_ << "      'sources': [\n";
+void GypBinaryTargetWriter::WriteLinuxFlagsForTarget(const Target* target,
+                                                     int indent) {
+  Flags flags(FlagsFromTarget(target));
+  WriteLinuxFlags(flags, indent);
+}
 
-  const Target::FileList& sources = target_->sources();
-  for (size_t i = 0; i < sources.size(); i++) {
-    const SourceFile& input_file = sources[i];
-    out_ << "        '" << helper_.GetFileReference(input_file) << "',\n";
+void GypBinaryTargetWriter::WriteLinuxFlags(const Flags& flags, int indent) {
+  WriteIncludeDirs(flags, indent);
+  WriteNamedArray(out_, "defines",      flags.defines,      indent);
+  WriteNamedArray(out_, "cflags",       flags.cflags,       indent);
+  WriteNamedArray(out_, "cflags_c",     flags.cflags_c,     indent);
+  WriteNamedArray(out_, "cflags_cc",    flags.cflags_cc,    indent);
+  WriteNamedArray(out_, "cflags_objc",  flags.cflags_objc,  indent);
+  WriteNamedArray(out_, "cflags_objcc", flags.cflags_objcc, indent);
+
+  // Put libraries and library directories in with ldflags.
+  Indent(indent) << "'ldflags': ["; \
+  WriteArrayValues(out_, flags.ldflags);
+
+  EscapeOptions escape_options;
+  escape_options.mode = ESCAPE_JSON;
+  for (size_t i = 0; i < flags.lib_dirs.size(); i++) {
+    out_ << " '-L";
+    EscapeStringToStream(out_,
+                         helper_.GetDirReference(flags.lib_dirs[i], false),
+                         escape_options);
+    out_ << "',";
   }
 
-  out_ << "      ],\n";
+  for (size_t i = 0; i < flags.libs.size(); i++) {
+    out_ << " '-l";
+    EscapeStringToStream(out_, flags.libs[i], escape_options);
+    out_ << "',";
+  }
+  out_ << " ],\n";
 }
 
-void GypBinaryTargetWriter::WriteDeps() {
-  const std::vector<const Target*>& deps = target_->deps();
+void GypBinaryTargetWriter::WriteSources(const Target* target, int indent) {
+  Indent(indent) << "'sources': [\n";
+
+  const Target::FileList& sources = target->sources();
+  for (size_t i = 0; i < sources.size(); i++) {
+    const SourceFile& input_file = sources[i];
+    Indent(indent + kExtraIndent) << "'" << helper_.GetFileReference(input_file)
+                                  << "',\n";
+  }
+
+  Indent(indent) << "],\n";
+}
+
+void GypBinaryTargetWriter::WriteDeps(const Target* target, int indent) {
+  const std::vector<const Target*>& deps = target->deps();
   if (deps.empty())
     return;
 
   EscapeOptions escape_options;
   escape_options.mode = ESCAPE_JSON;
 
-  out_ << "      'dependencies': [\n";
+  Indent(indent) << "'dependencies': [\n";
   for (size_t i = 0; i < deps.size(); i++) {
-    out_ << "        '";
+    Indent(indent + kExtraIndent) << "'";
     EscapeStringToStream(out_, helper_.GetFullRefForTarget(deps[i]),
                          escape_options);
     out_ << "',\n";
   }
-  out_ << "      ],\n";
+  Indent(indent) << "],\n";
+}
+
+void GypBinaryTargetWriter::WriteIncludeDirs(const Flags& flags, int indent) {
+  if (flags.include_dirs.empty())
+    return;
+
+  EscapeOptions options;
+  options.mode = ESCAPE_JSON;
+
+  Indent(indent) << "'include_dirs': [";
+  for (size_t i = 0; i < flags.include_dirs.size(); i++) {
+    out_ << " '";
+    EscapeStringToStream(out_,
+                         helper_.GetDirReference(flags.include_dirs[i], false),
+                         options);
+    out_ << "',";
+  }
+  out_ << " ],\n";
+}
+
+void GypBinaryTargetWriter::WriteDirectDependentSettings(int indent) {
+  if (target_->direct_dependent_configs().empty())
+    return;
+  out_ << "'direct_dependent_settings': {\n";
+
+  Flags flags(FlagsFromConfigList(target_->direct_dependent_configs()));
+  if (target_->settings()->IsLinux()) {
+    WriteLinuxFlags(flags, indent + kExtraIndent);
+  } else if (target_->settings()->IsWin()) {
+    WriteVCFlags(flags, indent + kExtraIndent);
+  } else if (target_->settings()->IsMac()) {
+    // TODO(brettw) write mac.
+    NOTREACHED();
+  }
+  Indent(indent) << "},\n";
+}
+
+void GypBinaryTargetWriter::WriteAllDependentSettings(int indent) {
+  if (target_->all_dependent_configs().empty())
+    return;
+  Indent(indent) << "'all_dependent_settings': {\n";
+
+  Flags flags(FlagsFromConfigList(target_->all_dependent_configs()));
+  if (target_->settings()->IsLinux()) {
+    WriteLinuxFlags(flags, indent + kExtraIndent);
+  } else if (target_->settings()->IsWin()) {
+    WriteVCFlags(flags, indent + kExtraIndent);
+  } else if (target_->settings()->IsMac()) {
+    // TODO(brettw) write mac.
+    NOTREACHED();
+  }
+  Indent(indent) << "},\n";
+}
+
+GypBinaryTargetWriter::Flags GypBinaryTargetWriter::FlagsFromTarget(
+    const Target* target) const {
+  Flags ret;
+
+  // Extracts a vector of the given type and name from the config values.
+  #define EXTRACT(type, name) \
+      { \
+        Accumulator<type> acc(&ret.name); \
+        RecursiveTargetConfigToStream<type>(target, &ConfigValues::name, \
+                                            acc, out_); \
+      }
+
+  EXTRACT(std::string, defines);
+  EXTRACT(SourceDir,   include_dirs);
+  EXTRACT(std::string, cflags);
+  EXTRACT(std::string, cflags_c);
+  EXTRACT(std::string, cflags_cc);
+  EXTRACT(std::string, cflags_objc);
+  EXTRACT(std::string, cflags_objcc);
+  EXTRACT(std::string, ldflags);
+
+  #undef EXTRACT
+
+  const OrderedSet<SourceDir>& all_lib_dirs = target->all_lib_dirs();
+  for (size_t i = 0; i < all_lib_dirs.size(); i++)
+    ret.lib_dirs.push_back(all_lib_dirs[i]);
+
+  const OrderedSet<std::string> all_libs = target->all_libs();
+  for (size_t i = 0; i < all_libs.size(); i++)
+    ret.libs.push_back(all_libs[i]);
+
+  return ret;
+}
+
+GypBinaryTargetWriter::Flags GypBinaryTargetWriter::FlagsFromConfigList(
+    const std::vector<const Config*>& configs) const {
+  Flags ret;
+
+  #define EXTRACT(type, name) \
+      FillConfigListValues<type>(configs, &ConfigValues::name, &ret.name);
+
+  EXTRACT(std::string, defines);
+  EXTRACT(SourceDir,   include_dirs);
+  EXTRACT(std::string, cflags);
+  EXTRACT(std::string, cflags_c);
+  EXTRACT(std::string, cflags_cc);
+  EXTRACT(std::string, cflags_objc);
+  EXTRACT(std::string, cflags_objcc);
+  EXTRACT(std::string, ldflags);
+  EXTRACT(SourceDir,   lib_dirs);
+  EXTRACT(std::string, libs);
+
+  #undef EXTRACT
+
+  return ret;
 }

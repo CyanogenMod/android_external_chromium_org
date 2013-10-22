@@ -24,6 +24,7 @@
 
 namespace extensions {
 namespace api {
+class TCPServerSocketEventDispatcher;
 class TCPSocketEventDispatcher;
 class UDPSocketEventDispatcher;
 }
@@ -153,6 +154,7 @@ class ApiResourceManager : public ProfileKeyedAPI,
   }
 
  private:
+  friend class api::TCPServerSocketEventDispatcher;
   friend class api::TCPSocketEventDispatcher;
   friend class api::UDPSocketEventDispatcher;
   friend class ProfileKeyedAPIFactory<ApiResourceManager<T> >;
@@ -286,7 +288,7 @@ class ApiResourceManager : public ProfileKeyedAPI,
         } else {
           linked_ptr<T> ptr = api_resource_map_[*it];
           T* resource = ptr.get();
-          erase = (resource && !resource->persistent());
+          erase = (resource && !resource->IsPersistent());
         }
 
         if (erase) {

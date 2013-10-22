@@ -290,12 +290,12 @@ void ShelfLayoutManager::LayoutShelf() {
 
   if (shelf_->launcher()) {
     // This is not part of UpdateBoundsAndOpacity() because
-    // SetLauncherViewBounds() sets the bounds immediately and does not animate.
-    // The height of the LauncherView for a horizontal shelf and the width of
-    // the LauncherView for a vertical shelf are set when |shelf_|'s bounds
+    // SetShelfViewBounds() sets the bounds immediately and does not animate.
+    // The height of the ShelfView for a horizontal shelf and the width of
+    // the ShelfView for a vertical shelf are set when |shelf_|'s bounds
     // are changed via UpdateBoundsAndOpacity(). This sets the origin and the
     // dimension in the other direction.
-    shelf_->launcher()->SetLauncherViewBounds(
+    shelf_->launcher()->SetShelfViewBounds(
         target_bounds.launcher_bounds_in_shelf);
   }
 }
@@ -830,16 +830,16 @@ void ShelfLayoutManager::CalculateTargetBounds(
   // This needs to happen after calling UpdateTargetBoundsForGesture(), because
   // that can change the size of the shelf.
   target_bounds->launcher_bounds_in_shelf = SelectValueForShelfAlignment(
-      gfx::Rect(base::i18n::IsRTL() ? status_size.width() : 0, 0,
-                    shelf_width - status_size.width(),
-                    target_bounds->shelf_bounds_in_root.height()),
+      gfx::Rect(0, 0,
+                shelf_width - status_size.width(),
+                target_bounds->shelf_bounds_in_root.height()),
       gfx::Rect(0, 0, target_bounds->shelf_bounds_in_root.width(),
                 shelf_height - status_size.height()),
       gfx::Rect(0, 0, target_bounds->shelf_bounds_in_root.width(),
                 shelf_height - status_size.height()),
-      gfx::Rect(base::i18n::IsRTL() ? status_size.width() : 0, 0,
-                    shelf_width - status_size.width(),
-                    target_bounds->shelf_bounds_in_root.height()));
+      gfx::Rect(0, 0,
+                shelf_width - status_size.width(),
+                target_bounds->shelf_bounds_in_root.height()));
 }
 
 void ShelfLayoutManager::UpdateTargetBoundsForGesture(

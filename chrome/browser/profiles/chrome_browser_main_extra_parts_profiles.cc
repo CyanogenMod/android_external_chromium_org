@@ -33,6 +33,7 @@
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/profiles/gaia_info_update_service_factory.h"
+#include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -89,6 +90,7 @@
 #include "chrome/browser/extensions/api/socket/tcp_socket.h"
 #include "chrome/browser/extensions/api/socket/udp_socket.h"
 #include "chrome/browser/extensions/api/sockets_tcp/tcp_socket_event_dispatcher.h"
+#include "chrome/browser/extensions/api/sockets_tcp_server/tcp_server_socket_event_dispatcher.h"
 #include "chrome/browser/extensions/api/sockets_udp/udp_socket_event_dispatcher.h"
 #include "chrome/browser/extensions/api/streams_private/streams_private_api.h"
 #include "chrome/browser/extensions/api/system_info/system_info_api.h"
@@ -218,6 +220,8 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ActivityLogFactory::GetInstance();
   extensions::ActivityLogAPI::GetFactoryInstance();
   extensions::AlarmManager::GetFactoryInstance();
+  extensions::ApiResourceManager<extensions::ResumableTCPServerSocket>::
+      GetFactoryInstance();
   extensions::ApiResourceManager<extensions::ResumableTCPSocket>::
       GetFactoryInstance();
   extensions::ApiResourceManager<extensions::ResumableUDPSocket>::
@@ -227,6 +231,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ApiResourceManager<extensions::Socket>::GetFactoryInstance();
   extensions::ApiResourceManager<extensions::UsbDeviceResource>::
       GetFactoryInstance();
+  extensions::api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   extensions::api::TCPSocketEventDispatcher::GetFactoryInstance();
   extensions::api::UDPSocketEventDispatcher::GetFactoryInstance();
   extensions::AudioAPI::GetFactoryInstance();
@@ -294,6 +299,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   GlobalErrorServiceFactory::GetInstance();
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
+  HotwordServiceFactory::GetInstance();
   invalidation::InvalidationServiceFactory::GetInstance();
   InstantServiceFactory::GetInstance();
 #if defined(ENABLE_MDNS)

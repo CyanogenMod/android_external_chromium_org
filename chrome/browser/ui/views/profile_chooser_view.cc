@@ -48,6 +48,7 @@ const int kLargeImageSide = 64;
 const int kSmallImageSide = 32;
 const int kMinMenuWidth = 250;
 const int kButtonHeight = 29;
+const int kArrowHeight = 10;
 
 // Current profile avatar image.
 views::View* CreateProfileImageView(const gfx::Image& icon) {
@@ -55,8 +56,8 @@ views::View* CreateProfileImageView(const gfx::Image& icon) {
 
   gfx::Image image = profiles::GetSizedAvatarIconWithBorder(
       icon, true,
-      kLargeImageSide + profiles::kAvatarIconBorder,
-      kLargeImageSide + profiles::kAvatarIconBorder);
+      kLargeImageSide + profiles::kAvatarIconPadding,
+      kLargeImageSide + profiles::kAvatarIconPadding);
   view->SetImage(image.ToImageSkia());
 
   return view;
@@ -199,6 +200,7 @@ void ProfileChooserView::ShowBubble(
   profile_bubble_->set_close_on_deactivate(close_on_deactivate_);
   profile_bubble_->SetAlignment(border_alignment);
   profile_bubble_->GetWidget()->Show();
+  profile_bubble_->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
 }
 
 // static
@@ -220,6 +222,8 @@ ProfileChooserView::ProfileChooserView(views::View* anchor_view,
       browser_(browser) {
   // Reset the default margins inherited from the BubbleDelegateView.
   set_margins(gfx::Insets());
+  // Compensate for built-in vertical padding in the anchor view's image.
+  set_anchor_view_insets(gfx::Insets(kArrowHeight, 0, kArrowHeight, 0));
 
   ResetLinksAndButtons();
 
@@ -274,12 +278,18 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
   layout->set_minimum_size(gfx::Size(kMinMenuWidth, 0));
 
   if (view_to_display == GAIA_SIGNIN_VIEW) {
+    const int kMinGaiaViewWidth = 280;
+    const int kMinGaiaViewHeight = 300;
     Profile* profile = browser_->profile();
     views::WebView* web_view = new views::WebView(profile);
     web_view->LoadInitialURL(GURL(chrome::kChromeUIInlineLoginURL));
     layout->StartRow(1, 0);
     layout->AddView(web_view);
+    layout->set_minimum_size(
+        gfx::Size(kMinGaiaViewWidth, kMinGaiaViewHeight));
     Layout();
+    if (GetBubbleFrameView())
+      SizeToContents();
     return;
   }
 
@@ -329,6 +339,8 @@ void ProfileChooserView::ShowView(BubbleViewMode view_to_display,
   layout->AddView(option_buttons_view);
 
   Layout();
+  if (GetBubbleFrameView())
+    SizeToContents();
 }
 
 void ProfileChooserView::WindowClosing() {
@@ -367,7 +379,6 @@ void ProfileChooserView::LinkClicked(views::Link* sender, int event_flags) {
   if (sender == manage_accounts_link_) {
     // ShowView() will DCHECK if this view is displayed for non signed-in users.
     ShowView(ACCOUNT_MANAGEMENT_VIEW, avatar_menu_.get());
-    SizeToContents();   // The account list changes the height of the bubble.
   } else if (sender == signout_current_profile_link_) {
     avatar_menu_->BeginSignOut();
   } else if (sender == signin_current_profile_link_) {
@@ -505,8 +516,8 @@ views::View* ProfileChooserView::CreateOtherProfilesView(
 
     gfx::Image image = profiles::GetSizedAvatarIconWithBorder(
         item.icon, true,
-        kSmallImageSide + profiles::kAvatarIconBorder,
-        kSmallImageSide + profiles::kAvatarIconBorder);
+        kSmallImageSide + profiles::kAvatarIconPadding,
+        kSmallImageSide + profiles::kAvatarIconPadding);
 
     views::TextButton* button = new views::TextButton(this, item.name);
     open_other_profile_indexes_map_[button] = index;

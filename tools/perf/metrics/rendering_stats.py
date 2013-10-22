@@ -4,9 +4,11 @@
 
 from operator import attrgetter
 
+RENDER_PROCESS_MARKER = 'RenderProcessMarker'
+
+
 class RenderingStats(object):
-  def __init__(self, render_process_marker, timeline_markers,
-               rendering_stats_deltas, used_gpu_benchmarking):
+  def __init__(self, render_process_marker, timeline_markers):
     """
     Utility class for extracting rendering statistics from the timeline (or
     other loggin facilities), and providing them in a common format to classes
@@ -19,6 +21,7 @@ class RenderingStats(object):
     All *_time values are measured in milliseconds.
     """
     assert(len(render_process_marker) == 1)
+    assert(len(timeline_markers) > 0)
     self.renderer_process = render_process_marker[0].start_thread.parent
     self.start = timeline_markers[0].start
     self.end = timeline_markers[-1].start + timeline_markers[-1].duration
@@ -33,22 +36,11 @@ class RenderingStats(object):
     self.rasterize_time = []
     self.rasterized_pixel_count = []
 
-    if used_gpu_benchmarking:
-      for marker in timeline_markers:
-        self.initMainThreadStatsFromTimeline(marker.start,
-                                             marker.start+marker.duration)
-        self.initImplThreadStatsFromTimeline(marker.start,
-                                             marker.start+marker.duration)
-    else:
-      self.initFrameCountsFromRenderingStats(rendering_stats_deltas)
-
-  def initFrameCountsFromRenderingStats(self, rs):
-    # TODO(ernstm): remove numFramesSentToScreen when RenderingStats
-    # cleanup CL was picked up by the reference build.
-    if 'frameCount' in rs:
-      self.frame_count = rs.get('frameCount', 0)
-    else:
-      self.frame_count = rs.get('numFramesSentToScreen', 0)
+    for marker in timeline_markers:
+      self.initMainThreadStatsFromTimeline(marker.start,
+                                           marker.start+marker.duration)
+      self.initImplThreadStatsFromTimeline(marker.start,
+                                           marker.start+marker.duration)
 
   def initMainThreadStatsFromTimeline(self, start, end):
     # TODO(ernstm): Remove when CL with new event names was rolled into

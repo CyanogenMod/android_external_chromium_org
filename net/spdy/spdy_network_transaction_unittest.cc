@@ -705,7 +705,7 @@ TEST_P(SpdyNetworkTransactionTest, Get) {
 }
 
 TEST_P(SpdyNetworkTransactionTest, GetAtEachPriority) {
-  for (RequestPriority p = MINIMUM_PRIORITY; p < NUM_PRIORITIES;
+  for (RequestPriority p = MINIMUM_PRIORITY; p <= MAXIMUM_PRIORITY;
        p = RequestPriority(p + 1)) {
     // Construct the request.
     scoped_ptr<SpdyFrame> req(
@@ -3550,19 +3550,30 @@ TEST_P(SpdyNetworkTransactionTest, WriteError) {
       spdy_util_.ConstructSpdyGet(NULL, 0, false, 1, LOWEST, true));
   MockWrite writes[] = {
     // We'll write 10 bytes successfully
-    MockWrite(ASYNC, req->data(), 10),
+    MockWrite(ASYNC, req->data(), 10, 0),
     // Followed by ERROR!
-    MockWrite(ASYNC, ERR_FAILED),
+    MockWrite(ASYNC, ERR_FAILED, 1),
   };
 
-  DelayedSocketData data(2, NULL, 0,
-                         writes, arraysize(writes));
+  MockRead reads[] = {
+    MockRead(ASYNC, 0, 2)  // EOF
+  };
+
+  DeterministicSocketData data(reads, arraysize(reads),
+                               writes, arraysize(writes));
+
   NormalSpdyTransactionHelper helper(CreateGetRequest(), DEFAULT_PRIORITY,
                                      BoundNetLog(), GetParam(), NULL);
-  helper.RunToCompletion(&data);
+  helper.SetDeterministic();
+  helper.RunPreTestSetup();
+  helper.AddDeterministicData(&data);
+  EXPECT_TRUE(helper.StartDefaultTest());
+  data.RunFor(2);
+  helper.FinishDefaultTest();
+  EXPECT_TRUE(data.at_write_eof());
+  EXPECT_TRUE(!data.at_read_eof());
   TransactionHelperResult out = helper.output();
   EXPECT_EQ(ERR_FAILED, out.rv);
-  data.Reset();
 }
 
 // Test that partial writes work.

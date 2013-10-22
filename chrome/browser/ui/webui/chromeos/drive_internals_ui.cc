@@ -52,7 +52,7 @@ namespace {
 // Gets metadata of all files and directories in |root_path|
 // recursively. Stores the result as a list of dictionaries like:
 //
-// [{ path: 'GCache/v1/tmp/<resource_id>',
+// [{ path: 'GCache/v1/tmp/<local_id>',
 //    size: 12345,
 //    is_directory: false,
 //    last_modified: '2005-08-09T09:57:00-08:00',
@@ -130,6 +130,7 @@ std::string FormatEntry(const base::FilePath& path,
   std::string out;
   StringAppendF(&out, "%s\n", path.AsUTF8Unsafe().c_str());
   StringAppendF(&out, "  title: %s\n", entry.title().c_str());
+  StringAppendF(&out, "  local_id: %s\n", entry.local_id().c_str());
   StringAppendF(&out, "  resource_id: %s\n", entry.resource_id().c_str());
   StringAppendF(&out, "  parent_local_id: %s\n",
                 entry.parent_local_id().c_str());
@@ -159,8 +160,6 @@ std::string FormatEntry(const base::FilePath& path,
   if (entry.has_file_specific_info()) {
     const drive::FileSpecificInfo& file_specific_info =
         entry.file_specific_info();
-    StringAppendF(&out, "    thumbnail_url: %s\n",
-                  file_specific_info.thumbnail_url().c_str());
     StringAppendF(&out, "    alternate_url: %s\n",
                   file_specific_info.alternate_url().c_str());
     StringAppendF(&out, "    content_mime_type: %s\n",
@@ -260,7 +259,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
                              scoped_ptr<drive::ResourceEntryVector> entries);
 
   // Called as the iterator for DebugInfoCollector::IterateFileCache().
-  void UpdateCacheEntry(const std::string& resource_id,
+  void UpdateCacheEntry(const std::string& local_id,
                         const drive::FileCacheEntry& cache_entry);
 
   // Called when GetFreeDiskSpace() is complete.
@@ -791,13 +790,13 @@ void DriveInternalsWebUIHandler::OnReadDirectoryByPath(
 }
 
 void DriveInternalsWebUIHandler::UpdateCacheEntry(
-    const std::string& resource_id,
+    const std::string& local_id,
     const drive::FileCacheEntry& cache_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Convert |cache_entry| into a dictionary.
   base::DictionaryValue value;
-  value.SetString("resource_id", resource_id);
+  value.SetString("local_id", local_id);
   value.SetString("md5", cache_entry.md5());
   value.SetBoolean("is_present", cache_entry.is_present());
   value.SetBoolean("is_pinned", cache_entry.is_pinned());

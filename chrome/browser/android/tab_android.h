@@ -56,7 +56,16 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   // Return specific id information regarding this TabAndroid.
   const SessionID& session_id() const { return session_tab_id_; }
-  int android_id() const { return android_tab_id_; }
+  int GetAndroidId() const;
+
+  // Return the tab title.
+  string16 GetTitle() const;
+
+  // Return the tab url.
+  GURL GetURL() const;
+
+  // Restore the tab if it was unloaded from memory.
+  bool RestoreIfNeeded();
 
   // Helper methods to make it easier to access objects from the associated
   // WebContents.  Can return NULL.
@@ -123,10 +132,10 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   virtual void InitWebContents(JNIEnv* env,
                                jobject obj,
-                               jint tab_id,
                                jboolean incognito,
                                jobject jcontent_view_core,
                                jobject jweb_contents_delegate);
+
   virtual void DestroyWebContents(JNIEnv* env,
                                   jobject obj,
                                   jboolean delete_native);
@@ -146,7 +155,6 @@ class TabAndroid : public CoreTabHelperDelegate,
   JavaObjectWeakGlobalRef weak_java_tab_;
 
   SessionID session_tab_id_;
-  int android_tab_id_;
 
   content::NotificationRegistrar notification_registrar_;
 

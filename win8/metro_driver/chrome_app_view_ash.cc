@@ -50,10 +50,6 @@ typedef winfoundtn::ITypedEventHandler<
 
 typedef winfoundtn::ITypedEventHandler<
     winui::Core::CoreWindow*,
-    winui::Core::VisibilityChangedEventArgs*> VisibilityChangedHandler;
-
-typedef winfoundtn::ITypedEventHandler<
-    winui::Core::CoreWindow*,
     winui::Core::WindowActivatedEventArgs*> WindowActivatedHandler;
 
 typedef winfoundtn::ITypedEventHandler<
@@ -80,7 +76,8 @@ void MetroExit() {
 class ChromeChannelListener : public IPC::Listener {
  public:
   ChromeChannelListener(base::MessageLoop* ui_loop, ChromeAppViewAsh* app_view)
-      : ui_proxy_(ui_loop->message_loop_proxy()), app_view_(app_view) {}
+      : ui_proxy_(ui_loop->message_loop_proxy()),
+        app_view_(app_view) {}
 
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     IPC_BEGIN_MESSAGE_MAP(ChromeChannelListener, message)
@@ -177,13 +174,13 @@ bool WaitForChromeIPCConnection(const std::string& channel_name) {
 // This class helps decoding the pointer properties of an event.
 class PointerInfoHandler {
  public:
-  PointerInfoHandler() :
-      x_(0),
-      y_(0),
-      wheel_delta_(0),
-      update_kind_(winui::Input::PointerUpdateKind_Other),
-      timestamp_(0),
-      pointer_id_(0) {}
+  PointerInfoHandler()
+      : x_(0),
+        y_(0),
+        wheel_delta_(0),
+        update_kind_(winui::Input::PointerUpdateKind_Other),
+        timestamp_(0),
+        pointer_id_(0) {}
 
   HRESULT Init(winui::Core::IPointerEventArgs* args) {
     HRESULT hr = args->get_CurrentPoint(&pointer_point_);
@@ -419,11 +416,6 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
   hr = window_->add_CharacterReceived(mswr::Callback<CharEventHandler>(
       this, &ChromeAppViewAsh::OnCharacterReceived).Get(),
       &character_received_token_);
-  CheckHR(hr);
-
-  hr = window_->add_VisibilityChanged(mswr::Callback<VisibilityChangedHandler>(
-      this, &ChromeAppViewAsh::OnVisibilityChanged).Get(),
-      &visibility_changed_token_);
   CheckHR(hr);
 
   hr = window_->add_Activated(mswr::Callback<WindowActivatedHandler>(
@@ -712,6 +704,7 @@ HRESULT ChromeAppViewAsh::OnPointerPressed(
     return hr;
 
   if (pointer.IsMouse()) {
+    // TODO: this is wrong, more than one pointer may be down at a time.
     mouse_down_flags_ = pointer.flags();
     ui_channel_->Send(new MetroViewerHostMsg_MouseButton(
         pointer.x(),
@@ -739,6 +732,7 @@ HRESULT ChromeAppViewAsh::OnPointerReleased(
     return hr;
 
   if (pointer.IsMouse()) {
+    // TODO: this is wrong, more than one pointer may be down at a time.
     mouse_down_flags_ = ui::EF_NONE;
     ui_channel_->Send(new MetroViewerHostMsg_MouseButton(
         pointer.x(),
@@ -877,18 +871,6 @@ HRESULT ChromeAppViewAsh::OnCharacterReceived(
   return S_OK;
 }
 
-HRESULT ChromeAppViewAsh::OnVisibilityChanged(
-    winui::Core::ICoreWindow* sender,
-    winui::Core::IVisibilityChangedEventArgs* args) {
-  boolean visible = false;
-  HRESULT hr = args->get_Visible(&visible);
-  if (FAILED(hr))
-    return hr;
-
-  ui_channel_->Send(new MetroViewerHostMsg_VisibilityChanged(!!visible));
-  return S_OK;
-}
-
 HRESULT ChromeAppViewAsh::OnWindowActivated(
     winui::Core::ICoreWindow* sender,
     winui::Core::IWindowActivatedEventArgs* args) {
@@ -896,6 +878,14 @@ HRESULT ChromeAppViewAsh::OnWindowActivated(
   HRESULT hr = args->get_WindowActivationState(&state);
   if (FAILED(hr))
     return hr;
+
+  // Treat both full activation (Ash was reopened from the Start Screen or from
+  // any other Metro entry point in Windows) and pointer activation (user
+  // clicked back in Ash after using another app on another monitor) the same.
+  if (state == winui::Core::CoreWindowActivationState_CodeActivated ||
+      state == winui::Core::CoreWindowActivationState_PointerActivated) {
+    ui_channel_->Send(new MetroViewerHostMsg_WindowActivated());
+  }
   return S_OK;
 }
 

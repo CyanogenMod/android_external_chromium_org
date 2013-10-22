@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
@@ -164,6 +165,11 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 
   pipeline_.reset(new media::Pipeline(media_loop_, media_log_.get()));
 
+  // |gpu_factories_| requires that its entry points be called on its
+  // |GetMessageLoop()|.  Since |pipeline_| will own decoders created from the
+  // factories, require that their message loops are identical.
+  DCHECK(!gpu_factories_ || (gpu_factories_->GetMessageLoop() == media_loop_));
+
   // Let V8 know we started new thread if we did not do it yet.
   // Made separate task to avoid deletion of player currently being created.
   // Also, delaying GC until after player starts gets rid of starting lag --
@@ -306,7 +312,9 @@ void WebMediaPlayerImpl::play() {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = false;
-  SetPlaybackRate(playback_rate_);
+  pipeline_->SetPlaybackRate(playback_rate_);
+  if (data_source_)
+    data_source_->MediaIsPlaying();
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PLAY));
 
@@ -318,7 +326,9 @@ void WebMediaPlayerImpl::pause() {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = true;
-  SetPlaybackRate(0.0f);
+  pipeline_->SetPlaybackRate(0.0f);
+  if (data_source_)
+    data_source_->MediaIsPaused();
   paused_time_ = pipeline_->GetMediaTime();
 
   media_log_->AddEvent(media_log_->CreateEvent(media::MediaLogEvent::PAUSE));
@@ -385,7 +395,9 @@ void WebMediaPlayerImpl::setRate(double rate) {
 
   playback_rate_ = rate;
   if (!paused_) {
-    SetPlaybackRate(rate);
+    pipeline_->SetPlaybackRate(rate);
+    if (data_source_)
+      data_source_->MediaPlaybackRateChanged(rate);
   }
 }
 
@@ -517,9 +529,10 @@ void WebMediaPlayerImpl::paint(WebCanvas* canvas,
   scoped_refptr<media::VideoFrame> video_frame;
   {
     base::AutoLock auto_lock(lock_);
-    current_frame_painted_ = true;
+    DoneWaitingForPaint(true);
     video_frame = current_frame_;
   }
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:paint");
   gfx::Rect gfx_rect(rect);
   skcanvas_video_renderer_.Paint(video_frame.get(), canvas, gfx_rect, alpha);
 }
@@ -584,7 +597,9 @@ void WebMediaPlayerImpl::SetVideoFrameProviderClient(
 
 scoped_refptr<media::VideoFrame> WebMediaPlayerImpl::GetCurrentFrame() {
   base::AutoLock auto_lock(lock_);
-  current_frame_painted_ = true;
+  DoneWaitingForPaint(true);
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "media", "WebMediaPlayerImpl:compositing", this);
   return current_frame_;
 }
 
@@ -595,6 +610,7 @@ void WebMediaPlayerImpl::PutCurrentFrame(
     DCHECK(frame_->view()->isAcceleratedCompositingActive());
     UMA_HISTOGRAM_BOOLEAN("Media.AcceleratedCompositingActive", true);
   }
+  TRACE_EVENT_ASYNC_END0("media", "WebMediaPlayerImpl:compositing", this);
 }
 
 bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
@@ -611,12 +627,26 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     video_frame = current_frame_;
   }
 
-  if (!video_frame.get())
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:copyVideoTextureToPlatformTexture");
+
+  if (!video_frame)
     return false;
   if (video_frame->format() != media::VideoFrame::NATIVE_TEXTURE)
     return false;
   if (video_frame->texture_target() != GL_TEXTURE_2D)
     return false;
+
+  // Since this method changes which texture is bound to the TEXTURE_2D target,
+  // ideally it would restore the currently-bound texture before returning.
+  // The cost of getIntegerv is sufficiently high, however, that we want to
+  // avoid it in user builds. As a result assume (below) that |texture| is
+  // bound when this method is called, and only verify this fact when
+  // DCHECK_IS_ON.
+  if (DCHECK_IS_ON()) {
+    GLint bound_texture = 0;
+    web_graphics_context->getIntegerv(GL_TEXTURE_BINDING_2D, &bound_texture);
+    DCHECK_EQ(static_cast<GLuint>(bound_texture), texture);
+  }
 
   scoped_refptr<media::VideoFrame::MailboxHolder> mailbox_holder =
       video_frame->texture_mailbox();
@@ -646,6 +676,9 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
   web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
                                     false);
+
+  // Restore the state for TEXTURE_2D binding point as mentioned above.
+  web_graphics_context->bindTexture(GL_TEXTURE_2D, texture);
 
   web_graphics_context->deleteTexture(source_texture);
 
@@ -828,17 +861,25 @@ void WebMediaPlayerImpl::WillDestroyCurrentMessageLoop() {
 
 void WebMediaPlayerImpl::Repaint() {
   DCHECK(main_loop_->BelongsToCurrentThread());
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:repaint");
 
   bool size_changed = false;
   {
     base::AutoLock auto_lock(lock_);
     std::swap(pending_size_change_, size_changed);
-    pending_repaint_ = false;
+    if (pending_repaint_) {
+      TRACE_EVENT_ASYNC_END0(
+          "media", "WebMediaPlayerImpl:repaintPending", this);
+      pending_repaint_ = false;
+    }
   }
 
-  if (size_changed)
+  if (size_changed) {
+    TRACE_EVENT0("media", "WebMediaPlayerImpl:clientSizeChanged");
     GetClient()->sizeChanged();
+  }
 
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:clientRepaint");
   GetClient()->repaint();
 }
 
@@ -1236,36 +1277,51 @@ void WebMediaPlayerImpl::FrameReady(
     const scoped_refptr<media::VideoFrame>& frame) {
   base::AutoLock auto_lock(lock_);
 
-  if (current_frame_.get() &&
+  if (current_frame_ &&
       current_frame_->natural_size() != frame->natural_size() &&
       !pending_size_change_) {
     pending_size_change_ = true;
   }
 
-  // If |current_frame_| is set, hasn't been painted, and we haven't even
-  // gotten the chance to request a repaint for it yet, then mark it as dropped.
-  if (current_frame_ && !current_frame_painted_ && pending_repaint_) {
-    DVLOG(1) << "Frame dropped before being painted: "
-             << current_frame_->GetTimestamp().InSecondsF();
-    if (frames_dropped_before_paint_ < kuint32max)
-      frames_dropped_before_paint_++;
-  }
+  DoneWaitingForPaint(false);
 
   current_frame_ = frame;
   current_frame_painted_ = false;
+  TRACE_EVENT_FLOW_BEGIN0("media", "WebMediaPlayerImpl:waitingForPaint", this);
 
   if (pending_repaint_)
     return;
 
+  TRACE_EVENT_ASYNC_BEGIN0("media", "WebMediaPlayerImpl:repaintPending", this);
   pending_repaint_ = true;
   main_loop_->PostTask(FROM_HERE, base::Bind(
       &WebMediaPlayerImpl::Repaint, AsWeakPtr()));
 }
 
-void WebMediaPlayerImpl::SetPlaybackRate(float playback_rate) {
-  pipeline_->SetPlaybackRate(playback_rate);
-  if (data_source_)
-    data_source_->SetPlaybackRate(playback_rate);
+void WebMediaPlayerImpl::DoneWaitingForPaint(bool painting_frame) {
+  lock_.AssertAcquired();
+  if (!current_frame_ || current_frame_painted_)
+    return;
+
+  TRACE_EVENT_FLOW_END0("media", "WebMediaPlayerImpl:waitingForPaint", this);
+
+  if (painting_frame) {
+    current_frame_painted_ = true;
+    return;
+  }
+
+  // The frame wasn't painted, but we aren't waiting for a Repaint() call so
+  // assume that the frame wasn't painted because the video wasn't visible.
+  if (!pending_repaint_)
+    return;
+
+  // The |current_frame_| wasn't painted, it is being replaced, and we haven't
+  // even gotten the chance to request a repaint for it yet. Mark it as dropped.
+  TRACE_EVENT0("media", "WebMediaPlayerImpl:frameDropped");
+  DVLOG(1) << "Frame dropped before being painted: "
+           << current_frame_->GetTimestamp().InSecondsF();
+  if (frames_dropped_before_paint_ < kuint32max)
+    frames_dropped_before_paint_++;
 }
 
 }  // namespace content

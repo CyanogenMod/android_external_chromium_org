@@ -134,8 +134,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual int GenerateRoutingID() OVERRIDE;
   virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
   virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
-  virtual void SetOutgoingMessageFilter(
-      IPC::ChannelProxy::OutgoingMessageFilter* filter) OVERRIDE;
   virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
@@ -265,9 +263,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  // Gets gpu factories, which will run on |factories_loop|.
-  scoped_refptr<RendererGpuVideoAcceleratorFactories> GetGpuFactories(
-      const scoped_refptr<base::MessageLoopProxy>& factories_loop);
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> GetGpuFactories();
 
   scoped_refptr<cc::ContextProvider> OffscreenCompositorContextProvider();
   scoped_refptr<cc::ContextProvider> SharedMainThreadContextProvider();

@@ -97,7 +97,9 @@ class PageRunnerTests(unittest.TestCase):
 
     options = options_for_unittests.GetCopy()
     options.output_format = 'none'
-    options.reset_html_results = None
+    options.reset_results = None
+    options.upload_results = None
+    options.results_label = None
 
     options.repeat_options.page_repeat_iters = 1
     options.repeat_options.pageset_repeat_iters = 1

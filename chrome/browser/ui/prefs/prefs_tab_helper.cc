@@ -42,78 +42,6 @@ DEFINE_WEB_CONTENTS_USER_DATA_KEY(PrefsTabHelper);
 
 namespace {
 
-// Registers prefs only used for migration.
-void RegisterPrefsToMigrate(user_prefs::PrefRegistrySyncable* prefs) {
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldStandardFontFamily,
-      IDS_STANDARD_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldFixedFontFamily,
-      IDS_FIXED_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldSerifFontFamily,
-      IDS_SERIF_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldSansSerifFontFamily,
-      IDS_SANS_SERIF_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldCursiveFontFamily,
-      IDS_CURSIVE_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitOldFantasyFontFamily,
-      IDS_FANTASY_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kGlobalDefaultCharset,
-      IDS_DEFAULT_ENCODING,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  prefs->RegisterLocalizedIntegerPref(
-      prefs::kWebKitGlobalDefaultFontSize,
-      IDS_DEFAULT_FONT_SIZE,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedIntegerPref(
-      prefs::kWebKitGlobalDefaultFixedFontSize,
-      IDS_DEFAULT_FIXED_FONT_SIZE,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedIntegerPref(
-      prefs::kWebKitGlobalMinimumFontSize,
-      IDS_MINIMUM_FONT_SIZE,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedIntegerPref(
-      prefs::kWebKitGlobalMinimumLogicalFontSize,
-      IDS_MINIMUM_LOGICAL_FONT_SIZE,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalStandardFontFamily,
-      IDS_STANDARD_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalFixedFontFamily,
-      IDS_FIXED_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalSerifFontFamily,
-      IDS_SERIF_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalSansSerifFontFamily,
-      IDS_SANS_SERIF_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalCursiveFontFamily,
-      IDS_CURSIVE_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  prefs->RegisterLocalizedStringPref(
-      prefs::kWebKitGlobalFantasyFontFamily,
-      IDS_FANTASY_FONT_FAMILY,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
 // The list of prefs we want to observe.
 const char* kPrefsToObserve[] = {
   prefs::kDefaultCharset,
@@ -138,12 +66,16 @@ const char* kPrefsToObserve[] = {
 
 const int kPrefsToObserveLength = arraysize(kPrefsToObserve);
 
+#if !defined(OS_ANDROID)
 // Registers a preference under the path |pref_name| for each script used for
 // per-script font prefs.
 // For example, for WEBKIT_WEBPREFS_FONTS_SERIF ("fonts.serif"):
 // "fonts.serif.Arab", "fonts.serif.Hang", etc. are registered.
 // |fonts_with_defaults| contains all |pref_names| already registered since they
 // have a specified default value.
+// On Android there are no default values for these properties and there is no
+// way to set them (because extensions are not supported so the Font Settings
+// API cannot be used), so we can avoid registering them altogether.
 void RegisterFontFamilyPrefs(user_prefs::PrefRegistrySyncable* registry,
                              const std::set<std::string>& fonts_with_defaults) {
 
@@ -177,7 +109,6 @@ ALL_FONT_SCRIPTS(WEBKIT_WEBPREFS_FONTS_STANDARD)
   }
 }
 
-#if !defined(OS_ANDROID)
 // Registers |obs| to observe per-script font prefs under the path |map_name|.
 // On android, there's no exposed way to change these prefs, so we can save
 // ~715KB of heap and some startup cycles by avoiding observing these prefs
@@ -329,60 +260,6 @@ UScriptCode GetScriptOfBrowserLocale() {
     code = USCRIPT_INVALID_CODE;
   return GetScriptForFontPrefMatching(code);
 }
-
-const struct {
-  const char* from;
-  const char* to;
-} kPrefNamesToMigrate[] = {
-  // Migrate prefs like "webkit.webprefs.standard_font_family" to
-  // "webkit.webprefs.fonts.standard.Zyyy". This moves the formerly
-  // "non-per-script" font prefs into the per-script font pref maps, as the
-  // entry for the "Common" script (Zyyy is the ISO 15924 script code for the
-  // Common script). The |from| prefs will exist if the migration to global
-  // prefs (for the per-tab pref mechanism, which has since been removed) never
-  // occurred.
-  { prefs::kWebKitOldCursiveFontFamily,
-    prefs::kWebKitCursiveFontFamily },
-  { prefs::kWebKitOldFantasyFontFamily,
-    prefs::kWebKitFantasyFontFamily },
-  { prefs::kWebKitOldFixedFontFamily,
-    prefs::kWebKitFixedFontFamily },
-  { prefs::kWebKitOldSansSerifFontFamily,
-    prefs::kWebKitSansSerifFontFamily },
-  { prefs::kWebKitOldSerifFontFamily,
-    prefs::kWebKitSerifFontFamily },
-  { prefs::kWebKitOldStandardFontFamily,
-    prefs::kWebKitStandardFontFamily },
-
-  // Migrate "global" prefs. These will exist if the migration to global prefs
-  // (for the per-tab pref mechanism, which has since been removed) occurred.
-  // In addition, this moves the formerly "non-per-script" font prefs into the
-  // per-script font pref maps, as above.
-  { prefs::kGlobalDefaultCharset,
-    prefs::kDefaultCharset },
-  { prefs::kWebKitGlobalDefaultFixedFontSize,
-    prefs::kWebKitDefaultFixedFontSize },
-  { prefs::kWebKitGlobalDefaultFontSize,
-    prefs::kWebKitDefaultFontSize },
-  { prefs::kWebKitGlobalMinimumFontSize,
-    prefs::kWebKitMinimumFontSize },
-  { prefs::kWebKitGlobalMinimumLogicalFontSize,
-    prefs::kWebKitMinimumLogicalFontSize },
-  { prefs::kWebKitGlobalCursiveFontFamily,
-    prefs::kWebKitCursiveFontFamily },
-  { prefs::kWebKitGlobalFantasyFontFamily,
-    prefs::kWebKitFantasyFontFamily },
-  { prefs::kWebKitGlobalFixedFontFamily,
-    prefs::kWebKitFixedFontFamily },
-  { prefs::kWebKitGlobalSansSerifFontFamily,
-    prefs::kWebKitSansSerifFontFamily },
-  { prefs::kWebKitGlobalSerifFontFamily,
-    prefs::kWebKitSerifFontFamily },
-  { prefs::kWebKitGlobalStandardFontFamily,
-    prefs::kWebKitStandardFontFamily }
-};
-
-const int kPrefsToMigrateLength = ARRAYSIZE_UNSAFE(kPrefNamesToMigrate);
 
 // Sets a font family pref in |prefs| to |pref_value|.
 void OverrideFontFamily(WebPreferences* prefs,
@@ -564,7 +441,11 @@ void PrefsTabHelper::RegisterProfilePrefs(
 #if defined(OS_ANDROID)
   registry->RegisterDoublePref(
       prefs::kWebKitFontScaleFactor,
-      pref_defaults.font_scale_factor,
+      1.0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kWebKitFontScaleFactorQuirk,
+      true,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kWebKitForceEnableZoom,
@@ -612,8 +493,10 @@ void PrefsTabHelper::RegisterProfilePrefs(
     }
   }
 
-  // Register font prefs that don't have defaults.
+  // Register per-script font prefs that don't have defaults.
+#if !defined(OS_ANDROID)
   RegisterFontFamilyPrefs(registry, fonts_with_defaults);
+#endif
 
   registry->RegisterLocalizedIntegerPref(
       prefs::kWebKitDefaultFontSize,
@@ -643,19 +526,6 @@ void PrefsTabHelper::RegisterProfilePrefs(
       prefs::kRecentlySelectedEncoding,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-
-  RegisterPrefsToMigrate(registry);
-}
-
-void PrefsTabHelper::MigrateUserPrefs(PrefService* prefs) {
-  for (int i = 0; i < kPrefsToMigrateLength; ++i) {
-    const PrefService::Preference* pref =
-        prefs->FindPreference(kPrefNamesToMigrate[i].from);
-    if (pref && !pref->IsDefaultValue()) {
-      prefs->Set(kPrefNamesToMigrate[i].to, *pref->GetValue());
-      prefs->ClearPref(kPrefNamesToMigrate[i].from);
-    }
-  }
 }
 
 void PrefsTabHelper::Observe(int type,

@@ -31,10 +31,7 @@ namespace chromeos {
 
 class CryptohomeClient;
 class UserManager;
-
-namespace system {
-class StatisticsProvider;
-}
+class User;
 
 namespace attestation {
 
@@ -112,7 +109,6 @@ class PlatformVerificationFlow {
                            cryptohome::AsyncMethodCaller* async_caller,
                            CryptohomeClient* cryptohome_client,
                            UserManager* user_manager,
-                           system::StatisticsProvider* statistics_provider,
                            Delegate* delegate);
 
   virtual ~PlatformVerificationFlow();
@@ -131,13 +127,6 @@ class PlatformVerificationFlow {
                             const std::string& service_id,
                             const std::string& challenge,
                             const ChallengeCallback& callback);
-
-  // Performs a quick check to see if platform verification is reasonably
-  // expected to succeed.  The result of the check will be sent to the given
-  // |callback|.  If the |result| is true, then platform verification is
-  // expected to succeed.  However, this result is not authoritative either true
-  // or false.  If an error occurs, |result| will be false.
-  void CheckPlatformState(const base::Callback<void(bool result)>& callback);
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* prefs);
 
@@ -174,11 +163,13 @@ class PlatformVerificationFlow {
 
   // A callback called when an attestation certificate request operation
   // completes.  |service_id|, |challenge|, and |callback| are the same as in
-  // ChallengePlatformKey.  |operation_success| is true iff the certificate
+  // ChallengePlatformKey.  |user_id| identifies the user for which the
+  // certificate was requested.  |operation_success| is true iff the certificate
   // request operation succeeded.  |certificate| holds the certificate for the
   // platform key on success.  If the certificate request was successful, this
   // method invokes a request to sign the challenge.
-  void OnCertificateReady(const std::string& service_id,
+  void OnCertificateReady(const std::string& user_id,
+                          const std::string& service_id,
                           const std::string& challenge,
                           const ChallengeCallback& callback,
                           bool operation_success,
@@ -204,6 +195,11 @@ class PlatformVerificationFlow {
   // Gets the URL associated with the given |web_contents|.  If a URL as been
   // set explicitly using set_testing_url(), then this value is always returned.
   const GURL& GetURL(content::WebContents* web_contents);
+
+  // Gets the user associated with the given |web_contents|.  NULL may be
+  // returned.  If |web_contents| is NULL (e.g. during testing), then the
+  // current active user will be returned.
+  User* GetUser(content::WebContents* web_contents);
 
   // Checks whether policy or profile settings associated with |web_contents|
   // have attestation for content protection explicitly disabled.
@@ -242,7 +238,6 @@ class PlatformVerificationFlow {
   cryptohome::AsyncMethodCaller* async_caller_;
   CryptohomeClient* cryptohome_client_;
   UserManager* user_manager_;
-  system::StatisticsProvider* statistics_provider_;
   Delegate* delegate_;
   scoped_ptr<Delegate> default_delegate_;
   PrefService* testing_prefs_;

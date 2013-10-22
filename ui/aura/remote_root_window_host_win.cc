@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
-#include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/base/cursor/cursor_loader_win.h"
@@ -46,6 +45,11 @@ void SetVirtualKeyStates(uint32 flags) {
   SetKeyState(keyboard_state, !!(flags & ui::EF_CONTROL_DOWN), VK_CONTROL);
   SetKeyState(keyboard_state, !!(flags & ui::EF_ALT_DOWN), VK_MENU);
   SetKeyState(keyboard_state, !!(flags & ui::EF_CAPS_LOCK_DOWN), VK_CAPITAL);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_LEFT_MOUSE_BUTTON), VK_LBUTTON);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_RIGHT_MOUSE_BUTTON),
+              VK_RBUTTON);
+  SetKeyState(keyboard_state, !!(flags & ui::EF_MIDDLE_MOUSE_BUTTON),
+              VK_MBUTTON);
 
   ::SetKeyboardState(keyboard_state);
 }
@@ -123,7 +127,8 @@ RemoteRootWindowHostWin::RemoteRootWindowHostWin(const gfx::Rect& bounds)
     : remote_window_(NULL),
       delegate_(NULL),
       host_(NULL),
-      ignore_mouse_moves_until_set_cursor_ack_(false) {
+      ignore_mouse_moves_until_set_cursor_ack_(false),
+      event_flags_(0) {
   prop_.reset(new ui::ViewProp(NULL, kRootWindowHostWinKey, this));
 }
 
@@ -151,8 +156,8 @@ bool RemoteRootWindowHostWin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_KeyDown, OnKeyDown)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_KeyUp, OnKeyUp)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_Character, OnChar)
-    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_VisibilityChanged,
-                        OnVisibilityChanged)
+    IPC_MESSAGE_HANDLER(MetroViewerHostMsg_WindowActivated,
+                        OnWindowActivated)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_TouchDown,
                         OnTouchDown)
     IPC_MESSAGE_HANDLER(MetroViewerHostMsg_TouchUp,
@@ -408,10 +413,15 @@ void RemoteRootWindowHostWin::OnMouseMoved(int32 x, int32 y, int32 flags) {
 }
 
 void RemoteRootWindowHostWin::OnMouseButton(
-    int32 x, int32 y, int32 extra, ui::EventType type, ui::EventFlags flags) {
+    int32 x,
+    int32 y,
+    int32 extra,
+    ui::EventType type,
+    ui::EventFlags flags) {
   gfx::Point location(x, y);
   ui::MouseEvent mouse_event(type, location, location, flags);
 
+  SetEventFlags(flags | key_event_flags());
   if (type == ui::ET_MOUSEWHEEL) {
     ui::MouseWheelEvent wheel_event(mouse_event, 0, extra);
     delegate_->OnHostMouseEvent(&wheel_event);
@@ -460,9 +470,8 @@ void RemoteRootWindowHostWin::OnChar(uint32 key_code,
                           scan_code, flags, true);
 }
 
-void RemoteRootWindowHostWin::OnVisibilityChanged(bool visible) {
-  if (visible)
-    delegate_->OnHostActivated();
+void RemoteRootWindowHostWin::OnWindowActivated() {
+  delegate_->OnHostActivated();
 }
 
 void RemoteRootWindowHostWin::OnTouchDown(int32 x,
@@ -557,9 +566,8 @@ void RemoteRootWindowHostWin::DispatchKeyboardMessage(ui::EventType type,
                                                       uint32 scan_code,
                                                       uint32 flags,
                                                       bool is_character) {
+  SetEventFlags(flags | mouse_event_flags());
   if (base::MessageLoop::current()->IsNested()) {
-    SetVirtualKeyStates(flags);
-
     uint32 message = is_character ? WM_CHAR :
         (type == ui::ET_KEY_PRESSED ? WM_KEYDOWN : WM_KEYUP);
     ::PostThreadMessage(::GetCurrentThreadId(),
@@ -573,6 +581,13 @@ void RemoteRootWindowHostWin::DispatchKeyboardMessage(ui::EventType type,
                        is_character);
     delegate_->OnHostKeyEvent(&event);
   }
+}
+
+void RemoteRootWindowHostWin::SetEventFlags(uint32 flags) {
+  if (flags == event_flags_)
+    return;
+  event_flags_ = flags;
+  SetVirtualKeyStates(event_flags_);
 }
 
 }  // namespace aura

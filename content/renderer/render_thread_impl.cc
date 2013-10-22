@@ -590,10 +590,6 @@ void RenderThreadImpl::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
   channel()->RemoveFilter(filter);
 }
 
-void RenderThreadImpl::SetOutgoingMessageFilter(
-    IPC::ChannelProxy::OutgoingMessageFilter* filter) {
-}
-
 void RenderThreadImpl::AddObserver(RenderProcessObserver* observer) {
   observers_.AddObserver(observer);
 }
@@ -870,8 +866,7 @@ void RenderThreadImpl::PostponeIdleNotification() {
 }
 
 scoped_refptr<RendererGpuVideoAcceleratorFactories>
-RenderThreadImpl::GetGpuFactories(
-    const scoped_refptr<base::MessageLoopProxy>& factories_loop) {
+RenderThreadImpl::GetGpuFactories() {
   DCHECK(IsMainThread());
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
@@ -891,7 +886,7 @@ RenderThreadImpl::GetGpuFactories(
   GpuChannelHost* gpu_channel_host = GetGpuChannel();
   if (gpu_channel_host) {
     gpu_factories = new RendererGpuVideoAcceleratorFactories(
-        gpu_channel_host, factories_loop, gpu_va_context_provider_);
+        gpu_channel_host, gpu_va_context_provider_);
   }
   return gpu_factories;
 }

@@ -73,7 +73,7 @@ INSTRUMENTATION_TESTS = dict((suite.name, suite) for suite in [
     ])
 
 VALID_TESTS = set(['chromedriver', 'gpu', 'ui', 'unit', 'webkit',
-                   'webkit_layout', 'webrtc'])
+                   'webkit_layout', 'webrtc_chromium', 'webrtc_native'])
 
 RunCmd = bb_utils.RunCmd
 
@@ -263,8 +263,12 @@ def RunWebkitLayoutTests(options):
 
   exit_code = RunCmd(['webkit/tools/layout_tests/run_webkit_tests.py'] +
                      cmd_args)
-  if exit_code == 254:  # AKA -1, internal error.
+  if exit_code == 255: # test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
     bb_annotations.PrintMsg('?? (crashed or hung)')
+  elif exit_code == 254: # test_run_results.NO_DEVICES_EXIT_STATUS
+    bb_annotations.PrintMsg('?? (no devices found)')
+  elif exit_code == 253: # test_run_results.NO_TESTS_EXIT_STATUS
+    bb_annotations.PrintMsg('?? (no tests found)')
   else:
     full_results_path = os.path.join('..', 'layout-test-results',
                                      'full_results.json')
@@ -392,10 +396,12 @@ def ProvisionDevices(options):
   RunCmd(provision_cmd)
 
 
-def DeviceStatusCheck(_):
+def DeviceStatusCheck(options):
   bb_annotations.PrintNamedStep('device_status_check')
-  RunCmd(['build/android/buildbot/bb_device_status_check.py'],
-         halt_on_failure=True)
+  cmd = ['build/android/buildbot/bb_device_status_check.py']
+  if options.restart_usb:
+    cmd.append('--restart-usb')
+  RunCmd(cmd, halt_on_failure=True)
 
 
 def GetDeviceSetupStepCmds():
@@ -419,15 +425,25 @@ def RunWebkitTests(options):
   RunWebkitLint(options.target)
 
 
-def RunWebRTCTests(options):
-  RunTestSuites(options, gtest_config.WEBRTC_TEST_SUITES)
+def RunWebRTCChromiumTests(options):
+  RunTestSuites(options, gtest_config.WEBRTC_CHROMIUM_TEST_SUITES)
+
+
+def RunWebRTCNativeTests(options):
+  RunTestSuites(options, gtest_config.WEBRTC_NATIVE_TEST_SUITES)
 
 
 def RunGPUTests(options):
   InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
-  bb_annotations.PrintNamedStep('gpu_tests')
-  RunCmd(['content/test/gpu/run_gpu_test',
-          '--browser=android-content-shell', 'pixel'])
+
+  # Pixel tests require that the browser implements GrabWindowSnapshot and
+  # GrabViewSnapshot, which android-content-shell currently does not.
+  # (crbug.com/285932)
+
+  # bb_annotations.PrintNamedStep('gpu_tests')
+  # RunCmd(['content/test/gpu/run_gpu_test',
+  #         '--browser=android-content-shell', 'pixel'])
+
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
   RunCmd(['content/test/gpu/run_gpu_test',
           '--browser=android-content-shell', 'webgl_conformance',
@@ -442,7 +458,8 @@ def GetTestStepCmds():
       ('ui', RunInstrumentationTests),
       ('webkit', RunWebkitTests),
       ('webkit_layout', RunWebkitLayoutTests),
-      ('webrtc', RunWebRTCTests),
+      ('webrtc_chromium', RunWebRTCChromiumTests),
+      ('webrtc_native', RunWebRTCNativeTests),
   ]
 
 
@@ -550,6 +567,8 @@ def GetDeviceStepsOptParser():
   parser.add_option('--coverage-bucket',
                     help=('Bucket name to store coverage results. Coverage is '
                           'only run if this is set.'))
+  parser.add_option('--restart-usb', action='store_true',
+                    help='Restart usb ports before device status check.')
   parser.add_option(
       '--flakiness-server',
       help=('The flakiness dashboard server to which the results should be '

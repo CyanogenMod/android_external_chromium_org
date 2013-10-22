@@ -53,7 +53,7 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_protocols.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/message_handler.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/first_run/upgrade_util.h"
@@ -71,6 +71,7 @@
 #include "chrome/browser/metrics/tracking_synchronizer.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
 #include "chrome/browser/metrics/variations/variations_service.h"
+#include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_browser_delegate_impl.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
 #include "chrome/browser/net/chrome_net_log.h"
@@ -91,7 +92,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/renderer_host/chrome_render_view_host_observer.h"
 #include "chrome/browser/service/service_process_control.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/three_d_api_observer.h"
@@ -381,6 +381,12 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
   RegisterRecoveryComponent(cus, g_browser_process->local_state());
   RegisterPepperFlashComponent(cus);
   RegisterSwiftShaderComponent(cus);
+#endif
+
+  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(
+      cus, command_line);
+
+#if !defined(OS_CHROMEOS)
   RegisterWidevineCdmComponent(cus);
 
   // CRLSetFetcher attempts to load a CRL set from either the local disk or
@@ -388,9 +394,6 @@ void RegisterComponentsForUpdate(const CommandLine& command_line) {
   if (!command_line.HasSwitch(switches::kDisableCRLSets))
     g_browser_process->crl_set_fetcher()->StartInitialLoad(cus);
 #endif
-
-  g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(
-      cus, command_line);
 
   cus->Start();
 }
@@ -500,17 +503,6 @@ class LoadCompleteListener : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(LoadCompleteListener);
 };
 
-void RenderViewHostCreated(content::RenderViewHost* render_view_host) {
-  content::SiteInstance* site_instance = render_view_host->GetSiteInstance();
-  Profile* profile = Profile::FromBrowserContext(
-      site_instance->GetBrowserContext());
-
-  new ChromeRenderViewHostObserver(render_view_host,
-                                   profile->GetNetworkPredictor());
-  new extensions::MessageHandler(render_view_host);
-}
-
-
 }  // namespace
 
 namespace chrome_browser {
@@ -536,7 +528,6 @@ ChromeBrowserMainParts::ChromeBrowserMainParts(
       shutdown_watcher_(new ShutdownWatcherHelper()),
       startup_timer_(new performance_monitor::StartupTimer()),
       browser_field_trials_(parameters.command_line),
-      rvh_callback_(base::Bind(&RenderViewHostCreated)),
       translate_manager_(NULL),
       profile_(NULL),
       run_message_loop_(true),
@@ -552,13 +543,9 @@ ChromeBrowserMainParts::ChromeBrowserMainParts(
   // a ChromeNetworkDelegate attached that selectively allows cookies again.
   if (!disable_enforcing_cookie_policies_for_tests_)
     net::URLRequest::SetDefaultCookiePolicyToBlock();
-
-  content::RenderViewHost::AddCreatedCallback(rvh_callback_);
 }
 
 ChromeBrowserMainParts::~ChromeBrowserMainParts() {
-  content::RenderViewHost::RemoveCreatedCallback(rvh_callback_);
-
   for (int i = static_cast<int>(chrome_extra_parts_.size())-1; i >= 0; --i)
     delete chrome_extra_parts_[i];
   chrome_extra_parts_.clear();
@@ -1274,6 +1261,14 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   content::WebUIControllerFactory::RegisterFactory(
       ChromeWebUIControllerFactory::GetInstance());
 
+  // NaClBrowserDelegateImpl is accessed inside PostProfileInit().
+  // So make sure to create it before that.
+#if !defined(DISABLE_NACL)
+  NaClBrowserDelegateImpl* delegate = new NaClBrowserDelegateImpl(
+    extensions::ExtensionSystem::Get(profile_)->info_map());
+  NaClBrowser::SetDelegate(delegate);
+#endif
+
   // TODO(stevenjb): Move WIN and MACOSX specific code to appropriate Parts.
   // (requires supporting early exit).
   PostProfileInit();
@@ -1440,7 +1435,11 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
                           parsed_command_line().GetSwitchValuePath(
                               switches::kPnaclDir));
   }
-  NaClProcessHost::EarlyStartup(new NaClBrowserDelegateImpl);
+
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(NaClProcessHost::EarlyStartup));
 #endif
 
   // Make sure initial prefs are recorded

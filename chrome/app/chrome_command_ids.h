@@ -73,6 +73,8 @@
 #define IDC_MINIMIZE_WINDOW             34046
 #define IDC_MAXIMIZE_WINDOW             34047
 #define IDC_ALL_WINDOWS_FRONT           34048
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_2 34049
+#define IDC_VISIT_DESKTOP_OF_LRU_USER_3 34050
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -164,6 +166,7 @@
 #define IDC_DEV_TOOLS                   40003
 #define IDC_DEV_TOOLS_CONSOLE           40004
 #define IDC_TASK_MANAGER                40005
+#define IDC_DEV_TOOLS_DEVICES           40006
 #if defined(GOOGLE_CHROME_BUILD)
 #define IDC_FEEDBACK                    40008
 #endif

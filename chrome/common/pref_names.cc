@@ -82,7 +82,15 @@ const char kRestoreOnStartupMigrated[] = "session.restore_on_startup_migrated";
 
 // The URLs to restore on startup or when the home button is pressed. The URLs
 // are only restored on startup if kRestoreOnStartup is 4.
-const char kURLsToRestoreOnStartup[] = "session.urls_to_restore_on_startup";
+const char kURLsToRestoreOnStartup[] = "session.startup_urls";
+
+// Old startup url pref name for kURLsToRestoreOnStartup.
+const char kURLsToRestoreOnStartupOld[] = "session.urls_to_restore_on_startup";
+
+// Serialized migration time of kURLsToRestoreOnStartup (see
+// base::Time::ToInternalValue for details on serialization format).
+const char kRestoreStartupURLsMigrationTime[] =
+    "session.startup_urls_migration_time";
 
 // If set to true profiles are created in ephemeral mode and do not store their
 // data in the profile folder on disk but only in memory.
@@ -141,47 +149,6 @@ const char kAcceptLanguages[] = "intl.accept_languages";
 // locale, it's initialized from the corresponding string resource that is
 // stored in non-translatable part of the resource bundle.
 const char kStaticEncodings[] = "intl.static_encodings";
-
-// Obselete WebKit prefs for migration.
-const char kGlobalDefaultCharset[] = "intl.global.charset_default";
-const char kWebKitGlobalDefaultFontSize[] =
-    "webkit.webprefs.global.default_font_size";
-const char kWebKitGlobalDefaultFixedFontSize[] =
-    "webkit.webprefs.global.default_fixed_font_size";
-const char kWebKitGlobalMinimumFontSize[] =
-    "webkit.webprefs.global.minimum_font_size";
-const char kWebKitGlobalMinimumLogicalFontSize[] =
-    "webkit.webprefs.global.minimum_logical_font_size";
-const char kWebKitGlobalJavascriptCanOpenWindowsAutomatically[] =
-    "webkit.webprefs.global.javascript_can_open_windows_automatically";
-const char kWebKitGlobalJavascriptEnabled[] =
-    "webkit.webprefs.global.javascript_enabled";
-const char kWebKitGlobalLoadsImagesAutomatically[] =
-    "webkit.webprefs.global.loads_images_automatically";
-const char kWebKitGlobalPluginsEnabled[] =
-    "webkit.webprefs.global.plugins_enabled";
-const char kWebKitGlobalStandardFontFamily[] =
-    "webkit.webprefs.global.standard_font_family";
-const char kWebKitGlobalFixedFontFamily[] =
-    "webkit.webprefs.global.fixed_font_family";
-const char kWebKitGlobalSerifFontFamily[] =
-    "webkit.webprefs.global.serif_font_family";
-const char kWebKitGlobalSansSerifFontFamily[] =
-    "webkit.webprefs.global.sansserif_font_family";
-const char kWebKitGlobalCursiveFontFamily[] =
-    "webkit.webprefs.global.cursive_font_family";
-const char kWebKitGlobalFantasyFontFamily[] =
-    "webkit.webprefs.global.fantasy_font_family";
-const char kWebKitOldStandardFontFamily[] =
-    "webkit.webprefs.standard_font_family";
-const char kWebKitOldFixedFontFamily[] = "webkit.webprefs.fixed_font_family";
-const char kWebKitOldSerifFontFamily[] = "webkit.webprefs.serif_font_family";
-const char kWebKitOldSansSerifFontFamily[] =
-    "webkit.webprefs.sansserif_font_family";
-const char kWebKitOldCursiveFontFamily[] =
-    "webkit.webprefs.cursive_font_family";
-const char kWebKitOldFantasyFontFamily[] =
-    "webkit.webprefs.fantasy_font_family";
 
 // If these change, the corresponding enums in the extension API
 // experimental.fontSettings.json must also change.
@@ -289,6 +256,8 @@ const char kWebKitAllowRunningInsecureContent[] =
     "webkit.webprefs.allow_running_insecure_content";
 #if defined(OS_ANDROID)
 const char kWebKitFontScaleFactor[] = "webkit.webprefs.font_scale_factor";
+const char kWebKitFontScaleFactorQuirk[] =
+    "webkit.webprefs.font_scale_factor_quirk";
 const char kWebKitForceEnableZoom[] = "webkit.webprefs.force_enable_zoom";
 const char kWebKitPasswordEchoEnabled[] =
     "webkit.webprefs.password_echo_enabled";
@@ -717,6 +686,9 @@ const char kScreenMagnifierScale[] = "settings.a11y.screen_magnifier_scale";
 const char kVirtualKeyboardEnabled[] = "settings.a11y.virtual_keyboard";
 // A boolean pref which determines whether autoclick is enabled.
 const char kAutoclickEnabled[] = "settings.a11y.autoclick";
+// An integer pref which determines time in ms between when the mouse cursor
+// stops and when an autoclick is triggered.
+const char kAutoclickDelayMs[] = "settings.a11y.autoclick_delay_ms";
 // A boolean pref which determines whether the accessibility menu shows
 // regardless of the state of a11y features.
 const char kShouldAlwaysShowAccessibilityMenu[] = "settings.a11y.enable_menu";
@@ -2082,6 +2054,10 @@ const char kVideoCaptureAllowed[] = "hardware.video_capture_enabled";
 // TODO(tommi): Update comment when this is supported for all modes.
 const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 
+// A boolean pref that controls the enabled-state of hotword search voice
+// trigger.
+const char kHotwordSearchEnabled[] = "hotword.search_enabled";
+
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
 const char kProtectedMediaIdentifierEnabled[] =
@@ -2207,10 +2183,6 @@ const char kPerformanceTracingEnabled[] =
 
 // Value of the enums in TabStrip::LayoutType as an int.
 const char kTabStripLayoutType[] = "tab_strip_layout_type";
-
-// If true, cloud policy for the user is not loaded when the user signs in.
-const char kDisableCloudPolicyOnSignin[] =
-    "policy.disable_cloud_policy_on_signin";
 
 // Indicates that factory reset was requested from options page.
 const char kFactoryResetRequested[] = "FactoryResetRequested";
@@ -2351,11 +2323,10 @@ const char kIgnoredProtocolHandlers[] =
 // specified.
 const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 
-// Integers that specify the policy refresh rate for device- and user-policy in
+// Integer that specifies the policy refresh rate for device-policy in
 // milliseconds. Not all values are meaningful, so it is clamped to a sane range
 // by the cloud policy subsystem.
 const char kDevicePolicyRefreshRate[] = "policy.device_refresh_rate";
-const char kUserPolicyRefreshRate[] = "policy.user_refresh_rate";
 
 // String that represents the recovery component last downloaded version. This
 // takes the usual 'a.b.c.d' notation.

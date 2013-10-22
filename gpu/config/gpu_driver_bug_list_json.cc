@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "2.22",
+  "version": "2.24",
   "entries": [
     {
       "id": 1,
@@ -553,22 +553,6 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 41,
-      "cr_bugs": [259978],
-      "description": "Intel D3D driver crashes when sharing surfaces between D3D9 and D3D11.",
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x8086",
-      "driver_version": {
-        "op": ">=",
-        "value": "9.18.10.0"
-      },
-      "features": [
-        "disable_d3d11"
-      ]
-    },
-    {
       "id": 42,
       "cr_bugs": [290876],
       "description": "Framebuffer discarding causes flickering on older IMG drivers.",
@@ -611,6 +595,17 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "disable_ext_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 45,
+      "cr_bugs": [307751],
+      "description": "Unfold short circuit on MacOSX.",
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "unfold_short_circuit_as_ternary_operation"
       ]
     }
   ]

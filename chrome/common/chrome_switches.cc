@@ -176,12 +176,6 @@ const char kCipherSuiteBlacklist[]          = "cipher-suite-blacklist";
 // expiration of credentials during testing.
 const char kClearTokenService[]             = "clear-token-service";
 
-// The maximum amount of delay in ms between receiving a cloud policy
-// invalidation and fetching the policy. A random delay up to this value is used
-// to prevent Chrome clients from overwhelming the cloud policy server when a
-// policy which affects many users is changed.
-const char kCloudPolicyInvalidationDelay[]  = "cloud-policy-invalidation-delay";
-
 // Used with kCloudPrintFile. Tells Chrome to delete the file when finished
 // displaying the print dialog.
 const char kCloudPrintDeleteFile[]          = "cloud-print-delete-file";
@@ -276,11 +270,6 @@ const char kDiagnosticsFormat[]             = "diagnostics-format";
 // Tells the diagnostics mode to do the requested recovery step(s).
 const char kDiagnosticsRecovery[]           = "diagnostics-recovery";
 
-// If set, the app list will be disabled at startup. Note this doesn't prevent
-// the app list from running, it just makes Chrome think the app list hasn't
-// been enabled (as in kEnableAppList) yet.
-const char kDisableAppList[]                = "disable-app-list";
-
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
 
@@ -316,9 +305,6 @@ const char kDisableBookmarkAutocompleteProvider[] =
 // preferences.
 const char kDisableClientSidePhishingDetection[] =
     "disable-client-side-phishing-detection";
-
-// Disables pushing cloud policy to Chrome using an invalidation service.
-const char kDisableCloudPolicyPush[]        = "disable-cloud-policy-push";
 
 // Disable default component extensions with background pages - useful for
 // performance tests where these pages may interfere with perf results.
@@ -367,6 +353,9 @@ const char kDisableExtensionsHttpThrottling[] =
 // Disable mandatory enforcement of web_accessible_resources in extensions.
 const char kDisableExtensionsResourceWhitelist[] =
     "disable-extensions-resource-whitelist";
+
+// Disables Google Now integration.
+const char kDisableGoogleNowIntegration[] = "disable-google-now-integration";
 
 // Disable Instant extended API.
 const char kDisableInstantExtendedAPI[]     = "disable-instant-extended-api";
@@ -608,6 +597,10 @@ const char kEnableDomDistiller[]               = "enable-dom-distiller";
 const char kEasyOffStoreExtensionInstall[]  =
     "easy-off-store-extension-install";
 
+// Enables experimentation with ephemeral apps, which are launched without
+// installing in Chrome.
+const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
+
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
     "enable-extension-activity-logging";
@@ -645,9 +638,6 @@ const char kEnableInstantExtendedAPI[]      = "enable-instant-extended-api";
 // allow support independent of application testing. This flag overrides
 // "disable-ipv6" which appears elswhere in this file.
 const char kEnableIPv6[]                    = "enable-ipv6";
-
-/// Enables the IPC fuzzer for reliability testing
-const char kEnableIPCFuzzing[]              = "enable-ipc-fuzzing";
 
 // Enables IP Pooling within the networks stack (SPDY only). When a connection
 // is needed for a domain which shares an IP with an existing connection,
@@ -705,6 +695,10 @@ const char kDisablePnaclCrashThrottling[]   = "disable-pnacl-crash-throttling";
 
 // Disables the installation of Portable Native Client.
 const char kDisablePnaclInstall[]           = "disable-pnacl-install";
+
+// Enables the proactive populating of the disk cache with Web resources that
+// are likely to be needed in future page fetches.
+const char kEnablePrecache[]                = "enable-precache";
 
 // Enables tracking of tasks in profiler for viewing via about:profiler.
 // To predominantly disable tracking (profiling), use the command line switch:
@@ -880,6 +874,9 @@ const char kForceLoadCloudPolicy[]          = "force-load-cloud-policy";
 // Enables using GAIA information to populate profile name and icon.
 const char kGaiaProfileInfo[]               = "gaia-profile-info";
 
+// Enables setting global commands through the Extensions Commands API.
+const char kGlobalCommands[]                = "global-commands";
+
 // Specifies an alternate URL to use for speaking to Google. Useful for testing.
 const char kGoogleBaseURL[]                 = "google-base-url";
 
@@ -972,10 +969,6 @@ const char kLimitedInstallFromWebstore[]    = "limited-install-from-webstore";
 // Comma-separated list of directories with component extensions to load.
 const char kLoadComponentExtension[]        = "load-component-extension";
 
-// If present, disables the loading and application of cloud policy for
-// signed-in users.
-const char kDisableCloudPolicyOnSignin[]    = "disable-cloud-policy-on-signin";
-
 // Loads an extension from the specified directory.
 const char kLoadExtension[]                 = "load-extension";
 
@@ -1017,9 +1010,12 @@ const char kNativeMessagingHosts[]          = "native-messaging-hosts";
 // Intended primarily for use with --log-net-log.
 const char kNetLogLevel[]                   = "net-log-level";
 
+// Marks a newly created profile as a supervised profile. Used for tests.
+const char kNewProfileIsSupervised[]        = "new-profile-is-supervised";
+
 // Use new profile management system, including profile sign-out and new
 // choosers.
-const char kNewProfileManagement[]    = "new-profile-management";
+const char kNewProfileManagement[]          = "new-profile-management";
 
 // Disables the default browser check. Useful for UI/browser tests where we
 // want to avoid having the default browser info-bar displayed.
@@ -1039,9 +1035,9 @@ const char kNoEvents[]                      = "no-events";
 const char kNoExperiments[]                 = "no-experiments";
 
 // Skip First Run tasks, whether or not it's actually the First Run. Overridden
-// by kForceFirstRun.
-// Also drops the First Run beacon so that First Run will not occur in
-// subsequent runs as well.
+// by kForceFirstRun. This does not drop the First Run sentinel and thus doesn't
+// prevent first run from occuring the next time chrome is launched without this
+// flag (see kCancelFirstRun for that).
 const char kNoFirstRun[]                    = "no-first-run";
 
 // Support a separate switch that enables the v8 playback extension.
@@ -1247,6 +1243,11 @@ const char kRemoteDebuggingFrontend[]       = "remote-debugging-frontend";
 // Enables print preview in the renderer. This flag is generated internally by
 // Chrome and does nothing when directly passed to the browser.
 const char kRendererPrintPreview[]          = "renderer-print-preview";
+
+// If set, the app list will forget it has been installed on startup. Note this
+// doesn't prevent the app list from running, it just makes Chrome think the app
+// list hasn't been enabled (as in kEnableAppList) yet.
+const char kResetAppListInstallState[]      = "reset-app-list-install-state";
 
 // Forces a reset of the one-time-randomized FieldTrials on this client, also
 // known as the Chrome Variations state.
@@ -1534,13 +1535,6 @@ const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
 #if defined(OS_ANDROID) || defined(OS_IOS)
 // Enable SPDY proxy.
 const char kEnableSpdyProxyAuth[]           = "enable-spdy-proxy-auth";
-
-// Registers for cloud policy using the BROWSER client type instead of the
-// ANDROID_BROWSER or IOS_BROWSER types.
-// This allows skipping the server whitelist.
-// TODO(joaodasilva): remove this. http://crbug.com/248527
-const char kFakeCloudPolicyType[]           = "fake-cloud-policy-type";
-
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 #if defined(OS_ANDROID)

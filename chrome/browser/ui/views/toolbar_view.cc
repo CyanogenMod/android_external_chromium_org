@@ -93,10 +93,6 @@ const int kContentShadowHeightAsh = 2;
 // Non-ash uses a rounded content area with no shadow in the assets.
 const int kContentShadowHeight = 0;
 
-// Top margin for the wrench menu badges (badge is placed in the upper right
-// corner of the wrench menu).
-const int kBadgeTopMargin = 2;
-
 int GetButtonSpacing() {
   return (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) ?
       ToolbarView::kStandardSpacing : 0;
@@ -575,9 +571,10 @@ void ToolbarView::Layout() {
 }
 
 bool ToolbarView::HitTestRect(const gfx::Rect& rect) const {
-  // Don't take hits in our top shadow edge.  Let them fall through to the
-  // tab strip above us.
-  if (rect.y() < content_shadow_height())
+  // Fall through to the tab strip above us if none of |rect| intersects
+  // with this view (intersection with the top shadow edge does not
+  // count as intersection with this view).
+  if (rect.bottom() < content_shadow_height())
     return false;
   // Otherwise let our superclass take care of it.
   return AccessiblePaneView::HitTestRect(rect);

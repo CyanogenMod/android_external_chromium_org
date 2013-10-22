@@ -54,9 +54,6 @@ const char kGuestModeLoggingLevel[] = "1";
 // Format of command line switch.
 const char kSwitchFormatString[] = " --%s=\"%s\"";
 
-// User name which is used in the Guest session.
-const char kGuestUserName[] = "";
-
 // Derives the new command line from |base_command_line| by doing the following:
 // - Forward a given switches list to new command;
 // - Set start url if given;
@@ -89,6 +86,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kDisableThreadedCompositing,
       ::switches::kDisableTouchDragDrop,
       ::switches::kDisableTouchEditing,
+      ::switches::kDisableUniversalAcceleratedOverflowScroll,
       ::switches::kDisableWebKitMediaSource,
       ::switches::kDisableAcceleratedFixedRootBackground,
       ::switches::kEnableAcceleratedFixedRootBackground,
@@ -106,6 +104,7 @@ std::string DeriveCommandLine(const GURL& start_url,
       ::switches::kEnableThreadedCompositing,
       ::switches::kEnableTouchDragDrop,
       ::switches::kEnableTouchEditing,
+      ::switches::kEnableUniversalAcceleratedOverflowScroll,
       ::switches::kEnableViewport,
       ::switches::kForceDeviceScaleFactor,
       ::switches::kGpuStartupDialog,

@@ -112,7 +112,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/injected_script_source.targ
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_instrumentation_sources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_overlay_page.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/inspector_protocol_sources.target.darwin-arm.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/make_derived_sources.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/core/make_core_derived_sources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_arm_neon.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.darwin-arm.mk
@@ -144,6 +144,7 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/devtools/generate_devtools_grd.t
 include $(LOCAL_PATH)/third_party/WebKit/Source/modules/modules.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_common.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/platform/blink_platform.target.darwin-arm.mk
+include $(LOCAL_PATH)/third_party/WebKit/Source/platform/make_platform_derived_sources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/picker_resources.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/web/webkit.target.darwin-arm.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/weborigin/weborigin.target.darwin-arm.mk

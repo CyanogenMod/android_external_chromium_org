@@ -282,7 +282,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   // TODO(danakj): Move these to the android code.
   settings.max_partial_texture_updates = 0;
   settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
-  settings.solid_color_scrollbars = true;
   settings.solid_color_scrollbar_color =
       cmd->HasSwitch(switches::kHideScrollbars)
           ? SK_ColorTRANSPARENT
@@ -301,7 +300,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 #elif !defined(OS_MACOSX)
   if (cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
     settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
-    settings.solid_color_scrollbars = true;
   }
   if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport) ||
       cmd->HasSwitch(switches::kEnableOverlayScrollbars)) {
@@ -406,8 +404,9 @@ const cc::Layer* RenderWidgetCompositor::GetRootLayer() const {
 
 bool RenderWidgetCompositor::ScheduleMicroBenchmark(
     const std::string& name,
+    scoped_ptr<base::Value> value,
     const base::Callback<void(scoped_ptr<base::Value>)>& callback) {
-  return layer_tree_host_->ScheduleMicroBenchmark(name, callback);
+  return layer_tree_host_->ScheduleMicroBenchmark(name, value.Pass(), callback);
 }
 
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {

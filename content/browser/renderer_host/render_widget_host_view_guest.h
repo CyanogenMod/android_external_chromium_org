@@ -186,8 +186,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 #endif
 
   // Overridden from ui::GestureEventHelper.
-  virtual bool DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
+  virtual void DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
  protected:
   friend class RenderWidgetHostView;
@@ -206,7 +207,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   RenderWidgetHostImpl* host_;
 
   BrowserPluginGuest *guest_;
-  bool is_hidden_;
   gfx::Size size_;
   // The platform view for this RenderWidgetHostView.
   // RenderWidgetHostViewGuest mostly only cares about stuff related to

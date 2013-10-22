@@ -21,14 +21,10 @@
       }],
     ],
   },
-  'includes': [
-    'content_tests.gypi',
-  ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [
         '../build/win_precompile.gypi',
-        'content_shell.gypi',
       ],
     }],
     # In component mode, we build all of content as a single DLL.
@@ -494,6 +490,24 @@
           },
           'includes': [ 'content_jni.gypi' ],
         },
+        {
+          'target_name': 'content_android_linker',
+          'type': 'shared_library',
+          'conditions': [
+            ['android_webview_build == 0', {
+              # Avoid breaking the webview build because it doesn't have
+              # <(android_ndk_root)/crazy_linker.gyp. Note that it never uses
+              # the linker anyway.
+              'sources': [
+                'common/android/linker/linker_jni.cc',
+              ],
+              'dependencies': [
+                '<(android_ndk_root)/crazy_linker.gyp:crazy_linker',
+              ],
+            }],
+          ],
+        },
+
       ],
     }],  # OS == "android"
   ],

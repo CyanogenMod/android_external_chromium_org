@@ -27,6 +27,7 @@
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -566,8 +567,8 @@ void AppLauncherHandler::HandleUninstallApp(const ListValue* args) {
   std::string extension_id;
   CHECK(args->GetString(0, &extension_id));
 
-  const Extension* extension = extension_service_->GetExtensionById(
-      extension_id, true);
+  const Extension* extension = extension_service_->GetInstalledExtension(
+      extension_id);
   if (!extension)
     return;
 
@@ -602,8 +603,9 @@ void AppLauncherHandler::HandleCreateAppShortcut(const ListValue* args) {
 
   Browser* browser = chrome::FindBrowserWithWebContents(
         web_ui()->GetWebContents());
-  browser->window()->ShowCreateChromeAppShortcutsDialog(
-      browser->profile(), extension);
+  chrome::ShowCreateChromeAppShortcutsDialog(
+      browser->window()->GetNativeWindow(), browser->profile(), extension,
+      base::Closure());
 }
 
 void AppLauncherHandler::HandleReorderApps(const ListValue* args) {
@@ -790,7 +792,7 @@ void AppLauncherHandler::ExtensionUninstallAccepted() {
   // The extension can be uninstalled in another window while the UI was
   // showing. Do nothing in that case.
   const Extension* extension =
-      extension_service_->GetExtensionById(extension_id_prompting_, true);
+      extension_service_->GetInstalledExtension(extension_id_prompting_);
   if (!extension)
     return;
 

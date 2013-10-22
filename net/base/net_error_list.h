@@ -300,6 +300,9 @@ NET_ERROR(WS_THROTTLE_QUEUE_TOO_LARGE, -154)
 // was rejected.
 NET_ERROR(TOO_MANY_SOCKET_STREAMS, -155)
 
+// The SSL server certificate changed in a renegotiation.
+NET_ERROR(SSL_SERVER_CERT_CHANGED, -156)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -551,6 +554,10 @@ NET_ERROR(QUIC_PROTOCOL_ERROR, -356)
 
 // The HTTP headers were truncated by an EOF.
 NET_ERROR(RESPONSE_HEADERS_TRUNCATED, -357)
+
+// The QUIC crytpo handshake failed.  This means that the server was unable
+// to read any requests sent, so they may be resent.
+NET_ERROR(QUIC_HANDSHAKE_FAILED, -358)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

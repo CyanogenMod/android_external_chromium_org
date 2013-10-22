@@ -226,6 +226,20 @@ public abstract class TabBase implements NavigationClient {
     }
 
     /**
+     * Loads the current navigation if there is a pending lazy load (after tab restore).
+     */
+    public void loadIfNecessary() {
+        if (mContentViewCore != null) mContentViewCore.loadIfNecessary();
+    }
+
+    /**
+     * Requests the current navigation to be loaded upon the next call to loadIfNecessary().
+     */
+    protected void requestRestoreLoad() {
+        if (mContentViewCore != null) mContentViewCore.requestRestoreLoad();
+    }
+
+    /**
      * @return Whether or not the {@link TabBase} is currently showing an interstitial page, such as
      *         a bad HTTPS page.
      */
@@ -293,8 +307,12 @@ public abstract class TabBase implements NavigationClient {
      */
     public void reload() {
         // TODO(dtrainor): Should we try to rebuild the ContentView if it's frozen?
-        ContentViewCore contentViewCore = getContentViewCore();
-        if (contentViewCore != null) contentViewCore.reload();
+        if (mContentViewCore != null) mContentViewCore.reload();
+    }
+
+    /** Stop the current navigation. */
+    public void stopLoading() {
+        if (mContentViewCore != null) mContentViewCore.stopLoading();
     }
 
     /**
@@ -315,6 +333,7 @@ public abstract class TabBase implements NavigationClient {
     /**
      * @return The id representing this tab.
      */
+    @CalledByNative
     public int getId() {
         return mId;
     }
@@ -489,7 +508,7 @@ public abstract class TabBase implements NavigationClient {
 
         assert mNativeTabAndroid != 0;
         nativeInitWebContents(
-                mNativeTabAndroid, mId, mIncognito, mContentViewCore, mWebContentsDelegate);
+                mNativeTabAndroid, mIncognito, mContentViewCore, mWebContentsDelegate);
 
         // In the case where restoring a Tab or showing a prerendered one we already have a
         // valid infobar container, no need to recreate one.
@@ -518,6 +537,31 @@ public abstract class TabBase implements NavigationClient {
             mInfoBarContainer.destroy();
             mInfoBarContainer = null;
         }
+    }
+
+    /**
+     * @return The url associated with the tab.
+     */
+    @CalledByNative
+    public String getUrl() {
+        return getPageInfo() != null ? getPageInfo().getUrl() : "";
+    }
+
+    /**
+     * @return The tab title.
+     */
+    @CalledByNative
+    public String getTitle() {
+        return getPageInfo() != null ? getPageInfo().getTitle() : "";
+    }
+
+    /**
+     * Restores the tab if it is frozen or crashed.
+     * @return true iff tab restore was triggered.
+     */
+    @CalledByNative
+    public boolean restoreIfNeeded() {
+        return false;
     }
 
     private void destroyNativePageInternal() {
@@ -682,7 +726,7 @@ public abstract class TabBase implements NavigationClient {
         sIdCounter.addAndGet(diff);
     }
 
-    private native void nativeInitWebContents(int nativeTabAndroid, int id, boolean incognito,
+    private native void nativeInitWebContents(int nativeTabAndroid, boolean incognito,
             ContentViewCore contentViewCore, ChromeWebContentsDelegateAndroid delegate);
     private native void nativeDestroyWebContents(int nativeTabAndroid, boolean deleteNative);
     private native Profile nativeGetProfileAndroid(int nativeTabAndroid);

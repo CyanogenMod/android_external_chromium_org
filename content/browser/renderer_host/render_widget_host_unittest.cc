@@ -150,17 +150,15 @@ class MockInputRouter : public InputRouter {
   }
   virtual void SendTouchEvent(
       const TouchEventWithLatencyInfo& touch_event) OVERRIDE {
-    send_touch_event_not_cancelled_ = true;
+    send_touch_event_not_cancelled_ =
+        client_->FilterInputEvent(touch_event.event, touch_event.latency) ==
+        INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
   }
   virtual const NativeWebKeyboardEvent* GetLastKeyboardEvent() const OVERRIDE {
     NOTREACHED();
     return NULL;
   }
   virtual bool ShouldForwardTouchEvent() const OVERRIDE { return true; }
-  virtual bool ShouldForwardGestureEvent(
-      const GestureEventWithLatencyInfo& gesture_event) const OVERRIDE {
-    return true;
-  }
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {

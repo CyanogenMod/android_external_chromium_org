@@ -16,29 +16,67 @@
 // shared library, or a static library).
 class GypBinaryTargetWriter : public GypTargetWriter {
  public:
-  GypBinaryTargetWriter(const Target* debug_target,
-                        const Target* release_target,
-                        std::ostream& out);
+  GypBinaryTargetWriter(const TargetGroup& group, std::ostream& out);
   virtual ~GypBinaryTargetWriter();
 
   virtual void Run() OVERRIDE;
 
  private:
-  void WriteName();
-  void WriteType();
+  struct Flags {
+    Flags();
+    ~Flags();
 
-  // The flags can vary between debug and release, so we must pass in the
-  // correct debug or release target to the functions.
-  void WriteFlags(const Target* target);
-  void WriteDefines(const Target* target);
-  void WriteIncludes(const Target* target);
-  void WriteVCFlags(const Target* target);
+    std::vector<std::string> defines;
+    std::vector<SourceDir> include_dirs;
 
-  void WriteSources();
-  void WriteDeps();
+    std::vector<std::string> cflags;
+    std::vector<std::string> cflags_c;
+    std::vector<std::string> cflags_cc;
+    std::vector<std::string> cflags_objc;
+    std::vector<std::string> cflags_objcc;
+    std::vector<std::string> ldflags;
+    std::vector<SourceDir> lib_dirs;
+    std::vector<std::string> libs;
+  };
 
-  // The normal |target_| in the base class stores the debug version.
-  const Target* release_target_;
+  // Writes the given number of spaces to the output stream and returns it.
+  std::ostream& Indent(int spaces);
+
+  void WriteName(int indent);
+  void WriteType(int indent);
+
+  // Writes the flags, sources, and deps.
+  void WriteVCConfiguration(int indent);
+  void WriteLinuxConfiguration(int indent);
+
+  // Writes the Visual Studio flags, defines, etc. The flags input is non-const
+  // because the cflags will be fixed up to account for things converted to
+  // VC settings (rather than compiler flags).
+  void WriteVCFlags(Flags& flags, int indent);
+
+  // Writes the Linux compiler and linker flags. The first version does the
+  // flags for the given target, the second version takes a pregenerted list of
+  // flags.
+  void WriteLinuxFlagsForTarget(const Target* target, int indent);
+  void WriteLinuxFlags(const Flags& flags, int indent);
+
+  // Shared helpers for writing specific parts of GYP files.
+  void WriteSources(const Target* target, int indent);
+  void WriteDeps(const Target* target, int indent);
+  void WriteIncludeDirs(const Flags& flags, int indent);
+  void WriteDirectDependentSettings(int indent);
+  void WriteAllDependentSettings(int indent);
+
+  // Writes out the given flags and such from all configs in the given list.
+  void WriteSettingsFromConfigList(const std::vector<const Config*>& configs,
+                                   int indent);
+
+  // Fills the given flags structure.
+  Flags FlagsFromTarget(const Target* target) const;
+  Flags FlagsFromConfigList(const std::vector<const Config*>& configs) const;
+
+  // All associated targets.
+  TargetGroup group_;
 
   DISALLOW_COPY_AND_ASSIGN(GypBinaryTargetWriter);
 };

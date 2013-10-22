@@ -304,6 +304,8 @@
             }],
             ['OS=="win" or OS=="mac"', {
               'sources': [
+                'utility/media_galleries/iapps_xml_utils.cc',
+                'utility/media_galleries/iapps_xml_utils.h',
                 'utility/media_galleries/itunes_library_parser.cc',
                 'utility/media_galleries/itunes_library_parser.h',
                 'utility/media_galleries/picasa_album_table_reader.cc',
@@ -312,6 +314,12 @@
                 'utility/media_galleries/picasa_albums_indexer.h',
                 'utility/media_galleries/pmp_column_reader.cc',
                 'utility/media_galleries/pmp_column_reader.h',
+              ],
+            }],
+            ['OS=="mac"', {
+              'sources': [
+                'utility/media_galleries/iphoto_library_parser.cc',
+                'utility/media_galleries/iphoto_library_parser.h',
               ],
             }],
             ['use_openssl==1', {
@@ -800,20 +808,6 @@
             }],
           ],
         },
-        {
-          'target_name': 'ipcfuzz',
-          'type': 'loadable_module',
-          'include_dirs': [
-            '..',
-          ],
-          'dependencies': [
-            'test_support_common',
-            '../skia/skia.gyp:skia',
-          ],
-          'sources': [
-            'tools/ipclist/ipcfuzz.cc',
-          ],
-        },
       ],
     }],  # OS=="linux"
     ['OS=="win"',
@@ -829,9 +823,9 @@
             '../base/base.gyp:base_unittests',
             '../chrome_frame/chrome_frame.gyp:chrome_frame_tests',
             '../chrome_frame/chrome_frame.gyp:chrome_frame_net_tests',
-            '../content/content.gyp:content_browsertests',
-            '../content/content.gyp:content_shell',
-            '../content/content.gyp:content_unittests',
+            '../content/content_shell_and_tests.gyp:content_browsertests',
+            '../content/content_shell_and_tests.gyp:content_shell',
+            '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
             '../ui/ui.gyp:ui_unittests',
           ],
@@ -950,16 +944,13 @@
           'dependencies': [
             'installer_util',
             '../base/base.gyp:base',
-            '../breakpad/breakpad.gyp:breakpad_handler',
-            '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome/common_constants.gyp:common_constants',
+            '../components/components.gyp:breakpad_crash_service',
           ],
           'include_dirs': [
             '..',
           ],
           'sources': [
-            'tools/crash_service/crash_service.cc',
-            'tools/crash_service/crash_service.h',
             'tools/crash_service/main.cc',
           ],
           'msvs_settings': {
@@ -1017,16 +1008,13 @@
           'dependencies': [
             'installer_util_nacl_win64',
             '../base/base.gyp:base_static_win64',
-            '../breakpad/breakpad.gyp:breakpad_handler_win64',
-            '../breakpad/breakpad.gyp:breakpad_sender_win64',
             '../chrome/common_constants.gyp:common_constants_win64',
+            '../components/components.gyp:breakpad_crash_service_win64',
           ],
           'include_dirs': [
             '..',
           ],
           'sources': [
-            'tools/crash_service/crash_service.cc',
-            'tools/crash_service/crash_service.h',
             'tools/crash_service/main.cc',
             '../content/public/common/content_switches.cc',
           ],

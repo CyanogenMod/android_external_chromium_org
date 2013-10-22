@@ -62,8 +62,7 @@ class WebrtcApprtcBrowserTest : public WebRtcTestBase {
     }
 
     base::FilePath apprtc_dir =
-        GetSourceDir().Append(
-            FILE_PATH_LITERAL("third_party/webrtc_apprtc/apprtc"));
+        GetSourceDir().Append(FILE_PATH_LITERAL("out/apprtc"));
     if (!base::PathExists(apprtc_dir)) {
       LOG(ERROR) << "Missing AppRTC code at " <<
           apprtc_dir.value() << ". " << kAdviseOnGclientSolution;
@@ -120,11 +119,14 @@ class WebrtcApprtcBrowserTest : public WebRtcTestBase {
   base::ProcessHandle dev_appserver_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebrtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
-  if (!LaunchApprtcInstanceOnLocalhost()) {
-    // TODO(phoglund): assert on this once everything is in place on the bots.
-    return;
-  }
+#if defined (OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_MANUAL_WorksOnApprtc DISABLED_MANUAL_WorksOnApprtc
+#else
+#define MAYBE_MANUAL_WorksOnApprtc MANUAL_WorksOnApprtc
+#endif
+
+IN_PROC_BROWSER_TEST_F(WebrtcApprtcBrowserTest, MAYBE_MANUAL_WorksOnApprtc) {
+  ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
   while (!LocalApprtcInstanceIsUp())
     LOG(INFO) << "Waiting for AppRTC to come up...";
 

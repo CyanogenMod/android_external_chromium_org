@@ -19,7 +19,6 @@
 #include "ui/aura/window.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_dispatcher.h"
@@ -46,33 +45,14 @@ class ViewProp;
 }
 
 namespace aura {
-class MouseMovedTracker;
 class RootWindow;
 class RootWindowHost;
 class RootWindowObserver;
 class RootWindowTransformer;
 class TestScreen;
 
-// TODO(sky): nuke; used for debugging 275760.
-// Used for debugging.
-enum MouseMovedHandlerSetReason {
-  // |mouse_moved_handler_| set during capture.
-  MOUSE_MOVED_HANDLER_SET_REASON_CAPTURE = 1,
-
-  // |mouse_moved_handler_| set from a mouse event.
-  MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED = 2,
-
-  // |mouse_moved_handler_| set from a synthesized mouse event.
-  MOUSE_MOVED_HANDLER_SET_REASON_MOUSE_MOVED_SYNTHESIZED = 3,
-
-  // |mouse_moved_handler_| set to NULL.
-  MOUSE_MOVED_HANDLER_SET_REASON_NULL = 4,
-};
-
 // RootWindow is responsible for hosting a set of windows.
-class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
-                               public ui::CompositorObserver,
-                               public Window,
+class AURA_EXPORT RootWindow : public Window,
                                public ui::EventDispatcherDelegate,
                                public ui::GestureEventHelper,
                                public ui::LayerAnimationObserver,
@@ -153,12 +133,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // Clips the cursor movement to the root_window.
   bool ConfineCursorToWindow();
 
-  // Draws the necessary set of windows.
-  void Draw();
-
-  // Draw the whole screen.
-  void ScheduleFullRedraw();
-
   // Draw the damage_rect.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
 
@@ -234,13 +208,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
                            Window* window,
                            ui::EventResult result);
 
-  ui::GestureRecognizer* gesture_recognizer() const {
-    return gesture_recognizer_.get();
-  }
-
-  // Provided only for testing:
-  void SetGestureRecognizerForTesting(ui::GestureRecognizer* gr);
-
   // Returns the accelerated widget from the RootWindowHost.
   gfx::AcceleratedWidget GetAcceleratedWidget();
 
@@ -264,45 +231,18 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // coordinates. This may return a point outside the root window's bounds.
   gfx::Point GetLastMouseLocationInRoot() const;
 
-  // Overridden from Window:
-  virtual RootWindow* GetRootWindow() OVERRIDE;
-  virtual const RootWindow* GetRootWindow() const OVERRIDE;
-  virtual void SetTransform(const gfx::Transform& transform) OVERRIDE;
-
-  // Overridden from ui::EventTarget:
-  virtual ui::EventTarget* GetParentTarget() OVERRIDE;
-
-  // Overridden from ui::CompositorDelegate:
-  virtual void ScheduleDraw() OVERRIDE;
-
-  // Overridden from ui::CompositorObserver:
-  virtual void OnCompositingDidCommit(ui::Compositor*) OVERRIDE;
-  virtual void OnCompositingStarted(ui::Compositor*,
-                                    base::TimeTicks start_time) OVERRIDE;
-  virtual void OnCompositingEnded(ui::Compositor*) OVERRIDE;
-  virtual void OnCompositingAborted(ui::Compositor*) OVERRIDE;
-  virtual void OnCompositingLockStateChanged(ui::Compositor*) OVERRIDE;
-  virtual void OnUpdateVSyncParameters(ui::Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
-
-  // Overridden from ui::LayerDelegate:
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-
-  // Overridden from Window:
-  virtual bool CanFocus() const OVERRIDE;
-  virtual bool CanReceiveEvents() const OVERRIDE;
-
-  // Overridden from aura::client::CaptureDelegate:
-  virtual void UpdateCapture(Window* old_capture, Window* new_capture) OVERRIDE;
-  virtual void SetNativeCapture() OVERRIDE;
-  virtual void ReleaseNativeCapture() OVERRIDE;
-
   // Exposes RootWindowHost::QueryMouseLocation() for test purposes.
   bool QueryMouseLocationForTest(gfx::Point* point) const;
 
   void SetRootWindowTransformer(scoped_ptr<RootWindowTransformer> transformer);
   gfx::Transform GetRootTransform() const;
+
+  // Overridden from Window:
+  virtual RootWindow* GetRootWindow() OVERRIDE;
+  virtual const RootWindow* GetRootWindow() const OVERRIDE;
+  virtual void SetTransform(const gfx::Transform& transform) OVERRIDE;
+  virtual bool CanFocus() const OVERRIDE;
+  virtual bool CanReceiveEvents() const OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RootWindowTest, KeepTranslatedEventInRoot);
@@ -317,10 +257,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
     WINDOW_MOVING,     // Window is temporarily marked as hidden due to move
                        // across root windows.
   };
-
-  // TODO(sky): nuke; used for debugging 275760.
-  void SetMouseMovedHandler(aura::Window* window,
-                            MouseMovedHandlerSetReason reason);
 
   // Updates the event with the appropriate transform for the device scale
   // factor. The RootWindowHostDelegate dispatches events in the physical pixel
@@ -360,12 +296,24 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   // transform and insets.
   void UpdateRootWindowSize(const gfx::Size& host_size);
 
+  // Overridden from ui::EventTarget:
+  virtual ui::EventTarget* GetParentTarget() OVERRIDE;
+
+  // Overridden from ui::LayerDelegate:
+  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
+
+  // Overridden from aura::client::CaptureDelegate:
+  virtual void UpdateCapture(Window* old_capture, Window* new_capture) OVERRIDE;
+  virtual void SetNativeCapture() OVERRIDE;
+  virtual void ReleaseNativeCapture() OVERRIDE;
+
   // Overridden from ui::EventDispatcherDelegate.
   virtual bool CanDispatchToTarget(EventTarget* target) OVERRIDE;
 
   // Overridden from ui::GestureEventHelper.
-  virtual bool DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
+  virtual void DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Overridden from ui::LayerAnimationObserver:
   virtual void OnLayerAnimationEnded(
@@ -406,10 +354,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   bool DispatchGestureEventRepost(ui::GestureEvent* event);
   void DispatchHeldEvents();
 
-  // Parses the switch describing the initial size for the host window and
-  // returns bounds for the window.
-  gfx::Rect GetInitialHostWindowBounds() const;
-
   // Posts a task to send synthesized mouse move event if there
   // is no a pending task.
   void PostMouseMoveEventAfterWindowChange();
@@ -436,18 +380,11 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   Window* mouse_moved_handler_;
   Window* event_dispatch_target_;
 
-  // The gesture_recognizer_ for this.
-  scoped_ptr<ui::GestureRecognizer> gesture_recognizer_;
-
   bool synthesize_mouse_move_;
   bool waiting_on_compositing_end_;
   bool draw_on_compositing_end_;
 
   bool defer_draw_scheduling_;
-
-  // TODO(sky): nuke; used for debugging 275760.
-  MouseMovedHandlerSetReason mouse_moved_handler_set_reason_;
-  scoped_ptr<MouseMovedTracker> mouse_moved_handler_tracker_;
 
   // How many move holds are outstanding. We try to defer dispatching
   // touch/mouse moves while the count is > 0.
@@ -460,9 +397,6 @@ class AURA_EXPORT RootWindow : public ui::CompositorDelegate,
   scoped_ptr<ui::ViewProp> prop_;
 
   scoped_ptr<RootWindowTransformer> transformer_;
-
-  // Used to schedule painting.
-  base::WeakPtrFactory<RootWindow> schedule_paint_factory_;
 
   // Use to post mouse move event.
   base::WeakPtrFactory<RootWindow> event_factory_;

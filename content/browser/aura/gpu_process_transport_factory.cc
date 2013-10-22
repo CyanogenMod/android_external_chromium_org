@@ -363,7 +363,8 @@ GLHelper* GpuProcessTransportFactory::GetGLHelper() {
     scoped_refptr<cc::ContextProvider> provider =
         SharedMainThreadContextProvider();
     if (provider.get())
-      gl_helper_.reset(new GLHelper(provider->Context3d()));
+      gl_helper_.reset(new GLHelper(provider->Context3d(),
+                                    provider->ContextSupport()));
   }
   return gl_helper_.get();
 }
@@ -435,8 +436,10 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
         base::Bind(&GpuProcessTransportFactory::
                         OnLostMainThreadSharedContextInsideCallback,
                    callback_factory_.GetWeakPtr()));
-    if (!shared_main_thread_contexts_->BindToCurrentThread())
+    if (!shared_main_thread_contexts_->BindToCurrentThread()) {
       shared_main_thread_contexts_ = NULL;
+      offscreen_compositor_contexts_ = NULL;
+    }
   }
   return shared_main_thread_contexts_;
 }

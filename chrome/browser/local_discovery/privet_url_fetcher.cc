@@ -14,6 +14,7 @@ namespace local_discovery {
 
 namespace {
 const char kXPrivetTokenHeaderPrefix[] = "X-Privet-Token: ";
+const char kXPrivetEmptyToken[] = "\"\"";
 }
 
 PrivetURLFetcher::PrivetURLFetcher(
@@ -22,11 +23,15 @@ PrivetURLFetcher::PrivetURLFetcher(
     net::URLFetcher::RequestType request_type,
     net::URLRequestContextGetter* request_context,
     PrivetURLFetcher::Delegate* delegate)
-    : privet_access_token_(token), delegate_(delegate) {
+    : delegate_(delegate) {
+  std::string sent_token = token;
+  if (sent_token.empty())
+    sent_token = kXPrivetEmptyToken;
+
   url_fetcher_.reset(net::URLFetcher::Create(url, request_type, this));
   url_fetcher_->SetRequestContext(request_context);
   url_fetcher_->AddExtraRequestHeader(std::string(kXPrivetTokenHeaderPrefix) +
-                                      token);
+                                      sent_token);
 
   // URLFetcher requires us to set upload data for POST requests.
   if (request_type == net::URLFetcher::POST)

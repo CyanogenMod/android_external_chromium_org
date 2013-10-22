@@ -13,6 +13,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/extensions/suggest_permission_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -56,6 +57,65 @@ const int kDefaultHeight = 384;
 
 namespace apps {
 
+ShellWindow::SizeConstraints::SizeConstraints()
+    : maximum_size_(kUnboundedSize, kUnboundedSize) {
+}
+
+ShellWindow::SizeConstraints::SizeConstraints(const gfx::Size& min_size,
+                                              const gfx::Size& max_size)
+    : minimum_size_(min_size),
+      maximum_size_(max_size) {
+}
+
+ShellWindow::SizeConstraints::~SizeConstraints() {}
+
+gfx::Size ShellWindow::SizeConstraints::ClampSize(gfx::Size size) const {
+  const gfx::Size max_size = GetMaximumSize();
+  if (max_size.width() != kUnboundedSize)
+    size.set_width(std::min(size.width(), GetMaximumSize().width()));
+  if (max_size.height() != kUnboundedSize)
+    size.set_height(std::min(size.height(), GetMaximumSize().height()));
+  size.SetToMax(GetMinimumSize());
+  return size;
+}
+
+bool ShellWindow::SizeConstraints::HasMinimumSize() const {
+  return GetMinimumSize().width() != kUnboundedSize ||
+      GetMinimumSize().height() != kUnboundedSize;
+}
+
+bool ShellWindow::SizeConstraints::HasMaximumSize() const {
+  const gfx::Size max_size = GetMaximumSize();
+  return max_size.width() != kUnboundedSize ||
+      max_size.height() != kUnboundedSize;
+}
+
+bool ShellWindow::SizeConstraints::HasFixedSize() const {
+  return !GetMinimumSize().IsEmpty() && GetMinimumSize() == GetMaximumSize();
+}
+
+gfx::Size ShellWindow::SizeConstraints::GetMinimumSize() const {
+  return minimum_size_;
+}
+
+gfx::Size ShellWindow::SizeConstraints::GetMaximumSize() const {
+  return gfx::Size(
+      maximum_size_.width() == kUnboundedSize ?
+          kUnboundedSize :
+          std::max(maximum_size_.width(), minimum_size_.width()),
+      maximum_size_.height() == kUnboundedSize ?
+          kUnboundedSize :
+          std::max(maximum_size_.height(), minimum_size_.height()));
+}
+
+void ShellWindow::SizeConstraints::set_minimum_size(const gfx::Size& min_size) {
+  minimum_size_ = min_size;
+}
+
+void ShellWindow::SizeConstraints::set_maximum_size(const gfx::Size& max_size) {
+  maximum_size_ = max_size;
+}
+
 ShellWindow::CreateParams::CreateParams()
   : window_type(ShellWindow::WINDOW_TYPE_DEFAULT),
     frame(ShellWindow::FRAME_CHROME),
@@ -95,6 +155,7 @@ void ShellWindow::Init(const GURL& url,
   WebContents* web_contents = shell_window_contents_->GetWebContents();
   delegate_->InitWebContents(web_contents);
   WebContentsModalDialogManager::CreateForWebContents(web_contents);
+  extensions::ExtensionWebContentsObserver::CreateForWebContents(web_contents);
 
   web_contents->SetDelegate(this);
   WebContentsModalDialogManager::FromWebContents(web_contents)->
@@ -102,67 +163,11 @@ void ShellWindow::Init(const GURL& url,
   extensions::SetViewType(web_contents, extensions::VIEW_TYPE_APP_SHELL);
 
   // Initialize the window
-  window_type_ = params.window_type;
-
-  gfx::Rect bounds = params.bounds;
-
-  if (bounds.width() == 0)
-    bounds.set_width(kDefaultWidth);
-  if (bounds.height() == 0)
-    bounds.set_height(kDefaultHeight);
-
-  // If left and top are left undefined, the native shell window will center
-  // the window on the main screen in a platform-defined manner.
-
-  CreateParams new_params = params;
-
-  // Load cached state if it exists.
-  if (!params.window_key.empty()) {
-    window_key_ = params.window_key;
-
-    ShellWindowGeometryCache* cache = ShellWindowGeometryCache::Get(profile());
-
-    gfx::Rect cached_bounds;
-    gfx::Rect cached_screen_bounds;
-    ui::WindowShowState cached_state = ui::SHOW_STATE_DEFAULT;
-    if (cache->GetGeometry(extension()->id(), params.window_key, &cached_bounds,
-                           &cached_screen_bounds, &cached_state)) {
-      // App window has cached screen bounds, make sure it fits on screen in
-      // case the screen resolution changed.
-      gfx::Screen* screen = gfx::Screen::GetNativeScreen();
-      gfx::Display display = screen->GetDisplayMatching(cached_bounds);
-      gfx::Rect current_screen_bounds = display.work_area();
-      AdjustBoundsToBeVisibleOnScreen(cached_bounds,
-                                      cached_screen_bounds,
-                                      current_screen_bounds,
-                                      params.minimum_size,
-                                      &bounds);
-      new_params.state = cached_state;
-    }
-  }
-
-  gfx::Size& minimum_size = new_params.minimum_size;
-  gfx::Size& maximum_size = new_params.maximum_size;
-
-  // In the case that minimum size > maximum size, we consider the minimum
-  // size to be more important.
-  if (maximum_size.width() && maximum_size.width() < minimum_size.width())
-    maximum_size.set_width(minimum_size.width());
-  if (maximum_size.height() && maximum_size.height() < minimum_size.height())
-    maximum_size.set_height(minimum_size.height());
-
-  if (maximum_size.width() && bounds.width() > maximum_size.width())
-    bounds.set_width(maximum_size.width());
-  if (bounds.width() != INT_MIN && bounds.width() < minimum_size.width())
-    bounds.set_width(minimum_size.width());
-
-  if (maximum_size.height() && bounds.height() > maximum_size.height())
-    bounds.set_height(maximum_size.height());
-  if (bounds.height() != INT_MIN && bounds.height() < minimum_size.height())
-    bounds.set_height(minimum_size.height());
-
-  new_params.bounds = bounds;
-
+  CreateParams new_params = LoadDefaultsAndConstrain(params);
+  window_type_ = new_params.window_type;
+  window_key_ = new_params.window_key;
+  size_constraints_ = SizeConstraints(new_params.minimum_size,
+                                      new_params.maximum_size);
   native_app_window_.reset(delegate_->CreateNativeAppWindow(this, new_params));
 
   if (!new_params.hidden) {
@@ -191,7 +196,7 @@ void ShellWindow::Init(const GURL& url,
   registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 
-  shell_window_contents_->LoadContents(params.creator_process_id);
+  shell_window_contents_->LoadContents(new_params.creator_process_id);
 
   // Prevent the browser process from shutting down while this window is open.
   chrome::StartKeepAlive();
@@ -426,6 +431,16 @@ void ShellWindow::Restore() {
   }
 }
 
+void ShellWindow::SetMinimumSize(const gfx::Size& min_size) {
+  size_constraints_.set_minimum_size(min_size);
+  OnSizeConstraintsChanged();
+}
+
+void ShellWindow::SetMaximumSize(const gfx::Size& max_size) {
+  size_constraints_.set_maximum_size(max_size);
+  OnSizeConstraintsChanged();
+}
+
 //------------------------------------------------------------------------------
 // Private methods
 
@@ -471,6 +486,17 @@ void ShellWindow::UpdateExtensionAppIcon() {
   // Triggers actual image loading with 1x resources. The 2x resource will
   // be handled by IconImage class when requested.
   app_icon_image_->image_skia().GetRepresentation(1.0f);
+}
+
+void ShellWindow::OnSizeConstraintsChanged() {
+  native_app_window_->UpdateWindowMinMaxSize();
+  gfx::Rect bounds = GetClientBounds();
+  gfx::Size constrained_size = size_constraints_.ClampSize(bounds.size());
+  if (bounds.size() != constrained_size) {
+    bounds.set_size(constrained_size);
+    native_app_window_->SetBounds(bounds);
+  }
+  OnNativeWindowChanged();
 }
 
 void ShellWindow::CloseContents(WebContents* contents) {
@@ -642,6 +668,50 @@ void ShellWindow::AdjustBoundsToBeVisibleOnScreen(
                  std::min(bounds->y(),
                           current_screen_bounds.bottom() - bounds->height())));
   }
+}
+
+ShellWindow::CreateParams ShellWindow::LoadDefaultsAndConstrain(
+    CreateParams params) const {
+  gfx::Rect bounds = params.bounds;
+
+  if (bounds.width() == 0)
+    bounds.set_width(kDefaultWidth);
+  if (bounds.height() == 0)
+    bounds.set_height(kDefaultHeight);
+
+  // If left and top are left undefined, the native shell window will center
+  // the window on the main screen in a platform-defined manner.
+
+  // Load cached state if it exists.
+  if (!params.window_key.empty()) {
+    ShellWindowGeometryCache* cache = ShellWindowGeometryCache::Get(profile());
+
+    gfx::Rect cached_bounds;
+    gfx::Rect cached_screen_bounds;
+    ui::WindowShowState cached_state = ui::SHOW_STATE_DEFAULT;
+    if (cache->GetGeometry(extension()->id(), params.window_key,
+                           &cached_bounds, &cached_screen_bounds,
+                           &cached_state)) {
+      // App window has cached screen bounds, make sure it fits on screen in
+      // case the screen resolution changed.
+      gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+      gfx::Display display = screen->GetDisplayMatching(cached_bounds);
+      gfx::Rect current_screen_bounds = display.work_area();
+      AdjustBoundsToBeVisibleOnScreen(cached_bounds,
+                                      cached_screen_bounds,
+                                      current_screen_bounds,
+                                      params.minimum_size,
+                                      &bounds);
+      params.state = cached_state;
+    }
+  }
+
+  SizeConstraints size_constraints(params.minimum_size, params.maximum_size);
+  params.bounds.set_size(size_constraints.ClampSize(bounds.size()));
+  params.minimum_size = size_constraints.GetMinimumSize();
+  params.maximum_size = size_constraints.GetMaximumSize();
+
+  return params;
 }
 
 // static

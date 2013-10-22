@@ -208,7 +208,7 @@ Run the SDK examples as packaged apps
 
 Each example can also be launched as a packaged app. For more information about
 using Native Client for packaged apps, see :ref:`Packaged appliction
-<packaged>`.  For general information about packaged apps, see the
+<distributing_packaged>`.  For general information about packaged apps, see the
 `Chrome apps documentation
 <http://developer.chrome.com/apps/about_apps.html>`_.
 
@@ -220,10 +220,6 @@ apps, by using the ``make run_package`` command::
 
 You can use ``TOOLCHAIN`` and ``CONFIG`` parameters as above to run with a
 different toolchain or configuration.
-
-.. **TODO(jvoung)**: That doesn't seem to work in pepper_canary.
-.. It just picks newlib.
-.. https://code.google.com/p/chromium/issues/detail?id=307724
 
 
 .. _debugging_the_sdk_examples:

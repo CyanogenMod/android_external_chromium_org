@@ -104,6 +104,26 @@
     "dependencies": ["manifest:browser_action"],
     "contexts": ["blessed_extension"]
   },
+  // This API is whitelisted on stable and should not be enabled for a wider
+  // audience without resolving security issues raised in API proposal and
+  // review (https://codereview.chromium.org/25305002).
+  "browserAction.openPopup": [{
+    "channel": "dev",
+    "dependencies": ["manifest:browser_action"],
+    "contexts": ["blessed_extension"]
+  }, {
+    "channel": "stable",
+    "dependencies": ["manifest:browser_action"],
+    "whitelist": [
+      "enhhojjnijigcajfphajepfemndkmdlo",  // Dev
+      "pkedcjkdefgpdelpbcmbmeomcjbeemfm",  // Trusted Tester
+      "fmfcbgogabcbclcofgocippekhfcmgfj",  // Staging
+      "hfaagokkkhdbgiakmmlclaapfelnkoah",  // Canary
+      "F155646B5D1CA545F7E1E4E20D573DFDD44C2540",  // Trusted Tester (public)
+      "16CA7A47AAE4BE49B1E75A6B960C3875E945B264"   // Release
+    ],
+    "contexts": ["blessed_extension"]
+  }],
   "browsingData": {
     "dependencies": ["permission:browsingData"],
     "contexts": ["blessed_extension"]
@@ -294,7 +314,13 @@
   "hangoutsPrivate": {
     "channel": "stable",
     "contexts": ["blessed_extension"],
-    "whitelist": ["eigpckmcflhchknfhifenfgmjncfgcak"]
+    "whitelist": [
+      // http://crbug.com/309737
+      "nckgahadagoaajjgafhacjanaoiihapd",
+      "ljclpkphhpbpinifbeabbhlfddcpfdde",
+      "ppleadejekpmccmnpjdimmlfljlkdfej",
+      "eggnbpckecmjlblplehfpjjdhhidfdoj"
+    ]
   },
   "history": {
     "dependencies": ["permission:history"],
@@ -306,6 +332,11 @@
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
   "identity": {
+    "dependencies": ["permission:identity"],
+    "contexts": ["blessed_extension"]
+  },
+  "identity.onSignInChanged": {
+    "channel": "dev",
     "dependencies": ["permission:identity"],
     "contexts": ["blessed_extension"]
   },
@@ -525,6 +556,11 @@
     "channel": "dev",
     "contexts": ["blessed_extension"]
   },
+  "sockets.tcpServer": {
+    "dependencies": ["manifest:sockets"],
+    "channel": "dev",
+    "contexts": ["blessed_extension"]
+  },
   "sockets.udp": {
     "dependencies": ["manifest:sockets"],
     "channel": "dev",
@@ -561,6 +597,9 @@
   "system.storage": {
     "dependencies": ["permission:system.storage"],
     "contexts": ["blessed_extension"]
+  },
+  "system.storage.getAvailableCapacity": {
+    "channel": "dev"
   },
   "systemPrivate": {
     "dependencies": ["permission:systemPrivate"],

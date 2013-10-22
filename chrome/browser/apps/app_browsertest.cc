@@ -51,8 +51,8 @@
 #include "chrome/browser/chromeos/login/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
-#include "chromeos/dbus/mock_dbus_thread_manager_without_gmock.h"
 #endif
 
 using apps::ShellWindow;
@@ -187,7 +187,9 @@ bool CopyTestDataAndSetCommandLineArg(
   return true;
 }
 
+#if !defined(OS_CHROMEOS)
 const char kTestFilePath[] = "platform_apps/launch_files/test.txt";
+#endif
 
 }  // namespace
 
@@ -1219,7 +1221,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppIncognitoBrowserTest, IncognitoComponentApp) {
   ASSERT_TRUE(registry != NULL);
   registry->AddObserver(this);
 
-  OpenApplication(AppLaunchParams(incognito_profile, file_manager, 0));
+  OpenApplication(AppLaunchParams(
+      incognito_profile, file_manager, 0, chrome::HOST_DESKTOP_TYPE_NATIVE));
 
   while (!ContainsKey(opener_app_ids_, file_manager->id())) {
     content::RunAllPendingInMessageLoop();
@@ -1237,8 +1240,8 @@ class RestartDeviceTest : public PlatformAppBrowserTest {
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     PlatformAppBrowserTest::SetUpInProcessBrowserTestFixture();
 
-    chromeos::MockDBusThreadManagerWithoutGMock* dbus_manager =
-        new chromeos::MockDBusThreadManagerWithoutGMock;
+    chromeos::FakeDBusThreadManager* dbus_manager =
+        new chromeos::FakeDBusThreadManager;
     chromeos::DBusThreadManager::InitializeForTesting(dbus_manager);
     power_manager_client_ = dbus_manager->fake_power_manager_client();
   }

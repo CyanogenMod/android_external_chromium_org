@@ -44,16 +44,8 @@ specific_include_rules = {
 
   r"configuration_policy_handler\.cc": [
     "+chrome/browser/chrome_notification_types.h",
-    "+chrome/browser/download/download_prefs.h",
-    "+chrome/browser/extensions/external_policy_loader.h",
     "+chrome/browser/policy/policy_path_parser.h",
-    "+chrome/browser/prefs/proxy_config_dictionary.h",
-    "+chrome/browser/prefs/proxy_prefs.h",
     "+chrome/browser/prefs/session_startup_pref.h",
-    "+chrome/browser/search_engines/search_terms_data.h",
-    "+chrome/browser/search_engines/template_url.h",
-    "+chrome/common/extensions/extension.h",
-    "+content/public/browser/notification_service.h",
   ],
 
   r"configuration_policy_handler\.h": [
@@ -61,13 +53,8 @@ specific_include_rules = {
     "+chrome/common/content_settings.h",
   ],
 
-  r"configuration_policy_handler_unittest\.cc": [
-    "+chrome/browser/extensions/external_policy_loader.h",
-  ],
-
   r"configuration_policy_pref_store_unittest\.cc": [
     "+chrome/browser/prefs/incognito_mode_prefs.h",
-    "+chrome/browser/prefs/proxy_config_dictionary.h",
     "+chrome/common/content_settings.h",
     "+chrome/common/pref_names.h",
   ],

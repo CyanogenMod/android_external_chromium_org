@@ -28,6 +28,7 @@
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_utils.h"
+#include "chrome/browser/ui/webui/inspect_ui.h"
 #include "chrome/common/content_restriction.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
@@ -53,6 +54,12 @@
 #if defined(USE_ASH)
 #include "ash/accelerators/accelerator_commands.h"
 #include "chrome/browser/ui/ash/ash_util.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "ash/session_state_delegate.h"
+#include "ash/shell.h"
+#include "chrome/browser/ui/ash/multi_user_window_manager.h"
 #endif
 
 using content::NavigationEntry;
@@ -452,6 +459,21 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
     // mechanism to pass accelerators back into Ash. http://crbug.com/285308
 #endif
 
+#if defined(OS_CHROMEOS)
+    case IDC_VISIT_DESKTOP_OF_LRU_USER_2:
+    case IDC_VISIT_DESKTOP_OF_LRU_USER_3: {
+        // When running the multi user mode on Chrome OS, windows can "visit"
+        // another user's desktop.
+        const std::string& user_id =
+            ash::Shell::GetInstance()->session_state_delegate()->GetUserID(
+                IDC_VISIT_DESKTOP_OF_LRU_USER_2 == id ? 1 : 2);
+        chrome::MultiUserWindowManager::GetInstance()->ShowWindowForUser(
+            browser_->window()->GetNativeWindow(),
+            user_id);
+        break;
+      }
+#endif
+
 #if defined(OS_WIN)
     // Windows 8 specific commands.
     case IDC_METRO_SNAP_ENABLE:
@@ -628,6 +650,9 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       break;
     case IDC_DEV_TOOLS_CONSOLE:
       ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
+      break;
+    case IDC_DEV_TOOLS_DEVICES:
+      InspectUI::InspectDevices(browser_);
       break;
     case IDC_DEV_TOOLS_INSPECT:
       ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_INSPECT);
@@ -844,6 +869,10 @@ void BrowserCommandController::InitCommandState() {
 #endif
 #if defined(USE_ASH)
   command_updater_.UpdateCommandEnabled(IDC_MINIMIZE_WINDOW, true);
+#endif
+#if defined(OS_CHROMEOS)
+  command_updater_.UpdateCommandEnabled(IDC_VISIT_DESKTOP_OF_LRU_USER_2, true);
+  command_updater_.UpdateCommandEnabled(IDC_VISIT_DESKTOP_OF_LRU_USER_3, true);
 #endif
 
   // Page-related commands
@@ -1078,6 +1107,8 @@ void BrowserCommandController::UpdateCommandsForDevTools() {
   command_updater_.UpdateCommandEnabled(IDC_DEV_TOOLS,
                                         dev_tools_enabled);
   command_updater_.UpdateCommandEnabled(IDC_DEV_TOOLS_CONSOLE,
+                                        dev_tools_enabled);
+  command_updater_.UpdateCommandEnabled(IDC_DEV_TOOLS_DEVICES,
                                         dev_tools_enabled);
   command_updater_.UpdateCommandEnabled(IDC_DEV_TOOLS_INSPECT,
                                         dev_tools_enabled);

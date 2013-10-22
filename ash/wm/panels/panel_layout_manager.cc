@@ -14,7 +14,6 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
-#include "ash/wm/frame_painter.h"
 #include "ash/wm/window_animations.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
@@ -25,7 +24,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/client/activation_client.h"
-#include "ui/aura/focus_manager.h"
+#include "ui/aura/client/focus_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
@@ -39,8 +38,6 @@ namespace ash {
 namespace internal {
 
 namespace {
-const int kPanelMarginEdge = 4;
-const int kPanelMarginMiddle = 8;
 const int kPanelIdealSpacing = 4;
 
 const float kMaxHeightFactor = .80f;

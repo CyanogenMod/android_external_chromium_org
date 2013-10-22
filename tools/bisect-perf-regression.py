@@ -35,6 +35,7 @@ An example usage (using git hashes):
 
 """
 
+import copy
 import datetime
 import errno
 import imp
@@ -44,6 +45,7 @@ import os
 import re
 import shlex
 import shutil
+import StringIO
 import subprocess
 import sys
 import time
@@ -1234,7 +1236,8 @@ class BisectPerformanceMetrics(object):
       return False
     return True
 
-  def RunPerformanceTestAndParseResults(self, command_to_run, metric):
+  def RunPerformanceTestAndParseResults(self, command_to_run, metric,
+      reset_on_first_run=False, upload_on_last_run=False, results_label=None):
     """Runs a performance test on the current revision by executing the
     'command_to_run' and parses the results.
 
@@ -1260,10 +1263,11 @@ class BisectPerformanceMetrics(object):
 
     # If running a telemetry test for cros, insert the remote ip, and
     # identity parameters.
-    if self.opts.target_platform == 'cros':
-      if 'tools/perf/run_' in args[0]:
-        args.append('--remote=%s' % self.opts.cros_remote_ip)
-        args.append('--identity=%s' % CROS_TEST_KEY_PATH)
+    is_telemetry = ('tools/perf/run_' in command_to_run or
+        'tools\\perf\\run_' in command_to_run)
+    if self.opts.target_platform == 'cros' and is_telemetry:
+      args.append('--remote=%s' % self.opts.cros_remote_ip)
+      args.append('--identity=%s' % CROS_TEST_KEY_PATH)
 
     cwd = os.getcwd()
     os.chdir(self.src_cwd)
@@ -1271,10 +1275,19 @@ class BisectPerformanceMetrics(object):
     start_time = time.time()
 
     metric_values = []
+    output_of_all_runs = ''
     for i in xrange(self.opts.repeat_test_count):
       # Can ignore the return code since if the tests fail, it won't return 0.
       try:
-        (output, return_code) = RunProcessAndRetrieveOutput(args)
+        current_args = copy.copy(args)
+        if is_telemetry:
+          if i == 0 and reset_on_first_run:
+            current_args.append('--reset-results')
+          elif i == self.opts.repeat_test_count - 1 and upload_on_last_run:
+            current_args.append('--upload-results')
+          if results_label:
+            current_args.append('--results-label=%s' % results_label)
+        (output, return_code) = RunProcessAndRetrieveOutput(current_args)
       except OSError, e:
         if e.errno == errno.ENOENT:
           err_text  = ("Something went wrong running the performance test. "
@@ -1288,6 +1301,7 @@ class BisectPerformanceMetrics(object):
           return (err_text, -1)
         raise
 
+      output_of_all_runs += output
       if self.opts.output_buildbot_annotations:
         print output
 
@@ -1317,10 +1331,10 @@ class BisectPerformanceMetrics(object):
       print 'Results of performance test: %12f %12f' % (
           truncated_mean, standard_err)
       print
-      return (values, 0)
+      return (values, 0, output_of_all_runs)
     else:
       return ('Invalid metric specified, or no values returned from '
-          'performance test.', -1)
+          'performance test.', -1, output_of_all_runs)
 
   def FindAllRevisionsToSync(self, revision, depot):
     """Finds all dependant revisions and depots that need to be synced for a
@@ -2137,30 +2151,29 @@ class BisectPerformanceMetrics(object):
 
     return results
 
+  def _PrintRevisionInfo(self, cl, info):
+    # The perf dashboard specifically looks for the string
+    # "Author  : " to parse out who to cc on a bug. If you change the
+    # formatting here, please update the perf dashboard as well.
+    print
+    print 'Commit  : %s' % cl
+    print 'Author  : %s' % info['author']
+    print 'Email   : %s' % info['email']
+    print 'Date    : %s' % info['date']
+    print 'Subject : %s' % info['subject']
+
   def FormatAndPrintResults(self, bisect_results):
     """Prints the results from a bisection run in a readable format.
 
     Args
       bisect_results: The results from a bisection test run.
     """
-    if bisect_results['error']:
-      if self.opts.output_buildbot_annotations:
-        bisect_utils.OutputAnnotationStepStart('Results - Bisect Failed')
-
-      print
-      print bisect_results['error']
-      print
-
-      if self.opts.output_buildbot_annotations:
-        bisect_utils.OutputAnnotationStepClosed()
-      return
-
     revision_data = bisect_results['revision_data']
     revision_data_sorted = sorted(revision_data.iteritems(),
                                   key = lambda x: x[1]['sort'])
 
     if self.opts.output_buildbot_annotations:
-      bisect_utils.OutputAnnotationStepStart('Results')
+      bisect_utils.OutputAnnotationStepStart('Build Status Per Revision')
 
     print
     print 'Full results of bisection:'
@@ -2176,6 +2189,12 @@ class BisectPerformanceMetrics(object):
       print '  %20s  %40s  %s' % (current_data['depot'],
                                  current_id, build_status)
     print
+
+    if self.opts.output_buildbot_annotations:
+      bisect_utils.OutputAnnotationStepClosed()
+      # The perf dashboard scrapes the "results" step in order to comment on
+      # bugs. If you change this, please update the perf dashboard as well.
+      bisect_utils.OutputAnnotationStepStart('Results')
 
     # Find range where it possibly broke.
     first_working_revision = None
@@ -2280,6 +2299,10 @@ class BisectPerformanceMetrics(object):
           max(0.0001, (len_broken_group + len_working_group ))))
       confidence = min(1.0, max(confidence, 0.0)) * 100.0
 
+      # The perf dashboard specifically looks for the string
+      # "Confidence in Bisection Results: 100%" to decide whether or not
+      # to cc the author(s). If you change this, please update the perf
+      # dashboard as well.
       print 'Confidence in Bisection Results: %d%%' % int(confidence)
       print
       print 'Experimental - If confidence is less than 100%, there are could '\
@@ -2336,12 +2359,7 @@ class BisectPerformanceMetrics(object):
           os.chdir(c[0])
           info = self.source_control.QueryRevisionInfo(c[1])
 
-          print
-          print 'Commit  : %s' % c[1]
-          print 'Author  : %s' % info['author']
-          print 'Email   : %s' % info['email']
-          print 'Date    : %s' % info['date']
-          print 'Subject : %s' % info['subject']
+          self._PrintRevisionInfo(c[1], info)
         print
       else:
         multiple_commits = 0
@@ -2354,12 +2372,7 @@ class BisectPerformanceMetrics(object):
 
           info = self.source_control.QueryRevisionInfo(k)
 
-          print
-          print 'Commit  : %s' % k
-          print 'Author  : %s' % info['author']
-          print 'Email   : %s' % info['email']
-          print 'Date    : %s' % info['date']
-          print 'Subject : %s' % info['subject']
+          self._PrintRevisionInfo(k, info)
 
           multiple_commits += 1
         if multiple_commits > 1:
@@ -2467,7 +2480,7 @@ def DetermineAndCreateSourceControl(opts):
   return None
 
 
-def CheckPlatformSupported(opts):
+def IsPlatformSupported(opts):
   """Checks that this platform and build system are supported.
 
   Args:
@@ -2478,12 +2491,7 @@ def CheckPlatformSupported(opts):
   """
   # Haven't tested the script out on any other platforms yet.
   supported = ['posix', 'nt']
-  if not os.name in supported:
-    print "Sorry, this platform isn't supported yet."
-    print
-    return False
-
-  return True
+  return os.name in supported
 
 
 def RmTreeAndMkDir(path_to_dir):
@@ -2657,78 +2665,57 @@ class BisectOptions(object):
     return parser
 
   def ParseCommandLine(self):
-    """Parses the command line for bisect options.
-
-    Returns:
-      True on success."""
+    """Parses the command line for bisect options."""
     parser = self._CreateCommandLineParser()
     (opts, args) = parser.parse_args()
 
-    if not opts.command:
-      print 'Error: missing required parameter: --command'
-      print
-      parser.print_help()
-      return False
+    try:
+      if not opts.command:
+        raise RuntimeError('missing required parameter: --command')
 
-    if not opts.good_revision:
-      print 'Error: missing required parameter: --good_revision'
-      print
-      parser.print_help()
-      return False
+      if not opts.good_revision:
+        raise RuntimeError('missing required parameter: --good_revision')
 
-    if not opts.bad_revision:
-      print 'Error: missing required parameter: --bad_revision'
-      print
-      parser.print_help()
-      return False
+      if not opts.bad_revision:
+        raise RuntimeError('missing required parameter: --bad_revision')
 
-    if not opts.metric:
-      print 'Error: missing required parameter: --metric'
-      print
-      parser.print_help()
-      return False
+      if not opts.metric:
+        raise RuntimeError('missing required parameter: --metric')
 
-    if opts.target_platform == 'cros':
-      # Run sudo up front to make sure credentials are cached for later.
-      print 'Sudo is required to build cros:'
-      print
-      RunProcess(['sudo', 'true'])
-
-      if not opts.cros_board:
-        print 'Error: missing required parameter: --cros_board'
+      if opts.target_platform == 'cros':
+        # Run sudo up front to make sure credentials are cached for later.
+        print 'Sudo is required to build cros:'
         print
-        parser.print_help()
-        return False
+        RunProcess(['sudo', 'true'])
 
-      if not opts.cros_remote_ip:
-        print 'Error: missing required parameter: --cros_remote_ip'
-        print
-        parser.print_help()
-        return False
+        if not opts.cros_board:
+          raise RuntimeError('missing required parameter: --cros_board')
 
-      if not opts.working_directory:
-        print 'Error: missing required parameter: --working_directory'
-        print
-        parser.print_help()
-        return False
+        if not opts.cros_remote_ip:
+          raise RuntimeError('missing required parameter: --cros_remote_ip')
 
-    metric_values = opts.metric.split('/')
-    if len(metric_values) != 2:
-      print "Invalid metric specified: [%s]" % (opts.metric,)
-      print
-      return False
-    opts.metric = metric_values
+        if not opts.working_directory:
+          raise RuntimeError('missing required parameter: --working_directory')
 
-    opts.repeat_test_count = min(max(opts.repeat_test_count, 1), 100)
-    opts.max_time_minutes = min(max(opts.max_time_minutes, 1), 60)
-    opts.truncate_percent = min(max(opts.truncate_percent, 0), 25)
-    opts.truncate_percent = opts.truncate_percent / 100.0
+      metric_values = opts.metric.split('/')
+      if len(metric_values) != 2:
+        raise RuntimeError("Invalid metric specified: [%s]" % opts.metric)
 
-    for k, v in opts.__dict__.iteritems():
-      assert hasattr(self, k), "Invalid %s attribute in BisectOptions." % k
-      setattr(self, k, v)
+      opts.metric = metric_values
+      opts.repeat_test_count = min(max(opts.repeat_test_count, 1), 100)
+      opts.max_time_minutes = min(max(opts.max_time_minutes, 1), 60)
+      opts.truncate_percent = min(max(opts.truncate_percent, 0), 25)
+      opts.truncate_percent = opts.truncate_percent / 100.0
 
-    return True
+      for k, v in opts.__dict__.iteritems():
+        assert hasattr(self, k), "Invalid %s attribute in BisectOptions." % k
+        setattr(self, k, v)
+    except RuntimeError, e:
+      output_string = StringIO.StringIO()
+      parser.print_help(file=output_string)
+      error_message = '%s\n\n%s' % (e.message, output_string.getvalue())
+      output_string.close()
+      raise RuntimeError(error_message)
 
   @staticmethod
   def FromDict(values):
@@ -2744,9 +2731,9 @@ class BisectOptions(object):
     opts = BisectOptions()
 
     for k, v in values.iteritems():
-      assert hasattr(opts, name_to_attr[k]), 'Invalid %s attribute in '\
-          'BisectOptions.' % name_to_attr[k]
-      setattr(opts, name_to_attr[k], v)
+      assert hasattr(opts, k), 'Invalid %s attribute in '\
+          'BisectOptions.' % k
+      setattr(opts, k, v)
 
     metric_values = opts.metric.split('/')
     if len(metric_values) != 2:
@@ -2763,61 +2750,56 @@ class BisectOptions(object):
 
 def main():
 
-  opts = BisectOptions()
-  parse_results = opts.ParseCommandLine()
-
-  if not parse_results:
-    return 1
-
-  if opts.working_directory:
-    custom_deps = bisect_utils.DEFAULT_GCLIENT_CUSTOM_DEPS
-    if opts.no_custom_deps:
-      custom_deps = None
-    if bisect_utils.CreateBisectDirectoryAndSetupDepot(opts,
-                                                       custom_deps):
-      return 1
-
-    os.chdir(os.path.join(os.getcwd(), 'src'))
-
-    if not RemoveBuildFiles():
-      print "Something went wrong removing the build files."
-      print
-      return 1
-
-  if not CheckPlatformSupported(opts):
-    return 1
-
-  # Check what source control method they're using. Only support git workflow
-  # at the moment.
-  source_control = DetermineAndCreateSourceControl(opts)
-
-  if not source_control:
-    print "Sorry, only the git workflow is supported at the moment."
-    print
-    return 1
-
-  # gClient sync seems to fail if you're not in master branch.
-  if not source_control.IsInProperBranch() and not opts.debug_ignore_sync:
-    print "You must switch to master branch to run bisection."
-    print
-    return 1
-
   try:
+    opts = BisectOptions()
+    parse_results = opts.ParseCommandLine()
+
+    if opts.working_directory:
+      custom_deps = bisect_utils.DEFAULT_GCLIENT_CUSTOM_DEPS
+      if opts.no_custom_deps:
+        custom_deps = None
+      bisect_utils.CreateBisectDirectoryAndSetupDepot(opts, custom_deps)
+
+      os.chdir(os.path.join(os.getcwd(), 'src'))
+
+      if not RemoveBuildFiles():
+        raise RuntimeError('Something went wrong removing the build files.')
+
+    if not IsPlatformSupported(opts):
+      raise RuntimeError("Sorry, this platform isn't supported yet.")
+
+    # Check what source control method they're using. Only support git workflow
+    # at the moment.
+    source_control = DetermineAndCreateSourceControl(opts)
+
+    if not source_control:
+      raise RuntimeError("Sorry, only the git workflow is supported at the "
+          "moment.")
+
+    # gClient sync seems to fail if you're not in master branch.
+    if not source_control.IsInProperBranch() and not opts.debug_ignore_sync:
+      raise RuntimeError("You must switch to master branch to run bisection.")
+
     bisect_test = BisectPerformanceMetrics(source_control, opts)
     try:
       bisect_results = bisect_test.Run(opts.command,
                                        opts.bad_revision,
                                        opts.good_revision,
                                        opts.metric)
+      if bisect_results['error']:
+        raise RuntimeError(bisect_results['error'])
       bisect_test.FormatAndPrintResults(bisect_results)
-
-      if not bisect_results['error']:
-        return 0
+      return 0
     finally:
       bisect_test.PerformCleanup()
   except RuntimeError, e:
+    if opts.output_buildbot_annotations:
+      # The perf dashboard scrapes the "results" step in order to comment on
+      # bugs. If you change this, please update the perf dashboard as well.
+      bisect_utils.OutputAnnotationStepStart('Results')
     print 'Error: %s' % e.message
-    print
+    if opts.output_buildbot_annotations:
+      bisect_utils.OutputAnnotationStepClosed()
   return 1
 
 if __name__ == '__main__':

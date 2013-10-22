@@ -32,6 +32,7 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual WebGraphicsContext3DCommandBufferImpl* Context3d() OVERRIDE;
+  virtual gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
@@ -62,7 +63,7 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
       const WebKit::WebGraphicsMemoryAllocation& allocation);
 
  private:
-  void InitializeCapabilities();
+  bool InitializeCapabilities();
 
   base::ThreadChecker main_thread_checker_;
   base::ThreadChecker context_thread_checker_;

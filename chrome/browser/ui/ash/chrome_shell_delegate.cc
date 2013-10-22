@@ -200,21 +200,6 @@ void ChromeShellDelegate::ToggleFullscreen() {
   }
 }
 
-void ChromeShellDelegate::ToggleMaximized() {
-  // Only toggle if the user has a window open.
-  aura::Window* window = ash::wm::GetActiveWindow();
-  if (!window)
-    return;
-
-  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
-  // Get out of fullscreen when in fullscreen mode.
-  if (window_state->IsFullscreen()) {
-    ToggleFullscreen();
-    return;
-  }
-  window_state->ToggleMaximized();
-}
-
 void ChromeShellDelegate::RestoreTab() {
   if (tab_restore_helper_.get()) {
     DCHECK(!tab_restore_helper_->tab_restore_service()->IsLoaded());
@@ -254,7 +239,9 @@ app_list::AppListViewDelegate*
   // Shell will own the created delegate, and the delegate will own
   // the controller.
   Profile* profile = ProfileManager::GetDefaultProfileOrOffTheRecord();
-  return new AppListViewDelegate(new AppListControllerDelegateAsh(), profile);
+  return new AppListViewDelegate(
+      scoped_ptr<AppListControllerDelegate>(new AppListControllerDelegateAsh()),
+      profile);
 }
 
 ash::LauncherDelegate* ChromeShellDelegate::CreateLauncherDelegate(
