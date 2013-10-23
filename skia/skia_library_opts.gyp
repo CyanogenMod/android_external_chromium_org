@@ -5,6 +5,12 @@
 
 # This gyp file contains the platform-specific optimizations for Skia
 {
+  'variables': {
+    'variables': {
+      'skia_opts_ext%': '<!(python <(DEPTH)/build/dir_exists.py ../third_party/skia/src/opts/ext/)',
+    },
+    'skia_opts_ext%': '<(skia_opts_ext)',
+  },
   'targets': [
     # Due to an unfortunate intersection of lameness between gcc and gyp,
     # we have to build the *_SSE2.cpp files in a separate target.  The
@@ -396,6 +402,11 @@
             [ 'OS == "linux"', {
               'include_dirs': [
                 '../third_party/skia/include/config',
+              ],
+            }],
+            [ 'skia_opts_ext == "True"', {
+              'sources': [
+                '../third_party/skia/src/opts/ext/D32_A8_Black_Neon.S',
               ],
             }],
             ['arm_neon == 1', {
