@@ -407,6 +407,7 @@
             [ 'skia_opts_ext == "True"', {
               'sources': [
                 '../third_party/skia/src/opts/ext/D32_A8_Black_Neon.S',
+                '../third_party/skia/src/opts/ext/S32_Opaque_D32_filter_DX_shaderproc_neon.cpp',
               ],
             }],
             ['arm_neon == 1', {
