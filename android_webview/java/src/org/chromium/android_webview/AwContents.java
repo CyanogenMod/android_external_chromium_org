@@ -550,7 +550,7 @@ public class AwContents {
                 mZoomControls);
         nativeSetJavaPeers(mNativeAwContents, this, mWebContentsDelegate, mContentsClientBridge,
                 mIoThreadClient, mInterceptNavigationDelegate);
-        mContentsClient.installWebContentsObserver(mContentViewCore);
+        mContentsClient.installWebContentsObserver(mContentViewCore, mSettings);
         mSettings.setWebContents(nativeWebContents);
         nativeSetDipScale(mNativeAwContents, (float) mDIPScale);
         updateGlobalVisibleRect();
