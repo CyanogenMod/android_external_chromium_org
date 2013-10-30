@@ -7,6 +7,28 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
 
+// === START ANDROID WORKAROUND b/11392857
+#include <sys/system_properties.h>
+
+namespace {
+bool RequiresGrallocUnbind() {
+  static const char* kPropertyName = "ro.webview.gralloc_unbind";
+  char prop_value[PROP_VALUE_MAX];
+  int prop_value_length = __system_property_get(kPropertyName, prop_value);
+  if (prop_value_length == 1) {
+    if (strcmp(prop_value, "1") == 0) {
+      return true;
+    } else if (strcmp(prop_value, "0") == 0) {
+      return false;
+    }
+  }
+  LOG_IF(WARNING, prop_value_length > 0)
+      << "Unrecognized value for " << kPropertyName << ": " << prop_value;
+  return strcmp((char*)glGetString(GL_VENDOR), "NVIDIA Corporation") == 0;
+}
+}
+// === END   ANDROID WORKAROUND b/11392857
+
 namespace gfx {
 
 GLImageEGL::GLImageEGL(gfx::Size size)
@@ -75,11 +97,10 @@ void GLImageEGL::Destroy() {
 }
 
 void GLImageEGL::ReleaseTexImage() {
-  // === START ANDROID WORKAROUND http://b/10205015 and http://b/10892941
-  static bool is_qcom = strcmp((char*)glGetString(GL_VENDOR), "Qualcomm") == 0;
-  static bool is_arm = strcmp((char*)glGetString(GL_VENDOR), "ARM") == 0;
-  if (is_qcom || is_arm) return;
-  // === END   ANDROID WORKAROUND http://b/10205015 and http://b/10892941
+  // === START ANDROID WORKAROUND b/11392857
+  static bool requires_gralloc_unbind = RequiresGrallocUnbind();
+  if (!requires_gralloc_unbind) return;
+  // === END   ANDROID WORKAROUND b/11392857
   char zero[4] = { 0, };
   glTexImage2D(GL_TEXTURE_2D,
                0,
