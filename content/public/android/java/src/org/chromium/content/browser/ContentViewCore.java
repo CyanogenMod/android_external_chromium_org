@@ -176,8 +176,8 @@ import java.util.Map;
     }
 
     /**
-     * An interface that allows the embedder to be notified when the pinch gesture starts and
-     * stops.
+     * An interface that allows the embedder to be notified of events and state changes related to
+     * gesture processing.
      */
     public interface GestureStateListener {
         /**
@@ -204,6 +204,14 @@ import java.util.Map;
          * Called when a fling event was not handled by the renderer.
          */
         void onUnhandledFlingStartEvent();
+
+        /**
+         * Called to indicate that a scroll update gesture had been consumed by the page.
+         * This callback is called whenever any layer is scrolled (like a frame or div). It is
+         * not called when a JS touch handler consumes the event (preventDefault), it is not called
+         * for JS-initiated scrolling.
+         */
+        void onScrollUpdateGestureConsumed();
     }
 
     /**
@@ -1263,6 +1271,14 @@ import java.util.Map;
     private void unhandledFlingStartEvent() {
         if (mGestureStateListener != null) {
             mGestureStateListener.onUnhandledFlingStartEvent();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private void onScrollUpdateGestureConsumed() {
+        if (mGestureStateListener != null) {
+            mGestureStateListener.onScrollUpdateGestureConsumed();
         }
     }
 

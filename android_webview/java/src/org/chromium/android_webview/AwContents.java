@@ -162,6 +162,7 @@ public class AwContents {
     private OverScrollGlow mOverScrollGlow;
     // This can be accessed on any thread after construction. See AwContentsIoThreadClient.
     private final AwSettings mSettings;
+    private final ScrollAccessibilityHelper mScrollAccessibilityHelper;
 
     private boolean mIsPaused;
     private boolean mIsViewVisible;
@@ -387,7 +388,6 @@ public class AwContents {
             mScrollOffsetManager.onFlingStartGesture(velocityX, velocityY);
         }
 
-
         @Override
         public void onFlingCancelGesture() {
             mScrollOffsetManager.onFlingCancelGesture();
@@ -396,6 +396,11 @@ public class AwContents {
         @Override
         public void onUnhandledFlingStartEvent() {
             mScrollOffsetManager.onUnhandledFlingStartEvent();
+        }
+
+        @Override
+        public void onScrollUpdateGestureConsumed() {
+            mScrollAccessibilityHelper.postViewScrolledAccessibilityEventCallback();
         }
     }
 
@@ -514,6 +519,7 @@ public class AwContents {
         mSettings.setDIPScale(mDIPScale);
         mScrollOffsetManager = new AwScrollOffsetManager(new AwScrollOffsetManagerDelegate(),
                 new OverScroller(mContainerView.getContext()));
+        mScrollAccessibilityHelper = new ScrollAccessibilityHelper(mContainerView);
 
         setOverScrollMode(mContainerView.getOverScrollMode());
         setScrollBarStyle(mInternalAccessAdapter.super_getScrollBarStyle());
@@ -1008,6 +1014,10 @@ public class AwContents {
      * @see View#onScrollChanged(int,int)
      */
     public void onContainerViewScrollChanged(int l, int t, int oldl, int oldt) {
+        // A side-effect of View.onScrollChanged is that the scroll accessibility event being sent
+        // by the base class implementation. This is completely hidden from the base classes and
+        // cannot be prevented, which is why we need the code below.
+        mScrollAccessibilityHelper.removePostedViewScrolledAccessibilityEventCallback();
         mScrollOffsetManager.onContainerViewScrollChanged(l, t);
     }
 
@@ -1548,6 +1558,8 @@ public class AwContents {
           mContainerView.getContext().unregisterComponentCallbacks(mComponentCallbacks);
           mComponentCallbacks = null;
         }
+
+        mScrollAccessibilityHelper.removePostedCallbacks();
 
         if (mPendingDetachCleanupReferences != null) {
             for (int i = 0; i < mPendingDetachCleanupReferences.size(); ++i) {
