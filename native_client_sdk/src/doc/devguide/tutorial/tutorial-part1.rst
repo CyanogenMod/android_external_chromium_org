@@ -1,8 +1,8 @@
 .. _tutorial:
 
-#############################
-C++ Tutorial: Getting Started
-#############################
+######################################
+C++ Tutorial: Getting Started (Part 1)
+######################################
 
 .. contents::
   :local:
@@ -44,8 +44,9 @@ analogous to client/server communication on the web, where the client posts a
 message to the server and returns immediately. The Native Client messaging
 system is part of the Pepper API, and is described in detail in
 :doc:`Developer's Guide: Messaging System </devguide/coding/message-system>`.
-
-TODO: would it be better to compare to web-worker communication?
+It is also similar to the way `web workers
+<http://en.wikipedia.org/wiki/Web_worker>`_ interact with the main document in
+JavaScript.
 
 Step 1: Download and install the Native Client SDK
 ==================================================
@@ -142,6 +143,8 @@ on the structure of a typical Native Client application, see
 The stub code is intentionally very minimal. The C++ code does not do anything
 except correctly initialize itself. The JavaScript code waits for the Native
 Client module to load and changes the status text on the web page accordingly.
+
+.. _tutorial_step_5:
 
 Step 5: Compile the Native Client module and run the stub application
 =====================================================================

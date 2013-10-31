@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram.h"
 #include "base/process/process.h"
@@ -21,11 +20,11 @@
 #include "content/public/browser/media_observer.h"
 #include "content/public/common/content_switches.h"
 #include "media/audio/audio_manager_base.h"
-#include "media/audio/shared_memory_util.h"
 #include "media/base/audio_bus.h"
 #include "media/base/limits.h"
 
 using media::AudioBus;
+using media::AudioManager;
 
 namespace content {
 
@@ -108,6 +107,7 @@ AudioRendererHost::AudioEntry::~AudioEntry() {}
 
 ///////////////////////////////////////////////////////////////////////////////
 // AudioRendererHost implementations.
+
 AudioRendererHost::AudioRendererHost(
     int render_process_id,
     media::AudioManager* audio_manager,
@@ -125,6 +125,17 @@ AudioRendererHost::AudioRendererHost(
 
 AudioRendererHost::~AudioRendererHost() {
   DCHECK(audio_entries_.empty());
+}
+
+void AudioRendererHost::GetOutputControllers(
+    int render_view_id,
+    const RenderViewHost::GetAudioOutputControllersCallback& callback) const {
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&AudioRendererHost::DoGetOutputControllers, this,
+                 render_view_id),
+      callback);
 }
 
 void AudioRendererHost::OnChannelClosing() {
@@ -238,7 +249,22 @@ void AudioRendererHost::DoCompleteCreation(int stream_id) {
       entry->stream_id(),
       foreign_memory_handle,
       foreign_socket_handle,
-      media::PacketSizeInBytes(entry->shared_memory()->requested_size())));
+      entry->shared_memory()->requested_size()));
+}
+
+RenderViewHost::AudioOutputControllerList
+AudioRendererHost::DoGetOutputControllers(int render_view_id) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  RenderViewHost::AudioOutputControllerList controllers;
+  AudioEntryMap::const_iterator it = audio_entries_.begin();
+  for (; it != audio_entries_.end(); ++it) {
+    AudioEntry* entry = it->second;
+    if (entry->render_view_id() == render_view_id)
+      controllers.push_back(entry->controller());
+  }
+
+  return controllers;
 }
 
 void AudioRendererHost::DoNotifyAudioPowerLevel(int stream_id,
@@ -249,14 +275,11 @@ void AudioRendererHost::DoNotifyAudioPowerLevel(int stream_id,
   MediaObserver* const media_observer =
       GetContentClient()->browser()->GetMediaObserver();
   if (media_observer) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableAudibleNotifications)) {
-      AudioEntry* const entry = LookupById(stream_id);
-      if (entry) {
-        media_observer->OnAudioStreamPlayingChanged(
-            render_process_id_, entry->render_view_id(), entry->stream_id(),
-            true, power_dbfs, clipped);
-      }
+    AudioEntry* const entry = LookupById(stream_id);
+    if (entry) {
+      media_observer->OnAudioStreamPlayingChanged(
+          render_process_id_, entry->render_view_id(), entry->stream_id(),
+          true, power_dbfs, clipped);
     }
   }
 }
@@ -323,15 +346,12 @@ void AudioRendererHost::OnCreateStream(
   // Calculate output and input memory size.
   int output_memory_size = AudioBus::CalculateMemorySize(params);
   int frames = params.frames_per_buffer();
-  int input_memory_size =
-      AudioBus::CalculateMemorySize(input_channels, frames);
+  int input_memory_size = AudioBus::CalculateMemorySize(input_channels, frames);
 
   // Create the shared memory and share with the renderer process.
   // For synchronized I/O (if input_channels > 0) then we allocate
   // extra memory after the output data for the input data.
-  uint32 io_buffer_size = output_memory_size + input_memory_size;
-  uint32 shared_memory_size =
-      media::TotalSharedMemorySizeInBytes(io_buffer_size);
+  uint32 shared_memory_size = output_memory_size + input_memory_size;
   scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
   if (!shared_memory->CreateAndMapAnonymous(shared_memory_size)) {
     SendErrorMessage(stream_id);

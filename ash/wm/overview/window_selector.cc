@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "ash/ash_switches.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
@@ -15,12 +16,15 @@
 #include "ash/wm/overview/window_selector_window.h"
 #include "ash/wm/window_state.h"
 #include "base/auto_reset.h"
+#include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/timer/timer.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_observer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_handler.h"
 
@@ -28,7 +32,34 @@ namespace ash {
 
 namespace {
 
-const int kOverviewDelayOnCycleMilliseconds = 500;
+// The time from when the user pressed alt+tab while still holding alt before
+// overview is engaged.
+const int kOverviewDelayOnCycleMilliseconds = 100;
+
+// If the delay before overview is less than or equal to this threshold the
+// initial monitor is used for multi-display overview, otherwise the monitor
+// of the currently selected window is used.
+const int kOverviewDelayInitialMonitorThreshold = 100;
+
+// The maximum amount of time allowed for the delay before overview on cycling.
+// If the specified time exceeds this the timer will not be started.
+const int kMaxOverviewDelayOnCycleMilliseconds = 10000;
+
+int GetOverviewDelayOnCycleMilliseconds() {
+  static int value = -1;
+  if (value == -1) {
+    value = kOverviewDelayOnCycleMilliseconds;
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshOverviewDelayOnAltTab)) {
+      if (!base::StringToInt(CommandLine::ForCurrentProcess()->
+            GetSwitchValueASCII(switches::kAshOverviewDelayOnAltTab), &value)) {
+        LOG(ERROR) << "Expected int value for "
+                   << switches::kAshOverviewDelayOnAltTab;
+      }
+    }
+  }
+  return value;
+}
 
 // A comparator for locating a given target window.
 struct WindowSelectorItemComparator
@@ -47,7 +78,7 @@ struct WindowSelectorItemComparator
 // A comparator for locating a selector item for a given root.
 struct WindowSelectorItemForRoot
     : public std::unary_function<WindowSelectorItem*, bool> {
-  explicit WindowSelectorItemForRoot(const aura::RootWindow* root)
+  explicit WindowSelectorItemForRoot(const aura::Window* root)
       : root_window(root) {
   }
 
@@ -55,7 +86,7 @@ struct WindowSelectorItemForRoot
     return item->GetRootWindow() == root_window;
   }
 
-  const aura::RootWindow* root_window;
+  const aura::Window* root_window;
 };
 
 // Filter to watch for the termination of a keyboard gesture to cycle through
@@ -105,14 +136,114 @@ void UpdateShelfVisibility() {
   }
 }
 
+// Returns the window immediately below |window| in the current container.
+aura::Window* GetWindowBelow(aura::Window* window) {
+  aura::Window* parent = window->parent();
+  if (!parent)
+    return NULL;
+  aura::Window* below = NULL;
+  for (aura::Window::Windows::const_iterator iter = parent->children().begin();
+       iter != parent->children().end(); ++iter) {
+    if (*iter == window)
+      return below;
+    below = *iter;
+  }
+  NOTREACHED();
+  return NULL;
+}
+
 }  // namespace
+
+// This class restores and moves a window to the front of the stacking order for
+// the duration of the class's scope.
+class ScopedShowWindow : public aura::WindowObserver {
+ public:
+  ScopedShowWindow();
+  virtual ~ScopedShowWindow();
+
+  // Show |window| at the top of the stacking order.
+  void Show(aura::Window* window);
+
+  // Cancel restoring the window on going out of scope.
+  void CancelRestore();
+
+  aura::Window* window() { return window_; }
+
+  // aura::WindowObserver:
+  virtual void OnWillRemoveWindow(aura::Window* window) OVERRIDE;
+
+ private:
+  // The window being shown.
+  aura::Window* window_;
+
+  // The window immediately below where window_ belongs.
+  aura::Window* stack_window_above_;
+
+  // If true, minimize window_ on going out of scope.
+  bool minimized_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedShowWindow);
+};
+
+ScopedShowWindow::ScopedShowWindow()
+    : window_(NULL),
+      stack_window_above_(NULL),
+      minimized_(false) {
+}
+
+void ScopedShowWindow::Show(aura::Window* window) {
+  DCHECK(!window_);
+  window_ = window;
+  stack_window_above_ = GetWindowBelow(window);
+  minimized_ = wm::GetWindowState(window)->IsMinimized();
+  window_->Show();
+  window_->SetTransform(gfx::Transform());
+  window_->parent()->AddObserver(this);
+  window_->parent()->StackChildAtTop(window_);
+}
+
+ScopedShowWindow::~ScopedShowWindow() {
+  if (window_) {
+    window_->parent()->RemoveObserver(this);
+
+    // Restore window's stacking position.
+    if (stack_window_above_)
+      window_->parent()->StackChildAbove(window_, stack_window_above_);
+    else
+      window_->parent()->StackChildAtBottom(window_);
+
+    // Restore minimized state.
+    if (minimized_)
+      wm::GetWindowState(window_)->Minimize();
+  }
+}
+
+void ScopedShowWindow::CancelRestore() {
+  if (!window_)
+    return;
+  window_->parent()->RemoveObserver(this);
+  window_ = stack_window_above_ = NULL;
+}
+
+void ScopedShowWindow::OnWillRemoveWindow(aura::Window* window) {
+  if (window == window_) {
+    CancelRestore();
+  } else if (window == stack_window_above_) {
+    // If the window this window was above is removed, use the next window down
+    // as the restore marker.
+    stack_window_above_ = GetWindowBelow(stack_window_above_);
+  }
+}
 
 WindowSelector::WindowSelector(const WindowList& windows,
                                WindowSelector::Mode mode,
                                WindowSelectorDelegate* delegate)
     : mode_(mode),
+      timer_enabled_(GetOverviewDelayOnCycleMilliseconds() <
+                         kMaxOverviewDelayOnCycleMilliseconds),
       start_overview_timer_(FROM_HERE,
-          base::TimeDelta::FromMilliseconds(kOverviewDelayOnCycleMilliseconds),
+          base::TimeDelta::FromMilliseconds(
+              GetOverviewDelayOnCycleMilliseconds()),
           this, &WindowSelector::StartOverview),
       delegate_(delegate),
       selected_window_(0),
@@ -161,7 +292,8 @@ WindowSelector::WindowSelector(const WindowList& windows,
 
   if (mode == WindowSelector::CYCLE) {
     event_handler_.reset(new WindowSelectorEventFilter(this));
-    start_overview_timer_.Reset();
+    if (timer_enabled_)
+      start_overview_timer_.Reset();
   } else {
     StartOverview();
   }
@@ -206,12 +338,11 @@ void WindowSelector::Step(WindowSelector::Direction direction) {
   if (window_overview_) {
     window_overview_->SetSelection(selected_window_);
   } else {
-    aura::Window* current_window =
-        windows_[selected_window_]->SelectionWindow();
-    current_window->Show();
-    current_window->SetTransform(gfx::Transform());
-    current_window->parent()->StackChildAtTop(current_window);
+    showing_window_.reset(new ScopedShowWindow);
+    showing_window_->Show(windows_[selected_window_]->SelectionWindow());
     start_overview_timer_.Reset();
+    if (timer_enabled_)
+      start_overview_timer_.Reset();
   }
 }
 
@@ -221,6 +352,8 @@ void WindowSelector::SelectWindow() {
 }
 
 void WindowSelector::SelectWindow(aura::Window* window) {
+  if (showing_window_ && showing_window_->window() == window)
+    showing_window_->CancelRestore();
   ScopedVector<WindowSelectorItem>::iterator iter =
       std::find_if(windows_.begin(), windows_.end(),
                    WindowSelectorItemComparator(window));
@@ -327,8 +460,14 @@ void WindowSelector::OnAttemptToReactivateWindow(aura::Window* request_active,
 
 void WindowSelector::StartOverview() {
   DCHECK(!window_overview_);
-  window_overview_.reset(new WindowOverview(this, &windows_,
-      mode_ == CYCLE ? windows_[selected_window_]->GetRootWindow() : NULL));
+  aura::Window* overview_root = NULL;
+  if (mode_ == CYCLE) {
+    overview_root = GetOverviewDelayOnCycleMilliseconds() <=
+                        kOverviewDelayInitialMonitorThreshold ?
+                    Shell::GetTargetRootWindow() :
+                    windows_[selected_window_]->GetRootWindow();
+  }
+  window_overview_.reset(new WindowOverview(this, &windows_, overview_root));
   if (mode_ == CYCLE)
     window_overview_->SetSelection(selected_window_);
   UpdateShelfVisibility();

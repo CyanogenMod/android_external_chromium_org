@@ -46,6 +46,10 @@ namespace {
 const char* kCommonSwitches[] = {
     "ignore-certificate-errors", "metrics-recording-only"};
 
+#if defined(OS_LINUX)
+const char* kEnableCrashReport = "enable-crash-reporter-for-testing";
+#endif
+
 Status UnpackAutomationExtension(const base::FilePath& temp_dir,
                                  base::FilePath* automation_extension) {
   std::string decoded_extension;
@@ -217,6 +221,20 @@ Status LaunchDesktopChrome(
 
   base::LaunchOptions options;
 
+#if defined(OS_LINUX)
+  // If minidump path is set in the capability, enable minidump for crashes.
+  if (!capabilities.minidump_path.empty()) {
+    VLOG(0) << "Minidump generation specified. Will save dumps to: "
+            << capabilities.minidump_path;
+
+    options.environ["CHROME_HEADLESS"] = 1;
+    options.environ["BREAKPAD_DUMP_LOCATION"] = capabilities.minidump_path;
+
+    if (!command.HasSwitch(kEnableCrashReport))
+      command.AppendSwitch(kEnableCrashReport);
+  }
+#endif
+
 #if !defined(OS_WIN)
   if (!capabilities.log_path.empty())
     options.environ["CHROME_LOG_FILE"] = capabilities.log_path;
@@ -277,6 +295,7 @@ Status LaunchDesktopChrome(
                             devtools_event_listeners,
                             port_reservation.Pass(),
                             process,
+                            command,
                             &user_data_dir,
                             &extension_dir));
   for (size_t i = 0; i < extension_bg_pages.size(); ++i) {

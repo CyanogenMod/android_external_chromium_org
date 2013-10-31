@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
@@ -18,6 +19,7 @@
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
+#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -99,7 +101,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
       const base::FilePath& file_system_directory,
       base::SequencedTaskRunner* file_task_runner,
       const GetTypeStringForURLCallback& get_type_string_for_url,
-      const std::set<std::string>& known_type_strings);
+      const std::set<std::string>& known_type_strings,
+      SandboxFileSystemBackendDelegate* sandbox_delegate);
   virtual ~ObfuscatedFileUtil();
 
   // FileSystemFileUtil overrides.
@@ -214,6 +217,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // on each path segment and add the results.
   static int64 ComputeFilePathCost(const base::FilePath& path);
 
+  // Tries to prepopulate directory database for the given type strings.
+  // This tries from the first one in the given type_strings and stops
+  // once it succeeds to do so for one database (i.e. it prepopulates
+  // at most one database).
+  void MaybePrepopulateDatabase(
+      const std::vector<std::string>& type_strings_to_prepopulate);
+
  private:
   typedef SandboxDirectoryDatabase::FileId FileId;
   typedef SandboxDirectoryDatabase::FileInfo FileInfo;
@@ -302,7 +312,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
 
   void MarkUsed();
   void DropDatabases();
-  bool InitOriginDatabase(bool create);
+
+  // Initializes the origin database. |origin_hint| may be used as a hint
+  // for initializing database if it's not empty.
+  bool InitOriginDatabase(const GURL& origin_hint, bool create);
 
   base::PlatformFileError GenerateNewLocalPath(
       SandboxDirectoryDatabase* db,
@@ -334,9 +347,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   GetTypeStringForURLCallback get_type_string_for_url_;
   std::set<std::string> known_type_strings_;
 
-  // If this instance is initialized for an isolated partition, this should
-  // only see a single origin.
-  GURL isolated_origin_;
+  // Not owned.
+  SandboxFileSystemBackendDelegate* sandbox_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ObfuscatedFileUtil);
 };

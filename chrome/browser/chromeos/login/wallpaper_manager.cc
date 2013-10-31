@@ -17,6 +17,7 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -30,7 +31,6 @@
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -312,6 +312,7 @@ void WallpaperManager::Observe(int type,
       break;
     }
     case chrome::NOTIFICATION_WALLPAPER_ANIMATION_FINISHED: {
+      NotifyAnimationFinished();
       if (should_cache_wallpaper_) {
         BrowserThread::PostDelayedTask(
             BrowserThread::UI, FROM_HERE,
@@ -603,6 +604,19 @@ void WallpaperManager::UpdateWallpaper() {
     return;
   }
   SetUserWallpaper(last_selected_user_);
+}
+
+void WallpaperManager::AddObserver(WallpaperManager::Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void WallpaperManager::RemoveObserver(WallpaperManager::Observer* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+void WallpaperManager::NotifyAnimationFinished() {
+  FOR_EACH_OBSERVER(
+      Observer, observers_, OnWallpaperAnimationFinished(last_selected_user_));
 }
 
 // WallpaperManager, private: --------------------------------------------------

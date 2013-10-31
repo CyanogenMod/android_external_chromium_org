@@ -4,20 +4,24 @@
 
 #include "net/tools/quic/test_tools/quic_test_client.h"
 
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/proof_verifier.h"
+#include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 #include "net/tools/quic/test_tools/http_message_test_utils.h"
 #include "url/gurl.h"
 
+using base::StringPiece;
+using net::test::QuicConnectionPeer;
+using net::test::QuicTestWriter;
 using std::string;
 using std::vector;
-using base::StringPiece;
 
 namespace {
 
@@ -97,15 +101,17 @@ class QuicEpollClient : public QuicClient {
 
   QuicEpollClient(IPEndPoint server_address,
              const string& server_hostname,
-             const QuicVersion version)
-      : Super(server_address, server_hostname, version, false) {
+             const QuicVersionVector& supported_versions)
+      : Super(server_address, server_hostname, supported_versions, false),
+        override_guid_(0), test_writer_(NULL) {
   }
 
   QuicEpollClient(IPEndPoint server_address,
              const string& server_hostname,
              const QuicConfig& config,
-             const QuicVersion version)
-      : Super(server_address, server_hostname, config, version) {
+             const QuicVersionVector& supported_versions)
+      : Super(server_address, server_hostname, config, supported_versions),
+        override_guid_(0), test_writer_(NULL) {
   }
 
   virtual ~QuicEpollClient() {
@@ -114,32 +120,42 @@ class QuicEpollClient : public QuicClient {
     }
   }
 
-  virtual QuicEpollConnectionHelper* CreateQuicConnectionHelper() OVERRIDE {
-    if (writer_.get() != NULL) {
-      writer_->set_fd(fd());
-      return new QuicEpollConnectionHelper(writer_.get(), epoll_server());
-    } else {
-      return Super::CreateQuicConnectionHelper();
+  virtual QuicPacketWriter* CreateQuicPacketWriter() OVERRIDE {
+    QuicPacketWriter* writer = Super::CreateQuicPacketWriter();
+    if (!test_writer_) {
+      return writer;
     }
+    test_writer_->set_writer(writer);
+    return test_writer_;
   }
 
-  void UseWriter(QuicTestWriter* writer) { writer_.reset(writer); }
+  virtual QuicGuid GenerateGuid() OVERRIDE {
+    return override_guid_ ? override_guid_ : Super::GenerateGuid();
+  }
+
+  // Takes ownership of writer.
+  void UseWriter(QuicTestWriter* writer) { test_writer_ = writer; }
+
+  void UseGuid(QuicGuid guid) {
+    override_guid_ = guid;
+  }
 
  private:
-  scoped_ptr<QuicTestWriter> writer_;
+  QuicGuid override_guid_;  // GUID to use, if nonzero
+  QuicTestWriter* test_writer_;
 };
 
 QuicTestClient::QuicTestClient(IPEndPoint address, const string& hostname,
-                               const QuicVersion version)
-    : client_(new QuicEpollClient(address, hostname, version)) {
+                               const QuicVersionVector& supported_versions)
+    : client_(new QuicEpollClient(address, hostname, supported_versions)) {
   Initialize(address, hostname, true);
 }
 
 QuicTestClient::QuicTestClient(IPEndPoint address,
                                const string& hostname,
                                bool secure,
-                               const QuicVersion version)
-    : client_(new QuicEpollClient(address, hostname, version)) {
+                               const QuicVersionVector& supported_versions)
+    : client_(new QuicEpollClient(address, hostname, supported_versions)) {
   Initialize(address, hostname, secure);
 }
 
@@ -147,8 +163,9 @@ QuicTestClient::QuicTestClient(IPEndPoint address,
                                const string& hostname,
                                bool secure,
                                const QuicConfig& config,
-                               const QuicVersion version)
-    : client_(new QuicEpollClient(address, hostname, config, version)) {
+                               const QuicVersionVector& supported_versions)
+    : client_(new QuicEpollClient(address, hostname, config,
+                                  supported_versions)) {
   Initialize(address, hostname, secure);
 }
 
@@ -161,7 +178,7 @@ void QuicTestClient::Initialize(IPEndPoint address,
   priority_ = 3;
   bytes_read_ = 0;
   bytes_written_= 0;
-  never_connected_ = true;
+  connect_attempted_ = false;
   secure_ = secure;
   auto_reconnect_ = false;
   proof_verifier_ = NULL;
@@ -235,7 +252,7 @@ string QuicTestClient::SendSynchronousRequest(const string& uri) {
 }
 
 QuicReliableClientStream* QuicTestClient::GetOrCreateStream() {
-  if (never_connected_ == true || auto_reconnect_) {
+  if (!connect_attempted_ || auto_reconnect_) {
     if (!connected()) {
       Connect();
     }
@@ -274,9 +291,11 @@ void QuicTestClient::WaitForResponse() {
 
 void QuicTestClient::Connect() {
   DCHECK(!connected());
-  client_->Initialize();
+  if (!connect_attempted_) {
+    client_->Initialize();
+  }
   client_->Connect();
-  never_connected_ = false;
+  connect_attempted_ = true;
 }
 
 void QuicTestClient::ResetConnection() {
@@ -285,7 +304,10 @@ void QuicTestClient::ResetConnection() {
 }
 
 void QuicTestClient::Disconnect() {
-  client_->Disconnect();
+  if (client_->connected()) {
+    client_->Disconnect();
+  }
+  connect_attempted_ = false;
 }
 
 IPEndPoint QuicTestClient::LocalSocketAddress() const {
@@ -301,10 +323,46 @@ void QuicTestClient::ClearPerRequestState() {
   bytes_written_ = 0;
 }
 
-void QuicTestClient::WaitForInitialResponse() {
-  DCHECK(stream_ != NULL);
-  while (stream_ && stream_->stream_bytes_read() == 0) {
+void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
+  int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
+  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  if (timeout_us > 0) {
+    client()->epoll_server()->set_timeout_in_us(timeout_us);
+  }
+  const QuicClock* clock =
+      QuicConnectionPeer::GetHelper(client()->session()->connection())->
+          GetClock();
+  QuicTime end_waiting_time = clock->Now().Add(
+      QuicTime::Delta::FromMicroseconds(timeout_us));
+  while (stream_ != NULL &&
+         !client_->session()->IsClosedStream(stream_->id()) &&
+         (timeout_us < 0 || clock->Now() < end_waiting_time)) {
     client_->WaitForEvents();
+  }
+  if (timeout_us > 0) {
+    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
+  }
+}
+
+void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
+  int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
+  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  if (timeout_us > 0) {
+    client()->epoll_server()->set_timeout_in_us(timeout_us);
+  }
+  const QuicClock* clock =
+      QuicConnectionPeer::GetHelper(client()->session()->connection())->
+          GetClock();
+  QuicTime end_waiting_time = clock->Now().Add(
+      QuicTime::Delta::FromMicroseconds(timeout_us));
+  while (stream_ != NULL &&
+         !client_->session()->IsClosedStream(stream_->id()) &&
+         stream_->stream_bytes_read() == 0 &&
+         (timeout_us < 0 || clock->Now() < end_waiting_time)) {
+    client_->WaitForEvents();
+  }
+  if (timeout_us > 0) {
+    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
   }
 }
 
@@ -337,8 +395,12 @@ void QuicTestClient::OnClose(ReliableQuicStream* stream) {
 }
 
 void QuicTestClient::UseWriter(QuicTestWriter* writer) {
-  DCHECK(!connected());
   reinterpret_cast<QuicEpollClient*>(client_.get())->UseWriter(writer);
+}
+
+void QuicTestClient::UseGuid(QuicGuid guid) {
+  DCHECK(!connected());
+  reinterpret_cast<QuicEpollClient*>(client_.get())->UseGuid(guid);
 }
 
 }  // namespace test

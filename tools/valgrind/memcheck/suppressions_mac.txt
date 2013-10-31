@@ -29,87 +29,11 @@
    ...
 }
 {
-   # Mac system library bug?  See http://crbug.com/11327
-   bug_11327
-   Memcheck:Uninitialized
-   fun:_ZN19AudioConverterChain5ResetEv
-   fun:AudioConverterReset
-   obj:/System/Library/Components/CoreAudio.component/Contents/MacOS/CoreAudio
-}
-{
-   # Mac system library bug?  See http://crbug.com/11327
-   bug_11327b
-   Memcheck:Uninitialized
-   fun:AUNetSendEntry
-   fun:AUNetSendEntry
-   obj:/System/Library/Components/CoreAudio.component/Contents/MacOS/CoreAudio
-}
-{
-   # Filed with Apple as rdar://6915060; see http://crbug.com/11270
-   bug_11270
-   Memcheck:Leak
-   fun:calloc
-   fun:CMSSetLabCLUT
-}
-{
-   # Mac leak in CMOpenOrNewAccess in unit_tests PlatformCanvas_SkLayer_Test,
-   # ToolbarControllerTest_FocusLocation_Test. See http://crbug.com/11333.
-   bug_11333
-   Memcheck:Leak
-   fun:malloc
-   fun:stdSmartNewPtr
-   fun:stdSmartNewHandle
-   fun:IOCreateAndOpen
-   fun:ScratchInit
-   fun:CMOpenOrNewAccess
-}
-{
-   # suddenly very common as of 6 aug 2009
-   bug_11333b
-   Memcheck:Leak
-   fun:malloc
-   fun:stdSmartNewPtr
-   fun:stdSmartNewHandle
-   fun:IOCreateAndOpen
-   fun:ScratchInit
-   fun:CMNewAccessFromAnother
-}
-{
-   # Tiny one-time leak, widely seen by valgind users; everyone suppresses this.
-   # See related discussion at http://gcc.gnu.org/bugzilla/show_bug.cgi?id=39366
-   plugin_bundle_global_leak
-   Memcheck:Leak
-   fun:malloc
-   fun:__cxa_get_globals
-   fun:__cxa_allocate_exception
-   fun:_ZN4dyld4loadEPKcRKNS_11LoadContextE
-   fun:dlopen
-   fun:dlopen
-   fun:_CFBundleDlfcnCheckLoaded
-}
-{
    bug_18215
    Memcheck:Uninitialized
    fun:_DPSNextEvent
    fun:-[NSApplication nextEventMatchingMask:untilDate:inMode:dequeue:]
    fun:-[NSApplication run]
-}
-{
-   bug_18223
-   Memcheck:Uninitialized
-   fun:_ZNK8Security12UnixPlusPlus17StaticForkMonitorclEv
-   fun:_ZN12ocspdGlobals10serverPortEv
-}
-{
-   # Filed with Apple as rdar://7255382
-   bug_20459a
-   Memcheck:Leak
-   ...
-   fun:_CFRuntimeCreateInstance
-   fun:CFRunLoopSourceCreate
-   fun:CFMachPortCreateRunLoopSource
-   fun:_ZN8Security12MachPlusPlus10CFAutoPort6enableEv
-   fun:_ZN8Security14SecurityServer14ThreadNotifierC2Ev
 }
 {
    # Also filed with Apple as rdar://7255382
@@ -121,97 +45,6 @@
    fun:CFArrayCreateMutableCopy
    ...
    fun:_ZN8Security12KeychainCore5Trust8evaluate*
-}
-# See description of bug_20653a/b in suppressions.txt.
-{
-   bug_20653a_mac
-   Memcheck:Param
-   write(buf)
-   fun:write$UNIX2003
-   fun:pager_write_pagelist
-}
-{
-   bug_20653b_mac
-   Memcheck:Param
-   write(buf)
-   fun:write$UNIX2003
-   ...
-   fun:pager_write
-}
-
-# See http://www.openradar.me/8287193
-{
-   Invalid redzone accesses in DKeyHas8Words
-   Memcheck:Unaddressable
-   fun:DKeyHas8Words
-}
-
-# See https://bugs.kde.org/show_bug.cgi?id=188572
-# This suppression is missing in Valgrind on Mac 10.6
-# TODO(glider): remove it once it arrives in the trunk.
-{
-   Unavoidable leak in setenv()
-   Memcheck:Leak
-   fun:malloc_zone_malloc
-   fun:__setenv
-   fun:setenv$UNIX2003
-}
-{
-   # Reported to Apple as rdar://6915429
-   bug_12525
-   Memcheck:Leak
-   ...
-   fun:-[CIContextImpl render:toBitmap:rowBytes:bounds:format:colorSpace:]
-}
-{
-   bug_69436
-   Memcheck:Leak
-   ...
-   fun:-[CIKernel initWithCString:noCopy:]
-   ...
-   fun:-[NSPopUpButtonCell _drawIndicatorWithFrame:inView:]
-}
-{
-   # Capturer on Mac uses OpenGL driver, which triggers several warnings.
-   # The check has to be quite generic, as different hardware graphics cards
-   # will cause different sets of warnings.
-   bug_75037
-   Memcheck:Uninitialized
-   ...
-   fun:_ZN8remoting*CapturerMac*
-}
-{
-   # See also http://openradar.appspot.com/radar?id=1235407
-   bug_77063
-   Memcheck:Free
-   fun:_ZdlPv
-   fun:_ZN15THFSPlusCatalogD2Ev
-   fun:_ZN5TNode10SetCatalogEP15THFSPlusCatalog
-   fun:_ZN15TMountPointList9AddVolumeEsb
-   fun:_ZN15TMountPointList4FindEsPN5TNode12StPopulatingE
-   fun:_ZN15TMountPointList20SupportsInvisibleBitEsPN5TNode12StPopulatingEb
-   fun:_ZNK21THFSPlusPropertyStore4OpenEbb
-   fun:_ZNK21THFSPlusPropertyStore13GetPropertiesEb
-   fun:_ZN16TFSCopyOperation22GetSourcePropertyStoreERK11THFSPlusRef
-   fun:_ZN16TFSCopyOperation13DoMoveToTrashERK11THFSPlusRef
-   fun:_ZN16TFSCopyOperation3RunEv
-   fun:_FSOperation
-   fun:_FSOperateOnObjectSync
-   fun:FSMoveObjectToTrashSync
-   fun:_Z9TrashFunc*FilePath
-}
-{
-   # See also http://openradar.appspot.com/radar?id=1169404
-   bug_79533a
-   Memcheck:Uninitialized
-   ...
-   fun:_Z*19cssm_DataAbortQuery17cssm_dl_db_handlel
-   fun:CSSM_DL_DataAbortQuery
-   fun:_ZN11SSDLSession14DataAbortQueryEll
-   fun:_Z*19cssm_DataAbortQuery17cssm_dl_db_handlel
-   fun:CSSM_DL_DataAbortQuery
-   fun:tpDbFindIssuerCrl
-   fun:tpVerifyCertGroupWithCrls
 }
 {
    # See also http://openradar.appspot.com/radar?id=1169404
@@ -225,61 +58,6 @@
    fun:CSSM_DL_DataAbortQuery
    fun:tpDbFindIssuerCrl
    fun:tpVerifyCertGroupWithCrls
-}
-{
-   bug_85213_a
-   Memcheck:Leak
-   ...
-   fun:_CFBundleCopyDirectoryContentsAtPath
-}
-{
-   bug_85213_b
-   Memcheck:Leak
-   ...
-   fun:_CFBundleCopyInfoDictionaryInDirectoryWithVersion
-}
-{
-   bug_85213_c
-   Memcheck:Leak
-   ...
-   fun:_CFBundleURLLooksLikeBundleVersion
-}
-{
-   bug_85213_d
-   Memcheck:Leak
-   ...
-   fun:_CFBundleCreate
-   fun:_ZN6webkit5npapi9PluginLib17ReadWebPluginInfoE*
-}
-{
-   bug_85213_e
-   Memcheck:Leak
-   ...
-   fun:CFBundlePreflightExecutable
-   fun:_ZN6webkit5npapi9PluginLib17ReadWebPluginInfoE*
-}
-{
-   bug_85213_f
-   Memcheck:Leak
-   ...
-   fun:CFBundleGetPackageInfo
-   fun:_ZN6webkit5npapi9PluginLib17ReadWebPluginInfoE*
-}
-{
-   bug_86927
-   Memcheck:Leak
-   fun:malloc
-   fun:CGSMapShmem
-   fun:CGSResolveShmemReference
-   fun:CGSScoreboard
-   fun:initCGDisplayState
-   fun:initCGDisplayMappings
-   fun:cgsInit
-   fun:pthread_once
-   fun:CGSInitialize
-   fun:CGSServerOperationState
-   fun:+[NSThemeFrame initialize]
-   fun:_class_initialize
 }
 {
    # QTKit leak. See http://crbug.com/100772 and rdar://10319535.
@@ -325,18 +103,6 @@
 # 2. Intentional unit test errors, stuff that is somehow a false positive
 # in our own code, or stuff that is so trivial it's not worth fixing.
 {
-   # Plugins are deliberately not unloaded (on shutdown) on the Mac, in order to
-   # prevent crashes for those that don't unload cleanly.
-   plugin_unload
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN4base17LoadNativeLibraryE*
-   fun:_ZN6webkit5npapi9PluginLib4LoadEv
-   fun:_ZN6webkit5npapi9PluginLib13NP_InitializeEv
-   fun:_ZN6webkit5npapi21WebPluginDelegateImpl6CreateE*
-   fun:_ZN19TestWebViewDelegate20CreatePluginDelegateE*
-}
-{
    # Mac Sandbox test cases are registered in a global map.  This code is only
    # used in the unit test binary.
    Mac_Sandbox_Intentional_Leak1
@@ -350,41 +116,11 @@
    fun:_ZN4dyld24initializeMainExecutableEv
 }
 {
-   # The ConfirmQuitPanelController animates out and releases itself. And
-   # CocoaTest::TearDown() still sees this window and deques events for it,
-   # but one of those events creates this TSM Context that gets leaked.
-   # See http://crbug.com/61816 for more details.
-   # ut*AllSelectedIMInDoc = fun:utOpenActivateAllSelectedIMInDoc or
-   #                         fun:utDeactivateAllSelectedIMInDoc
-   Mac_Animated_Window_Close_ProcessNotification_Event
-   Memcheck:Leak
-   fun:malloc_zone_malloc
-   fun:_CFRuntimeCreateInstance
-   fun:__CFDictionaryInit
-   fun:ut*AllSelectedIMInDoc
-   ...
-   fun:My*ctivateTSMDocument
-}
-{
    # __cxa_get_globals leaks a structure when called for the first time
    __cxa_get_globals one-time leak
    Memcheck:Leak
    ...
    fun:__cxa_get_globals
-}
-{
-   bug_93711_a - intentional
-   Memcheck:Param
-   msync(start)
-   fun:msync$UNIX2003
-   fun:mach_override_ptr
-}
-{
-   bug_93711_b - likely induced by an intentional memory error
-   Memcheck:Leak
-   fun:malloc
-   fun:allocateBranchIsland
-   fun:mach_override_ptr
 }
 {
    # Intentional leak of a time-based self-deleting object.
@@ -1628,18 +1364,6 @@
    fun:_ZN14KeychainSearch17FindMatchingItemsEPSt6vectorIP24OpaqueSecKeychainItemRefSaIS2_EE
 }
 {
-   bug_96684a
-   Memcheck:Uninitialized
-   fun:_ZN7content20P2PSocketHostTcpBase4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEE
-   fun:*SocketHost*TcpTest_*_Test8TestBodyEv
-}
-{
-   bug_96684b
-   Memcheck:Uninitialized
-   fun:_ZN7content16P2PSocketHostUdp4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEE
-   fun:*SocketHostUdpTest_*_Test8TestBodyEv
-}
-{
    bug_96689
    Memcheck:Uninitialized
    fun:_ZN3net11SSLHostInfo10ParseInnerERKSs
@@ -2609,14 +2333,17 @@
    fun:_ZN10TType1Font7GetFontEPK5TFont
 }
 {
-   bug_308683_a
-   Memcheck:Uninitialized
-   fun:_ZN7content16P2PSocketHostUdp4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEEy
-   fun:_ZN7content*P2PSocketHostUdpTest_Send*
+   bug_310761_a
+   Memcheck:Leak
+   fun:malloc
+   fun:_NPN_Get*Identifier
+   fun:_ZN6WebKit11WebBindings*get*Identifier*
 }
 {
-   bug_308683_b
-   Memcheck:Uninitialized
-   fun:_ZN7content20P2PSocketHostTcpBase4SendERKN3net10IPEndPointERKSt6vectorIcSaIcEEy
-   fun:_ZN7content*P2PSocketHost*
+   bug_310761_b
+   Memcheck:Leak
+   fun:malloc
+   fun:_ZN3WTF10fastMallocEm
+   fun:_ZN7WebCore*TerminatedArrayBuilder*
+   fun:_ZN7WebCore7RuleSet19compactPendingRules*
 }

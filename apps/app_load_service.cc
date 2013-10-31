@@ -15,7 +15,6 @@
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -26,7 +25,8 @@ using extensions::ExtensionPrefs;
 namespace apps {
 
 AppLoadService::PostReloadAction::PostReloadAction()
-    : command_line(CommandLine::NO_PROGRAM) {
+    : action_type(LAUNCH),
+      command_line(CommandLine::NO_PROGRAM) {
 }
 
 AppLoadService::AppLoadService(Profile* profile)
@@ -131,7 +131,7 @@ bool AppLoadService::HasShellWindows(const std::string& extension_id) {
 
 bool AppLoadService::WasUnloadedForReload(
     const extensions::UnloadedExtensionInfo& unload_info) {
-  if (unload_info.reason == extension_misc::UNLOAD_REASON_DISABLE) {
+  if (unload_info.reason == extensions::UnloadedExtensionInfo::REASON_DISABLE) {
     ExtensionPrefs* prefs = ExtensionPrefs::Get(profile_);
      return (prefs->GetDisableReasons(unload_info.extension->id()) &
         Extension::DISABLE_RELOAD) != 0;

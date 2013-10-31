@@ -8,10 +8,13 @@
 import logging
 import optparse
 import os
+import psutil
+import re
+import signal
 import smtplib
 import subprocess
 import sys
-import re
+import time
 import urllib
 
 import bb_annotations
@@ -109,6 +112,26 @@ def DeviceInfo(serial, options):
   return device_type, device_build, battery_level, full_report, errors, True
 
 
+def GetLastDevices(out_dir):
+  """Returns a list of devices that have been seen on the bot.
+
+  Args:
+    options: out_dir parameter of options argument is used as the base
+             directory to load and update the cache file.
+
+  Returns: List of device serial numbers that were on the bot.
+  """
+  devices_path = os.path.join(out_dir, '.last_devices')
+  devices = []
+  try:
+    with open(devices_path) as f:
+      devices = f.read().splitlines()
+  except IOError:
+    # Ignore error, file might not exist
+    pass
+  return devices
+
+
 def CheckForMissingDevices(options, adb_online_devs):
   """Uses file of previous online devices to detect broken phones.
 
@@ -125,17 +148,6 @@ def CheckForMissingDevices(options, adb_online_devs):
 
   out_dir = os.path.abspath(options.out_dir)
 
-  def ReadDeviceList(file_name):
-    devices_path = os.path.join(out_dir, file_name)
-    devices = []
-    try:
-      with open(devices_path) as f:
-        devices = f.read().splitlines()
-    except IOError:
-      # Ignore error, file might not exist
-      pass
-    return devices
-
   def WriteDeviceList(file_name, device_list):
     path = os.path.join(out_dir, file_name)
     if not os.path.exists(out_dir):
@@ -145,7 +157,7 @@ def CheckForMissingDevices(options, adb_online_devs):
       f.write('\n'.join(set(device_list)))
 
   last_devices_path = os.path.join(out_dir, '.last_devices')
-  last_devices = ReadDeviceList('.last_devices')
+  last_devices = GetLastDevices(out_dir)
   missing_devs = list(set(last_devices) - set(adb_online_devs))
 
   all_known_devices = list(set(adb_online_devs) | set(last_devices))
@@ -241,6 +253,24 @@ def RestartUsb():
   return 0
 
 
+def KillAllAdb():
+  def GetAllAdb():
+    for p in psutil.process_iter():
+      if 'adb' in p.name or 'adb' in ' '.join(p.cmdline):
+        yield p
+
+  for sig in [signal.SIGTERM, signal.SIGQUIT, signal.SIGKILL]:
+    for p in GetAllAdb():
+      try:
+        print 'kill %d %d (%s [%s])' % (sig, p.pid, p.name,
+            ' '.join(p.cmdline))
+        p.send_signal(sig)
+      except psutil.error.NoSuchProcess:
+        pass
+  for p in GetAllAdb():
+    print 'Unable to kill %d (%s [%s])' % (p.pid, p.name, ' '.join(p.cmdline))
+
+
 def main():
   parser = optparse.OptionParser()
   parser.add_option('', '--out-dir',
@@ -257,9 +287,20 @@ def main():
     parser.error('Unknown options %s' % args)
 
   if options.restart_usb:
-    rc = RestartUsb()
-    if rc:
-      return 1
+    expected_devices = GetLastDevices(os.path.abspath(options.out_dir))
+    devices = android_commands.GetAttachedDevices()
+    # Only restart usb if devices are missing
+    if set(expected_devices) != set(devices):
+      KillAllAdb()
+      if RestartUsb():
+        return 1
+      retries = 5
+      while retries:
+        time.sleep(1)
+        devices = android_commands.GetAttachedDevices()
+        if set(expected_devices) == set(devices):
+          break
+        retries -= 1
 
   devices = android_commands.GetAttachedDevices()
   # TODO(navabi): Test to make sure this fails and then fix call

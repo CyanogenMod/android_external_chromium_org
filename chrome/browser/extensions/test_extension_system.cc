@@ -48,6 +48,11 @@ void TestExtensionSystem::CreateExtensionProcessManager() {
   extension_process_manager_.reset(ExtensionProcessManager::Create(profile_));
 }
 
+void TestExtensionSystem::SetExtensionProcessManager(
+    ExtensionProcessManager* manager) {
+  extension_process_manager_.reset(manager);
+}
+
 ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
     const CommandLine* command_line,
     const base::FilePath& install_directory) {
@@ -62,7 +67,7 @@ ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
   ExtensionPrefs* extension_prefs = ExtensionPrefs::Create(
       profile_->GetPrefs(),
       install_directory,
-      ExtensionPrefValueMapFactory::GetForProfile(profile_),
+      ExtensionPrefValueMapFactory::GetForBrowserContext(profile_),
       extensions_disabled);
     ExtensionPrefsFactory::GetInstance()->SetInstanceForTesting(
         profile_,

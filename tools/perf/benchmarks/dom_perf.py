@@ -35,7 +35,7 @@ SCORE_UNIT = 'score (bigger is better)'
 SCORE_TRACE_NAME = 'score'
 
 
-class DomPerfMeasurement(page_measurement.PageMeasurement):
+class _DomPerfMeasurement(page_measurement.PageMeasurement):
   @property
   def results_are_the_same_on_every_page(self):
     return False
@@ -44,7 +44,7 @@ class DomPerfMeasurement(page_measurement.PageMeasurement):
     try:
       def _IsDone():
         return tab.GetCookieByName('__domperf_finished') == '1'
-      util.WaitFor(_IsDone, 600, poll_interval=5)
+      util.WaitFor(_IsDone, 600)
 
       data = json.loads(tab.EvaluateJavaScript('__domperf_result'))
       for suite in data['BenchmarkSuites']:
@@ -55,7 +55,7 @@ class DomPerfMeasurement(page_measurement.PageMeasurement):
     finally:
       tab.EvaluateJavaScript('document.cookie = "__domperf_finished=0"')
 
-  def DidRunTest(self, tab, results):
+  def DidRunTest(self, browser, results):
     # Now give the geometric mean as the total for the combined runs.
     scores = []
     for result in results.page_results:
@@ -70,7 +70,7 @@ class DomPerf(test.Test):
   The final score is computed as the geometric mean of the individual results.
   Scores are not comparable across benchmark suite versions and higher scores
   means better performance: Bigger is better!"""
-  test = DomPerfMeasurement
+  test = _DomPerfMeasurement
 
   def CreatePageSet(self, options):
     dom_perf_dir = os.path.join(util.GetChromiumSrcDir(), 'data', 'dom_perf')

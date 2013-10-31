@@ -25,6 +25,7 @@
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
@@ -352,9 +353,8 @@ void PanelLayoutManager::OnWindowAddedToLayout(aura::Window* child) {
     // back to appropriate container and ignore it.
     // TODO(varkha): Updating bounds during a drag can cause problems and a more
     // general solution is needed. See http://crbug.com/251813 .
-    child->SetDefaultParentByRootWindow(
-        child->GetRootWindow(),
-        child->GetRootWindow()->GetBoundsInScreen());
+    aura::client::ParentWindowWithContext(
+        child, child, child->GetRootWindow()->GetBoundsInScreen());
     wm::ReparentTransientChildrenOfChild(child->parent(), child);
     DCHECK(child->parent()->id() != kShellWindowId_PanelContainer);
     return;
@@ -438,9 +438,9 @@ void PanelLayoutManager::SetChildBounds(aura::Window* child,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// PanelLayoutManager, ash::LauncherIconObserver implementation:
+// PanelLayoutManager, ShelfIconObserver implementation:
 
-void PanelLayoutManager::OnLauncherIconPositionsChanged() {
+void PanelLayoutManager::OnShelfIconPositionsChanged() {
   // TODO: As this is called for every animation step now. Relayout needs to be
   // updated to use current icon position instead of use the ideal bounds so
   // that the panels slide with their icons instead of jumping.
@@ -450,8 +450,7 @@ void PanelLayoutManager::OnLauncherIconPositionsChanged() {
 ////////////////////////////////////////////////////////////////////////////////
 // PanelLayoutManager, ash::ShellObserver implementation:
 
-void PanelLayoutManager::OnShelfAlignmentChanged(
-    aura::RootWindow* root_window) {
+void PanelLayoutManager::OnShelfAlignmentChanged(aura::Window* root_window) {
   if (panel_container_->GetRootWindow() == root_window)
     Relayout();
 }

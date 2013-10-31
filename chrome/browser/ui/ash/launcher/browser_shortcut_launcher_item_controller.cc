@@ -8,7 +8,7 @@
 
 #include "ash/launcher/launcher.h"
 #include "ash/launcher/launcher_model.h"
-#include "ash/shelf/shelf_util.h"
+#include "ash/launcher/launcher_model_util.h"
 #include "ash/shell.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -60,8 +60,9 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
   ash::LauncherModel* model = launcher_controller()->model();
 
   // Determine the new browser's active state and change if necessary.
-  size_t browser_index = ash::GetBrowserItemIndex(*model);
-  DCHECK_GE(browser_index, 0u);
+  int browser_index =
+      ash::GetLauncherItemIndexForType(ash::TYPE_BROWSER_SHORTCUT, *model);
+  DCHECK_GE(browser_index, 0);
   ash::LauncherItem browser_item = model->items()[browser_index];
   ash::LauncherItemStatus browser_status = ash::STATUS_CLOSED;
 
@@ -116,7 +117,12 @@ bool BrowserShortcutLauncherItemController::IsCurrentlyShownInWindow(
 bool BrowserShortcutLauncherItemController::IsOpen() const {
   const BrowserList* ash_browser_list =
       BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
-  return ash_browser_list->empty() ? false : true;
+  for (BrowserList::const_iterator it = ash_browser_list->begin();
+       it != ash_browser_list->end(); ++it) {
+    if (launcher_controller()->IsBrowserFromActiveUser(*it))
+      return true;
+  }
+  return false;
 }
 
 bool BrowserShortcutLauncherItemController::IsVisible() const {
@@ -166,8 +172,10 @@ BrowserShortcutLauncherItemController::GetApplicationList(int event_flags) {
   for (BrowserList::const_iterator it = ash_browser_list->begin();
        it != ash_browser_list->end(); ++it) {
     Browser* browser = *it;
-    // Make sure that the browser was already shown and it has a proper window.
-    if (std::find(ash_browser_list->begin_last_active(),
+    // Make sure that the browser was already shown, is from the current user
+    // and has a proper window.
+    if (!launcher_controller()->IsBrowserFromActiveUser(browser) ||
+        std::find(ash_browser_list->begin_last_active(),
                   ash_browser_list->end_last_active(),
                   browser) == ash_browser_list->end_last_active() ||
         !browser->window())
@@ -234,7 +242,7 @@ string16 BrowserShortcutLauncherItemController::GetTitle() {
 }
 
 ui::MenuModel* BrowserShortcutLauncherItemController::CreateContextMenu(
-    aura::RootWindow* root_window) {
+    aura::Window* root_window) {
   ash::LauncherItem item =
       *(launcher_controller()->model()->ItemByID(launcher_id()));
   return new LauncherContextMenu(launcher_controller(), &item, root_window);
@@ -329,6 +337,7 @@ void BrowserShortcutLauncherItemController::ActivateOrAdvanceToNextBrowser() {
 bool BrowserShortcutLauncherItemController::IsBrowserRepresentedInBrowserList(
     Browser* browser) {
   return (browser &&
+          launcher_controller()->IsBrowserFromActiveUser(browser) &&
           browser->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
           (browser->is_type_tabbed() ||
            !browser->is_app() ||

@@ -26,6 +26,7 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_value_store.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/process/process_info.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -59,7 +60,6 @@
 #include "chrome/browser/first_run/upgrade_util.h"
 #include "chrome/browser/google/google_search_counter.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/gpu/chrome_gpu_util.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/jankometer.h"
 #include "chrome/browser/language_usage_metrics.h"
@@ -85,7 +85,6 @@
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/pref_metrics_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/process_singleton.h"
@@ -314,8 +313,10 @@ base::FilePath GetStartupProfilePath(const base::FilePath& user_data_dir,
 
   // If we are showing the app list then chrome isn't shown so load the app
   // list's profile rather than chrome's.
-  if (command_line.HasSwitch(switches::kShowAppList))
-    return AppListService::Get()->GetProfilePath(user_data_dir);
+  if (command_line.HasSwitch(switches::kShowAppList)) {
+    return AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->
+        GetProfilePath(user_data_dir);
+  }
 
   return g_browser_process->profile_manager()->GetLastUsedProfileDir(
       user_data_dir);
@@ -959,7 +960,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
           master_prefs_->suppress_default_browser_prompt_for_version);
     }
 
-    AppListService::Get()->HandleFirstRun();
+    AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->HandleFirstRun();
   }
 #endif
 
@@ -1027,6 +1028,26 @@ void ChromeBrowserMainParts::PreMainMessageLoopRun() {
 
 void ChromeBrowserMainParts::PreProfileInit() {
   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreProfileInit");
+
+#if !defined(OS_ANDROID)
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+
+  // First check if any ephemeral profiles are left behind because of browser
+  // crash and schedule them for deletion and then proceed with getting the set
+  // of profiles to open.
+  ProfileInfoCache& profile_cache = profile_manager->GetProfileInfoCache();
+  size_t profiles_count = profile_cache.GetNumberOfProfiles();
+  std::vector<base::FilePath> profiles_to_delete;
+  for (size_t i = 0;i < profiles_count; ++i) {
+    if (profile_cache.ProfileIsEphemeralAtIndex(i))
+      profiles_to_delete.push_back(profile_cache.GetPathOfProfileAtIndex(i));
+  }
+  for (size_t i = 0;i < profiles_to_delete.size(); ++i) {
+    profile_manager->ScheduleProfileForDeletion(
+        profiles_to_delete[i], ProfileManager::CreateCallback());
+  }
+#endif  // OS_ANDROID
+
   for (size_t i = 0; i < chrome_extra_parts_.size(); ++i)
     chrome_extra_parts_[i]->PreProfileInit();
 }
@@ -1076,6 +1097,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // application is in the foreground or not. Do not start here.
 #if !defined(OS_ANDROID)
   // Now that the file thread has been started, start recording.
+  MetricsService::SetExecutionPhase(MetricsService::START_METRICS_RECORDING);
   StartMetricsRecording();
 #endif
 
@@ -1222,6 +1244,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // calls to GetDefaultProfile().
   ProfileManager::AllowGetDefaultProfile();
 
+  MetricsService::SetExecutionPhase(MetricsService::CREATE_PROFILE);
   profile_ = CreateProfile(parameters(), user_data_dir_, parsed_command_line());
   if (!profile_)
     return content::RESULT_CODE_NORMAL_EXIT;
@@ -1406,6 +1429,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // Start watching for hangs during startup. We disarm this hang detector when
   // ThreadWatcher takes over or when browser is shutdown or when
   // startup_watcher_ is deleted.
+  MetricsService::SetExecutionPhase(MetricsService::STARTUP_TIMEBOMB_ARM);
   startup_watcher_->Arm(base::TimeDelta::FromSeconds(300));
 
   // On mobile, need for clean shutdown arises only when the application comes
@@ -1427,6 +1451,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
 #endif
 
   // Start watching all browser threads for responsiveness.
+  MetricsService::SetExecutionPhase(MetricsService::THREAD_WATCHER_START);
   ThreadWatcherList::StartWatchingAll(parsed_command_line());
 
 #if !defined(DISABLE_NACL)
@@ -1598,6 +1623,7 @@ bool ChromeBrowserMainParts::MainMessageLoopRun(int* result_code) {
 
   performance_monitor::PerformanceMonitor::GetInstance()->StartGatherCycle();
 
+  MetricsService::SetExecutionPhase(MetricsService::MAIN_MESSAGE_LOOP_RUN);
   run_loop.Run();
 
   return true;
@@ -1614,6 +1640,7 @@ void ChromeBrowserMainParts::PostMainMessageLoopRun() {
 
   // Start watching for jank during shutdown. It gets disarmed when
   // |shutdown_watcher_| object is destructed.
+  MetricsService::SetExecutionPhase(MetricsService::SHUTDOWN_TIMEBOMB_ARM);
   shutdown_watcher_->Arm(base::TimeDelta::FromSeconds(300));
 
   // Disarm the startup hang detector time bomb if it is still Arm'ed.

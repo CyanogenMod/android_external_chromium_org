@@ -59,11 +59,11 @@ LOCAL_SRC_FILES := \
 	content/public/browser/javascript_dialog_manager.cc \
 	content/public/browser/load_from_memory_cache_details.cc \
 	content/public/browser/local_storage_usage_info.cc \
+	content/public/browser/media_device_id.cc \
 	content/public/browser/navigation_controller.cc \
 	content/public/browser/navigation_details.cc \
 	content/public/browser/notification_registrar.cc \
 	content/public/browser/page_navigator.cc \
-	content/public/browser/render_view_host_observer.cc \
 	content/public/browser/resource_dispatcher_host_delegate.cc \
 	content/public/browser/resource_request_details.cc \
 	content/public/browser/speech_recognition_session_config.cc \
@@ -116,7 +116,6 @@ LOCAL_SRC_FILES := \
 	content/browser/browser_plugin/browser_plugin_embedder.cc \
 	content/browser/browser_plugin/browser_plugin_geolocation_permission_context.cc \
 	content/browser/browser_plugin/browser_plugin_guest.cc \
-	content/browser/browser_plugin/browser_plugin_guest_helper.cc \
 	content/browser/browser_plugin/browser_plugin_guest_manager.cc \
 	content/browser/browser_plugin/browser_plugin_message_filter.cc \
 	content/browser/browser_process_sub_thread.cc \
@@ -191,6 +190,16 @@ LOCAL_SRC_FILES := \
 	content/browser/fileapi/browser_file_system_helper.cc \
 	content/browser/fileapi/chrome_blob_storage_context.cc \
 	content/browser/fileapi/fileapi_message_filter.cc \
+	content/browser/frame_host/debug_urls.cc \
+	content/browser/frame_host/frame_tree.cc \
+	content/browser/frame_host/frame_tree_node.cc \
+	content/browser/frame_host/interstitial_page_impl.cc \
+	content/browser/frame_host/navigation_controller_impl.cc \
+	content/browser/frame_host/navigation_entry_impl.cc \
+	content/browser/frame_host/render_frame_host_impl.cc \
+	content/browser/frame_host/render_frame_message_filter.cc \
+	content/browser/frame_host/render_view_host_manager.cc \
+	content/browser/frame_host/web_contents_screenshot_manager.cc \
 	content/browser/gamepad/gamepad_provider.cc \
 	content/browser/gamepad/gamepad_service.cc \
 	content/browser/geolocation/empty_wifi_data_provider.cc \
@@ -243,7 +252,6 @@ LOCAL_SRC_FILES := \
 	content/browser/loader/offline_policy.cc \
 	content/browser/loader/power_save_block_resource_throttle.cc \
 	content/browser/loader/redirect_to_file_resource_handler.cc \
-	content/browser/loader/render_view_host_tracker.cc \
 	content/browser/loader/resource_buffer.cc \
 	content/browser/loader/resource_dispatcher_host_impl.cc \
 	content/browser/loader/resource_handler.cc \
@@ -293,17 +301,19 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/clipboard_message_filter.cc \
 	content/browser/renderer_host/compositor_impl_android.cc \
 	content/browser/renderer_host/database_message_filter.cc \
+	content/browser/renderer_host/delegated_frame_evictor.cc \
 	content/browser/renderer_host/dip_util.cc \
 	content/browser/renderer_host/file_utilities_message_filter.cc \
-	content/browser/renderer_host/frame_memory_manager.cc \
-	content/browser/renderer_host/frame_tree.cc \
-	content/browser/renderer_host/frame_tree_node.cc \
 	content/browser/renderer_host/gamepad_browser_message_filter.cc \
 	content/browser/renderer_host/gpu_message_filter.cc \
 	content/browser/renderer_host/image_transport_factory_android.cc \
 	content/browser/renderer_host/ime_adapter_android.cc \
 	content/browser/renderer_host/input/gesture_event_filter.cc \
 	content/browser/renderer_host/input/immediate_input_router.cc \
+	content/browser/renderer_host/input/synthetic_gesture_controller_new.cc \
+	content/browser/renderer_host/input/synthetic_gesture_new.cc \
+	content/browser/renderer_host/input/synthetic_smooth_scroll_gesture_new.cc \
+	content/browser/renderer_host/input/synthetic_web_input_event_builders.cc \
 	content/browser/renderer_host/input/touch_event_queue.cc \
 	content/browser/renderer_host/input/touchpad_tap_suppression_controller.cc \
 	content/browser/renderer_host/input/touchscreen_tap_suppression_controller_stub.cc \
@@ -343,8 +353,6 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/native_web_keyboard_event_android.cc \
 	content/browser/renderer_host/overscroll_configuration.cc \
 	content/browser/renderer_host/overscroll_controller.cc \
-	content/browser/renderer_host/render_frame_host_impl.cc \
-	content/browser/renderer_host/render_frame_message_filter.cc \
 	content/browser/renderer_host/render_message_filter.cc \
 	content/browser/renderer_host/render_process_host_impl.cc \
 	content/browser/renderer_host/render_view_host_delegate.cc \
@@ -356,6 +364,8 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/render_widget_host_view_android.cc \
 	content/browser/renderer_host/render_widget_host_view_base.cc \
 	content/browser/renderer_host/render_widget_host_view_guest.cc \
+	content/browser/renderer_host/renderer_frame_manager.cc \
+	content/browser/renderer_host/software_frame_manager.cc \
 	content/browser/renderer_host/synthetic_gesture_calculator.cc \
 	content/browser/renderer_host/synthetic_gesture_controller.cc \
 	content/browser/renderer_host/socket_stream_dispatcher_host.cc \
@@ -392,13 +402,7 @@ LOCAL_SRC_FILES := \
 	content/browser/tracing/tracing_controller_impl.cc \
 	content/browser/user_metrics.cc \
 	content/browser/utility_process_host_impl.cc \
-	content/browser/web_contents/debug_urls.cc \
-	content/browser/web_contents/interstitial_page_impl.cc \
-	content/browser/web_contents/navigation_controller_impl.cc \
-	content/browser/web_contents/navigation_entry_impl.cc \
-	content/browser/web_contents/render_view_host_manager.cc \
 	content/browser/web_contents/web_contents_impl.cc \
-	content/browser/web_contents/web_contents_screenshot_manager.cc \
 	content/browser/web_contents/web_contents_view_android.cc \
 	content/browser/web_contents/web_contents_view_guest.cc \
 	content/browser/webui/content_web_ui_controller_factory.cc \
@@ -459,13 +463,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -591,13 +595,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

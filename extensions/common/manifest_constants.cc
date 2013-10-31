@@ -111,6 +111,8 @@ const char kRunAt[] = "run_at";
 const char kSandboxedPages[] = "sandbox.pages";
 const char kSandboxedPagesCSP[] = "sandbox.content_security_policy";
 const char kScriptBadge[] = "script_badge";
+const char kSearchProvider[] = "chrome_settings_overrides.search_provider";
+const char kSettingsOverride[] = "chrome_settings_overrides";
 const char kShiftKey[] = "shiftKey";
 const char kShortcutKey[] = "shortcutKey";
 const char kShortName[] = "short_name";
@@ -149,7 +151,6 @@ const char kUrlHandlers[] = "url_handlers";
 const char kUrlHandlerTitle[] = "title";
 const char kVersion[] = "version";
 const char kWebAccessibleResources[] = "web_accessible_resources";
-const char kWebRtc[] = "webrtc";
 const char kWebURLs[] = "app.urls";
 const char kWebview[] = "webview";
 const char kWebviewAccessibleResources[] = "accessible_resources";
@@ -337,6 +338,8 @@ const char kInvalidGlob[] =
     "Invalid value for 'content_scripts[*].*[*]'.";
 const char kInvalidGlobList[] =
     "Invalid value for 'content_scripts[*].*'.";
+const char kInvalidHomepageOverrideURL[] =
+    "Invalid value for overriding homepage url: '[*]'.";
 const char kInvalidHomepageURL[] =
     "Invalid value for homepage url: '[*]'.";
 const char kInvalidIconPath[] =
@@ -528,6 +531,8 @@ const char kInvalidSandboxedPagesCSP[] =
     "Invalid value for 'sandbox.content_security_policy'.";
 const char kInvalidScriptBadge[] =
     "Invalid value for 'script_badge'.";
+const char kInvalidEmptySettingsOverrides[] =
+    "Empty dictionary for 'chrome_settings_overrides'.";
 const char kInvalidShortName[] =
     "Invalid value for 'short_name'.";
 const char kInvalidSignature[] =
@@ -542,6 +547,8 @@ const char kInvalidSpellcheckDictionaryLocale[] =
     "Invalid value for spellcheck dictionary locale.";
 const char kInvalidSpellcheckDictionaryPath[] =
     "Invalid value for spellcheck dictionary path.";
+const char kInvalidStartupOverrideURL[] =
+    "Invalid value for overriding startup URL: '[*]'.";
 const char kInvalidSystemIndicator[] =
     "Invalid value for 'system_indicator'.";
 const char kInvalidTheme[] =

@@ -13,6 +13,7 @@
 #include "chrome/common/ntp_logging_events.h"
 #include "chrome/common/omnibox_focus_state.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "ui/base/window_open_disposition.h"
 
 class GURL;
 
@@ -41,6 +42,14 @@ class SearchIPCRouter : public content::WebContentsObserver {
     // the omnibox focus state.
     virtual void FocusOmnibox(OmniboxFocusState state) = 0;
 
+    // Called when the page wants to navigate to |url|. Usually used by the
+    // page to navigate to privileged destinations (e.g. chrome:// URLs) or to
+    // navigate to URLs that are hidden from the page using Restricted IDs (rid
+    // in the API).
+    virtual void NavigateToURL(const GURL& url,
+                               WindowOpenDisposition disposition,
+                               bool is_most_visited_item_url) = 0;
+
     // Called when the SearchBox wants to delete a Most Visited item.
     virtual void OnDeleteMostVisitedItem(const GURL& url) = 0;
 
@@ -52,6 +61,10 @@ class SearchIPCRouter : public content::WebContentsObserver {
 
     // Called to signal that an event has occurred on the New Tab Page.
     virtual void OnLogEvent(NTPLoggingEventType event) = 0;
+
+    // Called when the page wants to paste the |text| (or the clipboard contents
+    // if the |text| is empty) into the omnibox.
+    virtual void PasteIntoOmnibox(const string16& text) = 0;
   };
 
   // An interface to be implemented by consumers of SearchIPCRouter objects to
@@ -64,11 +77,13 @@ class SearchIPCRouter : public content::WebContentsObserver {
     // SearchIPCRouter calls these functions before sending/receiving messages
     // to/from the page.
     virtual bool ShouldProcessSetVoiceSearchSupport() = 0;
-    virtual bool ShouldProcessFocusOmnibox() = 0;
+    virtual bool ShouldProcessFocusOmnibox(bool is_active_tab) = 0;
+    virtual bool ShouldProcessNavigateToURL(bool is_active_tab) = 0;
     virtual bool ShouldProcessDeleteMostVisitedItem() = 0;
     virtual bool ShouldProcessUndoMostVisitedDeletion() = 0;
     virtual bool ShouldProcessUndoAllMostVisitedDeletions() = 0;
     virtual bool ShouldProcessLogEvent() = 0;
+    virtual bool ShouldProcessPasteIntoOmnibox(bool is_active_tab) = 0;
     virtual bool ShouldSendSetPromoInformation() = 0;
     virtual bool ShouldSendSetDisplayInstantResults() = 0;
     virtual bool ShouldSendSetSuggestionToPrefetch() = 0;
@@ -104,6 +119,12 @@ class SearchIPCRouter : public content::WebContentsObserver {
   // Tells the page that the user pressed Enter in the omnibox.
   void Submit(const string16& text);
 
+  // Called when the tab corresponding to |this| instance is activated.
+  void OnTabActivated();
+
+  // Called when the tab corresponding to |this| instance is deactivated.
+  void OnTabDeactivated();
+
  private:
   friend class SearchIPCRouterTest;
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperTest,
@@ -136,6 +157,7 @@ class SearchIPCRouter : public content::WebContentsObserver {
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest, SendSetPromoInformation);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            DoNotSendSetPromoInformation);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest, ProcessNavigateToURL);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            ProcessDeleteMostVisitedItem);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
@@ -143,16 +165,25 @@ class SearchIPCRouter : public content::WebContentsObserver {
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            ProcessUndoAllMostVisitedDeletions);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           ProcessPasteIntoOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           DoNotProcessPasteIntoOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            DoNotProcessMessagesForIncognitoPage);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           DoNotProcessMessagesForInactiveTab);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessVoiceSearchSupportMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreVoiceSearchSupportMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessFocusOmniboxMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreFocusOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, HandleTabChangedEvents);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, SendSetPromoInformationMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            DoNotSendSetPromoInformationMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessLogEventMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreLogEventMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessNavigateToURLMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreNavigateToURLMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            ProcessDeleteMostVisitedItemMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
@@ -167,6 +198,8 @@ class SearchIPCRouter : public content::WebContentsObserver {
                            IgnoreUndoAllMostVisitedDeletionsMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            IgnoreMessageIfThePageIsNotActive);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessPasteAndOpenDropdownMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnorePasteAndOpenDropdownMsg);
 
   // Overridden from contents::WebContentsObserver:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -175,10 +208,15 @@ class SearchIPCRouter : public content::WebContentsObserver {
   void OnVoiceSearchSupportDetermined(int page_id,
                                       bool supports_voice_search) const;
   void OnFocusOmnibox(int page_id, OmniboxFocusState state) const;
+  void OnSearchBoxNavigate(int page_id,
+                           const GURL& url,
+                           WindowOpenDisposition disposition,
+                           bool is_most_visited_item_url) const;
   void OnDeleteMostVisitedItem(int page_id, const GURL& url) const;
   void OnUndoMostVisitedDeletion(int page_id, const GURL& url) const;
   void OnUndoAllMostVisitedDeletions(int page_id) const;
   void OnLogEvent(int page_id, NTPLoggingEventType event) const;
+  void OnPasteAndOpenDropDown(int page_id, const string16& text) const;
 
   // Used by unit tests to set a fake delegate.
   void set_delegate(Delegate* delegate);
@@ -191,6 +229,9 @@ class SearchIPCRouter : public content::WebContentsObserver {
 
   Delegate* delegate_;
   scoped_ptr<Policy> policy_;
+
+  // Set to true, when the tab corresponding to |this| instance is active.
+  bool is_active_tab_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchIPCRouter);
 };

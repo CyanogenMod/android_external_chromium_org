@@ -6,8 +6,8 @@ import logging
 import socket
 import sys
 
-from telemetry.core import util
 from telemetry.core import exceptions
+from telemetry.core import util
 from telemetry.core.backends import png_bitmap
 from telemetry.core.backends.chrome import inspector_console
 from telemetry.core.backends.chrome import inspector_memory
@@ -86,18 +86,6 @@ class InspectorBackend(object):
     self._browser_backend.tab_list_backend.CloseTab(self._debugger_url)
 
   # Public methods implemented in JavaScript.
-
-  def WaitForDocumentReadyStateToBeComplete(self, timeout):
-    util.WaitFor(
-        lambda: self._runtime.Evaluate('document.readyState') == 'complete',
-        timeout)
-
-  def WaitForDocumentReadyStateToBeInteractiveOrBetter(
-      self, timeout):
-    def IsReadyStateInteractiveOrBetter():
-      rs = self._runtime.Evaluate('document.readyState')
-      return rs == 'complete' or rs == 'interactive'
-    util.WaitFor(IsReadyStateInteractiveOrBetter, timeout)
 
   @property
   def screenshot_supported(self):

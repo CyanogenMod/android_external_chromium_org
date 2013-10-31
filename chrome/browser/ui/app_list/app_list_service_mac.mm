@@ -14,14 +14,15 @@
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
+#include "chrome/browser/ui/app_list/app_list_controller_delegate_impl.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_service_impl.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -78,31 +79,6 @@ const NSTimeInterval kAnimationDuration = 0.2;
 
 // Distance towards the screen edge that the app list moves from when showing.
 const CGFloat kDistanceMovedOnShow = 20;
-
-class AppListControllerDelegateCocoa : public AppListControllerDelegate {
- public:
-  AppListControllerDelegateCocoa();
-  virtual ~AppListControllerDelegateCocoa();
-
- private:
-  // AppListControllerDelegate overrides:
-  virtual void DismissView() OVERRIDE;
-  virtual gfx::NativeWindow GetAppListWindow() OVERRIDE;
-  virtual Pinnable GetPinnable() OVERRIDE;
-  virtual void CreateNewWindow(Profile* profile, bool incognito) OVERRIDE;
-  virtual void ActivateApp(Profile* profile,
-                           const extensions::Extension* extension,
-                           AppListSource source,
-                           int event_flags) OVERRIDE;
-  virtual void LaunchApp(Profile* profile,
-                         const extensions::Extension* extension,
-                         AppListSource source,
-                         int event_flags) OVERRIDE;
-  virtual void ShowForProfileByPath(
-      const base::FilePath& profile_path) OVERRIDE;
-
-  DISALLOW_COPY_AND_ASSIGN(AppListControllerDelegateCocoa);
-};
 
 ShellIntegration::ShortcutInfo GetAppListShortcutInfo(
     const base::FilePath& profile_path) {
@@ -194,67 +170,6 @@ NSRunningApplication* ActiveApplicationNotChrome() {
   }
 
   return nil;
-}
-
-AppListControllerDelegateCocoa::AppListControllerDelegateCocoa() {}
-
-AppListControllerDelegateCocoa::~AppListControllerDelegateCocoa() {}
-
-void AppListControllerDelegateCocoa::DismissView() {
-  AppListServiceMac::GetInstance()->DismissAppList();
-}
-
-gfx::NativeWindow AppListControllerDelegateCocoa::GetAppListWindow() {
-  return AppListServiceMac::GetInstance()->GetAppListWindow();
-}
-
-AppListControllerDelegate::Pinnable
-    AppListControllerDelegateCocoa::GetPinnable() {
-  return NO_PIN;
-}
-
-void AppListControllerDelegateCocoa::CreateNewWindow(
-    Profile* profile, bool incognito) {
-  Profile* window_profile = incognito ?
-      profile->GetOffTheRecordProfile() : profile;
-  chrome::NewEmptyWindow(window_profile, chrome::GetActiveDesktop());
-}
-
-void AppListControllerDelegateCocoa::ActivateApp(
-    Profile* profile,
-    const extensions::Extension* extension,
-    AppListSource source,
-    int event_flags) {
-  LaunchApp(profile, extension, source, event_flags);
-}
-
-void AppListControllerDelegateCocoa::LaunchApp(
-    Profile* profile,
-    const extensions::Extension* extension,
-    AppListSource source,
-    int event_flags) {
-  AppListServiceImpl::RecordAppListAppLaunch();
-
-  AppLaunchParams params(profile, extension, NEW_FOREGROUND_TAB);
-
-  if (source != LAUNCH_FROM_UNKNOWN &&
-      extension->id() == extension_misc::kWebStoreAppId) {
-    // Set an override URL to include the source.
-    GURL extension_url = extensions::AppLaunchInfo::GetFullLaunchURL(extension);
-    params.override_url = net::AppendQueryParameter(
-        extension_url,
-        extension_urls::kWebstoreSourceField,
-        AppListSourceToString(source));
-  }
-
-  OpenApplication(params);
-}
-
-void AppListControllerDelegateCocoa::ShowForProfileByPath(
-    const base::FilePath& profile_path) {
-  AppListService* service = AppListServiceMac::GetInstance();
-  service->SetProfilePath(profile_path);
-  service->Show();
 }
 
 enum DockLocation {
@@ -376,7 +291,8 @@ void GetAppListWindowOrigins(
 
 }  // namespace
 
-AppListServiceMac::AppListServiceMac() {
+AppListServiceMac::AppListServiceMac()
+    : profile_(NULL) {
   animation_controller_.reset([[AppListAnimationController alloc] init]);
 }
 
@@ -418,11 +334,15 @@ void AppListServiceMac::Init(Profile* initial_profile) {
                                         AppListServiceMac::GetInstance());
 }
 
+Profile* AppListServiceMac::GetCurrentAppListProfile() {
+  return profile_;
+}
+
 void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
-  if (profile() == requested_profile)
+  if (profile_ == requested_profile)
     return;
 
-  SetProfile(requested_profile);
+  profile_ = requested_profile;
 
   if (window_controller_) {
     // Clear the search box.
@@ -435,7 +355,7 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
   scoped_ptr<app_list::AppListViewDelegate> delegate(
       new AppListViewDelegate(
           scoped_ptr<AppListControllerDelegate>(
-              new AppListControllerDelegateCocoa()), profile()));
+              new AppListControllerDelegateImpl(this)), profile_));
   [[window_controller_ appListViewController] setDelegate:delegate.Pass()];
 }
 
@@ -445,7 +365,7 @@ void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
 
   InvalidatePendingProfileLoads();
 
-  if (requested_profile == profile()) {
+  if (requested_profile == profile_) {
     ShowWindowNearDock();
     return;
   }
@@ -495,7 +415,7 @@ NSWindow* AppListServiceMac::GetAppListWindow() {
 }
 
 AppListControllerDelegate* AppListServiceMac::CreateControllerDelegate() {
-  return new AppListControllerDelegateCocoa();
+  return new AppListControllerDelegateImpl(this);
 }
 
 void AppListServiceMac::OnShimLaunch(apps::AppShimHandler::Host* host,
@@ -544,13 +464,13 @@ void AppListServiceMac::ShowWindowNearDock() {
 }
 
 // static
-AppListService* AppListService::Get() {
+AppListService* AppListService::Get(chrome::HostDesktopType desktop_type) {
   return AppListServiceMac::GetInstance();
 }
 
 // static
 void AppListService::InitAll(Profile* initial_profile) {
-  Get()->Init(initial_profile);
+  AppListServiceMac::GetInstance()->Init(initial_profile);
 }
 
 @implementation AppListAnimationController

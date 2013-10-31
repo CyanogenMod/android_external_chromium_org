@@ -33,7 +33,7 @@ const CGFloat kMinimumContentsHeight = 101;
 
 // Height of all decorations & paddings on main dialog together.
 const CGFloat kDecorationHeight = kAccountChooserHeight +
-                                  autofill::kDetailTopPadding +
+                                  autofill::kDetailVerticalPadding +
                                   chrome_style::kClientBottomPadding +
                                   chrome_style::kTitleTopPadding;
 
@@ -131,7 +131,7 @@ void AutofillDialogCocoa::GetUserInput(DialogSection section,
 }
 
 string16 AutofillDialogCocoa::GetCvc() {
-  return string16();
+  return base::SysNSStringToUTF16([sheet_delegate_ getCvc]);
 }
 
 bool AutofillDialogCocoa::HitTestInput(const DetailInput& input,
@@ -210,6 +210,10 @@ void AutofillDialogCocoa::ActivateInput(const DetailInput& input) {
 
 gfx::Size AutofillDialogCocoa::GetSize() const {
   return gfx::Size(NSSizeToCGSize([[sheet_delegate_ window] frame].size));
+}
+
+content::WebContents* AutofillDialogCocoa::GetSignInWebContents() {
+  return [sheet_delegate_ getSignInWebContents];
 }
 
 void AutofillDialogCocoa::OnConstrainedWindowClosed(
@@ -393,7 +397,7 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
   NSSize contentSize;
 
   // Overall size is determined by either main container or sign in view.
-  if (![[mainContainer_ view] isHidden])
+  if ([[signInContainer_ view] isHidden])
     contentSize = [mainContainer_ preferredSize];
   else
     contentSize = [signInContainer_ preferredSize];
@@ -413,7 +417,8 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     // equivalent to the height of the header. Clarify with UX what the final
     // padding will be.
     if (height != 0.0) {
-      size.height = height + headerSize.height + autofill::kDetailTopPadding;
+      size.height =
+          height + headerSize.height + autofill::kDetailVerticalPadding;
     }
   }
 
@@ -436,7 +441,7 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
   NSDivideRect(clientRect, &headerRect, &mainRect,
                kAccountChooserHeight, NSMinYEdge);
   NSDivideRect(mainRect, &dummyRect, &mainRect,
-               autofill::kDetailTopPadding, NSMinYEdge);
+               autofill::kDetailVerticalPadding, NSMinYEdge);
   headerRect = NSInsetRect(
       headerRect, chrome_style::kHorizontalPadding, 0);
   NSDivideRect(headerRect, &titleRect, &headerRect,
@@ -473,6 +478,7 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 
   NSRect frameRect = [[self window] frameRectForContentRect:contentRect];
   [[self window] setFrame:frameRect display:YES];
+  [[self window] recalculateKeyViewLoop];
 }
 
 - (IBAction)accept:(id)sender {
@@ -523,18 +529,15 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     NSView* loadingShieldView = [loadingShieldTextField_ superview];
     [loadingShieldTextField_ setStringValue:newLoadingMessage];
     [loadingShieldTextField_ sizeToFit];
-    [loadingShieldView setHidden:[newLoadingMessage length] == 0];
 
-    // For the duration of the loading shield, it becomes first responder.
+    BOOL showShield = ([newLoadingMessage length] != 0);
+
+    // For the duration of the loading shield, hide the main contents.
     // This prevents the currently focused text field "shining through".
-    if (![loadingShieldView isHidden]) {
-      [loadingShieldView setNextResponder:
-          [[loadingShieldView window] firstResponder]];
-      [[loadingShieldView window] makeFirstResponder:loadingShieldView];
-    } else {
-      [[loadingShieldView window] makeFirstResponder:
-          [loadingShieldView nextResponder]];
-    }
+    // No need to remember previous state, because the loading shield
+    // always flows through to the main container.
+    [[mainContainer_ view] setHidden:showShield];
+    [loadingShieldView setHidden:!showShield];
     [self requestRelayout];
   }
 }
@@ -567,6 +570,16 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
 - (void)getInputs:(autofill::DetailOutputMap*)output
        forSection:(autofill::DialogSection)section {
   [[mainContainer_ sectionForId:section] getInputs:output];
+}
+
+- (NSString*)getCvc {
+  autofill::DialogSection section = autofill::SECTION_CC;
+  NSString* value = [[mainContainer_ sectionForId:section] suggestionText];
+  if (!value) {
+    section = autofill::SECTION_CC_BILLING;
+    value = [[mainContainer_ sectionForId:section] suggestionText];
+  }
+  return value;
 }
 
 - (BOOL)saveDetailsLocally {
@@ -616,6 +629,10 @@ void AutofillDialogCocoa::OnConstrainedWindowClosed(
     autofill::DialogSection section = static_cast<autofill::DialogSection>(i);
     [[mainContainer_ sectionForId:section] activateFieldForInput:input];
   }
+}
+
+- (content::WebContents*)getSignInWebContents {
+  return [signInContainer_ webContents];
 }
 
 @end

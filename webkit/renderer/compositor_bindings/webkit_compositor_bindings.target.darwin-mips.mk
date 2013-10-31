@@ -14,8 +14,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,gpu_gpu_gyp)/gpu.stamp \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
-	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
+	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_gyp)/blink.stamp
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -85,13 +84,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -105,7 +104,6 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -197,13 +195,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -217,7 +215,6 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DU_USING_ICU_NAMESPACE=0' \
-	'-DPOSIX_AVOID_MMAP' \
 	'-D__STDC_CONSTANT_MACROS' \
 	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
@@ -316,8 +313,7 @@ LOCAL_LDFLAGS_Release := \
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
-	skia_skia_library_gyp \
-	ui_ui_gyp
+	skia_skia_library_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

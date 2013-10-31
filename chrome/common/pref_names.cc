@@ -256,8 +256,6 @@ const char kWebKitAllowRunningInsecureContent[] =
     "webkit.webprefs.allow_running_insecure_content";
 #if defined(OS_ANDROID)
 const char kWebKitFontScaleFactor[] = "webkit.webprefs.font_scale_factor";
-const char kWebKitFontScaleFactorQuirk[] =
-    "webkit.webprefs.font_scale_factor_quirk";
 const char kWebKitForceEnableZoom[] = "webkit.webprefs.force_enable_zoom";
 const char kWebKitPasswordEchoEnabled[] =
     "webkit.webprefs.password_echo_enabled";
@@ -637,7 +635,7 @@ const char kLanguagePreloadEngines[] = "settings.language.preload_engines";
 const char kLanguageEnabledExtensionImes[] =
     "settings.language.enabled_extension_imes";
 
-// A integer prefs which determine how we remap modifier keys (e.g. swap Alt and
+// Integer prefs which determine how we remap modifier keys (e.g. swap Alt and
 // Control.) Possible values for these prefs are 0-4. See ModifierKey enum in
 // src/chrome/browser/chromeos/input_method/xkeyboard.h
 const char kLanguageRemapSearchKeyTo[] =
@@ -652,6 +650,11 @@ const char kLanguageRemapCapsLockKeyTo[] =
     "settings.language.remap_caps_lock_key_to";
 const char kLanguageRemapDiamondKeyTo[] =
     "settings.language.remap_diamond_key_to";
+
+// A boolean pref that causes top-row keys to be interpreted as function keys
+// instead of as media keys.
+const char kLanguageSendFunctionKeys[] =
+    "settings.language.send_function_keys";
 
 // A boolean pref which determines whether key repeat is enabled.
 const char kLanguageXkbAutoRepeatEnabled[] =
@@ -729,10 +732,17 @@ const char kDisplayProperties[] = "settings.display.properties";
 // layout/offset information.
 const char kSecondaryDisplays[] = "settings.display.secondary_displays";
 
-// A preference to keep track of the session start time. The value is set
-// after login. When the browser restarts after a crash, the pref value is not
-// changed unless it appears corrupted (value unset, value lying in the future,
-// zero value).
+// A boolean pref indicating whether user activity has been observed in the
+// current session already. The pref is used to restore information about user
+// activity after browser crashes.
+const char kSessionUserActivitySeen[] = "session.user_activity_seen";
+
+// A preference to keep track of the session start time. If the session length
+// limit is configured to start running after initial user activity has been
+// observed, the pref is set after the first user activity in a session.
+// Otherwise, it is set immediately after session start. The pref is used to
+// restore the session start time after browser crashes. The time is expressed
+// as the serialization obtained from base::TimeTicks::ToInternalValue().
 const char kSessionStartTime[] = "session.start_time";
 
 // Holds the maximum session time in milliseconds. If this pref is set, the
@@ -740,6 +750,11 @@ const char kSessionStartTime[] = "session.start_time";
 // informed about the remaining time by a countdown timer shown in the ash
 // system tray.
 const char kSessionLengthLimit[] = "session.length_limit";
+
+// Whether the session length limit should start running only after the first
+// user activity has been observed in a session.
+const char kSessionWaitForInitialUserActivity[] =
+    "session.wait_for_initial_user_activity";
 
 // Inactivity time in milliseconds while the system is on AC power before
 // the screen should be dimmed, turned off, or locked, before an
@@ -792,6 +807,11 @@ const char kPowerPresentationScreenDimDelayFactor[] =
 // off.  Values are limited to a minimum of 1.0.
 const char kPowerUserActivityScreenDimDelayFactor[] =
     "power.user_activity_screen_dim_delay_factor";
+
+// Whether the power management delays should start running only after the first
+// user activity has been observed in a session.
+const char kPowerWaitForInitialUserActivity[] =
+    "power.wait_for_initial_user_activity";
 
 // The URL from which the Terms of Service can be downloaded. The value is only
 // honored for public accounts.
@@ -1208,10 +1228,6 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 extern const char kMessageCenterEnabledSyncNotifierIds[] =
     "message_center.enabled_sync_notifier_ids";
 
-// Boolean pref indicating the welcome notification was dismissed by the user.
-extern const char kWelcomeNotificationDismissed[] =
-    "message_center.welcome_notification_dismissed";
-
 // List pref containing synced notification sending services that are currently
 // enabled.
 extern const char kEnabledSyncedNotificationSendingServices[] =
@@ -1226,6 +1242,14 @@ extern const char kInitializedSyncedNotificationSendingServices[] =
 // Notification feature.
 extern const char kSyncedNotificationFirstRun[] =
     "synced_notification.first_run";
+
+// Boolean pref indicating the welcome notification was dismissed by the user.
+extern const char kWelcomeNotificationDismissed[] =
+    "message_center.welcome_notification_dismissed";
+
+// Boolean pref indicating the welcome notification was previously popped up.
+extern const char kWelcomeNotificationPreviouslyPoppedUp[] =
+    "message_center.welcome_notification_previously_popped_up";
 
 // Dictionary pref that keeps track of per-extension settings. The keys are
 // extension ids.
@@ -1355,6 +1379,10 @@ const char kVariationsSeedDate[] = "variations_seed_date";
 
 // SHA-1 hash of the serialized variations seed data.
 const char kVariationsSeedHash[] = "variations_seed_hash";
+
+// An enum value to indicate the execution phase the browser was in.
+const char kStabilityExecutionPhase[] =
+    "user_experience_metrics.stability.execution_phase";
 
 // True if the previous run of the program exited cleanly.
 const char kStabilityExitedCleanly[] =
@@ -1863,6 +1891,10 @@ const char kGoogleServicesUsername[] = "google.services.username";
 const char kGoogleServicesUsernamePattern[] =
     "google.services.username_pattern";
 
+// Local hash of authentication password, used for off-line authentication
+// when on-line authentication is not available.
+const char kGoogleServicesPasswordHash[] = "google.services.password_hash";
+
 #if !defined(OS_ANDROID)
 // Tracks the number of times that we have shown the sign in promo at startup.
 const char kSignInPromoStartupCount[] = "sync_promo.startup_count";
@@ -2057,6 +2089,11 @@ const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 // A boolean pref that controls the enabled-state of hotword search voice
 // trigger.
 const char kHotwordSearchEnabled[] = "hotword.search_enabled";
+
+// A boolean pref that controls the enabled-state of hotword search voice
+// trigger when using incognito mode.
+const char kHotwordSearchIncognitoEnabled[] =
+    "hotword.incognito_search_enabled";
 
 #if defined(OS_ANDROID)
 // Boolean that controls the global enabled-state of protected media identifier.
@@ -2373,12 +2410,6 @@ const char kShowLogoutButtonInTray[] = "show_logout_button_in_tray";
 // its value is a dictionary whose keys are kShelfAlignment and
 // kShelfAutoHideBehavior.
 const char kShelfPreferences[] = "shelf_preferences";
-
-// Tuning for immersive fullscreen.
-const char kImmersiveModeRevealDelayMs[] =
-    "immersive_mode.reveal_delay_ms";
-const char kImmersiveModeRevealXThresholdPixels[] =
-    "immersive_mode.reveal_x_threshold_pixels";
 #endif
 
 #if defined(USE_AURA)
@@ -2426,6 +2457,8 @@ const char kScrollPredictionSeconds[] =
     "gesture.scroll_prediction_seconds";
 const char kSemiLongPressTimeInSeconds[] =
     "gesture.semi_long_press_time_in_seconds";
+const char kShowPressDelayInMS[] =
+    "gesture.show_press_delay_in_ms";
 const char kTabScrubActivationDelayInMS[] =
     "gesture.tab_scrub_activation_delay_in_ms";
 const char kFlingAccelerationCurveCoefficient0[] =

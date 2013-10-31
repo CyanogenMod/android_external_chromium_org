@@ -508,8 +508,10 @@
         <structure type="chrome_scaled_image" name="IDR_NEWTAB_CHROME_WELCOME_PAGE_THUMBNAIL" file="common/ntp_welcome_thumb.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_NEWTAB_WEBSTORE_THUMBNAIL" file="ntp_webstore_thumb.png" />
+      <if expr="pp_ifdef('use_ash')">
+        <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_ALERT" file="common/notification_alert.png" />
+      </if>
       <if expr="pp_ifdef('chromeos')">
-        <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_ALERT" file="cros/notification_alert.png" />
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_PERIPHERAL_BATTERY_LOW" file="cros/notification_peripheral_battery_low.png" />
       </if>
       <if expr="is_win or is_linux">
@@ -519,6 +521,7 @@
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_TRAY_EMPTY" file="common/notification_tray_empty.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_WELCOME_ICON" file="common/notification_welcome_icon.png" />
+      <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_WELCOME_LEARN_MORE" file="common/notification_welcome_learn_more.png" />
       <structure type="chrome_scaled_image" name="IDR_OMNIBOX_BORDER_BOTTOM" file="common/omnibox_border_bottom.png" />
       <structure type="chrome_scaled_image" name="IDR_OMNIBOX_BORDER_BOTTOM_LEFT" file="common/omnibox_border_bottom_left.png" />
       <structure type="chrome_scaled_image" name="IDR_OMNIBOX_BORDER_BOTTOM_RIGHT" file="common/omnibox_border_bottom_right.png" />
@@ -1033,6 +1036,7 @@
       <structure type="chrome_scaled_image" name="IDR_TOOLS_BAR_LOW" file="common/browser_tools_bar_low.png" />
       <structure type="chrome_scaled_image" name="IDR_TOOLS_BAR_MEDIUM" file="common/browser_tools_bar_medium.png" />
       <structure type="chrome_scaled_image" name="IDR_TOOLS_BAR_HIGH" file="common/browser_tools_bar_high.png" />
+      <structure type="chrome_scaled_image" name="IDR_TRANSLATE" file="translate.png" />
       <structure type="chrome_scaled_image" name="IDR_UP_ARROW" file="common/up_arrow.png" />
       <if expr="not is_macosx and not is_ios and not pp_ifdef('toolkit_views')">
         <structure type="chrome_scaled_image" name="IDR_UPDATE_BADGE" file="update_badge.png" />

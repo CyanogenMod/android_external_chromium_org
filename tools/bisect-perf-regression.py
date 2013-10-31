@@ -69,13 +69,15 @@ DEPOT_DEPS_NAME = {
     "src" : "src/",
     "recurse" : True,
     "depends" : None,
-    "from" : 'cros'
+    "from" : 'cros',
+    'viewvc': 'http://src.chromium.org/viewvc/chrome?view=revision&revision='
   },
   'webkit' : {
     "src" : "src/third_party/WebKit",
     "recurse" : True,
     "depends" : None,
-    "from" : 'chromium'
+    "from" : 'chromium',
+    'viewvc': 'http://src.chromium.org/viewvc/blink?view=revision&revision='
   },
   'angle' : {
     "src" : "src/third_party/angle_dx11",
@@ -90,7 +92,8 @@ DEPOT_DEPS_NAME = {
     "recurse" : True,
     "depends" : None,
     "from" : 'chromium',
-    "custom_deps": bisect_utils.GCLIENT_CUSTOM_DEPS_V8
+    "custom_deps": bisect_utils.GCLIENT_CUSTOM_DEPS_V8,
+    'viewvc': 'https://code.google.com/p/v8/source/detail?r=',
   },
   'v8_bleeding_edge' : {
     "src" : "src/v8_bleeding_edge",
@@ -98,27 +101,31 @@ DEPOT_DEPS_NAME = {
     "depends" : None,
     "svn": "https://v8.googlecode.com/svn/branches/bleeding_edge",
     "from" : 'v8',
+    'viewvc': 'https://code.google.com/p/v8/source/detail?r=',
   },
   'skia/src' : {
     "src" : "src/third_party/skia/src",
     "recurse" : True,
     "svn" : "http://skia.googlecode.com/svn/trunk/src",
     "depends" : ['skia/include', 'skia/gyp'],
-    "from" : 'chromium'
+    "from" : 'chromium',
+    'viewvc': 'https://code.google.com/p/skia/source/detail?r=',
   },
   'skia/include' : {
     "src" : "src/third_party/skia/include",
     "recurse" : False,
     "svn" : "http://skia.googlecode.com/svn/trunk/include",
     "depends" : None,
-    "from" : 'chromium'
+    "from" : 'chromium',
+    'viewvc': 'https://code.google.com/p/skia/source/detail?r=',
   },
   'skia/gyp' : {
     "src" : "src/third_party/skia/gyp",
     "recurse" : False,
     "svn" : "http://skia.googlecode.com/svn/trunk/gyp",
     "depends" : None,
-    "from" : 'chromium'
+    "from" : 'chromium',
+    'viewvc': 'https://code.google.com/p/skia/source/detail?r=',
   }
 }
 
@@ -826,12 +833,13 @@ class GitSourceControl(SourceControl):
         'email': %s,
         'date': %s,
         'subject': %s,
+        'body': %s,
       }
     """
     commit_info = {}
 
-    formats = ['%cN', '%cE', '%s', '%cD']
-    targets = ['author', 'email', 'subject', 'date']
+    formats = ['%cN', '%cE', '%s', '%cD', '%b']
+    targets = ['author', 'email', 'subject', 'date', 'body']
 
     for i in xrange(len(formats)):
       cmd = ['log', '--format=%s' % formats[i], '-1', revision]
@@ -1263,8 +1271,7 @@ class BisectPerformanceMetrics(object):
 
     # If running a telemetry test for cros, insert the remote ip, and
     # identity parameters.
-    is_telemetry = ('tools/perf/run_' in command_to_run or
-        'tools\\perf\\run_' in command_to_run)
+    is_telemetry = bisect_utils.IsTelemetryCommand(command_to_run)
     if self.opts.target_platform == 'cros' and is_telemetry:
       args.append('--remote=%s' % self.opts.cros_remote_ip)
       args.append('--identity=%s' % CROS_TEST_KEY_PATH)
@@ -1554,8 +1561,9 @@ class BisectPerformanceMetrics(object):
           return ('Skipped revision: [%s]' % str(revision),
               BUILD_RESULT_SKIPPED)
 
+        start_build_time = time.time()
         if self.BuildCurrentRevision(depot):
-          start_time = time.time()
+          after_build_time = time.time()
           results = self.RunPerformanceTestAndParseResults(command_to_run,
                                                            metric)
 
@@ -1565,7 +1573,8 @@ class BisectPerformanceMetrics(object):
 
             if not external_revisions is None:
               return (results[0], results[1], external_revisions,
-                  time.time() - start_time)
+                  time.time() - after_build_time, time.time() -
+                  start_build_time)
             else:
               return ('Failed to parse DEPS file for external revisions.',
                   BUILD_RESULT_FAIL)
@@ -1759,7 +1768,8 @@ class BisectPerformanceMetrics(object):
       revision_data[r] = {'revision' : r,
                           'depot' : depot,
                           'value' : None,
-                          'time' : 0,
+                          'perf_time' : 0,
+                          'build_time' : 0,
                           'passed' : '?',
                           'sort' : i + sort + 1}
 
@@ -1963,7 +1973,8 @@ class BisectPerformanceMetrics(object):
                                               'passed' : '?',
                                               'depot' : target_depot,
                                               'external' : None,
-                                              'time' : 0,
+                                              'perf_time' : 0,
+                                              'build_time' : 0,
                                               'sort' : sort_key_ids}
         revision_list.append(current_revision_id)
 
@@ -2012,13 +2023,15 @@ class BisectPerformanceMetrics(object):
       # already know the results.
       bad_revision_data = revision_data[revision_list[0]]
       bad_revision_data['external'] = bad_results[2]
-      bad_revision_data['time'] = bad_results[3]
+      bad_revision_data['perf_time'] = bad_results[3]
+      bad_revision_data['build_time'] = bad_results[4]
       bad_revision_data['passed'] = False
       bad_revision_data['value'] = known_bad_value
 
       good_revision_data = revision_data[revision_list[max_revision]]
       good_revision_data['external'] = good_results[2]
-      good_revision_data['time'] = good_results[3]
+      good_revision_data['perf_time'] = good_results[3]
+      good_revision_data['build_time'] = good_results[4]
       good_revision_data['passed'] = True
       good_revision_data['value'] = known_good_value
 
@@ -2116,7 +2129,8 @@ class BisectPerformanceMetrics(object):
         if not run_results[1]:
           if len(run_results) > 2:
             next_revision_data['external'] = run_results[2]
-            next_revision_data['time'] = run_results[3]
+            next_revision_data['perf_time'] = run_results[3]
+            next_revision_data['build_time'] = run_results[4]
 
           passed_regression = self.CheckIfRunPassed(run_results[0],
                                                     known_good_value,
@@ -2151,76 +2165,53 @@ class BisectPerformanceMetrics(object):
 
     return results
 
-  def _PrintRevisionInfo(self, cl, info):
+  def _PrintBanner(self, results_dict):
+    print
+    print " __o_\___          Aw Snap! We hit a speed bump!"
+    print "=-O----O-'__.~.___________________________________"
+    print
+    print 'Bisect reproduced a %.02f%% (+-%.02f%%) change in the %s metric.' % (
+        results_dict['regression_size'], results_dict['regression_std_err'],
+        '/'.join(self.opts.metric))
+    # The perf dashboard specifically looks for the string
+    # "Confidence in Bisection Results: 100%" to decide whether or not
+    # to cc the author(s). If you change this, please update the perf
+    # dashboard as well.
+    print 'Confidence in Bisection Results: %d%%' % results_dict['confidence']
+
+  def _PrintRevisionInfo(self, cl, info, depot=None):
     # The perf dashboard specifically looks for the string
     # "Author  : " to parse out who to cc on a bug. If you change the
     # formatting here, please update the perf dashboard as well.
     print
-    print 'Commit  : %s' % cl
-    print 'Author  : %s' % info['author']
-    print 'Email   : %s' % info['email']
-    print 'Date    : %s' % info['date']
     print 'Subject : %s' % info['subject']
+    print 'Author  : %s' % info['author']
+    if not info['email'].startswith(info['author']):
+      print 'Email   : %s' % info['email']
+    if depot and DEPOT_DEPS_NAME[depot].has_key('viewvc'):
+      try:
+        # Format is "git-svn-id: svn://....@123456 <other data>"
+        svn_line = [i for i in info['body'].splitlines() if 'git-svn-id:' in i]
+        svn_revision = svn_line[0].split('@')
+        svn_revision = svn_revision[1].split(' ')[0]
+        print 'Link    : %s' % DEPOT_DEPS_NAME[depot]['viewvc'] + svn_revision
+      except IndexError:
+        print
+        print 'Failed to parse svn revision from body:'
+        print
+        print info['body']
+        print
+    print 'Commit  : %s' % cl
+    print 'Date    : %s' % info['date']
 
-  def FormatAndPrintResults(self, bisect_results):
-    """Prints the results from a bisection run in a readable format.
-
-    Args
-      bisect_results: The results from a bisection test run.
-    """
-    revision_data = bisect_results['revision_data']
-    revision_data_sorted = sorted(revision_data.iteritems(),
-                                  key = lambda x: x[1]['sort'])
-
-    if self.opts.output_buildbot_annotations:
-      bisect_utils.OutputAnnotationStepStart('Build Status Per Revision')
-
-    print
-    print 'Full results of bisection:'
-    for current_id, current_data  in revision_data_sorted:
-      build_status = current_data['passed']
-
-      if type(build_status) is bool:
-        if build_status:
-          build_status = 'Good'
-        else:
-          build_status = 'Bad'
-
-      print '  %20s  %40s  %s' % (current_data['depot'],
-                                 current_id, build_status)
-    print
-
-    if self.opts.output_buildbot_annotations:
-      bisect_utils.OutputAnnotationStepClosed()
-      # The perf dashboard scrapes the "results" step in order to comment on
-      # bugs. If you change this, please update the perf dashboard as well.
-      bisect_utils.OutputAnnotationStepStart('Results')
-
-    # Find range where it possibly broke.
-    first_working_revision = None
-    first_working_revision_index = -1
-    last_broken_revision = None
-    last_broken_revision_index = -1
-
-    for i in xrange(len(revision_data_sorted)):
-      k, v = revision_data_sorted[i]
-      if v['passed'] == 1:
-        if not first_working_revision:
-          first_working_revision = k
-          first_working_revision_index = i
-
-      if not v['passed']:
-        last_broken_revision = k
-        last_broken_revision_index = i
-
+  def _PrintTestedCommitsTable(self, revision_data_sorted,
+                               first_working_revision, last_broken_revision):
     print
     print 'Tested commits:'
     print '  %20s  %40s  %12s %14s %13s' % ('Depot'.center(20, ' '),
         'Commit SHA'.center(40, ' '), 'Mean'.center(12, ' '),
         'Std. Error'.center(14, ' '), 'State'.center(13, ' '))
     state = 0
-    step_time_avg = 0.0
-    step_count = 0.0
     for current_id, current_data in revision_data_sorted:
       if current_data['value']:
         if (current_id == last_broken_revision or
@@ -2242,11 +2233,77 @@ class BisectPerformanceMetrics(object):
             current_data['depot'].center(20, ' '), current_id, mean,
             std_error, state_str)
 
-        step_time_avg += current_data['time']
-        step_count += 1
+  def _PrintReproSteps(self):
+    print
+    print 'To reproduce locally:'
+    print '$ ' + self.opts.command
+    if bisect_utils.IsTelemetryCommand(self.opts.command):
+      print
+      print 'Also consider passing --profiler=list to see available profilers.'
 
+  def _PrintOtherRegressions(self, other_regressions, revision_data):
+    print
+    print 'Other regressions may have occurred:'
+    for regression in other_regressions:
+      current_id, previous_id, percent_change, deviations = regression
+      current_data = revision_data[current_id]
+      previous_data = revision_data[previous_id]
+
+      if deviations is None:
+        deviations = 'N/A'
+      else:
+        deviations = '%.2f' % deviations
+
+      if percent_change is None:
+        percent_change = 0
+
+      print '  %8s  %s  [%.2f%%, %s x std.dev]' % (
+          previous_data['depot'], previous_id, 100 * percent_change, deviations)
+      print '  %8s  %s' % (current_data['depot'], current_id)
+      print
+
+  def _PrintStepTime(self, revision_data_sorted):
+    step_perf_time_avg = 0.0
+    step_build_time_avg = 0.0
+    step_count = 0.0
+    for _, current_data in revision_data_sorted:
+      step_perf_time_avg += current_data['perf_time']
+      step_build_time_avg += current_data['build_time']
+      step_count += 1
     if step_count:
-      step_time_avg = step_time_avg / step_count
+      step_perf_time_avg = step_perf_time_avg / step_count
+      step_build_time_avg = step_build_time_avg / step_count
+    print
+    print 'Average build time : %s' % datetime.timedelta(
+        seconds=int(step_build_time_avg))
+    print 'Average test time  : %s' % datetime.timedelta(
+        seconds=int(step_perf_time_avg))
+
+  def _PrintWarnings(self):
+    if not self.warnings:
+      return
+    print
+    print 'WARNINGS:'
+    for w in self.warnings:
+      print '  !!! %s' % w
+
+  def _GetResultsDict(self, revision_data, revision_data_sorted):
+    # Find range where it possibly broke.
+    first_working_revision = None
+    first_working_revision_index = -1
+    last_broken_revision = None
+    last_broken_revision_index = -1
+
+    for i in xrange(len(revision_data_sorted)):
+      k, v = revision_data_sorted[i]
+      if v['passed'] == 1:
+        if not first_working_revision:
+          first_working_revision = k
+          first_working_revision_index = i
+
+      if not v['passed']:
+        last_broken_revision = k
+        last_broken_revision_index = i
 
     if last_broken_revision != None and first_working_revision != None:
       bounds_broken = [revision_data[last_broken_revision]['value']['mean'],
@@ -2278,14 +2335,9 @@ class BisectPerformanceMetrics(object):
       regression_size = math.fabs(max(mean_of_good_runs, mean_of_bad_runs) /
           max(0.0001, min(mean_of_good_runs, mean_of_bad_runs))) * 100.0 - 100.0
 
-      regression_std_err = CalculatePooledStandardError(
-          [working_mean, broken_mean])
-
-      print
-      print 'Average step time: %s' % datetime.timedelta(
-          seconds=int(step_time_avg))
-      print 'Approximate size of regression: %.02f%%, +-%.02f%% std. err' % (
-          regression_size, regression_std_err)
+      regression_std_err = math.fabs(CalculatePooledStandardError(
+          [working_mean, broken_mean]) /
+          max(0.0001, min(mean_of_good_runs, mean_of_bad_runs))) * 100.0
 
       # Give a "confidence" in the bisect. At the moment we use how distinct the
       # values are before and after the last broken revision, and how noisy the
@@ -2297,27 +2349,9 @@ class BisectPerformanceMetrics(object):
 
       confidence = (dist_between_groups / (
           max(0.0001, (len_broken_group + len_working_group ))))
-      confidence = min(1.0, max(confidence, 0.0)) * 100.0
+      confidence = int(min(1.0, max(confidence, 0.0)) * 100.0)
 
-      # The perf dashboard specifically looks for the string
-      # "Confidence in Bisection Results: 100%" to decide whether or not
-      # to cc the author(s). If you change this, please update the perf
-      # dashboard as well.
-      print 'Confidence in Bisection Results: %d%%' % int(confidence)
-      print
-      print 'Experimental - If confidence is less than 100%, there are could '\
-          'be some other strong candidates for this regression. You can '\
-          'try increasing the repeat_count, or looking for a sub-metric that '\
-          'shows the regression more clearly.'
-      print
-
-      print 'Results: Regression may have occurred in range:'
-      print '  -> First Bad Revision: [%40s] [%s]' %\
-            (last_broken_revision,
-            revision_data[last_broken_revision]['depot'])
-      print '  -> Last Good Revision: [%40s] [%s]' %\
-            (first_working_revision,
-            revision_data[first_working_revision]['depot'])
+      culprit_revisions = []
 
       cwd = os.getcwd()
       self.ChangeToDepotWorkingDirectory(
@@ -2332,10 +2366,8 @@ class BisectPerformanceMetrics(object):
         (output, return_code) = RunProcessAndRetrieveOutput(cmd)
 
         changes = []
-
         assert not return_code, 'An error occurred while running'\
                                 ' "%s"' % ' '.join(cmd)
-
         last_depot = None
         cwd = os.getcwd()
         for l in output.split('\n'):
@@ -2353,49 +2385,27 @@ class BisectPerformanceMetrics(object):
               contents = l.split(' ')
               if len(contents) > 1:
                 changes.append([last_depot, contents[0]])
-
-        print
         for c in changes:
           os.chdir(c[0])
           info = self.source_control.QueryRevisionInfo(c[1])
-
-          self._PrintRevisionInfo(c[1], info)
-        print
+          culprit_revisions.append((c[1], info, None))
       else:
-        multiple_commits = 0
         for i in xrange(last_broken_revision_index, len(revision_data_sorted)):
           k, v = revision_data_sorted[i]
           if k == first_working_revision:
             break
-
           self.ChangeToDepotWorkingDirectory(v['depot'])
-
           info = self.source_control.QueryRevisionInfo(k)
-
-          self._PrintRevisionInfo(k, info)
-
-          multiple_commits += 1
-        if multiple_commits > 1:
-          self.warnings.append('Due to build errors, regression range could'
-            ' not be narrowed down to a single commit.')
-      print
+          culprit_revisions.append((k, info, v['depot']))
       os.chdir(cwd)
 
-      # Give a warning if the values were very close together
+      # Check for any other possible regression ranges
       good_std_dev = revision_data[first_working_revision]['value']['std_err']
       good_mean = revision_data[first_working_revision]['value']['mean']
       bad_mean = revision_data[last_broken_revision]['value']['mean']
-
-      # A standard deviation of 0 could indicate either insufficient runs
-      # or a test that consistently returns the same value.
-      if self.opts.repeat_test_count == 1:
-        self.warnings.append('Tests were only set to run once. This '
-            'may be insufficient to get meaningful results.')
-
-      # Check for any other possible regression ranges
       prev_revision_data = revision_data_sorted[0][1]
       prev_revision_id = revision_data_sorted[0][0]
-      possible_regressions = []
+      other_regressions = []
       for current_id, current_data in revision_data_sorted:
         if current_data['value']:
           prev_mean = prev_revision_data['value']['mean']
@@ -2419,45 +2429,84 @@ class BisectPerformanceMetrics(object):
 
           if deviations >= 1.5 or percent_change > 0.01:
             if current_id != first_working_revision:
-              possible_regressions.append(
+              other_regressions.append(
                   [current_id, prev_revision_id, percent_change, deviations])
           prev_revision_data = current_data
           prev_revision_id = current_id
 
-      if possible_regressions:
-        print
-        print 'Other regressions may have occurred:'
-        print
-        for p in possible_regressions:
-          current_id = p[0]
-          percent_change = p[2]
-          deviations = p[3]
-          current_data = revision_data[current_id]
-          previous_id = p[1]
-          previous_data = revision_data[previous_id]
+    # Check for warnings:
+    if len(culprit_revisions) > 1:
+      self.warnings.append('Due to build errors, regression range could '
+                           'not be narrowed down to a single commit.')
+    if self.opts.repeat_test_count == 1:
+      self.warnings.append('Tests were only set to run once. This may '
+                           'be insufficient to get meaningful results.')
+    if confidence < 100:
+      self.warnings.append(
+          'Confidence is less than 100%. There could be other candidates for '
+          'this regression. Try bisecting again with increased repeat_count or '
+          'on a sub-metric that shows the regression more clearly.')
 
-          if deviations is None:
-            deviations = 'N/A'
-          else:
-            deviations = '%.2f' % deviations
+    return {
+        'first_working_revision': first_working_revision,
+        'last_broken_revision': last_broken_revision,
+        'culprit_revisions': culprit_revisions,
+        'other_regressions': other_regressions,
+        'regression_size': regression_size,
+        'regression_std_err': regression_std_err,
+        'confidence': confidence,
+        }
 
-          if percent_change is None:
-            percent_change = 0
+  def FormatAndPrintResults(self, bisect_results):
+    """Prints the results from a bisection run in a readable format.
 
-          print '  %8s  %s  [%.2f%%, %s x std.dev]' % (
-              previous_data['depot'], previous_id, 100 * percent_change,
-              deviations)
-          print '  %8s  %s' % (
-              current_data['depot'], current_id)
-          print
+    Args
+      bisect_results: The results from a bisection test run.
+    """
+    revision_data = bisect_results['revision_data']
+    revision_data_sorted = sorted(revision_data.iteritems(),
+                                  key = lambda x: x[1]['sort'])
+    results_dict = self._GetResultsDict(revision_data, revision_data_sorted)
 
-      if self.warnings:
-        print
-        print 'The following warnings were generated:'
-        print
-        for w in self.warnings:
-          print '  - %s' % w
-        print
+    if self.opts.output_buildbot_annotations:
+      bisect_utils.OutputAnnotationStepStart('Build Status Per Revision')
+
+    print
+    print 'Full results of bisection:'
+    for current_id, current_data  in revision_data_sorted:
+      build_status = current_data['passed']
+
+      if type(build_status) is bool:
+        if build_status:
+          build_status = 'Good'
+        else:
+          build_status = 'Bad'
+
+      print '  %20s  %40s  %s' % (current_data['depot'],
+                                  current_id, build_status)
+    print
+
+    if self.opts.output_buildbot_annotations:
+      bisect_utils.OutputAnnotationStepClosed()
+      # The perf dashboard scrapes the "results" step in order to comment on
+      # bugs. If you change this, please update the perf dashboard as well.
+      bisect_utils.OutputAnnotationStepStart('Results')
+
+    if results_dict['culprit_revisions']:
+      self._PrintBanner(results_dict)
+      for culprit in results_dict['culprit_revisions']:
+        cl, info, depot = culprit
+        self._PrintRevisionInfo(cl, info, depot)
+      self._PrintReproSteps()
+      if results_dict['other_regressions']:
+        self._PrintOtherRegressions(results_dict['other_regressions'],
+                                    revision_data)
+
+    self._PrintTestedCommitsTable(revision_data_sorted,
+                                  results_dict['first_working_revision'],
+                                  results_dict['last_broken_revision'])
+    self._PrintStepTime(revision_data_sorted)
+    self._PrintWarnings()
 
     if self.opts.output_buildbot_annotations:
       bisect_utils.OutputAnnotationStepClosed()

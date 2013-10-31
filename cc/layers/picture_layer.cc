@@ -20,7 +20,8 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
   : client_(client),
     pile_(make_scoped_refptr(new PicturePile())),
     instrumentation_object_tracker_(id()),
-    is_mask_(false) {
+    is_mask_(false),
+    update_source_frame_number_(-1) {
 }
 
 PictureLayer::~PictureLayer() {
@@ -37,6 +38,18 @@ scoped_ptr<LayerImpl> PictureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
 void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
   Layer::PushPropertiesTo(base_layer);
   PictureLayerImpl* layer_impl = static_cast<PictureLayerImpl*>(base_layer);
+
+  if (layer_impl->bounds().IsEmpty()) {
+    // Update may not get called for an empty layer, so resize here instead.
+    // Using layer_impl because either bounds() or paint_properties().bounds
+    // may disagree and either one could have been pushed to layer_impl.
+    pile_->Resize(gfx::Size());
+    pile_->UpdateRecordedRegion();
+  } else if (update_source_frame_number_ ==
+             layer_tree_host()->source_frame_number()) {
+    // If update called, then pile size must match bounds pushed to impl layer.
+    DCHECK_EQ(layer_impl->bounds().ToString(), pile_->size().ToString());
+  }
 
   layer_impl->SetIsMask(is_mask_);
   // Unlike other properties, invalidation must always be set on layer_impl.
@@ -78,6 +91,7 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
                "source_frame_number",
                layer_tree_host()->source_frame_number());
 
+  update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
   pile_->Resize(paint_properties().bounds);

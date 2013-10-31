@@ -187,6 +187,11 @@ const char kResponseInfo[] = "{"
     "     \"x-privet-token\" : \"MyPrivetToken\""
     "}";
 
+const char kResponseInfoWithID[] = "{"
+    "     \"x-privet-token\" : \"MyPrivetToken\","
+    "     \"id\" : \"my_id\""
+    "}";
+
 const char kResponseRegisterStart[] = "{"
     "     \"action\": \"start\","
     "     \"user\": \"user@host.com\""
@@ -223,17 +228,17 @@ const char kResponseGaiaToken[] = "{"
 const char kURLInfo[] = "http://1.2.3.4:8888/privet/info";
 
 const char kURLRegisterStart[] =
-    "http://1.2.3.4:8888/privet/register?action=start&user=user@host.com";
+    "http://1.2.3.4:8888/privet/register?action=start&user=user%40host.com";
 
 const char kURLRegisterClaimToken[] =
     "http://1.2.3.4:8888/privet/register?action=getClaimToken&"
-    "user=user@host.com";
+    "user=user%40host.com";
 
 const char kURLCloudPrintConfirm[] =
     "https://www.google.com/cloudprint/confirm?token=MySampleToken";
 
 const char kURLRegisterComplete[] =
-    "http://1.2.3.4:8888/privet/register?action=complete&user=user@host.com";
+    "http://1.2.3.4:8888/privet/register?action=complete&user=user%40host.com";
 
 const char kURLGaiaToken[] =
     "https://accounts.google.com/o/oauth2/token";
@@ -365,8 +370,7 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
     ProfileOAuth2TokenService* token_service =
         ProfileOAuth2TokenServiceFactory::GetForProfile(browser()->profile());
 
-    token_service->UpdateCredentials("user@host.com",
-                                     "MyFakeToken");
+    token_service->UpdateCredentials("user@host.com", "MyFakeToken");
 
     AddLibrary(base::FilePath(FILE_PATH_LITERAL("local_discovery_ui_test.js")));
   }
@@ -479,6 +483,11 @@ IN_PROC_BROWSER_TEST_F(LocalDiscoveryUITest, RegisterTest) {
       kResponseRegisterClaimTokenConfirm,
       true);
 
+  fake_fetcher_factory().SetFakeResponse(
+      GURL(kURLInfo),
+      kResponseInfoWithID,
+      true);
+
   {
     InSequence s;
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
@@ -486,7 +495,8 @@ IN_PROC_BROWSER_TEST_F(LocalDiscoveryUITest, RegisterTest) {
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
         kURLCloudPrintConfirm));
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
-        kURLRegisterComplete))
+        kURLRegisterComplete));
+    EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(kURLInfo))
         .WillOnce(InvokeWithoutArgs(&condition_token_claimed,
                                     &TestMessageLoopCondition::Signal));
   }

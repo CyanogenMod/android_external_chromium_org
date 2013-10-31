@@ -7,8 +7,8 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "components/browser_context_keyed_service/browser_context_keyed_service.h"
@@ -20,14 +20,14 @@ class ExtensionUninstallDialog;
 
 namespace extensions {
 
-class ManagementFunction : public SyncExtensionFunction {
+class ManagementFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~ManagementFunction() {}
 
   ExtensionService* service();
 };
 
-class AsyncManagementFunction : public AsyncExtensionFunction {
+class AsyncManagementFunction : public ChromeAsyncExtensionFunction {
  protected:
   virtual ~AsyncManagementFunction() {}
 
@@ -69,14 +69,14 @@ class ManagementGetPermissionWarningsByIdFunction : public ManagementFunction {
 };
 
 class ManagementGetPermissionWarningsByManifestFunction
-    : public AsyncExtensionFunction {
+    : public ChromeAsyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION(
       "management.getPermissionWarningsByManifest",
       MANAGEMENT_GETPERMISSIONWARNINGSBYMANIFEST);
 
   // Called when utility process finishes.
-  void OnParseSuccess(base::DictionaryValue* parsed_manifest);
+  void OnParseSuccess(scoped_ptr<base::DictionaryValue> parsed_manifest);
   void OnParseFailure(const std::string& error);
 
  protected:

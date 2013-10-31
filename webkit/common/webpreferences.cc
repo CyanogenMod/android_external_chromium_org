@@ -72,6 +72,7 @@ WebPreferences::WebPreferences()
       accelerated_2d_canvas_enabled(false),
       minimum_accelerated_2d_canvas_size(257 * 256),
       antialiased_2d_canvas_disabled(false),
+      accelerated_2d_canvas_msaa_sample_count(0),
       accelerated_filters_enabled(false),
       gesture_tap_highlight_enabled(false),
       accelerated_compositing_for_plugins_enabled(false),
@@ -89,6 +90,7 @@ WebPreferences::WebPreferences()
       device_supports_touch(false),
       device_supports_mouse(true),
       touch_adjustment_enabled(true),
+      pointer_events_max_touch_points(0),
       fixed_position_creates_stacking_context(false),
       sync_xhr_in_documents_enabled(true),
       deferred_image_decoding_enabled(false),
@@ -133,6 +135,7 @@ WebPreferences::WebPreferences()
       wide_viewport_quirk(false),
       use_wide_viewport(true),
       viewport_meta_layout_size_quirk(false),
+      viewport_meta_merge_content_quirk(false),
       viewport_meta_zero_values_quirk(false),
       ignore_main_frame_overflow_hidden_quirk(false),
       report_screen_size_in_physical_pixels_quirk(false)

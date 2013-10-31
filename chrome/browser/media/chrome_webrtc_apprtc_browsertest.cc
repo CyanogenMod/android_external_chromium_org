@@ -119,7 +119,7 @@ class WebrtcApprtcBrowserTest : public WebRtcTestBase {
   base::ProcessHandle dev_appserver_;
 };
 
-#if defined (OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN)
 #define MAYBE_MANUAL_WorksOnApprtc DISABLED_MANUAL_WorksOnApprtc
 #else
 #define MAYBE_MANUAL_WorksOnApprtc MANUAL_WorksOnApprtc
@@ -135,6 +135,9 @@ IN_PROC_BROWSER_TEST_F(WebrtcApprtcBrowserTest, MAYBE_MANUAL_WorksOnApprtc) {
 
   chrome::AddBlankTabAt(browser(), -1, true);
   content::WebContents* left_tab = OpenPageAndAcceptUserMedia(room_url);
+  // TODO(phoglund): Remove when this bug gets fixed:
+  // http://code.google.com/p/webrtc/issues/detail?id=1742
+  SleepInJavascript(left_tab, 5000);
   chrome::AddBlankTabAt(browser(), -1, true);
   content::WebContents* right_tab = OpenPageAndAcceptUserMedia(room_url);
 

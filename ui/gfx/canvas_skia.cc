@@ -334,7 +334,7 @@ void Canvas::DrawStringRectWithHalo(const base::string16& text,
   // Create a temporary buffer filled with the halo color. It must leave room
   // for the 1-pixel border around the text.
   Size size(display_rect.width() + 2, display_rect.height() + 2);
-  Canvas text_canvas(size, image_scale(), true);
+  Canvas text_canvas(size, image_scale(), false);
   SkPaint bkgnd_paint;
   bkgnd_paint.setColor(halo_color);
   text_canvas.DrawRect(Rect(size), bkgnd_paint);
@@ -372,12 +372,20 @@ void Canvas::DrawStringRectWithHalo(const base::string16& text,
 void Canvas::DrawFadeTruncatingStringRect(
     const base::string16& text,
     TruncateFadeMode truncate_mode,
-    size_t desired_characters_to_truncate_from_head,
     const FontList& font_list,
     SkColor color,
     const Rect& display_rect) {
-  int flags = NO_ELLIPSIS;
+  DrawFadeTruncatingStringRectWithFlags(
+      text, truncate_mode, font_list, color, display_rect, NO_ELLIPSIS);
+}
 
+void Canvas::DrawFadeTruncatingStringRectWithFlags(
+    const base::string16& text,
+    TruncateFadeMode truncate_mode,
+    const FontList& font_list,
+    SkColor color,
+    const Rect& display_rect,
+    int flags) {
   // If the whole string fits in the destination then just draw it directly.
   if (GetStringWidth(text, font_list) <= display_rect.width()) {
     DrawStringRectWithFlags(text, font_list, color, display_rect, flags);
@@ -385,8 +393,8 @@ void Canvas::DrawFadeTruncatingStringRect(
   }
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-  base::string16 clipped_text = text;
-  const bool is_rtl = AdjustStringDirection(flags, &clipped_text);
+  const bool is_rtl = base::i18n::GetFirstStrongCharacterDirection(text) ==
+                      base::i18n::RIGHT_TO_LEFT;
 
   switch (truncate_mode) {
     case TruncateFadeTail:
@@ -399,26 +407,6 @@ void Canvas::DrawFadeTruncatingStringRect(
       if (!is_rtl)
         flags |= TEXT_ALIGN_RIGHT;
       break;
-    case TruncateFadeHeadAndTail:
-      DCHECK_GT(desired_characters_to_truncate_from_head, 0u);
-      // Due to the fade effect the first character is hard to see.
-      // We want to make sure that the first character starting at
-      // |desired_characters_to_truncate_from_head| is readable so we reduce
-      // the offset by a little bit.
-      desired_characters_to_truncate_from_head =
-          std::max<int>(0, desired_characters_to_truncate_from_head - 2);
-
-      if (desired_characters_to_truncate_from_head) {
-        // Make sure to clip the text at a UTF16 boundary.
-        U16_SET_CP_LIMIT(text.data(), 0,
-                         desired_characters_to_truncate_from_head,
-                         text.length());
-        clipped_text = text.substr(desired_characters_to_truncate_from_head);
-      }
-
-      render_text->set_fade_tail(true);
-      render_text->set_fade_head(true);
-      break;
   }
 
   // Default to left alignment unless right alignment was chosen above.
@@ -426,8 +414,7 @@ void Canvas::DrawFadeTruncatingStringRect(
     flags |= TEXT_ALIGN_LEFT;
 
   Rect rect = display_rect;
-  UpdateRenderText(rect, clipped_text, font_list, flags, color,
-                   render_text.get());
+  UpdateRenderText(rect, text, font_list, flags, color, render_text.get());
 
   const int line_height = render_text->GetStringSize().height();
   // Center the text vertically.
@@ -439,18 +426,6 @@ void Canvas::DrawFadeTruncatingStringRect(
   ClipRect(display_rect);
   render_text->Draw(this);
   canvas_->restore();
-}
-
-void Canvas::DrawFadeTruncatingString(
-    const base::string16& text,
-    TruncateFadeMode truncate_mode,
-    size_t desired_characters_to_truncate_from_head,
-    const Font& font,
-    SkColor color,
-    const Rect& display_rect) {
-  DrawFadeTruncatingStringRect(text, truncate_mode,
-                               desired_characters_to_truncate_from_head,
-                               FontList(font), color, display_rect);
 }
 
 }  // namespace gfx

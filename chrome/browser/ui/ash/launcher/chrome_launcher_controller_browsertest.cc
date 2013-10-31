@@ -12,9 +12,10 @@
 #include "ash/launcher/launcher.h"
 #include "ash/launcher/launcher_button.h"
 #include "ash/launcher/launcher_model.h"
-#include "ash/shelf/shelf_util.h"
+#include "ash/launcher/launcher_model_util.h"
 #include "ash/shelf/shelf_view.h"
 #include "ash/shell.h"
+#include "ash/test/app_list_controller_test_api.h"
 #include "ash/test/launcher_test_api.h"
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/test/shell_test_api.h"
@@ -268,11 +269,7 @@ class LauncherAppBrowserTest : public ExtensionBrowserTest {
 
   // Get the index of an item which has the given type.
   int GetIndexOfLauncherItemType(ash::LauncherItemType type) {
-    for (int i = 0; i < model_->item_count(); i++) {
-      if (model_->items()[i].type == type)
-        return i;
-    }
-    return -1;
+    return ash::GetLauncherItemIndexForType(type, *model_);
   }
 
   // Try to rip off |item_index|.
@@ -1030,7 +1027,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, Navigation) {
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, TabDragAndDrop) {
   TabStripModel* tab_strip_model1 = browser()->tab_strip_model();
   EXPECT_EQ(1, tab_strip_model1->count());
-  int browser_index = ash::GetBrowserItemIndex(*model_);
+  int browser_index = GetIndexOfLauncherItemType(ash::TYPE_BROWSER_SHORTCUT);
   EXPECT_TRUE(browser_index >= 0);
   EXPECT_EQ(1u, chrome::GetTotalBrowserCount());
 
@@ -1173,7 +1170,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, RefocusFilterLaunch) {
 IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ActivationStateCheck) {
   TabStripModel* tab_strip = browser()->tab_strip_model();
   // Get the browser item index
-  int browser_index = ash::GetBrowserItemIndex(*controller_->model());
+  int browser_index = GetIndexOfLauncherItemType(ash::TYPE_BROWSER_SHORTCUT);
   EXPECT_TRUE(browser_index >= 0);
 
   // Even though we are just comming up, the browser should be active.
@@ -1547,7 +1544,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
   ash::test::ShelfViewTestAPI test(
       ash::test::LauncherTestAPI(launcher_).shelf_view());
-  AppListService* service = AppListService::Get();
+  AppListService* service = AppListService::Get(chrome::GetActiveDesktop());
 
   // There should be two items in our launcher by this time.
   EXPECT_EQ(2, model_->item_count());
@@ -1563,7 +1560,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, DragAndDrop) {
 
   EXPECT_TRUE(service->IsAppListVisible());
   app_list::AppsGridView* grid_view =
-      app_list::AppsGridView::GetLastGridViewForTest();
+      ash::test::AppListControllerTestApi(ash::Shell::GetInstance()).
+          GetRootGridView();
   ASSERT_TRUE(grid_view);
   ASSERT_TRUE(grid_view->has_drag_and_drop_host_for_test());
 
@@ -1764,7 +1762,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ClickItem) {
       ash::Shell::GetPrimaryRootWindow(), gfx::Point());
   ash::test::ShelfViewTestAPI test(
       ash::test::LauncherTestAPI(launcher_).shelf_view());
-  AppListService* service = AppListService::Get();
+  AppListService* service = AppListService::Get(chrome::GetActiveDesktop());
   // There should be two items in our launcher by this time.
   EXPECT_EQ(2, model_->item_count());
   EXPECT_FALSE(service->IsAppListVisible());
@@ -1779,7 +1777,8 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, ClickItem) {
 
   EXPECT_TRUE(service->IsAppListVisible());
   app_list::AppsGridView* grid_view =
-      app_list::AppsGridView::GetLastGridViewForTest();
+      ash::test::AppListControllerTestApi(ash::Shell::GetInstance()).
+          GetRootGridView();
   ASSERT_TRUE(grid_view);
   const views::ViewModel* vm_grid = grid_view->view_model_for_test();
   EXPECT_EQ(2, vm_grid->view_size());
@@ -1835,7 +1834,7 @@ IN_PROC_BROWSER_TEST_F(LauncherAppBrowserTest, MatchingLauncherIDandActiveTab) {
 
   aura::Window* window = browser()->window()->GetNativeWindow();
 
-  int browser_index = ash::GetBrowserItemIndex(*model_);
+  int browser_index = GetIndexOfLauncherItemType(ash::TYPE_BROWSER_SHORTCUT);
   ash::LauncherID browser_id = model_->items()[browser_index].id;
   EXPECT_EQ(browser_id, controller_->GetIDByWindow(window));
 

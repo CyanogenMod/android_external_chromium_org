@@ -138,6 +138,9 @@ class Run(Command):
     self._test = matching_tests.popitem()[1]
 
   def Run(self, options, args):
+    if not self._test.enabled:
+      print >> sys.stderr, 'TEST IS DISABLED. SKIPPING.'
+      return 0
     return min(255, self._test().Run(copy.copy(options)))
 
 
@@ -170,8 +173,15 @@ def _MatchTestName(input_test_name):
         return True
     return False
 
+  # Exact matching.
   if input_test_name in test_aliases:
-    input_test_name = test_aliases[input_test_name]
+    exact_match = test_aliases[input_test_name]
+  else:
+    exact_match = input_test_name
+  if exact_match in _GetTests():
+    return {exact_match: _GetTests()[exact_match]}
+
+  # Fuzzy matching.
   return dict((test_name, test_class)
       for test_name, test_class in _GetTests().iteritems()
       if _Matches(input_test_name, test_name))

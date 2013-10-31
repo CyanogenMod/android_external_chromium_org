@@ -53,8 +53,8 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
     ListValue* bounds;
     success &= dict->GetList("ImageBounds", &bounds);
     double image_width, image_height;
-    success &= bounds->GetDouble(0, &image_height);
-    success &= bounds->GetDouble(1, &image_width);
+    success &= bounds->GetDouble(0, &image_width);
+    success &= bounds->GetDouble(1, &image_height);
 
     success &= dict->GetList("Border", &list);
     int border_x, border_y, border_width, border_height;
@@ -81,7 +81,7 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
 
     new_layer = nine_patch_layer;
   } else if (layer_type == "TextureLayer") {
-    new_layer = TextureLayer::Create(NULL);
+    new_layer = TextureLayer::CreateForMailbox(NULL);
   } else if (layer_type == "PictureLayer") {
     new_layer = PictureLayer::Create(content_client);
   } else {  // Type "Layer" or "unknown"
@@ -103,6 +103,24 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
   bool scrollable;
   if (dict->GetBoolean("Scrollable", &scrollable))
     new_layer->SetScrollable(scrollable);
+
+  bool wheel_handler;
+  if (dict->GetBoolean("WheelHandler", &wheel_handler))
+    new_layer->SetHaveWheelEventHandlers(wheel_handler);
+
+  if (dict->HasKey("TouchRegion")) {
+    success &= dict->GetList("TouchRegion", &list);
+    cc::Region touch_region;
+    for (size_t i = 0; i < list->GetSize(); ) {
+      int rect_x, rect_y, rect_width, rect_height;
+      success &= list->GetInteger(i++, &rect_x);
+      success &= list->GetInteger(i++, &rect_y);
+      success &= list->GetInteger(i++, &rect_width);
+      success &= list->GetInteger(i++, &rect_height);
+      touch_region.Union(gfx::Rect(rect_x, rect_y, rect_width, rect_height));
+    }
+    new_layer->SetTouchEventHandlerRegion(touch_region);
+  }
 
   success &= dict->GetList("DrawTransform", &list);
   double transform[16];

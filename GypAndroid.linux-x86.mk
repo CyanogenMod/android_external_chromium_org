@@ -123,7 +123,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.linu
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_dom.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_html.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform.target.linux-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform_geometry.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_prerequisites.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_remaining.target.linux-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_rendering.target.linux-x86.mk
@@ -226,7 +225,7 @@ include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/keycode_converter.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.linux-x86.mk
-include $(LOCAL_PATH)/ui/shell_dialogs.target.linux-x86.mk
+include $(LOCAL_PATH)/ui/shell_dialogs/shell_dialogs.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/surface/surface.target.linux-x86.mk
 include $(LOCAL_PATH)/ui/ui.target.linux-x86.mk

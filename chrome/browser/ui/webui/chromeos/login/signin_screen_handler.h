@@ -17,6 +17,7 @@
 #include "chrome/browser/chromeos/login/login_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/wallpaper_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system_key_event_listener.h"
@@ -173,7 +174,8 @@ class SigninScreenHandler
       public LoginDisplayWebUIHandler,
       public SystemKeyEventListener::CapsLockObserver,
       public content::NotificationObserver,
-      public NetworkStateInformer::NetworkStateInformerObserver {
+      public NetworkStateInformer::NetworkStateInformerObserver,
+      public WallpaperManager::Observer {
  public:
   SigninScreenHandler(
       const scoped_refptr<NetworkStateInformer>& network_state_informer,
@@ -200,6 +202,14 @@ class SigninScreenHandler
 
   // Required Local State preferences.
   static void RegisterPrefs(PrefRegistrySimple* registry);
+
+  // From WallpaperManager::Observer
+  virtual void OnWallpaperAnimationFinished(const std::string& email) OVERRIDE;
+
+  void set_kiosk_enable_flow_aborted_callback_for_test(
+      const base::Closure& callback) {
+    kiosk_enable_flow_aborted_callback_for_test_ = callback;
+  }
 
  private:
   enum UIState {
@@ -390,6 +400,11 @@ class SigninScreenHandler
   // Update current input method (namely keyboard layout) to LRU by this user.
   void SetUserInputMethod(const std::string& username);
 
+  // Invoked when auto enrollment check is finished to decide whether to
+  // continue kiosk enable flow. Kiosk enable flow is resumed when
+  // |should_auto_enroll| is false.
+  void ContinueKioskEnableFlow(bool should_auto_enroll);
+
   // Current UI state of the signin screen.
   UIState ui_state_;
 
@@ -473,6 +488,10 @@ class SigninScreenHandler
 
   scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
+
+  bool wait_for_auto_enrollment_check_;
+
+  base::Closure kiosk_enable_flow_aborted_callback_for_test_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninScreenHandler);
 };

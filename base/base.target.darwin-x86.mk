@@ -114,7 +114,6 @@ LOCAL_SRC_FILES := \
 	base/location.cc \
 	base/logging.cc \
 	base/memory/aligned_memory.cc \
-	base/memory/discardable_memory.cc \
 	base/memory/discardable_memory_android.cc \
 	base/memory/memory_pressure_listener.cc \
 	base/memory/ref_counted.cc \
@@ -134,6 +133,7 @@ LOCAL_SRC_FILES := \
 	base/metrics/bucket_ranges.cc \
 	base/metrics/histogram.cc \
 	base/metrics/histogram_base.cc \
+	base/metrics/histogram_delta_serialization.cc \
 	base/metrics/histogram_samples.cc \
 	base/metrics/histogram_snapshot_manager.cc \
 	base/metrics/sparse_histogram.cc \
@@ -278,13 +278,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -364,13 +364,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

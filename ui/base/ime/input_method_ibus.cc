@@ -69,6 +69,57 @@ chromeos::IBusEngineHandlerInterface* GetEngine() {
   return chromeos::IBusBridge::Get()->GetEngineHandler();
 }
 
+// Check ui::TextInputType and chrome::ibus::TextInputType is kept in sync.
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_NONE) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_NONE), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_TEXT) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_TEXT), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_PASSWORD) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_PASSWORD),
+               mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_SEARCH) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_SEARCH), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_EMAIL) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_EMAIL), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_NUMBER) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_NUMBER), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_TELEPHONE) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_TELEPHONE),
+               mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_URL) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_URL), mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_DATE) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_DATE), mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_DATE_TIME) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_DATE_TIME),
+               mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_DATE_TIME_LOCAL),
+               mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_MONTH) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_MONTH), mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_TIME) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_TIME), mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_WEEK) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_WEEK), mismatching_enum);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_TEXT_AREA) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_TEXT_AREA),
+               mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_CONTENT_EDITABLE) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_CONTENT_EDITABLE),
+               mismatching_enums);
+COMPILE_ASSERT(int(ui::TEXT_INPUT_TYPE_DATE_TIME_FIELD) == \
+               int(chromeos::ibus::TEXT_INPUT_TYPE_DATE_TIME_FIELD),
+               mismatching_enums);
+
+chromeos::ibus::TextInputType UiToIbusTextInputType(ui::TextInputType type) {
+  // Check the type is in the range representable by
+  // chrome::ibus::TextInputType.
+  DCHECK_LE(type, static_cast<int>(chromeos::ibus::TEXT_INPUT_TYPE_MAX)) <<
+    "ui::TextInputType and chromeos::ibus::TextInputType not synchronized";
+  return static_cast<chromeos::ibus::TextInputType>(type);
+}
+
 }  // namespace
 
 namespace ui {
@@ -229,75 +280,19 @@ void InputMethodIBus::OnTextInputTypeChanged(const TextInputClient* client) {
     UpdateContextFocusState();
     if (previous_textinput_type_ != client->GetTextInputType())
       OnInputMethodChanged();
+    previous_textinput_type_ = client->GetTextInputType();
   }
   InputMethodBase::OnTextInputTypeChanged(client);
 }
 
 void InputMethodIBus::OnCaretBoundsChanged(const TextInputClient* client) {
-  if (!context_focused_ || !IsTextInputClientFocused(client))
-    return;
-
-  // The current text input type should not be NONE if |context_| is focused.
-  DCHECK(!IsTextInputTypeNone());
-  const gfx::Rect rect = GetTextInputClient()->GetCaretBounds();
-
-  gfx::Rect composition_head;
-  if (!GetTextInputClient()->GetCompositionCharacterBounds(0,
-                                                           &composition_head)) {
-    composition_head = rect;
-  }
-
-  chromeos::IBusPanelCandidateWindowHandlerInterface* candidate_window =
-      chromeos::IBusBridge::Get()->GetCandidateWindowHandler();
-  if (!candidate_window)
-    return;
-  candidate_window->SetCursorLocation(
-      GfxRectToIBusRect(rect),
-      GfxRectToIBusRect(composition_head));
-
-  gfx::Range text_range;
-  gfx::Range selection_range;
-  string16 surrounding_text;
-  if (!GetTextInputClient()->GetTextRange(&text_range) ||
-      !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text) ||
-      !GetTextInputClient()->GetSelectionRange(&selection_range)) {
-    previous_surrounding_text_.clear();
-    previous_selection_range_ = gfx::Range::InvalidRange();
-    return;
-  }
-
-  if (previous_selection_range_ == selection_range &&
-      previous_surrounding_text_ == surrounding_text)
-    return;
-
-  previous_selection_range_ = selection_range;
-  previous_surrounding_text_ = surrounding_text;
-
-  if (!selection_range.IsValid()) {
-    // TODO(nona): Ideally selection_range should not be invalid.
-    // TODO(nona): If javascript changes the focus on page loading, even (0,0)
-    //             can not be obtained. Need investigation.
-    return;
-  }
-
-  // Here SetSurroundingText accepts relative position of |surrounding_text|, so
-  // we have to convert |selection_range| from node coordinates to
-  // |surrounding_text| coordinates.
-  if (!GetEngine())
-    return;
-  GetEngine()->SetSurroundingText(
-      UTF16ToUTF8(surrounding_text),
-      selection_range.start() - text_range.start(),
-      selection_range.end() - text_range.start());
+  OnCaretBoundsChangedInternal(client);
+  InputMethodBase::OnCaretBoundsChanged(client);
 }
 
 void InputMethodIBus::CancelComposition(const TextInputClient* client) {
   if (context_focused_ && IsTextInputClientFocused(client))
     ResetContext();
-}
-
-void InputMethodIBus::OnInputLocaleChanged() {
-  // Not supported.
 }
 
 std::string InputMethodIBus::GetInputLocale() {
@@ -383,8 +378,9 @@ void InputMethodIBus::ResetContext() {
 
 void InputMethodIBus::UpdateContextFocusState() {
   const bool old_context_focused = context_focused_;
+  const TextInputType current_text_input_type = GetTextInputType();
   // Use switch here in case we are going to add more text input types.
-  switch (GetTextInputType()) {
+  switch (current_text_input_type) {
     case TEXT_INPUT_TYPE_NONE:
     case TEXT_INPUT_TYPE_PASSWORD:
       context_focused_ = false;
@@ -401,7 +397,12 @@ void InputMethodIBus::UpdateContextFocusState() {
   if (old_context_focused && !context_focused_) {
     GetEngine()->FocusOut();
   } else if (!old_context_focused && context_focused_) {
-    GetEngine()->FocusIn();
+    GetEngine()->FocusIn(UiToIbusTextInputType(current_text_input_type));
+    OnCaretBoundsChanged(GetTextInputClient());
+  } else if (context_focused_ &&
+             current_text_input_type != previous_textinput_type_) {
+    GetEngine()->FocusOut();
+    GetEngine()->FocusIn(UiToIbusTextInputType(current_text_input_type));
     OnCaretBoundsChanged(GetTextInputClient());
   }
 }
@@ -804,6 +805,65 @@ void InputMethodIBus::ExtractCompositionText(
     out_composition->underlines.push_back(CompositionUnderline(
         0, length, SK_ColorBLACK, false /* thick */));
   }
+}
+
+void InputMethodIBus::OnCaretBoundsChangedInternal(
+    const TextInputClient* client) {
+  if (!context_focused_ || !IsTextInputClientFocused(client))
+    return;
+
+  // The current text input type should not be NONE if |context_| is focused.
+  DCHECK(!IsTextInputTypeNone());
+  const gfx::Rect rect = GetTextInputClient()->GetCaretBounds();
+
+  gfx::Rect composition_head;
+  if (!GetTextInputClient()->GetCompositionCharacterBounds(0,
+                                                           &composition_head)) {
+    composition_head = rect;
+  }
+
+  chromeos::IBusPanelCandidateWindowHandlerInterface* candidate_window =
+      chromeos::IBusBridge::Get()->GetCandidateWindowHandler();
+  if (!candidate_window)
+    return;
+  candidate_window->SetCursorLocation(
+      GfxRectToIBusRect(rect),
+      GfxRectToIBusRect(composition_head));
+
+  gfx::Range text_range;
+  gfx::Range selection_range;
+  string16 surrounding_text;
+  if (!GetTextInputClient()->GetTextRange(&text_range) ||
+      !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text) ||
+      !GetTextInputClient()->GetSelectionRange(&selection_range)) {
+    previous_surrounding_text_.clear();
+    previous_selection_range_ = gfx::Range::InvalidRange();
+    return;
+  }
+
+  if (previous_selection_range_ == selection_range &&
+      previous_surrounding_text_ == surrounding_text)
+    return;
+
+  previous_selection_range_ = selection_range;
+  previous_surrounding_text_ = surrounding_text;
+
+  if (!selection_range.IsValid()) {
+    // TODO(nona): Ideally selection_range should not be invalid.
+    // TODO(nona): If javascript changes the focus on page loading, even (0,0)
+    //             can not be obtained. Need investigation.
+    return;
+  }
+
+  // Here SetSurroundingText accepts relative position of |surrounding_text|, so
+  // we have to convert |selection_range| from node coordinates to
+  // |surrounding_text| coordinates.
+  if (!GetEngine())
+    return;
+  GetEngine()->SetSurroundingText(
+      UTF16ToUTF8(surrounding_text),
+      selection_range.start() - text_range.start(),
+      selection_range.end() - text_range.start());
 }
 
 }  // namespace ui

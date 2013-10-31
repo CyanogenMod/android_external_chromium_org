@@ -8,15 +8,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/timer/timer.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/browser/ssl/ssl_error_handler.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/resource_controller.h"
 #include "net/url_request/url_request.h"
-
-namespace net {
-class ClientCertStore;
-}
 
 namespace content {
 class ResourceDispatcherHostLoginDelegate;
@@ -39,6 +36,10 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void StartRequest();
   void CancelRequest(bool from_renderer);
 
+  // Sets the resource as detached and starts a timer to cancel the request in
+  // the future.
+  void Detach();
+
   void ReportUploadProgress();
 
   bool is_transferring() const { return is_transferring_; }
@@ -54,19 +55,13 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   // IPC message handlers:
   void OnUploadProgressACK();
 
+  void set_detachable_delay_ms(int delay) {
+    detachable_delay_on_cancel_ms_ = delay;
+  }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreLookup);
-
-  ResourceLoader(scoped_ptr<net::URLRequest> request,
-                 scoped_ptr<ResourceHandler> handler,
-                 ResourceLoaderDelegate* delegate,
-                 scoped_ptr<net::ClientCertStore> client_cert_store);
-
-  // Initialization logic shared between the public and private constructor.
-  void Init(scoped_ptr<net::URLRequest> request,
-            scoped_ptr<ResourceHandler> handler,
-            ResourceLoaderDelegate* delegate,
-            scoped_ptr<net::ClientCertStore> client_cert_store);
+  FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreNull);
 
   // net::URLRequest::Delegate implementation:
   virtual void OnReceivedRedirect(net::URLRequest* request,
@@ -133,7 +128,8 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   // which point we'll receive a new ResourceHandler.
   bool is_transferring_;
 
-  scoped_ptr<net::ClientCertStore> client_cert_store_;
+  int detachable_delay_on_cancel_ms_;
+  scoped_ptr<base::OneShotTimer<ResourceLoader> > detached_timer_;
 
   base::WeakPtrFactory<ResourceLoader> weak_ptr_factory_;
 

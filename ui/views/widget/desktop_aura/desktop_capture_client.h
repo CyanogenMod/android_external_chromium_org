@@ -12,6 +12,10 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/views/views_export.h"
 
+namespace aura {
+class RootWindow;
+}
+
 namespace views {
 
 // Desktop implementation of CaptureClient. There is one CaptureClient per
@@ -27,13 +31,13 @@ class VIEWS_EXPORT DesktopCaptureClient : public aura::client::CaptureClient {
   virtual aura::Window* GetCaptureWindow() OVERRIDE;
 
  private:
-  typedef std::set<aura::RootWindow*> Roots;
+  typedef std::set<DesktopCaptureClient*> CaptureClients;
 
   aura::RootWindow* root_;
   aura::Window* capture_window_;
 
-  // Set of RootWindows DesktopCaptureClient has been created for.
-  static Roots* roots_;
+  // Set of DesktopCaptureClients.
+  static CaptureClients* capture_clients_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopCaptureClient);
 };

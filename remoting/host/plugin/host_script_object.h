@@ -8,28 +8,16 @@
 #include <string>
 #include <vector>
 
-#include "base/compiler_specific.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/string16.h"
-#include "base/synchronization/cancellation_flag.h"
-#include "base/synchronization/lock.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/thread_task_runner_handle.h"
-#include "base/threading/platform_thread.h"
-#include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "remoting/base/auto_thread_task_runner.h"
-#include "remoting/host/chromoting_host_context.h"
-#include "remoting/host/log_to_server.h"
+#include "remoting/host/it2me/it2me_impl.h"
 #include "remoting/host/plugin/host_plugin_utils.h"
 #include "remoting/host/setup/daemon_controller.h"
 #include "remoting/jingle_glue/xmpp_signal_strategy.h"
 #include "remoting/protocol/pairing_registry.h"
-#include "third_party/npapi/bindings/npapi.h"
-#include "third_party/npapi/bindings/npfunctions.h"
-#include "third_party/npapi/bindings/npruntime.h"
 
 namespace remoting {
 
@@ -37,7 +25,7 @@ namespace remoting {
 // HostNPScriptObject creates threads that are required to run
 // ChromotingHost and starts/stops the host on those threads. When
 // destroyed it synchronously shuts down the host and all threads.
-class HostNPScriptObject {
+class HostNPScriptObject : public It2MeImpl::Observer {
  public:
   HostNPScriptObject(NPP plugin,
                      NPObject* parent,
@@ -67,24 +55,6 @@ class HostNPScriptObject {
   void SetWindow(NPWindow* np_window);
 
  private:
-  //////////////////////////////////////////////////////////
-  // Definitions for It2Me host.
-
-  class It2MeImpl;
-
-  // These state values are duplicated in host_session.js. Remember to update
-  // both copies when making changes.
-  enum State {
-    kDisconnected,
-    kStarting,
-    kRequestedAccessCode,
-    kReceivedAccessCode,
-    kConnected,
-    kDisconnecting,
-    kError,
-    kInvalidDomainError
-  };
-
   //////////////////////////////////////////////////////////
   // Plugin methods for It2Me host.
 
@@ -187,21 +157,22 @@ class HostNPScriptObject {
   bool StopDaemon(const NPVariant* args, uint32_t arg_count, NPVariant* result);
 
   //////////////////////////////////////////////////////////
-  // Helper methods used by the It2Me host implementation.
+  // Implementation of It2MeImpl::Observer methods.
 
   // Notifies OnStateChanged handler of a state change.
-  void NotifyStateChanged(State state);
+  virtual void OnStateChanged(It2MeHostState state) OVERRIDE;
 
   // If the web-app has registered a callback to be notified of changes to the
   // NAT traversal policy, notify it.
-  void NotifyNatPolicyChanged(bool nat_traversal_enabled);
+  virtual void OnNatPolicyChanged(bool nat_traversal_enabled) OVERRIDE;
 
   // Stores the Access Code for the web-app to query.
-  void StoreAccessCode(const std::string& access_code,
-                       base::TimeDelta access_code_lifetime);
+  virtual void OnStoreAccessCode(const std::string& access_code,
+                                 base::TimeDelta access_code_lifetime) OVERRIDE;
 
   // Stores the client user's name for the web-app to query.
-  void StoreClientUsername(const std::string& client_username);
+  virtual void OnClientAuthenticated(
+      const std::string& client_username) OVERRIDE;
 
   // Used to generate localized strings to pass to the It2Me host core.
   void LocalizeStrings(NPObject* localize_func);
@@ -298,7 +269,7 @@ class HostNPScriptObject {
   scoped_refptr<It2MeImpl> it2me_impl_;
 
   // Cached, read-only copies of |it2me_impl_| session state.
-  State state_;
+  It2MeHostState state_;
   std::string access_code_;
   base::TimeDelta access_code_lifetime_;
   std::string client_username_;

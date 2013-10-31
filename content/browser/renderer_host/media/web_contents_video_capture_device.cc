@@ -139,7 +139,8 @@ class ThreadSafeCaptureOracle
     : public base::RefCountedThreadSafe<ThreadSafeCaptureOracle> {
  public:
   ThreadSafeCaptureOracle(scoped_ptr<media::VideoCaptureDevice::Client> client,
-                          scoped_ptr<VideoCaptureOracle> oracle);
+                          scoped_ptr<VideoCaptureOracle> oracle,
+                          const gfx::Size& capture_size);
 
   bool ObserveEventAndDecideCapture(
       VideoCaptureOracle::Event event,
@@ -174,6 +175,9 @@ class ThreadSafeCaptureOracle
 
   // Makes the decision to capture a frame.
   const scoped_ptr<VideoCaptureOracle> oracle_;
+
+  // The resolution at which we're capturing.
+  const gfx::Size capture_size_;
 };
 
 // FrameSubscriber is a proxy to the ThreadSafeCaptureOracle that's compatible
@@ -396,8 +400,12 @@ class VideoFrameDeliveryLog {
 
 ThreadSafeCaptureOracle::ThreadSafeCaptureOracle(
     scoped_ptr<media::VideoCaptureDevice::Client> client,
-    scoped_ptr<VideoCaptureOracle> oracle)
-    : client_(client.Pass()), oracle_(oracle.Pass()) {}
+    scoped_ptr<VideoCaptureOracle> oracle,
+    const gfx::Size& capture_size)
+    : client_(client.Pass()),
+      oracle_(oracle.Pass()),
+      capture_size_(capture_size) {
+}
 
 bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
     VideoCaptureOracle::Event event,
@@ -410,7 +418,7 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
     return false;  // Capture is stopped.
 
   scoped_refptr<media::VideoFrame> output_buffer =
-      client_->ReserveOutputBuffer();
+      client_->ReserveOutputBuffer(capture_size_);
   const bool should_capture =
       oracle_->ObserveEventAndDecideCapture(event, event_time);
   const bool content_is_dirty =
@@ -642,7 +650,7 @@ void RenderVideoFrame(const SkBitmap& input,
       method = skia::ImageOperations::RESIZE_BOX;
     }
 
-    TRACE_EVENT_ASYNC_STEP0("mirroring", "Capture", output.get(), "Scale");
+    TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", output.get(), "Scale");
     scaled_bitmap = skia::ImageOperations::Resize(input, method,
                                                   region_in_frame.width(),
                                                   region_in_frame.height());
@@ -650,7 +658,7 @@ void RenderVideoFrame(const SkBitmap& input,
     scaled_bitmap = input;
   }
 
-  TRACE_EVENT_ASYNC_STEP0("mirroring", "Capture", output.get(), "YUV");
+  TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", output.get(), "YUV");
   {
     SkAutoLockPixels scaled_bitmap_locker(scaled_bitmap);
 
@@ -864,7 +872,8 @@ void CaptureMachine::DidCopyFromBackingStore(
   base::Time now = base::Time::Now();
   if (success) {
     UMA_HISTOGRAM_TIMES("TabCapture.CopyTimeBitmap", now - start_time);
-    TRACE_EVENT_ASYNC_STEP0("mirroring", "Capture", target.get(), "Render");
+    TRACE_EVENT_ASYNC_STEP_INTO0("mirroring", "Capture", target.get(),
+                                 "Render");
     render_task_runner_->PostTask(FROM_HERE, base::Bind(
         &RenderVideoFrame, bitmap, target,
         base::Bind(deliver_frame_cb, start_time)));
@@ -1028,27 +1037,21 @@ void WebContentsVideoCaptureDevice::Impl::AllocateAndStart(
     return;
   }
 
-  // Initialize capture settings which will be consistent for the
-  // duration of the capture.
+  // Need to call OnFrameInfo just to set the frame rate.
+  // TODO(nick): http://crbug.com/309907 The other parameters of this struct are
+  // ignored. Come up with a better way to communicate the frame rate.
   media::VideoCaptureCapability settings;
-
-  settings.width = width;
-  settings.height = height;
   settings.frame_rate = frame_rate;
-  // Note: the value of |settings.color| doesn't matter if we use only the
-  // VideoFrame based methods on |client|.
-  settings.color = media::PIXEL_FORMAT_I420;
-  settings.expected_capture_delay = 0;
-  settings.interlaced = false;
+  client->OnFrameInfo(settings);
 
   base::TimeDelta capture_period = base::TimeDelta::FromMicroseconds(
-      1000000.0 / settings.frame_rate + 0.5);
+      1000000.0 / frame_rate + 0.5);
 
-  client->OnFrameInfo(settings);
   scoped_ptr<VideoCaptureOracle> oracle(
       new VideoCaptureOracle(capture_period,
                              kAcceleratedSubscriberIsSupported));
-  oracle_proxy_ = new ThreadSafeCaptureOracle(client.Pass(), oracle.Pass());
+  oracle_proxy_ = new ThreadSafeCaptureOracle(
+      client.Pass(), oracle.Pass(), gfx::Size(width, height));
 
   // Allocates the CaptureMachine. The CaptureMachine will be tracking render
   // view swapping over its lifetime, and we don't want to lose our reference to

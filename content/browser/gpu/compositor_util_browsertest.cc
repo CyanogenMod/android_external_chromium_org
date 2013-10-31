@@ -25,19 +25,15 @@ IN_PROC_BROWSER_TEST_F(CompositorUtilTest, CompositingModeAsExpected) {
     DELEGATED,  // Implies threaded
   } expected_mode = DISABLED;
 #if defined(USE_AURA)
-#if defined(OS_CHROMEOS)
-  expected_mode = THREADED;
-#else
   expected_mode = DELEGATED;
-#endif
 #elif defined(OS_ANDROID)
   expected_mode = THREADED;
 #elif defined(OS_MACOSX)
   if (base::mac::IsOSMountainLionOrLater())
-    expected_mode = ENABLED;
+    expected_mode = THREADED;
 #elif defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_VISTA)
-    expected_mode = ENABLED;
+    expected_mode = THREADED;
 #endif
 
   EXPECT_EQ(expected_mode == ENABLED ||

@@ -327,10 +327,8 @@ bool NotificationsApiFunction::CreateNotification(
     optional_fields.clickable = *options->is_clickable;
 
   NotificationsApiDelegate* api_delegate(new NotificationsApiDelegate(
-      this,
-      profile(),
-      extension_->id(),
-      id));  // ownership is passed to Notification
+      this, GetProfile(), extension_->id(), id));  // ownership is passed to
+                                                   // Notification
   Notification notification(type,
                             extension_->url(),
                             title,
@@ -345,7 +343,7 @@ bool NotificationsApiFunction::CreateNotification(
                             optional_fields,
                             api_delegate);
 
-  g_browser_process->notification_ui_manager()->Add(notification, profile());
+  g_browser_process->notification_ui_manager()->Add(notification, GetProfile());
   return true;
 }
 
@@ -442,16 +440,24 @@ bool NotificationsApiFunction::UpdateNotification(
   if (options->is_clickable.get())
     notification->set_clickable(*options->is_clickable);
 
-  g_browser_process->notification_ui_manager()->Update(
-      *notification, profile());
+  g_browser_process->notification_ui_manager()->Update(*notification,
+                                                       GetProfile());
   return true;
 }
 
-bool NotificationsApiFunction::IsNotificationsApiEnabled() {
+bool NotificationsApiFunction::AreExtensionNotificationsAllowed() const {
   DesktopNotificationService* service =
-      DesktopNotificationServiceFactory::GetForProfile(profile());
+      DesktopNotificationServiceFactory::GetForProfile(GetProfile());
   return service->IsNotifierEnabled(message_center::NotifierId(
-      message_center::NotifierId::APPLICATION, extension_->id()));
+             message_center::NotifierId::APPLICATION, extension_->id()));
+}
+
+bool NotificationsApiFunction::IsNotificationsApiEnabled() const {
+  return CanRunWhileDisabled() || AreExtensionNotificationsAllowed();
+}
+
+bool NotificationsApiFunction::CanRunWhileDisabled() const {
+  return false;
 }
 
 bool NotificationsApiFunction::RunImpl() {
@@ -585,7 +591,7 @@ bool NotificationsGetAllFunction::RunNotificationsApi() {
       g_browser_process->notification_ui_manager();
   std::set<std::string> notification_ids =
       notification_ui_manager->GetAllIdsByProfileAndSourceOrigin(
-          profile_, extension_->url());
+          GetProfile(), extension_->url());
 
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
 
@@ -596,6 +602,28 @@ bool NotificationsGetAllFunction::RunNotificationsApi() {
   }
 
   SetResult(result.release());
+  SendResponse(true);
+
+  return true;
+}
+
+NotificationsGetPermissionLevelFunction::
+NotificationsGetPermissionLevelFunction() {}
+
+NotificationsGetPermissionLevelFunction::
+~NotificationsGetPermissionLevelFunction() {}
+
+bool NotificationsGetPermissionLevelFunction::CanRunWhileDisabled() const {
+  return true;
+}
+
+bool NotificationsGetPermissionLevelFunction::RunNotificationsApi() {
+  api::notifications::PermissionLevel result =
+      AreExtensionNotificationsAllowed()
+          ? api::notifications::PERMISSION_LEVEL_GRANTED
+          : api::notifications::PERMISSION_LEVEL_DENIED;
+
+  SetResult(new base::StringValue(api::notifications::ToString(result)));
   SendResponse(true);
 
   return true;

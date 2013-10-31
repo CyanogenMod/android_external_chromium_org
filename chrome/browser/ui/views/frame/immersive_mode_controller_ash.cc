@@ -7,13 +7,10 @@
 #include <set>
 #include <vector>
 
-#include "ash/ash_switches.h"
 #include "ash/shell.h"
-#include "ash/wm/window_properties.h"
-#include "base/command_line.h"
+#include "ash/wm/window_state.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
-#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "content/public/browser/notification_service.h"
@@ -48,6 +45,15 @@ const int kAnimationOffsetY = 3;
 const int kRevealSlowAnimationDurationMs = 400;
 const int kRevealFastAnimationDurationMs = 200;
 
+// The delay in milliseconds between the mouse stopping at the top edge of the
+// screen and the top-of-window views revealing.
+const int kMouseRevealDelayMs = 200;
+
+// The maximum amount of pixels that the cursor can move for the cursor to be
+// considered "stopped". This allows the user to reveal the top-of-window views
+// without holding the cursor completely still.
+const int kMouseRevealXThresholdPixels = 3;
+
 // How many pixels a gesture can start away from |top_container_| when in
 // closed state and still be considered near it. This is needed to overcome
 // issues with poor location values near the edge of the display.
@@ -70,19 +76,6 @@ const int kHeightOfDeadRegionAboveTopContainer = 10;
 // between displays if the user has a vertical display layout (primary display
 // above/below secondary display).
 const int kMouseRevealBoundsHeight = 3;
-
-// If |hovered| is true, moves the mouse above |view|. Moves it outside of
-// |view| otherwise.
-// Should not be called outside of tests.
-void MoveMouse(views::View* view, bool hovered) {
-  gfx::Point cursor_pos;
-  if (!hovered) {
-    int bottom_edge = view->bounds().bottom();
-    cursor_pos = gfx::Point(0, bottom_edge + 100);
-  }
-  views::View::ConvertPointToScreen(view, &cursor_pos);
-  aura::Env::GetInstance()->set_last_mouse_location(cursor_pos);
-}
 
 // Returns the BubbleDelegateView corresponding to |maybe_bubble| if
 // |maybe_bubble| is a bubble.
@@ -300,11 +293,6 @@ void ImmersiveModeControllerAsh::UnlockRevealedState() {
   }
 }
 
-void ImmersiveModeControllerAsh::MaybeExitImmersiveFullscreen() {
-  if (ShouldExitImmersiveFullscreen())
-    delegate_->FullscreenStateChanged();
-}
-
 void ImmersiveModeControllerAsh::Init(
     Delegate* delegate,
     views::Widget* widget,
@@ -315,12 +303,6 @@ void ImmersiveModeControllerAsh::Init(
   // window pointer so |this| can stop observing during destruction.
   native_window_ = widget_->GetNativeWindow();
   top_container_ = top_container;
-
-  // Optionally allow the tab indicators to be hidden.
-  if (CommandLine::ForCurrentProcess()->
-          HasSwitch(ash::switches::kAshImmersiveHideTabIndicators)) {
-    tab_indicator_visibility_ = TAB_INDICATORS_FORCE_HIDE;
-  }
 }
 
 void ImmersiveModeControllerAsh::SetEnabled(bool enabled) {
@@ -361,7 +343,7 @@ void ImmersiveModeControllerAsh::SetEnabled(bool enabled) {
     top_edge_hover_timer_.Stop();
     // Snap immediately to the closed state.
     reveal_state_ = CLOSED;
-    EnablePaintToLayer(false);
+    top_container_->SetPaintToLayer(false);
     delegate_->SetImmersiveStyle(false);
     SetRenderWindowTopInsetsForTouch(0);
 
@@ -404,6 +386,18 @@ ImmersiveRevealedLock* ImmersiveModeControllerAsh::GetRevealedLock(
 void ImmersiveModeControllerAsh::OnFindBarVisibleBoundsChanged(
     const gfx::Rect& new_visible_bounds_in_screen) {
   find_bar_visible_bounds_in_screen_ = new_visible_bounds_in_screen;
+}
+
+void ImmersiveModeControllerAsh::SetupForTest() {
+  DCHECK(!enabled_);
+  animations_disabled_for_test_ = true;
+
+  // Move the mouse off of the top-of-window views so that it does not keep
+  // the top-of-window views revealed.
+  gfx::Point cursor_pos(0, top_container_->bounds().bottom() + 100);
+  views::View::ConvertPointToScreen(top_container_, &cursor_pos);
+  aura::Env::GetInstance()->set_last_mouse_location(cursor_pos);
+  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -551,6 +545,7 @@ void ImmersiveModeControllerAsh::AnimationProgressed(
 
 ////////////////////////////////////////////////////////////////////////////////
 // aura::WindowObserver overrides:
+
 void ImmersiveModeControllerAsh::OnWindowPropertyChanged(aura::Window* window,
                                                          const void* key,
                                                          intptr_t old) {
@@ -561,23 +556,11 @@ void ImmersiveModeControllerAsh::OnWindowPropertyChanged(aura::Window* window,
     // Disable immersive mode when the user exits fullscreen without going
     // through FullscreenController::ToggleFullscreenMode(). This is the case
     // if the user exits fullscreen via the restore button.
-    if (ShouldExitImmersiveFullscreen()) {
-      // Other "property change" observers may want to animate between the
-      // current visuals and the new window state. Do not alter the current
-      // visuals yet and post a task to exit immersive fullscreen instead.
-      base::MessageLoopForUI::current()->PostTask(
-          FROM_HERE,
-          base::Bind(&ImmersiveModeControllerAsh::MaybeExitImmersiveFullscreen,
-                     weak_ptr_factory_.GetWeakPtr()));
-    }
-
-    ui::WindowShowState show_state = native_window_->GetProperty(
-        aura::client::kShowStateKey);
-    if (show_state == ui::SHOW_STATE_FULLSCREEN &&
-        old == ui::SHOW_STATE_MINIMIZED) {
-      // Relayout in case there was a layout while the window show state was
-      // ui::SHOW_STATE_MINIMIZED.
-      LayoutBrowserRootView();
+    ui::WindowShowState show_state = static_cast<ui::WindowShowState>(
+        native_window_->GetProperty(aura::client::kShowStateKey));
+    if (show_state != ui::SHOW_STATE_FULLSCREEN &&
+        show_state != ui::SHOW_STATE_MINIMIZED) {
+      delegate_->FullscreenStateChanged();
     }
   }
 }
@@ -599,32 +582,6 @@ void ImmersiveModeControllerAsh::OnRemoveTransientChild(
     aura::Window* window,
     aura::Window* transient) {
   bubble_manager_->StopObserving(transient);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Testing interface:
-
-void ImmersiveModeControllerAsh::SetForceHideTabIndicatorsForTest(bool force) {
-  if (force)
-    tab_indicator_visibility_ = TAB_INDICATORS_FORCE_HIDE;
-  else if (tab_indicator_visibility_ == TAB_INDICATORS_FORCE_HIDE)
-    tab_indicator_visibility_ = TAB_INDICATORS_HIDE;
-  UpdateUseMinimalChrome(LAYOUT_YES);
-}
-
-void ImmersiveModeControllerAsh::StartRevealForTest(bool hovered) {
-  MaybeStartReveal(ANIMATE_NO);
-  MoveMouse(top_container_, hovered);
-  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
-}
-
-void ImmersiveModeControllerAsh::SetMouseHoveredForTest(bool hovered) {
-  MoveMouse(top_container_, hovered);
-  UpdateLocatedEventRevealedLock(NULL, ALLOW_REVEAL_WHILE_CLOSING_NO);
-}
-
-void ImmersiveModeControllerAsh::DisableAnimationsForTest() {
-  animations_disabled_for_test_ = true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -721,8 +678,7 @@ void ImmersiveModeControllerAsh::UpdateTopEdgeHoverTimer(
   // |hit_bounds_in_screen| is short.)
   if (top_edge_hover_timer_.IsRunning() &&
       abs(location_in_screen.x() - mouse_x_when_hit_top_in_screen_) <=
-          ImmersiveFullscreenConfiguration::
-              immersive_mode_reveal_x_threshold_pixels())
+          kMouseRevealXThresholdPixels)
     return;
 
   // Start the reveal if the cursor doesn't move for some amount of time.
@@ -731,8 +687,7 @@ void ImmersiveModeControllerAsh::UpdateTopEdgeHoverTimer(
   // Timer is stopped when |this| is destroyed, hence Unretained() is safe.
   top_edge_hover_timer_.Start(
       FROM_HERE,
-      base::TimeDelta::FromMilliseconds(
-          ImmersiveFullscreenConfiguration::immersive_mode_reveal_delay_ms()),
+      base::TimeDelta::FromMilliseconds(kMouseRevealDelayMs),
       base::Bind(&ImmersiveModeControllerAsh::AcquireLocatedEventRevealedLock,
                  base::Unretained(this)));
 }
@@ -908,8 +863,12 @@ void ImmersiveModeControllerAsh::UpdateUseMinimalChrome(Layout layout) {
   bool in_tab_fullscreen = fullscreen_controller ?
       fullscreen_controller->IsFullscreenForTabOrPending() : false;
   bool use_minimal_chrome = !in_tab_fullscreen && enabled_;
-  native_window_->SetProperty(ash::internal::kFullscreenUsesMinimalChromeKey,
-                              use_minimal_chrome);
+
+  // When using minimal chrome, the shelf is auto-hidden. The auto-hidden shelf
+  // displays a 3px 'light bar' when it is closed. Otherwise, the shelf is
+  // hidden completely and cannot be revealed.
+  ash::wm::GetWindowState(native_window_)->set_hide_shelf_when_fullscreen(
+      !use_minimal_chrome);
 
   TabIndicatorVisibility previous_tab_indicator_visibility =
       tab_indicator_visibility_;
@@ -918,12 +877,7 @@ void ImmersiveModeControllerAsh::UpdateUseMinimalChrome(Layout layout) {
         TAB_INDICATORS_SHOW : TAB_INDICATORS_HIDE;
   }
 
-  // Ash on Windows may not have a shell.
-  if (ash::Shell::HasInstance()) {
-    // When using minimal chrome, the shelf is auto-hidden. The auto-hidden
-    // shelf displays a 3px 'light bar' when it is closed.
-    ash::Shell::GetInstance()->UpdateShelfVisibility();
-  }
+  ash::Shell::GetInstance()->UpdateShelfVisibility();
 
   if (tab_indicator_visibility_ != previous_tab_indicator_visibility) {
     // If the top-of-window views are revealed or animating, the change will
@@ -964,7 +918,7 @@ void ImmersiveModeControllerAsh::MaybeStartReveal(Animate animate) {
   reveal_state_ = SLIDING_OPEN;
   if (previous_reveal_state == CLOSED) {
     // Turn on layer painting so that we can overlap the web contents.
-    EnablePaintToLayer(true);
+    top_container_->SetPaintToLayer(true);
 
     // Ensure window caption buttons are updated and the view bounds are
     // computed at normal (non-immersive-style) size. The layout call moves the
@@ -993,25 +947,6 @@ void ImmersiveModeControllerAsh::MaybeStartReveal(Animate animate) {
 
   if (previous_reveal_state == CLOSED)
      FOR_EACH_OBSERVER(Observer, observers_, OnImmersiveRevealStarted());
-}
-
-void ImmersiveModeControllerAsh::EnablePaintToLayer(bool enable) {
-  top_container_->SetPaintToLayer(enable);
-
-  // Views software compositing is not fully layer aware. If the bookmark bar
-  // is detached while the top container layer slides on or off the screen,
-  // the pixels that become exposed are the remnants of the last software
-  // composite of the BrowserView, not the freshly-exposed bookmark bar.
-  // Force the bookmark bar to paint to a layer so the views composite
-  // properly. The infobar container does not need this treatment because
-  // BrowserView::PaintChildren() always draws it last when it is visible.
-  BookmarkBarView* bookmark_bar = delegate_->GetBookmarkBar();
-  if (!bookmark_bar)
-    return;
-  if (enable && bookmark_bar->IsDetached())
-    bookmark_bar->SetPaintToLayer(true);
-  else
-    bookmark_bar->SetPaintToLayer(false);
 }
 
 void ImmersiveModeControllerAsh::LayoutBrowserRootView() {
@@ -1050,10 +985,6 @@ void ImmersiveModeControllerAsh::MaybeEndReveal(Animate animate) {
   reveal_state_ = SLIDING_CLOSED;
   int duration_ms = GetAnimationDuration(animate);
   if (duration_ms > 0) {
-    // The bookmark bar may have become detached during the reveal so ensure
-    // layers are available. This is a no-op for the top container.
-    EnablePaintToLayer(true);
-
     animation_->SetSlideDuration(duration_ms);
     animation_->Hide();
   } else {
@@ -1066,22 +997,11 @@ void ImmersiveModeControllerAsh::OnSlideClosedAnimationCompleted() {
   DCHECK_EQ(SLIDING_CLOSED, reveal_state_);
   reveal_state_ = CLOSED;
   // Layers aren't needed after animation completes.
-  EnablePaintToLayer(false);
+  top_container_->SetPaintToLayer(false);
   // Update tabstrip for closed state.
   delegate_->SetImmersiveStyle(true);
   SetRenderWindowTopInsetsForTouch(kNearTopContainerDistance);
   LayoutBrowserRootView();
-}
-
-bool ImmersiveModeControllerAsh::ShouldExitImmersiveFullscreen() const {
-  if (!native_window_)
-    return false;
-
-  ui::WindowShowState show_state = static_cast<ui::WindowShowState>(
-      native_window_->GetProperty(aura::client::kShowStateKey));
-  return IsEnabled() &&
-      show_state != ui::SHOW_STATE_FULLSCREEN &&
-      show_state != ui::SHOW_STATE_MINIMIZED;
 }
 
 ImmersiveModeControllerAsh::SwipeType ImmersiveModeControllerAsh::GetSwipeType(

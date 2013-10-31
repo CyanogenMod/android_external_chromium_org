@@ -2523,9 +2523,9 @@ static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverFrame(PP_Instance inst
   iface->DeliverFrame(instance, decrypted_frame, decrypted_frame_info);
 }
 
-static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedBlockInfo* decrypted_block_info) {
+static void Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedSampleInfo* decrypted_sample_info) {
   const struct PPB_ContentDecryptor_Private_0_7 *iface = Pnacl_WrapperInfo_PPB_ContentDecryptor_Private_0_7.real_iface;
-  iface->DeliverSamples(instance, audio_frames, decrypted_block_info);
+  iface->DeliverSamples(instance, audio_frames, decrypted_sample_info);
 }
 
 /* End wrapper methods for PPB_ContentDecryptor_Private_0_7 */
@@ -3091,11 +3091,6 @@ static void Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished(PP_Instance ins
 static PP_Bool Pnacl_M25_PPB_NaCl_Private_IsOffTheRecord(void) {
   const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
   return iface->IsOffTheRecord();
-}
-
-static PP_Bool Pnacl_M25_PPB_NaCl_Private_IsPnaclEnabled(void) {
-  const struct PPB_NaCl_Private_1_0 *iface = Pnacl_WrapperInfo_PPB_NaCl_Private_1_0.real_iface;
-  return iface->IsPnaclEnabled();
 }
 
 static PP_ExternalPluginResult Pnacl_M25_PPB_NaCl_Private_ReportNaClError(PP_Instance instance, PP_NaClError message_id) {
@@ -4800,7 +4795,7 @@ struct PPB_ContentDecryptor_Private_0_7 Pnacl_Wrappers_PPB_ContentDecryptor_Priv
     .DecoderDeinitializeDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M31_PPB_ContentDecryptor_Private_DecoderDeinitializeDone,
     .DecoderResetDone = (void (*)(PP_Instance instance, PP_DecryptorStreamType decoder_type, uint32_t request_id))&Pnacl_M31_PPB_ContentDecryptor_Private_DecoderResetDone,
     .DeliverFrame = (void (*)(PP_Instance instance, PP_Resource decrypted_frame, const struct PP_DecryptedFrameInfo* decrypted_frame_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverFrame,
-    .DeliverSamples = (void (*)(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedBlockInfo* decrypted_block_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples
+    .DeliverSamples = (void (*)(PP_Instance instance, PP_Resource audio_frames, const struct PP_DecryptedSampleInfo* decrypted_sample_info))&Pnacl_M31_PPB_ContentDecryptor_Private_DeliverSamples
 };
 
 struct PPB_Ext_CrxFileSystem_Private_0_1 Pnacl_Wrappers_PPB_Ext_CrxFileSystem_Private_0_1 = {
@@ -4955,7 +4950,6 @@ struct PPB_NaCl_Private_1_0 Pnacl_Wrappers_PPB_NaCl_Private_1_0 = {
     .GetNexeFd = (int32_t (*)(PP_Instance instance, const char* pexe_url, uint32_t abi_version, uint32_t opt_level, const char* last_modified, const char* etag, PP_Bool has_no_store_header, PP_Bool* is_hit, PP_FileHandle* nexe_handle, struct PP_CompletionCallback callback))&Pnacl_M25_PPB_NaCl_Private_GetNexeFd,
     .ReportTranslationFinished = (void (*)(PP_Instance instance, PP_Bool success))&Pnacl_M25_PPB_NaCl_Private_ReportTranslationFinished,
     .IsOffTheRecord = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsOffTheRecord,
-    .IsPnaclEnabled = (PP_Bool (*)(void))&Pnacl_M25_PPB_NaCl_Private_IsPnaclEnabled,
     .ReportNaClError = (PP_ExternalPluginResult (*)(PP_Instance instance, PP_NaClError message_id))&Pnacl_M25_PPB_NaCl_Private_ReportNaClError,
     .OpenNaClExecutable = (PP_FileHandle (*)(PP_Instance instance, const char* file_url, uint64_t* file_token_lo, uint64_t* file_token_hi))&Pnacl_M25_PPB_NaCl_Private_OpenNaClExecutable
 };

@@ -17,8 +17,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,third_party_icu_icuuc_gyp)/icuuc.stamp \
 	$(call intermediates-dir-for,GYP,third_party_npapi_npapi_gyp)/npapi.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
-	$(call intermediates-dir-for,GYP,ui_ui_resources_gyp)/ui_resources.stamp \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_v8_gyp)/v8.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_resources_gyp)/webkit_resources.stamp \
 	$(call intermediates-dir-for,GYP,webkit_webkit_strings_gyp)/webkit_strings.stamp \
@@ -83,13 +81,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -147,7 +145,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/frameworks/wilhelm/include \
@@ -212,13 +209,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -277,7 +274,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/third_party/npapi/bindings \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources \
 	$(LOCAL_PATH)/v8/include \
 	$(LOCAL_PATH)/third_party/WebKit \
 	$(PWD)/frameworks/wilhelm/include \
@@ -346,8 +342,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_library_gyp \
-	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

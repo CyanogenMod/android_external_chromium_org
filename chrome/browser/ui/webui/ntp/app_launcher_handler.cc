@@ -14,9 +14,9 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -25,8 +25,8 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -60,6 +60,7 @@ using content::WebContents;
 using extensions::CrxInstaller;
 using extensions::Extension;
 using extensions::ExtensionPrefs;
+using extensions::UnloadedExtensionInfo;
 
 namespace {
 
@@ -283,8 +284,8 @@ void AppLauncherHandler::Observe(int type,
         extension = content::Details<const Extension>(details).ptr();
         uninstalled = true;
       } else {  // NOTIFICATION_EXTENSION_UNLOADED
-        if (content::Details<extensions::UnloadedExtensionInfo>(
-                details)->reason == extension_misc::UNLOAD_REASON_UNINSTALL) {
+        if (content::Details<UnloadedExtensionInfo>(details)->reason ==
+            UnloadedExtensionInfo::REASON_UNINSTALL) {
           // Uninstalls are tracked by NOTIFICATION_EXTENSION_UNINSTALLED.
           return;
         }

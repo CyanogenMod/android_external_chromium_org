@@ -4,8 +4,10 @@
 
 #include "content/shell/app/shell_main_delegate.h"
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "cc/base/switches.h"
@@ -13,6 +15,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/layouttest_support.h"
+#include "content/shell/app/shell_breakpad_client.h"
 #include "content/shell/app/webkit_test_platform_support.h"
 #include "content/shell/browser/shell_browser_main.h"
 #include "content/shell/browser/shell_content_browser_client.h"
@@ -42,16 +45,27 @@
 #endif
 
 #if defined(OS_MACOSX)
+#include "base/mac/os_crash_dumps.h"
+#include "components/breakpad/app/breakpad_mac.h"
 #include "content/shell/app/paths_mac.h"
 #include "content/shell/app/shell_main_delegate_mac.h"
 #endif  // OS_MACOSX
 
 #if defined(OS_WIN)
 #include <initguid.h>
+#include <windows.h>
 #include "base/logging_win.h"
+#include "components/breakpad/app/breakpad_win.h"
+#endif
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#include "components/breakpad/app/breakpad_linux.h"
 #endif
 
 namespace {
+
+base::LazyInstance<content::ShellBreakpadClient>::Leaky
+    g_shell_breakpad_client = LAZY_INSTANCE_INITIALIZER;
 
 #if defined(OS_WIN)
 // If "Content Shell" doesn't show up in your list of trace providers in
@@ -149,11 +163,18 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
         switches::kEnableExperimentalWebPlatformFeatures);
     }
 
-    if (!command_line.HasSwitch(switches::kEnableThreadedCompositing))
+    if (!command_line.HasSwitch(switches::kEnableThreadedCompositing)) {
+      command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
+    }
 
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
+
+#if defined(USE_AURA)
+    // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
+    command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
+#endif
 
     net::CookieMonster::EnableFileScheme();
 
@@ -174,6 +195,33 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 }
 
 void ShellMainDelegate::PreSandboxStartup() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCrashReporter)) {
+    breakpad::SetBreakpadClient(g_shell_breakpad_client.Pointer());
+#if defined(OS_MACOSX)
+    base::mac::DisableOSCrashDumps();
+    breakpad::InitCrashReporter();
+    breakpad::InitCrashProcessInfo();
+#elif defined(OS_POSIX) && !defined(OS_MACOSX)
+    std::string process_type =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kProcessType);
+    if (!process_type.empty() && process_type != switches::kZygoteProcess) {
+#if defined(OS_ANDROID)
+      breakpad::InitNonBrowserCrashReporterForAndroid();
+#else
+      breakpad::InitCrashReporter();
+#endif
+    }
+#elif defined(OS_WIN)
+    UINT new_flags =
+        SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX;
+    UINT existing_flags = SetErrorMode(new_flags);
+    SetErrorMode(existing_flags | new_flags);
+    breakpad::InitCrashReporter();
+#endif
+  }
+
   InitializeResourceBundle();
 }
 
@@ -192,6 +240,15 @@ int ShellMainDelegate::RunProcess(
   browser_runner_.reset(BrowserMainRunner::Create());
   return ShellBrowserMain(main_function_params, browser_runner_);
 }
+
+#if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
+void ShellMainDelegate::ZygoteForked() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCrashReporter)) {
+    breakpad::InitCrashReporter();
+  }
+}
+#endif
 
 void ShellMainDelegate::InitializeResourceBundle() {
 #if defined(OS_ANDROID)

@@ -25,6 +25,7 @@
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
 #include "ash/multi_profile_uma.h"
+#include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/rotator/screen_rotation.h"
 #include "ash/screenshot_delegate.h"
@@ -134,8 +135,10 @@ void HandleCycleLinear(const ui::Accelerator& accelerator) {
 }
 
 bool HandleAccessibleFocusCycle(bool reverse) {
-  if (!Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
+  if (!Shell::GetInstance()->accessibility_delegate()->
+      IsSpokenFeedbackEnabled()) {
     return false;
+  }
   aura::Window* active_window = ash::wm::GetActiveWindow();
   if (!active_window)
     return false;
@@ -157,10 +160,11 @@ bool HandleAccessibleFocusCycle(bool reverse) {
 }
 
 void HandleSilenceSpokenFeedback() {
-  if (!Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
+  if (!delegate->IsSpokenFeedbackEnabled())
     return;
-
-  Shell::GetInstance()->delegate()->SilenceSpokenFeedback();
+  delegate->SilenceSpokenFeedback();
 }
 
 #if defined(OS_CHROMEOS)
@@ -170,17 +174,17 @@ bool HandleLock() {
 }
 
 bool HandleFileManager() {
-  Shell::GetInstance()->delegate()->OpenFileManager();
+  Shell::GetInstance()->new_window_delegate()->OpenFileManager();
   return true;
 }
 
 bool HandleCrosh() {
-  Shell::GetInstance()->delegate()->OpenCrosh();
+  Shell::GetInstance()->new_window_delegate()->OpenCrosh();
   return true;
 }
 
 bool HandleToggleSpokenFeedback() {
-  Shell::GetInstance()->delegate()->
+  Shell::GetInstance()->accessibility_delegate()->
       ToggleSpokenFeedback(A11Y_NOTIFICATION_SHOW);
   return true;
 }
@@ -280,7 +284,7 @@ bool HandleRotateScreen() {
 }
 
 bool HandleToggleRootWindowFullScreen() {
-  Shell::GetPrimaryRootWindow()->ToggleFullScreen();
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->ToggleFullScreen();
   return true;
 }
 
@@ -613,25 +617,27 @@ bool AcceleratorController::PerformAction(int action,
       return true;
 #endif
     case OPEN_FEEDBACK_PAGE:
-      ash::Shell::GetInstance()->delegate()->OpenFeedbackPage();
+      ash::Shell::GetInstance()->new_window_delegate()->OpenFeedbackPage();
       return true;
     case EXIT:
       // UMA metrics are recorded in the handler.
       exit_warning_handler_.HandleAccelerator();
       return true;
     case NEW_INCOGNITO_WINDOW:
-      Shell::GetInstance()->delegate()->NewWindow(true /* is_incognito */);
+      Shell::GetInstance()->new_window_delegate()->NewWindow(
+          true /* is_incognito */);
       return true;
     case NEW_TAB:
       if (key_code == ui::VKEY_T)
         shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEWTAB_T);
-      Shell::GetInstance()->delegate()->NewTab();
+      Shell::GetInstance()->new_window_delegate()->NewTab();
       return true;
     case NEW_WINDOW:
-      Shell::GetInstance()->delegate()->NewWindow(false /* is_incognito */);
+      Shell::GetInstance()->new_window_delegate()->NewWindow(
+          false /* is_incognito */);
       return true;
     case RESTORE_TAB:
-      Shell::GetInstance()->delegate()->RestoreTab();
+      Shell::GetInstance()->new_window_delegate()->RestoreTab();
       return true;
     case TAKE_SCREENSHOT:
       if (screenshot_delegate_.get() &&
@@ -662,7 +668,8 @@ bool AcceleratorController::PerformAction(int action,
       // consume the key since Search+Shift is one of the shortcuts the a11y
       // feature uses. crbug.com/132296
       DCHECK_EQ(ui::VKEY_LWIN, accelerator.key_code());
-      if (Shell::GetInstance()->delegate()->IsSpokenFeedbackEnabled())
+      if (Shell::GetInstance()->accessibility_delegate()->
+          IsSpokenFeedbackEnabled())
         return false;
       ash::Shell::GetInstance()->ToggleAppList(NULL);
       return true;
@@ -710,15 +717,21 @@ bool AcceleratorController::PerformAction(int action,
         return keyboard_brightness_control_delegate_->
             HandleKeyboardBrightnessUp(accelerator);
       break;
-    case VOLUME_MUTE:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeMute(accelerator);
-    case VOLUME_DOWN:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeDown(accelerator);
-    case VOLUME_UP:
-      return shell->system_tray_delegate()->GetVolumeControlDelegate()->
-          HandleVolumeUp(accelerator);
+    case VOLUME_MUTE: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeMute(accelerator);
+    }
+    case VOLUME_DOWN: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeDown(accelerator);
+    }
+    case VOLUME_UP: {
+      ash::VolumeControlDelegate* volume_delegate =
+          shell->system_tray_delegate()->GetVolumeControlDelegate();
+      return volume_delegate && volume_delegate->HandleVolumeUp(accelerator);
+    }
     case FOCUS_LAUNCHER:
       return shell->focus_cycler()->FocusWidget(
           Launcher::ForPrimaryDisplay()->shelf_widget());
@@ -727,7 +740,7 @@ bool AcceleratorController::PerformAction(int action,
     case FOCUS_PREVIOUS_PANE:
       return HandleRotatePaneFocus(Shell::BACKWARD);
     case SHOW_KEYBOARD_OVERLAY:
-      ash::Shell::GetInstance()->delegate()->ShowKeyboardOverlay();
+      ash::Shell::GetInstance()->new_window_delegate()->ShowKeyboardOverlay();
       return true;
     case SHOW_OAK:
       if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -759,7 +772,7 @@ bool AcceleratorController::PerformAction(int action,
       break;
     }
     case SHOW_TASK_MANAGER:
-      Shell::GetInstance()->delegate()->ShowTaskManager();
+      Shell::GetInstance()->new_window_delegate()->ShowTaskManager();
       return true;
     case NEXT_IME:
       // This check is necessary e.g. not to process the Shift+Alt+
@@ -842,7 +855,7 @@ bool AcceleratorController::PerformAction(int action,
         shell->delegate()->RecordUserMetricsAction(
             UMA_ACCEL_FULLSCREEN_F4);
       }
-      shell->delegate()->ToggleFullscreen();
+      accelerators::ToggleFullscreen();
       return true;
     }
     case TOGGLE_MAXIMIZED: {

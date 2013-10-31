@@ -1200,7 +1200,7 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
           Auto detect
         </message>
         <message name="IDC_VISIT_DESKTOP_OF_LRU_USER" desc="The text label of the menu item which allows the user to move a window from one users desktop to another.">
-          Teleport window to '<ph name="USER_NAME">$1<ex>User name</ex></ph>' 
+          Teleport window to '<ph name="USER_NAME">$1<ex>User name</ex></ph>'
         </message>
       </if>
       <message name="IDS_ACCNAME_ZOOM_PLUS2" desc="The accessible description of the Make Text Larger menu item in the merged menu">
@@ -1520,6 +1520,9 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
       </if>
 
       <!-- Keywords -->
+      <message name="IDS_ANNOTATED_SUGGESTION" desc="A suggested search query in the omnibox dropdown, annotated to disambiguate it from other similar queries.">
+        <ph name="SUGGESTION">$1<ex>roosevelt</ex></ph> - <ph name="ANNOTATION">$2<ex>Franklin D. Roosevelt, 32nd U.S. President</ex></ph>
+      </message>
       <message name="IDS_AUTOCOMPLETE_MATCH_DESCRIPTION_SEPARATOR" desc="The separator between a result in the autocomplete popup and its description.">
         ''' - '''
       </message>
@@ -1848,10 +1851,12 @@ Psst! Incognito mode <ph name="SHORTCUT_KEY">$1<ex>(Ctrl+Shift+N)</ex></ph> may 
                desc="Prompt text for the confirmation dialog asking whether the user really meant to keep a dangerous download">
         This might hurt. Don't say we didn't warn you...
       </message>
-      <message name="IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD"
-               desc="Prompt text for the confirmation dialog asking whether the user really meant to keep a malicious download">
+      <message name="IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_LEAD"
+               desc="Lead prompt text for the confirmation dialog asking whether the user really meant to keep a malicious download">
         This file will harm your computer.
-
+      </message>
+      <message name="IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_BODY"
+               desc="Body prompt text for the confirmation dialog asking whether the user really meant to keep a malicious download">
 Even if you have downloaded files from this website before, the website might have been hacked. Instead of recovering this file, you can retry the download later.
       </message>
       <message name="IDS_CONFIRM_DOWNLOAD_AGAIN"
@@ -3982,8 +3987,8 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_TITLE" desc="Titlebar of the extension or app permissions review window">
         Current Permissions
       </message>
-      <message name="IDS_EXTENSION_FIRST_RUN_PROMPT_TITLE" desc="Titlebar of the extension or app permissions prompt window">
-        Confirm Permissions
+      <message name="IDS_EXTENSION_LAUNCH_APP_PROMPT_TITLE" desc="Titlebar of the app launch prompt window">
+        Confirm Launch App
       </message>
       <message name="IDS_EXTENSION_INSTALL_PROMPT_HEADING" desc="First bold line in the content area of the extension or app installation prompt. Asks the user if they want to install a particular extension or app.">
         Add "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>"?
@@ -4009,8 +4014,8 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_HEADING" desc="First bold line in the content area of the extension or app permissions prompt. Shows the user the permissions a particular extension or app has.">
         <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>
       </message>
-      <message name="IDS_EXTENSION_FIRST_RUN_PROMPT_HEADING" desc="First bold line in the content area of the extension or app permissions prompt. Asks the user if they want to accept permission for a particular app.">
-        Enable "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>"?
+      <message name="IDS_EXTENSION_LAUNCH_APP_PROMPT_HEADING" desc="First bold line in the content area of the app launch prompt. Asks the user if they want to launch a particular app.">
+        Launch "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>"?
       </message>
 
       <!-- Extension alerts. -->
@@ -4299,9 +4304,6 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_DOWNLOADS_OPEN" desc="Permission string for access to downloads.">
         Open downloaded files
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_WARNING_IDENTITY_EMAIL" desc="Permission string for access to profile email address.">
-        View email addresses signed in to your profile
       </message>
       <message name="IDS_EXTENSION_PROMPT_WARNING_WALLPAPER" desc="Permission string for access to wallpaper.">
         Change your wallpaper
@@ -4903,14 +4905,11 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_COMMANDS_GENERIC_ACTIVATE" desc="The generic 'activate extension' text used as description for some commands.">
         Activate the extension
       </message>
-      <message name="IDS_EXTENSION_COMMANDS_GLOBAL" desc="The tooltip for commands that are global in nature.">
-        This keyboard shortcut is active at all times (not just when Chrome has focus). Click to change.
+      <message name="IDS_EXTENSION_COMMANDS_GLOBAL" desc="The text in the select box for commands that are global in nature (the shortcut works when Chrome does not have focus).">
+        Global
       </message>
-      <message name="IDS_EXTENSION_COMMANDS_NOT_GLOBAL" desc="The tooltip for commands that are not global in nature.">
-        This keyboard shortcut is only active when Chrome has focus. Click to change.
-      </message>
-      <message name="IDS_EXTENSION_COMMANDS_NOT_GLOBAL_PERMANENT" desc="The tooltip for commands that are not global in nature and never can be.">
-        This keyboard shortcut is only active when Chrome has focus.
+      <message name="IDS_EXTENSION_COMMANDS_NOT_GLOBAL" desc="The text in the select box for commands that are not global in nature (the shortcut works only when Chrome has focus).">
+        In Chrome
       </message>
 
       <message name="IDS_EXTENSION_PACK_DIALOG_TITLE" desc="Title of pack extension dialog">
@@ -4975,6 +4974,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_EXTENSION_PROMPT_INSTALL_BUTTON" desc="Text for the install button on the extension install prompt">
         Add
       </message>
+      <message name="IDS_EXTENSION_PROMPT_LAUNCH_BUTTON" desc="Text for the launch button on the extension install prompt">
+        Launch
+      </message>
       <message name="IDS_EXTENSION_PROMPT_UNINSTALL_BUTTON" desc="Text for the uninstall button on the extension uninstall prompt">
         Remove
       </message>
@@ -4989,9 +4991,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_EXTENSION_PROMPT_PERMISSIONS_CLEAR_RETAINED_FILES_BUTTON" desc="Text for the Revoke File Access button on the extension permissions prompt">
         Revoke File Access
-      </message>
-      <message name="IDS_EXTENSION_PROMPT_FIRST_RUN_ACCEPT_BUTTON" desc="Text for the allow button on the first run promopt to accept permissions and launch app">
-        Accept and open
       </message>
       <message name="IDS_EXTENSION_WEB_STORE_TITLE" desc="Text for the Chrome Web Store">
         Chrome Web Store
@@ -5637,6 +5636,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DEVICE_DISCOVERY_NOTIFICATIONS_DESCRIPTION" desc="Description of the 'device discovery notifications' flag.">
         Device discovery notifications on local network.
       </message>
+      <message name="IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_NAME">
+        Enable Privet local printing
+      </message>
+      <message name="IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION">
+        Print to printers on the local network using the Privet protocol.
+      </message>
       <message name="IDS_FLAGS_TOUCH_OPTIMIZED_UI_NAME" desc="Title of the touch-optimized UI flag." >
         Touch Optimized UI
       </message>
@@ -5893,6 +5898,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_NTP_SUGGESTIONS_PAGE_DESCRIPTION" desc="Description of the 'Enable suggestions page' lab.">
         Add 'Suggestions' card to the new tab page, which suggests the pages to be opened.
       </message>
+      <message name="IDS_FLAGS_ENABLE_IME_MODE_INDICATOR" desc="Title for the flag to enable the new indicator for the active keyboard input mode.">
+        Enable the new indicator for the active keyboard input method
+      </message>
+      <message name="IDS_FLAGS_ENABLE_IME_MODE_INDICATOR_DESCRIPTION" desc="Description for the flag to enable the new indicator for the active keyboard input method.">
+        Shows the active input method near the caret when switching between keyboard input methods.
+      </message>
       <message name="IDS_FLAGS_ENABLE_INSTANT_EXTENDED_API" desc="Title for the flag to enable the Instant extended API.">
         Enable Instant Extended API
       </message>
@@ -6028,6 +6039,24 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_DISABLE_OVERVIEW_MODE_DESCRIPTION" desc="Description for the flag to disable window overview mode.">
         Disable overview mode, activated by pushing the switch window button.
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_NAME" desc="Title for the delay before engaging overview on alt+tab.">
+        Delay before engaging overview when cycling.
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_DESCRIPTION" desc="Description for what the delay before engaging overview means.">
+        The time from the last alt+tab press before engaging overview mode when cycling through windows.
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_INSTANT" desc="The choice to have overview engage immediately on alt+tab.">
+        Instant
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_SHORT" desc="The choice to have overview engage almost immediately on alt+tab.">
+        Very short
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_LONG" desc="The choice to have overview engage after a fairly long delay.">
+        Long
+      </message>
+      <message name="IDS_FLAGS_OVERVIEW_DELAY_NEVER" desc="The choice to have overview not engage on alt+tab.">
+        Never
       </message>
       <message name="IDS_FLAGS_SCROLL_END_EFFECT_NAME" desc="Title for the flag for scroll end effect from vertical overscroll.">
         Scroll end effect
@@ -6265,12 +6294,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_DESCRIPTION" desc="Description for the flag to disable infobar popup for protected media identifier.">
           Disable infobar popup by default when accessing the protected media identifier.
         </message>
-        <message name="IDS_FLAGS_ENABLE_MEDIADRM_NAME" desc="Title for the flag to enable MediaDrm for encrypted content.">
-          Enable MediaDrm.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_MEDIADRM_DESCRIPTION" desc="Description for the flag to enable MediaDrm for encrypted content.">
-          Enable MediaDrm by default for Encrypted Media Extensions.
-        </message>
         <message name="IDS_FLAGS_MEDIADRM_ENABLE_NON_COMPOSITING_NAME" desc="Title for the flag to enable non-conmpositing decoding in MediaDrm for encrypted content.">
           Enable non-compositing decoding.
         </message>
@@ -6327,12 +6350,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DND_APPLIST_TO_LAUNCHER_DESCRIPTION" desc="Description for the flag to disable drag and drop opertions from the app list menu to the launcher.">
         Disallow drag and drop from the app list menu to the shelf.
       </message>
-      <message name="IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_NAME" desc="Title for the flag for immersive fullscreen mode.">
-        Immersive fullscreen
-      </message>
-      <message name="IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_DESCRIPTION" desc="Description for the flag for immersive fullscreen mode.">
-        Enables "immersive fullscreen" where the tab strip at the top and the app shelf at the bottom are still accessible in fullscreen.
-      </message>
       <message name="IDS_FLAGS_ENABLE_MEMORY_MONITOR_NAME" desc="Title for the flag to enable advanced gestures.">
         Enable memory monitor
       </message>
@@ -6340,10 +6357,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Enables visual memory monitor in status area.
       </message>
       <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE" desc="Title for the full multi profile mode flag.">
-        Enable full multi profile mode
+        Enable side-by-side multi profile mode
       </message>
       <message name="IDS_FLAGS_ENABLE_FULL_MULTI_PROFILE_MODE_DESCRIPTION" desc="Title for the full multi profile mode flag.">
-        Enable full multi profile mode
+        Enable side-by-side multi profile mode in which all browser and app windows share the same workspace.
       </message>
       <message name="IDS_FLAGS_ASH_AUDIO_DEVICE_MENU_NAME" desc="Title for a flag for audio switching.">
         Audio input/output menu
@@ -6454,12 +6471,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_SPELLCHECK_AUTOCORRECT_DESCRIPTION" desc="Description for the flag to force synchronous spellchecking.">
         Turn on autocorrection of text while typing. Synchronous spellchecking is not compatible with this feature.
       </message>
-      <message name="IDS_FLAGS_NO_DISCARD_TABS_NAME" desc="Name for the flag to disable the tab discarding feature.">
-        Don't discard tabs.
-      </message>
-      <message name="IDS_FLAGS_NO_DISCARD_TABS_DESCRIPTION" desc="Description for the flag to disable the tab discarding feature.">
-        Turns off tab discarding, a feature that discards infrequently used tabs under low memory conditions.
-      </message>
       <message name="IDS_FLAGS_DOCKED_WINDOWS_NAME" desc="Name for the flag to enable docked windows feature.">
         Enable docking of windows near screen edges.
       </message>
@@ -6545,12 +6556,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_FLAGS_ENABLE_STICKY_KEYS_DESCRIPTION" desc="Description for the flag to enable sticky keys.">
           StickyKeys allows the user to press and release a modifier key, such as Shift, Ctrl, or Alt, and have it remain active until any other key is pressed.
         </message>
-        <message name="IDS_FLAGS_ENABLE_AUTOCLICK_NAME" desc="Name for the flag to enable autoclick.">
-          Enable autoclick.
-        </message>
-        <message name="IDS_FLAGS_ENABLE_AUTOCLICK_DESCRIPTION" desc="Description for the flag to enable autoclick.">
-          Enables an accessibility setting which automatically triggers a click when the mouse pointer stops.
-        </message>
         <message name="IDS_FLAGS_ENABLE_SAML_SIGNIN_NAME" desc="Name for the flag to enable SAML signin support.">
           Enable SAML signin.
         </message>
@@ -6606,11 +6611,11 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PASSWORD_AUTOFILL_PUBLIC_SUFFIX_DOMAIN_MATCHING_DESCRIPTION" desc="Description of flag to enable or disable public suffix domain matching for autofill of passwords.">
         Enable or disable a feature which allows the user to select username/password combinations for domains that match the same public suffix registry domain.
       </message>
-      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_NAME" desc="Name of the flag to enable people search.">
-        Enable people search.
+      <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_NAME" desc="Name of the flag for the password manager reauthentication option.">
+        Password Manager Reauthentication
       </message>
-      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_DESCRIPTION" desc="Description of flag to enable people search.">
-        Enable searching for people directly from the apps list search.
+      <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION" desc="Description of the flag for the password manager reauthentication option.">
+        Prompt the user for their OS password before revealing passwords on the passwords page.
       </message>
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_NAME" desc="Name for the flag to enable Performance Monitor.">
         Enable performance monitoring
@@ -6822,14 +6827,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_USER_IMAGE_SYNC_DESCRIPTION" desc="Description for the flag to disable sync of user account image.">
         Disables sync of user account image between different ChromeOS devices.
       </message>
-      <if expr="is_android">
-        <message name="IDS_FLAGS_ENABLE_CAST_NAME" desc="Name of the flag to enable Chromecast support.">
-          Enable Chromecast support
-        </message>
-        <message name="IDS_FLAGS_ENABLE_CAST_DESCRIPTION" desc="Description for the flag to enable playing videos remotely on Chromecast.">
-          Enable playing videos remotely on Chromecast.
-        </message>
-      </if>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_FLAGS_ENABLE_FIRST_RUN_UI_NAME" desc="Name of the flag to enable new first-run UI.">
           Enable new first-run UI.
@@ -6873,6 +6870,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_ENABLE_SERVICE_WORKER_DESCRIPTION" desc="Description for the flag to enable ServiceWorker.">
         ServiceWorker is a new kind of web worker that can intercept resource requests. See https://github.com/slightlyoff/ServiceWorker for more information.
+      </message>
+      <if expr="is_android">
+        <message name="IDS_FLAGS_DISABLE_CLICK_DELAY_NAME" desc="Name of the flag to disable the click delay.">
+          Disable click delay.
+        </message>
+        <message name="IDS_FLAGS_DISABLE_CLICK_DELAY_DESCRIPTION" desc="Description of the flag to disable the click delay.">
+          Always send click events immediate upon a tap, even when it's part of a double-tap gesture.  This speeds up navigation and other tap actions by 300ms on most pages, but means links and buttons must be avoided when double tapping to zoom.
+        </message>
+      </if>
+      <message name="IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_NAME" desc="Name of the flag to enable the new Translate UX.">
+        Enable the new Translate UX.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_DESCRIPTION" desc="Description for the flag to enable the new Translate UX.">
+        Enable the new Translate bubble UX is offered instead of the infobar.
       </message>
 
       <!-- Crashes -->
@@ -7431,6 +7442,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_TOOLTIP_MIC_SEARCH" desc="The tooltip for search-by-voice button">
         Search by voice
       </message>
+      <message name="IDS_TOOLTIP_TRANSLATE" desc="The tooltip for translate">
+        Translate this page
+      </message>
       <message name="IDS_TOOLTIP_ZOOM" desc="The tooltip for zoom icon">
         Zoom: <ph name="VALUE">$1<ex>100</ex></ph>%
       </message>
@@ -7784,9 +7798,10 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       </message>
       <message name="IDS_FEEDBACK_PRIVACY_NOTE" desc="Text for the privacy note included with Chrome OS">
         Your Chrome and operating system version will be submitted in addition
-        to any information you choose to include above. This feedback is used to
-        diagnose problems and help improve Chrome. Any personal information you
-        submit, whether explicitly or incidentally will be protected in
+        to any information you choose to include above. If you include your email
+        address, Google may contact you regarding your feedback report. This feedback
+        is used to diagnose problems and help improve Chrome. Any personal information
+        you submit, whether explicitly or incidentally will be protected in
         accordance with our privacy policies.<ph name="BEGIN_BOLD">&lt;strong&gt;
         </ph> By submitting this feedback, you agree that Google may use feedback
         that you provide to improve any Google product or service.
@@ -8589,7 +8604,7 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         Adding your printers to Google Cloud Print allows you to print from
         anywhere, to anywhere. Share your printers with whoever you choose and
         print to them from Chrome, your phone, tablet, PC, or any other
-        web-connected device. <ph name="START_LINK">$1</ph>Learn more<ph name="END_LINK">$2</ph>
+        web-connected device.
       </message>
       <message name="IDS_PRINT_PREVIEW_NO_DESTS_PROMO_ADD_PRINTER_BUTTON_LABEL" desc="Label of button to setup Google Cloud Print printers.">
         Add a printer
@@ -9622,6 +9637,14 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_FONT_LANGUAGE_SETTING_PLACEHOLDER" desc="Placeholder string for the Fonts and Encodings select menus">
         Loading...
       </message>
+      <message name="IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_INSTALL"
+               desc="Explanatory message about how to get the Advanced Font Settings extension">
+        <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>Advanced font settings<ph name="END_LINK">&lt;/a&gt;</ph> (requires extension)
+      </message>
+      <message name="IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_OPTIONS"
+               desc="Link to the Advanced Font Settings extension's options page">
+        Advanced font settings
+      </message>
 
       <!-- Language & spell-checker settings -->
       <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_DIALOG_TITLE">
@@ -9697,10 +9720,10 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
       <message name="IDS_HTTP_POST_WARNING_TITLE" desc="Title for dialog that warns users about a navigation that results in a repost">
         Confirm Form Resubmission
       </message>
-      <message name="IDS_HTTP_POST_WARNING" desc="Re-navigation to page that leads to HTTP POST">
+      <message name="IDS_HTTP_POST_WARNING" desc="Re-navigation to page that leads to HTTP POST" formatter_data="android_java">
         The page that you're looking for used information that you entered. Returning to that page might cause any action you took to be repeated. Do you want to continue?
       </message>
-      <message name="IDS_HTTP_POST_WARNING_RESEND" desc="Resend button for post warning">
+      <message name="IDS_HTTP_POST_WARNING_RESEND" desc="Resend button for post warning" formatter_data="android_java">
         Continue
       </message>
 
@@ -10416,17 +10439,36 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- Autofill dialog: legal documents -->
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
         By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
       </message>
-      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Virtual Card Notice</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Terms Of Use</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
       </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
         The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Terms Of Use</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Yet More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
       </message>
 
       <!-- Autofill dialog: validation messages -->
@@ -10444,9 +10486,6 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_EXPIRATION_DATE" desc="Message displayed to user when credit card expiration date validation fails.">
         The card is expired. Please check the date or enter a new card.
-      </message>
-      <message name="IDS_AUTOFILL_DIALOG_VALIDATION_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET" desc="Message displayed to user when user entered a credit card number that is not supported by Google Wallet.">
-        This type of card is not supported by Google Wallet. Please select a different card.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_ZIP_CODE" desc="Message displayed to user when ZIP code (postal code) validation fails.">
         Invalid ZIP code. Please check and try again.
@@ -11179,6 +11218,10 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
                  desc="Text for the button that opens the app maximized. (In sentence case.)">
           Open maximized
         </message>
+        <message name="IDS_APP_CONTEXT_MENU_OPEN_TAB"
+                 desc="Text for the button that opens the app in a tab. (In sentence case.)">
+          Open in a tab
+        </message>
       </if>
 
       <if expr="pp_ifdef('use_titlecase')">
@@ -11221,6 +11264,10 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
         <message name="IDS_APP_CONTEXT_MENU_OPEN_MAXIMIZED"
                  desc="Text for the button that opens the app maximized. (In title case.)">
           Open Maximized
+        </message>
+        <message name="IDS_APP_CONTEXT_MENU_OPEN_TAB"
+                 desc="Text for the button that opens the app in a tab. (In title case.)">
+          Open in a Tab
         </message>
       </if>
 
@@ -13540,7 +13587,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Nope
       </message>
       <message name="IDS_TRANSLATE_INFOBAR_NEVER_TRANSLATE" desc="Button label shown to never translate a specific language in the translate infobar">
-        Never translate <ph name="language">$1<ex>English</ex></ph>
+        Never translate <ph name="language">$1<ex>French</ex></ph>
       </message>
       <message name="IDS_TRANSLATE_INFOBAR_ALWAYS_TRANSLATE" desc="Button label shown to always translate a specific language in the translate infobar">
         Always translate <ph name="language">$1<ex>English</ex></ph>
@@ -13677,13 +13724,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Upper right
       </message>
       <message name="IDS_NOTIFICATION_WELCOME_BODY" desc="Notification body for the Welcome Notification">
-        With Google Now, stay connected to what you need to know, across all devices.
+        Stay connected to what you need to know, across all devices.
+      </message>
+      <message name="IDS_NOTIFICATION_WELCOME_BUTTON_LEARN_MORE" desc="Learn more button text for the Welcome Notification">
+        Learn more
       </message>
       <message name="IDS_NOTIFICATION_WELCOME_DISPLAY_SOURCE" desc="Display source for the Welcome Notification">
         Notifications
       </message>
       <message name="IDS_NOTIFICATION_WELCOME_TITLE" desc="Notification title for the Welcome Notification">
-        Chrome notifications just got better!
+        Google Now on your desktop!
       </message>
       <if expr="is_macosx">
         <message name="IDS_MESSAGE_CENTER_FOOTER_WITH_PRODUCT_TITLE" desc="The label in the footer of the message center tray, with the product title.">
@@ -14416,12 +14466,16 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_VALIDATION_FAILED" desc="Error message shown on the enrollment screen upon a failure to validate downloaded policy.">
         The policy downloaded from the server is invalid: <ph name="VALIDATION_ERROR">$1<ex>Invalid signature</ex></ph>.
       </message>
-      <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_REGISTRATION_ROBOT_AUTH_FETCH_FAILED" desc="Error message shown on the enrollment screen upon failure to fetch the OAuth2 authorization code for device-level API access.">
+      <message name="IDS_ENTERPRISE_ENROLLMENT_ROBOT_AUTH_FETCH_FAILED" desc="Error message shown on the enrollment screen upon failure to fetch the OAuth2 authorization code for device-level API access.">
         Oops!  The system failed to authorize API access for this device.
       </message>
-      <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_REGISTRATION_ROBOT_REFRESH_FETCH_FAILED" desc="Error message shown on the enrollment screen upon failure to fetch the OAuth2 refresh token for device-level API access.">
+      <message name="IDS_ENTERPRISE_ENROLLMENT_ROBOT_REFRESH_FETCH_FAILED" desc="Error message shown on the enrollment screen upon failure to fetch the OAuth2 refresh token for device-level API access.">
         Oops!  The system failed to attain a long-term API access token for this device.
       </message>
+      <message name="IDS_ENTERPRISE_ENROLLMENT_ROBOT_REFRESH_STORE_FAILED" desc="Error message shown on the enrollment screen upon failure to store the OAuth2 refresh token for device-level API access.">
+        Oops!  The system failed to store the long-term API access token for this device.
+      </message>
+
       <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_LOCK_ERROR" desc="Error message shown on the enrollment screen upon failure to lock the device mode.">
         Oops!  The system failed to establish the device installation-time attributes lock.
       </message>
@@ -14735,10 +14789,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
       Oops! The new supervised user couldn't be created. Please make sure you're signed in properly and try again.
     </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in. This will be followed by a 'Learn more' link.">
-      This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
+      This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
     </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL" desc="Label for the 'Supervised user' checkbox in the create-profile dialog when the current user is signed in, but their login information is invalid. This will be followed by a 'Sign in again' link.">
-      This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex>.</ph>
+      This is a supervised user managed by <ph name="CUSTODIAN_EMAIL">$1<ex>user@gmail.com</ex></ph>.
 Your account sign-in details are out of date.
     </message>
     <message name="IDS_PROFILES_CREATE_MANAGED_JUST_SIGNED_IN" desc="Warning message shown in the create-profile dialog when the custodian signed in recently, sync has not yet finished initializing, and so the creation process is likely to take extra time.">
@@ -14783,10 +14837,7 @@ You need to be signed in to use this feature.
 
 Creating a supervised user does not create a Google Account, and their settings and data will not follow them to other devices with Chrome Sync. Currently, a supervised user applies only to this installation of Chrome, on this device.
 
-After you create a new supervised user, you can manage their settings at any time, from any device, at www.chrome.com/manage.
-    </message>
-    <message name="IDS_NEW_MANAGED_USER_LEARN_EVEN_MORE_LABEL" desc="Label for the link within the 'Learn more' dialog for the supervised user feature, which links to a Help Center article giving even more information about the feature.">
-      Learn even more
+After you create a new supervised user, you can manage their settings at any time, from any device, at www.chrome.com/manage. <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://support.google.com/chrome/?p=ui_supervised_users&amp;hl=[GRITLANGCODE]"&gt;</ph>Learn more about supervised users<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
     </message>
     <message name="IDS_NEW_MANAGED_USER_LEARN_MORE_DONE_BUTTON" desc="Text for the 'OK' button on the 'Learn more' dialog for the supervised user feature.">
       OK, got it!
@@ -15005,11 +15056,11 @@ Do you accept?
     <message name="IDS_FLAGS_ENABLE_INLINE_SIGNIN_DESCRIPTION" desc="Description for the flag to enable inline signin flows">
       Enables inline sign flows, still using the existing gaia template.
     </message>
-    <message name="IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_NAME" desc="Title for the flag to enable the gaia profile information">
-      Enable GAIA profile name and icon
+    <message name="IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_NAME" desc="Title for the flag to enable the google profile information">
+      Enable Google profile name and icon
     </message>
-    <message name="IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_DESCRIPTION" desc="Description for the flag to enable the gaia profile information">
-      Enables using GAIA information to populate the profile name and icon in the avatar menu.
+    <message name="IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_DESCRIPTION" desc="Description for the flag to enable the google profile information">
+      Enables using Google information to populate the profile name and icon in the avatar menu.
     </message>
     <message name="IDS_FLAGS_ENABLE_GOOGLE_NOW_INTEGRATION_NAME" desc="Name of about:flags option to turn on Google Now integration">
       Google Now
@@ -15029,6 +15080,13 @@ Do you accept?
     </message>
     <message name="IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_DESCRIPTION" desc="Description of about:flags option to turn on the virtual keyboard">
       Enable virtual keyboard support.
+    </message>
+
+    <message name="IDS_FLAGS_ENABLE_SWIPE_SELECTION_NAME" desc="Name of about:flags option to turn on swipe selection for the virtual keyboard">
+      Swipe Selection
+    </message>
+    <message name="IDS_FLAGS_ENABLE_SWIPE_SELECTION_DESCRIPTION" desc="Description of about:flags option to turn on swipe selection for the virtual keyboard">
+      Enable Swipe Selection support for the virtual keyboard. Unless the virtual keyboard is also enabled, this will do nothing.
     </message>
 
     <!-- Simple Cache Backend experiment. -->
@@ -15171,6 +15229,9 @@ Do you accept?
     </message>
     <message name="IDS_MEDIA_GALLERIES_DIALOG_DEVICE_NOT_ATTACHED" desc="Label text to indicate a removable storage device is not attached.">
       not attached
+    </message>
+    <message name="IDS_MEDIA_GALLERIES_DIALOG_DELETE" desc="Text label of the menu item which removes selected media gallery access for all apps.">
+      Permanently remove access for all apps
     </message>
 
     <!-- App List. -->
@@ -15476,6 +15537,17 @@ Do you accept?
       More Apps
     </message>
 
+    <!-- WebStore search results -->
+    <message name="IDS_WEBSTORE_RESULT_INSTALL" desc="Text of button on WebStore search result for installing an extension/app.">
+      Add
+    </message>
+    <message name="IDS_WEBSTORE_RESULT_LAUNCH" desc="Text of button on WebStore search result for launching an ephemeral app.">
+      Launch
+    </message>
+    <message name="IDS_WEBSTORE_RESULT_LAUNCH_APP_TOOLTIP" desc="Tooltip of button on WebStore search result for launching an ephemeral app.">
+      Launch app
+    </message>
+
     <!-- Synced Notification display strings -->
     <message name="IDS_FIRST_SYNCED_NOTIFICATION_SERVICE_NAME" desc="The name of the first service source for synced notifications.">
       Google+
@@ -15635,6 +15707,7 @@ Do you accept?
     <message name="IDS_LOCAL_DISCOVERY_NOTIFICATIONS_DISABLE_BUTTON_LABEL" desc="Label for button disabling local device notifications">
       Don't show this again
     </message>
+
     <!-- People search strings -->
     <message name="IDS_PEOPLE_SEARCH_ACTION_EMAIL_TOOLTIP" desc="Tooltip text for sending an email to the person in the result">
       Email this person
@@ -15647,6 +15720,17 @@ Do you accept?
     </message>
     <message name="IDS_LOCAL_DISCOVERY_REGISTER_TIMEOUT_ON_PRINTER" desc="Label for when registration has timed out on the printer side">
       Printer registration has timed out. In order to register a printer, you must confirm registration on the printer.
+    </message>
+
+    <!--Tab media indicator tooltip strings-->
+    <message name="IDS_TOOLTIP_TAB_MEDIA_STATE_RECORDING" desc="Extra tool tip text, when the tab is recording media.">
+      This tab is using your camera or microphone.
+    </message>
+    <message name="IDS_TOOLTIP_TAB_MEDIA_STATE_CAPTURING" desc="Extra tool tip text, when the tab content is being captured.">
+      This tab's content is being shared.
+    </message>
+    <message name="IDS_TOOLTIP_TAB_MEDIA_STATE_AUDIO_PLAYING" desc="Extra tool tip text, when the tab is playing audio.">
+      This tab is playing audio.
     </message>
   </messages>
 

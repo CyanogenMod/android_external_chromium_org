@@ -2,10 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import sys
 import time
 
 from metrics import rendering_stats
 from telemetry.page import page_measurement
+from telemetry.core.timeline.model import MarkerMismatchError
+from telemetry.core.timeline.model import MarkerOverlapError
 
 
 class RasterizeAndRecord(page_measurement.PageMeasurement):
@@ -20,15 +23,21 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
                       'Higher values reduce variance, but can cause' +
                       'instability (timeouts, event buffer overflows, etc.).')
     parser.add_option('--start-wait-time', dest='start_wait_time',
-                      default=2,
+                      default=5,
                       help='Wait time before the benchmark is started ' +
                       '(must be long enought to load all content)')
     parser.add_option('--stop-wait-time', dest='stop_wait_time',
-                      default=5,
+                      default=10,
                       help='Wait time before measurement is taken ' +
                       '(must be long enough to render one frame)')
 
   def CustomizeBrowserOptions(self, options):
+    # rasterize_and_record fails on the Linux perf bot.
+    # TODO(ernstm): Re-enable this test when crbug.com/311389 is fixed.
+    if 'linux' in sys.platform:
+      print 'This benchmark is temporarily disabled on Linux. Skipping test.'
+      sys.exit(0)
+
     # Run each raster task N times. This allows us to report the time for the
     # best run, effectively excluding cache effects and time when the thread is
     # de-scheduled.
@@ -44,6 +53,15 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
     ])
 
   def MeasurePage(self, page, tab, results):
+    # TODO(ernstm): Remove this temporary workaround when reference build has
+    # been updated to branch 1671 or later.
+    backend = tab.browser._browser_backend # pylint: disable=W0212
+    if (not hasattr(backend, 'chrome_branch_number') or
+        (sys.platform != 'android' and backend.chrome_branch_number < 1671)):
+      print ('Warning: rasterize_and_record requires Chrome branch 1671 or '
+             'later. Skipping measurement.')
+      sys.exit(0)
+
     # Rasterize only what's visible.
     tab.ExecuteJavaScript(
         'chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent();')
@@ -81,8 +99,11 @@ class RasterizeAndRecord(page_measurement.PageMeasurement):
         'console.timeEnd("' + rendering_stats.RENDER_PROCESS_MARKER + '")')
 
     timeline = tab.browser.StopTracing().AsTimelineModel()
-    timeline_markers = timeline.FindTimelineMarkers(
-        rendering_stats.RENDER_PROCESS_MARKER)
+    try:
+      timeline_markers = timeline.FindTimelineMarkers(
+          rendering_stats.RENDER_PROCESS_MARKER)
+    except (MarkerMismatchError, MarkerOverlapError) as e:
+      raise page_measurement.MeasurementFailure(str(e))
     stats = rendering_stats.RenderingStats(timeline_markers, timeline_markers)
 
     results.Add('rasterize_time', 'ms',

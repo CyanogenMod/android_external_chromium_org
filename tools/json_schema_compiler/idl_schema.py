@@ -292,7 +292,13 @@ class Enum(object):
     enum = []
     for node in self.node.children:
       if node.cls == 'EnumItem':
-        enum.append(node.GetName())
+        enum_value = {'name': node.GetName()}
+        for child in node.children:
+          if child.cls == 'Comment':
+            enum_value['description'] = ProcessComment(child.GetName())[0]
+          else:
+            raise ValueError('Did not process %s %s' % (child.cls, child))
+        enum.append(enum_value)
       elif node.cls == 'Comment':
         self.description = ProcessComment(node.GetName())[0]
       else:
@@ -313,10 +319,16 @@ class Namespace(object):
   dictionary that the JSON schema compiler expects to see.
   '''
 
-  def __init__(self, namespace_node, description, nodoc=False, internal=False):
+  def __init__(self,
+               namespace_node,
+               description,
+               nodoc=False,
+               internal=False,
+               platforms=None):
     self.namespace = namespace_node
     self.nodoc = nodoc
     self.internal = internal
+    self.platforms = platforms
     self.events = []
     self.functions = []
     self.types = []
@@ -344,7 +356,8 @@ class Namespace(object):
             'types': self.types,
             'functions': self.functions,
             'internal': self.internal,
-            'events': self.events}
+            'events': self.events,
+            'platforms': self.platforms}
 
   def process_interface(self, node):
     members = []
@@ -369,6 +382,7 @@ class IDLSchema(object):
     nodoc = False
     internal = False
     description = None
+    platforms = None
     for node in self.idl:
       if node.cls == 'Namespace':
         if not description:
@@ -376,10 +390,11 @@ class IDLSchema(object):
           print('%s must have a namespace-level comment. This will '
                            'appear on the API summary page.' % node.GetName())
           description = ''
-        namespace = Namespace(node, description, nodoc, internal)
+        namespace = Namespace(node, description, nodoc, internal, platforms)
         namespaces.append(namespace.process())
         nodoc = False
         internal = False
+        platforms = None
       elif node.cls == 'Copyright':
         continue
       elif node.cls == 'Comment':
@@ -389,6 +404,8 @@ class IDLSchema(object):
           nodoc = bool(node.value)
         elif node.name == 'internal':
           internal = bool(node.value)
+        elif node.name == 'platforms':
+          platforms = list(node.value)
         else:
           continue
       else:

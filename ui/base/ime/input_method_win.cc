@@ -94,6 +94,7 @@ void InputMethodWin::OnInputLocaleChanged() {
   locale_ = imm32_manager_.GetInputLanguageName();
   direction_ = imm32_manager_.GetTextDirection();
   OnInputMethodChanged();
+  InputMethodBase::OnInputLocaleChanged();
 }
 
 std::string InputMethodWin::GetInputLocale() {
@@ -148,10 +149,6 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
   if (GetTextInputClient()) {
     GetTextInputClient()->InsertChar(static_cast<char16>(wparam),
                                      ui::GetModifiersFromKeyState());
-
-    // If Windows sends a WM_CHAR, then any previously sent WM_DEADCHARs (which
-    // are displayed as the composition text) should be cleared.
-    GetTextInputClient()->ClearCompositionText();
   }
 
   // Explicitly show the system menu at a good location on [Alt]+[Space].
@@ -168,21 +165,6 @@ LRESULT InputMethodWin::OnDeadChar(UINT message,
                                    LPARAM lparam,
                                    BOOL* handled) {
   *handled = TRUE;
-
-  if (IsTextInputTypeNone())
-    return 0;
-
-  if (!GetTextInputClient())
-    return 0;
-
-  // Shows the dead character as a composition text, so that the user can know
-  // what dead key was pressed.
-  ui::CompositionText composition;
-  composition.text.assign(1, static_cast<char16>(wparam));
-  composition.selection = gfx::Range(0, 1);
-  composition.underlines.push_back(
-      ui::CompositionUnderline(0, 1, SK_ColorBLACK, false));
-  GetTextInputClient()->SetCompositionText(composition);
   return 0;
 }
 

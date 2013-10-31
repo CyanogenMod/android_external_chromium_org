@@ -81,9 +81,9 @@
 #endif
 
 // static
-AppListService* AppListService::Get() {
+AppListService* AppListService::Get(chrome::HostDesktopType desktop_type) {
 #if defined(USE_ASH)
-  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
+  if (desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
     return chrome::GetAppListServiceAsh();
 #endif
 
@@ -373,6 +373,10 @@ gfx::NativeWindow AppListServiceWin::GetAppListWindow() {
   return shower_->GetWindow();
 }
 
+Profile* AppListServiceWin::GetCurrentAppListProfile() {
+  return shower_->profile();
+}
+
 AppListControllerDelegate* AppListServiceWin::CreateControllerDelegate() {
   return new AppListControllerDelegateWin(this);
 }
@@ -401,9 +405,7 @@ void AppListServiceWin::ShowForProfile(Profile* requested_profile) {
   }
 
   InvalidatePendingProfileLoads();
-  // TODO(koz): Investigate making SetProfile() call SetProfilePath() itself.
   SetProfilePath(requested_profile->GetPath());
-  SetProfile(requested_profile);
   shower_->ShowForProfile(requested_profile);
   RecordAppListLaunch();
 }
@@ -414,7 +416,6 @@ void AppListServiceWin::DismissAppList() {
 
 void AppListServiceWin::OnAppListClosing() {
   shower_->CloseAppList();
-  SetProfile(NULL);
 }
 
 void AppListServiceWin::OnLoadProfileForWarmup(Profile* initial_profile) {

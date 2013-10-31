@@ -2,18 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/service/service_process_control.h"
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
+#include "base/path_service.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/process/process_iterator.h"
 #include "base/test/test_timeouts.h"
-#include "chrome/browser/service/service_process_control.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/service_process_util.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/common/content_paths.h"
+#include "content/public/common/content_switches.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 class ServiceProcessControlBrowserTest
     : public InProcessBrowserTest {
@@ -26,12 +33,12 @@ class ServiceProcessControlBrowserTest
     service_process_handle_ = base::kNullProcessHandle;
   }
 
-#if defined(OS_MACOSX)
-  virtual void TearDown() {
-    // ForceServiceProcessShutdown removes the process from launched on Mac.
-    ForceServiceProcessShutdown("", 0);
+  void HistogramsCallback() {
+    MockHistogramsCallback();
+    QuitMessageLoop();
   }
-#endif  // OS_MACOSX
+
+  MOCK_METHOD0(MockHistogramsCallback, void());
 
  protected:
   void LaunchServiceProcessControl() {
@@ -47,17 +54,13 @@ class ServiceProcessControlBrowserTest
     content::RunMessageLoop();
   }
 
-  // Send a Cloud Print status request and wait for a reply from the service.
-  void SendRequestAndWait() {
-    ServiceProcessControl::GetInstance()->GetCloudPrintProxyInfo(
-        base::Bind(&ServiceProcessControlBrowserTest::CloudPrintInfoCallback,
-                   base::Unretained(this)));
-    content::RunMessageLoop();
+  static void QuitMessageLoop() {
+    base::MessageLoop::current()->Quit();
   }
 
-  void CloudPrintInfoCallback(
+  static void CloudPrintInfoCallback(
       const cloud_print::CloudPrintProxyInfo& proxy_info) {
-    base::MessageLoop::current()->Quit();
+    QuitMessageLoop();
   }
 
   void Disconnect() {
@@ -65,10 +68,23 @@ class ServiceProcessControlBrowserTest
     ServiceProcessControl::GetInstance()->Disconnect();
   }
 
-  void WaitForShutdown() {
-    EXPECT_TRUE(base::WaitForSingleProcess(
-        service_process_handle_,
-        TestTimeouts::action_max_timeout()));
+  virtual void SetUp() OVERRIDE {
+    service_process_handle_ = base::kNullProcessHandle;
+  }
+
+  virtual void TearDown() OVERRIDE {
+    if (ServiceProcessControl::GetInstance()->IsConnected())
+      EXPECT_TRUE(ServiceProcessControl::GetInstance()->Shutdown());
+#if defined(OS_MACOSX)
+    // ForceServiceProcessShutdown removes the process from launched on Mac.
+    ForceServiceProcessShutdown("", 0);
+#endif  // OS_MACOSX
+    if (service_process_handle_ != base::kNullProcessHandle) {
+      EXPECT_TRUE(base::WaitForSingleProcess(
+          service_process_handle_,
+          TestTimeouts::action_max_timeout()));
+      service_process_handle_ = base::kNullProcessHandle;
+    }
   }
 
   void ProcessControlLaunched() {
@@ -99,12 +115,52 @@ class ServiceProcessControlBrowserTest
   base::ProcessHandle service_process_handle_;
 };
 
+class RealServiceProcessControlBrowserTest
+      : public ServiceProcessControlBrowserTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ServiceProcessControlBrowserTest::SetUpCommandLine(command_line);
+    base::FilePath exe;
+    PathService::Get(base::DIR_EXE, &exe);
+#if defined(OS_MACOSX)
+    exe = exe.DirName().DirName().DirName();
+#endif
+    exe = exe.Append(chrome::kHelperProcessExecutablePath);
+    // Run chrome instead of browser_tests.exe.
+    EXPECT_TRUE(base::PathExists(exe));
+    command_line->AppendSwitchPath(switches::kBrowserSubprocessPath, exe);
+  }
+};
+
+#if defined(OS_MACOSX)
+// Does not work on MACOSX.
+#define MAYBE_LaunchAndIPC DISABLED_LaunchAndIPC
+#else
+#define MAYBE_LaunchAndIPC LaunchAndIPC
+#endif
+
+IN_PROC_BROWSER_TEST_F(RealServiceProcessControlBrowserTest,
+                       MAYBE_LaunchAndIPC) {
+  LaunchServiceProcessControl();
+
+  // Make sure we are connected to the service process.
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  ServiceProcessControl::GetInstance()->GetCloudPrintProxyInfo(
+        base::Bind(&ServiceProcessControlBrowserTest::CloudPrintInfoCallback));
+  content::RunMessageLoop();
+
+  // And then shutdown the service process.
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->Shutdown());
+}
+
 IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, LaunchAndIPC) {
   LaunchServiceProcessControl();
 
   // Make sure we are connected to the service process.
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
-  SendRequestAndWait();
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  ServiceProcessControl::GetInstance()->GetCloudPrintProxyInfo(
+        base::Bind(&ServiceProcessControlBrowserTest::CloudPrintInfoCallback));
+  content::RunMessageLoop();
 
   // And then shutdown the service process.
   EXPECT_TRUE(ServiceProcessControl::GetInstance()->Shutdown());
@@ -117,16 +173,17 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, LaunchTwice) {
   LaunchServiceProcessControl();
 
   // Make sure we are connected to the service process.
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
-  SendRequestAndWait();
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->GetCloudPrintProxyInfo(
+        base::Bind(&ServiceProcessControlBrowserTest::CloudPrintInfoCallback)));
+  content::RunMessageLoop();
 
   // Launch the service process again.
   LaunchServiceProcessControl();
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
-  SendRequestAndWait();
-
-  // And then shutdown the service process.
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->Shutdown());
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->GetCloudPrintProxyInfo(
+        base::Bind(&ServiceProcessControlBrowserTest::CloudPrintInfoCallback)));
+  content::RunMessageLoop();
 }
 
 static void DecrementUntilZero(int* count) {
@@ -150,8 +207,6 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest,
   // Then run the message loop to keep things running.
   content::RunMessageLoop();
   EXPECT_EQ(0, launch_count);
-  // And then shutdown the service process.
-  EXPECT_TRUE(process->Shutdown());
 }
 
 // Make sure using the same task for success and failure tasks works.
@@ -166,34 +221,28 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, SameLaunchTask) {
   // Then run the message loop to keep things running.
   content::RunMessageLoop();
   EXPECT_EQ(0, launch_count);
-  // And then shutdown the service process.
-  EXPECT_TRUE(process->Shutdown());
 }
 
 // Tests whether disconnecting from the service IPC causes the service process
 // to die.
-IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest,
-                       DieOnDisconnect) {
+IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, DieOnDisconnect) {
   // Launch the service process.
   LaunchServiceProcessControl();
   // Make sure we are connected to the service process.
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
   Disconnect();
-  WaitForShutdown();
 }
 
-IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest,
-                       ForceShutdown) {
+IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, ForceShutdown) {
   // Launch the service process.
   LaunchServiceProcessControl();
   // Make sure we are connected to the service process.
-  EXPECT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
   base::ProcessId service_pid;
   EXPECT_TRUE(GetServiceProcessData(NULL, &service_pid));
   EXPECT_NE(static_cast<base::ProcessId>(0), service_pid);
   chrome::VersionInfo version_info;
   ForceServiceProcessShutdown(version_info.Version(), service_pid);
-  WaitForShutdown();
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, CheckPid) {
@@ -204,5 +253,42 @@ IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, CheckPid) {
   EXPECT_TRUE(GetServiceProcessData(NULL, &service_pid));
   EXPECT_NE(static_cast<base::ProcessId>(0), service_pid);
   // Disconnect from service process.
-  ServiceProcessControl::GetInstance()->Disconnect();
+  Disconnect();
+}
+
+IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, HistogramsNoService) {
+  ASSERT_FALSE(ServiceProcessControl::GetInstance()->IsConnected());
+  EXPECT_CALL(*this, MockHistogramsCallback()).Times(0);
+  EXPECT_FALSE(ServiceProcessControl::GetInstance()->GetHistograms(
+      base::Bind(&ServiceProcessControlBrowserTest::HistogramsCallback,
+                 base::Unretained(this)),
+      base::TimeDelta()));
+}
+
+IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, HistogramsTimeout) {
+  LaunchServiceProcessControl();
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  // Callback should not be called during GetHistograms call.
+  EXPECT_CALL(*this, MockHistogramsCallback()).Times(0);
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->GetHistograms(
+      base::Bind(&ServiceProcessControlBrowserTest::HistogramsCallback,
+                 base::Unretained(this)),
+      base::TimeDelta::FromMilliseconds(100)));
+  EXPECT_CALL(*this, MockHistogramsCallback()).Times(1);
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->Shutdown());
+  content::RunMessageLoop();
+}
+
+IN_PROC_BROWSER_TEST_F(ServiceProcessControlBrowserTest, Histograms) {
+  LaunchServiceProcessControl();
+  ASSERT_TRUE(ServiceProcessControl::GetInstance()->IsConnected());
+  // Callback should not be called during GetHistograms call.
+  EXPECT_CALL(*this, MockHistogramsCallback()).Times(0);
+  // Wait for real callback by providing large timeout value.
+  EXPECT_TRUE(ServiceProcessControl::GetInstance()->GetHistograms(
+      base::Bind(&ServiceProcessControlBrowserTest::HistogramsCallback,
+                base::Unretained(this)),
+      base::TimeDelta::FromHours(1)));
+  EXPECT_CALL(*this, MockHistogramsCallback()).Times(1);
+  content::RunMessageLoop();
 }

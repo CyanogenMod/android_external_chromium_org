@@ -44,10 +44,6 @@
     "channel": "stable",
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
-  "app.currentWindowInternal.setAlwaysOnTop": {
-    "channel": "dev",
-    "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
-  },
   "app.getDetails": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
     "matches": []
@@ -678,6 +674,10 @@
     "channel": "stable",
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
+  "webrtcAudioPrivate": {
+    "dependencies": ["permission:webrtcAudioPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "webrtcLoggingPrivate": {
     "dependencies": ["permission:webrtcLoggingPrivate"],
     "contexts": ["blessed_extension"]
@@ -698,7 +698,7 @@
     "dependencies": ["permission:webrtc"],
     "contexts": ["blessed_extension"]
   },
-  "webrtc.udpTransport": {
+  "webrtc.castUdpTransport": {
     "dependencies": ["permission:webrtc"],
     "contexts": ["blessed_extension"]
   },

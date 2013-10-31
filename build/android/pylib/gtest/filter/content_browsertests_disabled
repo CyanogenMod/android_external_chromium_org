@@ -7,7 +7,6 @@ MediaTest.*
 MediaSourceTest.*
 WebGLConformanceTest.*
 MessagePortTest.Tests
-*EncryptedMediaTest.*
 CrossPlatformAccessibilityBrowserTest.*
 DatabaseTest.*
 ResourceDispatcherHostBrowserTest.SyncXMLHttpRequest_DuringUnload
@@ -83,6 +82,10 @@ WebRTCInternalsBrowserTest.WithRealPeerConnectionCall
 # http://crbug.com/175683
 WebrtcBrowserTest.CallWithDataAndLaterAddMedia
 
+# http://crbug.com/311348
+WebrtcBrowserTest.CallWithSctpDataOnly
+WebrtcBrowserTest.CallWithSctpDataAndMedia
+
 # http://crbug.com/224134
 RenderWidgetHostBrowserTest.GetSnapshotFromRendererTest
 
@@ -106,3 +109,9 @@ ResourceFetcherTests.ResourceFetcherDownload
 
 # http://crbug.com/256238
 SignalTest.*
+
+# http://crbug.com/311344
+BrowserGpuChannelHostFactoryTest.AlreadyEstablished
+BrowserGpuChannelHostFactoryTest.Basic
+BrowserGpuChannelHostFactoryTest.CrashAndRecover
+BrowserGpuChannelHostFactoryTest.EstablishAndTerminate

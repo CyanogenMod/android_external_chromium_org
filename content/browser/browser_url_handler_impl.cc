@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
-#include "content/browser/web_contents/debug_urls.h"
+#include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_switches.h"
@@ -19,7 +19,7 @@ namespace content {
 static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
   if (url->SchemeIs(kViewSourceScheme)) {
     // Load the inner URL instead.
-    *url = GURL(url->path());
+    *url = GURL(url->GetContent());
 
     // Bug 26129: limit view-source to view the content and not any
     // other kind of 'active' url scheme like 'javascript' or 'data'.

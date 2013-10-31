@@ -23,10 +23,7 @@ bool ToggleMinimized() {
     return true;
   }
   wm::WindowState* window_state = wm::GetWindowState(window);
-  // Disable the shortcut for minimizing full screen window due to
-  // crbug.com/131709, which is a crashing issue related to minimizing
-  // full screen pepper window.
-  if (window_state->IsFullscreen() || !window_state->CanMinimize())
+  if (!window_state->CanMinimize())
     return false;
   ash::Shell::GetInstance()->delegate()->RecordUserMetricsAction(
       ash::UMA_MINIMIZE_PER_KEY);
@@ -40,9 +37,15 @@ void ToggleMaximized() {
     return;
   // Get out of fullscreen when in fullscreen mode.
   if (window_state->IsFullscreen())
-    Shell::GetInstance()->delegate()->ToggleFullscreen();
+    ToggleFullscreen();
   else
     window_state->ToggleMaximized();
+}
+
+void ToggleFullscreen() {
+  wm::WindowState* window_state = wm::GetActiveWindowState();
+  if (window_state)
+    window_state->ToggleFullscreen();
 }
 
 }  // namespace accelerators

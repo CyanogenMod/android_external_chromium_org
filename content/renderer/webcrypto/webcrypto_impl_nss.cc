@@ -69,21 +69,6 @@ CK_MECHANISM_TYPE WebCryptoAlgorithmToHMACMechanism(
   }
 }
 
-// TODO(eroman): This works by re-allocating a new buffer. It would be better if
-//               the WebArrayBuffer could just be truncated instead.
-void ShrinkBuffer(WebKit::WebArrayBuffer* buffer, unsigned new_size) {
-  DCHECK_LE(new_size, buffer->byteLength());
-
-  if (new_size == buffer->byteLength())
-    return;
-
-  WebKit::WebArrayBuffer new_buffer =
-      WebKit::WebArrayBuffer::create(new_size, 1);
-  DCHECK(!new_buffer.isNull());
-  memcpy(new_buffer.data(), buffer->data(), new_size);
-  *buffer = new_buffer;
-}
-
 bool AesCbcEncryptDecrypt(
     CK_ATTRIBUTE_TYPE operation,
     const WebKit::WebCryptoAlgorithm& algorithm,
@@ -162,7 +147,7 @@ bool AesCbcEncryptDecrypt(
     return false;
   }
 
-  ShrinkBuffer(buffer, final_output_chunk_len + output_len);
+  WebCryptoImpl::ShrinkBuffer(buffer, final_output_chunk_len + output_len);
   return true;
 }
 
@@ -278,8 +263,9 @@ bool WebCryptoImpl::DigestInternal(
 
 bool WebCryptoImpl::GenerateKeyInternal(
     const WebKit::WebCryptoAlgorithm& algorithm,
-    scoped_ptr<WebKit::WebCryptoKeyHandle>* key,
-    WebKit::WebCryptoKeyType* type) {
+    bool extractable,
+    WebKit::WebCryptoKeyUsageMask usage_mask,
+    WebKit::WebCryptoKey* key) {
 
   CK_MECHANISM_TYPE mech = WebCryptoAlgorithmToGenMechanism(algorithm);
   unsigned int keylen_bytes = 0;
@@ -332,9 +318,9 @@ bool WebCryptoImpl::GenerateKeyInternal(
     return false;
   }
 
-  key->reset(new SymKeyHandle(pk11_key.Pass()));
-  *type = key_type;
-
+  *key = WebKit::WebCryptoKey::create(
+      new SymKeyHandle(pk11_key.Pass()),
+      key_type, extractable, algorithm, usage_mask);
   return true;
 }
 
@@ -343,14 +329,21 @@ bool WebCryptoImpl::ImportKeyInternal(
     WebKit::WebCryptoKeyFormat format,
     const unsigned char* key_data,
     unsigned key_data_size,
-    const WebKit::WebCryptoAlgorithm& algorithm,
+    const WebKit::WebCryptoAlgorithm& algorithm_or_null,
+    bool extractable,
     WebKit::WebCryptoKeyUsageMask usage_mask,
-    scoped_ptr<WebKit::WebCryptoKeyHandle>* handle,
-    WebKit::WebCryptoKeyType* type) {
+    WebKit::WebCryptoKey* key) {
+  // TODO(eroman): Currently expects algorithm to always be specified, as it is
+  //               required for raw format.
+  if (algorithm_or_null.isNull())
+    return false;
+  const WebKit::WebCryptoAlgorithm& algorithm = algorithm_or_null;
+
+  WebKit::WebCryptoKeyType type;
   switch (algorithm.id()) {
     case WebKit::WebCryptoAlgorithmIdHmac:
     case WebKit::WebCryptoAlgorithmIdAesCbc:
-      *type = WebKit::WebCryptoKeyTypeSecret;
+      type = WebKit::WebCryptoKeyTypeSecret;
       break;
     // TODO(bryaneyler): Support more key types.
     default:
@@ -417,9 +410,8 @@ bool WebCryptoImpl::ImportKeyInternal(
     return false;
   }
 
-  scoped_ptr<SymKeyHandle> sym_key(new SymKeyHandle(pk11_sym_key.Pass()));
-  *handle = sym_key.Pass();
-
+  *key = WebKit::WebCryptoKey::create(new SymKeyHandle(pk11_sym_key.Pass()),
+                                      type, extractable, algorithm, usage_mask);
   return true;
 }
 

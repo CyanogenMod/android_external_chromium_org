@@ -89,6 +89,13 @@ void ConflictingModuleView::MaybeShow(Browser* browser,
     return;
   }
 
+  // |anchor_view| must be in a widget (the browser's widget). If not, |browser|
+  // may be destroyed before us, and we'll crash trying to access |browser|
+  // later on. We can't DCHECK |browser|'s widget here as we may be called from
+  // creation of BrowserWindow, which means browser->window() may return NULL.
+  DCHECK(anchor_view);
+  DCHECK(anchor_view->GetWidget());
+
   ConflictingModuleView* bubble_delegate =
       new ConflictingModuleView(anchor_view, browser, url);
   views::BubbleDelegateView::CreateBubble(bubble_delegate);

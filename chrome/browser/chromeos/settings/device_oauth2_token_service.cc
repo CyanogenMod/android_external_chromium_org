@@ -16,7 +16,6 @@
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/policy/proto/cloud/device_management_backend.pb.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/cryptohome/system_salt_getter.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -233,44 +232,32 @@ void DeviceOAuth2TokenService::RegisterPrefs(PrefRegistrySimple* registry) {
                                std::string());
 }
 
-void DeviceOAuth2TokenService::SetAndSaveRefreshToken(
+bool DeviceOAuth2TokenService::SetAndSaveRefreshToken(
     const std::string& refresh_token) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
-  // TODO(xiyuan): Use async GetSystemSalt after merging to M31.
-  const std::string system_salt = SystemSaltGetter::Get()->GetSystemSaltSync();
-  if (system_salt.empty()) {
-    const int64 kRequestSystemSaltDelayMs = 500;
-    content::BrowserThread::PostDelayedTask(
-        content::BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&DeviceOAuth2TokenService::SetAndSaveRefreshToken,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   refresh_token),
-        base::TimeDelta::FromMilliseconds(kRequestSystemSaltDelayMs));
-    return;
-  }
-
   std::string encrypted_refresh_token =
       token_encryptor_->EncryptWithSystemSalt(refresh_token);
+  if (encrypted_refresh_token.empty()) {
+    LOG(ERROR) << "Failed to encrypt refresh token; save aborted.";
+    return false;
+  }
 
   local_state_->SetString(prefs::kDeviceRobotAnyApiRefreshToken,
                           encrypted_refresh_token);
+  return true;
 }
 
 std::string DeviceOAuth2TokenService::GetRefreshToken(
     const std::string& account_id) {
-  DCHECK_EQ(account_id, GetRobotAccountId());
   if (refresh_token_.empty()) {
     std::string encrypted_refresh_token =
         local_state_->GetString(prefs::kDeviceRobotAnyApiRefreshToken);
 
-    // TODO(xiyuan): This needs a proper fix after M31.
-    LOG_IF(ERROR, SystemSaltGetter::Get()->GetSystemSaltSync().empty())
-        << "System salt is not available for decryption";
-
     refresh_token_ = token_encryptor_->DecryptWithSystemSalt(
         encrypted_refresh_token);
+    if (!encrypted_refresh_token.empty() && refresh_token_.empty())
+      LOG(ERROR) << "Failed to decrypt refresh token.";
   }
   return refresh_token_;
 }

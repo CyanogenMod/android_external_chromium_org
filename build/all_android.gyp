@@ -18,6 +18,7 @@
       'type': 'none',
       'dependencies': [
         '../content/content_shell_and_tests.gyp:content_shell_apk',
+        '../mojo/mojo.gyp:mojo_shell_apk',
         '<@(android_app_targets)',
         'android_builder_tests',
         '../android_webview/android_webview.gyp:android_webview_apk',
@@ -63,7 +64,7 @@
         '../cc/cc_tests.gyp:cc_perftests_apk',
         '../cc/cc_tests.gyp:cc_unittests',
         '../chrome/chrome.gyp:unit_tests',
-        '../components/components.gyp:components_unittests',
+        '../components/components_tests.gyp:components_unittests',
         '../content/content_shell_and_tests.gyp:content_browsertests',
         '../content/content_shell_and_tests.gyp:content_gl_tests',
         '../content/content_shell_and_tests.gyp:content_shell_test_apk',
@@ -80,7 +81,7 @@
         '../tools/android/android_tools.gyp:android_tools',
         '../tools/android/android_tools.gyp:memconsumer',
         '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
-        '../ui/ui.gyp:ui_unittests',
+        '../ui/ui_unittests.gyp:ui_unittests',
         # Required by ui_unittests.
         # TODO(wangxianzhu): It'd better let ui_unittests depend on it, but
         # this would cause circular gyp dependency which needs refactoring the
@@ -95,7 +96,7 @@
             '../base/base.gyp:base_unittests_apk',
             '../cc/cc_tests.gyp:cc_unittests_apk',
             '../chrome/chrome.gyp:unit_tests_apk',
-            '../components/components.gyp:components_unittests_apk',
+            '../components/components_tests.gyp:components_unittests_apk',
             '../content/content_shell_and_tests.gyp:content_browsertests_apk',
             '../content/content_shell_and_tests.gyp:content_gl_tests_apk',
             '../content/content_shell_and_tests.gyp:content_unittests_apk',
@@ -108,7 +109,7 @@
             '../sandbox/sandbox.gyp:sandbox_linux_jni_unittests_apk',
             '../sql/sql.gyp:sql_unittests_apk',
             '../sync/sync.gyp:sync_unit_tests_apk',
-            '../ui/ui.gyp:ui_unittests_apk',
+            '../ui/ui_unittests.gyp:ui_unittests_apk',
             '../android_webview/android_webview.gyp:android_webview_test_apk',
             '../chrome/chrome.gyp:chromium_testshell_test_apk',
             '../chrome/chrome.gyp:chromium_testshell_uiautomator_tests',

@@ -12,6 +12,7 @@ namespace client {
 class DefaultActivationClient;
 class DefaultCaptureClient;
 class FocusClient;
+class WindowTreeClient;
 }
 class RootWindow;
 }
@@ -27,7 +28,7 @@ class ShellAuraPlatformData {
   ShellAuraPlatformData();
   ~ShellAuraPlatformData();
 
-  void CreateWindow(int width, int height);
+  void ResizeWindow(int width, int height);
 
   aura::RootWindow* window() { return root_window_.get(); }
 
@@ -36,6 +37,7 @@ class ShellAuraPlatformData {
   scoped_ptr<aura::client::FocusClient> focus_client_;
   scoped_ptr<aura::client::DefaultActivationClient> activation_client_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
+  scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
   scoped_ptr<ui::EventHandler> ime_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellAuraPlatformData);

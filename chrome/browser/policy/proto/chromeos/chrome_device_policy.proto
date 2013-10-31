@@ -64,9 +64,8 @@ message DeviceProxySettingsProto {
   optional string proxy_bypass_list = 4;
 }
 
-// This was added to the protobuf definition but never implemented. Chrome can
-// meanwhile lock down access to media devices via a user policy, so the
-// device-level setting is deprecated for good.
+// This is used by chromeos, make sure to do cleanup there before marking it as
+// obsolette.
 message CameraEnabledProto {
   optional bool camera_enabled = 1;
 }
@@ -97,6 +96,7 @@ message DeviceReportingProto {
   optional bool report_boot_mode = 3;
   optional bool report_location = 4;
   optional bool report_network_interfaces = 5;
+  optional bool report_users = 6;
 }
 
 message EphemeralUsersEnabledProto {
@@ -534,12 +534,18 @@ message LoginScreenPowerManagementProto {
   optional string login_screen_power_management = 1;
 }
 
+message AutoCleanupSettigsProto {
+  // Configures strategy for automatic clean-up process that is run when device
+  // runs out of free disk space. One of "remove-lru", "remove-lru-if-dormant".
+  optional string clean_up_strategy = 1;
+}
+
 message ChromeDeviceSettingsProto {
   optional DevicePolicyRefreshRateProto device_policy_refresh_rate = 1;
   optional UserWhitelistProto user_whitelist = 2;
   optional GuestModeEnabledProto guest_mode_enabled = 3;
   optional DeviceProxySettingsProto device_proxy_settings = 4;
-  optional CameraEnabledProto OBSOLETE_camera_enabled = 5 [deprecated = true];
+  optional CameraEnabledProto camera_enabled = 5;
   optional ShowUserNamesOnSigninProto show_user_names = 6;
   optional DataRoamingEnabledProto data_roaming_enabled = 7;
   optional AllowNewUsersProto allow_new_users = 8;
@@ -565,4 +571,5 @@ message ChromeDeviceSettingsProto {
   optional SupervisedUsersSettingsProto supervised_users_settings = 28;
   optional LoginScreenPowerManagementProto login_screen_power_management = 29;
   optional SystemUse24HourClockProto use_24hour_clock = 30;
+  optional AutoCleanupSettigsProto auto_clean_up_settings = 31;
 }

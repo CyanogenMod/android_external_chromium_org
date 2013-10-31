@@ -356,6 +356,9 @@ Press any key to continue exploring.
   <message name="IDS_APP_START_APP_WAIT_MESSAGE" desc="Message displayed while installing and/or launching web application in kiosk mode.">
     Initializing application...
   </message>
+  <message name="IDS_APP_START_WAIT_FOR_APP_WINDOW_MESSAGE" desc="Message displayed while waiting for the application to create its window in kiosk mode.">
+    Waiting for application window...
+  </message>
   <message name="IDS_APP_START_CONFIGURE_NETWORK" desc="Text displayed for configure network button while installing and/or launching web application in kiosk mode.">
     Configure network
   </message>
@@ -967,13 +970,13 @@ Press any key to continue exploring.
     Delay before click:
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_EXTREMELY_SHORT" desc="Label for an extremely short autoclick delay option in the settings.">
-    extremely short 
+    extremely short
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_VERY_SHORT" desc="Label for a very short autoclick delay option in the settings.">
-    very short 
+    very short
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_SHORT" desc="Label for a short autoclick delay option in the settings.">
-    short 
+    short
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_AUTOCLICK_DELAY_LONG" desc="Label for a long autoclick delay option in the settings.">
     long
@@ -2223,11 +2226,11 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SWITCH_INPUT_METHODS_HINT"
            desc="Explanatory message about how to switch input methods">
-    Press alt+shift to switch between input methods.
+    Press Alt+Shift to switch between input methods.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SELECT_PREVIOUS_INPUT_METHOD_HINT"
            desc="Explanatory message about how to select the previous input method">
-    Press ctrl+space to select the previous input method.
+    Press Ctrl+Space to select the previous input method.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_INPUT_METHOD_EXTENSION_IME"
            desc="Label for extension IMEs">
@@ -2368,6 +2371,14 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_KEY_ESCAPE"
            desc="The dropdown list item for 'Customize modifier keys' overlay">
     Escape
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SEND_FUNCTION_KEYS"
+           desc="The checkbox label for a setting to interpret the top-row keys as function keys instead.">
+    Treat top-row keys as function keys
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SEND_FUNCTION_KEYS_DESCRIPTION"
+           desc="A label describing how to use the top-row keys' original actions when the treat-as-function-keys setting is enabled.">
+    Hold the Search key to switch the behavior of the top-row keys.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS"
            desc="The link to open 'Language and input settings' window.">
@@ -3140,7 +3151,7 @@ Battery full
     Mirror monitors
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_NEW_INCOGNITO_WINDOW" desc="The text in the keyboard overlay to explain the shortcut.">
-    New Incognito window
+    New incognito window
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_NEW_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
     New tab
@@ -3165,6 +3176,9 @@ Battery full
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_OPEN_FILE_MANAGER" desc="The text in the keyboard overlay to explain the shortcut (Open the file manager).">
     Open file manager
+  </message>
+  <message name="IDS_KEYBOARD_OVERLAY_OPEN_GOOGLE_CLOUD_PRINT" desc="The text in the keyboard overlay to explain the shortcut (Opens the 'Google Cloud Print' dialog).">
+    Open Google Cloud Print
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_PAGE_DOWN" desc="The text in the keyboard overlay to explain the shortcut (Page down).">
     Page down
@@ -3827,13 +3841,13 @@ Battery full
 
   <!-- HDCP verification UI -->
   <message name="IDS_PLATFORM_VERIFICATION_DIALOG_HEADLINE" desc="The label to describe what the dialog wants to confirm.">
-    Google needs to uniquely identify your device to authorize the playback of HD content. <ph name="LEARN_MORE">$1<ex>Learn more</ex></ph>.
+    <ph name="DOMAIN">$1<ex>example.com</ex></ph> requires unique identification of your device, by Google, to play HD content. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>.
   </message>
   <message name="IDS_PLATFORM_VERIFICATION_DIALOG_ALLOW" desc="The button label to allow access of HD playback.">
     Okay, got it
   </message>
   <message name="IDS_PLATFORM_VERIFICATION_DIALOG_DENY" desc="The button label to deny access of HD playback.">
-    No, disable HD
+    Disable HD on <ph name="DOMAIN">$1<ex>example.com</ex></ph>
   </message>
 
 </grit-part>

@@ -51,6 +51,7 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
@@ -730,6 +731,101 @@ class LayerTreeHostTestSetNextCommitForcesRedraw : public LayerTreeHostTest {
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestSetNextCommitForcesRedraw);
 
+// Tests that if a layer is not drawn because of some reason in the parent then
+// its damage is preserved until the next time it is drawn.
+class LayerTreeHostTestUndrawnLayersDamageLater : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestUndrawnLayersDamageLater()
+      : root_layer_(ContentLayer::Create(&client_)) {
+  }
+
+  virtual void SetupTree() OVERRIDE {
+    root_layer_->SetIsDrawable(true);
+    root_layer_->SetBounds(gfx::Size(50, 50));
+    layer_tree_host()->SetRootLayer(root_layer_);
+
+    // The initially transparent layer has a larger child layer, which is
+    // not initially drawn because of the this (parent) layer.
+    parent_layer_ = FakeContentLayer::Create(&client_);
+    parent_layer_->SetBounds(gfx::Size(15, 15));
+    parent_layer_->SetOpacity(0.0f);
+    root_layer_->AddChild(parent_layer_);
+
+    child_layer_ = FakeContentLayer::Create(&client_);
+    child_layer_->SetBounds(gfx::Size(25, 25));
+    parent_layer_->AddChild(child_layer_);
+
+    LayerTreeHostTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                     LayerTreeHostImpl::FrameData* frame_data,
+                                     bool result) OVERRIDE {
+    EXPECT_TRUE(result);
+
+    gfx::RectF root_damage_rect;
+    if (!frame_data->render_passes.empty())
+      root_damage_rect = frame_data->render_passes.back()->damage_rect;
+
+    // The first time, the whole view needs be drawn.
+    // Afterwards, just the opacity of surface_layer1 is changed a few times,
+    // and each damage should be the bounding box of it and its child. If this
+    // was working improperly, the damage might not include its childs bounding
+    // box.
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        EXPECT_RECT_EQ(gfx::Rect(root_layer_->bounds()), root_damage_rect);
+        break;
+      case 2:
+      case 3:
+      case 4:
+        EXPECT_RECT_EQ(gfx::Rect(child_layer_->bounds()), root_damage_rect);
+        break;
+      default:
+        NOTREACHED();
+    }
+
+    return result;
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1:
+        // Test not owning the surface.
+        parent_layer_->SetOpacity(1.0f);
+        break;
+      case 2:
+        parent_layer_->SetOpacity(0.0f);
+        break;
+      case 3:
+        // Test owning the surface.
+        parent_layer_->SetOpacity(0.5f);
+        parent_layer_->SetForceRenderSurface(true);
+        break;
+      case 4:
+        EndTest();
+        break;
+      default:
+        NOTREACHED();
+    }
+  }
+
+
+  virtual void AfterTest() OVERRIDE {}
+
+ private:
+  FakeContentLayerClient client_;
+  scoped_refptr<ContentLayer> root_layer_;
+  scoped_refptr<FakeContentLayer> parent_layer_;
+  scoped_refptr<FakeContentLayer> child_layer_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestUndrawnLayersDamageLater);
+
 // If the layerTreeHost says it can't draw, Then we should not try to draw.
 class LayerTreeHostTestCanDrawBlocksDrawing : public LayerTreeHostTest {
  public:
@@ -1004,10 +1100,9 @@ class LayerTreeHostTestFrameTimeUpdatesAfterDraw : public LayerTreeHostTest {
       first_frame_time_ = impl->CurrentFrameTimeTicks();
       impl->SetNeedsRedraw();
 
-      // Since base::TimeTicks::Now() uses a low-resolution clock on
-      // Windows, we need to make sure that the clock has incremented past
-      // first_frame_time_.
-      while (first_frame_time_ == base::TimeTicks::Now()) {}
+      // Since we might use a low-resolution clock on Windows, we need to
+      // make sure that the clock has incremented past first_frame_time_.
+      while (first_frame_time_ == gfx::FrameTime::Now()) {}
 
       return;
     }
@@ -2204,7 +2299,7 @@ class LayerTreeHostWithProxy : public LayerTreeHost {
   LayerTreeHostWithProxy(FakeLayerTreeHostClient* client,
                          const LayerTreeSettings& settings,
                          scoped_ptr<FakeProxy> proxy)
-      : LayerTreeHost(client, settings) {
+      : LayerTreeHost(client, NULL, settings) {
     proxy->SetLayerTreeHost(this);
     EXPECT_TRUE(InitializeForTesting(proxy.PassAs<Proxy>()));
   }
@@ -2272,7 +2367,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithGLRenderer) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, settings, NULL);
+      LayerTreeHost::Create(&client, NULL, settings, NULL);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2284,7 +2379,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithSoftwareRenderer) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, settings, NULL);
+      LayerTreeHost::Create(&client, NULL, settings, NULL);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(4u, host->settings().max_partial_texture_updates);
 }
@@ -2296,7 +2391,7 @@ TEST(LayerTreeHostTest, PartialUpdatesWithDelegatingRendererAndGLContent) {
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, settings, NULL);
+      LayerTreeHost::Create(&client, NULL, settings, NULL);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }
@@ -2309,7 +2404,7 @@ TEST(LayerTreeHostTest,
   settings.max_partial_texture_updates = 4;
 
   scoped_ptr<LayerTreeHost> host =
-      LayerTreeHost::Create(&client, settings, NULL);
+      LayerTreeHost::Create(&client, NULL, settings, NULL);
   EXPECT_TRUE(host->InitializeOutputSurfaceIfNeeded());
   EXPECT_EQ(0u, host->MaxPartialTextureUpdates());
 }
@@ -2358,9 +2453,9 @@ class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
         // Because a resource was evicted, a commit will be kicked off.
         host_impl->SetMemoryPolicy(
             ManagedMemoryPolicy(100 * 100 * 4 * 2,
-                                ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
+                                gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
                                 100 * 100 * 4 * 1,
-                                ManagedMemoryPolicy::CUTOFF_ALLOW_EVERYTHING,
+                                gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
                                 1000));
         host_impl->SetDiscardBackBufferWhenNotVisible(true);
         break;
@@ -2482,15 +2577,16 @@ class LayerTreeHostTestLCDNotification : public LayerTreeHostTest {
 
 SINGLE_THREAD_TEST_F(LayerTreeHostTestLCDNotification);
 
-// Verify that the BeginFrame notification is used to initiate rendering.
-class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
+// Verify that the BeginImplFrame notification is used to initiate rendering.
+class LayerTreeHostTestBeginImplFrameNotification : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_frame_scheduling_enabled = true;
+    settings->begin_impl_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE {
-    // This will trigger a SetNeedsBeginFrame which will trigger a BeginFrame.
+    // This will trigger a SetNeedsBeginImplFrame which will trigger a
+    // BeginImplFrame.
     PostSetNeedsCommitToMainThread();
   }
 
@@ -2508,24 +2604,24 @@ class LayerTreeHostTestBeginFrameNotification : public LayerTreeHostTest {
   base::TimeTicks frame_time_;
 };
 
-MULTI_THREAD_TEST_F(LayerTreeHostTestBeginFrameNotification);
+MULTI_THREAD_TEST_F(LayerTreeHostTestBeginImplFrameNotification);
 
-class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
+class LayerTreeHostTestBeginImplFrameNotificationShutdownWhileEnabled
     : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_frame_scheduling_enabled = true;
+    settings->begin_impl_frame_scheduling_enabled = true;
     settings->using_synchronous_renderer_compositor = true;
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // The BeginFrame notification is turned off now but will get enabled
+    // The BeginImplFrame notification is turned off now but will get enabled
     // once we return. End test while it's enabled.
     ImplThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&LayerTreeHostTestBeginFrameNotification::EndTest,
+        base::Bind(&LayerTreeHostTestBeginImplFrameNotification::EndTest,
                    base::Unretained(this)));
   }
 
@@ -2533,7 +2629,7 @@ class LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled
 };
 
 MULTI_THREAD_TEST_F(
-    LayerTreeHostTestBeginFrameNotificationShutdownWhileEnabled);
+    LayerTreeHostTestBeginImplFrameNotificationShutdownWhileEnabled);
 
 class LayerTreeHostTestAbortedCommitDoesntStall : public LayerTreeHostTest {
  protected:
@@ -2541,7 +2637,7 @@ class LayerTreeHostTestAbortedCommitDoesntStall : public LayerTreeHostTest {
       : commit_count_(0), commit_complete_count_(0) {}
 
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    settings->begin_frame_scheduling_enabled = true;
+    settings->begin_impl_frame_scheduling_enabled = true;
   }
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
@@ -4709,7 +4805,7 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestUpdateLayerInEmptyViewport);
 class LayerTreeHostTestAbortEvictedTextures : public LayerTreeHostTest {
  public:
   LayerTreeHostTestAbortEvictedTextures()
-      : num_will_begin_frames_(0), num_impl_commits_(0) {}
+      : num_will_begin_main_frames_(0), num_impl_commits_(0) {}
 
  protected:
   virtual void SetupTree() OVERRIDE {
@@ -4723,9 +4819,9 @@ class LayerTreeHostTestAbortEvictedTextures : public LayerTreeHostTest {
 
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
-  virtual void WillBeginFrame() OVERRIDE {
-    num_will_begin_frames_++;
-    switch (num_will_begin_frames_) {
+  virtual void WillBeginMainFrame() OVERRIDE {
+    num_will_begin_main_frames_++;
+    switch (num_will_begin_main_frames_) {
       case 2:
         // Send a redraw to the compositor thread.  This will (wrongly) be
         // ignored unless aborting resets the texture state.
@@ -4755,12 +4851,12 @@ class LayerTreeHostTestAbortEvictedTextures : public LayerTreeHostTest {
 
   virtual void AfterTest() OVERRIDE {
     // Ensure that the commit was truly aborted.
-    EXPECT_EQ(2, num_will_begin_frames_);
+    EXPECT_EQ(2, num_will_begin_main_frames_);
     EXPECT_EQ(1, num_impl_commits_);
   }
 
  private:
-  int num_will_begin_frames_;
+  int num_will_begin_main_frames_;
   int num_impl_commits_;
 };
 
@@ -4881,9 +4977,9 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
         // This will trigger a commit because the priority cutoff has changed.
         impl->SetMemoryPolicy(ManagedMemoryPolicy(
             16u*1024u*1024u,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE,
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
             0,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING,
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
             1000));
         break;
       case 2:
@@ -4891,9 +4987,9 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
         // changed, and there is already enough memory for all allocations.
         impl->SetMemoryPolicy(ManagedMemoryPolicy(
             32u*1024u*1024u,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE,
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
             0,
-            ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING,
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
             1000));
         break;
       case 3:
@@ -5041,14 +5137,14 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
                 second_context_provider_ :
                 first_context_provider_));
     output_surface->SetMemoryPolicyToSetAtBind(make_scoped_ptr(
-        new cc::ManagedMemoryPolicy(
+        new ManagedMemoryPolicy(
             second_context_provider_ ?
                 second_output_surface_memory_limit_ :
                 first_output_surface_memory_limit_,
-            cc::ManagedMemoryPolicy::CUTOFF_ALLOW_NICE_TO_HAVE,
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
             0,
-            cc::ManagedMemoryPolicy::CUTOFF_ALLOW_NOTHING,
-            cc::ManagedMemoryPolicy::kDefaultNumResourcesLimit)));
+            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
+            ManagedMemoryPolicy::kDefaultNumResourcesLimit)));
     return output_surface.PassAs<OutputSurface>();
   }
 

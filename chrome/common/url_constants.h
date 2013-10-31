@@ -404,10 +404,6 @@ extern const char kSyncLearnMoreURL[];
 // The URL for the "Learn more" page for download scanning.
 extern const char kDownloadScanningLearnMoreURL[];
 
-// The URL for the "Learn more" page for downloads flagged as potentially
-// unwanted by the SafeBrowsing service.
-extern const char kDownloadPotentiallyUnwantedLearnMoreURL[];
-
 // The URL for the "Learn more" page for interrupted downloads.
 extern const char kDownloadInterruptedLearnMoreURL[];
 
@@ -436,6 +432,9 @@ extern const char kLearnMoreEnterpriseURL[];
 #endif
 
 extern const char kNotificationsHelpURL[];
+
+// The Welcome Notification More Info URL.
+extern const char kNotificationWelcomeLearnMoreURL[];
 
 // Gets the hosts/domains that are shown in chrome://chrome-urls.
 extern const char* const kChromeHostURLs[];
@@ -486,6 +485,9 @@ extern const char kDriveScheme[];
 
 // "Learn more" URL for the Cloud Print section under Options.
 extern const char kCloudPrintLearnMoreURL[];
+
+// "Learn more" URL for the Cloud Print Preview No Destinations Promotion.
+extern const char kCloudPrintNoDestinationsLearnMoreURL[];
 
 // Parameters that get appended to force SafeSearch.
 extern const char kSafeSearchSafeParameter[];

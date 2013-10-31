@@ -31,7 +31,6 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/login/login_state.h"
 #include "content/public/test/test_utils.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -164,6 +163,12 @@ class TrayAccessibilityTest
     tray()->detailed_menu_->OnViewClicked(button);
   }
 
+  void ClickAutoclickOnDetailMenu() {
+    views::View* button = tray()->detailed_menu_->autoclick_view_;
+    EXPECT_TRUE(button);
+    tray()->detailed_menu_->OnViewClicked(button);
+  }
+
   bool IsSpokenFeedbackEnabledOnDetailMenu() {
     return tray()->detailed_menu_->spoken_feedback_enabled_;
   }
@@ -180,6 +185,9 @@ class TrayAccessibilityTest
     return tray()->detailed_menu_->large_cursor_enabled_;
   }
 
+  bool IsAutoclickEnabledOnDetailMenu() {
+    return tray()->detailed_menu_->autoclick_enabled_;
+  }
   bool IsSpokenFeedbackMenuShownOnDetailMenu() {
     return tray()->detailed_menu_->spoken_feedback_view_;
   }
@@ -194,6 +202,10 @@ class TrayAccessibilityTest
 
   bool IsLargeCursorMenuShownOnDetailMenu() {
     return tray()->detailed_menu_->large_cursor_view_;
+  }
+
+  bool IsAutoclickMenuShownOnDetailMenu() {
+    return tray()->detailed_menu_->autoclick_view_;
   }
 
   policy::MockConfigurationPolicyProvider provider_;
@@ -298,6 +310,12 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, ShowMenu) {
   SetMagnifierEnabled(false);
   EXPECT_FALSE(CanCreateMenuItem());
 
+  // Toggling autoclick changes the visibility of the menu.
+  AccessibilityManager::Get()->EnableAutoclick(true);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(false);
+  EXPECT_FALSE(CanCreateMenuItem());
+
   // Enabling all accessibility features.
   SetMagnifierEnabled(true);
   EXPECT_TRUE(CanCreateMenuItem());
@@ -305,6 +323,10 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, ShowMenu) {
   EXPECT_TRUE(CanCreateMenuItem());
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(true);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(false);
   EXPECT_TRUE(CanCreateMenuItem());
   AccessibilityManager::Get()->EnableSpokenFeedback(
       false, ash::A11Y_NOTIFICATION_NONE);
@@ -346,6 +368,12 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, ShowMenuWithShowMenuOption) {
   SetMagnifierEnabled(false);
   EXPECT_TRUE(CanCreateMenuItem());
 
+  // The menu is keeping visible regardless of toggling autoclick.
+  AccessibilityManager::Get()->EnableAutoclick(true);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(false);
+  EXPECT_TRUE(CanCreateMenuItem());
+
   // Enabling all accessibility features.
   SetMagnifierEnabled(true);
   EXPECT_TRUE(CanCreateMenuItem());
@@ -353,6 +381,10 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, ShowMenuWithShowMenuOption) {
   EXPECT_TRUE(CanCreateMenuItem());
   AccessibilityManager::Get()->EnableSpokenFeedback(
       true, ash::A11Y_NOTIFICATION_NONE);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(true);
+  EXPECT_TRUE(CanCreateMenuItem());
+  AccessibilityManager::Get()->EnableAutoclick(false);
   EXPECT_TRUE(CanCreateMenuItem());
   AccessibilityManager::Get()->EnableSpokenFeedback(
       false, ash::A11Y_NOTIFICATION_NONE);
@@ -477,6 +509,17 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, MAYBE_ClickDetailMenu) {
   EXPECT_TRUE(CreateDetailedMenu());
   ClickScreenMagnifierOnDetailMenu();
   EXPECT_FALSE(MagnificationManager::Get()->IsMagnifierEnabled());
+
+  // Confirms that the check item toggles autoclick.
+  EXPECT_FALSE(AccessibilityManager::Get()->IsAutoclickEnabled());
+
+  EXPECT_TRUE(CreateDetailedMenu());
+  ClickAutoclickOnDetailMenu();
+  EXPECT_TRUE(AccessibilityManager::Get()->IsAutoclickEnabled());
+
+  EXPECT_TRUE(CreateDetailedMenu());
+  ClickAutoclickOnDetailMenu();
+  EXPECT_FALSE(AccessibilityManager::Get()->IsAutoclickEnabled());
 }
 
 IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
@@ -488,6 +531,8 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Enabling spoken feedback.
@@ -498,6 +543,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Disabling spoken feedback.
@@ -508,6 +554,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Enabling high contrast.
@@ -517,6 +564,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_TRUE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Disabling high contrast.
@@ -526,6 +574,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Enabling full screen magnifier.
@@ -535,6 +584,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_TRUE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Disabling screen magnifier.
@@ -544,6 +594,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Enabling large cursor.
@@ -553,6 +604,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_TRUE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Disabling large cursor.
@@ -562,6 +614,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Enabling all of the a11y features.
@@ -575,6 +628,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_TRUE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_TRUE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_TRUE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 
   // Disabling all of the a11y features.
@@ -588,6 +642,30 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMarksOnDetailMenu) {
   EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
   EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
+  CloseDetailMenu();
+
+  // Autoclick is disabled on login screen.
+  SetLoginStatus(ash::user::LOGGED_IN_USER);
+
+  // Enabling autoclick.
+  AccessibilityManager::Get()->EnableAutoclick(true);
+  EXPECT_TRUE(CreateDetailedMenu());
+  EXPECT_FALSE(IsSpokenFeedbackEnabledOnDetailMenu());
+  EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
+  EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
+  EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_TRUE(IsAutoclickEnabledOnDetailMenu());
+  CloseDetailMenu();
+
+  // Disabling autoclick.
+  AccessibilityManager::Get()->EnableAutoclick(false);
+  EXPECT_TRUE(CreateDetailedMenu());
+  EXPECT_FALSE(IsSpokenFeedbackEnabledOnDetailMenu());
+  EXPECT_FALSE(IsHighContrastEnabledOnDetailMenu());
+  EXPECT_FALSE(IsScreenMagnifierEnabledOnDetailMenu());
+  EXPECT_FALSE(IsLargeCursorEnabledOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickEnabledOnDetailMenu());
   CloseDetailMenu();
 }
 
@@ -598,6 +676,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_TRUE(IsHighContrastMenuShownOnDetailMenu());
   EXPECT_TRUE(IsScreenMagnifierMenuShownOnDetailMenu());
   EXPECT_TRUE(IsLargeCursorMenuShownOnDetailMenu());
+  EXPECT_FALSE(IsAutoclickMenuShownOnDetailMenu());
   CloseDetailMenu();
 
   SetLoginStatus(ash::user::LOGGED_IN_USER);
@@ -606,6 +685,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_TRUE(IsHighContrastMenuShownOnDetailMenu());
   EXPECT_TRUE(IsScreenMagnifierMenuShownOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsAutoclickMenuShownOnDetailMenu());
   CloseDetailMenu();
 
   SetLoginStatus(ash::user::LOGGED_IN_LOCKED);
@@ -614,6 +694,7 @@ IN_PROC_BROWSER_TEST_P(TrayAccessibilityTest, CheckMenuVisibilityOnDetailMenu) {
   EXPECT_TRUE(IsHighContrastMenuShownOnDetailMenu());
   EXPECT_TRUE(IsScreenMagnifierMenuShownOnDetailMenu());
   EXPECT_FALSE(IsLargeCursorMenuShownOnDetailMenu());
+  EXPECT_TRUE(IsAutoclickMenuShownOnDetailMenu());
   CloseDetailMenu();
 }
 

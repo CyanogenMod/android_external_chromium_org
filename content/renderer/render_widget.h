@@ -68,6 +68,7 @@ class ExternalPopupMenu;
 class PepperPluginInstanceImpl;
 class RenderWidgetCompositor;
 class RenderWidgetTest;
+class ResizingModeSelector;
 struct ContextMenuParams;
 struct GpuRenderingStats;
 struct WebPluginGeometry;
@@ -291,6 +292,7 @@ class CONTENT_EXPORT RenderWidget
   void AnimationCallback();
   void AnimateIfNeeded();
   void InvalidationCallback();
+  void FlushPendingInputEventAck();
   void DoDeferredUpdateAndSendInputAck();
   void DoDeferredUpdate();
   void DoDeferredClose();
@@ -309,6 +311,8 @@ class CONTENT_EXPORT RenderWidget
               const gfx::Rect& resizer_rect,
               bool is_fullscreen,
               ResizeAck resize_ack);
+  // Used to force the size of a window when running layout tests.
+  void ResizeSynchronously(const gfx::Rect& new_position);
   virtual void SetScreenMetricsEmulationParameters(
       float device_scale_factor, float root_layer_scale);
   void SetExternalPopupOriginAdjustmentsForEmulation(
@@ -710,6 +714,9 @@ class CONTENT_EXPORT RenderWidget
 
   scoped_ptr<IPC::Message> pending_input_event_ack_;
 
+  // The time spent in input handlers this frame. Used to throttle input acks.
+  base::TimeDelta total_input_handling_time_this_frame_;
+
   // Indicates if the next sequence of Char events should be suppressed or not.
   bool suppress_next_char_events_;
 
@@ -782,6 +789,8 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point popup_view_origin_for_emulation_;
   gfx::Point popup_screen_origin_for_emulation_;
   float popup_origin_scale_for_emulation_;
+
+  scoped_ptr<ResizingModeSelector> resizing_mode_selector_;
 
   base::WeakPtrFactory<RenderWidget> weak_ptr_factory_;
 

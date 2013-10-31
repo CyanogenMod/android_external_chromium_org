@@ -373,8 +373,10 @@ bool StartupBrowserCreatorImpl::Launch(Profile* profile,
       return true;
     }
   } else if (command_line_.HasSwitch(switches::kShowAppList)) {
+    // This switch is used for shortcuts on the native desktop.
     AppListService::RecordShowTimings(command_line_);
-    AppListService::Get()->ShowForProfile(profile);
+    AppListService::Get(chrome::HOST_DESKTOP_TYPE_NATIVE)->
+        ShowForProfile(profile);
     return true;
   }
 
@@ -603,7 +605,8 @@ void StartupBrowserCreatorImpl::ProcessLaunchURLs(
     // Chrome may have been running in the background due to an app with a
     // background page being installed, or running with only an app window
     // displayed.
-    SessionService* service = SessionServiceFactory::GetForProfile(profile_);
+    SessionService* service =
+        SessionServiceFactory::GetForProfileForSessionRestore(profile_);
     if (service && service->ShouldNewWindowStartSession()) {
       // Restore the last session if any.
       if (!HasPendingUncleanExit(profile_) &&

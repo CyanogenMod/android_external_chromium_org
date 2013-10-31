@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_number_conversions.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
@@ -33,11 +34,8 @@ void InvokeErrorCallback(const std::string& service_path,
                          const std::string& error_name) {
   std::string error_msg = "Connect Error: " + error_name;
   NET_LOG_ERROR(error_msg, service_path);
-  if (error_callback.is_null())
-    return;
-  scoped_ptr<base::DictionaryValue> error_data(
-      network_handler::CreateErrorData(service_path, error_name, error_msg));
-  error_callback.Run(error_name, error_data.Pass());
+  network_handler::RunErrorCallback(
+      error_callback, service_path, error_name, error_msg);
 }
 
 bool IsAuthenticationError(const std::string& error) {
@@ -444,11 +442,12 @@ void NetworkConnectionHandler::VerifyConfiguredAndConnect(
     if (cert_loader_ && cert_loader_->IsHardwareBacked()) {
       // Pass NULL if pkcs11_id is empty, so that it doesn't clear any
       // previously configured client cert.
-      client_cert::SetShillProperties(client_cert_type,
-                                      cert_loader_->tpm_token_slot(),
-                                      cert_loader_->tpm_user_pin(),
-                                      pkcs11_id.empty() ? NULL : &pkcs11_id,
-                                      &config_properties);
+      client_cert::SetShillProperties(
+          client_cert_type,
+          base::IntToString(cert_loader_->tpm_token_slot_id()),
+          cert_loader_->tpm_user_pin(),
+          pkcs11_id.empty() ? NULL : &pkcs11_id,
+          &config_properties);
     }
   }
 
@@ -609,9 +608,8 @@ void NetworkConnectionHandler::CheckPendingRequest(
   pending_requests_.erase(service_path);
   if (error_callback.is_null())
     return;
-  scoped_ptr<base::DictionaryValue> error_data(
-      network_handler::CreateErrorData(service_path, error_name, shill_error));
-  error_callback.Run(error_name, error_data.Pass());
+  network_handler::RunErrorCallback(
+      error_callback, service_path, error_name, shill_error);
 }
 
 void NetworkConnectionHandler::CheckAllPendingRequests() {

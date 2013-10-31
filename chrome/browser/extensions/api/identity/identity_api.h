@@ -15,12 +15,11 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/api/identity/account_tracker.h"
 #include "chrome/browser/extensions/api/identity/gaia_web_auth_flow.h"
-#include "chrome/browser/extensions/api/identity/identity_event_router.h"
 #include "chrome/browser/extensions/api/identity/identity_mint_queue.h"
 #include "chrome/browser/extensions/api/identity/identity_signin_flow.h"
 #include "chrome/browser/extensions/api/identity/web_auth_flow.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/signin/signin_global_error.h"
 #include "google_apis/gaia/oauth2_mint_token_flow.h"
 #include "google_apis/gaia/oauth2_token_service.h"
@@ -28,6 +27,12 @@
 class GoogleServiceAuthError;
 class MockGetAuthTokenFunction;
 class Profile;
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+class DeviceOAuth2TokenService;
+}
+#endif
 
 namespace extensions {
 
@@ -64,7 +69,7 @@ extern const char kPageLoadFailure[];
 // profile will be signed in already, but if it turns out we need a
 // new login token, there is a sign-in flow. If that flow completes
 // successfully, getAuthToken proceeds to the non-interactive flow.
-class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
+class IdentityGetAuthTokenFunction : public ChromeAsyncExtensionFunction,
                                      public GaiaWebAuthFlow::Delegate,
                                      public IdentityMintRequestQueue::Request,
                                      public OAuth2MintTokenFlow::Delegate,
@@ -134,6 +139,9 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   // Starts a login access token request for device robot account. This method
   // will be called only in enterprise kiosk mode in ChromeOS.
   virtual void StartDeviceLoginAccessTokenRequest();
+
+  // Continuation of StartDeviceLoginAccessTokenRequest().
+  virtual void DidGetTokenService(chromeos::DeviceOAuth2TokenService* service);
 #endif
 
   // Starts a mint token request to GAIA.
@@ -170,7 +178,8 @@ class IdentityGetAuthTokenFunction : public AsyncExtensionFunction,
   scoped_ptr<OAuth2TokenService::Request> login_token_request_;
 };
 
-class IdentityRemoveCachedAuthTokenFunction : public SyncExtensionFunction {
+class IdentityRemoveCachedAuthTokenFunction
+    : public ChromeSyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("identity.removeCachedAuthToken",
                              EXPERIMENTAL_IDENTITY_REMOVECACHEDAUTHTOKEN)
@@ -183,7 +192,7 @@ class IdentityRemoveCachedAuthTokenFunction : public SyncExtensionFunction {
   virtual bool RunImpl() OVERRIDE;
 };
 
-class IdentityLaunchWebAuthFlowFunction : public AsyncExtensionFunction,
+class IdentityLaunchWebAuthFlowFunction : public ChromeAsyncExtensionFunction,
                                           public WebAuthFlow::Delegate {
  public:
   DECLARE_EXTENSION_FUNCTION("identity.launchWebAuthFlow",
@@ -297,7 +306,6 @@ class IdentityAPI : public ProfileKeyedAPI,
   IdentityMintRequestQueue mint_queue_;
   CachedTokens token_cache_;
   AccountTracker account_tracker_;
-  IdentityEventRouter identity_event_router_;
 };
 
 template <>

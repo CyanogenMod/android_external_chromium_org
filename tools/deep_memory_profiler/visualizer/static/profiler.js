@@ -80,10 +80,12 @@ Profiler.prototype.getRunId = function() {
 /**
  * To be called by view when new model being selected.
  * And then triggers all relative views to update.
+ * @param {string} id Model id.
+ * @param {Object} pos Clicked position.
  */
-Profiler.prototype.setSelected = function(id) {
+Profiler.prototype.setSelected = function(id, pos) {
   this.selected_ = id;
-  this.emit('changed:selected', id);
+  this.emit('changed:selected', id, pos);
 };
 
 /**
@@ -138,13 +140,32 @@ Profiler.prototype.getCurSubById = function(id) {
 Profiler.prototype.setSub = function(sub) {
   var selected = this.selected_;
   var path = selected.split(',');
-  var key = path[path.length-1];
+  var key = path[path.length - 1];
 
   // Add sub breakdown to template.
   var models = this.getModelsbyId(selected);
   var subTmpl = sub.split(',');
   subTmpl.push({});
   models[0].template[2][key] = subTmpl;
+
+  // Recalculate new template.
+  this.reparse();
+};
+
+/**
+ * Remove children of figured node and reparse whole tree.
+ * @param {string} id World-breakdown like 'vm-map'.
+ */
+Profiler.prototype.unsetSub = function(id) {
+  var models = this.getModelsbyId(id);
+  if (!('template' in models[0]))
+    return;
+
+  var path = id.split(',');
+  var key = path[path.length - 1];
+  if (!(key in models[0].template[2]))
+    return;
+  delete (models[0].template[2][key]);
 
   // Recalculate new template.
   this.reparse();
@@ -167,22 +188,24 @@ Profiler.prototype.accumulate_ = function(
   var worldName = template[0];
   var breakdownName = template[1];
   var categories = snapshot.worlds[worldName].breakdown[breakdownName];
-  // Make deep copy of localUnits.
-  var remainderUnits = localUnits.slice(0);
+  var matchedUnitsSet = {};
   var model = {
     name: name || worldName + '-' + breakdownName,
     time: snapshot.time,
     children: []
   };
 
+  localUnits.sort(function(a, b) { return b - a; });
   Object.keys(categories).forEach(function(categoryName) {
     var category = categories[categoryName];
     if (category['hidden'] === true)
       return;
-
+    category.units.sort(function(a, b) { return b - a; });
     // Filter units.
-    var matchedUnits = intersection(category.units, localUnits);
-    remainderUnits = difference(remainderUnits, matchedUnits);
+    var matchedUnits = intersectionOfSorted(category.units, localUnits);
+    matchedUnits.forEach(function(unit) {
+      matchedUnitsSet[unit] = unit;
+    });
 
     // Accumulate categories.
     var size = matchedUnits.reduce(function(previous, current) {
@@ -253,13 +276,19 @@ Profiler.prototype.accumulate_ = function(
             name: categoryName + '-remaining',
             size: size - retVal.totalSize
           });
-        } else {
+        } else if (size < retVal.totalSize) {
           // Output WARNING when sub-breakdown size is larger.
           console.log('WARNING: size of sub-breakdown is larger');
         }
       }
     }
   });
+
+  var remainderUnits = localUnits.reduce(function(previous, current) {
+    if (!(current in matchedUnitsSet))
+      previous.push(current);
+    return previous;
+  }, []);
 
   return {
     model: model,

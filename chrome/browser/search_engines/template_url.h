@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/search_engines/template_url_id.h"
@@ -104,6 +105,9 @@ class TemplateURLRef {
     // True for searches issued with the bookmark bar pref set to shown.
     bool bookmark_bar_pinned;
 
+    // Additional query params provided by the suggest server.
+    std::string suggest_query_params;
+
     // If set, ReplaceSearchTerms() will automatically append any extra query
     // params specified via the --extra-search-query-params command-line
     // argument.  Generally, this should be set when dealing with the search or
@@ -123,6 +127,12 @@ class TemplateURLRef {
 
     // When searching for an image, the original size of the image.
     gfx::Size image_original_size;
+
+    // If set, ReplaceSearchTerms() will append a param to the TemplateURLRef to
+    // update the search results page incrementally even if that is otherwise
+    // disabled by google.com preferences. See comments on
+    // SearchTermsData::ForceInstantResultsParam().
+    bool force_instant_results;
   };
 
   TemplateURLRef(TemplateURL* owner, Type type);
@@ -249,7 +259,7 @@ class TemplateURLRef {
     GOOGLE_IMAGE_SEARCH_SOURCE,
     GOOGLE_IMAGE_THUMBNAIL,
     GOOGLE_IMAGE_URL,
-    GOOGLE_INSTANT_ENABLED,
+    GOOGLE_FORCE_INSTANT_RESULTS,
     GOOGLE_INSTANT_EXTENDED_ENABLED,
     GOOGLE_NTP_IS_THEMED,
     GOOGLE_OMNIBOX_START_MARGIN,
@@ -505,6 +515,22 @@ struct TemplateURLData {
 };
 
 
+// AssociatedExtensionInfo ----------------------------------------------------
+
+// An AssociatedExtensionInfo represents information about the extension that
+// added the search engine using the Override Settings API.
+struct AssociatedExtensionInfo {
+  std::string extension_id;
+
+  // Whether the search engine is supposed to be default.
+  bool wants_to_be_default_engine;
+
+  // Used to resolve conflicts when there are multiple extensions specifying the
+  // default search engine. The most recently-installed wins.
+  base::Time install_time;
+};
+
+
 // TemplateURL ----------------------------------------------------------------
 
 // A TemplateURL represents a single "search engine", defined primarily as a
@@ -520,6 +546,14 @@ struct TemplateURLData {
 // is made a friend so that it can be the exception to this pattern.
 class TemplateURL {
  public:
+  enum Type {
+    // Regular search engine.
+    NORMAL,
+    // Installed by extension through Override Settings API.
+    NORMAL_CONTROLLED_BY_EXTENSION,
+    // The keyword associated with an extension that uses the Omnibox API.
+    OMNIBOX_API_EXTENSION,
+  };
   // |profile| may be NULL.  This will affect the results of e.g. calling
   // ReplaceSearchTerms() on the member TemplateURLRefs.
   TemplateURL(Profile* profile, const TemplateURLData& data);
@@ -615,8 +649,12 @@ class TemplateURL {
   // IsGoogleSearchURLWithReplaceableKeyword() is true for both TemplateURLs.
   bool HasSameKeywordAs(const TemplateURL& other) const;
 
+  Type GetType() const;
+
+  // Returns the id of the extension that added this search engine. Only call
+  // this for TemplateURLs of type NORMAL_CONTROLLED_BY_EXTENSION or
+  // OMNIBOX_API_EXTENSION.
   std::string GetExtensionId() const;
-  bool IsExtensionKeyword() const;
 
   // Returns the total number of URLs comprised in this template, including
   // search and alternate URLs.
@@ -721,6 +759,7 @@ class TemplateURL {
   TemplateURLRef instant_url_ref_;
   TemplateURLRef image_url_ref_;
   TemplateURLRef new_tab_url_ref_;
+  scoped_ptr<AssociatedExtensionInfo> extension_info_;
 
   // TODO(sky): Add date last parsed OSD file.
 

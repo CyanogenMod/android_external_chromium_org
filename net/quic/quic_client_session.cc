@@ -15,6 +15,7 @@
 #include "net/base/net_errors.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
+#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_stream_factory.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
@@ -82,6 +83,7 @@ void QuicClientSession::StreamRequest::OnRequestCompleteFailure(int rv) {
 QuicClientSession::QuicClientSession(
     QuicConnection* connection,
     scoped_ptr<DatagramClientSocket> socket,
+    scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
     const string& server_hostname,
@@ -92,11 +94,13 @@ QuicClientSession::QuicClientSession(
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
+      writer_(writer.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
       read_pending_(false),
       num_total_streams_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_),
+      num_packets_read_(0),
       weak_factory_(this) {
   crypto_stream_.reset(
       crypto_client_stream_factory ?
@@ -336,9 +340,10 @@ void QuicClientSession::OnCryptoHandshakeMessageReceived(
   logger_.OnCryptoHandshakeMessageReceived(message);
 }
 
-void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
+void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
+                                           bool from_peer) {
   DCHECK(!connection()->connected());
-  logger_.OnConnectionClose(error, from_peer);
+  logger_.OnConnectionClosed(error, from_peer);
   if (from_peer) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.QuicSession.ConnectionCloseErrorCodeServer", error);
@@ -348,9 +353,16 @@ void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
   }
 
   if (error == QUIC_CONNECTION_TIMED_OUT) {
-    UMA_HISTOGRAM_SPARSE_SLOWLY(
+    UMA_HISTOGRAM_COUNTS(
         "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
         GetNumOpenStreams());
+    if (!IsCryptoHandshakeConfirmed()) {
+      // If there have been any streams created, they were 0-RTT speculative
+      // requests that have not be serviced.
+      UMA_HISTOGRAM_COUNTS(
+          "Net.QuicSession.ConnectionClose.NumTotalStreams.HandshakeTimedOut",
+          num_total_streams_);
+    }
   }
 
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.QuicSession.QuicVersion",
@@ -360,7 +372,7 @@ void QuicClientSession::ConnectionClose(QuicErrorCode error, bool from_peer) {
     base::ResetAndReturn(&callback_).Run(ERR_QUIC_PROTOCOL_ERROR);
   }
   socket_->Close();
-  QuicSession::ConnectionClose(error, from_peer);
+  QuicSession::OnConnectionClosed(error, from_peer);
   NotifyFactoryOfSessionClosedLater();
 }
 
@@ -380,16 +392,22 @@ void QuicClientSession::StartReading() {
                          base::Bind(&QuicClientSession::OnReadComplete,
                                     weak_factory_.GetWeakPtr()));
   if (rv == ERR_IO_PENDING) {
+    num_packets_read_ = 0;
     return;
   }
 
-  // Data was read, process it.
-  // Schedule the work through the message loop to avoid recursive
-  // callbacks.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&QuicClientSession::OnReadComplete,
-                 weak_factory_.GetWeakPtr(), rv));
+  if (++num_packets_read_ > 32) {
+    num_packets_read_ = 0;
+    // Data was read, process it.
+    // Schedule the work through the message loop to avoid recursive
+    // callbacks.
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&QuicClientSession::OnReadComplete,
+                   weak_factory_.GetWeakPtr(), rv));
+  } else {
+    OnReadComplete(rv);
+  }
 }
 
 void QuicClientSession::CloseSessionOnError(int error) {
@@ -438,6 +456,7 @@ base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
   dict->SetString("guid", base::Uint64ToString(guid()));
+  dict->SetBoolean("connected", connection()->connected());
   return dict;
 }
 

@@ -5,9 +5,12 @@
 #include "content/renderer/webcrypto/webcrypto_impl.h"
 
 #include <vector>
+#include <openssl/aes.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 
 #include "base/logging.h"
 #include "crypto/openssl_util.h"
@@ -33,29 +36,153 @@ class SymKeyHandle : public WebKit::WebCryptoKeyHandle {
   DISALLOW_COPY_AND_ASSIGN(SymKeyHandle);
 };
 
-}  // anonymous namespace
+const EVP_CIPHER* GetAESCipherByKeyLength(unsigned key_length_bytes) {
+  // OpenSSL supports AES CBC ciphers for only 3 key lengths: 128, 192, 256 bits
+  switch (key_length_bytes) {
+    case 16:
+      return EVP_aes_128_cbc();
+    case 24:
+      return EVP_aes_192_cbc();
+    case 32:
+      return EVP_aes_256_cbc();
+    default:
+      return NULL;
+  }
+}
+
+unsigned WebCryptoHmacParamsToBlockSize(
+    const WebKit::WebCryptoHmacKeyParams* params) {
+  DCHECK(params);
+  switch (params->hash().id()) {
+    case WebKit::WebCryptoAlgorithmIdSha1:
+      return SHA_DIGEST_LENGTH / 8;
+    case WebKit::WebCryptoAlgorithmIdSha224:
+      return SHA224_DIGEST_LENGTH / 8;
+    case WebKit::WebCryptoAlgorithmIdSha256:
+      return SHA256_DIGEST_LENGTH / 8;
+    case WebKit::WebCryptoAlgorithmIdSha384:
+      return SHA384_DIGEST_LENGTH / 8;
+    case WebKit::WebCryptoAlgorithmIdSha512:
+      return SHA512_DIGEST_LENGTH / 8;
+    default:
+      return 0;
+  }
+}
+
+// OpenSSL constants for EVP_CipherInit_ex(), do not change
+enum CipherOperation {
+  kDoDecrypt = 0,
+  kDoEncrypt = 1
+};
+
+bool AesCbcEncryptDecrypt(CipherOperation cipher_operation,
+                          const WebKit::WebCryptoAlgorithm& algorithm,
+                          const WebKit::WebCryptoKey& key,
+                          const unsigned char* data,
+                          unsigned data_size,
+                          WebKit::WebArrayBuffer* buffer) {
+
+  // TODO(padolph): Handle other encrypt operations and then remove this gate
+  if (algorithm.id() != WebKit::WebCryptoAlgorithmIdAesCbc)
+    return false;
+
+  DCHECK_EQ(algorithm.id(), key.algorithm().id());
+  DCHECK_EQ(WebKit::WebCryptoKeyTypeSecret, key.type());
+
+  if (data_size >= INT_MAX - AES_BLOCK_SIZE) {
+    // TODO(padolph): Handle this by chunking the input fed into OpenSSL. Right
+    // now it doesn't make much difference since the one-shot API would end up
+    // blowing out the memory and crashing anyway. However a newer version of
+    // the spec allows for a sequence<CryptoData> so this will be relevant.
+    return false;
+  }
+
+  // Note: PKCS padding is enabled by default
+  crypto::ScopedOpenSSL<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free> context(
+      EVP_CIPHER_CTX_new());
+
+  if (!context.get())
+    return false;
+
+  SymKeyHandle* const sym_key = reinterpret_cast<SymKeyHandle*>(key.handle());
+
+  const EVP_CIPHER* const cipher =
+      GetAESCipherByKeyLength(sym_key->key().size());
+  DCHECK(cipher);
+
+  const WebKit::WebCryptoAesCbcParams* const params = algorithm.aesCbcParams();
+  if (params->iv().size() != AES_BLOCK_SIZE)
+    return false;
+
+  if (!EVP_CipherInit_ex(context.get(),
+                         cipher,
+                         NULL,
+                         &sym_key->key()[0],
+                         params->iv().data(),
+                         cipher_operation)) {
+    return false;
+  }
+
+  // According to the openssl docs, the amount of data written may be as large
+  // as (data_size + cipher_block_size - 1), constrained to a multiple of
+  // cipher_block_size.
+  unsigned output_max_len = data_size + AES_BLOCK_SIZE - 1;
+  const unsigned remainder = output_max_len % AES_BLOCK_SIZE;
+  if (remainder != 0)
+    output_max_len += AES_BLOCK_SIZE - remainder;
+  DCHECK_GT(output_max_len, data_size);
+
+  *buffer = WebKit::WebArrayBuffer::create(output_max_len, 1);
+
+  unsigned char* const buffer_data =
+      reinterpret_cast<unsigned char*>(buffer->data());
+
+  int output_len = 0;
+  if (!EVP_CipherUpdate(
+          context.get(), buffer_data, &output_len, data, data_size))
+    return false;
+  int final_output_chunk_len = 0;
+  if (!EVP_CipherFinal_ex(
+          context.get(), buffer_data + output_len, &final_output_chunk_len))
+    return false;
+
+  const unsigned final_output_len =
+      static_cast<unsigned>(output_len) +
+      static_cast<unsigned>(final_output_chunk_len);
+  DCHECK_LE(final_output_len, output_max_len);
+
+  WebCryptoImpl::ShrinkBuffer(buffer, final_output_len);
+
+  return true;
+}
+
+}  // namespace
 
 void WebCryptoImpl::Init() { crypto::EnsureOpenSSLInit(); }
 
-bool WebCryptoImpl::EncryptInternal(
-    const WebKit::WebCryptoAlgorithm& algorithm,
-    const WebKit::WebCryptoKey& key,
-    const unsigned char* data,
-    unsigned data_size,
-    WebKit::WebArrayBuffer* buffer) {
-  // TODO(padolph): Placeholder for OpenSSL implementation.
-  // Issue http://crbug.com/267888.
+bool WebCryptoImpl::EncryptInternal(const WebKit::WebCryptoAlgorithm& algorithm,
+                                    const WebKit::WebCryptoKey& key,
+                                    const unsigned char* data,
+                                    unsigned data_size,
+                                    WebKit::WebArrayBuffer* buffer) {
+  if (algorithm.id() == WebKit::WebCryptoAlgorithmIdAesCbc) {
+    return AesCbcEncryptDecrypt(
+        kDoEncrypt, algorithm, key, data, data_size, buffer);
+  }
+
   return false;
 }
 
-bool WebCryptoImpl::DecryptInternal(
-    const WebKit::WebCryptoAlgorithm& algorithm,
-    const WebKit::WebCryptoKey& key,
-    const unsigned char* data,
-    unsigned data_size,
-    WebKit::WebArrayBuffer* buffer) {
-  // TODO(padolph): Placeholder for OpenSSL implementation.
-  // Issue http://crbug.com/267888.
+bool WebCryptoImpl::DecryptInternal(const WebKit::WebCryptoAlgorithm& algorithm,
+                                    const WebKit::WebCryptoKey& key,
+                                    const unsigned char* data,
+                                    unsigned data_size,
+                                    WebKit::WebArrayBuffer* buffer) {
+  if (algorithm.id() == WebKit::WebCryptoAlgorithmIdAesCbc) {
+    return AesCbcEncryptDecrypt(
+        kDoDecrypt, algorithm, key, data, data_size, buffer);
+  }
+
   return false;
 }
 
@@ -121,21 +248,70 @@ bool WebCryptoImpl::DigestInternal(const WebKit::WebCryptoAlgorithm& algorithm,
 
 bool WebCryptoImpl::GenerateKeyInternal(
     const WebKit::WebCryptoAlgorithm& algorithm,
-    scoped_ptr<WebKit::WebCryptoKeyHandle>* key,
-    WebKit::WebCryptoKeyType* type) {
-  // TODO(ellyjones): Placeholder for OpenSSL implementation.
-  // Issue http://crbug.com/267888.
-  return false;
+    bool extractable,
+    WebKit::WebCryptoKeyUsageMask usage_mask,
+    WebKit::WebCryptoKey* key) {
+
+  unsigned keylen_bytes = 0;
+  WebKit::WebCryptoKeyType key_type;
+  switch (algorithm.id()) {
+    case WebKit::WebCryptoAlgorithmIdAesCbc: {
+      const WebKit::WebCryptoAesKeyGenParams* params =
+          algorithm.aesKeyGenParams();
+      DCHECK(params);
+      if (params->length() % 8)
+        return false;
+      keylen_bytes = params->length() / 8;
+      if (!GetAESCipherByKeyLength(keylen_bytes)) {
+        return false;
+      }
+      key_type = WebKit::WebCryptoKeyTypeSecret;
+      break;
+    }
+    case WebKit::WebCryptoAlgorithmIdHmac: {
+      const WebKit::WebCryptoHmacKeyParams* params = algorithm.hmacKeyParams();
+      DCHECK(params);
+      if (!params->getLength(keylen_bytes)) {
+        keylen_bytes = WebCryptoHmacParamsToBlockSize(params);
+      }
+      key_type = WebKit::WebCryptoKeyTypeSecret;
+      break;
+    }
+
+    default: { return false; }
+  }
+
+  if (keylen_bytes == 0) {
+    return false;
+  }
+
+  crypto::OpenSSLErrStackTracer(FROM_HERE);
+
+  std::vector<unsigned char> random_bytes(keylen_bytes, 0);
+  if (!(RAND_bytes(&random_bytes[0], keylen_bytes))) {
+    return false;
+  }
+
+  *key = WebKit::WebCryptoKey::create(
+      new SymKeyHandle(&random_bytes[0], random_bytes.size()),
+      key_type, extractable, algorithm, usage_mask);
+
+  return true;
 }
 
 bool WebCryptoImpl::ImportKeyInternal(
     WebKit::WebCryptoKeyFormat format,
     const unsigned char* key_data,
     unsigned key_data_size,
-    const WebKit::WebCryptoAlgorithm& algorithm,
-    WebKit::WebCryptoKeyUsageMask /*usage_mask*/,
-    scoped_ptr<WebKit::WebCryptoKeyHandle>* handle,
-    WebKit::WebCryptoKeyType* type) {
+    const WebKit::WebCryptoAlgorithm& algorithm_or_null,
+    bool extractable,
+    WebKit::WebCryptoKeyUsageMask usage_mask,
+    WebKit::WebCryptoKey* key) {
+  // TODO(eroman): Currently expects algorithm to always be specified, as it is
+  //               required for raw format.
+  if (algorithm_or_null.isNull())
+    return false;
+  const WebKit::WebCryptoAlgorithm& algorithm = algorithm_or_null;
 
   // TODO(padolph): Support all relevant alg types and then remove this gate.
   if (algorithm.id() != WebKit::WebCryptoAlgorithmIdHmac &&
@@ -152,7 +328,7 @@ bool WebCryptoImpl::ImportKeyInternal(
   // they differ? (jwk, probably)
 
   // Symmetric keys are always type secret
-  *type = WebKit::WebCryptoKeyTypeSecret;
+  WebKit::WebCryptoKeyType type = WebKit::WebCryptoKeyTypeSecret;
 
   const unsigned char* raw_key_data;
   unsigned raw_key_data_size;
@@ -160,6 +336,12 @@ bool WebCryptoImpl::ImportKeyInternal(
     case WebKit::WebCryptoKeyFormatRaw:
       raw_key_data = key_data;
       raw_key_data_size = key_data_size;
+      // The NSS implementation fails when importing a raw AES key with a length
+      // incompatible with AES. The line below is to match this behavior.
+      if (algorithm.id() == WebKit::WebCryptoAlgorithmIdAesCbc &&
+          !GetAESCipherByKeyLength(raw_key_data_size)) {
+        return false;
+      }
       break;
     case WebKit::WebCryptoKeyFormatJwk:
       // TODO(padolph): Handle jwk format; need simple JSON parser.
@@ -169,7 +351,9 @@ bool WebCryptoImpl::ImportKeyInternal(
       return false;
   }
 
-  handle->reset(new SymKeyHandle(raw_key_data, raw_key_data_size));
+  *key = WebKit::WebCryptoKey::create(
+      new SymKeyHandle(raw_key_data, raw_key_data_size),
+      type, extractable, algorithm, usage_mask);
 
   return true;
 }

@@ -324,7 +324,7 @@ void GetScreenInfoForWindow(gfx::NativeViewId id,
 
   WebKit::WebScreenInfo screen_info;
   screen_info.depth = dev_mode.dmBitsPerPel;
-  screen_info.depthPerComponent = dev_mode.dmBitsPerPel / 3;  // Assumes RGB
+  screen_info.depthPerComponent = 8;
   screen_info.deviceScaleFactor = gfx::win::GetDeviceScaleFactor();
   screen_info.isMonochrome = dev_mode.dmColor == DMCOLOR_MONOCHROME;
   screen_info.rect = gfx::Rect(monitor_info.rcMonitor);
@@ -500,7 +500,7 @@ void RenderWidgetHostViewWin::SetSize(const gfx::Size& size) {
 }
 
 void RenderWidgetHostViewWin::SetBounds(const gfx::Rect& rect) {
-  if (being_destroyed_ || render_widget_host_->is_hidden())
+  if (being_destroyed_)
     return;
 
   // No SWP_NOREDRAW as autofill popups can move and the underneath window
@@ -951,7 +951,7 @@ bool RenderWidgetHostViewWin::CanDispatchToConsumer(
   return true;
 }
 
-void RenderWidgetHostViewWin::DispatchLongPressGestureEvent(
+void RenderWidgetHostViewWin::DispatchPostponedGestureEvent(
     ui::GestureEvent* event) {
   ForwardGestureEventToRenderer(event);
 }

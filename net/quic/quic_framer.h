@@ -150,8 +150,10 @@ class NET_EXPORT_PRIVATE QuicReceivedEntropyHashCalculatorInterface {
 class NET_EXPORT_PRIVATE QuicFramer {
  public:
   // Constructs a new framer that installs a kNULL QuicEncrypter and
-  // QuicDecrypter for level ENCRYPTION_NONE.
-  QuicFramer(QuicVersion quic_version,
+  // QuicDecrypter for level ENCRYPTION_NONE. |supported_versions| specifies the
+  // list of supported QUIC versions. |quic_version_| is set to the maximum
+  // version in |supported_versions|.
+  QuicFramer(const QuicVersionVector& supported_versions,
              QuicTime creation_time,
              bool is_server);
 
@@ -180,6 +182,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // will be used.  The builder need not be set.
   void set_fec_builder(QuicFecBuilderInterface* builder) {
     fec_builder_ = builder;
+  }
+
+  const QuicVersionVector& supported_versions() const {
+    return supported_versions_;
   }
 
   QuicVersion version() const {
@@ -251,8 +257,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // Returns the number of bytes added to the packet for the specified frame,
   // and 0 if the frame doesn't fit.  Includes the header size for the first
   // frame.
-  size_t GetSerializedFrameLength(
-      const QuicFrame& frame, size_t free_bytes, bool first_frame);
+  size_t GetSerializedFrameLength(const QuicFrame& frame,
+                                  size_t free_bytes,
+                                  bool first_frame,
+                                  bool last_frame);
 
   // Returns the associated data from the encrypted packet |encrypted| as a
   // stringpiece.
@@ -427,6 +435,11 @@ class NET_EXPORT_PRIVATE QuicFramer {
   scoped_ptr<QuicData> decrypted_;
   // Version of the protocol being used.
   QuicVersion quic_version_;
+  // This vector contains QUIC versions which we currently support.
+  // This should be ordered such that the highest supported version is the first
+  // element, with subsequent elements in descending order (versions can be
+  // skipped as necessary).
+  QuicVersionVector supported_versions_;
   // Primary decrypter used to decrypt packets during parsing.
   scoped_ptr<QuicDecrypter> decrypter_;
   // Alternative decrypter that can also be used to decrypt packets.

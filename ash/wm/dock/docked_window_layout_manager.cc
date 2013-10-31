@@ -23,6 +23,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/focus_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
@@ -104,23 +105,14 @@ bool IsUsedByLayout(aura::Window* window) {
 }
 
 void UndockWindow(aura::Window* window) {
-  aura::Window* focused =
-      aura::client::GetFocusClient(window)->GetFocusedWindow();
-  bool had_focus = window == focused || window->Contains(focused);
-  window->Hide();
-  window->layer()->GetAnimator()->StopAnimating();
   gfx::Rect previous_bounds = window->bounds();
   aura::Window* previous_parent = window->parent();
-  window->SetDefaultParentByRootWindow(window->GetRootWindow(), gfx::Rect());
+  aura::client::ParentWindowWithContext(window, window, gfx::Rect());
   if (window->parent() != previous_parent)
     wm::ReparentTransientChildrenOfChild(window->parent(), window);
-  // Animate maximize animation from previous window bounds.
-  if (wm::GetWindowState(window)->IsMaximized())
-    window->layer()->SetBounds(previous_bounds);
-  window->Show();
-  // Restore focus if the window had it before.
-  if (had_focus && !wm::GetWindowState(window)->IsFullscreen())
-    focused->Focus();
+  // Start maximize or fullscreen (affecting packaged apps) animation from
+  // previous window bounds.
+  window->layer()->SetBounds(previous_bounds);
 }
 
 // Returns width that is as close as possible to |target_width| while being
@@ -479,6 +471,7 @@ void DockedWindowLayoutManager::OnWindowRemovedFromLayout(aura::Window* child) {
   child->RemoveObserver(this);
   wm::GetWindowState(child)->RemoveObserver(this);
   Relayout();
+  UpdateDockBounds(DockedWindowLayoutManagerObserver::CHILD_CHANGED);
 }
 
 void DockedWindowLayoutManager::OnChildWindowVisibilityChanged(
@@ -509,7 +502,7 @@ void DockedWindowLayoutManager::OnDisplayWorkAreaInsetsChanged() {
 }
 
 void DockedWindowLayoutManager::OnFullscreenStateChanged(
-    bool is_fullscreen, aura::RootWindow* root_window) {
+    bool is_fullscreen, aura::Window* root_window) {
   if (dock_container_->GetRootWindow() != root_window)
     return;
   // Entering fullscreen mode (including immersive) hides docked windows.
@@ -541,7 +534,7 @@ void DockedWindowLayoutManager::OnFullscreenStateChanged(
 }
 
 void DockedWindowLayoutManager::OnShelfAlignmentChanged(
-    aura::RootWindow* root_window) {
+    aura::Window* root_window) {
   if (dock_container_->GetRootWindow() != root_window)
     return;
 
@@ -584,7 +577,7 @@ void DockedWindowLayoutManager::OnWindowShowTypeChanged(
     // Reparenting changes the source bounds for the animation if a window is
     // visible so hide it here and show later when it is already in the desktop.
     UndockWindow(window);
-  } else {
+  } else if (old_type == wm::SHOW_TYPE_MINIMIZED) {
     RestoreDockedWindow(window_state);
   }
 }

@@ -894,8 +894,9 @@ TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
   RunTest(true, true, false);
 }
 
+// Flaky on all platforms, http://crbug.com/310979
 TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
-       LoseAfterEvict_MultiThread_DelegatingRenderer_ImplSidePaint) {
+       DISABLED_LoseAfterEvict_MultiThread_DelegatingRenderer_ImplSidePaint) {
   lose_after_evict_ = true;
   RunTest(true, true, true);
 }
@@ -1089,7 +1090,7 @@ class LayerTreeHostContextTestDontUseLostResources
     child_output_surface_ = FakeOutputSurface::Create3d();
     child_output_surface_->BindToClient(&output_surface_client_);
     child_resource_provider_ =
-        ResourceProvider::Create(child_output_surface_.get(), 0, false);
+        ResourceProvider::Create(child_output_surface_.get(), NULL, 0, false);
   }
 
   static void EmptyReleaseCallback(unsigned sync_point, bool lost) {}
@@ -1402,13 +1403,16 @@ class LayerTreeHostContextTestCompositeAndReadbackBeforeOutputSurfaceInit
 
     times_output_surface_created_ = 0;
 
+    // Post the SetNeedsCommit before the readback to make sure it is run
+    // on the main thread before the readback's replacement commit when
+    // we have a threaded compositor.
+    PostSetNeedsCommitToMainThread();
+
     char pixels[4];
     bool result = layer_tree_host()->CompositeAndReadback(
         &pixels, gfx::Rect(1, 1));
     EXPECT_EQ(!delegating_renderer(), result);
     EXPECT_EQ(1, times_output_surface_created_);
-
-    PostSetNeedsCommitToMainThread();
   }
 
   virtual void DidInitializeOutputSurface(bool succeeded) OVERRIDE {
@@ -1781,6 +1785,7 @@ class LayerTreeHostTestCannotCreateIfCannotCreateOutputSurface
     settings.impl_side_painting = impl_side_painting;
     scoped_ptr<LayerTreeHost> layer_tree_host = LayerTreeHost::Create(
         this,
+        NULL,
         settings,
         impl_thread ? impl_thread->message_loop_proxy() : NULL);
     EXPECT_FALSE(layer_tree_host);

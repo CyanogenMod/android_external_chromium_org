@@ -325,6 +325,9 @@ class BrowserView : public BrowserWindow,
   virtual void ShowBookmarkBubble(const GURL& url,
                                   bool already_bookmarked) OVERRIDE;
   virtual void ShowBookmarkPrompt() OVERRIDE;
+  virtual void ShowTranslateBubble(
+      content::WebContents* contents,
+      TranslateBubbleModel::ViewState view_state) OVERRIDE;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   virtual void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,
@@ -424,7 +427,6 @@ class BrowserView : public BrowserWindow,
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
   // ImmersiveModeController::Delegate overrides:
-  virtual BookmarkBarView* GetBookmarkBar() OVERRIDE;
   virtual FullscreenController* GetFullscreenController() OVERRIDE;
   virtual void FullscreenStateChanged() OVERRIDE;
   virtual void SetImmersiveStyle(bool immersive) OVERRIDE;
@@ -702,9 +704,10 @@ class BrowserView : public BrowserWindow,
   // True if we have already been initialized.
   bool initialized_;
 
-  // True if we should ignore requests to layout.  This is set while toggling
-  // fullscreen mode on and off to reduce jankiness.
-  bool ignore_layout_;
+  // True when in ProcessFullscreen(). The flag is used to avoid reentrance and
+  // to ignore requests to layout while in ProcessFullscreen() to reduce
+  // jankiness.
+  bool in_process_fullscreen_;
 
   scoped_ptr<FullscreenExitBubbleViews> fullscreen_bubble_;
 

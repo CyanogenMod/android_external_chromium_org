@@ -68,14 +68,6 @@ static const struct Executables {
   { "jnlp", DANGEROUS },
 #endif
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
-  // Relating to PDF.
-  { "pdf", ALLOW_ON_USER_GESTURE },
-  { "pdfxml", ALLOW_ON_USER_GESTURE },
-  { "mars", ALLOW_ON_USER_GESTURE },
-  { "fdf", ALLOW_ON_USER_GESTURE },
-  { "xfdf", ALLOW_ON_USER_GESTURE },
-  { "xdp", ALLOW_ON_USER_GESTURE },
-  { "xfd", ALLOW_ON_USER_GESTURE },
   // Relating to scripting languages.
   { "pl", ALLOW_ON_USER_GESTURE },
   { "py", ALLOW_ON_USER_GESTURE },

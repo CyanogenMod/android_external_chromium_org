@@ -80,25 +80,6 @@ class ConvertableToTraceFormat : public RefCounted<ConvertableToTraceFormat> {
 };
 
 struct TraceEventHandle {
-  TraceEventHandle()
-      : chunk_seq(0),
-        chunk_index(0),
-        event_index(0) {
-  }
-
-  TraceEventHandle(uint32 a_chunk_seq,
-                   size_t a_chunk_index,
-                   size_t a_event_index)
-      : chunk_seq(a_chunk_seq),
-        chunk_index(static_cast<uint16>(a_chunk_index)),
-        event_index(static_cast<uint16>(a_event_index)) {
-    DCHECK(chunk_seq);
-    DCHECK(a_chunk_index < (1u << 16));
-    DCHECK(a_event_index < (1u << 16));
-  }
-
-  bool IsNull() const { return chunk_seq == 0; }
-
   uint32 chunk_seq;
   uint16 chunk_index;
   uint16 event_index;
@@ -163,6 +144,8 @@ class BASE_EXPORT TraceEvent {
   char phase() const { return phase_; }
   int thread_id() const { return thread_id_; }
   TimeDelta duration() const { return duration_; }
+  unsigned long long id() const { return id_; }
+  unsigned char flags() const { return flags_; }
 
   // Exposed for unittesting:
 
@@ -471,7 +454,12 @@ class BASE_EXPORT TraceLog {
   // WARNING: It is possible for the previously set callback to be called
   // after a call to SetEventCallback() that replaces or clears the callback.
   // This callback may be invoked on any thread.
-  typedef void (*EventCallback)(char phase,
+  // TODO(wangxianzhu): For now for TRACE_EVENT_PHASE_COMPLETE events, the
+  // client will still receive pairs of TRACE_EVENT_PHASE_BEGIN and
+  // TRACE_EVENT_PHASE_END events. Should send TRACE_EVENT_PHASE_COMPLETE
+  // directly to clients if it is beneficial and feasible.
+  typedef void (*EventCallback)(TimeTicks timestamp,
+                                char phase,
                                 const unsigned char* category_group_enabled,
                                 const char* name,
                                 unsigned long long id,
@@ -649,7 +637,9 @@ class BASE_EXPORT TraceLog {
   TraceBuffer* trace_buffer() const { return logged_events_.get(); }
   TraceBuffer* CreateTraceBuffer();
 
-  void OutputEventToConsoleWhileLocked(TraceEvent* trace_event);
+  void OutputEventToConsoleWhileLocked(unsigned char phase,
+                                       const TimeTicks& timestamp,
+                                       TraceEvent* trace_event);
 
   TraceEvent* AddEventToThreadSharedChunkWhileLocked(
       NotificationHelper* notifier, TraceEventHandle* handle);

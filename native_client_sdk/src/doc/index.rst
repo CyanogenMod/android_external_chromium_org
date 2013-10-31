@@ -19,6 +19,7 @@ Contents:
    devguide/index.rst
    devguide/tutorial/index.rst
    devguide/tutorial/tutorial-part1.rst
+   devguide/tutorial/tutorial-part2.rst
    devguide/devcycle/index.rst
    devguide/devcycle/building.rst
    devguide/devcycle/running.rst
@@ -31,6 +32,7 @@ Contents:
    devguide/coding/application-structure.rst
    devguide/coding/native-client-modules.rst
    devguide/coding/FileIO.rst
+   devguide/coding/nacl_io.rst
    devguide/coding/message-system.rst
    devguide/coding/progress-events.rst
    devguide/coding/url-loading.rst
@@ -46,6 +48,7 @@ Contents:
    peppercpp/index.rst
    reference/index.rst
    reference/pnacl-bitcode-abi.rst
+   reference/pnacl-c-cpp-language-support.rst
    reference/nacl-manifest-format.rst
    publications-and-presentations.rst
    faq.rst

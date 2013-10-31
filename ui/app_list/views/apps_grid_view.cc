@@ -69,9 +69,6 @@ const int kPrerenderPages = 1;
 // The drag and drop proxy should get scaled by this factor.
 const float kDragAndDropProxyScale = 1.5f;
 
-// For testing we remember the last created grid view.
-AppsGridView* last_created_grid_view_for_test = NULL;
-
 // RowMoveAnimationDelegate is used when moving an item into a different row.
 // Before running the animation, the item's layer is re-created and kept in
 // the original position, then the item is moved to just before its target
@@ -237,6 +234,7 @@ AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
                            PaginationModel* pagination_model,
                            content::WebContents* start_page_contents)
     : model_(NULL),
+      item_list_(NULL),
       delegate_(delegate),
       pagination_model_(pagination_model),
       page_switcher_view_(new PageSwitcher(pagination_model)),
@@ -252,7 +250,6 @@ AppsGridView::AppsGridView(AppsGridViewDelegate* delegate,
       page_flip_target_(-1),
       page_flip_delay_in_ms_(kPageFlipDelayInMs),
       bounds_animator_(this) {
-  last_created_grid_view_for_test = this;
   pagination_model_->AddObserver(this);
   AddChildView(page_switcher_view_);
 
@@ -272,11 +269,12 @@ AppsGridView::~AppsGridView() {
   if (drag_view_)
     EndDrag(true);
 
-  if (model_) {
+  if (model_)
     model_->RemoveObserver(this);
-    model_->apps()->RemoveObserver(this);
-  }
   pagination_model_->RemoveObserver(this);
+
+  if (item_list_)
+    item_list_->RemoveObserver(this);
 }
 
 void AppsGridView::SetLayout(int icon_size, int cols, int rows_per_page) {
@@ -291,16 +289,22 @@ void AppsGridView::SetLayout(int icon_size, int cols, int rows_per_page) {
 }
 
 void AppsGridView::SetModel(AppListModel* model) {
-  if (model_) {
+  if (model_)
     model_->RemoveObserver(this);
-    model_->apps()->RemoveObserver(this);
-  }
 
   model_ = model;
-  if (model_) {
+  if (model_)
     model_->AddObserver(this);
-    model_->apps()->AddObserver(this);
-  }
+
+  Update();
+}
+
+void AppsGridView::SetItemList(AppListItemList* item_list) {
+  if (item_list_)
+    item_list_->RemoveObserver(this);
+
+  item_list_ = item_list;
+  item_list_->AddObserver(this);
   Update();
 }
 
@@ -625,17 +629,23 @@ void AppsGridView::ViewHierarchyChanged(
   }
 }
 
-// static
-AppsGridView* AppsGridView::GetLastGridViewForTest() {
-  return last_created_grid_view_for_test;
-}
-
 void AppsGridView::Update() {
   DCHECK(!selected_view_ && !drag_view_);
+  if (!item_list_)
+    return;
 
   view_model_.Clear();
-  if (model_ && model_->apps()->item_count())
-    ListItemsAdded(0, model_->apps()->item_count());
+  if (!item_list_->item_count())
+    return;
+  for (size_t i = 0; i < item_list_->item_count(); ++i) {
+    views::View* view = CreateViewForItemAtIndex(i);
+    view_model_.Add(view, i);
+    AddChildView(view);
+  }
+  UpdatePaging();
+  UpdatePulsingBlockViews();
+  Layout();
+  SchedulePaint();
 }
 
 void AppsGridView::UpdatePaging() {
@@ -648,7 +658,7 @@ void AppsGridView::UpdatePaging() {
 
 void AppsGridView::UpdatePulsingBlockViews() {
   const int available_slots =
-      tiles_per_page() - model_->apps()->item_count() % tiles_per_page();
+      tiles_per_page() - item_list_->item_count() % tiles_per_page();
   const int desired = model_->status() == AppListModel::STATUS_SYNCING ?
       available_slots : 0;
 
@@ -670,9 +680,9 @@ void AppsGridView::UpdatePulsingBlockViews() {
 }
 
 views::View* AppsGridView::CreateViewForItemAtIndex(size_t index) {
-  DCHECK_LT(index, model_->apps()->item_count());
+  DCHECK_LT(index, item_list_->item_count());
   AppListItemView* view = new AppListItemView(this,
-                                              model_->apps()->GetItemAt(index));
+                                              item_list_->item_at(index));
   view->SetIconSize(icon_size_);
 #if defined(USE_AURA)
   view->SetPaintToLayer(true);
@@ -1107,10 +1117,10 @@ void AppsGridView::MoveItemInModel(views::View* item_view,
   if (target_model_index == current_model_index)
     return;
 
-  model_->apps()->RemoveObserver(this);
-  model_->apps()->Move(current_model_index, target_model_index);
+  item_list_->RemoveObserver(this);
+  item_list_->MoveItem(current_model_index, target_model_index);
   view_model_.Move(current_model_index, target_model_index);
-  model_->apps()->AddObserver(this);
+  item_list_->AddObserver(this);
 
   if (pagination_model_->selected_page() != target.page)
     pagination_model_->SelectPage(target.page, false);
@@ -1169,14 +1179,12 @@ void AppsGridView::LayoutStartPage() {
   start_page_view_->SetBoundsRect(start_page_bounds);
 }
 
-void AppsGridView::ListItemsAdded(size_t start, size_t count) {
+void AppsGridView::OnListItemAdded(size_t index, AppListItemModel* item) {
   EndDrag(true);
 
-  for (size_t i = start; i < start + count; ++i) {
-    views::View* view = CreateViewForItemAtIndex(i);
-    view_model_.Add(view, i);
-    AddChildView(view);
-  }
+  views::View* view = CreateViewForItemAtIndex(index);
+  view_model_.Add(view, index);
+  AddChildView(view);
 
   UpdatePaging();
   UpdatePulsingBlockViews();
@@ -1184,14 +1192,12 @@ void AppsGridView::ListItemsAdded(size_t start, size_t count) {
   SchedulePaint();
 }
 
-void AppsGridView::ListItemsRemoved(size_t start, size_t count) {
+void AppsGridView::OnListItemRemoved(size_t index, AppListItemModel* item) {
   EndDrag(true);
 
-  for (size_t i = 0; i < count; ++i) {
-    views::View* view = view_model_.view_at(start);
-    view_model_.Remove(start);
-    delete view;
-  }
+  views::View* view = view_model_.view_at(index);
+  view_model_.Remove(index);
+  delete view;
 
   UpdatePaging();
   UpdatePulsingBlockViews();
@@ -1199,16 +1205,14 @@ void AppsGridView::ListItemsRemoved(size_t start, size_t count) {
   SchedulePaint();
 }
 
-void AppsGridView::ListItemMoved(size_t index, size_t target_index) {
+void AppsGridView::OnListItemMoved(size_t from_index,
+                                   size_t to_index,
+                                   AppListItemModel* item) {
   EndDrag(true);
-  view_model_.Move(index, target_index);
+  view_model_.Move(from_index, to_index);
 
   UpdatePaging();
   AnimateToIdealBounds();
-}
-
-void AppsGridView::ListItemsChanged(size_t start, size_t count) {
-  NOTREACHED();
 }
 
 void AppsGridView::TotalPagesChanged() {

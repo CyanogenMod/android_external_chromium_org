@@ -22,6 +22,7 @@
 #include "content/child/npapi/webplugin.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/common/input_messages.h"
 #include "content/common/swapped_out_messages.h"
@@ -40,6 +41,7 @@
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_webkitplatformsupport_impl.h"
+#include "content/renderer/resizing_mode_selector.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -55,6 +57,7 @@
 #include "third_party/WebKit/public/web/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -139,6 +142,12 @@ ui::TextInputMode ConvertInputMode(
     return ui::TEXT_INPUT_MODE_DEFAULT;
   return it->second;
 }
+
+// TODO(brianderson): Replace the hard-coded threshold with a fraction of
+// the BeginMainFrame interval.
+// 4166us will allow 1/4 of a 60Hz interval or 1/2 of a 120Hz interval to
+// be spent in input hanlders before input starts getting throttled.
+const int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
 
 }  // namespace
 
@@ -356,6 +365,7 @@ RenderWidget::RenderWidget(WebKit::WebPopupType popup_type,
       outstanding_ime_acks_(0),
 #endif
       popup_origin_scale_for_emulation_(0.f),
+      resizing_mode_selector_(new ResizingModeSelector()),
       weak_ptr_factory_(this) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
@@ -627,8 +637,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
                           const gfx::Rect& resizer_rect,
                           bool is_fullscreen,
                           ResizeAck resize_ack) {
-  if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-      !RenderThreadImpl::current()->layout_test_mode()) {
+  if (!resizing_mode_selector_->is_synchronous_mode()) {
     // A resize ack shouldn't be requested if we have not ACK'd the previous
     // one.
     DCHECK(resize_ack != SEND_RESIZE_ACK || !next_paint_is_resize_ack());
@@ -667,14 +676,12 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
 
-    if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-        !RenderThreadImpl::current()->layout_test_mode()) {
+    if (!resizing_mode_selector_->is_synchronous_mode()) {
       // Resize should have caused an invalidation of the entire view.
       DCHECK(new_size.IsEmpty() || is_accelerated_compositing_active_ ||
              paint_aggregator_.HasPendingUpdate());
     }
-  } else if (!RenderThreadImpl::current() ||  // Will be NULL during unit tests.
-             !RenderThreadImpl::current()->layout_test_mode()) {
+  } else if (!resizing_mode_selector_->is_synchronous_mode()) {
     resize_ack = NO_RESIZE_ACK;
   }
 
@@ -694,6 +701,15 @@ void RenderWidget::Resize(const gfx::Size& new_size,
   // If a resize ack is requested and it isn't set-up, then no more resizes will
   // come in and in general things will go wrong.
   DCHECK(resize_ack != SEND_RESIZE_ACK || next_paint_is_resize_ack());
+}
+
+void RenderWidget::ResizeSynchronously(const gfx::Rect& new_position) {
+  Resize(new_position.size(), new_position.size(), overdraw_bottom_height_,
+         gfx::Rect(), is_fullscreen_, NO_RESIZE_ACK);
+  view_screen_rect_ = new_position;
+  window_screen_rect_ = new_position;
+  if (!did_show_)
+    initial_pos_ = new_position;
 }
 
 void RenderWidget::OnClose() {
@@ -726,6 +742,9 @@ void RenderWidget::OnCreatingNewAck() {
 }
 
 void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
+  if (resizing_mode_selector_->ShouldAbortOnResize(this, params))
+    return;
+
   if (screen_metrics_emulator_) {
     screen_metrics_emulator_->OnResizeMessage(params);
     return;
@@ -1026,6 +1045,10 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
     return;
   }
 
+  base::TimeTicks start_time;
+  if (base::TimeTicks::IsHighResNowFastAndReliable())
+    start_time = base::TimeTicks::HighResNow();
+
   const char* const event_name =
       WebInputEventTraits::GetName(input_event->type);
   TRACE_EVENT1("renderer", "RenderWidget::OnHandleInputEvent",
@@ -1105,7 +1128,7 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
                                             input_event->type,
                                             ack_result,
                                             latency_info);
-  bool event_type_gets_rate_limited =
+  bool event_type_can_be_rate_limited =
       input_event->type == WebInputEvent::MouseMove ||
       input_event->type == WebInputEvent::MouseWheel ||
       input_event->type == WebInputEvent::TouchMove;
@@ -1113,12 +1136,27 @@ void RenderWidget::OnHandleInputEvent(const WebKit::WebInputEvent* input_event,
   bool frame_pending = paint_aggregator_.HasPendingUpdate();
   if (is_accelerated_compositing_active_) {
     frame_pending = compositor_ &&
-                    compositor_->commitRequested();
+                    compositor_->BeginMainFrameRequested();
   }
 
-  if (event_type_gets_rate_limited && frame_pending && !is_hidden_) {
+  // If we don't have a fast and accurate HighResNow, we assume the input
+  // handlers are heavy and rate limit them.
+  bool rate_limiting_wanted = true;
+  if (base::TimeTicks::IsHighResNowFastAndReliable()) {
+      base::TimeTicks end_time = base::TimeTicks::HighResNow();
+      total_input_handling_time_this_frame_ += (end_time - start_time);
+      rate_limiting_wanted =
+          total_input_handling_time_this_frame_.InMicroseconds() >
+          kInputHandlingTimeThrottlingThresholdMicroseconds;
+  }
+
+  if (rate_limiting_wanted && event_type_can_be_rate_limited &&
+      frame_pending && !is_hidden_) {
     // We want to rate limit the input events in this case, so we'll wait for
     // painting to finish before ACKing this message.
+    TRACE_EVENT_INSTANT0("renderer",
+      "RenderWidget::OnHandleInputEvent ack throttled",
+      TRACE_EVENT_SCOPE_THREAD);
     if (pending_input_event_ack_) {
       // As two different kinds of events could cause us to postpone an ack
       // we send it now, if we have one pending. The Browser should never
@@ -1374,11 +1412,15 @@ void RenderWidget::InvalidationCallback() {
   DoDeferredUpdateAndSendInputAck();
 }
 
-void RenderWidget::DoDeferredUpdateAndSendInputAck() {
-  DoDeferredUpdate();
-
+void RenderWidget::FlushPendingInputEventAck() {
   if (pending_input_event_ack_)
     Send(pending_input_event_ack_.release());
+  total_input_handling_time_this_frame_ = base::TimeDelta();
+}
+
+void RenderWidget::DoDeferredUpdateAndSendInputAck() {
+  DoDeferredUpdate();
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::DoDeferredUpdate() {
@@ -1411,7 +1453,7 @@ void RenderWidget::DoDeferredUpdate() {
   }
 
   // Tracking of frame rate jitter
-  base::TimeTicks frame_begin_ticks = base::TimeTicks::Now();
+  base::TimeTicks frame_begin_ticks = gfx::FrameTime::Now();
   InstrumentWillBeginFrame();
   AnimateIfNeeded();
 
@@ -1600,8 +1642,7 @@ void RenderWidget::DoDeferredUpdate() {
   // UpdateReply message so we can receive another input event before the
   // UpdateRect_ACK on platforms where the UpdateRect_ACK is sent from within
   // the UpdateRect IPC message handler.
-  if (pending_input_event_ack_)
-    Send(pending_input_event_ack_.release());
+  FlushPendingInputEventAck();
 
   // If Composite() called SwapBuffers, pending_update_params_ will be reset (in
   // OnSwapBuffersPosted), meaning a message has been added to the
@@ -1714,7 +1755,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
     // with invalid damage rects.
     paint_aggregator_.ClearPendingUpdate();
 
-    if (RenderThreadImpl::current()->layout_test_mode()) {
+    if (resizing_mode_selector_->is_synchronous_mode()) {
       WebRect new_pos(rootWindowRect().x,
                       rootWindowRect().y,
                       new_size.width,
@@ -1725,7 +1766,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
 
     AutoResizeCompositor();
 
-    if (!RenderThreadImpl::current()->layout_test_mode())
+    if (!resizing_mode_selector_->is_synchronous_mode())
       need_update_rect_for_auto_resize_ = true;
   }
 }
@@ -1820,8 +1861,7 @@ void RenderWidget::willBeginCompositorFrame() {
 
 void RenderWidget::didBecomeReadyForAdditionalInput() {
   TRACE_EVENT0("renderer", "RenderWidget::didBecomeReadyForAdditionalInput");
-  if (pending_input_event_ack_)
-    Send(pending_input_event_ack_.release());
+  FlushPendingInputEventAck();
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
@@ -1977,7 +2017,7 @@ void RenderWidget::setWindowRect(const WebRect& rect) {
         (pos.y - popup_view_origin_for_emulation_.y()) * scale;
   }
 
-  if (!RenderThreadImpl::current()->layout_test_mode()) {
+  if (!resizing_mode_selector_->is_synchronous_mode()) {
     if (did_show_) {
       Send(new ViewHostMsg_RequestMove(routing_id_, pos));
       SetPendingWindowRect(pos);
@@ -1985,13 +2025,7 @@ void RenderWidget::setWindowRect(const WebRect& rect) {
       initial_pos_ = pos;
     }
   } else {
-    WebSize new_size(pos.width, pos.height);
-    Resize(new_size, new_size, overdraw_bottom_height_,
-           WebRect(), is_fullscreen_, NO_RESIZE_ACK);
-    view_screen_rect_ = pos;
-    window_screen_rect_ = pos;
-    if (!did_show_)
-      initial_pos_ = pos;
+    ResizeSynchronously(pos);
   }
 }
 
@@ -2745,13 +2779,15 @@ RenderWidget::CreateGraphicsContext3D(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuCompositing))
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(
-          surface_id(),
-          GetURLForGraphicsContext3D(),
-          RenderThreadImpl::current(),
-          weak_ptr_factory_.GetWeakPtr()));
+  if (!RenderThreadImpl::current())
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      RenderThreadImpl::current()->EstablishGpuChannelSync(
+          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
+  if (!gpu_channel_host)
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
 
+  WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
 #if defined(OS_ANDROID)
   // If we raster too fast we become upload bound, and pending
   // uploads consume memory. For maximum upload throughput, we would
@@ -2771,22 +2807,24 @@ RenderWidget::CreateGraphicsContext3D(
   static const size_t kBytesPerMegabyte = 1024 * 1024;
   // We keep the MappedMemoryReclaimLimit the same as the upload limit
   // to avoid unnecessarily stalling the compositor thread.
-  const size_t mapped_memory_reclaim_limit =
+  limits.mapped_memory_reclaim_limit =
       max_transfer_buffer_usage_mb * kBytesPerMegabyte;
-#else
-  const size_t mapped_memory_reclaim_limit =
-      WebGraphicsContext3DCommandBufferImpl::kNoLimit;
 #endif
-  if (!context->Initialize(
+
+  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client;
+
+  if (!is_threaded_compositing_enabled_)
+    swap_client = weak_ptr_factory_.GetWeakPtr();
+
+  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
+      new WebGraphicsContext3DCommandBufferImpl(
+          surface_id(),
+          GetURLForGraphicsContext3D(),
+          gpu_channel_host.get(),
+          swap_client,
           attributes,
           false /* bind generates resources */,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
-          kDefaultCommandBufferSize,
-          kDefaultStartTransferBufferSize,
-          kDefaultMinTransferBufferSize,
-          kDefaultMaxTransferBufferSize,
-          mapped_memory_reclaim_limit))
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+          limits));
   return context.Pass();
 }
 

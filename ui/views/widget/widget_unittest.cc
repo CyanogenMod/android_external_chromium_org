@@ -27,6 +27,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
@@ -1142,8 +1143,10 @@ class DesktopAuraTopLevelWindowTest
       owned_window_->SetType(aura::client::WINDOW_TYPE_MENU);
     }
     owned_window_->Init(ui::LAYER_TEXTURED);
-    owned_window_->SetDefaultParentByRootWindow(
-        widget_.GetNativeView()->GetRootWindow(), gfx::Rect(0, 0, 1900, 1600));
+    aura::client::ParentWindowWithContext(
+        owned_window_,
+        widget_.GetNativeView()->GetRootWindow(),
+        gfx::Rect(0, 0, 1900, 1600));
     owned_window_->Show();
     owned_window_->AddObserver(this);
 
@@ -1307,7 +1310,7 @@ void GenerateMouseEvents(Widget* widget, ui::EventType last_event_type) {
   ui::MouseEvent move_event(ui::ET_MOUSE_MOVED, screen_bounds.CenterPoint(),
                             screen_bounds.CenterPoint(), 0);
   aura::RootWindowHostDelegate* rwhd =
-      widget->GetNativeWindow()->GetRootWindow()->AsRootWindowHostDelegate();
+      widget->GetNativeWindow()->GetDispatcher()->AsRootWindowHostDelegate();
   rwhd->OnHostMouseEvent(&move_event);
   if (last_event_type == ui::ET_MOUSE_ENTERED)
     return;
@@ -1955,16 +1958,12 @@ TEST_F(WidgetChildDestructionTest,
   RunDestroyChildWidgetsTest(true, false);
 }
 
-// TODO: test fails on linux as destroying parent X widget does not
-// automatically destroy transients. http://crbug.com/300020 .
-#if !defined(OS_LINUX)
 // See description of RunDestroyChildWidgetsTest(). Both parent and child use
 // DesktopNativeWidgetAura.
 TEST_F(WidgetChildDestructionTest,
        DestroyChildWidgetsInOrderWithDesktopNativeWidgetForBoth) {
   RunDestroyChildWidgetsTest(true, true);
 }
-#endif
 #endif
 
 // See description of RunDestroyChildWidgetsTest().
@@ -2014,7 +2013,7 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
                            cursor_location_main,
                            cursor_location_main,
                            ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetRootWindow()->
+  top_level_widget.GetNativeView()->GetDispatcher()->
       AsRootWindowHostDelegate()->OnHostMouseEvent(&move_main);
 
   EXPECT_EQ(1, widget_view->GetEventCount(ui::ET_MOUSE_ENTERED));
@@ -2040,7 +2039,7 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
                                    cursor_location_dialog,
                                    cursor_location_dialog,
                                    ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetRootWindow()->
+  top_level_widget.GetNativeView()->GetDispatcher()->
       AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_dialog);
   EXPECT_EQ(1, dialog_widget_view->GetEventCount(ui::ET_MOUSE_PRESSED));
 
@@ -2051,7 +2050,7 @@ TEST_F(WidgetTest, WindowMouseModalityTest) {
                                  cursor_location_main2,
                                  cursor_location_main2,
                                  ui::EF_NONE);
-  top_level_widget.GetNativeView()->GetRootWindow()->
+  top_level_widget.GetNativeView()->GetDispatcher()->
       AsRootWindowHostDelegate()->OnHostMouseEvent(&mouse_down_main);
   EXPECT_EQ(0, widget_view->GetEventCount(ui::ET_MOUSE_MOVED));
 

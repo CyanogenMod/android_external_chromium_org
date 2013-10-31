@@ -13,6 +13,7 @@
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
@@ -57,7 +58,6 @@
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/plugins/plugin_info_message_filter.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
@@ -594,13 +594,7 @@ void HandleSingleTabModeBlockOnUIThread(const BlockedWindowParams& params) {
   SingleTabModeTabHelper::FromWebContents(web_contents)->HandleOpenUrl(params);
 }
 
-float GetFontScaleMultiplier(const PrefService* prefs) {
-  if (prefs->GetBoolean(prefs::kWebKitFontScaleFactorQuirk)) {
-    // The value of kWebKitFontScaleFactor passed by Chrome for Android already
-    // includes the multiplier.
-    return 1.0f;
-  }
-
+float GetFontScaleMultiplier() {
   static const float kMinFSM = 1.05f;
   static const int kWidthForMinFSM = 320;
   static const float kMaxFSM = 1.3f;
@@ -1437,8 +1431,12 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           extensions::ExtensionSystem::Get(profile)->extension_service();
       if (extension_service) {
         extensions::ProcessMap* process_map = extension_service->process_map();
-        if (process_map && process_map->Contains(process->GetID()))
+        if (process_map && process_map->Contains(process->GetID())) {
           command_line->AppendSwitch(switches::kExtensionProcess);
+#if defined(OS_WIN) && defined(USE_AURA)
+          command_line->AppendSwitch(switches::kDisableGpuCompositing);
+#endif
+        }
       }
 
       PrefService* prefs = profile->GetPrefs();
@@ -2223,7 +2221,7 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
 #if defined(OS_ANDROID)
   web_prefs->text_autosizing_font_scale_factor =
       static_cast<float>(prefs->GetDouble(prefs::kWebKitFontScaleFactor)) *
-      GetFontScaleMultiplier(prefs);
+      GetFontScaleMultiplier();
   web_prefs->force_enable_zoom =
       prefs->GetBoolean(prefs::kWebKitForceEnableZoom);
 #endif

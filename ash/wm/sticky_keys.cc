@@ -4,8 +4,10 @@
 
 #include "ash/wm/sticky_keys.h"
 
+#if defined(USE_X11)
 #include <X11/Xlib.h>
 #undef RootWindow
+#endif
 
 #include "base/basictypes.h"
 #include "base/debug/stack_trace.h"
@@ -40,7 +42,7 @@ StickyKeysHandlerDelegateImpl::~StickyKeysHandlerDelegateImpl() {
 void StickyKeysHandlerDelegateImpl::DispatchKeyEvent(ui::KeyEvent* event,
                                                      aura::Window* target) {
   DCHECK(target);
-  target->GetRootWindow()->AsRootWindowHostDelegate()->OnHostKeyEvent(event);
+  target->GetDispatcher()->AsRootWindowHostDelegate()->OnHostKeyEvent(event);
 }
 
 }  // namespace
@@ -75,6 +77,7 @@ StickyKeysHandler::StickyKeysHandler(ui::EventFlags target_modifier_flag,
     : modifier_flag_(target_modifier_flag),
       current_state_(DISABLED),
       keyevent_from_myself_(false),
+      preparing_to_enable_(false),
       delegate_(delegate) {
 }
 
@@ -133,11 +136,19 @@ StickyKeysHandler::KeyEventType
 bool StickyKeysHandler::HandleDisabledState(ui::KeyEvent* event) {
   switch (TranslateKeyEvent(event)) {
     case TARGET_MODIFIER_UP:
-      current_state_ = ENABLED;
-      modifier_up_event_.reset(event->Copy());
-      return true;
+      if (preparing_to_enable_) {
+        preparing_to_enable_ = false;
+        current_state_ = ENABLED;
+        modifier_up_event_.reset(event->Copy());
+        return true;
+      }
+      return false;
     case TARGET_MODIFIER_DOWN:
+      preparing_to_enable_ = true;
+      return false;
     case NORMAL_KEY_DOWN:
+      preparing_to_enable_ = false;
+      return false;
     case NORMAL_KEY_UP:
     case OTHER_MODIFIER_DOWN:
     case OTHER_MODIFIER_UP:
@@ -199,6 +210,7 @@ bool StickyKeysHandler::HandleLockedState(ui::KeyEvent* event) {
 }
 
 void StickyKeysHandler::AppendModifier(ui::KeyEvent* event) {
+#if defined(USE_X11)
   XEvent* xev = event->native_event();
   XKeyEvent* xkey = &(xev->xkey);
   switch (modifier_flag_) {
@@ -214,6 +226,9 @@ void StickyKeysHandler::AppendModifier(ui::KeyEvent* event) {
     default:
       NOTREACHED();
   }
+#elif defined(USE_OZONE)
+  NOTIMPLEMENTED() << "Modifier key is not handled";
+#endif
   event->set_flags(event->flags() | modifier_flag_);
   event->set_character(ui::GetCharacterFromKeyCode(event->key_code(),
                                                    event->flags()));

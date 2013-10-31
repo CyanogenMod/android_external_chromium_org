@@ -18,6 +18,7 @@
 #include "content/browser/indexed_db/indexed_db_metadata.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "content/browser/indexed_db/list_set.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -44,8 +45,8 @@ class CONTENT_EXPORT IndexedDBDatabase
   };
 
   typedef std::vector<IndexedDBKey> IndexKeys;
-  // Identifier is pair of (origin identifier, database name).
-  typedef std::pair<std::string, base::string16> Identifier;
+  // Identifier is pair of (origin url, database name).
+  typedef std::pair<GURL, base::string16> Identifier;
 
   static const int64 kInvalidId = 0;
   static const int64 kMinimumIndexId = 30;
@@ -55,12 +56,9 @@ class CONTENT_EXPORT IndexedDBDatabase
       IndexedDBBackingStore* backing_store,
       IndexedDBFactory* factory,
       const Identifier& unique_identifier);
-  scoped_refptr<IndexedDBBackingStore> BackingStore() const;
 
-  const Identifier& identifier() { return identifier_; }
-  scoped_refptr<IndexedDBBackingStore> backing_store() {
-    return backing_store_;
-  }
+  const Identifier& identifier() const { return identifier_; }
+  IndexedDBBackingStore* backing_store() { return backing_store_.get(); }
 
   int64 id() const { return metadata_.id; }
   const base::string16& name() const { return metadata_.name; }
@@ -123,6 +121,9 @@ class CONTENT_EXPORT IndexedDBDatabase
   void TransactionFinished(IndexedDBTransaction* transaction);
   void TransactionFinishedAndCompleteFired(IndexedDBTransaction* transaction);
   void TransactionFinishedAndAbortFired(IndexedDBTransaction* transaction);
+
+  // Called by transactions to report failure committing to the backing store.
+  void TransactionCommitFailed();
 
   void Get(int64 transaction_id,
            int64 object_store_id,

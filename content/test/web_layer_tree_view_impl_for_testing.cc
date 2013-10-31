@@ -20,6 +20,7 @@
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
 #include "third_party/WebKit/public/platform/WebRenderingStats.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
+#include "ui/gfx/frame_time.h"
 #include "webkit/common/gpu/test_context_provider_factory.h"
 #include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
@@ -44,7 +45,7 @@ bool WebLayerTreeViewImplForTesting::Initialize() {
 
   // Accelerated animations are enabled for unit tests.
   settings.accelerated_animation_enabled = true;
-  layer_tree_host_ = cc::LayerTreeHost::Create(this, settings, NULL);
+  layer_tree_host_ = cc::LayerTreeHost::Create(this, NULL, settings, NULL);
   if (!layer_tree_host_)
     return false;
   return true;
@@ -127,7 +128,7 @@ bool WebLayerTreeViewImplForTesting::commitRequested() const {
 }
 
 void WebLayerTreeViewImplForTesting::composite() {
-  layer_tree_host_->Composite(base::TimeTicks::Now());
+  layer_tree_host_->Composite(gfx::FrameTime::Now());
 }
 
 void WebLayerTreeViewImplForTesting::didStopFlinging() {}

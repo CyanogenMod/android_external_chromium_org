@@ -81,7 +81,6 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
-      bool use_oauth2_token,
       CancelationSignal* cancelation_signal) OVERRIDE;
   virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
@@ -180,6 +179,11 @@ class SYNC_EXPORT_PRIVATE SyncManagerImpl :
   const SyncScheduler* scheduler() const;
 
   bool GetHasInvalidAuthTokenForTest() const;
+
+ protected:
+  // Helper functions.  Virtual for testing.
+  virtual void NotifyInitializationSuccess();
+  virtual void NotifyInitializationFailure();
 
  private:
   friend class SyncManagerTest;

@@ -87,30 +87,17 @@ class CONTENT_EXPORT GestureEventFilter {
   // Returns whether there are any gesture event in the queue.
   bool HasQueuedGestureEvents() const;
 
-  // Tries forwarding the event to the tap deferral sub-filter.
-  void ForwardGestureEventForDeferral(
-      const GestureEventWithLatencyInfo& gesture_event);
-
-  // Tries forwarding the event, skipping the tap deferral sub-filter.
-  void ForwardGestureEventSkipDeferral(
-      const GestureEventWithLatencyInfo& gesture_event);
+  void ForwardGestureEvent(const GestureEventWithLatencyInfo& gesture_event);
 
  private:
   friend class MockRenderWidgetHost;
   friend class GestureEventFilterTest;
 
-  static bool IsGestureEventTypeAsync(WebKit::WebInputEvent::Type type);
-
-  // Returns the last gesture event that was sent to the renderer.
-  const GestureEventWithLatencyInfo& GetGestureEventAwaitingAck() const;
+  static bool ShouldIgnoreAckForGestureType(WebKit::WebInputEvent::Type type);
 
   // TODO(mohsen): There are a bunch of ShouldForward.../ShouldDiscard...
   // methods that are getting confusing. This should be somehow fixed. Maybe
   // while refactoring GEF: http://crbug.com/148443.
-
-  // Invoked on the expiration of the timer to release a deferred
-  // GestureTapDown to the renderer.
-  void SendGestureTapDownNow();
 
   // Inovked on the expiration of the debounce interval to release
   // deferred events.
@@ -146,10 +133,6 @@ class CONTENT_EXPORT GestureEventFilter {
   bool ShouldForwardForTapSuppression(
       const GestureEventWithLatencyInfo& gesture_event);
 
-  // Sub-filter for deferring GestureTapDowns.
-  bool ShouldForwardForTapDeferral(
-      const GestureEventWithLatencyInfo& gesture_event);
-
   // Puts the events in a queue to forward them one by one; i.e., forward them
   // whenever ACK for previous event is received. This queue also tries to
   // coalesce events as much as possible.
@@ -169,9 +152,14 @@ class CONTENT_EXPORT GestureEventFilter {
   gfx::Transform GetTransformForEvent(
       const GestureEventWithLatencyInfo& gesture_event) const;
 
-  // Pops and sends async events from the head of |coalesced_gesture_events_|
-  // until the queue is empty or the event at the head is synchronous.
-  void SendAsyncEvents();
+  // Pops and sends events ignoring ack from the head of
+  // |coalesced_gesture_events_| until the queue is empty or the event at the
+  // head requires an ack.
+  void SendEventsIgnoringAck();
+
+  // Adds |gesture_event| to the |coalesced_gesture_events_|, resetting the
+  // accumulation of |combined_scroll_pinch_|.
+  void EnqueueEvent(const GestureEventWithLatencyInfo& gesture_event);
 
   // The receiver of all forwarded gesture events.
   GestureEventFilterClient* client_;
@@ -190,9 +178,6 @@ class CONTENT_EXPORT GestureEventFilter {
   // Transform that holds the combined transform matrix for the current
   // scroll-pinch sequence at the end of the queue.
   gfx::Transform combined_scroll_pinch_;
-
-  // Timer to release a previously deferred GestureTapDown event.
-  base::OneShotTimer<GestureEventFilter> send_gtd_timer_;
 
   // An object tracking the state of touchpad on the delivery of mouse events to
   // the renderer to filter mouse immediately after a touchpad fling canceling
@@ -218,17 +203,11 @@ class CONTENT_EXPORT GestureEventFilter {
   // have yet to be sent.
   GestureEventQueue coalesced_gesture_events_;
 
-  // Tap gesture event currently subject to deferral.
-  GestureEventWithLatencyInfo deferred_tap_down_event_;
-
-  // Timer to release a previously deferred GestureTapDown event.
+  // Timer to release a previously deferred gesture event.
   base::OneShotTimer<GestureEventFilter> debounce_deferring_timer_;
 
   // Queue of events that have been deferred for debounce.
   GestureEventQueue debouncing_deferral_queue_;
-
-  // Time window in which to defer a GestureTapDown.
-  int maximum_tap_gap_time_ms_;
 
   // Time window in which to debounce scroll/fling ends.
   // TODO(rjkroege): Make this dynamically configurable.

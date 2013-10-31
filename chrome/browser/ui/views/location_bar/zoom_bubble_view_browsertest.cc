@@ -7,28 +7,12 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller_test.h"
-#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/ui/views/frame/immersive_mode_controller_ash.h"
-#endif
-
-class ZoomBubbleBrowserTest : public InProcessBrowserTest {
- public:
-  ZoomBubbleBrowserTest() {}
-  virtual ~ZoomBubbleBrowserTest() {}
-
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    ImmersiveFullscreenConfiguration::EnableImmersiveFullscreenForTest();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ZoomBubbleBrowserTest);
-};
+typedef InProcessBrowserTest ZoomBubbleBrowserTest;
 
 // TODO(linux_aura) http://crbug.com/163931
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
@@ -49,9 +33,7 @@ IN_PROC_BROWSER_TEST_F(ZoomBubbleBrowserTest, MAYBE_NonImmersiveFullscreen) {
   EXPECT_TRUE(zoom_bubble->GetAnchorView());
 
   // Entering fullscreen should close the bubble. (We enter into tab fullscreen
-  // here because tab fullscreen is non-immersive even when
-  // ImmersiveFullscreenConfiguration::UseImmersiveFullscreen()) returns
-  // true.
+  // here because tab fullscreen is non-immersive even on Chrome OS.)
   {
     // NOTIFICATION_FULLSCREEN_CHANGED is sent asynchronously. Wait for the
     // notification before testing the zoom bubble visibility.
@@ -88,14 +70,9 @@ IN_PROC_BROWSER_TEST_F(ZoomBubbleBrowserTest, ImmersiveFullscreen) {
   BrowserView* browser_view = static_cast<BrowserView*>(browser()->window());
   content::WebContents* web_contents = browser_view->GetActiveWebContents();
 
-  ASSERT_TRUE(ImmersiveFullscreenConfiguration::UseImmersiveFullscreen());
-  ImmersiveModeControllerAsh* immersive_controller =
-      static_cast<ImmersiveModeControllerAsh*>(
-          browser_view->immersive_mode_controller());
-  immersive_controller->DisableAnimationsForTest();
-
-  // Move the mouse out of the way.
-  immersive_controller->SetMouseHoveredForTest(false);
+  ImmersiveModeController* immersive_controller =
+      browser_view->immersive_mode_controller();
+  immersive_controller->SetupForTest();
 
   // Enter immersive fullscreen.
   {

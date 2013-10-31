@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/autofill/autofill_dialog_view_delegate.h"
 #include "chrome/browser/ui/autofill/loading_animation.h"
 #include "chrome/browser/ui/views/autofill/decorated_textfield.h"
+#include "chrome/browser/ui/views/autofill/tooltip_icon.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "components/autofill/content/browser/wallet/wallet_service_url.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -157,6 +158,12 @@ void DrawArrow(gfx::Canvas* canvas,
   }
 }
 
+// Returns whether |view| is an input (e.g. textfield, combobox).
+bool IsInput(views::View* view) {
+  return view->GetClassName() == DecoratedTextfield::kViewClassName ||
+         view->GetClassName() == views::Combobox::kViewClassName;
+}
+
 // This class handles layout for the first row of a SuggestionView.
 // It exists to circumvent shortcomings of GridLayout and BoxLayout (namely that
 // the former doesn't fully respect child visibility, and that the latter won't
@@ -240,28 +247,6 @@ class LayoutPropagationView : public views::View {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LayoutPropagationView);
-};
-
-// A tooltip icon (just an ImageView with a tooltip). Looks like (?).
-class TooltipIcon : public views::ImageView {
- public:
-  explicit TooltipIcon(const base::string16& tooltip) : tooltip_(tooltip) {
-    SetImage(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-        IDR_AUTOFILL_TOOLTIP_ICON).ToImageSkia());
-  }
-  virtual ~TooltipIcon() {}
-
-  // views::View implementation
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE {
-    *tooltip = tooltip_;
-    return !tooltip_.empty();
-  }
-
- private:
-  base::string16 tooltip_;
-
-  DISALLOW_COPY_AND_ASSIGN(TooltipIcon);
 };
 
 // A View for a single notification banner.
@@ -662,30 +647,6 @@ void AutofillDialogViews::AccountChooser::OnMenuButtonClicked(
                               ui::MENU_SOURCE_NONE,
                               0) == views::MenuRunner::MENU_DELETED) {
     return;
-  }
-}
-
-void AutofillDialogViews::ShowDialogInMode(DialogMode dialog_mode) {
-  std::vector<views::View*> visible;
-
-  if (dialog_mode == LOADING) {
-    visible.push_back(loading_shield_);
-  } else if (dialog_mode == SIGN_IN) {
-    visible.push_back(sign_in_web_view_);
-  } else {
-    DCHECK_EQ(DETAIL_INPUT, dialog_mode);
-    visible.push_back(notification_area_);
-    visible.push_back(scrollable_area_);
-  }
-
-  for (size_t i = 0; i < visible.size(); ++i) {
-    DCHECK_GE(GetIndexOf(visible[i]), 0);
-  }
-
-  for (int i = 0; i < child_count(); ++i) {
-    views::View* child = child_at(i);
-    child->SetVisible(
-        std::find(visible.begin(), visible.end(), child) != visible.end());
   }
 }
 
@@ -1374,14 +1335,10 @@ void AutofillDialogViews::Show() {
       delegate_->GetWebContents()->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
-  web_contents_modal_dialog_manager->SetCloseOnInterstitialWebUI(
-      window_->GetNativeView(), true);
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
-  // This line fixes http://crbug.com/271779, which happens only on Views/Win32.
-  // TODO(rouslan): Remove this line after Windows is entirely on Aura.
-  focus_manager_->SetFocusedView(GetInitiallyFocusedView());
+  ShowDialogInMode(DETAIL_INPUT);
 
   // Listen for size changes on the browser.
   views::Widget* browser_widget =
@@ -1418,7 +1375,8 @@ void AutofillDialogViews::UpdateAccountChooser() {
                                         GetContentsBounds().height());
       ShowDialogInMode(LOADING);
     } else {
-      ShowDialogInMode(DETAIL_INPUT);
+      bool show_sign_in = delegate_->ShouldShowSignInWebView();
+      ShowDialogInMode(show_sign_in ? SIGN_IN : DETAIL_INPUT);
     }
 
     InvalidateLayout();
@@ -1550,26 +1508,34 @@ bool AutofillDialogViews::SaveDetailsLocally() {
 }
 
 const content::NavigationController* AutofillDialogViews::ShowSignIn() {
-  // TODO(abodenha) We should be able to use the WebContents of the WebView
-  // to navigate instead of LoadInitialURL.  Figure out why it doesn't work.
-
+  // TODO(abodenha): We should be able to use the WebContents of the WebView
+  // to navigate instead of LoadInitialURL. Figure out why it doesn't work.
   sign_in_delegate_.reset(
       new AutofillDialogSignInDelegate(
           this, sign_in_web_view_->GetWebContents(),
           delegate_->GetWebContents()->GetDelegate(),
           GetMinimumSignInViewSize(), GetMaximumSignInViewSize()));
-  sign_in_web_view_->LoadInitialURL(wallet::GetSignInUrl());
+  sign_in_web_view_->LoadInitialURL(delegate_->SignInUrl());
 
   ShowDialogInMode(SIGN_IN);
-  sign_in_web_view_->RequestFocus();
 
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
+
   return &sign_in_web_view_->web_contents()->GetController();
 }
 
 void AutofillDialogViews::HideSignIn() {
-  ShowDialogInMode(DETAIL_INPUT);
+  sign_in_web_view_->SetWebContents(NULL);
+
+  if (delegate_->ShouldShowSpinner()) {
+    UpdateAccountChooser();
+  } else {
+    ShowDialogInMode(DETAIL_INPUT);
+    InvalidateLayout();
+  }
+  DCHECK(!sign_in_web_view_->visible());
+
   UpdateButtonStrip();
   ContentsPreferredSizeChanged();
 }
@@ -1652,6 +1618,10 @@ void AutofillDialogViews::ActivateInput(const DetailInput& input) {
 
 gfx::Size AutofillDialogViews::GetSize() const {
   return GetWidget() ? GetWidget()->GetRootView()->size() : gfx::Size();
+}
+
+content::WebContents* AutofillDialogViews::GetSignInWebContents() {
+  return sign_in_web_view_->web_contents();
 }
 
 gfx::Size AutofillDialogViews::GetPreferredSize() {
@@ -1746,6 +1716,36 @@ bool AutofillDialogViews::IsDialogButtonEnabled(ui::DialogButton button) const {
   return delegate_->IsDialogButtonEnabled(button);
 }
 
+views::View* AutofillDialogViews::GetInitiallyFocusedView() {
+  if (!window_ || !focus_manager_)
+    return NULL;
+
+  if (sign_in_web_view_->visible())
+    return sign_in_web_view_;
+
+  if (loading_shield_->visible())
+    return views::DialogDelegateView::GetInitiallyFocusedView();
+
+  DCHECK(scrollable_area_->visible());
+
+  views::FocusManager* manager = focus_manager_;
+  for (views::View* next = scrollable_area_;
+       next;
+       next = manager->GetNextFocusableView(next, window_, false, true)) {
+    if (!IsInput(next))
+      continue;
+
+    // If there are no invalid inputs, return the first input found. Otherwise,
+    // return the first invalid input found.
+    if (validity_map_.empty() ||
+        validity_map_.find(next) != validity_map_.end()) {
+      return next;
+    }
+  }
+
+  return views::DialogDelegateView::GetInitiallyFocusedView();
+}
+
 views::View* AutofillDialogViews::CreateExtraView() {
   return button_strip_extra_view_;
 }
@@ -1789,8 +1789,10 @@ bool AutofillDialogViews::Accept() {
   if (ValidateForm())
     return delegate_->OnAccept();
 
-  if (!validity_map_.empty())
-    validity_map_.begin()->first->RequestFocus();
+  // |ValidateForm()| failed; there should be invalid views in |validity_map_|.
+  DCHECK(!validity_map_.empty());
+  FocusInitialView();
+
   return false;
 }
 
@@ -2010,8 +2012,6 @@ void AutofillDialogViews::InitChildViews() {
 
   overlay_view_ = new OverlayView(delegate_);
   overlay_view_->SetVisible(false);
-
-  ShowDialogInMode(DETAIL_INPUT);
 }
 
 views::View* AutofillDialogViews::CreateDetailsContainer() {
@@ -2148,6 +2148,14 @@ views::View* AutofillDialogViews::InitInputsView(DialogSection section) {
   return view;
 }
 
+void AutofillDialogViews::ShowDialogInMode(DialogMode dialog_mode) {
+  loading_shield_->SetVisible(dialog_mode == LOADING);
+  sign_in_web_view_->SetVisible(dialog_mode == SIGN_IN);
+  notification_area_->SetVisible(dialog_mode == DETAIL_INPUT);
+  scrollable_area_->SetVisible(dialog_mode == DETAIL_INPUT);
+  FocusInitialView();
+}
+
 void AutofillDialogViews::UpdateSectionImpl(
     DialogSection section,
     bool clobber_inputs) {
@@ -2212,6 +2220,12 @@ void AutofillDialogViews::UpdateDetailsGroupState(const DetailsGroup& group) {
   }
 
   ContentsPreferredSizeChanged();
+}
+
+void AutofillDialogViews::FocusInitialView() {
+  views::View* to_focus = GetInitiallyFocusedView();
+  if (to_focus && !to_focus->HasFocus())
+    to_focus->RequestFocus();
 }
 
 template<class T>

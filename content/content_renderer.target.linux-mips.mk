@@ -100,7 +100,6 @@ LOCAL_SRC_FILES := \
 	content/renderer/media/android/stream_texture_factory_android_impl.cc \
 	content/renderer/media/android/stream_texture_factory_android_synchronous_impl.cc \
 	content/renderer/media/android/webmediaplayer_android.cc \
-	content/renderer/media/android/webmediaplayer_proxy_android.cc \
 	content/renderer/media/audio_decoder.cc \
 	content/renderer/media/audio_device_factory.cc \
 	content/renderer/media/audio_input_message_filter.cc \
@@ -169,10 +168,12 @@ LOCAL_SRC_FILES := \
 	content/renderer/renderer_webcookiejar_impl.cc \
 	content/renderer/renderer_webcolorchooser_impl.cc \
 	content/renderer/renderer_webkitplatformsupport_impl.cc \
+	content/renderer/resizing_mode_selector.cc \
 	content/renderer/sad_plugin.cc \
 	content/renderer/savable_resources.cc \
 	content/renderer/scoped_clipboard_writer_glue.cc \
 	content/renderer/shared_memory_seqlock_reader.cc \
+	content/renderer/shared_worker_repository.cc \
 	content/renderer/skia_benchmarking_extension.cc \
 	content/renderer/speech_recognition_dispatcher.cc \
 	content/renderer/stats_collection_controller.cc \
@@ -185,8 +186,7 @@ LOCAL_SRC_FILES := \
 	content/renderer/web_ui_extension_data.cc \
 	content/renderer/webcrypto/webcrypto_impl.cc \
 	content/renderer/webcrypto/webcrypto_impl_openssl.cc \
-	content/renderer/websharedworker_proxy.cc \
-	content/renderer/websharedworkerrepository_impl.cc
+	content/renderer/websharedworker_proxy.cc
 
 
 # Flags passed to both C and C++ files.
@@ -226,13 +226,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -366,13 +366,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

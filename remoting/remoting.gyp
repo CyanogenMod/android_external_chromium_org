@@ -639,8 +639,9 @@
             'remoting_host',
             'remoting_host_event_logger',
             'remoting_host_logging',
-            'remoting_infoplist_strings',
             'remoting_host_setup_base',
+            'remoting_infoplist_strings',
+            'remoting_it2me_host_static',
             'remoting_jingle_glue',
             'remoting_resources',
           ],
@@ -730,6 +731,27 @@
             }],
           ],
         },  # end of target 'remoting_host_plugin'
+        {
+          'target_name': 'remoting_it2me_host_static',
+          'type': 'static_library',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'dependencies': [
+            '../base/base.gyp:base_i18n',
+            '../net/net.gyp:net',
+            'remoting_base',
+            'remoting_host',
+            'remoting_host_event_logger',
+            'remoting_host_logging',
+            'remoting_infoplist_strings',
+            'remoting_host_setup_base',
+            'remoting_jingle_glue',
+            'remoting_resources',
+          ],
+          'sources': [
+            'host/it2me/it2me_impl.cc',
+            'host/it2me/it2me_impl.h',
+          ],
+        },  # end of target 'remoting_it2me_host_static'
         {
           'target_name': 'remoting_infoplist_strings',
           'type': 'none',
@@ -1799,25 +1821,40 @@
     ['OS=="android"', {
       'targets': [
         {
+          'target_name': 'remoting_jni_headers',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/chromoting/jni/JniInterface.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'remoting',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },  # end of target 'remoting_jni_headers'
+        {
           'target_name': 'remoting_client_jni',
           'type': 'shared_library',
           'dependencies': [
             'remoting_base',
             'remoting_client',
             'remoting_jingle_glue',
+            'remoting_jni_headers',
             'remoting_protocol',
             '../google_apis/google_apis.gyp:google_apis',
+          ],
+          'include_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)/remoting',
           ],
           'sources': [
             'client/jni/android_keymap.cc',
             'client/jni/android_keymap.h',
             'client/jni/chromoting_jni_instance.cc',
             'client/jni/chromoting_jni_instance.h',
+            'client/jni/chromoting_jni_onload.cc',
             'client/jni/chromoting_jni_runtime.cc',
             'client/jni/chromoting_jni_runtime.h',
             'client/jni/jni_frame_consumer.cc',
             'client/jni/jni_frame_consumer.h',
-            'client/jni/jni_interface.cc',
           ],
         },  # end of target 'remoting_client_jni'
         {
@@ -1871,10 +1908,6 @@
             'java_in_dir': 'android/java',
             'additional_res_dirs': [ '<(SHARED_INTERMEDIATE_DIR)/remoting/android/res' ],
             'additional_input_paths': [
-              'android/java/src/org/chromium/chromoting/Chromoting.java',
-              'android/java/src/org/chromium/chromoting/Desktop.java',
-              'android/java/src/org/chromium/chromoting/DesktopView.java',
-              'android/java/src/org/chromium/chromoting/jni/JniInterface.java',
               '<(PRODUCT_DIR)/obj/remoting/remoting_android_resources.actions_rules_copies.stamp',
             ],
           },

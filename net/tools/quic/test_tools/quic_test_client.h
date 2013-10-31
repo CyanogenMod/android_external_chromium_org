@@ -12,8 +12,8 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/test_tools/quic_test_writer.h"
 #include "net/tools/quic/quic_client.h"
-#include "net/tools/quic/quic_packet_writer.h"
 
 namespace net {
 
@@ -23,30 +23,22 @@ namespace tools {
 
 namespace test {
 
-// Allows setting a writer for the client's QuicConnectionHelper, to allow
-// fine-grained control of writes.
-class QuicTestWriter : public QuicPacketWriter {
- public:
-  virtual ~QuicTestWriter() {}
-  virtual void set_fd(int fd) = 0;
-};
-
 class HTTPMessage;
 
 // A toy QUIC client used for testing.
 class QuicTestClient :  public ReliableQuicStream::Visitor {
  public:
   QuicTestClient(IPEndPoint server_address, const string& server_hostname,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
                  const string& server_hostname,
                  bool secure,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
   QuicTestClient(IPEndPoint server_address,
                  const string& server_hostname,
                  bool secure,
                  const QuicConfig& config,
-                 const QuicVersion version);
+                 const QuicVersionVector& supported_versions);
 
   virtual ~QuicTestClient();
 
@@ -77,7 +69,8 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
   void Disconnect();
   IPEndPoint LocalSocketAddress() const;
   void ClearPerRequestState();
-  void WaitForInitialResponse();
+  void WaitForResponseForMs(int timeout_ms);
+  void WaitForInitialResponseForMs(int timeout_ms);
   ssize_t Send(const void *buffer, size_t size);
   int response_size() const;
   size_t bytes_read() const;
@@ -88,7 +81,10 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
 
   // Configures client_ to take ownership of and use the writer.
   // Must be called before initial connect.
-  void UseWriter(QuicTestWriter* writer);
+  void UseWriter(net::test::QuicTestWriter* writer);
+  // If the given GUID is nonzero, configures client_ to use a specific GUID
+  // instead of a random one.
+  void UseGuid(QuicGuid guid);
 
   // Returns NULL if the maximum number of streams have already been created.
   QuicReliableClientStream* GetOrCreateStream();
@@ -121,17 +117,15 @@ class QuicTestClient :  public ReliableQuicStream::Visitor {
 
   BalsaHeaders headers_;
   QuicPriority priority_;
-
   string response_;
   uint64 bytes_read_;
   uint64 bytes_written_;
-  // True if the client has never connected before.  The client will
-  // auto-connect exactly once before sending data.  If something causes a
-  // connection reset, it will not automatically reconnect.
-  bool never_connected_;
+  // True if we tried to connect already since the last call to Disconnect().
+  bool connect_attempted_;
   bool secure_;
-  // If true, the client will always reconnect if necessary before creating a
-  // stream.
+  // The client will auto-connect exactly once before sending data.  If
+  // something causes a connection reset, it will not automatically reconnect
+  // unless auto_reconnect_ is true.
   bool auto_reconnect_;
 
   // proof_verifier_ points to a RecordingProofVerifier that is owned by

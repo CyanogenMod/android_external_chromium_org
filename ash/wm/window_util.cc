@@ -62,10 +62,6 @@ void CenterWindow(aura::Window* window) {
   window->SetBoundsInScreen(center, display);
 }
 
-void SetAnimateToFullscreen(aura::Window* window, bool animate) {
-  window->SetProperty(ash::internal::kAnimateToFullscreenKey, animate);
-}
-
 void AdjustBoundsToEnsureMinimumWindowVisibility(const gfx::Rect& visible_area,
                                                  gfx::Rect* bounds) {
   AdjustBoundsToEnsureWindowVisibility(
@@ -100,7 +96,7 @@ bool MoveWindowToEventRoot(aura::Window* window, const ui::Event& event) {
   views::View* target = static_cast<views::View*>(event.target());
   if (!target)
     return false;
-  aura::RootWindow* target_root =
+  aura::Window* target_root =
       target->GetWidget()->GetNativeView()->GetRootWindow();
   if (!target_root || target_root == window->GetRootWindow())
     return false;

@@ -39,14 +39,15 @@ LOCAL_SRC_FILES := \
 MY_CFLAGS_Debug := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
+	-Werror \
 	-fno-exceptions \
 	-fno-strict-aliasing \
+	-Wall \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-format \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -61,10 +62,6 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -75,18 +72,20 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DWEBKIT_STORAGE_COMMON_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -113,26 +112,26 @@ LOCAL_CPPFLAGS_Debug := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated \
+	-Wsign-compare \
 	-Wno-abi \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 # Flags passed to both C and C++ files.
 MY_CFLAGS_Release := \
 	-fstack-protector \
 	--param=ssp-buffer-size=4 \
+	-Werror \
 	-fno-exceptions \
 	-fno-strict-aliasing \
+	-Wall \
 	-Wno-unused-parameter \
 	-Wno-missing-field-initializers \
 	-fvisibility=hidden \
 	-pipe \
 	-fPIC \
-	-Wno-format \
 	-fno-tree-sra \
 	-fuse-ld=gold \
 	-Wno-psabi \
@@ -147,10 +146,6 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-Os \
 	-fno-ident \
 	-fdata-sections \
@@ -161,18 +156,20 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
 	'-DWEBKIT_STORAGE_COMMON_IMPLEMENTATION' \
 	'-DPOSIX_AVOID_MMAP' \
+	'-D__STDC_CONSTANT_MACROS' \
+	'-D__STDC_FORMAT_MACROS' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -180,7 +177,8 @@ MY_DEFS_Release := \
 	'-DCHROME_BUILD_ID=""' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
-	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
 
 
 # Include paths placed before CFLAGS/CPPFLAGS
@@ -199,12 +197,11 @@ LOCAL_CPPFLAGS_Release := \
 	-fno-rtti \
 	-fno-threadsafe-statics \
 	-fvisibility-inlines-hidden \
-	-Wno-deprecated \
+	-Wsign-compare \
 	-Wno-abi \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))

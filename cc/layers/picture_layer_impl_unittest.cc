@@ -1106,6 +1106,41 @@ TEST_F(PictureLayerImplTest, ActivateUninitializedLayer) {
   EXPECT_FALSE(active_layer_->needs_post_commit_initialization());
 }
 
+TEST_F(PictureLayerImplTest, SyncTilingAfterReleaseResource) {
+  SetupDefaultTrees(gfx::Size(10, 10));
+  host_impl_.active_tree()->UpdateDrawProperties();
+  EXPECT_FALSE(host_impl_.active_tree()->needs_update_draw_properties());
+
+  // Contrived unit test of a real crash. A layer is transparent during a
+  // context loss, and later becomes opaque, causing active layer SyncTiling to
+  // be called.
+  const float tile_scale = 2.f;
+  active_layer_->DidLoseOutputSurface();
+  EXPECT_FALSE(active_layer_->tilings()->TilingAtScale(tile_scale));
+  pending_layer_->AddTiling(2.f);
+  EXPECT_TRUE(active_layer_->tilings()->TilingAtScale(tile_scale));
+}
+
+TEST_F(PictureLayerImplTest, NoTilingIfDoesNotDrawContent) {
+  // Set up layers with tilings.
+  SetupDefaultTrees(gfx::Size(10, 10));
+  SetContentsScaleOnBothLayers(1.f, 1.f, 1.f, false);
+  pending_layer_->PushPropertiesTo(active_layer_);
+  EXPECT_TRUE(pending_layer_->DrawsContent());
+  EXPECT_TRUE(pending_layer_->CanHaveTilings());
+  EXPECT_GE(pending_layer_->num_tilings(), 0u);
+  EXPECT_GE(active_layer_->num_tilings(), 0u);
+
+  // Set content to false, which should make CanHaveTilings return false.
+  pending_layer_->SetDrawsContent(false);
+  EXPECT_FALSE(pending_layer_->DrawsContent());
+  EXPECT_FALSE(pending_layer_->CanHaveTilings());
+
+  // No tilings should be pushed to active layer.
+  pending_layer_->PushPropertiesTo(active_layer_);
+  EXPECT_EQ(0u, active_layer_->num_tilings());
+}
+
 class DeferredInitPictureLayerImplTest : public PictureLayerImplTest {
  public:
   DeferredInitPictureLayerImplTest()

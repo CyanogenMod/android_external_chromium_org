@@ -4,9 +4,9 @@
 
 #include "ash/magnifier/magnification_controller.h"
 
+#include "ash/accessibility_delegate.h"
 #include "ash/display/root_window_transformers.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "base/synchronization/waitable_event.h"
 #include "ui/aura/client/cursor_client.h"
@@ -127,7 +127,7 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   //  - Unzoom the current root_window.
   //  - Zoom the given new root_window |new_root_window|.
   //  - Switch the target window from current window to |new_root_window|.
-  void SwitchTargetRootWindow(aura::RootWindow* new_root_window,
+  void SwitchTargetRootWindow(aura::Window* new_root_window,
                               bool redraw_original_root_window);
 
   // Returns if the magnification scale is 1.0 or not (larger then 1.0).
@@ -147,7 +147,7 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Target root window. This must not be NULL.
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   // True if the magnified window is currently animating a change. Otherwise,
   // false.
@@ -273,7 +273,7 @@ bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
       Shell::GetScreen()->GetDisplayNearestWindow(root_window_);
   scoped_ptr<aura::RootWindowTransformer> transformer(
       internal::CreateRootWindowTransformerForDisplay(root_window_, display));
-  root_window_->SetRootWindowTransformer(transformer.Pass());
+  root_window_->GetDispatcher()->SetRootWindowTransformer(transformer.Pass());
 
   if (animate)
     is_on_animation_ = true;
@@ -380,7 +380,7 @@ void MagnificationControllerImpl::OnMouseMove(const gfx::Point& location) {
     if (ret) {
       // If the magnified region is moved, hides the mouse cursor and moves it.
       if (x_diff != 0 || y_diff != 0)
-        MoveCursorTo(root_window_, mouse);
+        MoveCursorTo(root_window_->GetDispatcher(), mouse);
     }
   }
 }
@@ -437,7 +437,7 @@ void MagnificationControllerImpl::OnImplicitAnimationsCompleted() {
     return;
 
   if (move_cursor_after_animation_) {
-    MoveCursorTo(root_window_, position_after_animation_);
+    MoveCursorTo(root_window_->GetDispatcher(), position_after_animation_);
     move_cursor_after_animation_ = false;
 
     aura::client::CursorClient* cursor_client =
@@ -456,7 +456,7 @@ void MagnificationControllerImpl::OnWindowDestroying(
     // destroyed before the root windows get destroyed.
     DCHECK(root_window);
 
-    aura::RootWindow* target_root_window = Shell::GetTargetRootWindow();
+    aura::Window* target_root_window = Shell::GetTargetRootWindow();
     CHECK(target_root_window);
 
     // The destroyed root window must not be target.
@@ -475,7 +475,7 @@ void MagnificationControllerImpl::OnWindowBoundsChanged(
 }
 
 void MagnificationControllerImpl::SwitchTargetRootWindow(
-    aura::RootWindow* new_root_window,
+    aura::Window* new_root_window,
     bool redraw_original_root_window) {
   DCHECK(new_root_window);
 
@@ -503,7 +503,8 @@ void MagnificationControllerImpl::SetScale(float scale, bool animate) {
     return;
 
   ValidateScale(&scale);
-  ash::Shell::GetInstance()->delegate()->SaveScreenMagnifierScale(scale);
+  ash::Shell::GetInstance()->accessibility_delegate()->
+      SaveScreenMagnifierScale(scale);
   RedrawKeepingMousePosition(scale, animate);
 }
 
@@ -543,7 +544,8 @@ void MagnificationControllerImpl::EnsurePointIsVisible(
 void MagnificationControllerImpl::SetEnabled(bool enabled) {
   if (enabled) {
     float scale =
-        ash::Shell::GetInstance()->delegate()->GetSavedScreenMagnifierScale();
+        ash::Shell::GetInstance()->accessibility_delegate()->
+        GetSavedScreenMagnifierScale();
     if (scale <= 0.0f)
       scale = kInitialMagnifiedScale;
     ValidateScale(&scale);
@@ -554,7 +556,8 @@ void MagnificationControllerImpl::SetEnabled(bool enabled) {
 
     is_enabled_ = enabled;
     RedrawKeepingMousePosition(scale, true);
-    ash::Shell::GetInstance()->delegate()->SaveScreenMagnifierScale(scale);
+    ash::Shell::GetInstance()->accessibility_delegate()->
+        SaveScreenMagnifierScale(scale);
   } else {
     // Do nothing, if already disabled.
     if (!is_enabled_)
@@ -574,7 +577,7 @@ bool MagnificationControllerImpl::IsEnabled() const {
 
 void MagnificationControllerImpl::OnMouseEvent(ui::MouseEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  aura::RootWindow* current_root = target->GetRootWindow();
+  aura::Window* current_root = target->GetRootWindow();
   gfx::Rect root_bounds = current_root->bounds();
 
   if (root_bounds.Contains(event->root_location())) {
@@ -612,7 +615,7 @@ void MagnificationControllerImpl::OnScrollEvent(ui::ScrollEvent* event) {
 
 void MagnificationControllerImpl::OnTouchEvent(ui::TouchEvent* event) {
   aura::Window* target = static_cast<aura::Window*>(event->target());
-  aura::RootWindow* current_root = target->GetRootWindow();
+  aura::Window* current_root = target->GetRootWindow();
   if (current_root == root_window_) {
     gfx::Rect root_bounds = current_root->bounds();
     if (root_bounds.Contains(event->root_location()))

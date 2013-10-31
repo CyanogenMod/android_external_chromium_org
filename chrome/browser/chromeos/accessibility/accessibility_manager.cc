@@ -14,6 +14,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/browser_process.h"
@@ -36,6 +37,7 @@
 #include "chrome/common/pref_names.h"
 #include "chromeos/login/login_state.h"
 #include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -50,13 +52,24 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using content::BrowserThread;
 using content::RenderViewHost;
+using extensions::api::braille_display_private::BrailleController;
+using extensions::api::braille_display_private::DisplayState;
 
 namespace chromeos {
 
 namespace {
 
 static chromeos::AccessibilityManager* g_accessibility_manager = NULL;
+
+static BrailleController* g_braille_controller_for_test = NULL;
+
+BrailleController* GetBrailleController() {
+  return g_braille_controller_for_test
+      ? g_braille_controller_for_test
+      : BrailleController::GetInstance();
+}
 
 // Helper class that directly loads an extension's content scripts into
 // all of the frames corresponding to a given RenderViewHost.
@@ -266,11 +279,14 @@ AccessibilityManager::AccessibilityManager()
       spoken_feedback_pref_handler_(prefs::kSpokenFeedbackEnabled),
       high_contrast_pref_handler_(prefs::kHighContrastEnabled),
       autoclick_pref_handler_(prefs::kAutoclickEnabled),
+      autoclick_delay_pref_handler_(prefs::kAutoclickDelayMs),
       large_cursor_enabled_(false),
       sticky_keys_enabled_(false),
       spoken_feedback_enabled_(false),
       high_contrast_enabled_(false),
-      spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE) {
+      autoclick_delay_ms_(ash::AutoclickController::kDefaultAutoclickDelayMs),
+      spoken_feedback_notification_(ash::A11Y_NOTIFICATION_NONE),
+      weak_ptr_factory_(this) {
 
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
@@ -284,6 +300,7 @@ AccessibilityManager::AccessibilityManager()
   notification_registrar_.Add(this,
                               chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED,
                               content::NotificationService::AllSources());
+  GetBrailleController()->AddObserver(this);
 }
 
 AccessibilityManager::~AccessibilityManager() {
@@ -576,6 +593,48 @@ void AccessibilityManager::UpdateAutoclickFromPref() {
 #endif
 }
 
+void AccessibilityManager::SetAutoclickDelay(int delay_ms) {
+  if (!profile_)
+    return;
+
+  PrefService* pref_service = profile_->GetPrefs();
+  pref_service->SetInteger(prefs::kAutoclickDelayMs, delay_ms);
+  pref_service->CommitPendingWrite();
+}
+
+int AccessibilityManager::GetAutoclickDelay() const {
+  return autoclick_delay_ms_;
+}
+
+void AccessibilityManager::UpdateAutoclickDelayFromPref() {
+  int autoclick_delay_ms =
+      profile_->GetPrefs()->GetInteger(prefs::kAutoclickDelayMs);
+
+  if (autoclick_delay_ms == autoclick_delay_ms_)
+    return;
+  autoclick_delay_ms_ = autoclick_delay_ms;
+
+#if defined(USE_ASH)
+  ash::Shell::GetInstance()->autoclick_controller()->SetAutoclickDelay(
+      autoclick_delay_ms_);
+#endif
+}
+
+void AccessibilityManager::CheckBrailleState() {
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO, FROM_HERE, base::Bind(
+          &BrailleController::GetDisplayState,
+          base::Unretained(GetBrailleController())),
+      base::Bind(&AccessibilityManager::ReceiveBrailleDisplayState,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
+void AccessibilityManager::ReceiveBrailleDisplayState(
+    scoped_ptr<extensions::api::braille_display_private::DisplayState> state) {
+  OnDisplayStateChanged(*state);
+}
+
+
 void AccessibilityManager::SetProfile(Profile* profile) {
   pref_change_registrar_.reset();
   local_state_pref_change_registrar_.reset();
@@ -604,6 +663,10 @@ void AccessibilityManager::SetProfile(Profile* profile) {
         prefs::kAutoclickEnabled,
         base::Bind(&AccessibilityManager::UpdateAutoclickFromPref,
                    base::Unretained(this)));
+    pref_change_registrar_->Add(
+        prefs::kAutoclickDelayMs,
+        base::Bind(&AccessibilityManager::UpdateAutoclickDelayFromPref,
+                   base::Unretained(this)));
 
     local_state_pref_change_registrar_.reset(new PrefChangeRegistrar);
     local_state_pref_change_registrar_->Init(g_browser_process->local_state());
@@ -622,6 +685,10 @@ void AccessibilityManager::SetProfile(Profile* profile) {
   spoken_feedback_pref_handler_.HandleProfileChanged(profile_, profile);
   high_contrast_pref_handler_.HandleProfileChanged(profile_, profile);
   autoclick_pref_handler_.HandleProfileChanged(profile_, profile);
+  autoclick_delay_pref_handler_.HandleProfileChanged(profile_, profile);
+
+  if (!profile_ && profile)
+    CheckBrailleState();
 
   profile_ = profile;
   UpdateLargeCursorFromPref();
@@ -629,10 +696,16 @@ void AccessibilityManager::SetProfile(Profile* profile) {
   UpdateSpokenFeedbackFromPref();
   UpdateHighContrastFromPref();
   UpdateAutoclickFromPref();
+  UpdateAutoclickDelayFromPref();
 }
 
 void AccessibilityManager::SetProfileForTest(Profile* profile) {
   SetProfile(profile);
+}
+
+void AccessibilityManager::SetBrailleControllerForTest(
+    BrailleController* controller) {
+  g_braille_controller_for_test = controller;
 }
 
 void AccessibilityManager::UpdateChromeOSAccessibilityHistograms() {
@@ -657,6 +730,20 @@ void AccessibilityManager::UpdateChromeOSAccessibilityHistograms() {
     UMA_HISTOGRAM_BOOLEAN(
         "Accessibility.CrosAlwaysShowA11yMenu",
         prefs->GetBoolean(prefs::kShouldAlwaysShowAccessibilityMenu));
+
+    bool autoclick_enabled = prefs->GetBoolean(prefs::kAutoclickEnabled);
+    UMA_HISTOGRAM_BOOLEAN("Accessibility.CrosAutoclick", autoclick_enabled);
+    if (autoclick_enabled) {
+      // We only want to log the autoclick delay if the user has actually
+      // enabled autoclick.
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          "Accessibility.CrosAutoclickDelay",
+          base::TimeDelta::FromMilliseconds(
+              prefs->GetInteger(prefs::kAutoclickDelayMs)),
+          base::TimeDelta::FromMilliseconds(1),
+          base::TimeDelta::FromMilliseconds(3000),
+          50);
+    }
   }
 }
 
@@ -698,4 +785,9 @@ void AccessibilityManager::Observe(
   }
 }
 
+void AccessibilityManager::OnDisplayStateChanged(
+    const DisplayState& display_state) {
+  if (display_state.available)
+    EnableSpokenFeedback(true, ash::A11Y_NOTIFICATION_SHOW);
+}
 }  // namespace chromeos

@@ -50,6 +50,7 @@
 #include "content/browser/download/mhtml_generation_manager.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
+#include "content/browser/frame_host/render_frame_message_filter.h"
 #include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -85,7 +86,6 @@
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #include "content/browser/renderer_host/pepper/pepper_message_filter.h"
 #include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
-#include "content/browser/renderer_host/render_frame_message_filter.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -93,6 +93,7 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
 #include "content/browser/renderer_host/text_input_client_message_filter.h"
+#include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resolve_proxy_msg_helper.h"
 #include "content/browser/service_worker/service_worker_context.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
@@ -100,6 +101,7 @@
 #include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream_context.h"
+#include "content/browser/tracing/trace_controller_impl.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/browser/worker_host/worker_message_filter.h"
@@ -588,12 +590,15 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       media_stream_manager,
       BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
       BrowserMainLoop::GetInstance()->user_input_monitor()));
-  AddFilter(new AudioRendererHost(
+  // The AudioRendererHost needs to be available for lookup, so it's
+  // stashed in a member variable.
+  audio_renderer_host_ = new AudioRendererHost(
       GetID(),
       audio_manager,
       BrowserMainLoop::GetInstance()->audio_mirroring_manager(),
       media_internals,
-      media_stream_manager));
+      media_stream_manager);
+  AddFilter(audio_renderer_host_);
   AddFilter(
       new MIDIHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
   AddFilter(new MIDIDispatcherHost(GetID(), browser_context));
@@ -609,7 +614,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(),
       storage_partition_impl_->GetIndexedDBContext()));
   AddFilter(new ServiceWorkerDispatcherHost(
-      storage_partition_impl_->GetServiceWorkerContext()));
+      GetID(), storage_partition_impl_->GetServiceWorkerContext()));
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
@@ -670,6 +675,13 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       new SocketStreamDispatcherHost(
           GetID(), request_context_callback, resource_context);
   AddFilter(socket_stream_dispatcher_host);
+
+  WebSocketDispatcherHost::GetRequestContextCallback
+      websocket_request_context_callback(
+          base::Bind(&GetRequestContext, request_context,
+                     media_request_context, ResourceType::SUB_RESOURCE));
+
+  AddFilter(new WebSocketDispatcherHost(websocket_request_context_callback));
 
   message_port_message_filter_ = new MessagePortMessageFilter(
       base::Bind(&RenderWidgetHelper::GetNextRoutingID,
@@ -931,7 +943,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableExperimentalWebPlatformFeatures,
     switches::kEnableExperimentalWebSocket,
     switches::kEnableFastTextAutosizing,
-    switches::kEnableFixedLayout,
     switches::kEnableGpuBenchmarking,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
@@ -975,7 +986,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kMemoryMetrics,
     switches::kNoReferrers,
     switches::kNoSandbox,
-    switches::kOverrideEncryptedMediaCanPlayType,
     switches::kPpapiInProcess,
     switches::kRegisterPepperPlugins,
     switches::kRendererAssertTest,
@@ -985,7 +995,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kStatsCollectionController,
     switches::kTestSandbox,
     switches::kTouchEvents,
-    switches::kTraceStartup,
     switches::kTraceToConsole,
     // This flag needs to be propagated to the renderer process for
     // --in-process-webgl.
@@ -1058,7 +1067,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableWebRTC,
     switches::kEnableSpeechRecognition,
     switches::kHideScrollbars,
-    switches::kEnableMediaDrm,
     switches::kMediaDrmEnableNonCompositing,
     switches::kNetworkCountryIso,
 #endif
@@ -1075,6 +1083,13 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));
+
+  if (browser_cmd.HasSwitch(switches::kTraceStartup) &&
+      TraceControllerImpl::GetInstance()->is_tracing_startup()) {
+    // Pass kTraceStartup switch to renderer only if startup tracing has not
+    // finished.
+    renderer_cmd->AppendSwitch(switches::kTraceStartup);
+  }
 
   // Disable databases in incognito mode.
   if (GetBrowserContext()->IsOffTheRecord() &&
@@ -1780,6 +1795,11 @@ void RenderProcessHostImpl::OnProcessLaunched() {
     Send(queued_messages_.front());
     queued_messages_.pop();
   }
+}
+
+scoped_refptr<AudioRendererHost>
+RenderProcessHostImpl::audio_renderer_host() const {
+  return audio_renderer_host_;
 }
 
 void RenderProcessHostImpl::OnUserMetricsRecordAction(

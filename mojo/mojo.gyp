@@ -123,6 +123,7 @@
         'system/message_pipe_unittest.cc',
         'system/raw_channel_posix_unittest.cc',
         'system/simple_dispatcher_unittest.cc',
+        'system/test_utils.cc',
         'system/test_utils.h',
         'system/waiter_list_unittest.cc',
         'system/waiter_test_utils.cc',
@@ -131,8 +132,8 @@
       ],
     },
     {
-      'target_name': 'mojo_shell',
-      'type': 'executable',
+      'target_name': 'mojo_shell_lib',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../net/net.gyp:net',
@@ -140,21 +141,45 @@
         'mojo_system',
       ],
       'sources': [
-        'loader/job.cc',
-        'loader/job.h',
-        'loader/loader.cc',
-        'loader/loader.h',
-        'loader/url_request_context_getter.cc',
-        'loader/url_request_context_getter.h',
         'shell/app_container.cc',
         'shell/app_container.h',
-        'shell/shell.cc',
+        'shell/context.cc',
+        'shell/context.h',
+        'shell/loader.cc',
+        'shell/loader.h',
+        'shell/network_delegate.cc',
+        'shell/network_delegate.h',
+        'shell/run.cc',
+        'shell/run.h',
         'shell/storage.cc',
         'shell/storage.h',
         'shell/switches.cc',
         'shell/switches.h',
         'shell/task_runners.cc',
         'shell/task_runners.h',
+        'shell/url_request_context_getter.cc',
+        'shell/url_request_context_getter.h',
+      ],
+      'conditions': [
+        ['OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [
+            4267,
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'mojo_shell',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../url/url.gyp:url_lib',
+        'mojo_shell_lib',
+        'mojo_system',
+      ],
+      'sources': [
+        'shell/desktop/mojo_main.cc',
       ],
       'conditions': [
         ['OS == "win"', {
@@ -167,13 +192,13 @@
     },
     {
       'target_name': 'sample_app',
-      'type': '<(component)',
+      'type': 'shared_library',
       'dependencies': [
         '../base/base.gyp:base',
         'mojo_system',
       ],
       'sources': [
-        'shell/sample_app.cc',
+        'examples/sample_app/sample_app.cc',
       ],
     },
     {
@@ -205,12 +230,91 @@
         'mojo_bindings',
       ],
       'sources': [
+        'public/bindings/sample/generated/sample_bar.cc',
+        'public/bindings/sample/generated/sample_bar.h',
+        'public/bindings/sample/generated/sample_bar_serialization.cc',
+        'public/bindings/sample/generated/sample_bar_serialization.h',
+        'public/bindings/sample/generated/sample_foo.cc',
+        'public/bindings/sample/generated/sample_foo.h',
+        'public/bindings/sample/generated/sample_foo_serialization.cc',
+        'public/bindings/sample/generated/sample_foo_serialization.h',
         'public/bindings/sample/generated/sample_service.h',
         'public/bindings/sample/generated/sample_service_proxy.cc',
+        'public/bindings/sample/generated/sample_service_serialization.cc',
         'public/bindings/sample/generated/sample_service_serialization.h',
         'public/bindings/sample/generated/sample_service_stub.cc',
         'public/bindings/sample/sample_test.cc',
       ],
     },
+  ],
+  'conditions': [
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'java_set_jni_headers',
+          'type': 'none',
+          'variables': {
+            'jni_gen_package': 'mojo',
+            'input_java_class': 'java/util/HashSet.class',
+          },
+          'includes': [ '../build/jar_file_jni_generator.gypi' ],
+        },
+        {
+          'target_name': 'mojo_jni_headers',
+          'type': 'none',
+          'dependencies': [
+            'java_set_jni_headers',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '<(SHARED_INTERMEDIATE_DIR)/mojo',
+            ],
+          },
+          'sources': [
+            'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoMain.java',
+            'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoView.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'mojo'
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          'target_name': 'libmojo_shell',
+          'type': 'shared_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '../ui/gfx/gfx.gyp:gfx',
+            '../ui/gl/gl.gyp:gl',
+            'mojo_jni_headers',
+            'mojo_shell_lib',
+          ],
+          'sources': [
+            'shell/android/library_loader.cc',
+            'shell/android/mojo_main.cc',
+            'shell/android/mojo_main.h',
+            'shell/android/mojo_view.cc',
+            'shell/android/mojo_view.h',
+          ],
+        },
+        {
+          'target_name': 'mojo_shell_apk',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+            '../net/net.gyp:net_java',
+            'libmojo_shell',
+          ],
+          'variables': {
+            'apk_name': 'MojoShell',
+            'java_in_dir': '<(DEPTH)/mojo/shell/android/apk',
+            'resource_dir': '<(DEPTH)/mojo/shell/android/apk/res',
+            'native_lib_target': 'libmojo_shell',
+          },
+          'includes': [ '../build/java_apk.gypi' ],
+        }
+      ],
+    }],
   ],
 }

@@ -9,7 +9,6 @@
 #include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 
@@ -95,11 +94,7 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
   }
 
   CreatePrompt();
-  int disable_reasons = extension_prefs->GetDisableReasons(extension->id());
-  if (disable_reasons & Extension::DISABLE_PERMISSIONS_CONSENT)
-    prompt_->ConfirmDefaultInstallFirstRun(this, extension);
-  else
-    prompt_->ConfirmReEnable(this, extension);
+  prompt_->ConfirmReEnable(this, extension);
 }
 
 void ExtensionEnableFlow::CreatePrompt() {

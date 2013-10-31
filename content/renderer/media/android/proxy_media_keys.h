@@ -12,15 +12,20 @@ class GURL;
 
 namespace content {
 
-class WebMediaPlayerProxyAndroid;
+class RendererMediaPlayerManager;
 
-// MediaKeys wrapper of the WebMediaPlayerProxyAndroid.
-// TODO(xhwang): Remove |player_id| from WebMediaPlayerProxyAndroid, make
-// WebMediaPlayerProxyAndroid a subclass of media::MediaKeys, then remove this
-// class!
+// A MediaKeys proxy that wraps the EME part of RendererMediaPlayerManager.
+// TODO(xhwang): Instead of accessing RendererMediaPlayerManager directly, let
+// RendererMediaPlayerManager return a MediaKeys object that can be used by
+// ProxyDecryptor directly. Then we can remove this class!
 class ProxyMediaKeys : public media::MediaKeys {
  public:
-  ProxyMediaKeys(WebMediaPlayerProxyAndroid* proxy, int media_keys_id);
+  ProxyMediaKeys(RendererMediaPlayerManager* proxy,
+                 int media_keys_id,
+                 const media::KeyAddedCB& key_added_cb,
+                 const media::KeyErrorCB& key_error_cb,
+                 const media::KeyMessageCB& key_message_cb);
+  virtual ~ProxyMediaKeys();
 
   void InitializeCDM(const std::string& key_system, const GURL& frame_url);
 
@@ -33,11 +38,23 @@ class ProxyMediaKeys : public media::MediaKeys {
                       const std::string& session_id) OVERRIDE;
   virtual void CancelKeyRequest(const std::string& session_id) OVERRIDE;
 
- private:
-  WebMediaPlayerProxyAndroid* proxy_;
-  int media_keys_id_;
+  // Callbacks.
+  void OnKeyAdded(const std::string& session_id);
+  void OnKeyError(const std::string& session_id,
+                  media::MediaKeys::KeyError error_code,
+                  int system_code);
+  void OnKeyMessage(const std::string& session_id,
+                    const std::vector<uint8>& message,
+                    const std::string& destination_url);
 
-  DISALLOW_COPY_AND_ASSIGN (ProxyMediaKeys);
+ private:
+  RendererMediaPlayerManager* manager_;
+  int media_keys_id_;
+  media::KeyAddedCB key_added_cb_;
+  media::KeyErrorCB key_error_cb_;
+  media::KeyMessageCB key_message_cb_;
+
+  DISALLOW_COPY_AND_ASSIGN(ProxyMediaKeys);
 };
 
 }  // namespace content

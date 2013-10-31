@@ -47,12 +47,27 @@ class WelcomeNotificationDelegate
   }
 
   virtual void Click() OVERRIDE {}
-  virtual void ButtonClick(int index) OVERRIDE {}
+  virtual void ButtonClick(int index) OVERRIDE {
+    DCHECK(index == 0);
+    OpenNotificationLearnMoreTab();
+  }
 
  private:
   void MarkAsDismissed() {
     profile_->GetPrefs()->
         SetBoolean(prefs::kWelcomeNotificationDismissed, true);
+  }
+
+  void OpenNotificationLearnMoreTab() {
+    Browser* browser = chrome::FindOrCreateTabbedBrowser(
+        profile_, chrome::GetActiveDesktop());
+    chrome::NavigateParams params(
+        browser,
+        GURL(chrome::kNotificationWelcomeLearnMoreURL),
+        content::PAGE_TRANSITION_LINK);
+    params.disposition = NEW_FOREGROUND_TAB;
+    params.window_action = chrome::NavigateParams::SHOW_WINDOW;
+    chrome::Navigate(&params);
   }
 
   virtual ~WelcomeNotificationDelegate() {}
@@ -81,8 +96,19 @@ void WelcomeNotification::ShowWelcomeNotificationIfNecessary(
     const Notification& notification) {
   if (notification.notifier_id().id == kChromeNowExtensionID) {
     PrefService* pref_service = profile_->GetPrefs();
-    if (!pref_service->GetBoolean(prefs::kWelcomeNotificationDismissed))
-      ShowWelcomeNotification();
+    if (!pref_service->GetBoolean(prefs::kWelcomeNotificationDismissed)) {
+      PopUpRequest popUpRequest =
+          pref_service->GetBoolean(
+              prefs::kWelcomeNotificationPreviouslyPoppedUp)
+          ? POP_UP_HIDDEN
+          : POP_UP_SHOWN;
+      if (popUpRequest == POP_UP_SHOWN) {
+        pref_service->SetBoolean(
+            prefs::kWelcomeNotificationPreviouslyPoppedUp, true);
+      }
+
+      ShowWelcomeNotification(popUpRequest);
+    }
   }
 }
 
@@ -93,11 +119,21 @@ void WelcomeNotification::RegisterProfilePrefs(
       prefs::kWelcomeNotificationDismissed,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(
+      prefs::kWelcomeNotificationPreviouslyPoppedUp,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-void WelcomeNotification::ShowWelcomeNotification() {
+void WelcomeNotification::ShowWelcomeNotification(PopUpRequest popUpRequest) {
+  message_center::ButtonInfo learn_more(
+      l10n_util::GetStringUTF16(IDS_NOTIFICATION_WELCOME_BUTTON_LEARN_MORE));
+  learn_more.icon = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+      IDR_NOTIFICATION_WELCOME_LEARN_MORE);
+
   message_center::RichNotificationData rich_notification_data;
   rich_notification_data.priority = 2;
+  rich_notification_data.buttons.push_back(learn_more);
 
   if (welcome_notification_id_.empty())
     welcome_notification_id_ = base::GenerateGUID();
@@ -117,6 +153,10 @@ void WelcomeNotification::ShowWelcomeNotification() {
             rich_notification_data,
             new WelcomeNotificationDelegate(
                 welcome_notification_id_, profile_)));
+
+    if (popUpRequest == POP_UP_HIDDEN)
+      message_center_notification->set_shown_as_popup(true);
+
     message_center_->AddNotification(message_center_notification.Pass());
   }
 }

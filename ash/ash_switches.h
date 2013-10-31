@@ -32,23 +32,19 @@ ASH_EXPORT extern const char kAshDisableAlternateFrameCaptionButtonStyle[];
 ASH_EXPORT extern const char kAshDisableAutoMaximizing[];
 ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
 ASH_EXPORT extern const char kAshDisableDragOffShelf[];
-ASH_EXPORT extern const char kAshDisableImmersiveFullscreen[];
 ASH_EXPORT extern const char kAshDisableOverviewMode[];
 ASH_EXPORT extern const char kAshDisableDragAndDropAppListToLauncher[];
 #if defined(OS_CHROMEOS)
-ASH_EXPORT extern const char kAshDisableSoftwareMirroring[];
 ASH_EXPORT extern const char kAshDisableUsbChargerNotification[];
 ASH_EXPORT extern const char kAshEnableAudioDeviceMenu[];
 #endif
 ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
 ASH_EXPORT extern const char kAshEnableAlternateFrameCaptionButtonStyle[];
-ASH_EXPORT extern const char kAshEnableAutoclick[];
 ASH_EXPORT extern const char kAshEnableBrightnessControl[];
 ASH_EXPORT extern const char kAshEnableDockedWindows[];
 #if defined(OS_CHROMEOS)
 ASH_EXPORT extern const char kAshEnableFullMultiProfileMode[];
 #endif
-ASH_EXPORT extern const char kAshEnableImmersiveFullscreen[];
 #if defined(OS_LINUX)
 ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
 #endif
@@ -61,9 +57,9 @@ ASH_EXPORT extern const char kAshGuestWallpaperLarge[];
 ASH_EXPORT extern const char kAshGuestWallpaperSmall[];
 ASH_EXPORT extern const char kAshHideNotificationsForFactory[];
 ASH_EXPORT extern const char kAshHostWindowBounds[];
-ASH_EXPORT extern const char kAshImmersiveHideTabIndicators[];
 ASH_EXPORT extern const char kAshOemWallpaperLarge[];
 ASH_EXPORT extern const char kAshOemWallpaperSmall[];
+ASH_EXPORT extern const char kAshOverviewDelayOnAltTab[];
 ASH_EXPORT extern const char kAshSecondaryDisplayLayout[];
 ASH_EXPORT extern const char kAshTouchHud[];
 ASH_EXPORT extern const char kAshUseAlternateShelfLayout[];

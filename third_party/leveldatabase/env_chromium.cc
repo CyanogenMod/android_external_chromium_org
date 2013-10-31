@@ -390,6 +390,66 @@ ErrorParsingResult ParseMethodAndError(const char* string,
   return NONE;
 }
 
+// Keep in sync with LevelDBCorruptionTypes in histograms.xml. Also, don't
+// change the order because indices into this array have been recorded in uma
+// histograms.
+const char* patterns[] = {
+  "missing files",
+  "log record too small",
+  "corrupted internal key",
+  "partial record",
+  "missing start of fragmented record",
+  "error in middle of record",
+  "unknown record type",
+  "truncated record at end",
+  "bad record length",
+  "VersionEdit",
+  "FileReader invoked with unexpected value",
+  "corrupted key",
+  "CURRENT file does not end with newline",
+  "no meta-nextfile entry",
+  "no meta-lognumber entry",
+  "no last-sequence-number entry",
+  "malformed WriteBatch",
+  "bad WriteBatch Put",
+  "bad WriteBatch Delete",
+  "unknown WriteBatch tag",
+  "WriteBatch has wrong count",
+  "bad entry in block",
+  "bad block contents",
+  "bad block handle",
+  "truncated block read",
+  "block checksum mismatch",
+  "checksum mismatch",
+  "corrupted compressed block contents",
+  "bad block type",
+  "bad magic number",
+  "file is too short",
+};
+
+// Returns 1-based index into the above array or 0 if nothing matches.
+int ParseCorruptionMessage(const leveldb::Status& status) {
+  DCHECK(!status.IsIOError());
+  DCHECK(!status.ok());
+  const int kOtherError = 0;
+  int error = kOtherError;
+  const std::string& str_error = status.ToString();
+  const size_t kNumPatterns = arraysize(patterns);
+  for (size_t i = 0; i < kNumPatterns; ++i) {
+    if (str_error.find(patterns[i]) != std::string::npos) {
+      error = i + 1;
+      break;
+    }
+  }
+  return error;
+}
+
+int GetNumCorruptionPatterns() {
+  // + 1 for the "other" error that is returned when a corruption message
+  // doesn't match any of the patterns.
+  return arraysize(patterns) + 1;
+}
+
 bool IndicatesDiskFull(leveldb::Status status) {
   if (status.ok())
     return false;
@@ -674,19 +734,32 @@ void ChromiumEnv::RestoreIfNecessary(const std::string& dir,
 namespace {
 #if defined(OS_WIN)
 static base::PlatformFileError GetDirectoryEntries(
-    const base::FilePath& dir_filepath,
+    const base::FilePath& dir_param,
     std::vector<base::FilePath>* result) {
-  // TODO(dgrogan): Replace with FindFirstFile / FindNextFile. Note that until
-  // that happens this is filtering out directories whereas the Posix version
-  // below is not. There shouldn't be any directories so this shouldn't be an
-  // issue.
-  base::FileEnumerator iter(dir_filepath, false, base::FileEnumerator::FILES);
-  base::FilePath current = iter.Next();
-  while (!current.empty()) {
-    result->push_back(current.BaseName());
-    current = iter.Next();
+  result->clear();
+  base::FilePath dir_filepath = dir_param.Append(FILE_PATH_LITERAL("*"));
+  WIN32_FIND_DATA find_data;
+  HANDLE find_handle = FindFirstFile(dir_filepath.value().c_str(), &find_data);
+  if (find_handle == INVALID_HANDLE_VALUE) {
+    DWORD last_error = GetLastError();
+    if (last_error == ERROR_FILE_NOT_FOUND)
+      return base::PLATFORM_FILE_OK;
+    return base::LastErrorToPlatformFileError(last_error);
   }
-  return base::PLATFORM_FILE_OK;
+  do {
+    base::FilePath filepath(find_data.cFileName);
+    base::FilePath::StringType basename = filepath.BaseName().value();
+    if (basename == FILE_PATH_LITERAL(".") ||
+        basename == FILE_PATH_LITERAL(".."))
+      continue;
+    result->push_back(filepath.BaseName());
+  } while (FindNextFile(find_handle, &find_data));
+  DWORD last_error = GetLastError();
+  base::PlatformFileError return_value = base::PLATFORM_FILE_OK;
+  if (last_error != ERROR_NO_MORE_FILES)
+    return_value = base::LastErrorToPlatformFileError(last_error);
+  FindClose(find_handle);
+  return return_value;
 }
 #else
 static base::PlatformFileError GetDirectoryEntries(

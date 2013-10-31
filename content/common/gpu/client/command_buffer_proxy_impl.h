@@ -15,11 +15,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
-#include "content/common/gpu/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 #include "gpu/command_buffer/common/gpu_control.h"
+#include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ui/events/latency_info.h"
@@ -28,6 +27,10 @@ struct GPUCommandBufferConsoleMessage;
 
 namespace base {
 class SharedMemory;
+}
+
+namespace gfx {
+class GpuMemoryBuffer;
 }
 
 namespace gpu {
@@ -107,17 +110,18 @@ class CommandBufferProxyImpl
                                const base::Closure& callback) OVERRIDE;
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
-
+  virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
+      OVERRIDE;
 
   int GetRouteID() const;
   bool Echo(const base::Closure& callback);
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
   void SetChannelErrorCallback(const base::Closure& callback);
 
+  typedef base::Callback<void(const gpu::MemoryAllocation&)>
+      MemoryAllocationChangedCallback;
   void SetMemoryAllocationChangedCallback(
-      const base::Callback<void(const GpuMemoryAllocationForRenderer&)>&
-          callback);
-
+      const MemoryAllocationChangedCallback& callback);
   void AddDeletionObserver(DeletionObserver* observer);
   void RemoveDeletionObserver(DeletionObserver* observer);
 
@@ -138,13 +142,12 @@ class CommandBufferProxyImpl
   // CommandBufferProxyImpl implementation.
   virtual gpu::error::Error GetLastError() OVERRIDE;
 
-  void SendManagedMemoryStats(const GpuManagedMemoryStats& stats);
-
   GpuChannelHost* channel() const { return channel_; }
 
  private:
   typedef std::map<int32, gpu::Buffer> TransferBufferMap;
   typedef base::hash_map<uint32, base::Closure> SignalTaskMap;
+  typedef std::map<int32, gfx::GpuMemoryBuffer*> GpuMemoryBufferMap;
 
   // Send an IPC message over the GPU channel. This is private to fully
   // encapsulate the channel; all callers of this function must explicitly
@@ -156,7 +159,7 @@ class CommandBufferProxyImpl
   void OnDestroyed(gpu::error::ContextLostReason reason);
   void OnEchoAck();
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
-  void OnSetMemoryAllocation(const GpuMemoryAllocationForRenderer& allocation);
+  void OnSetMemoryAllocation(const gpu::MemoryAllocation& allocation);
   void OnSignalSyncPointAck(uint32 id);
   void OnGenerateMailboxNamesReply(const std::vector<std::string>& names);
 
@@ -193,14 +196,16 @@ class CommandBufferProxyImpl
 
   base::Closure channel_error_callback_;
 
-  base::Callback<void(const GpuMemoryAllocationForRenderer&)>
-      memory_allocation_changed_callback_;
+  MemoryAllocationChangedCallback memory_allocation_changed_callback_;
 
   GpuConsoleMessageCallback console_message_callback_;
 
   // Tasks to be invoked in SignalSyncPoint responses.
   uint32 next_signal_id_;
   SignalTaskMap signal_tasks_;
+
+  // Local cache of id to gpu memory buffer mapping.
+  GpuMemoryBufferMap gpu_memory_buffers_;
 
   DISALLOW_COPY_AND_ASSIGN(CommandBufferProxyImpl);
 };

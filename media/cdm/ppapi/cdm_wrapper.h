@@ -31,24 +31,24 @@ namespace media {
 class CdmWrapper {
  public:
   static CdmWrapper* Create(const char* key_system,
-                            int key_system_size,
+                            uint32_t key_system_size,
                             GetCdmHostFunc get_cdm_host_func,
                             void* user_data);
 
   virtual ~CdmWrapper() {};
 
   virtual cdm::Status GenerateKeyRequest(const char* type,
-                                         int type_size,
+                                         uint32_t type_size,
                                          const uint8_t* init_data,
-                                         int init_data_size) = 0;
+                                         uint32_t init_data_size) = 0;
   virtual cdm::Status AddKey(const char* session_id,
-                             int session_id_size,
+                             uint32_t session_id_size,
                              const uint8_t* key,
-                             int key_size,
+                             uint32_t key_size,
                              const uint8_t* key_id,
-                             int key_id_size) = 0;
+                             uint32_t key_id_size) = 0;
   virtual cdm::Status CancelKeyRequest(const char* session_id,
-                                       int session_id_size) = 0;
+                                       uint32_t session_id_size) = 0;
   virtual void TimerExpired(void* context) = 0;
   virtual cdm::Status Decrypt(const cdm::InputBuffer& encrypted_buffer,
                               cdm::DecryptedBlock* decrypted_buffer) = 0;
@@ -84,7 +84,7 @@ template <class CdmInterface>
 class CdmWrapperImpl : public CdmWrapper {
  public:
   static CdmWrapper* Create(const char* key_system,
-                            int key_system_size,
+                            uint32_t key_system_size,
                             GetCdmHostFunc get_cdm_host_func,
                             void* user_data) {
     void* cdm_instance = ::CreateCdmInstance(
@@ -102,24 +102,24 @@ class CdmWrapperImpl : public CdmWrapper {
   }
 
   virtual cdm::Status GenerateKeyRequest(const char* type,
-                                         int type_size,
+                                         uint32_t type_size,
                                          const uint8_t* init_data,
-                                         int init_data_size) OVERRIDE {
+                                         uint32_t init_data_size) OVERRIDE {
     return cdm_->GenerateKeyRequest(type, type_size, init_data, init_data_size);
   }
 
   virtual cdm::Status AddKey(const char* session_id,
-                             int session_id_size,
+                             uint32_t session_id_size,
                              const uint8_t* key,
-                             int key_size,
+                             uint32_t key_size,
                              const uint8_t* key_id,
-                             int key_id_size) OVERRIDE {
+                             uint32_t key_id_size) OVERRIDE {
     return cdm_->AddKey(
         session_id, session_id_size, key, key_size, key_id, key_id_size);
   }
 
   virtual cdm::Status CancelKeyRequest(const char* session_id,
-                                       int session_id_size) OVERRIDE {
+                                       uint32_t session_id_size) OVERRIDE {
     return cdm_->CancelKeyRequest(session_id, session_id_size);
   }
 
@@ -212,7 +212,7 @@ template <> cdm::Status CdmWrapperImpl<cdm::ContentDecryptionModule_1>::
 }
 
 CdmWrapper* CdmWrapper::Create(const char* key_system,
-                               int key_system_size,
+                               uint32_t key_system_size,
                                GetCdmHostFunc get_cdm_host_func,
                                void* user_data) {
   // Try to create the CDM using the latest CDM interface version.
@@ -229,10 +229,10 @@ CdmWrapper* CdmWrapper::Create(const char* key_system,
 }
 
 // When updating the CdmAdapter, ensure you've updated the CdmWrapper to contain
-// stub implementations for new or modified methods which the older CDM
-// interface does not have.
-COMPILE_ASSERT(cdm::ContentDecryptionModule_2::kVersion ==
-                   cdm::ContentDecryptionModule::kVersion,
+// stub implementations for new or modified methods that the older CDM interface
+// does not have.
+COMPILE_ASSERT(cdm::ContentDecryptionModule::kVersion ==
+                   cdm::ContentDecryptionModule_2::kVersion,
                ensure_cdm_wrapper_templates_have_old_version_support);
 
 }  // namespace media

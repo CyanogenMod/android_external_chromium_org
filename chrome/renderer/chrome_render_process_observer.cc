@@ -36,7 +36,6 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "crypto/nss_util.h"
-#include "media/base/media_switches.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_module.h"
 #include "third_party/WebKit/public/web/WebCache.h"
@@ -352,9 +351,6 @@ void ChromeRenderProcessObserver::WebKitInitialized() {
   WebSecurityPolicy::registerURLSchemeAsNoAccess(native_scheme);
   WebSecurityPolicy::registerURLSchemeAsNotAllowingJavascriptURLs(
       native_scheme);
-
-  if (base::FieldTrialList::FindFullName("DateExtensionEnabled") == "Disabled")
-    WebRuntimeFeatures::enableDateExtension(false);
 }
 
 void ChromeRenderProcessObserver::OnRenderProcessShutdown() {

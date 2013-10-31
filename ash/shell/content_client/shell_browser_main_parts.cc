@@ -21,7 +21,6 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "net/base/net_module.h"
-#include "ui/aura/client/stacking_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
@@ -135,7 +134,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(
       false /* is_guest */);
 
-  ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->ShowRootWindow();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {

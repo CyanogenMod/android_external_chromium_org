@@ -8,18 +8,21 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/history/most_visited_tiles_experiment.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/search/search_ipc_router_policy_impl.h"
@@ -34,9 +37,11 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/page_transition_types.h"
+#include "content/public/common/referrer.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -105,7 +110,7 @@ bool InInstantProcess(Profile* profile,
 
 // Updates the location bar to reflect |contents| Instant support state.
 void UpdateLocationBar(content::WebContents* contents) {
-// iOS and Android doesn't use the Instant framework.
+// iOS and Android don't use the Instant framework.
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   if (!contents)
     return;
@@ -205,6 +210,14 @@ void SearchTabHelper::SetSuggestionToPrefetch(
 void SearchTabHelper::Submit(const string16& text) {
   DCHECK(!chrome::IsInstantNTP(web_contents_));
   ipc_router_.Submit(text);
+}
+
+void SearchTabHelper::OnTabActivated() {
+  ipc_router_.OnTabActivated();
+}
+
+void SearchTabHelper::OnTabDeactivated() {
+  ipc_router_.OnTabDeactivated();
 }
 
 void SearchTabHelper::Observe(
@@ -371,7 +384,7 @@ void SearchTabHelper::MaybeRemoveMostVisitedItems(
 }
 
 void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
-// iOS and Android doesn't use the Instant framework.
+// iOS and Android don't use the Instant framework.
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
   if (!browser)
@@ -412,6 +425,36 @@ void SearchTabHelper::FocusOmnibox(OmniboxFocusState state) {
 #endif
 }
 
+void SearchTabHelper::NavigateToURL(const GURL& url,
+                                    WindowOpenDisposition disposition,
+                                    bool is_most_visited_item_url) {
+// iOS and Android don't use the Instant framework.
+#if !defined(OS_IOS) && !defined(OS_ANDROID)
+  // TODO(kmadhusu): Remove chrome::FindBrowser...() function call from here.
+  // Create a SearchTabHelperDelegate interface and have the Browser object
+  // implement that interface to provide the necessary functionality.
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents_->GetBrowserContext());
+  if (!browser || !profile)
+    return;
+
+  if (is_most_visited_item_url) {
+    content::RecordAction(
+        content::UserMetricsAction("InstantExtended.MostVisitedClicked"));
+  }
+
+  chrome::NavigateParams params(browser, url,
+                                content::PAGE_TRANSITION_AUTO_BOOKMARK);
+  params.referrer = content::Referrer();
+  params.source_contents = web_contents_;
+  params.disposition = disposition;
+  params.is_renderer_initiated = false;
+  params.initiating_profile = profile;
+  chrome::Navigate(&params);
+#endif
+}
+
 void SearchTabHelper::OnDeleteMostVisitedItem(const GURL& url) {
   DCHECK(!url.is_empty());
   if (instant_service_)
@@ -433,6 +476,35 @@ void SearchTabHelper::OnLogEvent(NTPLoggingEventType event) {
   NTPUserDataLogger* data = NTPUserDataLogger::FromWebContents(web_contents());
   if (data)
     data->LogEvent(event);
+}
+
+void SearchTabHelper::PasteIntoOmnibox(const string16& text) {
+// iOS and Android don't use the Instant framework.
+#if !defined(OS_IOS) && !defined(OS_ANDROID)
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
+  if (!browser)
+    return;
+
+  OmniboxView* omnibox_view = browser->window()->GetLocationBar()->
+      GetLocationEntry();
+  // The first case is for right click to paste, where the text is retrieved
+  // from the clipboard already sanitized. The second case is needed to handle
+  // drag-and-drop value and it has to be sanitazed before setting it into the
+  // omnibox.
+  string16 text_to_paste = text.empty() ? omnibox_view->GetClipboardText() :
+      omnibox_view->SanitizeTextForPaste(text);
+
+  if (text_to_paste.empty())
+    return;
+
+  if (!omnibox_view->model()->has_focus())
+    omnibox_view->SetFocus();
+
+  omnibox_view->OnBeforePossibleChange();
+  omnibox_view->model()->on_paste();
+  omnibox_view->SetUserText(text_to_paste);
+  omnibox_view->OnAfterPossibleChange();
+#endif
 }
 
 void SearchTabHelper::UpdateMode(bool update_origin, bool is_preloaded_ntp) {

@@ -140,6 +140,7 @@ class EVENTS_EXPORT Event {
       case ET_GESTURE_LONG_PRESS:
       case ET_GESTURE_LONG_TAP:
       case ET_GESTURE_MULTIFINGER_SWIPE:
+      case ET_GESTURE_SHOW_PRESS:
         return true;
 
       case ET_SCROLL_FLING_CANCEL:
@@ -664,10 +665,6 @@ class EVENTS_EXPORT GestureEvent : public LocatedEvent {
   // Returns the lowest touch-id of any of the touches which make up this
   // gesture. If there are no touches associated with this gesture, returns -1.
   int GetLowestTouchId() const;
-
-  unsigned int touch_ids_bitfield() const {
-    return touch_ids_bitfield_;
-  }
 
  private:
   GestureEventDetails details_;

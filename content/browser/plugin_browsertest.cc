@@ -273,10 +273,10 @@ IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(SelfDeletePluginInNewStream)) {
   LoadAndWait(GetURL("self_delete_plugin_stream.html"));
 }
 
-// This test asserts on Mac in plugin_host in the NPNVWindowNPObject case.
-#if !(defined(OS_MACOSX) && !defined(NDEBUG))
-// If this test flakes use http://crbug.com/95558.
-IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(DeletePluginInDeallocate)) {
+// On Mac this test asserts in plugin_host: http://crbug.com/95558
+// On all platforms it flakes in ~URLRequestContext: http://crbug.com/310336
+#if !defined(NDEBUG)
+IN_PROC_BROWSER_TEST_F(PluginTest, DISABLED_DeletePluginInDeallocate) {
   LoadAndWait(GetURL("plugin_delete_in_deallocate.html"));
 }
 #endif

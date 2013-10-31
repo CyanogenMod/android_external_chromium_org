@@ -13,8 +13,8 @@ RootWindowHostOzone::RootWindowHostOzone(const gfx::Rect& bounds)
    : delegate_(NULL),
       widget_(0),
       bounds_(bounds),
-      factory_(new ui::EventFactoryOzone()) {
-  factory_->CreateStartupEventConverters();
+      factory_(ui::EventFactoryOzone::GetInstance()) {
+  factory_->StartProcessingEvents();
   gfx::SurfaceFactoryOzone* surface_factory =
       gfx::SurfaceFactoryOzone::GetInstance();
   widget_ = surface_factory->GetAcceleratedWidget();
@@ -36,6 +36,9 @@ bool RootWindowHostOzone::Dispatch(const base::NativeEvent& ne) {
   } else if (event->IsKeyEvent()) {
     ui::KeyEvent* keyev = static_cast<ui::KeyEvent*>(ne);
     delegate_->OnHostKeyEvent(keyev);
+  } else if (event->IsMouseEvent()) {
+    ui::MouseEvent* mouseev = static_cast<ui::MouseEvent*>(ne);
+    delegate_->OnHostMouseEvent(mouseev);
   }
   return true;
 }

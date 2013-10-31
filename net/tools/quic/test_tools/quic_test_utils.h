@@ -9,10 +9,10 @@
 
 #include "base/strings/string_piece.h"
 #include "net/quic/quic_connection.h"
+#include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_spdy_decompressor.h"
 #include "net/spdy/spdy_framer.h"
-#include "net/tools/quic/quic_packet_writer.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -23,6 +23,29 @@ class IPEndPoint;
 
 namespace tools {
 namespace test {
+
+// Upper limit on versions we support.
+QuicVersion QuicVersionMax();
+
+// Lower limit on versions we support.
+QuicVersion QuicVersionMin();
+
+// Simple random number generator used to compute random numbers suitable
+// for pseudo-randomly dropping packets in tests.  It works by computing
+// the sha1 hash of the current seed, and using the first 64 bits as
+// the next random number, and the next seed.
+class SimpleRandom {
+ public:
+  SimpleRandom() : seed_(0) {}
+
+  // Returns a random number in the range [0, kuint64max].
+  uint64 RandUint64();
+
+  void set_seed(uint64 seed) { seed_ = seed; }
+
+ private:
+  uint64 seed_;
+};
 
 class MockConnection : public QuicConnection {
  public:
@@ -36,7 +59,9 @@ class MockConnection : public QuicConnection {
   MockConnection(QuicGuid guid, IPEndPoint address, bool is_server);
   MockConnection(QuicGuid guid,
                  IPEndPoint address,
-                 QuicConnectionHelperInterface* helper, bool is_server);
+                 QuicConnectionHelperInterface* helper,
+                 QuicPacketWriter* writer,
+                 bool is_server);
   virtual ~MockConnection();
 
   // If the constructor that uses a MockHelper has been used then this method
@@ -67,29 +92,10 @@ class MockConnection : public QuicConnection {
 
  private:
   const bool has_mock_helper_;
+  scoped_ptr<QuicPacketWriter> writer_;
+  scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
-};
-
-class MockQuicSessionOwner : public QuicSessionOwner {
- public:
-  MockQuicSessionOwner();
-  ~MockQuicSessionOwner();
-  MOCK_METHOD2(OnConnectionClose, void(QuicGuid guid, QuicErrorCode error));
-};
-
-class TestDecompressorVisitor : public QuicSpdyDecompressor::Visitor {
- public:
-  virtual ~TestDecompressorVisitor() {}
-  virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
-  virtual void OnDecompressionError() OVERRIDE;
-
-  std::string data() { return data_; }
-  bool error() { return error_; }
-
- private:
-  std::string data_;
-  bool error_;
 };
 
 class TestSession : public QuicSession {
@@ -112,14 +118,6 @@ class TestSession : public QuicSession {
   DISALLOW_COPY_AND_ASSIGN(TestSession);
 };
 
-class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
- public:
-  MockAckNotifierDelegate();
-  virtual ~MockAckNotifierDelegate();
-
-  MOCK_METHOD0(OnAckNotification, void());
-};
-
 class MockPacketWriter : public QuicPacketWriter {
  public:
   MockPacketWriter();
@@ -131,6 +129,36 @@ class MockPacketWriter : public QuicPacketWriter {
                            const IPAddressNumber& self_address,
                            const IPEndPoint& peer_address,
                            QuicBlockedWriterInterface* blocked_writer));
+  MOCK_CONST_METHOD0(IsWriteBlockedDataBuffered, bool());
+};
+
+class MockQuicSessionOwner : public QuicSessionOwner {
+ public:
+  MockQuicSessionOwner();
+  ~MockQuicSessionOwner();
+  MOCK_METHOD2(OnConnectionClosed, void(QuicGuid guid, QuicErrorCode error));
+};
+
+class TestDecompressorVisitor : public QuicSpdyDecompressor::Visitor {
+ public:
+  virtual ~TestDecompressorVisitor() {}
+  virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
+  virtual void OnDecompressionError() OVERRIDE;
+
+  std::string data() { return data_; }
+  bool error() { return error_; }
+
+ private:
+  std::string data_;
+  bool error_;
+};
+
+class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
+ public:
+  MockAckNotifierDelegate();
+  virtual ~MockAckNotifierDelegate();
+
+  MOCK_METHOD0(OnAckNotification, void());
 };
 
 }  // namespace test

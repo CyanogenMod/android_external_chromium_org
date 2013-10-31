@@ -162,6 +162,7 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -185,7 +186,6 @@
 #include "chrome/browser/net/http_pipelining_compatibility_client.h"
 #include "chrome/browser/net/network_stats.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_otr_state.h"
@@ -226,6 +226,10 @@
 #if defined(OS_WIN)
 #include <windows.h>  // Needed for STATUS_* codes
 #include "base/win/registry.h"
+#endif
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/service/service_process_control.h"
 #endif
 
 using base::Time;
@@ -325,6 +329,8 @@ int MapCrashExitCodeForHistogram(int exit_code) {
 void MarkAppCleanShutdownAndCommit() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  pref->SetInteger(prefs::kStabilityExecutionPhase,
+                   MetricsService::CLEAN_SHUTDOWN);
   // Start writing right away (write happens on a different thread).
   pref->CommitPendingWrite();
 }
@@ -334,6 +340,9 @@ void MarkAppCleanShutdownAndCommit() {
 // static
 MetricsService::ShutdownCleanliness MetricsService::clean_shutdown_status_ =
     MetricsService::CLEANLY_SHUTDOWN;
+
+MetricsService::ExecutionPhase MetricsService::execution_phase_ =
+    MetricsService::CLEAN_SHUTDOWN;
 
 // This is used to quickly log stats from child process related notifications in
 // MetricsService::child_stats_buffer_.  The buffer's contents are transferred
@@ -405,6 +414,8 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterStringPref(prefs::kStabilityStatsVersion, std::string());
   registry->RegisterInt64Pref(prefs::kStabilityStatsBuildTime, 0);
   registry->RegisterBooleanPref(prefs::kStabilityExitedCleanly, true);
+  registry->RegisterIntegerPref(prefs::kStabilityExecutionPhase,
+                                CLEAN_SHUTDOWN);
   registry->RegisterBooleanPref(prefs::kStabilitySessionEndCompleted, true);
   registry->RegisterIntegerPref(prefs::kMetricsSessionID, -1);
   registry->RegisterIntegerPref(prefs::kStabilityLaunchCount, 0);
@@ -441,6 +452,7 @@ void MetricsService::RegisterPrefs(PrefRegistrySimple* registry) {
 // static
 void MetricsService::DiscardOldStabilityStats(PrefService* local_state) {
   local_state->SetBoolean(prefs::kStabilityExitedCleanly, true);
+  local_state->SetInteger(prefs::kStabilityExecutionPhase, CLEAN_SHUTDOWN);
   local_state->SetBoolean(prefs::kStabilitySessionEndCompleted, true);
 
   local_state->SetInteger(prefs::kStabilityIncompleteSessionEndCount, 0);
@@ -476,6 +488,7 @@ MetricsService::MetricsService()
       self_ptr_factory_(this),
       state_saver_factory_(this),
       waiting_for_asynchronous_reporting_step_(false),
+      num_async_histogram_fetches_in_progress_(0),
       entropy_source_returned_(LAST_ENTROPY_NONE) {
   DCHECK(IsSingleThreaded());
   InitializeMetricsState();
@@ -768,6 +781,7 @@ void MetricsService::OnAppEnterBackground() {
 void MetricsService::OnAppEnterForeground() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
+  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
 
   StartSchedulerIfNecessary();
 }
@@ -775,6 +789,7 @@ void MetricsService::OnAppEnterForeground() {
 void MetricsService::LogNeedForCleanShutdown() {
   PrefService* pref = g_browser_process->local_state();
   pref->SetBoolean(prefs::kStabilityExitedCleanly, false);
+  pref->SetInteger(prefs::kStabilityExecutionPhase, execution_phase_);
   // Redundant setting to be sure we call for a clean shutdown.
   clean_shutdown_status_ = NEED_TO_SHUTDOWN;
 }
@@ -893,6 +908,13 @@ void MetricsService::InitializeMetricsState() {
     // Reset flag, and wait until we call LogNeedForCleanShutdown() before
     // monitoring.
     pref->SetBoolean(prefs::kStabilityExitedCleanly, true);
+
+    // TODO(rtenneti): On windows, consider saving/getting execution_phase from
+    // the registry.
+    int execution_phase = pref->GetInteger(prefs::kStabilityExecutionPhase);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Chrome.Browser.ExecutionPhase",
+                                execution_phase);
+    pref->SetInteger(prefs::kStabilityExecutionPhase, CLEAN_SHUTDOWN);
   }
 
 #if defined(OS_WIN)
@@ -1306,12 +1328,32 @@ void MetricsService::OnMemoryDetailCollectionDone() {
       &MetricsService::OnHistogramSynchronizationDone,
       self_ptr_factory_.GetWeakPtr());
 
+  base::TimeDelta timeout =
+      base::TimeDelta::FromMilliseconds(kMaxHistogramGatheringWaitDuration);
+
+  DCHECK_EQ(num_async_histogram_fetches_in_progress_, 0);
+
+#if defined(OS_ANDROID)
+  // Android has no service process.
+  num_async_histogram_fetches_in_progress_ = 1;
+#else  // OS_ANDROID
+  num_async_histogram_fetches_in_progress_ = 2;
+  // Run requests to service and content in parallel.
+  if (!ServiceProcessControl::GetInstance()->GetHistograms(callback, timeout)) {
+    // Assume |num_async_histogram_fetches_in_progress_| is not changed by
+    // |GetHistograms()|.
+    DCHECK_EQ(num_async_histogram_fetches_in_progress_, 2);
+    // Assign |num_async_histogram_fetches_in_progress_| above and decrement it
+    // here to make code work even if |GetHistograms()| fired |callback|.
+    --num_async_histogram_fetches_in_progress_;
+  }
+#endif  // OS_ANDROID
+
   // Set up the callback to task to call after we receive histograms from all
   // child processes. Wait time specifies how long to wait before absolutely
   // calling us back on the task.
-  content::FetchHistogramsAsynchronously(
-      base::MessageLoop::current(), callback,
-      base::TimeDelta::FromMilliseconds(kMaxHistogramGatheringWaitDuration));
+  content::FetchHistogramsAsynchronously(base::MessageLoop::current(), callback,
+                                         timeout);
 }
 
 void MetricsService::OnHistogramSynchronizationDone() {
@@ -1319,6 +1361,11 @@ void MetricsService::OnHistogramSynchronizationDone() {
   // This function should only be called as the callback from an ansynchronous
   // step.
   DCHECK(waiting_for_asynchronous_reporting_step_);
+  DCHECK_GT(num_async_histogram_fetches_in_progress_, 0);
+
+  // Check if all expected requests finished.
+  if (--num_async_histogram_fetches_in_progress_ > 0)
+    return;
 
   waiting_for_asynchronous_reporting_step_ = false;
   OnFinalLogInfoCollectionDone();
@@ -1640,6 +1687,9 @@ void MetricsService::LogCleanShutdown() {
   clean_shutdown_status_ = CLEANLY_SHUTDOWN;
 
   RecordBooleanPrefValue(prefs::kStabilityExitedCleanly, true);
+  PrefService* pref = g_browser_process->local_state();
+  pref->SetInteger(prefs::kStabilityExecutionPhase,
+                   MetricsService::CLEAN_SHUTDOWN);
 }
 
 #if defined(OS_CHROMEOS)

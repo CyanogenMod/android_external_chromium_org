@@ -10,6 +10,7 @@
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/quic_connection.h"
+#include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
@@ -49,8 +50,10 @@ class TestConnection : public QuicConnection {
  public:
   TestConnection(QuicGuid guid,
                  IPEndPoint address,
-                 QuicConnectionHelper* helper)
-      : QuicConnection(guid, address, helper, false, QuicVersionMax()) {
+                 QuicConnectionHelper* helper,
+                 QuicPacketWriter* writer)
+      : QuicConnection(guid, address, helper, writer, false,
+                       QuicSupportedVersions()) {
   }
 
   void SendAck() {
@@ -77,7 +80,7 @@ class QuicConnectionHelperTest : public ::testing::Test {
 
   QuicConnectionHelperTest()
       : guid_(2),
-        framer_(QuicVersionMax(), QuicTime::Zero(), false),
+        framer_(QuicSupportedVersions(), QuicTime::Zero(), false),
         net_log_(BoundNetLog()),
         frame_(1, false, 0, kData) {
     Initialize();
@@ -119,19 +122,21 @@ class QuicConnectionHelperTest : public ::testing::Test {
                                           net_log_.net_log()));
     socket_->Connect(IPEndPoint());
     runner_ = new TestTaskRunner(&clock_);
-    helper_ = new QuicConnectionHelper(runner_.get(), &clock_,
-                                       &random_generator_, socket_.get());
+    helper_.reset(new QuicConnectionHelper(runner_.get(), &clock_,
+                                           &random_generator_));
     send_algorithm_ = new testing::StrictMock<MockSendAlgorithm>();
     EXPECT_CALL(*send_algorithm_, TimeUntilSend(_, _, _, _)).
         WillRepeatedly(Return(QuicTime::Delta::Zero()));
-    EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillRepeatedly(
-        Return(QuicBandwidth::FromKBitsPerSecond(100)));
-    EXPECT_CALL(*send_algorithm_, SmoothedRtt()).WillRepeatedly(
-        Return(QuicTime::Delta::FromMilliseconds(100)));
+    EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillRepeatedly(Return(
+        QuicBandwidth::FromKBitsPerSecond(100)));
+    EXPECT_CALL(*send_algorithm_, SmoothedRtt()).WillRepeatedly(Return(
+        QuicTime::Delta::FromMilliseconds(100)));
     ON_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _))
         .WillByDefault(Return(true));
     EXPECT_CALL(visitor_, HasPendingHandshake()).Times(AnyNumber());
-    connection_.reset(new TestConnection(guid_, IPEndPoint(), helper_));
+    writer_.reset(new QuicDefaultPacketWriter(socket_.get()));
+    connection_.reset(new TestConnection(guid_, IPEndPoint(), helper_.get(),
+                                         writer_.get()));
     connection_->set_visitor(&visitor_);
     connection_->SetSendAlgorithm(send_algorithm_);
   }
@@ -196,13 +201,14 @@ class QuicConnectionHelperTest : public ::testing::Test {
 
   testing::StrictMock<MockSendAlgorithm>* send_algorithm_;
   scoped_refptr<TestTaskRunner> runner_;
-  QuicConnectionHelper* helper_;
+  scoped_ptr<QuicConnectionHelper> helper_;
+  scoped_ptr<TestConnection> connection_;
+  testing::StrictMock<MockConnectionVisitor> visitor_;
+  scoped_ptr<QuicDefaultPacketWriter> writer_;
   scoped_ptr<MockUDPClientSocket> socket_;
   scoped_ptr<MockWrite[]> mock_writes_;
   MockClock clock_;
   MockRandom random_generator_;
-  scoped_ptr<TestConnection> connection_;
-  testing::StrictMock<MockConnectionVisitor> visitor_;
 
  private:
   void InitializeHeader(QuicPacketSequenceNumber sequence_number) {
@@ -350,15 +356,15 @@ TEST_F(QuicConnectionHelperTest, TestRTORetransmission) {
       QuicTime::Delta::FromMilliseconds(500);
   QuicTime start = clock_.ApproximateNow();
 
+  char buffer[] = "foo";
+
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, NOT_RETRANSMISSION, _));
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _));
   EXPECT_CALL(visitor_, OnCanWrite()).WillOnce(Return(true));
   EXPECT_CALL(visitor_, HasPendingHandshake()).Times(AnyNumber());
-
-  // Send a packet.
-  struct iovec iov = {const_cast<char*>(kData),
-                      static_cast<size_t>(strlen(kData))};
-  connection_->SendvStreamData(1, &iov, 1, 0, false);
+  IOVector data;
+  data.Append(buffer, 3);
+  connection_->SendStreamData(1, data, 0, false);
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 2, _, RTO_RETRANSMISSION, _));
   // Since no ack was received, the retransmission alarm will fire and
   // retransmit it.
@@ -382,15 +388,16 @@ TEST_F(QuicConnectionHelperTest, TestMultipleRTORetransmission) {
       QuicTime::Delta::FromMilliseconds(500);
   QuicTime start = clock_.ApproximateNow();
 
+  char buffer[] = "foo";
+
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 1, _, NOT_RETRANSMISSION, _));
   EXPECT_CALL(*send_algorithm_, OnPacketAbandoned(1, _));
   EXPECT_CALL(visitor_, OnCanWrite()).WillRepeatedly(Return(true));
   EXPECT_CALL(visitor_, HasPendingHandshake()).Times(AnyNumber());
 
-  // Send a packet.
-  struct iovec iov = {const_cast<char*>(kData),
-                      static_cast<size_t>(strlen(kData))};
-  connection_->SendvStreamData(1, &iov, 1, 0, false);
+  IOVector data;
+  data.Append(buffer, 3);
+  connection_->SendStreamData(1, data, 0, false);
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 2, _, RTO_RETRANSMISSION, _));
   // Since no ack was received, the retransmission alarm will fire and
   // retransmit it.
@@ -425,37 +432,13 @@ TEST_F(QuicConnectionHelperTest, InitialTimeout) {
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillOnce(
       Return(QuicTime::Delta::FromMicroseconds(1)));
   // After we run the next task, we should close the connection.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, false));
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, false));
 
   runner_->RunNextTask();
   EXPECT_EQ(QuicTime::Zero().Add(QuicTime::Delta::FromSeconds(
                 kDefaultInitialTimeoutSecs)),
             clock_.ApproximateNow());
   EXPECT_FALSE(connection_->connected());
-  EXPECT_TRUE(AtEof());
-}
-
-TEST_F(QuicConnectionHelperTest, WritePacketToWire) {
-  AddWrite(SYNCHRONOUS, ConstructDataPacket(1));
-  Initialize();
-
-  int len = GetWrite(0)->length();
-  WriteResult result = helper_->WritePacketToWire(*GetWrite(0));
-  EXPECT_EQ(len, result.bytes_written);
-  EXPECT_EQ(WRITE_STATUS_OK, result.status);
-  EXPECT_TRUE(AtEof());
-}
-
-// TODO(rtenneti): rewrite WritePacketToWireAsync after merging all changes.
-TEST_F(QuicConnectionHelperTest, DISABLED_WritePacketToWireAsync) {
-  AddWrite(ASYNC, ConstructClosePacket(1, 0));
-  Initialize();
-
-  EXPECT_CALL(visitor_, OnCanWrite()).WillOnce(Return(true));
-  WriteResult result = helper_->WritePacketToWire(*GetWrite(0));
-  EXPECT_EQ(-1, result.bytes_written);
-  EXPECT_EQ(WRITE_STATUS_BLOCKED, result.status);
-  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_TRUE(AtEof());
 }
 
@@ -487,7 +470,8 @@ TEST_F(QuicConnectionHelperTest, TimeoutAfterSend) {
   EXPECT_TRUE(connection_->connected());
 
   // This time, we should time out.
-  EXPECT_CALL(visitor_, ConnectionClose(QUIC_CONNECTION_TIMED_OUT, !kFromPeer));
+  EXPECT_CALL(visitor_,
+              OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, !kFromPeer));
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, 2, _, NOT_RETRANSMISSION,
                                              HAS_RETRANSMITTABLE_DATA));
   EXPECT_CALL(*send_algorithm_, RetransmissionDelay()).WillOnce(

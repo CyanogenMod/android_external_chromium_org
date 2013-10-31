@@ -111,9 +111,6 @@ const char kAppModeOAuth2Token[]            = "app-mode-oauth-token";
 // Whether to always use the new app install bubble when installing an app.
 const char kAppsNewInstallBubble[]          = "apps-new-install-bubble";
 
-// Disable throbber for extension apps.
-const char kAppsNoThrob[]                   = "apps-no-throb";
-
 // Experimental native frame support for packaged apps.
 const char kAppsUseNativeFrame[]            = "apps-use-native-frame";
 
@@ -554,6 +551,11 @@ const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
 const char kEnablePasswordAutofillPublicSuffixDomainMatching[] =
     "enable-password-autofill-public-suffix-domain-matching";
 
+// Enable the setting to prompt the user for their OS account password before
+// revealing plaintext passwords in the password manager.
+const char kEnablePasswordManagerReauthentication[] =
+    "enable-password-manager-reauthentication";
+
 // Enables the pre- and auto-login features. When a user signs in to sync, the
 // browser's cookie jar is pre-filled with GAIA cookies. When the user visits a
 // GAIA login page, an info bar can help the user login.
@@ -607,9 +609,6 @@ const char kEnableExtensionActivityLogging[] =
 
 const char kEnableExtensionActivityLogTesting[] =
     "enable-extension-activity-log-testing";
-
-// Enables or disables showing extensions in the action box.
-const char kExtensionsInActionBox[]         = "extensions-in-action-box";
 
 // Enable the fast unload controller, which speeds up tab/window close by
 // running a tab's onunload js handler independently of the GUI -
@@ -685,7 +684,7 @@ const char kEnableOmniboxAutoCompletionForIme[] =
 const char kEnablePanels[]                  = "enable-panels";
 
 // Enables searching for people from the apps list search box.
-const char kEnablePeopleSearch[]            = "enable-people-search";
+const char kDisablePeopleSearch[]           = "disable-people-search";
 
 // Disables the usage of Portable Native Client.
 const char kDisablePnacl[]                  = "disable-pnacl";
@@ -699,6 +698,9 @@ const char kDisablePnaclInstall[]           = "disable-pnacl-install";
 // Enables the proactive populating of the disk cache with Web resources that
 // are likely to be needed in future page fetches.
 const char kEnablePrecache[]                = "enable-precache";
+
+// Enable Privet local printing.
+const char kEnablePrivetLocalPrinting[]     = "enable-privet-local-printing";
 
 // Enables tracking of tasks in profiler for viewing via about:profiler.
 // To predominantly disable tracking (profiling), use the command line switch:
@@ -746,9 +748,6 @@ const char kDisableSpdy31[]                 = "disable-spdy31";
 
 // Enable SPDY/4 alpha 2. This is a temporary testing flag.
 const char kEnableSpdy4a2[]                 = "enable-spdy4a2";
-
-// Enable SPDY CREDENTIAL frame support.  This is a temporary testing flag.
-const char kEnableSpdyCredentialFrames[]    = "enable-spdy-credential-frames";
 
 // Enables auto correction for misspelled words.
 const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
@@ -871,14 +870,14 @@ const char kForceVariationIds[]             = "force-variation-ids";
 // testing the cloud policy framework.
 const char kForceLoadCloudPolicy[]          = "force-load-cloud-policy";
 
-// Enables using GAIA information to populate profile name and icon.
-const char kGaiaProfileInfo[]               = "gaia-profile-info";
-
 // Enables setting global commands through the Extensions Commands API.
 const char kGlobalCommands[]                = "global-commands";
 
 // Specifies an alternate URL to use for speaking to Google. Useful for testing.
 const char kGoogleBaseURL[]                 = "google-base-url";
+
+// Enables using GAIA information to populate profile name and icon.
+const char kGoogleProfileInfo[]             = "google-profile-info";
 
 // Specifies an alternate URL to use for retrieving the search domain for
 // Google. Useful for testing.
@@ -1227,10 +1226,6 @@ const char kProxyServer[]                   = "proxy-server";
 // NOTE: This is only implemented for Views.
 const char kPurgeMemoryButton[]             = "purge-memory-button";
 
-// Capture resource consumption information through page cycling and output the
-// data to the specified file.
-const char kRecordStats[]                   = "record-stats";
-
 // Chrome supports a playback and record mode.  Record mode saves *everything*
 // to the cache.  Playback mode reads data exclusively from the cache.  This
 // allows us to record a session into the cache and then replay it at will.
@@ -1346,6 +1341,9 @@ const char kSimulateOutdated[]               = "simulate-outdated";
 // Replaces the buffered data source for <audio> and <video> with a simplified
 // resource loader that downloads the entire resource into memory.
 
+// Second origin that can be used for the spdy proxy.
+const char kSpdyProxyAuthFallback[]         = "spdy-proxy-auth-fallback";
+
 // Origin for which SpdyProxy authentication is supported.
 const char kSpdyProxyAuthOrigin[]           = "spdy-proxy-auth-origin";
 
@@ -1432,10 +1430,6 @@ const char kSyncTrySsltcpFirstForXmpp[]     = "sync-try-ssltcp-first-for-xmpp";
 // Enables deferring sync backend initialization until user initiated changes
 // occur.
 const char kSyncEnableDeferredStartup[]     = "sync-enable-deferred-startup";
-
-// Disables use of OAuth2 token in sync components and reverts behavior to
-// ClientLogin token.
-const char kSyncDisableOAuth2Token[]         = "sync-disable-oauth2-token";
 
 // Enables feature to avoid unnecessary GetUpdate requests.
 const char kSyncEnableGetUpdateAvoidance[]   =

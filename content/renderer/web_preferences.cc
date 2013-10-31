@@ -237,6 +237,11 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setAntialiased2dCanvasEnabled(
       !prefs.antialiased_2d_canvas_disabled);
 
+  // Set MSAA sample count for 2d canvas if requested on the command line (or
+  // default value if not).
+  settings->setAccelerated2dCanvasMSAASampleCount(
+      prefs.accelerated_2d_canvas_msaa_sample_count);
+
   // Enable gpu-accelerated filters if requested on the command line.
   settings->setAcceleratedFiltersEnabled(prefs.accelerated_filters_enabled);
 
@@ -293,6 +298,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 
   WebRuntimeFeatures::enableLazyLayout(prefs.lazy_layout_enabled);
   WebRuntimeFeatures::enableTouch(prefs.touch_enabled);
+  settings->setMaxTouchPoints(prefs.pointer_events_max_touch_points);
   settings->setDeviceSupportsTouch(prefs.device_supports_touch);
   settings->setDeviceSupportsMouse(prefs.device_supports_mouse);
   settings->setEnableTouchAdjustment(prefs.touch_adjustment_enabled);
@@ -343,6 +349,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setUseWideViewport(prefs.use_wide_viewport);
   settings->setViewportMetaLayoutSizeQuirk(
       prefs.viewport_meta_layout_size_quirk);
+  settings->setViewportMetaMergeContentQuirk(
+      prefs.viewport_meta_merge_content_quirk);
   settings->setViewportMetaZeroValuesQuirk(
       prefs.viewport_meta_zero_values_quirk);
   settings->setIgnoreMainFrameOverflowHiddenQuirk(

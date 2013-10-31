@@ -15,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -60,7 +61,6 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
@@ -450,7 +450,7 @@ ProfileImpl::ProfileImpl(
         profile_policy_connector_->policy_service(),
         managed_user_settings,
         new ExtensionPrefStore(
-            ExtensionPrefValueMapFactory::GetForProfile(this), false),
+            ExtensionPrefValueMapFactory::GetForBrowserContext(this), false),
         pref_registry_,
         async_prefs));
     // Register on BrowserContext.
@@ -672,7 +672,7 @@ ProfileImpl::~ProfileImpl() {
     ProfileDestroyer::DestroyOffTheRecordProfileNow(
         off_the_record_profile_.get());
   } else {
-    ExtensionPrefValueMapFactory::GetForProfile(this)->
+    ExtensionPrefValueMapFactory::GetForBrowserContext(this)->
         ClearAllIncognitoSessionOnlyPreferences();
   }
 
@@ -725,7 +725,7 @@ Profile* ProfileImpl::GetOffTheRecordProfile() {
 
 void ProfileImpl::DestroyOffTheRecordProfile() {
   off_the_record_profile_.reset();
-  ExtensionPrefValueMapFactory::GetForProfile(this)->
+  ExtensionPrefValueMapFactory::GetForBrowserContext(this)->
       ClearAllIncognitoSessionOnlyPreferences();
 }
 
@@ -854,7 +854,7 @@ PrefService* ProfileImpl::GetOffTheRecordPrefs() {
     // stores a reference so that we do not leak memory here.
     otr_prefs_.reset(prefs_->CreateIncognitoPrefService(
         new ExtensionPrefStore(
-            ExtensionPrefValueMapFactory::GetForProfile(this), true)));
+            ExtensionPrefValueMapFactory::GetForBrowserContext(this), true)));
   }
   return otr_prefs_.get();
 }
@@ -911,14 +911,27 @@ ProfileImpl::GetMediaRequestContextForStoragePartition(
 void ProfileImpl::RequestMIDISysExPermission(
       int render_process_id,
       int render_view_id,
+      int bridge_id,
       const GURL& requesting_frame,
       const MIDISysExPermissionCallback& callback) {
   ChromeMIDIPermissionContext* context =
       ChromeMIDIPermissionContextFactory::GetForProfile(this);
   context->RequestMIDISysExPermission(render_process_id,
                                       render_view_id,
+                                      bridge_id,
                                       requesting_frame,
                                       callback);
+}
+
+void ProfileImpl::CancelMIDISysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
+  ChromeMIDIPermissionContext* context =
+      ChromeMIDIPermissionContextFactory::GetForProfile(this);
+  context->CancelMIDISysExPermissionRequest(
+      render_process_id, render_view_id, bridge_id, requesting_frame);
 }
 
 content::ResourceContext* ProfileImpl::GetResourceContext() {

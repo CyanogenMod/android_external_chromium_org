@@ -12,11 +12,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/chrome_scheme_hosts.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
+#include "extensions/common/extensions_client.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest.h"
@@ -24,6 +24,7 @@
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/permission_message_provider.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern_set.h"
@@ -66,7 +67,7 @@ bool CanSpecifyHostPermission(const Extension* extension,
                               const APIPermissionSet& permissions) {
   if (!pattern.match_all_urls() &&
       pattern.MatchesScheme(chrome::kChromeUIScheme)) {
-    URLPatternSet chrome_scheme_hosts =
+    URLPatternSet chrome_scheme_hosts = ExtensionsClient::Get()->
         GetPermittedChromeSchemeHosts(extension, permissions);
     if (chrome_scheme_hosts.ContainsPattern(pattern))
       return true;
@@ -214,9 +215,11 @@ bool ParseHelper(Extension* extension,
       host_permissions->AddPattern(pattern);
       // We need to make sure all_urls matches chrome://favicon and (maybe)
       // chrome://thumbnail, so add them back in to host_permissions separately.
-      if (pattern.match_all_urls())
-        host_permissions->AddPatterns(GetPermittedChromeSchemeHosts(
-            extension, *api_permissions));
+      if (pattern.match_all_urls()) {
+        host_permissions->AddPatterns(
+            ExtensionsClient::Get()->GetPermittedChromeSchemeHosts(
+                extension, *api_permissions));
+      }
       continue;
     }
 
@@ -392,9 +395,6 @@ const URLPatternSet& PermissionsData::GetEffectiveHostPermissions(
 // static
 bool PermissionsData::CanSilentlyIncreasePermissions(
     const Extension* extension) {
-  if (extension->requires_permissions_consent())
-    return false;
-
   return extension->location() != Manifest::INTERNAL;
 }
 
@@ -537,16 +537,11 @@ bool PermissionsData::CanExecuteScriptEverywhere(const Extension* extension) {
   if (extension->location() == Manifest::COMPONENT)
     return true;
 
-  const Extension::ScriptingWhitelist* whitelist =
-      Extension::GetScriptingWhitelist();
+  const ExtensionsClient::ScriptingWhitelist& whitelist =
+      ExtensionsClient::Get()->GetScriptingWhitelist();
 
-  for (Extension::ScriptingWhitelist::const_iterator iter = whitelist->begin();
-       iter != whitelist->end(); ++iter) {
-    if (extension->id() == *iter)
-      return true;
-  }
-
-  return false;
+  return std::find(whitelist.begin(), whitelist.end(), extension->id()) !=
+      whitelist.end();
 }
 
 // static

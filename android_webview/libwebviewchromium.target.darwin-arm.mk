@@ -56,7 +56,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_libpng_libpng_gyp)/third_party_libpng_libpng_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_libjpeg_libjpeg_gyp)/libjpeg.stamp \
 	$(call intermediates-dir-for,GYP,ui_gfx_gfx_jni_headers_gyp)/gfx_jni_headers.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_gyp)/ui_shell_dialogs_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_shell_dialogs_shell_dialogs_gyp)/ui_shell_dialogs_shell_dialogs_gyp.a \
 	$(call intermediates-dir-for,GYP,ui_base_strings_ui_strings_gyp)/ui_strings.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_events_events_gyp)/ui_events_events_gyp.a \
@@ -146,7 +146,6 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_html_gyp)/third_party_WebKit_Source_core_webcore_html_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_platform_gyp)/third_party_WebKit_Source_core_webcore_platform_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_harfbuzz_ng_harfbuzz_ng_gyp)/third_party_harfbuzz_ng_harfbuzz_ng_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_platform_geometry_gyp)/third_party_WebKit_Source_core_webcore_platform_geometry_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_remaining_gyp)/third_party_WebKit_Source_core_webcore_remaining_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_rendering_gyp)/third_party_WebKit_Source_core_webcore_rendering_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_svg_gyp)/third_party_WebKit_Source_core_webcore_svg_gyp.a \
@@ -279,13 +278,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -363,13 +362,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -491,7 +490,7 @@ LOCAL_STATIC_LIBRARIES := \
 	skia_skia_chrome_opts_gyp \
 	ui_gfx_gfx_gyp \
 	third_party_libpng_libpng_gyp \
-	ui_shell_dialogs_gyp \
+	ui_shell_dialogs_shell_dialogs_gyp \
 	ui_ui_gyp \
 	ui_events_events_gyp \
 	webkit_common_user_agent_user_agent_gyp \
@@ -544,7 +543,6 @@ LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_core_webcore_html_gyp \
 	third_party_WebKit_Source_core_webcore_platform_gyp \
 	third_party_harfbuzz_ng_harfbuzz_ng_gyp \
-	third_party_WebKit_Source_core_webcore_platform_geometry_gyp \
 	third_party_WebKit_Source_core_webcore_remaining_gyp \
 	third_party_WebKit_Source_core_webcore_rendering_gyp \
 	third_party_WebKit_Source_core_webcore_svg_gyp \

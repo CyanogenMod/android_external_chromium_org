@@ -49,7 +49,6 @@ static const char kTetheringAccepted[] = "Tethering.accepted";
 static const char kTetheringBind[] = "Tethering.bind";
 static const char kTetheringUnbind[] = "Tethering.unbind";
 
-static const char kChromeProductName[] = "Chrome";
 static const char kDevToolsRemoteBrowserTarget[] = "/devtools/browser";
 const int kMinVersionPortForwarding = 28;
 
@@ -221,19 +220,7 @@ class SocketTunnel {
   bool about_to_destroy_;
 };
 
-typedef std::vector<int> ParsedVersion;
-
-static ParsedVersion ParseVersion(const std::string& version) {
-  ParsedVersion result;
-  std::vector<std::string> parts;
-  Tokenize(version, ".", &parts);
-  for (size_t i = 0; i != parts.size(); ++i) {
-    int value = 0;
-    base::StringToInt(parts[i], &value);
-    result.push_back(value);
-  }
-  return result;
-}
+typedef DevToolsAdbBridge::RemoteBrowser::ParsedVersion ParsedVersion;
 
 static bool IsVersionLower(const ParsedVersion& left,
                            const ParsedVersion& right) {
@@ -252,8 +239,8 @@ static std::string FindBestSocketForTethering(
   for (DevToolsAdbBridge::RemoteBrowsers::const_iterator it = browsers.begin();
        it != browsers.end(); ++it) {
     scoped_refptr<DevToolsAdbBridge::RemoteBrowser> browser = *it;
-    ParsedVersion current_version = ParseVersion(browser->version());
-    if (browser->product() == kChromeProductName &&
+    ParsedVersion current_version = browser->GetParsedVersion();
+    if (browser->IsChrome() &&
         IsPortForwardingSupported(current_version) &&
         IsVersionLower(newest_version, current_version)) {
       socket = browser->socket();
@@ -272,9 +259,9 @@ class PortForwardingController::Connection
           content::BrowserThread::DeleteOnUIThread> {
  public:
   Connection(Registry* registry,
-             scoped_refptr<DevToolsAdbBridge::AndroidDevice> device,
+             scoped_refptr<AndroidDevice> device,
              const std::string& socket,
-             scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
+             scoped_refptr<RefCountedAdbThread> adb_thread,
              PrefService* pref_service);
 
   const PortStatusMap& GetPortStatusMap();
@@ -317,8 +304,8 @@ class PortForwardingController::Connection
   virtual bool ProcessIncomingMessage(const std::string& message) OVERRIDE;
 
   PortForwardingController::Registry* registry_;
-  scoped_refptr<DevToolsAdbBridge::AndroidDevice> device_;
-  scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread_;
+  scoped_refptr<AndroidDevice> device_;
+  scoped_refptr<RefCountedAdbThread> adb_thread_;
   PrefChangeRegistrar pref_change_registrar_;
   scoped_refptr<AdbWebSocket> web_socket_;
   int command_id_;
@@ -332,9 +319,9 @@ class PortForwardingController::Connection
 
 PortForwardingController::Connection::Connection(
     Registry* registry,
-    scoped_refptr<DevToolsAdbBridge::AndroidDevice> device,
+    scoped_refptr<AndroidDevice> device,
     const std::string& socket,
-    scoped_refptr<DevToolsAdbBridge::RefCountedAdbThread> adb_thread,
+    scoped_refptr<RefCountedAdbThread> adb_thread,
     PrefService* pref_service)
     : registry_(registry),
       device_(device),
@@ -579,7 +566,7 @@ bool PortForwardingController::Connection::ProcessIncomingMessage(
 }
 
 PortForwardingController::PortForwardingController(PrefService* pref_service)
-    : adb_thread_(DevToolsAdbBridge::RefCountedAdbThread::GetInstance()),
+    : adb_thread_(RefCountedAdbThread::GetInstance()),
       pref_service_(pref_service) {
 }
 

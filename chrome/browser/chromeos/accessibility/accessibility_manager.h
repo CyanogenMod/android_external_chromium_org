@@ -5,9 +5,11 @@
 #ifndef CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_ACCESSIBILITY_MANAGER_H_
 #define CHROME_BROWSER_CHROMEOS_ACCESSIBILITY_ACCESSIBILITY_MANAGER_H_
 
-#include "ash/shell_delegate.h"
+#include "ash/accessibility_delegate.h"
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
+#include "chrome/browser/extensions/api/braille_display_private/braille_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -33,7 +35,8 @@ struct AccessibilityStatusEventDetails {
 // AccessibilityManager changes the statuses of accessibility features
 // watching profile notifications and pref-changes.
 // TODO(yoshiki): merge MagnificationManager with AccessibilityManager.
-class AccessibilityManager : public content::NotificationObserver {
+class AccessibilityManager : public content::NotificationObserver,
+    extensions::api::braille_display_private::BrailleObserver {
  public:
   // Creates an instance of AccessibilityManager, this should be called once,
   // because only one instance should exist at the same time.
@@ -100,7 +103,16 @@ class AccessibilityManager : public content::NotificationObserver {
   // Returns true if autoclick is enabled.
   bool IsAutoclickEnabled();
 
+  // Set the delay for autoclicking after stopping the cursor in milliseconds.
+  void SetAutoclickDelay(int delay_ms);
+
+  // Returns the autoclick delay in milliseconds.
+  int GetAutoclickDelay() const;
+
   void SetProfileForTest(Profile* profile);
+
+  static void SetBrailleControllerForTest(
+      extensions::api::braille_display_private::BrailleController* controller);
 
  protected:
   AccessibilityManager();
@@ -118,7 +130,13 @@ class AccessibilityManager : public content::NotificationObserver {
   void UpdateSpokenFeedbackFromPref();
   void UpdateHighContrastFromPref();
   void UpdateAutoclickFromPref();
+  void UpdateAutoclickDelayFromPref();
   void LocalePrefChanged();
+
+  void CheckBrailleState();
+  void ReceiveBrailleDisplayState(
+      scoped_ptr<extensions::api::braille_display_private::DisplayState> state);
+
 
   void SetProfile(Profile* profile);
 
@@ -128,6 +146,12 @@ class AccessibilityManager : public content::NotificationObserver {
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // extensions::api::braille_display_private::BrailleObserver implementation.
+  // Enables spoken feedback if a braille display becomes available.
+  virtual void OnDisplayStateChanged(
+      const extensions::api::braille_display_private::DisplayState&
+          display_state) OVERRIDE;
 
   // Profile which has the current a11y context.
   Profile* profile_;
@@ -145,14 +169,18 @@ class AccessibilityManager : public content::NotificationObserver {
   PrefHandler spoken_feedback_pref_handler_;
   PrefHandler high_contrast_pref_handler_;
   PrefHandler autoclick_pref_handler_;
+  PrefHandler autoclick_delay_pref_handler_;
 
   bool large_cursor_enabled_;
   bool sticky_keys_enabled_;
   bool spoken_feedback_enabled_;
   bool high_contrast_enabled_;
   bool autoclick_enabled_;
+  int autoclick_delay_ms_;
 
   ash::AccessibilityNotificationVisibility spoken_feedback_notification_;
+
+  base::WeakPtrFactory<AccessibilityManager> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessibilityManager);
 };

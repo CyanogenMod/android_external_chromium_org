@@ -376,10 +376,6 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_AddStrictSecurityHost,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetClientSidePhishingDetection,
                     bool /* enable_phishing_detection */)
 
-// This message asks frame sniffer start.
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_StartFrameSniffer,
-                    string16 /* frame-name */)
-
 // Asks the renderer for a thumbnail of the image selected by the most
 // recently opened context menu, if there is one. If the image's area
 // is greater than thumbnail_min_area it will be downscaled to
@@ -507,10 +503,15 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ChromeViewHostMsg_GetPluginInfo,
 // Returns whether any internal plugin supporting |mime_type| is registered
 // Does not determine whether the plugin can actually be instantiated
 // (e.g. whether it is allowed or has all its dependencies).
-IPC_SYNC_MESSAGE_CONTROL1_1(
+// When the returned *|is_registered| is true, |additional_param_names| and
+// |additional_param_values| contain the name-value pairs, if any, specified
+// for the *first* plugin found that is registered for |mime_type|.
+IPC_SYNC_MESSAGE_CONTROL1_3(
     ChromeViewHostMsg_IsInternalPluginRegisteredForMimeType,
     std::string /* mime_type */,
-    bool /* registered */)
+    bool /* registered */,
+    std::vector<base::string16> /* additional_param_names */,
+    std::vector<base::string16> /* additional_param_values */)
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 // Tells the browser to search for a plug-in that can handle the given MIME
@@ -734,14 +735,13 @@ IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
                     int /* page_id */,
                     GURL /* url */)
 
-// Tells InstantExtended to navigate the active tab to a possibly priveleged
+// Tells InstantExtended to navigate the active tab to a possibly privileged
 // URL.
-IPC_MESSAGE_ROUTED5(ChromeViewHostMsg_SearchBoxNavigate,
+IPC_MESSAGE_ROUTED4(ChromeViewHostMsg_SearchBoxNavigate,
                     int /* page_id */,
                     GURL /* destination */,
-                    content::PageTransition /* transition */,
                     WindowOpenDisposition /* disposition */,
-                    bool /* is_search_type */)
+                    bool /*is_most_visited_item_url*/)
 
 // Tells InstantExtended to undo all most visited item deletions.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,

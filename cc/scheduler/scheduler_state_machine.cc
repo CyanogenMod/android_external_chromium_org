@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "ui/gfx/frame_time.h"
 
 namespace cc {
 
@@ -39,7 +40,8 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       pending_tree_is_ready_for_activation_(false),
       active_tree_needs_first_draw_(false),
       draw_if_possible_failed_(false),
-      did_create_and_initialize_first_output_surface_(false) {}
+      did_create_and_initialize_first_output_surface_(false),
+      smoothness_takes_priority_(false) {}
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
     OutputSurfaceState state) {
@@ -192,7 +194,7 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
   state->Set("major_state", major_state.release());
 
   scoped_ptr<base::DictionaryValue> timestamps_state(new base::DictionaryValue);
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks now = gfx::FrameTime::Now();
   timestamps_state->SetDouble(
       "0_interval",
       last_begin_impl_frame_args_.interval.InMicroseconds() / 1000.0L);
@@ -255,6 +257,8 @@ scoped_ptr<base::Value> SchedulerStateMachine::AsValue() const  {
   minor_state->SetBoolean("draw_if_possible_failed", draw_if_possible_failed_);
   minor_state->SetBoolean("did_create_and_initialize_first_output_surface",
                           did_create_and_initialize_first_output_surface_);
+  minor_state->SetBoolean("smoothness_takes_priority",
+                          smoothness_takes_priority_);
   state->Set("minor_state", minor_state.release());
 
   return state.PassAs<base::Value>();
@@ -820,7 +824,7 @@ bool SchedulerStateMachine::BeginImplFrameNeededToDraw() const {
 // These are cases where we are very likely to draw soon, but might not
 // actually have a new frame to draw when we receive the next BeginImplFrame.
 // Proactively requesting the BeginImplFrame helps hide the round trip latency
-// of the SetNeedsBeginFrame request that has to go to the Browser.
+// of the SetNeedsBeginImplFrame request that has to go to the Browser.
 bool SchedulerStateMachine::ProactiveBeginImplFrameWanted() const {
   // The output surface is the provider of BeginImplFrames,
   // so we are not going to get them even if we ask for them.
@@ -847,9 +851,10 @@ bool SchedulerStateMachine::ProactiveBeginImplFrameWanted() const {
     return true;
 
   // If we just swapped, it's likely that we are going to produce another
-  // frame soon. This helps avoid negative glitches in our SetNeedsBeginFrame
-  // requests, which may propagate to the BeginImplFrame provider and get
-  // sampled at an inopportune time, delaying the next BeginImplFrame.
+  // frame soon. This helps avoid negative glitches in our
+  // SetNeedsBeginImplFrame requests, which may propagate to the BeginImplFrame
+  // provider and get sampled at an inopportune time, delaying the next
+  // BeginImplFrame.
   if (last_frame_number_swap_performed_ == current_frame_number_)
     return true;
 
@@ -896,12 +901,19 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
   if (active_tree_needs_first_draw_)
     return true;
 
+  if (!needs_redraw_)
+    return false;
+
   // This is used to prioritize impl-thread draws when the main thread isn't
   // producing anything, e.g., after an aborted commit. We also check that we
   // don't have a pending tree -- otherwise we should give it a chance to
   // activate.
   // TODO(skyostil): Revisit this when we have more accurate deadline estimates.
-  if (commit_state_ == COMMIT_STATE_IDLE && needs_redraw_ && !has_pending_tree_)
+  if (commit_state_ == COMMIT_STATE_IDLE && !has_pending_tree_)
+    return true;
+
+  // Prioritize impl-thread draws in smoothness mode.
+  if (smoothness_takes_priority_)
     return true;
 
   return false;
@@ -933,6 +945,11 @@ void SchedulerStateMachine::SetNeedsManageTiles() {
 void SchedulerStateMachine::SetSwapUsedIncompleteTile(
     bool used_incomplete_tile) {
   swap_used_incomplete_tile_ = used_incomplete_tile;
+}
+
+void SchedulerStateMachine::SetSmoothnessTakesPriority(
+    bool smoothness_takes_priority) {
+  smoothness_takes_priority_ = smoothness_takes_priority;
 }
 
 void SchedulerStateMachine::DidDrawIfPossibleCompleted(bool success) {

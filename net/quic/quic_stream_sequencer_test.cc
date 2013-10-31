@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "base/rand_util.h"
+#include "net/base/ip_endpoint.h"
 #include "net/quic/reliable_quic_stream.h"
+#include "net/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -71,7 +73,8 @@ class MockStream : public ReliableQuicStream {
 
   MOCK_METHOD1(TerminateFromPeer, void(bool half_close));
   MOCK_METHOD2(ProcessData, uint32(const char* data, uint32 data_len));
-  MOCK_METHOD2(ConnectionClose, void(QuicErrorCode error, bool from_peer));
+  MOCK_METHOD2(CloseConnectionWithDetails, void(QuicErrorCode error,
+                                                const string& details));
   MOCK_METHOD1(Close, void(QuicRstStreamErrorCode error));
   MOCK_METHOD0(OnCanWrite, void());
 };
@@ -84,8 +87,9 @@ static const char kPayload[] =
 class QuicStreamSequencerTest : public ::testing::Test {
  protected:
   QuicStreamSequencerTest()
-      : session_(NULL),
-        stream_(session_,  1),
+      : connection_(new MockConnection(1, IPEndPoint(), false)),
+        session_(connection_, true),
+        stream_(&session_, 1),
         sequencer_(new QuicStreamSequencerPeer(&stream_)) {
   }
 
@@ -127,7 +131,8 @@ class QuicStreamSequencerTest : public ::testing::Test {
     return true;
   }
 
-  QuicSession* session_;
+  MockConnection* connection_;
+  MockSession session_;
   testing::StrictMock<MockStream> stream_;
   scoped_ptr<QuicStreamSequencerPeer> sequencer_;
 };
@@ -183,7 +188,8 @@ TEST_F(QuicStreamSequencerTest, FullFrameConsumed) {
 }
 
 TEST_F(QuicStreamSequencerTest, EmptyFrame) {
-  EXPECT_CALL(stream_, ConnectionClose(QUIC_INVALID_STREAM_FRAME, false));
+  EXPECT_CALL(stream_,
+              CloseConnectionWithDetails(QUIC_INVALID_STREAM_FRAME, _));
   EXPECT_FALSE(sequencer_->OnFrame(0, ""));
   EXPECT_EQ(0u, sequencer_->frames()->size());
   EXPECT_EQ(0u, sequencer_->num_bytes_consumed());

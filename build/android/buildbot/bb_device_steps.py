@@ -24,6 +24,7 @@ from pylib import constants
 from pylib.gtest import gtest_config
 
 CHROME_SRC_DIR = bb_utils.CHROME_SRC
+DIR_BUILD_ROOT = os.path.dirname(CHROME_SRC_DIR)
 CHROME_OUT_DIR = bb_utils.CHROME_OUT_DIR
 sys.path.append(os.path.join(
     CHROME_SRC_DIR, 'third_party', 'android_testrunner'))
@@ -46,6 +47,10 @@ GS_URL = 'https://storage.googleapis.com'
 I_TEST = collections.namedtuple('InstrumentationTest', [
     'name', 'apk', 'apk_package', 'test_apk', 'test_data', 'host_driven_root',
     'annotation', 'exclude_annotation', 'extra_flags'])
+
+
+def SrcPath(*path):
+  return os.path.join(CHROME_SRC_DIR, *path)
 
 
 def I(name, apk, apk_package, test_apk, test_data, host_driven_root=None,
@@ -221,7 +226,7 @@ def RunInstrumentationSuite(options, test, flunk_on_failure=True,
 def RunWebkitLint(target):
   """Lint WebKit's TestExpectation files."""
   bb_annotations.PrintNamedStep('webkit_lint')
-  RunCmd(['webkit/tools/layout_tests/run_webkit_tests.py',
+  RunCmd([SrcPath('webkit/tools/layout_tests/run_webkit_tests.py'),
           '--lint-test-files',
           '--chromium',
           '--target', target])
@@ -261,8 +266,8 @@ def RunWebkitLayoutTests(options):
     cmd_args.extend(
         ['--additional-expectations=%s' % os.path.join(CHROME_SRC_DIR, *f)])
 
-  exit_code = RunCmd(['webkit/tools/layout_tests/run_webkit_tests.py'] +
-                     cmd_args)
+  exit_code = RunCmd([SrcPath('webkit/tools/layout_tests/run_webkit_tests.py')]
+                     + cmd_args)
   if exit_code == 255: # test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
     bb_annotations.PrintMsg('?? (crashed or hung)')
   elif exit_code == 254: # test_run_results.NO_DEVICES_EXIT_STATUS
@@ -310,7 +315,8 @@ def RunWebkitLayoutTests(options):
             '--build-dir', CHROME_OUT_DIR,
             '--build-number', build_number,
             '--builder-name', builder_name,
-            '--gs-bucket', gs_bucket])
+            '--gs-bucket', gs_bucket],
+            cwd=DIR_BUILD_ROOT)
 
 
 def _ParseLayoutTestResults(results):
@@ -322,13 +328,19 @@ def _ParseLayoutTestResults(results):
   passes = {}
   for (test, result) in tests.iteritems():
     if result.get('is_unexpected'):
-      actual_result = result['actual']
-      if ' PASS' in actual_result:
-        flakes[test] = actual_result
-      elif actual_result == 'PASS':
+      actual_results = result['actual'].split()
+      expected_results = result['expected'].split()
+      if len(actual_results) > 1:
+        # We report the first failure type back, even if the second
+        # was more severe.
+        if actual_results[1] in expected_results:
+          flakes[test] = actual_results[0]
+        else:
+          failures[test] = actual_results[0]
+      elif actual_results[0] == 'PASS':
         passes[test] = result
       else:
-        failures[test] = actual_result
+        failures[test] = actual_results[0]
 
   return (passes, failures, flakes)
 
@@ -436,13 +448,9 @@ def RunWebRTCNativeTests(options):
 def RunGPUTests(options):
   InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
 
-  # Pixel tests require that the browser implements GrabWindowSnapshot and
-  # GrabViewSnapshot, which android-content-shell currently does not.
-  # (crbug.com/285932)
-
-  # bb_annotations.PrintNamedStep('gpu_tests')
-  # RunCmd(['content/test/gpu/run_gpu_test',
-  #         '--browser=android-content-shell', 'pixel'])
+  bb_annotations.PrintNamedStep('gpu_tests')
+  RunCmd(['content/test/gpu/run_gpu_test',
+          '--browser=android-content-shell', 'pixel'])
 
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
   RunCmd(['content/test/gpu/run_gpu_test',

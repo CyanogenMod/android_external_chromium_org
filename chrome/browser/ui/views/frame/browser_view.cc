@@ -34,6 +34,7 @@
 #include "chrome/browser/speech/tts_controller.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
@@ -46,7 +47,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
-#include "chrome/browser/ui/immersive_fullscreen_configuration.h"
 #include "chrome/browser/ui/ntp_background_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
@@ -83,6 +83,7 @@
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/translate/translate_bubble_view.h"
 #include "chrome/browser/ui/views/update_recommended_message_box.h"
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
@@ -153,6 +154,10 @@
 #include "chrome/browser/ui/sync/one_click_signin_bubble_delegate.h"
 #include "chrome/browser/ui/sync/one_click_signin_bubble_links_delegate.h"
 #include "chrome/browser/ui/views/sync/one_click_signin_bubble_view.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/ui/ash/multi_user_window_manager.h"
 #endif
 
 using base::TimeDelta;
@@ -399,7 +404,7 @@ BrowserView::BrowserView()
       devtools_dock_side_(DEVTOOLS_DOCK_SIDE_BOTTOM),
       devtools_window_(NULL),
       initialized_(false),
-      ignore_layout_(true),
+      in_process_fullscreen_(false),
 #if defined(OS_WIN) && !defined(USE_AURA)
       hung_window_detector_(&hung_plugin_action_),
       ticker_(0),
@@ -574,6 +579,28 @@ bool BrowserView::ShouldShowAvatar() const {
 #if defined(OS_CHROMEOS)
   if (IsOffTheRecord() && !IsGuestSession())
     return true;
+
+  // Note: In case of the M-31 mode the window manager won't exist.
+  chrome::MultiUserWindowManager* window_manager =
+      chrome::MultiUserWindowManager::GetInstance();
+  if (window_manager) {
+    // This function is called via BrowserNonClientFrameView::UpdateAvatarInfo
+    // during the creation of the BrowserWindow, so browser->window() will not
+    // yet be set. In this case we can safely return false.
+    if (!browser_->window())
+      return false;
+
+    // If the window is shown on a different desktop than the user, it should
+    // have the avatar icon.
+    aura::Window* window = browser_->window()->GetNativeWindow();
+
+    // Note: When the window manager the window is either on it's owners desktop
+    // (and shows no icon) or it is now (in which it will show an icon). So we
+    // can return here.
+    return !window_manager->IsWindowOnDesktopOfUser(
+        window,
+        window_manager->GetWindowOwner(window));
+  }
 #else
   if (IsOffTheRecord())  // Desktop guest is incognito and needs avatar.
     return true;
@@ -1151,6 +1178,18 @@ void BrowserView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
 
 void BrowserView::ShowBookmarkPrompt() {
   GetLocationBarView()->ShowBookmarkPrompt();
+}
+
+void BrowserView::ShowTranslateBubble(
+    content::WebContents* web_contents,
+    TranslateBubbleModel::ViewState view_state) {
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(web_contents);
+  LanguageState& language_state = translate_tab_helper->language_state();
+  language_state.SetTranslateEnabled(true);
+
+  TranslateBubbleView::ShowBubble(GetToolbarView()->GetTranslateBubbleAnchor(),
+                                  web_contents, view_state, browser_.get());
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -1765,7 +1804,7 @@ const char* BrowserView::GetClassName() const {
 }
 
 void BrowserView::Layout() {
-  if (ignore_layout_)
+  if (!initialized_ || in_process_fullscreen_)
     return;
 
   views::View::Layout();
@@ -1840,10 +1879,6 @@ void BrowserView::OnOmniboxPopupShownOrHidden() {
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, ImmersiveModeController::Delegate overrides:
-
-BookmarkBarView* BrowserView::GetBookmarkBar() {
-  return bookmark_bar_view_.get();
-}
 
 FullscreenController* BrowserView::GetFullscreenController() {
   // Cannot be injected into ImmersiveModeController because it is constructed
@@ -2013,9 +2048,6 @@ void BrowserView::InitViews() {
 
   GetLocationBar()->GetLocationEntry()->model()->popup_model()->AddObserver(
       this);
-
-  // We're now initialized and ready to process Layout requests.
-  ignore_layout_ = false;
 }
 
 void BrowserView::LoadingAnimationCallback() {
@@ -2250,11 +2282,14 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
                                     FullscreenType type,
                                     const GURL& url,
                                     FullscreenExitBubbleType bubble_type) {
+  if (in_process_fullscreen_)
+    return;
+  in_process_fullscreen_ = true;
+
   // Reduce jankiness during the following position changes by:
   //   * Hiding the window until it's in the final position
   //   * Ignoring all intervening Layout() calls, which resize the webpage and
-  //     thus are slow and look ugly
-  ignore_layout_ = true;
+  //     thus are slow and look ugly (enforced via |in_process_fullscreen_|).
   LocationBarView* location_bar = GetLocationBarView();
 #if defined(OS_WIN) && !defined(USE_AURA)
   OmniboxViewWin* omnibox_win =
@@ -2325,15 +2360,22 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   // recompute the height of the infobar top arrow because toggling in and out
   // of fullscreen changes it. Calling ToolbarSizeChanged() will do both these
   // things since it computes the arrow height directly and forces a layout
-  // indirectly via UpdateUIForContents().
-  ignore_layout_ = false;
+  // indirectly via UpdateUIForContents(). Reset |in_process_fullscreen_| in
+  // order to let the layout occur.
+  in_process_fullscreen_ = false;
   ToolbarSizeChanged(false);
 }
 
 bool BrowserView::ShouldUseImmersiveFullscreenForUrl(const GURL& url) const {
+#if defined(OS_CHROMEOS)
+  // Kiosk mode needs the whole screen.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode))
+    return false;
   bool is_browser_fullscreen = url.is_empty();
-  return ImmersiveFullscreenConfiguration::UseImmersiveFullscreen() &&
-      is_browser_fullscreen && IsBrowserTypeNormal();
+  return is_browser_fullscreen && IsBrowserTypeNormal();
+#else
+  return false;
+#endif
 }
 
 void BrowserView::LoadAccelerators() {

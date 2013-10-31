@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <string>
+#include <vector>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -17,15 +18,18 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_test_writer.h"
 #include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
 #include "net/tools/quic/quic_server.h"
 #include "net/tools/quic/quic_socket_utils.h"
 #include "net/tools/quic/test_tools/http_message_test_utils.h"
+#include "net/tools/quic/test_tools/packet_dropping_test_writer.h"
 #include "net/tools/quic/test_tools/quic_client_peer.h"
-#include "net/tools/quic/test_tools/quic_epoll_connection_helper_peer.h"
+#include "net/tools/quic/test_tools/quic_dispatcher_peer.h"
 #include "net/tools/quic/test_tools/quic_in_memory_cache_peer.h"
+#include "net/tools/quic/test_tools/quic_server_peer.h"
 #include "net/tools/quic/test_tools/quic_test_client.h"
 #include "net/tools/quic/test_tools/server_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,8 +38,13 @@ using base::StringPiece;
 using base::WaitableEvent;
 using net::test::QuicConnectionPeer;
 using net::test::QuicSessionPeer;
+using net::test::QuicTestWriter;
 using net::test::ReliableQuicStreamPeer;
+using net::tools::test::PacketDroppingTestWriter;
+using net::tools::test::QuicDispatcherPeer;
+using net::tools::test::QuicServerPeer;
 using std::string;
+using std::vector;
 
 namespace net {
 namespace tools {
@@ -58,7 +67,73 @@ void GenerateBody(string* body, int length) {
   }
 }
 
-class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
+// Run all tests with the cross products of all versions
+// and all values of FLAGS_pad_quic_handshake_packets.
+struct TestParams {
+  TestParams(const QuicVersionVector& client_supported_versions,
+             const QuicVersionVector& server_supported_versions,
+             QuicVersion negotiated_version,
+             bool use_padding)
+      : client_supported_versions(client_supported_versions),
+        server_supported_versions(server_supported_versions),
+        negotiated_version(negotiated_version),
+        use_padding(use_padding) {
+  }
+
+  QuicVersionVector client_supported_versions;
+  QuicVersionVector server_supported_versions;
+  QuicVersion negotiated_version;
+  bool use_padding;
+};
+
+// Constructs various test permutations.
+vector<TestParams> GetTestParams() {
+  vector<TestParams> params;
+  QuicVersionVector all_supported_versions = QuicSupportedVersions();
+
+  // Add an entry for server and client supporting all versions.
+  params.push_back(TestParams(all_supported_versions, all_supported_versions,
+                              all_supported_versions[0], true));
+  params.push_back(TestParams(all_supported_versions, all_supported_versions,
+                              all_supported_versions[0], false));
+
+  // Test client supporting 1 version and server supporting all versions.
+  // Simulate an old client and exercise version downgrade in the server.
+  // No protocol negotiation should occur. Skip the i = 0 case because it
+  // is essentially the same as the default case.
+  for (size_t i = 1; i < all_supported_versions.size(); ++i) {
+    QuicVersionVector client_supported_versions;
+    client_supported_versions.push_back(all_supported_versions[i]);
+    params.push_back(TestParams(client_supported_versions,
+                                all_supported_versions,
+                                client_supported_versions[0],
+                                true));
+    params.push_back(TestParams(client_supported_versions,
+                                all_supported_versions,
+                                client_supported_versions[0],
+                                false));
+  }
+
+  // Test client supporting all versions and server supporting 1 version.
+  // Simulate an old server and exercise version downgrade in the client.
+  // Protocol negotiation should occur. Skip the i = 0 case because it is
+  // essentially the same as the default case.
+  for (size_t i = 1; i < all_supported_versions.size(); ++i) {
+    QuicVersionVector server_supported_versions;
+    server_supported_versions.push_back(all_supported_versions[i]);
+    params.push_back(TestParams(all_supported_versions,
+                                server_supported_versions,
+                                server_supported_versions[0],
+                                true));
+    params.push_back(TestParams(all_supported_versions,
+                                server_supported_versions,
+                                server_supported_versions[0],
+                                false));
+  }
+  return params;
+}
+
+class EndToEndTest : public ::testing::TestWithParam<TestParams> {
  protected:
   EndToEndTest()
       : server_hostname_("example.com"),
@@ -67,7 +142,6 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
     net::IPAddressNumber ip;
     CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
     server_address_ = IPEndPoint(ip, 0);
-    QuicConnection::g_acks_do_not_instigate_acks = true;
     FLAGS_track_retransmission_history = true;
     client_config_.SetDefaults();
     server_config_.SetDefaults();
@@ -78,19 +152,33 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
                "HTTP/1.1", "200", "OK", kFooResponseBody);
     AddToCache("GET", "https://www.google.com/bar",
                "HTTP/1.1", "200", "OK", kBarResponseBody);
-    version_ = GetParam();
+
+    client_supported_versions_ = GetParam().client_supported_versions;
+    server_supported_versions_ = GetParam().server_supported_versions;
+    negotiated_version_ = GetParam().negotiated_version;
+    FLAGS_pad_quic_handshake_packets = GetParam().use_padding;
+    LOG(INFO) << "server running " << QuicVersionVectorToString(
+        server_supported_versions_);
+    LOG(INFO) << "client running " << QuicVersionVectorToString(
+        client_supported_versions_);
+    LOG(INFO) << "negotiated_version_ " << QuicVersionToString(
+        negotiated_version_);
+    LOG(INFO) << "use_padding " << GetParam().use_padding;
   }
 
   virtual ~EndToEndTest() {
+    // TODO(rtenneti): port RecycleUnusedPort if needed.
+    // RecycleUnusedPort(server_address_.port());
     QuicInMemoryCachePeer::ResetForTests();
   }
 
-  virtual QuicTestClient* CreateQuicClient() {
+  virtual QuicTestClient* CreateQuicClient(QuicTestWriter* writer) {
     QuicTestClient* client = new QuicTestClient(server_address_,
                                                 server_hostname_,
                                                 false,  // not secure
                                                 client_config_,
-                                                version_);
+                                                client_supported_versions_);
+    client->UseWriter(writer);
     client->Connect();
     return client;
   }
@@ -99,8 +187,20 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
     // Start the server first, because CreateQuicClient() attempts
     // to connect to the server.
     StartServer();
-    client_.reset(CreateQuicClient());
+    client_.reset(CreateQuicClient(client_writer_));
+    QuicEpollConnectionHelper* helper =
+        reinterpret_cast<QuicEpollConnectionHelper*>(
+            QuicConnectionPeer::GetHelper(
+                client_->client()->session()->connection()));
+    client_writer_->SetConnectionHelper(helper);
     return client_->client()->connected();
+  }
+
+  virtual void SetUp() {
+    // The ownership of these gets transferred to the QuicTestWriter and
+    // QuicDispatcher when Initialize() is executed.
+    client_writer_ = new PacketDroppingTestWriter();
+    server_writer_ = new PacketDroppingTestWriter();
   }
 
   virtual void TearDown() {
@@ -109,11 +209,17 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
 
   void StartServer() {
     server_thread_.reset(new ServerThread(server_address_, server_config_,
+                                          server_supported_versions_,
                                           strike_register_no_startup_period_));
     server_thread_->Start();
     server_thread_->listening()->Wait();
     server_address_ = IPEndPoint(server_address_.address(),
                                  server_thread_->GetPort());
+    QuicDispatcher* dispatcher =
+        QuicServerPeer::GetDispatcher(server_thread_->server());
+    server_writer_->SetConnectionHelper(
+        QuicDispatcherPeer::GetHelper(dispatcher));
+    QuicDispatcherPeer::UseWriter(dispatcher, server_writer_);
     server_started_ = true;
   }
 
@@ -136,21 +242,46 @@ class EndToEndTest : public ::testing::TestWithParam<QuicVersion> {
         method, path, version, response_code, response_detail, body);
   }
 
+  void SetPacketLossPercentage(int32 loss) {
+    // TODO(rtenneti): enable when we can do random packet loss tests in
+    // chrome's tree.
+    // client_writer_->set_fake_packet_loss_percentage(loss);
+    // server_writer_->set_fake_packet_loss_percentage(loss);
+  }
+
+  void SetPacketSendDelay(QuicTime::Delta delay) {
+    // TODO(rtenneti): enable when we can do random packet send delay tests in
+    // chrome's tree.
+    // client_writer_->set_fake_packet_delay(delay);
+    // server_writer_->set_fake_packet_delay(delay);
+  }
+
+  void SetReorderPercentage(int32 reorder) {
+    // TODO(rtenneti): enable when we can do random packet reorder tests in
+    // chrome's tree.
+    // client_writer_->set_fake_reorder_percentage(reorder);
+    // server_writer_->set_fake_reorder_percentage(reorder);
+  }
+
   IPEndPoint server_address_;
   string server_hostname_;
   scoped_ptr<ServerThread> server_thread_;
   scoped_ptr<QuicTestClient> client_;
+  PacketDroppingTestWriter* client_writer_;
+  PacketDroppingTestWriter* server_writer_;
   bool server_started_;
   QuicConfig client_config_;
   QuicConfig server_config_;
-  QuicVersion version_;
+  QuicVersionVector client_supported_versions_;
+  QuicVersionVector server_supported_versions_;
+  QuicVersion negotiated_version_;
   bool strike_register_no_startup_period_;
 };
 
 // Run all end to end tests with all supported versions.
 INSTANTIATE_TEST_CASE_P(EndToEndTests,
                         EndToEndTest,
-                        ::testing::ValuesIn(kSupportedQuicVersions));
+                        ::testing::ValuesIn(GetTestParams()));
 
 TEST_P(EndToEndTest, SimpleRequestResponse) {
   ASSERT_TRUE(Initialize());
@@ -206,7 +337,7 @@ TEST_P(EndToEndTest, MultipleRequestResponse) {
 
 TEST_P(EndToEndTest, MultipleClients) {
   ASSERT_TRUE(Initialize());
-  scoped_ptr<QuicTestClient> client2(CreateQuicClient());
+  scoped_ptr<QuicTestClient> client2(CreateQuicClient(NULL));
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
@@ -238,13 +369,12 @@ TEST_P(EndToEndTest, RequestOverMultiplePackets) {
   const size_t kStreamDataLength = 3;
   const QuicStreamId kStreamId = 1u;
   const QuicStreamOffset kStreamOffset = 0u;
-  size_t stream_payload_size =
-      QuicFramer::GetMinStreamFrameSize(
-          GetParam(), kStreamId, kStreamOffset, true) + kStreamDataLength;
+  size_t stream_payload_size = QuicFramer::GetMinStreamFrameSize(
+      negotiated_version_, kStreamId, kStreamOffset, true) + kStreamDataLength;
   size_t min_payload_size =
       std::max(kCongestionFeedbackFrameSize, stream_payload_size);
   size_t ciphertext_size =
-      NullEncrypter(GetParam()).GetCiphertextSize(min_payload_size);
+      NullEncrypter(false).GetCiphertextSize(min_payload_size);
   // TODO(satyashekhar): Fix this when versioning is implemented.
   client_->options()->max_packet_length =
       GetPacketHeaderSize(PACKET_8BYTE_GUID, !kIncludeVersion,
@@ -259,6 +389,8 @@ TEST_P(EndToEndTest, RequestOverMultiplePackets) {
 
 TEST_P(EndToEndTest, MultipleFramesRandomOrder) {
   ASSERT_TRUE(Initialize());
+  SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
+  SetReorderPercentage(50);
   // Set things up so we have a small payload, to guarantee fragmentation.
   // A congestion feedback frame can't be split into multiple packets, make sure
   // that our packet have room for at least this amount after the normal headers
@@ -268,19 +400,17 @@ TEST_P(EndToEndTest, MultipleFramesRandomOrder) {
   const size_t kStreamDataLength = 3;
   const QuicStreamId kStreamId = 1u;
   const QuicStreamOffset kStreamOffset = 0u;
-  size_t stream_payload_size =
-      QuicFramer::GetMinStreamFrameSize(
-          GetParam(), kStreamId, kStreamOffset, true) + kStreamDataLength;
+  size_t stream_payload_size = QuicFramer::GetMinStreamFrameSize(
+      negotiated_version_, kStreamId, kStreamOffset, true) + kStreamDataLength;
   size_t min_payload_size =
       std::max(kCongestionFeedbackFrameSize, stream_payload_size);
   size_t ciphertext_size =
-      NullEncrypter(GetParam()).GetCiphertextSize(min_payload_size);
+      NullEncrypter(false).GetCiphertextSize(min_payload_size);
   // TODO(satyashekhar): Fix this when versioning is implemented.
   client_->options()->max_packet_length =
       GetPacketHeaderSize(PACKET_8BYTE_GUID, !kIncludeVersion,
                           PACKET_6BYTE_SEQUENCE_NUMBER, NOT_IN_FEC_GROUP) +
       ciphertext_size;
-  client_->options()->random_reorder = true;
 
   // Make sure our request is too large to fit in one packet.
   EXPECT_GT(strlen(kLargeRequest), min_payload_size);
@@ -323,12 +453,12 @@ TEST_P(EndToEndTest, LargePostNoPacketLoss) {
 TEST_P(EndToEndTest, LargePostWithPacketLoss) {
   // Connect with lower fake packet loss than we'd like to test.  Until
   // b/10126687 is fixed, losing handshake packets is pretty brutal.
-  // FLAGS_fake_packet_loss_percentage = 5;
+  SetPacketLossPercentage(5);
   ASSERT_TRUE(Initialize());
 
   // Wait for the server SHLO before upping the packet loss.
   client_->client()->WaitForCryptoHandshakeConfirmed();
-  // FLAGS_fake_packet_loss_percentage = 30;
+  SetPacketLossPercentage(30);
 
   // 10 Kb body.
   string body;
@@ -341,7 +471,50 @@ TEST_P(EndToEndTest, LargePostWithPacketLoss) {
   EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
 }
 
-TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
+TEST_P(EndToEndTest, LargePostNoPacketLossWithDelayAndReordering) {
+  ASSERT_TRUE(Initialize());
+
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  // Both of these must be called when the writer is not actively used.
+  SetPacketSendDelay(QuicTime::Delta::FromMilliseconds(2));
+  SetReorderPercentage(30);
+
+  // 1 Mb body.
+  string body;
+  GenerateBody(&body, 1024 * 1024);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1,
+                      HttpConstants::POST, "/foo");
+  request.AddBody(body, true);
+
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+}
+
+TEST_P(EndToEndTest, LargePostWithPacketLossAndBlocketSocket) {
+  // Connect with lower fake packet loss than we'd like to test.  Until
+  // b/10126687 is fixed, losing handshake packets is pretty brutal.
+  SetPacketLossPercentage(5);
+  ASSERT_TRUE(Initialize());
+
+  // Wait for the server SHLO before upping the packet loss.
+  client_->client()->WaitForCryptoHandshakeConfirmed();
+  SetPacketLossPercentage(30);
+  client_writer_->set_fake_blocked_socket_percentage(10);
+
+  // 10 Kb body.
+  string body;
+  GenerateBody(&body, 1024 * 10);
+
+  HTTPMessage request(HttpConstants::HTTP_1_1,
+                      HttpConstants::POST, "/foo");
+  request.AddBody(body, true);
+
+  EXPECT_EQ(kFooResponseBody, client_->SendCustomSynchronousRequest(request));
+}
+
+// TODO(rtenneti): rch is investigating the root cause. Will enable after we
+// find the bug.
+TEST_P(EndToEndTest, DISABLED_LargePostZeroRTTFailure) {
   // Have the server accept 0-RTT without waiting a startup period.
   strike_register_no_startup_period_ = true;
 
@@ -371,6 +544,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
 
   // Restart the server so that the 0-RTT handshake will take 1 RTT.
   StopServer();
+  server_writer_ = new PacketDroppingTestWriter();
   StartServer();
 
   client_->Connect();
@@ -381,7 +555,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
 
 // TODO(ianswett): Enable once b/9295090 is fixed.
 TEST_P(EndToEndTest, DISABLED_LargePostFEC) {
-  // FLAGS_fake_packet_loss_percentage = 30;
+  SetPacketLossPercentage(30);
   ASSERT_TRUE(Initialize());
   client_->options()->max_packets_per_fec_group = 6;
 
@@ -398,6 +572,13 @@ TEST_P(EndToEndTest, DISABLED_LargePostFEC) {
 /*TEST_P(EndToEndTest, PacketTooLarge) {
   FLAGS_quic_allow_oversized_packets_for_test = true;
   ASSERT_TRUE(Initialize());
+
+  // If we use packet padding, then the CHLO is padded to such a large
+  // size that it is rejected by the server before the handshake can complete
+  // which results in a test timeout.
+  if (FLAGS_pad_quic_handshake_packets) {
+    return;
+  }
 
   string body;
   GenerateBody(&body, kMaxPacketSize);
@@ -507,7 +688,7 @@ TEST_P(EndToEndTest, ResetConnection) {
 }
 
 TEST_P(EndToEndTest, MaxStreamsUberTest) {
-  // FLAGS_fake_packet_loss_percentage = 1;
+  SetPacketLossPercentage(1);
   ASSERT_TRUE(Initialize());
   string large_body;
   GenerateBody(&large_body, 10240);
@@ -516,7 +697,7 @@ TEST_P(EndToEndTest, MaxStreamsUberTest) {
   AddToCache("GET", "/large_response", "HTTP/1.1", "200", "OK", large_body);;
 
   client_->client()->WaitForCryptoHandshakeConfirmed();
-  // FLAGS_fake_packet_loss_percentage = 10;
+  SetPacketLossPercentage(10);
 
   for (int i = 0; i < max_streams; ++i) {
     EXPECT_LT(0, client_->SendRequest("/large_response"));
@@ -528,9 +709,9 @@ TEST_P(EndToEndTest, MaxStreamsUberTest) {
   }
 }
 
-class WrongAddressWriter : public QuicPacketWriter {
+class WrongAddressWriter : public QuicTestWriter {
  public:
-  explicit WrongAddressWriter(int fd) : fd_(fd) {
+  WrongAddressWriter() {
     IPAddressNumber ip;
     CHECK(net::ParseIPLiteralToNumber("127.0.0.2", &ip));
     self_address_ = IPEndPoint(ip, 0);
@@ -541,12 +722,15 @@ class WrongAddressWriter : public QuicPacketWriter {
       const IPAddressNumber& real_self_address,
       const IPEndPoint& peer_address,
       QuicBlockedWriterInterface* blocked_writer) OVERRIDE {
-    return QuicSocketUtils::WritePacket(fd_, buffer, buf_len,
-                                        self_address_.address(), peer_address);
+    return writer()->WritePacket(buffer, buf_len, self_address_.address(),
+                                 peer_address, blocked_writer);
+  }
+
+  virtual bool IsWriteBlockedDataBuffered() const OVERRIDE {
+    return false;
   }
 
   IPEndPoint self_address_;
-  int fd_;
 };
 
 TEST_P(EndToEndTest, ConnectionMigration) {
@@ -555,15 +739,15 @@ TEST_P(EndToEndTest, ConnectionMigration) {
   EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
 
-  WrongAddressWriter writer(QuicClientPeer::GetFd(client_->client()));
-  QuicEpollConnectionHelper* helper =
-      reinterpret_cast<QuicEpollConnectionHelper*>(
-          QuicConnectionPeer::GetHelper(
-              client_->client()->session()->connection()));
-  QuicEpollConnectionHelperPeer::SetWriter(helper, &writer);
+  scoped_ptr<WrongAddressWriter> writer(new WrongAddressWriter());
+
+  writer->set_writer(new QuicDefaultPacketWriter(
+      QuicClientPeer::GetFd(client_->client())));
+  QuicConnectionPeer::SetWriter(
+      client_->client()->session()->connection(),
+      reinterpret_cast<QuicTestWriter*>(writer.get()));
 
   client_->SendSynchronousRequest("/bar");
-  QuicEpollConnectionHelperPeer::SetWriter(helper, NULL);
 
   EXPECT_EQ(QUIC_STREAM_CONNECTION_ERROR, client_->stream_error());
   EXPECT_EQ(QUIC_ERROR_MIGRATING_ADDRESS, client_->connection_error());

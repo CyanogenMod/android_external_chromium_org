@@ -392,6 +392,8 @@
         'prefs/pref_value_map.h',
         'prefs/pref_value_store.cc',
         'prefs/pref_value_store.h',
+        'prefs/scoped_user_pref_update.cc',
+        'prefs/scoped_user_pref_update.h',
         'prefs/value_map_pref_store.cc',
         'prefs/value_map_pref_store.h',
       ],
@@ -530,6 +532,7 @@
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_memory_unittest.cc',
+        'memory/discardable_memory_provider_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
@@ -551,6 +554,7 @@
         'metrics/bucket_ranges_unittest.cc',
         'metrics/field_trial_unittest.cc',
         'metrics/histogram_base_unittest.cc',
+        'metrics/histogram_delta_serialization_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
         'metrics/stats_table_unittest.cc',
@@ -573,6 +577,7 @@
         'prefs/pref_service_unittest.cc',
         'prefs/pref_value_map_unittest.cc',
         'prefs/pref_value_store_unittest.cc',
+        'prefs/scoped_user_pref_update_unittest.cc',
         'process/memory_unittest.cc',
         'process/memory_unittest_mac.h',
         'process/memory_unittest_mac.mm',
@@ -827,6 +832,11 @@
         ['use_system_nspr==1', {
           'dependencies': [
             'third_party/nspr/nspr.gyp:nspr',
+          ],
+        }],
+        ['<(native_discardable_memory)==1', {
+          'sources!': [
+            'memory/discardable_memory_provider_unittest.cc',
           ],
         }],
       ],  # conditions

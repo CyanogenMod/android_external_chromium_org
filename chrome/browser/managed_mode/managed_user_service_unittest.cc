@@ -4,6 +4,7 @@
 
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
@@ -12,12 +13,12 @@
 #include "chrome/browser/managed_mode/custodian_profile_downloader_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
 #include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_builder.h"
+#include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -153,7 +154,8 @@ TEST_F(ManagedUserServiceTest, ShutDownCustodianProfileDownloader) {
 class ManagedUserServiceExtensionTestBase : public ExtensionServiceTestBase {
  public:
   explicit ManagedUserServiceExtensionTestBase(bool is_managed)
-      : is_managed_(is_managed) {}
+      : is_managed_(is_managed),
+        channel_(chrome::VersionInfo::CHANNEL_DEV) {}
   virtual ~ManagedUserServiceExtensionTestBase() {}
 
   virtual void SetUp() OVERRIDE {
@@ -194,6 +196,7 @@ class ManagedUserServiceExtensionTestBase : public ExtensionServiceTestBase {
   }
 
   bool is_managed_;
+  extensions::ScopedCurrentChannel channel_;
 };
 
 class ManagedUserServiceExtensionTestUnmanaged

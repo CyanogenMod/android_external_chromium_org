@@ -619,7 +619,7 @@ void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
 
 void Layer::SetScrollOffsetFromImplSide(gfx::Vector2d scroll_offset) {
   DCHECK(IsPropertyChangeAllowed());
-  // This function only gets called during a begin frame, so there
+  // This function only gets called during a BeginMainFrame, so there
   // is no need to call SetNeedsUpdate here.
   DCHECK(layer_tree_host_ && layer_tree_host_->CommitRequested());
   if (scroll_offset_ == scroll_offset)
@@ -881,8 +881,8 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   }
 
   // Adjust the scroll delta to be just the scrolls that have happened since
-  // the begin frame was sent.  This happens for impl-side painting
-  // in LayerImpl::ApplyScrollDeltasSinceBeginFrame in a separate tree walk.
+  // the BeginMainFrame was sent.  This happens for impl-side painting
+  // in LayerImpl::ApplyScrollDeltasSinceBeginMainFrame in a separate tree walk.
   if (layer->layer_tree_impl()->settings().impl_side_painting) {
     layer->SetScrollOffset(scroll_offset_);
   } else {
@@ -1025,11 +1025,6 @@ void Layer::RemoveAnimation(int animation_id) {
 
 void Layer::SuspendAnimations(double monotonic_time) {
   layer_animation_controller_->SuspendAnimations(monotonic_time);
-  SetNeedsCommit();
-}
-
-void Layer::ResumeAnimations(double monotonic_time) {
-  layer_animation_controller_->ResumeAnimations(monotonic_time);
   SetNeedsCommit();
 }
 

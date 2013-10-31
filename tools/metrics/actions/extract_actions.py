@@ -224,6 +224,9 @@ def AddAndroidActions(actions):
   actions.add('MobileContextMenuShareLink')
   actions.add('MobileContextMenuText')
   actions.add('MobileContextMenuViewImage')
+  actions.add('MobileFocusedFakeboxOnNtp')
+  actions.add('MobileFocusedOmniboxNotOnNtp')
+  actions.add('MobileFocusedOmniboxOnNtp')
   actions.add('MobileFreAttemptSignIn')
   actions.add('MobileFreSignInSuccessful')
   actions.add('MobileFreSkipSignIn')
@@ -360,6 +363,7 @@ def AddExtensionActions(actions):
   actions.add('FileBrowser.CreateNewFolder')
   actions.add('FileBrowser.PhotoEditor.Edit')
   actions.add('FileBrowser.PhotoEditor.View')
+  actions.add('FileBrowser.SuggestApps.ShowDialog')
 
   # Actions sent by Google Now client.
   actions.add('GoogleNow.MessageClicked')

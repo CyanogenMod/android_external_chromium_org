@@ -355,7 +355,6 @@ void SyncManagerImpl::Init(
     Encryptor* encryptor,
     scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
     ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
-    bool use_oauth2_token,
     CancelationSignal* cancelation_signal) {
   CHECK(!initialized_);
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -410,18 +409,13 @@ void SyncManagerImpl::Init(
 
   DVLOG(1) << "Username: " << username;
   if (!OpenDirectory(username)) {
-    FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
-                      OnInitializationComplete(
-                          MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
-                          MakeWeakHandle(
-                              debug_info_event_listener_.GetWeakPtr()),
-                          false, ModelTypeSet()));
+    NotifyInitializationFailure();
     LOG(ERROR) << "Sync manager initialization failed!";
     return;
   }
 
   connection_manager_.reset(new SyncAPIServerConnectionManager(
-      sync_server_and_path, port, use_ssl, use_oauth2_token,
+      sync_server_and_path, port, use_ssl,
       post_factory.release(), cancelation_signal));
   connection_manager_->set_client_id(directory()->cache_guid());
   connection_manager_->AddListener(this);
@@ -462,11 +456,23 @@ void SyncManagerImpl::Init(
 
   UpdateCredentials(credentials);
 
+  NotifyInitializationSuccess();
+}
+
+void SyncManagerImpl::NotifyInitializationSuccess() {
   FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                     OnInitializationComplete(
                         MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
                         MakeWeakHandle(debug_info_event_listener_.GetWeakPtr()),
                         true, InitialSyncEndedTypes()));
+}
+
+void SyncManagerImpl::NotifyInitializationFailure() {
+  FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
+                    OnInitializationComplete(
+                        MakeWeakHandle(weak_ptr_factory_.GetWeakPtr()),
+                        MakeWeakHandle(debug_info_event_listener_.GetWeakPtr()),
+                        false, ModelTypeSet()));
 }
 
 void SyncManagerImpl::OnPassphraseRequired(
@@ -940,12 +946,6 @@ void SyncManagerImpl::OnSyncEngineEvent(const SyncEngineEvent& event) {
   if (event.what_happened == SyncEngineEvent::STOP_SYNCING_PERMANENTLY) {
     FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
                       OnStopSyncingPermanently());
-    return;
-  }
-
-  if (event.what_happened == SyncEngineEvent::UPDATED_TOKEN) {
-    FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
-                      OnUpdatedToken(event.updated_token));
     return;
   }
 

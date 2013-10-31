@@ -19,6 +19,7 @@ class ServerThread : public base::SimpleThread {
  public:
   ServerThread(IPEndPoint address,
                const QuicConfig& config,
+               const QuicVersionVector& supported_versions,
                bool strike_register_no_startup_period);
 
   virtual ~ServerThread();
@@ -29,6 +30,7 @@ class ServerThread : public base::SimpleThread {
 
   base::WaitableEvent* listening() { return &listening_; }
   base::WaitableEvent* quit() { return &quit_; }
+  QuicServer* server() { return &server_; }
 
  private:
   base::WaitableEvent listening_;

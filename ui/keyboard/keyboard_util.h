@@ -8,11 +8,10 @@
 #include <string>
 
 #include "base/strings/string16.h"
+// TODO(beng): replace with forward decl once RootWindow is renamed.
+#include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_export.h"
 
-namespace aura {
-class RootWindow;
-}
 struct GritResourceMap;
 
 namespace keyboard {
@@ -41,24 +40,33 @@ KEYBOARD_EXPORT bool IsKeyboardEnabled();
 // that this may convert |text| into ui::KeyEvents for injection in some
 // special circumstances (i.e. VKEY_RETURN, VKEY_BACK).
 KEYBOARD_EXPORT bool InsertText(const base::string16& text,
-                                aura::RootWindow* root_window);
+                                aura::Window* root_window);
 
 // Move cursor when swipe on the virtualkeyboard. Returns true if cursor was
 // successfully moved according to |swipe_direction|.
 KEYBOARD_EXPORT bool MoveCursor(int swipe_direction,
                                 int modifier_flags,
-                                aura::RootWindow* root_window);
+                                aura::WindowEventDispatcher* dispatcher);
 
 // Sends a fabricated key event, where |type| is the event type, |key_value|
 // is the unicode value of the character, |key_code| is the legacy key code
-// value, and |shift_modifier| indicates if the shift key is being virtually
+// value, and |modifier| indicates if any modifier keys are being virtually
 // pressed. The event is dispatched to the active TextInputClient associated
 // with |root_window|. The type may be "keydown" or "keyup".
 KEYBOARD_EXPORT bool SendKeyEvent(std::string type,
                                    int key_value,
                                    int key_code,
-                                   bool shift_modifier,
-                                   aura::RootWindow* root_window);
+                                   int modifiers,
+                                   aura::WindowEventDispatcher* dispatcher);
+
+// Marks that the keyboard load has started. This is used to measure the time it
+// takes to fully load the keyboard. This should be called before
+// MarkKeyboardLoadFinished.
+KEYBOARD_EXPORT const void MarkKeyboardLoadStarted();
+
+// Marks that the keyboard load has ended. This finishes measuring that the
+// keyboard is loaded.
+KEYBOARD_EXPORT const void MarkKeyboardLoadFinished();
 
 // Get the list of keyboard resources. |size| is populated with the number of
 // resources in the returned array.

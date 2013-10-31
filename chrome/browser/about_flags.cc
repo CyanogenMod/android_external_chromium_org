@@ -261,6 +261,20 @@ const Experiment::Choice kDefaultTileWidthChoices[] = {
     switches::kDefaultTileWidth, "1024"}
 };
 
+#if defined(USE_ASH)
+const Experiment::Choice kAshOverviewDelayChoices[] = {
+  { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
+  { IDS_FLAGS_OVERVIEW_DELAY_INSTANT,
+    ash::switches::kAshOverviewDelayOnAltTab, "0" },
+  { IDS_FLAGS_OVERVIEW_DELAY_SHORT,
+    ash::switches::kAshOverviewDelayOnAltTab, "100" },
+  { IDS_FLAGS_OVERVIEW_DELAY_LONG,
+    ash::switches::kAshOverviewDelayOnAltTab, "500" },
+  { IDS_FLAGS_OVERVIEW_DELAY_NEVER,
+    ash::switches::kAshOverviewDelayOnAltTab, "10000" },
+};
+#endif
+
 const Experiment::Choice kDefaultTileHeightChoices[] = {
   { IDS_GENERIC_EXPERIMENT_CHOICE_DEFAULT, "", "" },
   { IDS_FLAGS_DEFAULT_TILE_HEIGHT_SHORT,
@@ -809,13 +823,6 @@ const Experiment kExperiments[] = {
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kDisablePrefixedEncryptedMedia)
   },
-  {
-    "override-encrypted-media-canplaytype",
-    IDS_FLAGS_ENCRYPTED_MEDIA_CANPLAYTYPE_OVERRIDE_NAME,
-    IDS_FLAGS_ENCRYPTED_MEDIA_CANPLAYTYPE_OVERRIDE_DESCRIPTION,
-    kOsMac | kOsWin | kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kOverrideEncryptedMediaCanPlayType)
-  },
 #if defined(OS_ANDROID)
   {
     "disable-infobar-for-protected-media-identifier",
@@ -823,13 +830,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_INFOBAR_FOR_PROTECTED_MEDIA_IDENTIFIER_DESCRIPTION,
     kOsAndroid,
     SINGLE_VALUE_TYPE(switches::kDisableInfobarForProtectedMediaIdentifier)
-  },
-  {
-    "enable-mediadrm",
-    IDS_FLAGS_ENABLE_MEDIADRM_NAME,
-    IDS_FLAGS_ENABLE_MEDIADRM_DESCRIPTION,
-    kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableMediaDrm)
   },
   {
     "mediadrm-enable-non-compositing",
@@ -1002,13 +1002,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(chromeos::switches::kEnableBackgroundLoader)
   },
   {
-    "no-discard-tabs",
-    IDS_FLAGS_NO_DISCARD_TABS_NAME,
-    IDS_FLAGS_NO_DISCARD_TABS_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(chromeos::switches::kNoDiscardTabs)
-  },
-  {
     "ash-enable-docked-windows",
     IDS_FLAGS_DOCKED_WINDOWS_NAME,
     IDS_FLAGS_DOCKED_WINDOWS_DESCRIPTION,
@@ -1076,6 +1069,13 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_DISABLE_OVERVIEW_MODE_DESCRIPTION,
     kOsCrOS,
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableOverviewMode)
+  },
+  {
+    "overview-delay-on-alt-tab",
+    IDS_FLAGS_OVERVIEW_DELAY_NAME,
+    IDS_FLAGS_OVERVIEW_DELAY_DESCRIPTION,
+    kOsCrOS,
+    MULTI_VALUE_TYPE(kAshOverviewDelayChoices)
   },
   {
     "show-touch-hud",
@@ -1206,13 +1206,6 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(ash::switches::kAshDisableDragAndDropAppListToLauncher),
   },
-  { "ash-immersive-fullscreen-2",
-    IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_NAME,
-    IDS_FLAGS_ASH_IMMERSIVE_FULLSCREEN_DESCRIPTION,
-    kOsCrOS,
-    ENABLE_DISABLE_VALUE_TYPE(ash::switches::kAshEnableImmersiveFullscreen,
-                              ash::switches::kAshDisableImmersiveFullscreen),
-  },
 #if defined(OS_LINUX)
   { "ash-enable-memory-monitor",
       IDS_FLAGS_ENABLE_MEMORY_MONITOR_NAME,
@@ -1270,11 +1263,11 @@ const Experiment kExperiments[] = {
                               autofill::switches::kDisablePasswordGeneration)
   },
   {
-    "enable-people-search",
-    IDS_FLAGS_ENABLE_PEOPLE_SEARCH_NAME,
-    IDS_FLAGS_ENABLE_PEOPLE_SEARCH_DESCRIPTION,
-    kOsMac | kOsWin | kOsCrOS,
-    SINGLE_VALUE_TYPE(switches::kEnablePeopleSearch)
+    "enable-password-manager-reauthentication",
+    IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_NAME,
+    IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION,
+    kOsMac,
+    SINGLE_VALUE_TYPE(switches::kEnablePasswordManagerReauthentication)
   },
   {
     "password-autofill-public-suffix-domain-matching",
@@ -1521,6 +1514,13 @@ const Experiment kExperiments[] = {
     kOsCrOS,
     SINGLE_VALUE_TYPE(keyboard::switches::kEnableVirtualKeyboard)
   },
+  {
+    "enable-swipe-selection",
+    IDS_FLAGS_ENABLE_SWIPE_SELECTION_NAME,
+    IDS_FLAGS_ENABLE_SWIPE_SELECTION_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(keyboard::switches::kEnableSwipeSelection)
+  },
 #endif
   {
     "enable-simple-cache-backend",
@@ -1565,6 +1565,13 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableDeviceDiscoveryNotifications,
                               switches::kDisableDeviceDiscoveryNotifications)
+  },
+  {
+    "enable-privet-local-printing",
+    IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_NAME,
+    IDS_FLAGS_ENABLE_PRIVET_LOCAL_PRINTING_DESCRIPTION,
+    kOsWin | kOsLinux | kOsCrOS,
+    SINGLE_VALUE_TYPE(switches::kEnablePrivetLocalPrinting)
   },
 #endif  // ENABLE_MDNS
 #if defined(OS_MACOSX)
@@ -1654,13 +1661,6 @@ const Experiment kExperiments[] = {
     ENABLE_DISABLE_VALUE_TYPE(switches::kEnableStickyKeys,
                               switches::kDisableStickyKeys)
   },
-  {
-    "ash-enable-autoclick",
-    IDS_FLAGS_ENABLE_AUTOCLICK_NAME,
-    IDS_FLAGS_ENABLE_AUTOCLICK_DESCRIPTION,
-    kOsCrOS,
-    SINGLE_VALUE_TYPE(ash::switches::kAshEnableAutoclick)
-  },
 #endif
   {
     "enable-web-midi",
@@ -1684,11 +1684,11 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableInlineSignin)
   },
   {
-    "enable-gaia-profile-info",
-    IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_NAME,
-    IDS_FLAGS_ENABLE_GAIA_PROFILE_INFO_DESCRIPTION,
+    "enable-google-profile-info",
+    IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_NAME,
+    IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_DESCRIPTION,
     kOsMac | kOsWin | kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kGaiaProfileInfo)
+    SINGLE_VALUE_TYPE(switches::kGoogleProfileInfo)
   },
   {
     "disable-app-launcher",
@@ -1750,15 +1750,6 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE("")
 #endif
   },
-#if defined(OS_ANDROID)
-  {
-    "enable-cast",
-    IDS_FLAGS_ENABLE_CAST_NAME,
-    IDS_FLAGS_ENABLE_CAST_DESCRIPTION,
-    kOsAndroid,
-    SINGLE_VALUE_TYPE(switches::kEnableCast)
-  },
-#endif
 #if defined(OS_CHROMEOS)
   {
     "enable-first-run-ui",
@@ -1811,6 +1802,32 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_ENABLE_SERVICE_WORKER_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kEnableServiceWorker)
+  },
+#if defined(OS_ANDROID)
+  {
+    "disable-click-delay",
+    IDS_FLAGS_DISABLE_CLICK_DELAY_NAME,
+    IDS_FLAGS_DISABLE_CLICK_DELAY_DESCRIPTION,
+    kOsAndroid,
+    // Java-only switch: CommandLine.DISABLE_CLICK_DELAY
+    SINGLE_VALUE_TYPE("disable-click-delay")
+  },
+#endif
+#if defined(OS_CHROMEOS)
+  {
+    "enable-ime-mode-indicator",
+    IDS_FLAGS_ENABLE_IME_MODE_INDICATOR,
+    IDS_FLAGS_ENABLE_IME_MODE_INDICATOR_DESCRIPTION,
+    kOsCrOS,
+    SINGLE_VALUE_TYPE(chromeos::switches::kEnableIMEModeIndicator)
+  },
+#endif
+  {
+    "enable-translate-new-ux",
+    IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_NAME,
+    IDS_FLAGS_ENABLE_TRANSLATE_NEW_UX_DESCRIPTION,
+    kOsDesktop,
+    SINGLE_VALUE_TYPE(switches::kEnableTranslateNewUX)
   },
 };
 

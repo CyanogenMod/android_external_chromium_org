@@ -200,6 +200,10 @@ void RendererGpuVideoAcceleratorFactories::WaitSyncPoint(uint32 sync_point) {
 
   gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
   gles2->WaitSyncPointCHROMIUM(sync_point);
+
+  // Callers expect the WaitSyncPoint to affect the next IPCs. Make sure to
+  // flush the command buffers to ensure that.
+  gles2->ShallowFlushCHROMIUM();
 }
 
 void RendererGpuVideoAcceleratorFactories::ReadPixels(uint32 texture_id,
@@ -257,11 +261,20 @@ void RendererGpuVideoAcceleratorFactories::AsyncReadPixels(
   gles2->FramebufferTexture2D(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tmp_texture, 0);
   gles2->PixelStorei(GL_PACK_ALIGNMENT, 4);
+#if SK_B32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_R32_SHIFT == 16 && \
+    SK_A32_SHIFT == 24
+  GLenum skia_format = GL_BGRA_EXT;
+#elif SK_R32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_B32_SHIFT == 16 && \
+    SK_A32_SHIFT == 24
+  GLenum skia_format = GL_RGBA;
+#else
+#error Unexpected Skia ARGB_8888 layout!
+#endif
   gles2->ReadPixels(0,
                     0,
                     size.width(),
                     size.height(),
-                    GL_BGRA_EXT,
+                    skia_format,
                     GL_UNSIGNED_BYTE,
                     read_pixels_bitmap_.pixelRef()->pixels());
   gles2->DeleteFramebuffers(1, &fb);

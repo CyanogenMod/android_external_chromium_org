@@ -59,7 +59,7 @@ class LayerTreeHostImplClient {
  public:
   virtual void DidLoseOutputSurfaceOnImplThread() = 0;
   virtual void OnSwapBuffersCompleteOnImplThread() = 0;
-  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args) = 0;
+  virtual void BeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
   virtual void SetNeedsRedrawOnImplThread() = 0;
@@ -74,7 +74,6 @@ class LayerTreeHostImplClient {
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
       int priority_cutoff) = 0;
-  virtual void ReduceWastedContentsTextureMemoryOnImplThread() = 0;
   virtual void SendManagedMemoryStats() = 0;
   virtual bool IsInsideDraw() = 0;
   virtual void RenewTreePriority() = 0;
@@ -99,7 +98,8 @@ class CC_EXPORT LayerTreeHostImpl
       const LayerTreeSettings& settings,
       LayerTreeHostImplClient* client,
       Proxy* proxy,
-      RenderingStatsInstrumentation* rendering_stats_instrumentation);
+      RenderingStatsInstrumentation* rendering_stats_instrumentation,
+      SharedBitmapManager* manager);
   virtual ~LayerTreeHostImpl();
 
   // InputHandler implementation
@@ -220,7 +220,7 @@ class CC_EXPORT LayerTreeHostImpl
       scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
   virtual void ReleaseGL() OVERRIDE;
   virtual void SetNeedsRedrawRect(gfx::Rect rect) OVERRIDE;
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
+  virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void SetExternalDrawConstraints(
       const gfx::Transform& transform,
       gfx::Rect viewport,
@@ -259,7 +259,7 @@ class CC_EXPORT LayerTreeHostImpl
   const RendererCapabilities& GetRendererCapabilities() const;
 
   virtual bool SwapBuffers(const FrameData& frame);
-  void SetNeedsBeginFrame(bool enable);
+  void SetNeedsBeginImplFrame(bool enable);
   void DidModifyTilePriorities();
 
   void Readback(void* pixels, gfx::Rect rect_in_device_viewport);
@@ -401,9 +401,12 @@ class CC_EXPORT LayerTreeHostImpl
   virtual ResourceProvider::ResourceId ResourceIdForUIResource(
       UIResourceId uid) const;
 
+  virtual bool IsUIResourceOpaque(UIResourceId uid) const;
+
   struct UIResourceData {
     ResourceProvider::ResourceId resource_id;
     gfx::Size size;
+    bool opaque;
   };
 
  protected:
@@ -411,7 +414,8 @@ class CC_EXPORT LayerTreeHostImpl
       const LayerTreeSettings& settings,
       LayerTreeHostImplClient* client,
       Proxy* proxy,
-      RenderingStatsInstrumentation* rendering_stats_instrumentation);
+      RenderingStatsInstrumentation* rendering_stats_instrumentation,
+      SharedBitmapManager* manager);
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time,
@@ -619,6 +623,8 @@ class CC_EXPORT LayerTreeHostImpl
 
   // Optional callback to notify of new tree activations.
   base::Closure tree_activation_callback_;
+
+  SharedBitmapManager* shared_bitmap_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

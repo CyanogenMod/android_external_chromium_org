@@ -50,8 +50,7 @@
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_ASH)
-#include "ash/shell.h"
-#include "ash/shell_delegate.h"
+#include "ash/accelerators/accelerator_commands.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/window_state.h"
 #include "ui/aura/env.h"
@@ -207,6 +206,16 @@ void SetWindowPositionManaged(gfx::NativeWindow window, bool value) {
 #if defined(USE_ASH)
   ash::wm::GetWindowState(window)->set_window_position_managed(value);
 #endif
+}
+
+// Returns true if |tab_strip| browser window is docked.
+bool IsDocked(const TabStrip* tab_strip) {
+#if defined(USE_ASH)
+  DCHECK(tab_strip);
+  return ash::wm::GetWindowState(
+      tab_strip->GetWidget()->GetNativeWindow())->IsDocked();
+#endif
+  return false;
 }
 
 // Returns true if |bounds| contains the y-coordinate |y|. The y-coordinate
@@ -484,7 +493,7 @@ void TabDragController::Init(
 }
 
 // static
-bool TabDragController::IsAttachedTo(TabStrip* tab_strip) {
+bool TabDragController::IsAttachedTo(const TabStrip* tab_strip) {
   return (instance_ && instance_->active() &&
           instance_->attached_tabstrip() == tab_strip);
 }
@@ -1411,10 +1420,26 @@ void TabDragController::DetachIntoNewBrowserAndRunMoveLoop(
   gfx::Vector2d drag_offset;
   Browser* browser = CreateBrowserForDrag(
       attached_tabstrip_, point_in_screen, &drag_offset, &drag_bounds);
-  Detach(DONT_RELEASE_CAPTURE);
+#if defined(OS_WIN) && defined(USE_AURA)
+  gfx::NativeView attached_native_view =
+    attached_tabstrip_->GetWidget()->GetNativeView();
+#endif
+  Detach(host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH ?
+         DONT_RELEASE_CAPTURE : RELEASE_CAPTURE);
   BrowserView* dragged_browser_view =
       BrowserView::GetBrowserViewForBrowser(browser);
   views::Widget* dragged_widget = dragged_browser_view->GetWidget();
+#if defined(OS_WIN) && defined(USE_AURA)
+    // The Gesture recognizer does not work well currently when capture changes
+    // while a touch gesture is in progress. So we need to manually transfer
+    // gesture sequence and the GR's touch events queue to the new window. This
+    // should really be done somewhere in capture change code and or inside the
+    // GR. But we currently do not have a consistent way for doing it that would
+    // work in all cases. Hence this hack.
+    ui::GestureRecognizer::Get()->TransferEventsTo(
+        attached_native_view,
+        dragged_widget->GetNativeView());
+#endif
   dragged_widget->SetVisibilityChangedAnimationsEnabled(false);
   Attach(dragged_browser_view->tabstrip(), gfx::Point());
   attached_tabstrip_->InvalidateLayout();
@@ -1872,6 +1897,11 @@ void TabDragController::CompleteDrag() {
 
   if (attached_tabstrip_) {
     if (is_dragging_new_browser_) {
+      if (IsDocked(attached_tabstrip_)) {
+        DCHECK_EQ(host_desktop_type_, chrome::HOST_DESKTOP_TYPE_ASH);
+        was_source_maximized_ = false;
+        was_source_fullscreen_ = false;
+      }
       // If source window was maximized - maximize the new window as well.
       if (was_source_maximized_)
         attached_tabstrip_->GetWidget()->Maximize();
@@ -1880,9 +1910,17 @@ void TabDragController::CompleteDrag() {
           host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH) {
         // In fullscreen mode it is only possible to get here if the source
         // was in "immersive fullscreen" mode, so toggle it back on.
-        ash::Shell::GetInstance()->delegate()->ToggleFullscreen();
+        ash::accelerators::ToggleFullscreen();
       }
 #endif
+    } else {
+      // When dragging results in maximized or fullscreen browser window getting
+      // docked, restore it.
+      if ((was_source_fullscreen_ || was_source_maximized_) &&
+          (IsDocked(attached_tabstrip_))) {
+        DCHECK_EQ(host_desktop_type_, chrome::HOST_DESKTOP_TYPE_ASH);
+        attached_tabstrip_->GetWidget()->Restore();
+      }
     }
     attached_tabstrip_->StoppedDraggingTabs(
         GetTabsMatchingDraggedContents(attached_tabstrip_),

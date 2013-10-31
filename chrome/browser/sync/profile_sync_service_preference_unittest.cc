@@ -12,11 +12,11 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "chrome/browser/invalidation/invalidation_service_factory.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/token_service_factory.h"
@@ -187,8 +187,6 @@ class ProfileSyncServicePreferenceTest
     sync_service_->RegisterDataTypeController(dtc_);
     ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
         ->UpdateCredentials("test", "oauth2_login_token");
-    TokenServiceFactory::GetForProfile(profile_.get())
-        ->IssueAuthTokenForTest(GaiaConstants::kSyncService, "token");
 
     sync_service_->Initialize();
     base::MessageLoop::current()->Run();
@@ -246,11 +244,24 @@ class ProfileSyncServicePreferenceTest
     return pref_sync_service_->registered_preferences().count(pref_name) > 0;
   }
 
+  bool HasSyncData(const std::string& pref_name) {
+    return pref_sync_service_->IsPrefSynced(pref_name);
+  }
+
   std::string ValueString(const Value& value) {
     std::string serialized;
     JSONStringValueSerializer json(&serialized);
     json.Serialize(value);
     return serialized;
+  }
+
+  // Returns whether a given preference name is a new name of a migrated
+  // preference. Exposed here for testing.
+  static bool IsMigratedPreference(const char* preference_name) {
+    return PrefModelAssociator::IsMigratedPreference(preference_name);
+  }
+  static bool IsOldMigratedPreference(const char* old_preference_name) {
+    return PrefModelAssociator::IsOldMigratedPreference(old_preference_name);
   }
 
   scoped_ptr<TestingProfile> profile_;
@@ -403,12 +414,45 @@ TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationCloudHasData) {
             prefs_->GetString(prefs::kDefaultCharset));
 }
 
+TEST_F(ProfileSyncServicePreferenceTest, ModelAssociationMigrateOldData) {
+  ASSERT_TRUE(IsMigratedPreference(prefs::kURLsToRestoreOnStartup));
+  ASSERT_TRUE(IsOldMigratedPreference(prefs::kURLsToRestoreOnStartupOld));
+
+  PreferenceValues cloud_data;
+  STLValueDeleter<PreferenceValues> cloud_data_deleter(&cloud_data);
+  ListValue* urls_to_restore = new ListValue;
+  urls_to_restore->Append(Value::CreateStringValue(example_url1_));
+  urls_to_restore->Append(Value::CreateStringValue(example_url2_));
+  cloud_data[prefs::kURLsToRestoreOnStartupOld] = urls_to_restore;
+
+  AddPreferenceEntriesHelper helper(this, cloud_data);
+  ASSERT_TRUE(StartSyncService(helper.callback(), false));
+  ASSERT_TRUE(helper.success());
+
+  // Expect that the new preference data contains the old pref's values.
+  scoped_ptr<ListValue> expected_urls(new ListValue);
+  expected_urls->Append(Value::CreateStringValue(example_url1_));
+  expected_urls->Append(Value::CreateStringValue(example_url2_));
+
+  ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
+  scoped_ptr<const Value> value(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
+  ASSERT_TRUE(value.get());
+  EXPECT_TRUE(value->Equals(expected_urls.get()));
+  EXPECT_TRUE(GetPreferenceValue(prefs::kURLsToRestoreOnStartup).
+              Equals(expected_urls.get()));
+
+  // The old preference value should be the same.
+  expected_urls.reset(new ListValue);
+  value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartupOld));
+  ASSERT_TRUE(value.get());
+  EXPECT_TRUE(GetPreferenceValue(prefs::kURLsToRestoreOnStartupOld).
+              Equals(expected_urls.get()));
+}
+
 TEST_F(ProfileSyncServicePreferenceTest,
        ModelAssociationCloudHasOldMigratedData) {
-  ASSERT_TRUE(PrefModelAssociator::IsMigratedPreference(
-      prefs::kURLsToRestoreOnStartup));
-  ASSERT_TRUE(PrefModelAssociator::IsOldMigratedPreference(
-      prefs::kURLsToRestoreOnStartupOld));
+  ASSERT_TRUE(IsMigratedPreference(prefs::kURLsToRestoreOnStartup));
+  ASSERT_TRUE(IsOldMigratedPreference(prefs::kURLsToRestoreOnStartupOld));
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartup);
@@ -442,6 +486,7 @@ TEST_F(ProfileSyncServicePreferenceTest,
   expected_urls->Append(Value::CreateStringValue(example_url2_));
   expected_urls->Append(Value::CreateStringValue(example_url0_));
 
+  ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(value->Equals(expected_urls.get()));
@@ -458,10 +503,8 @@ TEST_F(ProfileSyncServicePreferenceTest,
 
 TEST_F(ProfileSyncServicePreferenceTest,
        ModelAssociationCloudHasNewMigratedData) {
-  ASSERT_TRUE(PrefModelAssociator::IsMigratedPreference(
-      prefs::kURLsToRestoreOnStartup));
-  ASSERT_TRUE(PrefModelAssociator::IsOldMigratedPreference(
-      prefs::kURLsToRestoreOnStartupOld));
+  ASSERT_TRUE(IsMigratedPreference(prefs::kURLsToRestoreOnStartup));
+  ASSERT_TRUE(IsOldMigratedPreference(prefs::kURLsToRestoreOnStartupOld));
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update(prefs_, prefs::kURLsToRestoreOnStartupOld);
@@ -494,6 +537,7 @@ TEST_F(ProfileSyncServicePreferenceTest,
   expected_urls->Append(Value::CreateStringValue(example_url1_));
   expected_urls->Append(Value::CreateStringValue(example_url2_));
 
+  ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(value->Equals(expected_urls.get()));
@@ -513,10 +557,8 @@ TEST_F(ProfileSyncServicePreferenceTest,
 
 TEST_F(ProfileSyncServicePreferenceTest,
        ModelAssociationCloudAddsOldAndNewMigratedData) {
-  ASSERT_TRUE(PrefModelAssociator::IsMigratedPreference(
-      prefs::kURLsToRestoreOnStartup));
-  ASSERT_TRUE(PrefModelAssociator::IsOldMigratedPreference(
-      prefs::kURLsToRestoreOnStartupOld));
+  ASSERT_TRUE(IsMigratedPreference(prefs::kURLsToRestoreOnStartup));
+  ASSERT_TRUE(IsOldMigratedPreference(prefs::kURLsToRestoreOnStartupOld));
   prefs_->SetString(prefs::kHomePage, example_url0_);
   {
     ListPrefUpdate update_old(prefs_, prefs::kURLsToRestoreOnStartupOld);
@@ -549,6 +591,7 @@ TEST_F(ProfileSyncServicePreferenceTest,
   expected_urls->Append(Value::CreateStringValue(example_url1_));
   expected_urls->Append(Value::CreateStringValue(example_url2_));
 
+  ASSERT_TRUE(HasSyncData(prefs::kURLsToRestoreOnStartup));
   value.reset(GetSyncedValue(prefs::kURLsToRestoreOnStartup));
   ASSERT_TRUE(value.get());
   EXPECT_TRUE(value->Equals(expected_urls.get()));

@@ -123,7 +123,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.darw
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_dom.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_html.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform.target.darwin-x86.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform_geometry.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_prerequisites.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_remaining.target.darwin-x86.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_rendering.target.darwin-x86.mk
@@ -226,7 +225,7 @@ include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/keycode_converter.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.darwin-x86.mk
-include $(LOCAL_PATH)/ui/shell_dialogs.target.darwin-x86.mk
+include $(LOCAL_PATH)/ui/shell_dialogs/shell_dialogs.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/surface/surface.target.darwin-x86.mk
 include $(LOCAL_PATH)/ui/ui.target.darwin-x86.mk

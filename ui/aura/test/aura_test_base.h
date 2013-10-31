@@ -35,13 +35,13 @@ class AuraTestBase : public testing::Test {
   // Creates a transient window that is transient to |parent|.
   aura::Window* CreateTransientChild(int id, aura::Window* parent);
 
-  // Attach |window| to the current shell's root window.
-  void SetDefaultParentByPrimaryRootWindow(aura::Window* window);
-
  protected:
   void RunAllPendingInMessageLoop();
 
+  void ParentWindow(Window* window);
+
   RootWindow* root_window() { return helper_->root_window(); }
+  TestScreen* test_screen() { return helper_->test_screen(); }
 
  private:
   bool setup_called_;

@@ -8,7 +8,6 @@
 #include <string>
 
 #include "ash/ash_export.h"
-#include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
 #include "base/callback.h"
 #include "base/strings/string16.h"
@@ -43,7 +42,9 @@ class CapsLockDelegate;
 class LauncherDelegate;
 class LauncherModel;
 struct LauncherItem;
+class NewWindowDelegate;
 class RootWindowHostFactory;
+class AccessibilityDelegate;
 class SessionStateDelegate;
 class SystemTrayDelegate;
 class UserWallpaperDelegate;
@@ -101,11 +102,6 @@ enum UserMetricsAction {
   UMA_WINDOW_SELECTION,
 };
 
-enum AccessibilityNotificationVisibility {
-  A11Y_NOTIFICATION_NONE,
-  A11Y_NOTIFICATION_SHOW,
-};
-
 // Delegate of the Shell.
 class ASH_EXPORT ShellDelegate {
  public:
@@ -133,74 +129,12 @@ class ASH_EXPORT ShellDelegate {
   // Invoked when the user uses Ctrl-Shift-Q to close chrome.
   virtual void Exit() = 0;
 
-  // Invoked when the user uses Ctrl+T to open a new tab.
-  virtual void NewTab() = 0;
-
-  // Invoked when the user uses Ctrl-N or Ctrl-Shift-N to open a new window.
-  virtual void NewWindow(bool incognito) = 0;
-
-  // Invoked when the user uses Shift+F4 to toggle the window fullscreen state.
-  virtual void ToggleFullscreen() = 0;
-
-  // Invoked when an accelerator is used to open the file manager.
-  virtual void OpenFileManager() = 0;
-
-  // Invoked when the user opens Crosh.
-  virtual void OpenCrosh() = 0;
-
-  // Invoked when the user uses Shift+Ctrl+T to restore the closed tab.
-  virtual void RestoreTab() = 0;
-
-  // Shows the keyboard shortcut overlay.
-  virtual void ShowKeyboardOverlay() = 0;
-
   // Create a shell-specific keyboard::KeyboardControllerProxy
   virtual keyboard::KeyboardControllerProxy*
       CreateKeyboardControllerProxy() = 0;
 
-  // Shows the task manager window.
-  virtual void ShowTaskManager() = 0;
-
   // Get the current browser context. This will get us the current profile.
   virtual content::BrowserContext* GetCurrentBrowserContext() = 0;
-
-  // Invoked to toggle spoken feedback for accessibility
-  virtual void ToggleSpokenFeedback(
-      AccessibilityNotificationVisibility notify) = 0;
-
-  // Returns true if spoken feedback is enabled.
-  virtual bool IsSpokenFeedbackEnabled() const = 0;
-
-  // Invoked to toggle high contrast for accessibility.
-  virtual void ToggleHighContrast() = 0;
-
-  // Returns true if high contrast mode is enabled.
-  virtual bool IsHighContrastEnabled() const = 0;
-
-  // Invoked to enable the screen magnifier.
-  virtual void SetMagnifierEnabled(bool enabled) = 0;
-
-  // Invoked to change the type of the screen magnifier.
-  virtual void SetMagnifierType(MagnifierType type) = 0;
-
-  // Returns if the screen magnifier is enabled or not.
-  virtual bool IsMagnifierEnabled() const = 0;
-
-  // Returns the current screen magnifier mode.
-  virtual MagnifierType GetMagnifierType() const = 0;
-
-  // Invoked to enable Large Cursor.
-  virtual void SetLargeCursorEnabled(bool enabled) = 0;
-
-  // Returns if Large Cursor is enabled or not.
-  virtual bool IsLargeCursorEnabled() const = 0;
-
-  // Returns true if the user want to show accesibility menu even when all the
-  // accessibility features are disabled.
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const = 0;
-
-  // Cancel all current and queued speech immediately.
-  virtual void SilenceSpokenFeedback() const = 0;
 
   // Invoked to create an AppListViewDelegate. Shell takes the ownership of
   // the created delegate.
@@ -223,11 +157,14 @@ class ASH_EXPORT ShellDelegate {
   // Creates a session state delegate. Shell takes ownership of the delegate.
   virtual SessionStateDelegate* CreateSessionStateDelegate() = 0;
 
+  // Creates a accessibility delegate. Shell takes ownership of the delegate.
+  virtual AccessibilityDelegate* CreateAccessibilityDelegate() = 0;
+
+  // Creates an application delegate. Shell takes ownership of the delegate.
+  virtual NewWindowDelegate* CreateNewWindowDelegate() = 0;
+
   // Creates a user action client. Shell takes ownership of the object.
   virtual aura::client::UserActionClient* CreateUserActionClient() = 0;
-
-  // Opens the feedback page for "Report Issue".
-  virtual void OpenFeedbackPage() = 0;
 
   // Records that the user performed an action.
   virtual void RecordUserMetricsAction(UserMetricsAction action) = 0;
@@ -241,15 +178,8 @@ class ASH_EXPORT ShellDelegate {
   // Handles the Previous Track Media shortcut key.
   virtual void HandleMediaPrevTrack() = 0;
 
-  // Saves the zoom scale of the full screen magnifier.
-  virtual void SaveScreenMagnifierScale(double scale) = 0;
-
-  // Gets a saved value of the zoom scale of full screen magnifier. If a value
-  // is not saved, return a negative value.
-  virtual double GetSavedScreenMagnifierScale() = 0;
-
   // Creates a menu model of the context for the |root_window|.
-  virtual ui::MenuModel* CreateContextMenu(aura::RootWindow* root_window) = 0;
+  virtual ui::MenuModel* CreateContextMenu(aura::Window* root_window) = 0;
 
   // Creates a root window host factory. Shell takes ownership of the returned
   // value.

@@ -22,6 +22,7 @@ namespace gfx {
 namespace {
 
 const char kDefaultGraphicsCardPath[] = "/dev/dri/card0";
+const char kDPMSProperty[] = "DPMS";
 
 const gfx::AcceleratedWidget kDefaultWidgetHandle = 1;
 
@@ -42,6 +43,23 @@ void HandlePageFlipEvent(int fd,
                          void* controller) {
   static_cast<HardwareDisplayControllerOzone*>(controller)->get_surface()
       ->SwapBuffers();
+}
+
+uint32_t GetDrmProperty(int fd, drmModeConnector* connector, const char* name) {
+  for (int i = 0; i < connector->count_props; ++i) {
+    drmModePropertyPtr property = drmModeGetProperty(fd, connector->props[i]);
+    if (!property)
+      continue;
+
+    if (strcmp(property->name, name) == 0) {
+      uint32_t id = property->prop_id;
+      drmModeFreeProperty(property);
+      return id;
+    }
+
+    drmModeFreeProperty(property);
+  }
+  return 0;
 }
 
 uint32_t GetCrtc(int fd, drmModeRes* resources, drmModeConnector* connector) {
@@ -165,11 +183,12 @@ gfx::AcceleratedWidget SoftwareSurfaceFactoryOzone::RealizeAcceleratedWidget(
     return gfx::kNullAcceleratedWidget;
   }
 
-  return reinterpret_cast<gfx::AcceleratedWidget>(
-      controller_->get_surface()->GetDrawableForWidget());
+  return reinterpret_cast<gfx::AcceleratedWidget>(controller_->get_surface());
 }
 
-bool SoftwareSurfaceFactoryOzone::LoadEGLGLES2Bindings() {
+bool SoftwareSurfaceFactoryOzone::LoadEGLGLES2Bindings(
+      AddGLLibraryCallback add_gl_library,
+      SetGLGetProcAddressProcCallback set_gl_get_proc_address) {
   return false;
 }
 
@@ -209,6 +228,12 @@ bool SoftwareSurfaceFactoryOzone::SchedulePageFlip(gfx::AcceleratedWidget w) {
   WaitForPageFlipEvent(drm_->get_fd());
 
   return true;
+}
+
+SkCanvas* SoftwareSurfaceFactoryOzone::GetCanvasForWidget(
+    gfx::AcceleratedWidget w) {
+  CHECK(state_ == INITIALIZED);
+  return reinterpret_cast<SoftwareSurfaceOzone*>(w)->GetDrawableForWidget();
 }
 
 gfx::VSyncProvider* SoftwareSurfaceFactoryOzone::GetVSyncProvider(
@@ -255,6 +280,10 @@ bool SoftwareSurfaceFactoryOzone::InitializeControllerForPrimaryDisplay(
     if (!crtc)
       continue;
 
+    uint32_t dpms_property_id = GetDrmProperty(drm->get_fd(),
+                                               connector,
+                                               kDPMSProperty);
+
     // TODO(dnicoara) Select one mode for now. In the future we may need to
     // save all the modes and allow the user to choose a specific mode. Or
     // even some fullscreen applications may need to change the mode.
@@ -262,6 +291,7 @@ bool SoftwareSurfaceFactoryOzone::InitializeControllerForPrimaryDisplay(
         drm,
         connector->connector_id,
         crtc,
+        dpms_property_id,
         connector->modes[0]);
 
     drmModeFreeConnector(connector);

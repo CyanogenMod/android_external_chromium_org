@@ -33,6 +33,8 @@
         'android/gfx_jni_registrar.h',
         'android/java_bitmap.cc',
         'android/java_bitmap.h',
+        'android/shared_device_display_info.cc',
+        'android/shared_device_display_info.h',
         'animation/animation.cc',
         'animation/animation.h',
         'animation/animation_container.cc',
@@ -84,6 +86,7 @@
         'display_observer.h',
         'favicon_size.cc',
         'favicon_size.h',
+        'frame_time.h',
         'font.cc',
         'font.h',
         'font_fallback_win.cc',
@@ -139,6 +142,8 @@
         'ozone/impl/drm_skbitmap_ozone.h',
         'ozone/impl/drm_wrapper_ozone.cc',
         'ozone/impl/drm_wrapper_ozone.h',
+        'ozone/impl/file_surface_factory_ozone.cc',
+        'ozone/impl/file_surface_factory_ozone.h',
         'ozone/impl/hardware_display_controller_ozone.cc',
         'ozone/impl/hardware_display_controller_ozone.h',
         'ozone/impl/software_surface_factory_ozone.cc',
@@ -332,12 +337,6 @@
           # C4324 is structure was padded due to __declspec(align()), which is
           # uninteresting.
           'msvs_disabled_warnings': [ 4267, 4324 ],
-
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'ForcedIncludeFiles': [ 'build/intsafe_workaround.h' ],
-            },
-          },
         }],
         ['OS=="android"', {
           'sources!': [

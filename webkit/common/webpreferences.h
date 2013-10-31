@@ -121,6 +121,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool accelerated_2d_canvas_enabled;
   int minimum_accelerated_2d_canvas_size;
   bool antialiased_2d_canvas_disabled;
+  int accelerated_2d_canvas_msaa_sample_count;
   bool accelerated_filters_enabled;
   bool gesture_tap_highlight_enabled;
   bool accelerated_compositing_for_plugins_enabled;
@@ -139,6 +140,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool device_supports_touch;
   bool device_supports_mouse;
   bool touch_adjustment_enabled;
+  int pointer_events_max_touch_points;
   bool fixed_position_creates_stacking_context;
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
@@ -176,6 +178,7 @@ struct WEBKIT_COMMON_EXPORT WebPreferences {
   bool wide_viewport_quirk;
   bool use_wide_viewport;
   bool viewport_meta_layout_size_quirk;
+  bool viewport_meta_merge_content_quirk;
   bool viewport_meta_zero_values_quirk;
   bool ignore_main_frame_overflow_hidden_quirk;
   bool report_screen_size_in_physical_pixels_quirk;

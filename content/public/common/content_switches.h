@@ -14,6 +14,7 @@ namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
+CONTENT_EXPORT extern const char kAcceleratedCanvas2dMSAASampleCount[];
 CONTENT_EXPORT extern const char kAllowFileAccessFromFiles[];
 CONTENT_EXPORT extern const char kAllowFiltersOverIPC[];
 CONTENT_EXPORT extern const char kAllowNoSandboxJob[];
@@ -111,7 +112,6 @@ CONTENT_EXPORT extern const char kEnableAcceleratedFixedRootBackground[];
 extern const char kEnableAcceleratedOverflowScroll[];
 extern const char kEnableAcceleratedScrollableFrames[];
 extern const char kEnableAccessibilityLogging[];
-extern const char kEnableAudibleNotifications[];
 CONTENT_EXPORT extern const char kEnableBeginFrameScheduling[];
 CONTENT_EXPORT extern const char kEnableBrowserPluginForAllViewTypes[];
 CONTENT_EXPORT extern const char kEnableBrowserPluginDragDrop[];
@@ -127,7 +127,6 @@ CONTENT_EXPORT extern const char kEnableExperimentalCanvasFeatures[];
 CONTENT_EXPORT extern const char kEnableExperimentalWebPlatformFeatures[];
 extern const char kEnableExperimentalWebSocket[];
 extern const char kEnableFastTextAutosizing[];
-CONTENT_EXPORT extern const char kEnableFixedLayout[];
 CONTENT_EXPORT extern const char kEnableFixedPositionCreatesStackingContext[];
 CONTENT_EXPORT extern const char kEnableGestureTapHighlight[];
 extern const char kEnableGpuBenchmarking[];
@@ -235,7 +234,6 @@ extern const char kSpeechRecognitionWebserviceKey[];
 CONTENT_EXPORT extern const char kStatsCollectionController[];
 extern const char kTabCaptureDownscaleQuality[];
 extern const char kTabCaptureUpscaleQuality[];
-extern const char kTapDownDeferralTimeMs[];
 CONTENT_EXPORT extern const char kTestingFixedHttpPort[];
 CONTENT_EXPORT extern const char kTestingFixedHttpsPort[];
 CONTENT_EXPORT extern const char kTestSandbox[];
@@ -294,10 +292,6 @@ extern const char kUseCoreAnimation[];
 
 #if defined(OS_POSIX)
 extern const char kChildCleanExit[];
-#endif
-
-#if defined(USE_AURA)
-CONTENT_EXPORT extern const char kTestCompositor[];
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

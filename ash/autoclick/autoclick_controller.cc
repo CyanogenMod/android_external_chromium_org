@@ -13,8 +13,28 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/vector2d.h"
 
 namespace ash {
+
+namespace {
+
+// The threshold of mouse movement measured in DIP that will
+// initiate a new autoclick.
+const int kMovementThreshold = 20;
+
+bool IsModifierKey(ui::KeyboardCode key_code) {
+  return key_code == ui::VKEY_SHIFT ||
+      key_code == ui::VKEY_LSHIFT ||
+      key_code == ui::VKEY_CONTROL ||
+      key_code == ui::VKEY_LCONTROL ||
+      key_code == ui::VKEY_RCONTROL ||
+      key_code == ui::VKEY_MENU ||
+      key_code == ui::VKEY_LMENU ||
+      key_code == ui::VKEY_RMENU;
+}
+
+}  // namespace
 
 // static.
 const int AutoclickController::kDefaultAutoclickDelayMs = 400;
@@ -36,6 +56,8 @@ class AutoclickControllerImpl : public AutoclickController,
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
 
   void InitClickTimer();
 
@@ -45,6 +67,9 @@ class AutoclickControllerImpl : public AutoclickController,
   int delay_ms_;
   int mouse_event_flags_;
   scoped_ptr<base::Timer> autoclick_timer_;
+  // The position in screen coordinates used to determine
+  // the distance the mouse has moved.
+  gfx::Point anchor_location_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoclickControllerImpl);
 };
@@ -53,7 +78,8 @@ class AutoclickControllerImpl : public AutoclickController,
 AutoclickControllerImpl::AutoclickControllerImpl()
     : enabled_(false),
       delay_ms_(kDefaultAutoclickDelayMs),
-      mouse_event_flags_(ui::EF_NONE) {
+      mouse_event_flags_(ui::EF_NONE),
+      anchor_location_(-kMovementThreshold, -kMovementThreshold) {
   InitClickTimer();
 }
 
@@ -98,7 +124,23 @@ void AutoclickControllerImpl::InitClickTimer() {
 void AutoclickControllerImpl::OnMouseEvent(ui::MouseEvent* event) {
   if (event->type() == ui::ET_MOUSE_MOVED) {
     mouse_event_flags_ = event->flags();
-    autoclick_timer_->Reset();
+
+    gfx::Point mouse_location = event->root_location();
+    ash::wm::ConvertPointToScreen(
+        wm::GetRootWindowAt(mouse_location),
+        &mouse_location);
+
+    // The distance between the mouse location and the anchor location
+    // must exceed a certain threshold to initiate a new autoclick countdown.
+    // This ensures that mouse jitter caused by poor motor control does not
+    // 1. initiate an unwanted autoclick from rest
+    // 2. prevent the autoclick from ever occuring when the mouse
+    //    arrives at the target.
+    gfx::Vector2d delta = mouse_location - anchor_location_;
+    if (delta.LengthSquared() >= kMovementThreshold * kMovementThreshold) {
+      anchor_location_ = event->root_location();
+      autoclick_timer_->Reset();
+    }
   } else if (event->type() == ui::ET_MOUSE_PRESSED) {
     autoclick_timer_->Stop();
   } else if (event->type() == ui::ET_MOUSEWHEEL &&
@@ -116,21 +158,35 @@ void AutoclickControllerImpl::OnKeyEvent(ui::KeyEvent* event) {
       ui::EF_EXTENDED;
   int new_modifiers = event->flags() & modifier_mask;
   mouse_event_flags_ = (mouse_event_flags_ & ~modifier_mask) | new_modifiers;
+
+  if (!IsModifierKey(event->key_code()))
+    autoclick_timer_->Stop();
 }
 
 void AutoclickControllerImpl::OnTouchEvent(ui::TouchEvent* event) {
   autoclick_timer_->Stop();
 }
 
+void AutoclickControllerImpl::OnGestureEvent(ui::GestureEvent* event) {
+  autoclick_timer_->Stop();
+}
+
+void AutoclickControllerImpl::OnScrollEvent(ui::ScrollEvent* event) {
+  autoclick_timer_->Stop();
+}
+
 void AutoclickControllerImpl::DoAutoclick() {
   gfx::Point screen_location =
       aura::Env::GetInstance()->last_mouse_location();
-  aura::RootWindow* root_window = wm::GetRootWindowAt(screen_location);
+  aura::Window* root_window = wm::GetRootWindowAt(screen_location);
   DCHECK(root_window) << "Root window not found while attempting autoclick.";
 
   gfx::Point click_location(screen_location);
+  anchor_location_ = click_location;
   wm::ConvertPointFromScreen(root_window, &click_location);
-  root_window->ConvertPointToHost(&click_location);
+
+  aura::WindowEventDispatcher* dispatcher = root_window->GetDispatcher();
+  dispatcher->ConvertPointToHost(&click_location);
 
   ui::MouseEvent press_event(ui::ET_MOUSE_PRESSED,
                              click_location,
@@ -141,8 +197,8 @@ void AutoclickControllerImpl::DoAutoclick() {
                                click_location,
                                mouse_event_flags_ | ui::EF_LEFT_MOUSE_BUTTON);
 
-  root_window->AsRootWindowHostDelegate()->OnHostMouseEvent(&press_event);
-  root_window->AsRootWindowHostDelegate()->OnHostMouseEvent(&release_event);
+  dispatcher->AsRootWindowHostDelegate()->OnHostMouseEvent(&press_event);
+  dispatcher->AsRootWindowHostDelegate()->OnHostMouseEvent(&release_event);
 }
 
 // static.

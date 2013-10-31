@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_LOGIN_DISPLAY_HOST_IMPL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -60,6 +61,8 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   virtual void OpenProxySettings() OVERRIDE;
   virtual void SetStatusAreaVisible(bool visible) OVERRIDE;
   virtual void CheckForAutoEnrollment() OVERRIDE;
+  virtual void GetAutoEnrollmentCheckResult(
+      const GetAutoEnrollmentCheckResultCallback& callback) OVERRIDE;
   virtual void StartWizard(
       const std::string& first_screen_name,
       scoped_ptr<DictionaryValue> screen_parameters) OVERRIDE;
@@ -88,6 +91,8 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // WebUI at a time).
   static const int kShowLoginWebUIid;
 
+  views::Widget* login_window_for_test() { return login_window_; }
+
  protected:
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
@@ -98,12 +103,31 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
  private:
+  // Way to restore if renderer have crashed.
+  enum RestorePath {
+    RESTORE_UNKNOWN,
+    RESTORE_WIZARD,
+    RESTORE_SIGN_IN,
+    RESTORE_ADD_USER_INTO_SESSION,
+  };
+
+  // Type of animations to run after the login screen.
+  enum FinalizeAnimationType {
+    ANIMATION_NONE,       // No animation.
+    ANIMATION_WORKSPACE,  // Use initial workspace animation (drop and
+                          // and fade in workspace). Used for user login.
+    ANIMATION_FADE_OUT,   // Fade out login screen. Used for app launch.
+  };
+
   // Marks display host for deletion.
   // If |post_quit_task| is true also posts Quit task to the MessageLoop.
   void ShutdownDisplayHost(bool post_quit_task);
 
-  // Start sign in transition animation.
-  void StartAnimation();
+  // Schedules workspace transition animation.
+  void ScheduleWorkspaceAnimation();
+
+  // Schedules fade out animation.
+  void ScheduleFadeOutAnimation();
 
   // Callback for the ownership status check.
   void OnOwnershipStatusCheckDone(
@@ -131,14 +155,14 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // Closes |login_window_| and resets |login_window_| and |login_view_| fields.
   void ResetLoginWindowAndView();
 
-  // Returns true if hosr running UI for adding users into session.
-  bool IsRunningUserAdding();
-
   // Deletes |auth_prewarmer_|.
   void OnAuthPrewarmDone();
 
   // Toggles OOBE progress bar visibility, the bar is hidden by default.
   void SetOobeProgressBarVisible(bool visible);
+
+  // Notifies the interested parties of the auto enrollment check result.
+  void NotifyAutoEnrollmentCheckResult(bool should_auto_enroll);
 
   // Used to calculate position of the screens and background.
   gfx::Rect background_bounds_;
@@ -211,12 +235,7 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   int crash_count_;
 
   // Way to restore if renderer have crashed.
-  enum {
-    RESTORE_UNKNOWN,
-    RESTORE_WIZARD,
-    RESTORE_SIGN_IN,
-    RESTORE_ADD_USER_INTO_SESSION,
-  } restore_path_;
+  RestorePath restore_path_;
 
   // Stored parameters for StartWizard, required to restore in case of crash.
   std::string wizard_first_screen_name_;
@@ -235,6 +254,17 @@ class LoginDisplayHostImpl : public LoginDisplayHost,
   // A focus ring controller to draw focus ring around view for keyboard
   // driven oobe.
   scoped_ptr<FocusRingController> focus_ring_controller_;
+
+  // Whether auto enrollment client has done the check.
+  bool auto_enrollment_check_done_;
+
+  // Callbacks to notify when auto enrollment client has done the check.
+  std::vector<GetAutoEnrollmentCheckResultCallback>
+      get_auto_enrollment_result_callbacks_;
+
+  FinalizeAnimationType finalize_animation_type_;
+
+  base::WeakPtrFactory<LoginDisplayHostImpl> animation_weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginDisplayHostImpl);
 };

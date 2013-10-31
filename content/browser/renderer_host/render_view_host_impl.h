@@ -12,9 +12,8 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "base/process/kill.h"
-#include "content/browser/renderer_host/render_frame_host_impl.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_node_data.h"
@@ -62,7 +61,6 @@ class BrowserMediaPlayerManager;
 class ChildProcessSecurityPolicyImpl;
 class PageState;
 class RenderFrameHostImpl;
-class RenderViewHostObserver;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
 class SessionStorageNamespaceImpl;
@@ -212,6 +210,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   virtual void UpdateWebkitPreferences(
       const WebPreferences& prefs) OVERRIDE;
   virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const OVERRIDE;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
@@ -239,6 +239,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   base::TerminationStatus render_view_termination_status() const {
     return render_view_termination_status_;
   }
+
+  // Returns the content specific prefs for this RenderViewHost.
+  WebPreferences GetWebkitPrefs(const GURL& url);
 
   // Sends the given navigation message. Use this rather than sending it
   // yourself since this does the internal bookkeeping described below. This
@@ -390,7 +393,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
 #if defined(OS_ANDROID)
   BrowserMediaPlayerManager* media_player_manager() {
-    return media_player_manager_;
+    return media_player_manager_.get();
   }
 
   void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
@@ -480,13 +483,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // to keep them consistent).
 
  protected:
-  friend class RenderViewHostObserver;
-
-  // Add and remove observers for filtering IPC messages.  Clients must be sure
-  // to remove the observer before they go away.
-  void AddObserver(RenderViewHostObserver* observer);
-  void RemoveObserver(RenderViewHostObserver* observer);
-
   // RenderWidgetHost protected overrides.
   virtual void OnUserGesture() OVERRIDE;
   virtual void NotifyRendererUnresponsive() OVERRIDE;
@@ -713,16 +709,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;
 
-  // A list of observers that filter messages.  Weak references.
-  ObserverList<RenderViewHostObserver> observers_;
-
   // When the last ShouldClose message was sent.
   base::TimeTicks send_should_close_start_time_;
 
 #if defined(OS_ANDROID)
   // Manages all the android mediaplayer objects and handling IPCs for video.
-  // This class inherits from RenderViewHostObserver.
-  BrowserMediaPlayerManager* media_player_manager_;
+  scoped_ptr<BrowserMediaPlayerManager> media_player_manager_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);

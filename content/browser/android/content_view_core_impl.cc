@@ -18,6 +18,9 @@
 #include "content/browser/android/interstitial_page_delegate_android.h"
 #include "content/browser/android/load_url_params.h"
 #include "content/browser/android/touch_point.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigation_controller_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
@@ -27,9 +30,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/ssl/ssl_host_state.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
-#include "content/browser/web_contents/navigation_controller_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -1044,7 +1044,7 @@ void ContentViewCoreImpl::ShowPressState(JNIEnv* env, jobject obj,
                                          jlong time_ms,
                                          jfloat x, jfloat y) {
   WebGestureEvent event = MakeGestureEvent(
-      WebInputEvent::GestureTapDown, time_ms, x, y);
+      WebInputEvent::GestureShowPress, time_ms, x, y);
   SendGestureEvent(event);
 }
 
@@ -1055,6 +1055,14 @@ void ContentViewCoreImpl::ShowPressCancel(JNIEnv* env,
                                           jfloat y) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureTapCancel, time_ms, x, y);
+  SendGestureEvent(event);
+}
+
+void ContentViewCoreImpl::TapDown(JNIEnv* env, jobject obj,
+                                  jlong time_ms,
+                                  jfloat x, jfloat y) {
+  WebGestureEvent event = MakeGestureEvent(
+      WebInputEvent::GestureTapDown, time_ms, x, y);
   SendGestureEvent(event);
 }
 
@@ -1353,6 +1361,8 @@ jboolean ContentViewCoreImpl::IsRenderWidgetHostViewReady(JNIEnv* env,
 
 void ContentViewCoreImpl::ExitFullscreen(JNIEnv* env, jobject obj) {
   RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (!host)
+    return;
   host->ExitFullscreen();
 }
 
@@ -1362,6 +1372,8 @@ void ContentViewCoreImpl::UpdateTopControlsState(JNIEnv* env,
                                                  bool enable_showing,
                                                  bool animate) {
   RenderViewHost* host = web_contents_->GetRenderViewHost();
+  if (!host)
+    return;
   host->Send(new ViewMsg_UpdateTopControlsState(host->GetRoutingID(),
                                                 enable_hiding,
                                                 enable_showing,

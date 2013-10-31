@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/theme_installed_infobar_delegate.h"
@@ -19,6 +18,7 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -153,7 +153,8 @@ ExtensionInstallUI* ExtensionInstallUI::Create(Profile* profile) {
 void ExtensionInstallUI::OpenAppInstalledUI(Profile* profile,
                                             const std::string& app_id) {
 #if defined(OS_CHROMEOS)
-  AppListService::Get()->ShowForProfile(profile);
+  AppListService::Get(chrome::HOST_DESKTOP_TYPE_ASH)->
+      ShowForProfile(profile);
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,
@@ -245,7 +246,10 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
 #endif
 
     if (IsAppLauncherEnabled()) {
-      AppListService::Get()->ShowForProfile(current_profile);
+      // TODO(tapted): ExtensionInstallUI should retain the desktop type from
+      // the browser used to initiate the flow. http://crbug.com/308360.
+      AppListService::Get(chrome::GetActiveDesktop())->
+          ShowForProfile(current_profile);
 
       content::NotificationService::current()->Notify(
           chrome::NOTIFICATION_APP_INSTALLED_TO_APPLIST,

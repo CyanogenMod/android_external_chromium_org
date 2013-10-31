@@ -84,6 +84,10 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Creates and Initialize the RootWindowController for secondary displays.
   static void CreateForSecondaryDisplay(aura::RootWindow* root_window);
 
+  // Creates and Initialize the RootWindowController for virtual
+  // keyboard displays.
+  static void CreateForVirtualKeyboardDisplay(aura::RootWindow* root_window);
+
   // Returns a RootWindowController that has a launcher for given
   // |window|. This returns the RootWindowController for the |window|'s
   // root window when multiple launcher mode is enabled, or the primary
@@ -202,7 +206,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   void CloseChildWindows();
 
   // Moves child windows to |dest|.
-  void MoveWindowsTo(aura::RootWindow* dest);
+  void MoveWindowsTo(aura::Window* dest);
 
   // Force the shelf to query for it's current visibility state.
   void UpdateShelfVisibility();
@@ -222,11 +226,16 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
  private:
   explicit RootWindowController(aura::RootWindow* root_window);
+  enum RootWindowType {
+    PRIMARY,
+    SECONDARY,
+    VIRTUAL_KEYBOARD
+  };
 
   // Initializes the RootWindowController.  |is_primary| is true if
   // the controller is for primary display.  |first_run_after_boot| is
   // set to true only for primary root window after boot.
-  void Init(bool is_primary, bool first_run_after_boot);
+  void Init(RootWindowType root_window_type, bool first_run_after_boot);
 
   void InitLayoutManagers();
 
@@ -301,7 +310,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
 // Gets the RootWindowController for |root_window|.
 ASH_EXPORT RootWindowController* GetRootWindowController(
-    const aura::RootWindow* root_window);
+    const aura::Window* root_window);
 
 }  // namespace internal
 }  // ash

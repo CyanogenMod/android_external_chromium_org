@@ -32,16 +32,17 @@ const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
 
 QuicClient::QuicClient(IPEndPoint server_address,
                        const string& server_hostname,
-                       const QuicVersion version,
+                       const QuicVersionVector& supported_versions,
                        bool print_response)
     : server_address_(server_address),
       server_hostname_(server_hostname),
       local_port_(0),
       fd_(-1),
+      helper_(CreateQuicConnectionHelper()),
       initialized_(false),
       packets_dropped_(0),
       overflow_supported_(false),
-      version_(version),
+      supported_versions_(supported_versions),
       print_response_(print_response) {
   config_.SetDefaults();
 }
@@ -49,16 +50,17 @@ QuicClient::QuicClient(IPEndPoint server_address,
 QuicClient::QuicClient(IPEndPoint server_address,
                        const string& server_hostname,
                        const QuicConfig& config,
-                       const QuicVersion version)
+                       const QuicVersionVector& supported_versions)
     : server_address_(server_address),
       server_hostname_(server_hostname),
       config_(config),
       local_port_(0),
       fd_(-1),
+      helper_(CreateQuicConnectionHelper()),
       initialized_(false),
       packets_dropped_(0),
       overflow_supported_(false),
-      version_(version),
+      supported_versions_(supported_versions),
       print_response_(false) {
 }
 
@@ -153,13 +155,16 @@ bool QuicClient::Connect() {
 bool QuicClient::StartConnect() {
   DCHECK(!connected() && initialized_);
 
-  QuicGuid guid = QuicRandom::GetInstance()->RandUint64();
+  QuicPacketWriter* writer = CreateQuicPacketWriter();
+  if (writer_.get() != writer) {
+    writer_.reset(writer);
+  }
+
   session_.reset(new QuicClientSession(
       server_hostname_,
       config_,
-      new QuicConnection(guid, server_address_,
-                         CreateQuicConnectionHelper(), false,
-                         version_),
+      new QuicConnection(GenerateGuid(), server_address_, helper_.get(),
+                         writer_.get(), false, supported_versions_),
       &crypto_config_));
   return session_->CryptoConnect();
 }
@@ -268,8 +273,16 @@ bool QuicClient::connected() const {
       session_->connection()->connected();
 }
 
+QuicGuid QuicClient::GenerateGuid() {
+  return QuicRandom::GetInstance()->RandUint64();
+}
+
 QuicEpollConnectionHelper* QuicClient::CreateQuicConnectionHelper() {
-  return new QuicEpollConnectionHelper(fd_, &epoll_server_);
+  return new QuicEpollConnectionHelper(&epoll_server_);
+}
+
+QuicPacketWriter* QuicClient::CreateQuicPacketWriter() {
+  return new QuicDefaultPacketWriter(fd_);
 }
 
 bool QuicClient::ReadAndProcessPacket() {

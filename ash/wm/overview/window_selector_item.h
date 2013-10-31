@@ -9,7 +9,6 @@
 #include "ui/gfx/rect.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 }
 
@@ -24,7 +23,7 @@ class WindowSelectorItem {
   virtual ~WindowSelectorItem();
 
   // Returns the root window on which this item is shown.
-  virtual aura::RootWindow* GetRootWindow() = 0;
+  virtual aura::Window* GetRootWindow() = 0;
 
   // Returns the targeted window given the event |target| window.
   // Returns NULL if no Window in this item was selected.
@@ -51,28 +50,35 @@ class WindowSelectorItem {
 
   // Sets the bounds of this window selector item to |target_bounds| in the
   // |root_window| root window.
-  void SetBounds(aura::RootWindow* root_window,
+  void SetBounds(aura::Window* root_window,
                  const gfx::Rect& target_bounds);
 
   // Recomputes the positions for the windows in this selection item. This is
   // dispatched when the bounds of a window change.
   void RecomputeWindowTransforms();
 
-  // Returns the current bounds of this selector item.
   const gfx::Rect& bounds() { return bounds_; }
+  const gfx::Rect& target_bounds() { return target_bounds_; }
 
  protected:
   // Sets the bounds of this selector item to |target_bounds| in |root_window|.
   // If |animate| the windows are animated from their current location.
-  virtual void SetItemBounds(aura::RootWindow* root_window,
+  virtual void SetItemBounds(aura::Window* root_window,
                              const gfx::Rect& target_bounds,
                              bool animate) = 0;
 
+  // Sets the bounds used by the selector item's windows.
+  void set_bounds(const gfx::Rect& bounds) { bounds_ = bounds; }
+
  private:
   // The root window this item is being displayed on.
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
-  // The bounds this item is fit to.
+  // The target bounds this selector item is fit within.
+  gfx::Rect target_bounds_;
+
+  // The actual bounds of the window(s) for this item. The aspect ratio of
+  // window(s) are maintained so they may not fill the target_bounds_.
   gfx::Rect bounds_;
 
   // True if running SetItemBounds. This prevents recursive calls resulting from

@@ -4,6 +4,8 @@
 
 #include "content/child/child_thread.h"
 
+#include <string>
+
 #include "base/allocator/allocator_extension.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -25,6 +27,8 @@
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/service_worker/service_worker_dispatcher.h"
+#include "content/child/service_worker/service_worker_message_filter.h"
 #include "content/child/socket_stream_dispatcher.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/websocket_dispatcher.h"
@@ -109,7 +113,7 @@ base::LazyInstance<base::Lock> g_lazy_child_thread_lock =
 // doesn't handle the case. Thus, we need our own class here.
 struct CondVarLazyInstanceTraits {
   static const bool kRegisterOnExit = true;
-  static const bool kAllowedToAccessOnNonjoinableThread = false;
+  static const bool kAllowedToAccessOnNonjoinableThread ALLOW_UNUSED = false;
   static base::ConditionVariable* New(void* instance) {
     return new (instance) base::ConditionVariable(
         g_lazy_child_thread_lock.Pointer());
@@ -133,7 +137,8 @@ void QuitMainThreadMessageLoop() {
 }  // namespace
 
 ChildThread::ChildThread()
-    : channel_connected_factory_(this) {
+    : channel_connected_factory_(this),
+      in_browser_process_(false) {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kProcessChannelID);
   Init();
@@ -141,7 +146,8 @@ ChildThread::ChildThread()
 
 ChildThread::ChildThread(const std::string& channel_name)
     : channel_name_(channel_name),
-      channel_connected_factory_(this) {
+      channel_connected_factory_(this),
+      in_browser_process_(true) {
   Init();
 }
 
@@ -163,7 +169,8 @@ void ChildThread::Init() {
                            true,
                            ChildProcess::current()->GetShutDownEvent()));
 #ifdef IPC_MESSAGE_LOG_ENABLED
-  IPC::Logging::GetInstance()->SetIPCSender(this);
+  if (!in_browser_process_)
+    IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
 
   sync_message_filter_ =
@@ -180,6 +187,11 @@ void ChildThread::Init() {
   resource_message_filter_ =
       new ChildResourceMessageFilter(resource_dispatcher());
 
+  service_worker_message_filter_ =
+      new ServiceWorkerMessageFilter(thread_safe_sender_.get());
+  service_worker_dispatcher_.reset(
+      new ServiceWorkerDispatcher(thread_safe_sender_.get()));
+
   quota_message_filter_ =
       new QuotaMessageFilter(thread_safe_sender_.get());
   quota_dispatcher_.reset(new QuotaDispatcher(thread_safe_sender_.get(),
@@ -191,6 +203,7 @@ void ChildThread::Init() {
       ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
   channel_->AddFilter(quota_message_filter_.get());
+  channel_->AddFilter(service_worker_message_filter_.get());
 
   // In single process mode we may already have a power monitor
   if (!base::PowerMonitor::Get()) {
@@ -252,6 +265,7 @@ ChildThread::~ChildThread() {
   IPC::Logging::GetInstance()->SetIPCSender(NULL);
 #endif
 
+  channel_->RemoveFilter(service_worker_message_filter_.get());
   channel_->RemoveFilter(quota_message_filter_.get());
   channel_->RemoveFilter(histogram_message_filter_.get());
   channel_->RemoveFilter(sync_message_filter_.get());

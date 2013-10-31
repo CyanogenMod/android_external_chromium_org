@@ -56,8 +56,10 @@ bool IsNonClientLocation(Window* target, const gfx::Point& location) {
 }
 
 float GetDeviceScaleFactorFromDisplay(Window* window) {
-  return gfx::Screen::GetScreenFor(window)->
-      GetDisplayNearestWindow(window).device_scale_factor();
+  gfx::Display display = gfx::Screen::GetScreenFor(window)->
+      GetDisplayNearestWindow(window);
+  DCHECK(display.is_valid());
+  return display.device_scale_factor();
 }
 
 Window* ConsumerToWindow(ui::GestureConsumer* consumer) {
@@ -130,8 +132,8 @@ class SimpleRootWindowTransformer : public RootWindowTransformer {
 
 RootWindow::CreateParams::CreateParams(const gfx::Rect& a_initial_bounds)
     : initial_bounds(a_initial_bounds),
-      host(NULL) {
-}
+      use_software_renderer(false),
+      host(NULL) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootWindow, public:
@@ -149,9 +151,11 @@ RootWindow::RootWindow(const CreateParams& params)
       event_factory_(this),
       held_event_factory_(this),
       repostable_event_factory_(this) {
+  set_dispatcher(this);
   SetName("RootWindow");
 
-  compositor_.reset(new ui::Compositor(host_->GetAcceleratedWidget()));
+  compositor_.reset(new ui::Compositor(params.use_software_renderer,
+                                       host_->GetAcceleratedWidget()));
   DCHECK(compositor_.get());
 
   prop_.reset(new ui::ViewProp(host_->GetAcceleratedWidget(),
@@ -181,6 +185,8 @@ RootWindow::~RootWindow() {
   // Destroying/removing child windows may try to access |host_| (eg.
   // GetAcceleratedWidget())
   host_.reset(NULL);
+
+  set_dispatcher(NULL);
 }
 
 // static
@@ -226,17 +232,16 @@ void RootWindow::RepostEvent(const ui::LocatedEvent& event) {
             static_cast<const ui::MouseEvent&>(event),
             static_cast<aura::Window*>(event.target()),
             static_cast<aura::Window*>(this)));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&RootWindow::DispatchHeldEvents,
+                   repostable_event_factory_.GetWeakPtr()));
   } else {
-    held_repostable_event_.reset(
-        new ui::GestureEvent(
-            static_cast<const ui::GestureEvent&>(event),
-            static_cast<aura::Window*>(event.target()),
-            static_cast<aura::Window*>(this)));
+    DCHECK(event.type() == ui::ET_GESTURE_TAP_DOWN);
+    held_repostable_event_.reset();
+    // TODO(rbyers): Reposing of gestures is tricky to get
+    // right, so it's not yet supported.  crbug.com/170987.
   }
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&RootWindow::DispatchHeldEvents,
-                  repostable_event_factory_.GetWeakPtr()));
 }
 
 RootWindowHostDelegate* RootWindow::AsRootWindowHostDelegate() {
@@ -520,11 +525,11 @@ gfx::Transform RootWindow::GetRootTransform() const {
 ////////////////////////////////////////////////////////////////////////////////
 // RootWindow, Window overrides:
 
-RootWindow* RootWindow::GetRootWindow() {
+Window* RootWindow::GetRootWindow() {
   return this;
 }
 
-const RootWindow* RootWindow::GetRootWindow() const {
+const Window* RootWindow::GetRootWindow() const {
   return this;
 }
 
@@ -613,7 +618,7 @@ void RootWindow::OnWindowAddedToRootWindow(Window* attached) {
 }
 
 void RootWindow::OnWindowRemovedFromRootWindow(Window* detached,
-                                               RootWindow* new_root) {
+                                               Window* new_root) {
   DCHECK(aura::client::GetCaptureWindow(this) != this);
 
   DispatchMouseExitToHidingWindow(detached);
@@ -738,6 +743,11 @@ void RootWindow::UpdateCapture(Window* old_capture,
   mouse_pressed_handler_ = NULL;
 }
 
+void RootWindow::OnOtherRootGotCapture() {
+  mouse_moved_handler_ = NULL;
+  mouse_pressed_handler_ = NULL;
+}
+
 void RootWindow::SetNativeCapture() {
   host_->SetCapture();
 }
@@ -761,7 +771,7 @@ bool RootWindow::CanDispatchToConsumer(ui::GestureConsumer* consumer) {
   return (window && window->GetRootWindow() == this);
 }
 
-void RootWindow::DispatchLongPressGestureEvent(ui::GestureEvent* event) {
+void RootWindow::DispatchPostponedGestureEvent(ui::GestureEvent* event) {
   DispatchGestureEvent(event);
 }
 
@@ -932,15 +942,15 @@ void RootWindow::DispatchMouseEventRepost(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_PRESSED)
     return;
   Window* target = client::GetCaptureWindow(this);
-  RootWindow* root = this;
+  WindowEventDispatcher* dispatcher = this;
   if (!target) {
     target = GetEventHandlerForPoint(event->location());
   } else {
-    root = target->GetRootWindow();
-    CHECK(root);  // Capture window better be in valid root.
+    dispatcher = target->GetDispatcher();
+    CHECK(dispatcher);  // Capture window better be in valid root.
   }
-  root->mouse_pressed_handler_ = NULL;
-  root->DispatchMouseEventToTarget(event, target);
+  dispatcher->mouse_pressed_handler_ = NULL;
+  dispatcher->DispatchMouseEventToTarget(event, target);
 }
 
 bool RootWindow::DispatchMouseEventToTarget(ui::MouseEvent* event,
@@ -1096,47 +1106,16 @@ bool RootWindow::DispatchTouchEventImpl(ui::TouchEvent* event) {
   return ProcessGestures(gestures.get()) ? true : handled;
 }
 
-bool RootWindow::DispatchGestureEventRepost(ui::GestureEvent* event) {
-  if (event->type() != ui::ET_GESTURE_TAP_DOWN)
-    return false;
-
-  // Cleanup stale gesture events for the old gesture target.
-  GestureConsumer* old_consumer = GetGestureTarget(event);
-  if (old_consumer)
-    CleanupGestureRecognizerState(static_cast<aura::Window*>(old_consumer));
-
-  Window* new_consumer = GetEventHandlerForPoint(event->root_location());
-  if (new_consumer) {
-    ui::GestureEvent begin_gesture(
-        ui::ET_GESTURE_BEGIN,
-        event->x(),
-        event->y(),
-        event->flags(),
-        event->time_stamp(),
-        ui::GestureEventDetails(ui::ET_GESTURE_BEGIN, 0, 0),
-        event->touch_ids_bitfield());
-    ProcessEvent(new_consumer, &begin_gesture);
-    ProcessEvent(new_consumer, event);
-    return event->handled();
-  }
-  return false;
-}
-
 void RootWindow::DispatchHeldEvents() {
   if (held_repostable_event_) {
     if (held_repostable_event_->type() == ui::ET_MOUSE_PRESSED) {
-      ui::MouseEvent mouse_event(
-          static_cast<const ui::MouseEvent&>(*held_repostable_event_.get()));
-      held_repostable_event_.reset();  // must be reset before dispatch
-      DispatchMouseEventRepost(&mouse_event);
+      scoped_ptr<ui::MouseEvent> mouse_event(
+          static_cast<ui::MouseEvent*>(held_repostable_event_.release()));
+      DispatchMouseEventRepost(mouse_event.get());
     } else {
-      DCHECK(held_repostable_event_->type() == ui::ET_GESTURE_TAP_DOWN);
-      ui::GestureEvent gesture_event(
-          static_cast<const ui::GestureEvent&>(*held_repostable_event_.get()));
-      held_repostable_event_.reset();  // must be reset before dispatch
-      DispatchGestureEventRepost(&gesture_event);
+      // TODO(rbyers): GESTURE_TAP_DOWN not yet supported: crbug.com/170987.
+      NOTREACHED();
     }
-    held_repostable_event_.reset();
   }
   if (held_move_event_ && held_move_event_->IsMouseEvent()) {
     // If a mouse move has been synthesized, the target location is suspect,

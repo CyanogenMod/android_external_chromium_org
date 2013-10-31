@@ -15,6 +15,9 @@ leak:net::(anonymous namespace)::ProxyResolverV8WithMockBindings::SetPacScriptFr
 leak:net::(anonymous namespace)::InitResolver
 leak:net::ProxyResolverScriptData::FromUTF8
 
+# A small string is leaked here (57 bytes per process). http://crbug.com/46571#c9
+leak:WebCore::V8GCController::collectGarbage
+
 # http://crbug.com/270180
 leak:net::ProxyResolverV8::Context::ResolveProxy
 
@@ -64,5 +67,15 @@ leak:StatusIconGtk::UpdatePlatformContextMenu
 leak:GlobalMenuBar::GlobalMenuBar
 leak:BookmarkBubbleGtk::InitFolderComboModel
 leak:TranslateInfoBarBase::CreateLanguageCombobox
+leak:GtkNativeViewManager
+leak:_gdk_x11_window_get_toplevel
+leak:gtk_util::*AppModal
+
+# Infobar-related leaks in browser tests. Retriage them once
+# http://crbug.com/62154 is fixed.
+leak:chrome::ShowBadFlagsPrompt
+leak:TranslateInfoBarDelegate::Create
+leak:TranslateLanguageList::TranslateLanguageList
+leak:SimpleAlertInfoBarDelegate::Create
 
 # PLEASE DO NOT ADD NEW SUPPRESSIONS HERE. See the comment above.

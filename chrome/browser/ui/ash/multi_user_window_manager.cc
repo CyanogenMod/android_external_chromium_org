@@ -10,11 +10,14 @@
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
+#include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/window_positioner.h"
 #include "ash/wm/window_state.h"
 #include "base/auto_reset.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -22,7 +25,9 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_util.h"
+#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/base/ui_base_types.h"
 
@@ -31,6 +36,31 @@ chrome::MultiUserWindowManager* g_instance = NULL;
 }  // namespace
 
 namespace chrome {
+
+// Caching the current multi profile mode since the detection which mode is
+// used is quite expensive.
+chrome::MultiUserWindowManager::MultiProfileMode
+    chrome::MultiUserWindowManager::multi_user_mode_ =
+        chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_UNINITIALIZED;
+
+// A class to disable updates to the MRU window list and the auto positioning
+// logic while the user gets switched.
+class UserChangeActionDisabler {
+ public:
+  UserChangeActionDisabler() {
+    ash::WindowPositioner::DisableAutoPositioning(true);
+    ash::Shell::GetInstance()->mru_window_tracker()->SetIgnoreActivations(true);
+  }
+
+  ~UserChangeActionDisabler() {
+    ash::WindowPositioner::DisableAutoPositioning(false);
+    ash::Shell::GetInstance()->mru_window_tracker()->SetIgnoreActivations(
+        false);
+  }
+ private:
+
+  DISALLOW_COPY_AND_ASSIGN(UserChangeActionDisabler);
+};
 
 // This class keeps track of all applications which were started for a user.
 // When an app gets created, the window will be tagged for that user. Note
@@ -61,13 +91,28 @@ class AppObserver : public apps::ShellWindowRegistry::Observer {
 
 // static
 MultiUserWindowManager* MultiUserWindowManager::GetInstance() {
+  return g_instance;
+}
+
+MultiUserWindowManager* MultiUserWindowManager::CreateInstance() {
   if (!g_instance &&
       ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled() &&
       !ash::switches::UseFullMultiProfileMode()) {
     g_instance = CreateInstanceInternal(
-        GetUserIDFromProfile(ProfileManager::GetDefaultProfile()));
+        ash::Shell::GetInstance()->session_state_delegate()->GetUserID(0));
+    multi_user_mode_ = MULTI_PROFILE_MODE_SEPARATED;
+  } else if (ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
+    multi_user_mode_ = MULTI_PROFILE_MODE_MIXED;
+  } else {
+    multi_user_mode_ = MULTI_PROFILE_MODE_OFF;
   }
   return g_instance;
+}
+
+// static
+MultiUserWindowManager::MultiProfileMode
+MultiUserWindowManager::GetMultiProfileMode() {
+  return multi_user_mode_;
 }
 
 // static
@@ -75,12 +120,42 @@ void MultiUserWindowManager::DeleteInstance() {
   if (g_instance)
     delete g_instance;
   g_instance = NULL;
+  multi_user_mode_ = MULTI_PROFILE_MODE_UNINITIALIZED;
 }
 
 // static
 std::string MultiUserWindowManager::GetUserIDFromProfile(Profile* profile) {
-  return gaia::CanonicalizeEmail(gaia::SanitizeEmail(
-      profile->GetOriginalProfile()->GetProfileName()));
+  return GetUserIDFromEmail(profile->GetOriginalProfile()->GetProfileName());
+}
+
+// static
+std::string MultiUserWindowManager::GetUserIDFromEmail(
+    const std::string& email) {
+  return gaia::CanonicalizeEmail(gaia::SanitizeEmail(email));
+}
+
+// static
+Profile* MultiUserWindowManager::GetProfileFromUserID(
+    const std::string& user_id) {
+  // This can only happen for unit tests. If it happens we return NULL.
+  if (!g_browser_process || !g_browser_process->profile_manager())
+    return NULL;
+
+  std::vector<Profile*> profiles =
+      g_browser_process->profile_manager()->GetLoadedProfiles();
+
+  std::vector<Profile*>::const_iterator profile_iterator = profiles.begin();
+  for (; profile_iterator != profiles.end(); ++profile_iterator) {
+    if (GetUserIDFromProfile(*profile_iterator) == user_id)
+      return *profile_iterator;
+  }
+  return NULL;
+}
+
+// static
+bool MultiUserWindowManager::ProfileIsFromActiveUser(Profile* profile) {
+  return MultiUserWindowManager::GetUserIDFromProfile(profile) ==
+         chromeos::UserManager::Get()->GetActiveUser()->email();
 }
 
 void MultiUserWindowManager::SetWindowOwner(aura::Window* window,
@@ -161,9 +236,17 @@ void MultiUserWindowManager::ActiveUserChanged(const std::string& user_id) {
   DCHECK(user_id != current_user_id_);
   std::string old_user = current_user_id_;
   current_user_id_ = user_id;
-  // Hide all windows which are not shown and show which should get shown.
-  WindowToEntryMap::iterator it = window_to_entry_.begin();
-  for (; it != window_to_entry_.end(); ++it) {
+  // When a user has changed, we need to show only the windows which are visible
+  // to that user. Additionally we need to restore the activation state of the
+  // windows. Changing the activation state however triggers the window position
+  // manager to auto position the windows. To avoid that we disable it
+  // temporarily.
+
+  // Disable the window position manager and the MRU window tracker temporarily.
+  scoped_ptr<UserChangeActionDisabler> disabler(new UserChangeActionDisabler);
+
+  for (WindowToEntryMap::iterator it = window_to_entry_.begin();
+       it != window_to_entry_.end(); ++it) {
     aura::Window* window = it->first;
     bool should_be_visible =
         it->second->show_for_user() == user_id && it->second->show();
@@ -171,12 +254,31 @@ void MultiUserWindowManager::ActiveUserChanged(const std::string& user_id) {
     if (should_be_visible != is_visible)
       SetWindowVisibility(window, should_be_visible);
   }
-}
 
-void MultiUserWindowManager::UserAddedToSession(const std::string& user_id) {
-  // Make sure that all newly created applications get properly added to this
-  // user's account.
-  AddUser(user_id);
+  // Retrieve the list of visible windows in their order. Use the list to
+  // traverse the windows and activate them, thus restoring the previous state.
+  // TODO(skuhne): Unfortunately the MruWindowTracker does not let us get the
+  // full list (visible and invisible) and after our visibility changes the
+  // actual order of windows can be changed. A workaround would be to implement
+  // our own aura::client::ActivationChangeObserver and track the activations
+  // from our known windows. But that should be part of another CL.
+  ash::MruWindowTracker* tracker =
+      ash::Shell::GetInstance()->mru_window_tracker();
+  ash::MruWindowTracker::WindowList mru_list = tracker->BuildWindowList(true);
+  for (ash::MruWindowTracker::WindowList::iterator mru_iterator =
+           mru_list.begin();
+       mru_iterator != mru_list.end(); mru_iterator++) {
+    aura::Window* window = *mru_iterator;
+    ash::wm::WindowState* window_state = ash::wm::GetWindowState(window);
+    if (IsWindowOnDesktopOfUser(window, user_id) &&
+        !window_state->IsMinimized()) {
+      aura::client::ActivationClient* client =
+          aura::client::GetActivationClient(window->GetRootWindow());
+      // Several unit tests come here without an activation client.
+      if (client)
+        client->ActivateWindow(window);
+    }
+  }
 }
 
 void MultiUserWindowManager::OnWindowDestroyed(aura::Window* window) {
@@ -258,7 +360,9 @@ MultiUserWindowManager::MultiUserWindowManager(
                  content::NotificationService::AllSources());
 
   // Add an app window observer & all already running apps.
-  AddUser(current_user_id);
+  Profile* profile = GetProfileFromUserID(current_user_id);
+  if (profile)
+    AddUser(profile);
 }
 
 MultiUserWindowManager::~MultiUserWindowManager() {
@@ -287,15 +391,9 @@ MultiUserWindowManager::~MultiUserWindowManager() {
         RemoveSessionStateObserver(this);
 }
 
-void MultiUserWindowManager::AddUser(const std::string& user_id) {
+void MultiUserWindowManager::AddUser(Profile* profile) {
+  const std::string& user_id = GetUserIDFromProfile(profile);
   if (user_id_to_app_observer_.find(user_id) != user_id_to_app_observer_.end())
-    return;
-
-  // Add an observer for all shell window changes.
-  Profile* profile = GetProfileFromUserID(user_id);
-
-  // In case of unit tests we might have no profile.
-  if (!profile)
     return;
 
   user_id_to_app_observer_[user_id] = new AppObserver(user_id);
@@ -320,7 +418,9 @@ void MultiUserWindowManager::AddUser(const std::string& user_id) {
 }
 
 void MultiUserWindowManager::AddBrowserWindow(Browser* browser) {
-  if (browser->window() && !browser->window()->GetNativeWindow())
+  // A unit test (e.g. CrashRestoreComplexTest.RestoreSessionForThreeUsers) can
+  // come here with no valid window.
+  if (!browser->window() || !browser->window()->GetNativeWindow())
     return;
   SetWindowOwner(browser->window()->GetNativeWindow(),
                  GetUserIDFromProfile(browser->profile()));
@@ -339,23 +439,6 @@ void MultiUserWindowManager::SetWindowVisibility(
     window->Show();
   else
     window->Hide();
-}
-
-Profile* MultiUserWindowManager::GetProfileFromUserID(
-    const std::string& user_id) {
-  // This can only happen for unit tests. If it happens we return NULL.
-  if (!g_browser_process || !g_browser_process->profile_manager())
-    return NULL;
-
-  std::vector<Profile*> profiles =
-      g_browser_process->profile_manager()->GetLoadedProfiles();
-
-  std::vector<Profile*>::iterator profile_iterator = profiles.begin();
-  for (; profile_iterator != profiles.end(); ++profile_iterator) {
-    if (GetUserIDFromProfile(*profile_iterator) == user_id)
-      return *profile_iterator;
-  }
-  return NULL;
 }
 
 }  // namespace chrome

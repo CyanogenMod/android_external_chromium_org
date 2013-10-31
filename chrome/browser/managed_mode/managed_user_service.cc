@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -23,7 +24,6 @@
 #include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service.h"
 #include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_base.h"
@@ -623,7 +623,7 @@ void ManagedUserService::RegisterAndInitSync(
                  weak_ptr_factory_.GetWeakPtr(), callback, custodian_profile));
 
   // Fetch the custodian's profile information, to store the name.
-  // TODO(pamg): If --gaia-profile-info (keyword: switches::kGaiaProfileInfo)
+  // TODO(pamg): If --google-profile-info (flag: switches::kGoogleProfileInfo)
   // is ever enabled, take the name from the ProfileInfoCache instead.
   CustodianProfileDownloaderService* profile_downloader_service =
       CustodianProfileDownloaderServiceFactory::GetForProfile(

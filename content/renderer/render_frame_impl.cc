@@ -4,6 +4,9 @@
 
 #include "content/renderer/render_frame_impl.h"
 
+#include <map>
+#include <string>
+
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -11,6 +14,7 @@
 #include "content/child/plugin_messages.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/service_worker/web_service_worker_provider_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/socket_stream_handle_data.h"
 #include "content/common/swapped_out_messages.h"
@@ -60,6 +64,7 @@ using WebKit::WebPluginParams;
 using WebKit::WebReferrerPolicy;
 using WebKit::WebSearchableFormData;
 using WebKit::WebSecurityOrigin;
+using WebKit::WebServiceWorkerProvider;
 using WebKit::WebStorageQuotaCallbacks;
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -168,34 +173,6 @@ WebKit::WebPlugin* RenderFrameImpl::createPlugin(
 #endif  // defined(ENABLE_PLUGINS)
 }
 
-WebKit::WebSharedWorker* RenderFrameImpl::createSharedWorker(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURL& url,
-    const WebKit::WebString& name,
-    unsigned long long document_id) {
-  int route_id = MSG_ROUTING_NONE;
-  bool exists = false;
-  bool url_mismatch = false;
-  ViewHostMsg_CreateWorker_Params params;
-  params.url = url;
-  params.name = name;
-  params.document_id = document_id;
-  params.render_view_route_id = render_view_->GetRoutingID();
-  params.route_id = MSG_ROUTING_NONE;
-  params.script_resource_appcache_id = 0;
-  render_view_->Send(new ViewHostMsg_LookupSharedWorker(
-      params, &exists, &route_id, &url_mismatch));
-  if (url_mismatch) {
-    return NULL;
-  } else {
-    return new WebSharedWorkerProxy(RenderThreadImpl::current(),
-                                    document_id,
-                                    exists,
-                                    route_id,
-                                    render_view_->GetRoutingID());
-  }
-}
-
 WebKit::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
     WebKit::WebFrame* frame,
     const WebKit::WebURL& url,
@@ -218,6 +195,16 @@ WebKit::WebApplicationCacheHost* RenderFrameImpl::createApplicationCacheHost(
 
 WebKit::WebCookieJar* RenderFrameImpl::cookieJar(WebKit::WebFrame* frame) {
   return render_view_->cookieJar(frame);
+}
+
+WebKit::WebServiceWorkerProvider* RenderFrameImpl::createServiceWorkerProvider(
+    WebKit::WebFrame* frame,
+    WebKit::WebServiceWorkerProviderClient* client) {
+  return new WebServiceWorkerProviderImpl(
+      ChildThread::current()->thread_safe_sender(),
+      ChildThread::current()->service_worker_message_filter(),
+      GURL(frame->document().securityOrigin().toString()),
+      make_scoped_ptr(client));
 }
 
 void RenderFrameImpl::didAccessInitialDocument(WebKit::WebFrame* frame) {

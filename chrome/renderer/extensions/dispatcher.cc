@@ -18,6 +18,7 @@
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/extensions/api/extension_api.h"
+#include "chrome/common/extensions/api/messaging/message.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -25,7 +26,6 @@
 #include "chrome/common/extensions/manifest_handlers/externally_connectable.h"
 #include "chrome/common/extensions/manifest_handlers/sandboxed_page_info.h"
 #include "chrome/common/extensions/message_bundle.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/renderer/chrome_render_process_observer.h"
@@ -69,6 +69,7 @@
 #include "chrome/renderer/extensions/tab_finder.h"
 #include "chrome/renderer/extensions/tabs_custom_bindings.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
+#include "chrome/renderer/extensions/webrtc_native_handler.h"
 #include "chrome/renderer/extensions/webstore_bindings.h"
 #include "chrome/renderer/resource_bundle_source_map.h"
 #include "content/public/renderer/render_thread.h"
@@ -80,6 +81,7 @@
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/view_type.h"
 #include "grit/common_resources.h"
 #include "grit/renderer_resources.h"
@@ -92,6 +94,7 @@
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScopedUserGesture.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -157,6 +160,49 @@ class TestFeaturesNativeHandler : public ObjectBackedNativeHandler {
         content::V8ValueConverter::create());
     args.GetReturnValue().Set(
         converter->ToV8Value(value, context()->v8_context()));
+  }
+};
+
+class UserGesturesNativeHandler : public ObjectBackedNativeHandler {
+ public:
+  explicit UserGesturesNativeHandler(ChromeV8Context* context)
+      : ObjectBackedNativeHandler(context) {
+    RouteFunction("IsProcessingUserGesture",
+        base::Bind(&UserGesturesNativeHandler::IsProcessingUserGesture,
+                   base::Unretained(this)));
+    RouteFunction("RunWithUserGesture",
+        base::Bind(&UserGesturesNativeHandler::RunWithUserGesture,
+                   base::Unretained(this)));
+    RouteFunction("RunWithoutUserGesture",
+        base::Bind(&UserGesturesNativeHandler::RunWithoutUserGesture,
+                   base::Unretained(this)));
+  }
+
+ private:
+  void IsProcessingUserGesture(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(v8::Boolean::New(
+        WebKit::WebUserGestureIndicator::isProcessingUserGesture()));
+  }
+
+  void RunWithUserGesture(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    WebKit::WebScopedUserGesture user_gesture;
+    CHECK_EQ(args.Length(), 1);
+    CHECK(args[0]->IsFunction());
+    v8::Handle<v8::Value> no_args;
+    context()->CallFunction(v8::Handle<v8::Function>::Cast(args[0]),
+                            0, &no_args);
+  }
+
+  void RunWithoutUserGesture(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    WebKit::WebUserGestureIndicator::consumeUserGesture();
+    CHECK_EQ(args.Length(), 1);
+    CHECK(args[0]->IsFunction());
+    v8::Handle<v8::Value> no_args;
+    context()->CallFunction(v8::Handle<v8::Function>::Cast(args[0]),
+                            0, &no_args);
   }
 };
 
@@ -539,7 +585,7 @@ void Dispatcher::OnDispatchOnConnect(
 }
 
 void Dispatcher::OnDeliverMessage(int target_port_id,
-                                  const std::string& message) {
+                                  const Message& message) {
   MessagingBindings::DeliverMessage(
       v8_context_set_.GetAll(),
       target_port_id,
@@ -610,8 +656,8 @@ void Dispatcher::OnUnloaded(const std::string& id) {
 }
 
 void Dispatcher::OnSetScriptingWhitelist(
-    const Extension::ScriptingWhitelist& extension_ids) {
-  Extension::SetScriptingWhitelist(extension_ids);
+    const ExtensionsClient::ScriptingWhitelist& extension_ids) {
+  ExtensionsClient::Get()->SetScriptingWhitelist(extension_ids);
 }
 
 bool Dispatcher::IsExtensionActive(
@@ -892,6 +938,8 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
       scoped_ptr<NativeHandler>(new TabsCustomBindings(this, context)));
   module_system->RegisterNativeHandler("webstore",
       scoped_ptr<NativeHandler>(new WebstoreBindings(this, context)));
+  module_system->RegisterNativeHandler("webrtc_natives",
+      scoped_ptr<NativeHandler>(new WebRtcNativeHandler(context)));
 }
 
 void Dispatcher::PopulateSourceMap() {
@@ -965,8 +1013,8 @@ void Dispatcher::PopulateSourceMap() {
                              IDR_WEB_REQUEST_INTERNAL_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("webrtc.castSendTransport",
                              IDR_WEBRTC_CAST_SEND_TRANSPORT_CUSTOM_BINDINGS_JS);
-  source_map_.RegisterSource("webrtc.udpTransport",
-                             IDR_WEBRTC_UDP_TRANSPORT_CUSTOM_BINDINGS_JS);
+  source_map_.RegisterSource("webrtc.castUdpTransport",
+                             IDR_WEBRTC_CAST_UDP_TRANSPORT_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("webstore", IDR_WEBSTORE_CUSTOM_BINDINGS_JS);
   source_map_.RegisterSource("windowControls", IDR_WINDOW_CONTROLS_JS);
   source_map_.RegisterSource("binding", IDR_BINDING_JS);
@@ -1076,6 +1124,8 @@ void Dispatcher::DidCreateScriptContext(
       scoped_ptr<NativeHandler>(new V8ContextNativeHandler(context, this)));
   module_system->RegisterNativeHandler("test_features",
       scoped_ptr<NativeHandler>(new TestFeaturesNativeHandler(context)));
+  module_system->RegisterNativeHandler("user_gestures",
+      scoped_ptr<NativeHandler>(new UserGesturesNativeHandler(context)));
 
   int manifest_version = extension ? extension->manifest_version() : 1;
   bool send_request_disabled =

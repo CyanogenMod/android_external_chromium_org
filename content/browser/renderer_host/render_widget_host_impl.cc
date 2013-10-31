@@ -414,7 +414,7 @@ void RenderWidgetHostImpl::SetOverscrollControllerEnabled(bool enabled) {
   if (!enabled)
     overscroll_controller_.reset();
   else if (!overscroll_controller_)
-    overscroll_controller_.reset(new OverscrollController(this));
+    overscroll_controller_.reset(new OverscrollController());
 }
 
 void RenderWidgetHostImpl::SuppressNextCharEvents() {
@@ -1222,6 +1222,11 @@ void RenderWidgetHostImpl::GetSnapshotFromRenderer(
     const gfx::Rect& src_subrect,
     const base::Callback<void(bool, const SkBitmap&)>& callback) {
   TRACE_EVENT0("browser", "RenderWidgetHostImpl::GetSnapshotFromRenderer");
+  if (!view_) {
+    callback.Run(false, SkBitmap());
+    return;
+  }
+
   pending_snapshots_.push(callback);
 
   gfx::Rect copy_rect = src_subrect.IsEmpty() ?
@@ -1484,7 +1489,6 @@ void RenderWidgetHostImpl::OnUpdateScreenRectsAck() {
 }
 
 void RenderWidgetHostImpl::OnRequestMove(const gfx::Rect& pos) {
-  // Note that we ignore the position.
   if (view_) {
     view_->SetBounds(pos);
     Send(new ViewMsg_Move_ACK(routing_id_));

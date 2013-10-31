@@ -10,7 +10,6 @@ import re
 from telemetry import test
 from telemetry.core.backends import png_bitmap
 from telemetry.page import page_test
-from telemetry.page import test_expectations
 
 test_data_dir = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'data', 'gpu'))
@@ -37,7 +36,6 @@ test_harness_script = r"""
   }
 
   window.domAutomationController = domAutomationController;
-  console.log("Harness injected.");
 """
 
 class PixelTestFailure(Exception):
@@ -129,6 +127,11 @@ class PixelValidator(page_test.PageTest):
     full_image_name = img_name + '_' + str(build_revision)
     full_image_name = full_image_name + '.png'
 
+    # Save the reference image
+    # This ensures that we get the right revision number
+    PixelValidator.WriteImage(
+        os.path.join(img_dir, full_image_name), ref_png)
+
     PixelValidator.WriteImage(
         os.path.join(img_dir, 'FAIL_' + full_image_name), screenshot)
 
@@ -145,7 +148,6 @@ class PixelValidator(page_test.PageTest):
     png_image.WriteFile(image_path)
 
 class Pixel(test.Test):
-  enabled = False
   test = PixelValidator
   page_set = 'page_sets/pixel_tests.json'
 
@@ -164,9 +166,8 @@ class Pixel(test.Test):
         default="unknownrev")
     parser.add_option_group(group)
 
-  def CreateExpectations(self, page_set):
-    print page_set.pages
+  def CreatePageSet(self, options):
+    page_set = super(Pixel, self).CreatePageSet(options)
     for page in page_set.pages:
       page.script_to_evaluate_on_commit = test_harness_script
-
-    return test_expectations.TestExpectations()
+    return page_set

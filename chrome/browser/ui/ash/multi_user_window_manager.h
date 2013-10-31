@@ -48,22 +48,51 @@ class AppObserver;
 //   clean automatically all references of that window upon destruction.
 // - User changes will be tracked via observer. No need to call.
 // - All child windows will be owned by the same owner as its parent.
+// TODO(skuhne): Split this class into a generic (non Chrome OS) utility
+// function list and a pure virtual class. Then create two implementations of
+// it: One for Chrome OS and for all other OS'ses. Then remove the
+// defined(OS_CHROMEOS) in the various locations of the code.
 class MultiUserWindowManager : public ash::SessionStateObserver,
                                public aura::WindowObserver,
                                public content::NotificationObserver,
                                public ash::wm::WindowStateObserver {
  public:
+  // The multi profile mode in use.
+  enum MultiProfileMode {
+    MULTI_PROFILE_MODE_UNINITIALIZED,  // Not initialized yet.
+    MULTI_PROFILE_MODE_OFF,            // Single user mode.
+    MULTI_PROFILE_MODE_SEPARATED,      // Each user has his own desktop.
+    MULTI_PROFILE_MODE_MIXED           // All users mix windows freely.
+  };
+
+  // Creates an instance of the MultiUserWindowManager.
+  // Note: This function might fail if due to the desired mode the
+  // MultiUserWindowManager is not required.
+  static MultiUserWindowManager* CreateInstance();
+
   // Gets the instance of the object. If the multi profile mode is not enabled
-  // this will return NULL. If it wasn't created yet, it will create an instance
-  // using the currently active user as the active user - otherwise it will
-  // return the previously created instance.
+  // this will return NULL.
   static MultiUserWindowManager* GetInstance();
+
+  // Return the current multi profile mode operation. If CreateInstance was not
+  // yet called (or was already destroyed), MULTI_PROFILE_MODE_UNINITIALIZED
+  // will get returned.
+  static MultiProfileMode GetMultiProfileMode();
 
   // Removes the instance.
   static void DeleteInstance();
 
   // Get the user id from a given profile.
   static std::string GetUserIDFromProfile(Profile* profile);
+
+  // Get the user id from an email address.
+  static std::string GetUserIDFromEmail(const std::string& email);
+
+  // Get a profile for a given user id.
+  static Profile* GetProfileFromUserID(const std::string& user_id);
+
+  // Check if the given profile is from the currently active user.
+  static bool ProfileIsFromActiveUser(Profile* profile);
 
   // Assigns an owner to a passed window. Note that this window's parent should
   // be a direct child of the root window.
@@ -96,9 +125,15 @@ class MultiUserWindowManager : public ash::SessionStateObserver,
   // passed back the window will be presented for every user.
   const std::string& GetUserPresentingWindow(aura::Window* window);
 
+  // Adds user to monitor now and future running V1/V2 application windows.
+  // Returns immediately if the user (identified by a |profile|) is already
+  // known to the manager. Note: This function is not implemented as a
+  // SessionStateObserver to coordinate the timing of the addition with other
+  // modules.
+  void AddUser(Profile* profile);
+
   // SessionStateObserver overrides:
   virtual void ActiveUserChanged(const std::string& user_id) OVERRIDE;
-  virtual void UserAddedToSession(const std::string& user_id) OVERRIDE;
 
   // WindowObserver overrides:
   virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
@@ -171,11 +206,6 @@ class MultiUserWindowManager : public ash::SessionStateObserver,
   explicit MultiUserWindowManager(const std::string& active_user_id);
   virtual ~MultiUserWindowManager();
 
-  // Adds user to monitor for application windows. Returns immediately if the
-  // user is already known to the system. Otherwise it will make sure that
-  // application windows from that user will get properly tracked.
-  void AddUser(const std::string& user_id);
-
   // Add a browser window to the system so that the owner can be remembered.
   void AddBrowserWindow(Browser* browser);
 
@@ -184,9 +214,6 @@ class MultiUserWindowManager : public ash::SessionStateObserver,
   // distinguish state changes performed by this class vs. state changes
   // performed by the others.
   void SetWindowVisibility(aura::Window* window, bool visible);
-
-  // Get a profile for a given user id.
-  Profile* GetProfileFromUserID(const std::string& user_id);
 
   // A lookup to see to which user the given window belongs to, where and if it
   // should get shown.
@@ -205,6 +232,10 @@ class MultiUserWindowManager : public ash::SessionStateObserver,
 
   // Suppress changes to the visibility flag while we are changing it ourselves.
   bool suppress_visibility_changes_;
+
+  // Caching the current multi profile mode since the detection which mode is
+  // used is quite expensive.
+  static MultiProfileMode multi_user_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(MultiUserWindowManager);
 };

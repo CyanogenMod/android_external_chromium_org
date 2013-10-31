@@ -11,7 +11,7 @@
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/input/gesture_event_filter.h"
 #include "content/browser/renderer_host/input/immediate_input_router.h"
-#include "content/browser/renderer_host/input/mock_web_input_event_builders.h"
+#include "content/browser/renderer_host/input/synthetic_web_input_event_builders.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller.h"
 #include "content/browser/renderer_host/input/tap_suppression_controller_client.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
@@ -58,8 +58,9 @@ namespace content {
 
 class TestOverscrollDelegate : public OverscrollControllerDelegate {
  public:
-  TestOverscrollDelegate()
-      : current_mode_(OVERSCROLL_NONE),
+  explicit TestOverscrollDelegate(RenderWidgetHostView* view)
+      : view_(view),
+        current_mode_(OVERSCROLL_NONE),
         completed_mode_(OVERSCROLL_NONE),
         delta_x_(0.f),
         delta_y_(0.f) {
@@ -80,6 +81,10 @@ class TestOverscrollDelegate : public OverscrollControllerDelegate {
 
  private:
   // Overridden from OverscrollControllerDelegate:
+  virtual gfx::Rect GetVisibleBounds() const OVERRIDE {
+    return view_->IsShowing() ? view_->GetViewBounds() : gfx::Rect();
+  }
+
   virtual void OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE {
     delta_x_ = delta_x;
     delta_y_ = delta_y;
@@ -98,6 +103,7 @@ class TestOverscrollDelegate : public OverscrollControllerDelegate {
     delta_x_ = delta_y_ = 0.f;
   }
 
+  RenderWidgetHostView* view_;
   OverscrollMode current_mode_;
   OverscrollMode completed_mode_;
   float delta_x_;
@@ -233,10 +239,6 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return gesture_event_filter()->coalesced_gesture_events_.at(i).event;
   }
 
-  bool shouldDeferTapDownEvents() const {
-    return gesture_event_filter()->maximum_tap_gap_time_ms_ != 0;
-  }
-
   bool ScrollingInProgress() const {
     return gesture_event_filter()->scrolling_in_progress_;
   }
@@ -251,12 +253,8 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
 
   void SetupForOverscrollControllerTest() {
     SetOverscrollControllerEnabled(true);
-    overscroll_delegate_.reset(new TestOverscrollDelegate);
+    overscroll_delegate_.reset(new TestOverscrollDelegate(GetView()));
     overscroll_controller_->set_delegate(overscroll_delegate_.get());
-  }
-
-  void set_maximum_tap_gap_time_ms(int delay_ms) {
-    gesture_event_filter()->maximum_tap_gap_time_ms_ = delay_ms;
   }
 
   void set_debounce_interval_time_ms(int delay_ms) {
@@ -649,28 +647,28 @@ class RenderWidgetHostTest : public testing::Test {
   }
 
   void SimulateKeyboardEvent(WebInputEvent::Type type) {
-    host_->ForwardKeyboardEvent(MockWebKeyboardEventBuilder::Build(type));
+    host_->ForwardKeyboardEvent(SyntheticWebKeyboardEventBuilder::Build(type));
   }
 
   void SimulateMouseEvent(WebInputEvent::Type type) {
-    host_->ForwardMouseEvent(MockWebMouseEventBuilder::Build(type));
+    host_->ForwardMouseEvent(SyntheticWebMouseEventBuilder::Build(type));
   }
 
   void SimulateWheelEvent(float dX, float dY, int modifiers, bool precise) {
     host_->ForwardWheelEvent(
-        MockWebMouseWheelEventBuilder::Build(dX, dY, modifiers, precise));
+        SyntheticWebMouseWheelEventBuilder::Build(dX, dY, modifiers, precise));
   }
 
   void SimulateMouseMove(int x, int y, int modifiers) {
     host_->ForwardMouseEvent(
-        MockWebMouseEventBuilder::Build(WebInputEvent::MouseMove,
-                                        x,
-                                        y,
-                                        modifiers));
+        SyntheticWebMouseEventBuilder::Build(WebInputEvent::MouseMove,
+                                             x,
+                                             y,
+                                             modifiers));
   }
 
   void SimulateWheelEventWithPhase(WebMouseWheelEvent::Phase phase) {
-    host_->ForwardWheelEvent(MockWebMouseWheelEventBuilder::Build(phase));
+    host_->ForwardWheelEvent(SyntheticWebMouseWheelEventBuilder::Build(phase));
   }
 
   // Inject provided synthetic WebGestureEvent instance.
@@ -682,12 +680,12 @@ class RenderWidgetHostTest : public testing::Test {
   void SimulateGestureEvent(WebInputEvent::Type type,
                             WebGestureEvent::SourceDevice sourceDevice) {
     SimulateGestureEventCore(
-        MockWebGestureEventBuilder::Build(type, sourceDevice));
+        SyntheticWebGestureEventBuilder::Build(type, sourceDevice));
   }
 
   void SimulateGestureScrollUpdateEvent(float dX, float dY, int modifiers) {
     SimulateGestureEventCore(
-        MockWebGestureEventBuilder::BuildScrollUpdate(dX, dY, modifiers));
+        SyntheticWebGestureEventBuilder::BuildScrollUpdate(dX, dY, modifiers));
   }
 
   void SimulateGesturePinchUpdateEvent(float scale,
@@ -695,10 +693,10 @@ class RenderWidgetHostTest : public testing::Test {
                                        float anchorY,
                                        int modifiers) {
     SimulateGestureEventCore(
-        MockWebGestureEventBuilder::BuildPinchUpdate(scale,
-                                                     anchorX,
-                                                     anchorY,
-                                                     modifiers));
+        SyntheticWebGestureEventBuilder::BuildPinchUpdate(scale,
+                                                          anchorX,
+                                                          anchorY,
+                                                          modifiers));
   }
 
   // Inject synthetic GestureFlingStart events.
@@ -707,9 +705,9 @@ class RenderWidgetHostTest : public testing::Test {
       float velocityY,
       WebGestureEvent::SourceDevice sourceDevice) {
     SimulateGestureEventCore(
-        MockWebGestureEventBuilder::BuildFling(velocityX,
-                                               velocityY,
-                                               sourceDevice));
+        SyntheticWebGestureEventBuilder::BuildFling(velocityX,
+                                                    velocityY,
+                                                    sourceDevice));
   }
 
   // Set the timestamp for the touch-event.
@@ -758,7 +756,7 @@ class RenderWidgetHostTest : public testing::Test {
   bool handle_mouse_event_;
 
  private:
-  MockWebTouchEvent touch_event_;
+  SyntheticWebTouchEvent touch_event_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostTest);
 };

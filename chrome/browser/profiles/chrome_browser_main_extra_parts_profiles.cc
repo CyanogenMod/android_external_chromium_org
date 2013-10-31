@@ -4,6 +4,7 @@
 
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 
+#include "apps/app_keep_alive_service_factory.h"
 #include "apps/app_load_service_factory.h"
 #include "apps/app_restore_service_factory.h"
 #include "apps/shell_window_geometry_cache.h"
@@ -85,6 +86,7 @@
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_api.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/sessions/sessions_api.h"
+#include "chrome/browser/extensions/api/settings_overrides/settings_overrides_api.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_manager.h"
 #include "chrome/browser/extensions/api/socket/socket.h"
 #include "chrome/browser/extensions/api/socket/tcp_socket.h"
@@ -98,6 +100,7 @@
 #include "chrome/browser/extensions/api/tabs/tabs_windows_api.h"
 #include "chrome/browser/extensions/api/usb/usb_device_resource.h"
 #include "chrome/browser/extensions/api/web_navigation/web_navigation_api.h"
+#include "chrome/browser/extensions/api/webrtc_audio_private/webrtc_audio_private_api.h"
 #include "chrome/browser/extensions/extension_prefs_factory.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_web_ui_override_registrar.h"
@@ -214,6 +217,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   DownloadServiceFactory::GetInstance();
 #if defined(ENABLE_EXTENSIONS)
   AppShortcutManagerFactory::GetInstance();
+  apps::AppKeepAliveServiceFactory::GetInstance();
   apps::AppLoadServiceFactory::GetInstance();
   apps::AppRestoreServiceFactory::GetInstance();
   apps::ShellWindowGeometryCache::Factory::GetInstance();
@@ -275,6 +279,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::ProcessesAPI::GetFactoryInstance();
   extensions::PushMessagingAPI::GetFactoryInstance();
   extensions::SessionsAPI::GetFactoryInstance();
+  extensions::SettingsOverridesAPI::GetFactoryInstance();
   extensions::SignedInDevicesManager::GetFactoryInstance();
 #if defined(ENABLE_SPELLCHECK)
   extensions::SpellcheckAPI::GetFactoryInstance();
@@ -286,6 +291,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   extensions::TabsWindowsAPI::GetFactoryInstance();
   extensions::TtsAPI::GetFactoryInstance();
   extensions::WebNavigationAPI::GetFactoryInstance();
+  extensions::WebrtcAudioPrivateEventService::GetFactoryInstance();
 #endif  // defined(ENABLE_EXTENSIONS)
   FaviconServiceFactory::GetInstance();
 #if defined(OS_CHROMEOS) && defined(FILE_MANAGER_EXTENSION)

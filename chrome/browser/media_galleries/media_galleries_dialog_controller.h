@@ -24,6 +24,11 @@ namespace extensions {
 class Extension;
 }
 
+namespace ui {
+class MenuModel;
+}
+
+class GalleryContextMenuModel;
 class MediaGalleriesDialogController;
 
 // The view.
@@ -31,15 +36,8 @@ class MediaGalleriesDialog {
  public:
   virtual ~MediaGalleriesDialog();
 
-  // Updates the entry for |gallery| with the checkbox set to the value in
-  // |permitted|. |gallery| is owned by the controller and is guaranteed to
-  // live longer than the dialog. If the entry does not already exist, it
-  // should be created.
-  virtual void UpdateGallery(const MediaGalleryPrefInfo& gallery,
-                             bool permitted) = 0;
-
-  // If there exists an entry for |gallery|, it should be removed.
-  virtual void ForgetGallery(MediaGalleryPrefId gallery) = 0;
+  // Tell the dialog to update its display list of galleries.
+  virtual void UpdateGalleries() = 0;
 
   // Constructs a platform-specific dialog owned and controlled by |controller|.
   static MediaGalleriesDialog* Create(
@@ -95,11 +93,18 @@ class MediaGalleriesDialogController
   // of gallery permissions checkbox settings is sent on every checkbox toggle.
   virtual void DidToggleGalleryId(MediaGalleryPrefId pref_id,
                                   bool enabled);
+  virtual void DidToggleNewGallery(const MediaGalleryPrefInfo& gallery,
+                                   bool enabled);
+
+  // The forget command in the context menu was selected.
+  virtual void DidForgetGallery(MediaGalleryPrefId pref_id);
 
   // The dialog is being deleted.
   virtual void DialogFinished(bool accepted);
 
   virtual content::WebContents* web_contents();
+
+  ui::MenuModel* GetContextMenuModel(MediaGalleryPrefId id);
 
  protected:
   // For use with tests.
@@ -191,6 +196,9 @@ class MediaGalleriesDialogController
   scoped_ptr<MediaGalleriesDialog> dialog_;
 
   scoped_refptr<ui::SelectFileDialog> select_folder_dialog_;
+
+  scoped_ptr<ui::MenuModel> context_menu_model_;
+  scoped_ptr<GalleryContextMenuModel> gallery_menu_model_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesDialogController);
 };

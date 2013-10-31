@@ -18,9 +18,6 @@ const char kAshWebUIInit[]                  = "ash-webui-init";
 // Enables overriding the path for the default authentication extension.
 const char kAuthExtensionPath[]             = "auth-ext-path";
 
-// Enables overriding the Chrome OS board type when running on Linux.
-const char kChromeOSReleaseBoard[] = "chromeos-release-board";
-
 // Forces the stub implementation of dbus clients.
 const char kDbusStub[] = "dbus-stub";
 
@@ -79,9 +76,6 @@ const char kEnableBackgroundLoader[]        = "enable-background-loader";
 
 // Enables switching between different cellular carriers from the UI.
 const char kEnableCarrierSwitching[]        = "enable-carrier-switching";
-
-// Enable switching between audio devices in Chrome instead of cras.
-const char kEnableChromeAudioSwitching[] = "enable-chrome-audio-switching";
 
 // Enables Chrome Captive Portal detector, which initiates Captive
 // Portal detection for new active networks.
@@ -166,11 +160,6 @@ const char kLoginUser[]                     = "login-user";
 // Enables natural scroll by default.
 const char kNaturalScrollDefault[]          = "enable-natural-scroll-default";
 
-// Disables tab discard in low memory conditions, a feature which silently
-// closes inactive tabs to free memory and to attempt to avoid the kernel's
-// out-of-memory process killer.
-const char kNoDiscardTabs[]                 = "no-discard-tabs";
-
 // Skips all other OOBE pages after user login.
 const char kOobeSkipPostLogin[]             = "oobe-skip-postlogin";
 
@@ -194,6 +183,9 @@ const char kEnableSamlSignin[]              = "enable-saml-signin";
 
 // Enables new first-run overlay UI.
 const char kEnableFirstRunUI[] = "enable-first-run-ui";
+
+// Enables testing for auto update UI.
+const char kTestAutoUpdateUI[] = "test-auto-update-ui";
 
 }  // namespace switches
 }  // namespace chromeos

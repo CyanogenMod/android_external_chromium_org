@@ -13,6 +13,7 @@
 #include "net/quic/crypto/quic_encrypter.h"
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
+#include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/spdy/spdy_frame_builder.h"
 
 using base::StringPiece;
@@ -108,6 +109,7 @@ FramerVisitorCapturingFrames::FramerVisitorCapturingFrames() : frame_count_(0) {
 }
 
 FramerVisitorCapturingFrames::~FramerVisitorCapturingFrames() {
+  STLDeleteElements(&stream_data_);
 }
 
 bool FramerVisitorCapturingFrames::OnPacketHeader(
@@ -118,9 +120,12 @@ bool FramerVisitorCapturingFrames::OnPacketHeader(
 }
 
 bool FramerVisitorCapturingFrames::OnStreamFrame(const QuicStreamFrame& frame) {
-  // TODO(ianswett): Own the underlying string, so it will not exist outside
-  // this callback.
-  stream_frames_.push_back(frame);
+  // Make a copy of the frame and store a copy of underlying string, since
+  // frame.data may not exist outside this callback.
+  stream_data_.push_back(new string(frame.data.as_string()));
+  QuicStreamFrame frame_copy = frame;
+  stream_frames_.push_back(frame_copy);
+  stream_frames_.back().data = *(stream_data_.back());
   ++frame_count_;
   return true;
 }
@@ -207,15 +212,20 @@ MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                bool is_server)
     : QuicConnection(guid, address, new testing::NiceMock<MockHelper>(),
-                     is_server, QuicVersionMax()),
-      has_mock_helper_(true) {
+                     new testing::NiceMock<MockPacketWriter>(),
+                     is_server, QuicSupportedVersions()),
+      has_mock_helper_(true),
+      writer_(QuicConnectionPeer::GetWriter(this)),
+      helper_(helper()) {
 }
 
 MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                QuicConnectionHelperInterface* helper,
+                               QuicPacketWriter* writer,
                                bool is_server)
-    : QuicConnection(guid, address, helper, is_server, QuicVersionMax()),
+    : QuicConnection(guid, address, helper, writer, is_server,
+                     QuicSupportedVersions()),
       has_mock_helper_(false) {
 }
 
@@ -246,6 +256,7 @@ bool PacketSavingConnection::SendOrQueuePacket(
     QuicPacketEntropyHash /* entropy_hash */,
     TransmissionType /* transmission_type */,
     HasRetransmittableData /* retransmittable */,
+    IsHandshake /* handshake */,
     Force /* forced */) {
   packets_.push_back(packet);
   QuicEncryptedPacket* encrypted =
@@ -278,6 +289,12 @@ void TestSession::SetCryptoStream(QuicCryptoStream* stream) {
 
 QuicCryptoStream* TestSession::GetCryptoStream() {
   return crypto_stream_;
+}
+
+MockPacketWriter::MockPacketWriter() {
+}
+
+MockPacketWriter::~MockPacketWriter() {
 }
 
 MockSendAlgorithm::MockSendAlgorithm() {
@@ -333,12 +350,17 @@ string HexDumpWithMarks(const char* data, int length,
 
 }  // namespace
 
+QuicVersion QuicVersionMax() { return QuicSupportedVersions().front(); }
+
+QuicVersion QuicVersionMin() { return QuicSupportedVersions().back(); }
+
 void CompareCharArraysWithHexError(
     const string& description,
     const char* actual,
     const int actual_len,
     const char* expected,
     const int expected_len) {
+  EXPECT_EQ(actual_len, expected_len);
   const int min_len = min(actual_len, expected_len);
   const int max_len = max(actual_len, expected_len);
   scoped_ptr<bool[]> marks(new bool[max_len]);
@@ -370,7 +392,7 @@ static QuicPacket* ConstructPacketFromHandshakeMessage(
     bool should_include_version) {
   CryptoFramer crypto_framer;
   scoped_ptr<QuicData> data(crypto_framer.ConstructHandshakeMessage(message));
-  QuicFramer quic_framer(QuicVersionMax(), QuicTime::Zero(), false);
+  QuicFramer quic_framer(QuicSupportedVersions(), QuicTime::Zero(), false);
 
   QuicPacketHeader header;
   header.public_header.guid = guid;
@@ -404,13 +426,12 @@ size_t GetPacketLengthForOneStream(
     InFecGroup is_in_fec_group,
     size_t* payload_length) {
   *payload_length = 1;
-  bool use_short_hash = version >= QUIC_VERSION_11;
   const size_t stream_length =
-      NullEncrypter(use_short_hash).GetCiphertextSize(*payload_length) +
+      NullEncrypter(false).GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_GUID, include_version,
           sequence_number_length, is_in_fec_group);
-  const size_t ack_length = NullEncrypter(use_short_hash).GetCiphertextSize(
+  const size_t ack_length = NullEncrypter(false).GetCiphertextSize(
       QuicFramer::GetMinAckFrameSize()) +
       GetPacketHeaderSize(PACKET_8BYTE_GUID, include_version,
                           sequence_number_length, is_in_fec_group);
@@ -418,7 +439,7 @@ size_t GetPacketLengthForOneStream(
     *payload_length = 1 + ack_length - stream_length;
   }
 
-  return NullEncrypter(use_short_hash).GetCiphertextSize(*payload_length) +
+  return NullEncrypter(false).GetCiphertextSize(*payload_length) +
       QuicPacketCreator::StreamFramePacketOverhead(
           version, PACKET_8BYTE_GUID, include_version,
           sequence_number_length, is_in_fec_group);

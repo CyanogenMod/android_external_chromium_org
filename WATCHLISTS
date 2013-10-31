@@ -268,9 +268,6 @@
     'ftp': {
       'filepath': 'ftp',
     },
-    'fullscreen_controller': {
-      'filepath': 'fullscreen_controller',
-    },
     'geolocation': {
       'filepath': 'chrome/browser/geolocation/|'\
                   'content/browser/geolocation|'\
@@ -411,6 +408,8 @@
     },
     'ozone': {
       'filepath': 'ui/base/ozone/|'\
+        'ui/events/ozone/|'\
+        'ui/gfx/ozone/|'\
         'ui/gl/gl_.*egl.*|'\
         'ui/gl/gl_.*ozone.*'
     },
@@ -713,7 +712,6 @@
     'filebrowse': ['rginda+watch@chromium.org'],
     'filesapp': ['mtomasz+watch@chromium.org'],
     'ftp': ['phajdan.jr@chromium.org'],
-    'fullscreen_controller': ['scheib+watch@chromium.org'],
     'geolocation': ['mvanouwerkerk@chromium.org'],
     'gfx_geometry': ['cc-bugs@chromium.org'],
     'gfx_image': ['rsesek+watch@chromium.org'],
@@ -728,7 +726,7 @@
                 'melevin+watch@chromium.org', 'dougw+watch@chromium.org',
                 'kmadhusu+watch@chromium.org', 'dhollowa+watch@chromium.org',
                 'jfweitz+watch@chromium.org', 'skanuj+watch@chromium.org',
-                'donnd+watch@chromium.org', 'mad+watch@chromium.org'],
+                'donnd+watch@chromium.org'],
     'ipc': ['jam@chromium.org', 'darin-cc@chromium.org'],
     'linux_fonts': ['derat+watch@chromium.org'],
     'linux_sandboxing': ['agl@chromium.org', 'jln+watch@chromium.org'],
@@ -742,6 +740,7 @@
                 'isherman@chromium.org',
                 'asvitkine+watch@chromium.org'],
     'mojo': ['aa@chromium.org',
+             'abarth@chromium.org',
              'ben+mojo@chromium.org',
              'darin@chromium.org',
              'viettrungluu+watch@chromium.org'],
@@ -756,7 +755,8 @@
             'pedrosimonetti+watch@chromium.org'],
     'omnibox': ['suzhe@chromium.org'],
     'options': ['dbeam+watch-options@chromium.org'],
-    'ozone': ['rjkroege@chromium.org', 'kalyan.kondapally@intel.com'],
+    'ozone': ['kalyan.kondapally@intel.com', 'ozone-reviews@chromium.org',
+              'rjkroege@chromium.org'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
                'dcheng@chromium.org', 'jianli@chromium.org'],
     'pepper_api': ['piman+watch@chromium.org',

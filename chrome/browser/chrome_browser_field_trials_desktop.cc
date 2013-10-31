@@ -11,14 +11,13 @@
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/auto_launch_trial.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/gpu/chrome_gpu_util.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/safe_browsing/safe_browsing_blocking_page.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
@@ -130,7 +129,6 @@ void SetupDesktopFieldTrials(const CommandLine& parsed_command_line,
                              PrefService* local_state) {
   prerender::ConfigurePrefetchAndPrerender(parsed_command_line);
   AutoLaunchChromeFieldTrial();
-  gpu_util::InitializeCompositingFieldTrial();
   OmniboxFieldTrial::ActivateStaticTrials();
   SetupInfiniteCacheFieldTrial();
   DisableShowProfileSwitcherTrialIfNecessary();

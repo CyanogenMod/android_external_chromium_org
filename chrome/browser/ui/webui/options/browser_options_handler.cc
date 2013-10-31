@@ -17,6 +17,7 @@
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,7 +31,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
@@ -507,9 +507,6 @@ void BrowserOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   values->SetBoolean("enableStickyKeys",
                      command_line.HasSwitch(switches::kEnableStickyKeys));
-  values->SetBoolean("enableAutoclick",
-                     command_line.HasSwitch(
-                        ash::switches::kAshEnableAutoclick));
 #endif
 
 #if defined(OS_MACOSX)
@@ -850,13 +847,6 @@ void BrowserOptionsHandler::CheckAutoLaunchCallback(
 }
 
 void BrowserOptionsHandler::UpdateDefaultBrowserState() {
-  // Check for side-by-side first.
-  if (ShellIntegration::CanSetAsDefaultBrowser() ==
-          ShellIntegration::SET_DEFAULT_NOT_ALLOWED) {
-    SetDefaultBrowserUIString(IDS_OPTIONS_DEFAULTBROWSER_SXS);
-    return;
-  }
-
 #if defined(OS_MACOSX)
   ShellIntegration::DefaultWebClientState state =
       ShellIntegration::GetDefaultBrowser();
@@ -907,14 +897,21 @@ int BrowserOptionsHandler::StatusStringIdForState(
 void BrowserOptionsHandler::SetDefaultWebClientUIState(
     ShellIntegration::DefaultWebClientUIState state) {
   int status_string_id;
-  if (state == ShellIntegration::STATE_IS_DEFAULT)
+
+  if (state == ShellIntegration::STATE_IS_DEFAULT) {
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_DEFAULT;
-  else if (state == ShellIntegration::STATE_NOT_DEFAULT)
-    status_string_id = IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT;
-  else if (state == ShellIntegration::STATE_UNKNOWN)
+  } else if (state == ShellIntegration::STATE_NOT_DEFAULT) {
+    if (ShellIntegration::CanSetAsDefaultBrowser() ==
+            ShellIntegration::SET_DEFAULT_NOT_ALLOWED) {
+      status_string_id = IDS_OPTIONS_DEFAULTBROWSER_SXS;
+    } else {
+      status_string_id = IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT;
+    }
+  } else if (state == ShellIntegration::STATE_UNKNOWN) {
     status_string_id = IDS_OPTIONS_DEFAULTBROWSER_UNKNOWN;
-  else
+  } else {
     return;  // Still processing.
+  }
 
   SetDefaultBrowserUIString(status_string_id);
 }

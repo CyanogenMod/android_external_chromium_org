@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/theme_image_mapper.h"
 #include "grit/theme_resources.h"
+#include "ui/aura/root_window.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/views/controls/menu/native_menu_win.h"
@@ -76,12 +77,10 @@ class DesktopThemeProvider : public ui::ThemeProvider {
 BrowserDesktopRootWindowHostWin::BrowserDesktopRootWindowHostWin(
     views::internal::NativeWidgetDelegate* native_widget_delegate,
     views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-    const gfx::Rect& initial_bounds,
     BrowserView* browser_view,
     BrowserFrame* browser_frame)
     : DesktopRootWindowHostWin(native_widget_delegate,
-                               desktop_native_widget_aura,
-                               initial_bounds),
+                               desktop_native_widget_aura),
       browser_view_(browser_view),
       browser_frame_(browser_frame),
       did_gdi_clear_(false) {
@@ -92,6 +91,12 @@ BrowserDesktopRootWindowHostWin::BrowserDesktopRootWindowHostWin(
 }
 
 BrowserDesktopRootWindowHostWin::~BrowserDesktopRootWindowHostWin() {
+}
+
+void BrowserDesktopRootWindowHostWin::SetWindowTransparency() {
+  bool transparent = ShouldUseNativeFrame() && !IsFullscreen();
+  GetRootWindow()->compositor()->SetHostHasTransparentBackground(transparent);
+  GetRootWindow()->SetTransparent(transparent);
 }
 
 views::NativeMenuWin* BrowserDesktopRootWindowHostWin::GetSystemMenu() {
@@ -123,6 +128,13 @@ bool BrowserDesktopRootWindowHostWin::UsesNativeSystemMenu() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserDesktopRootWindowHostWin, views::DesktopRootWindowHostWin overrides:
+
+void BrowserDesktopRootWindowHostWin::OnRootWindowCreated(
+    aura::RootWindow* root,
+    const views::Widget::InitParams& params) {
+  DesktopRootWindowHostWin::OnRootWindowCreated(root, params);
+  SetWindowTransparency();
+}
 
 int BrowserDesktopRootWindowHostWin::GetInitialShowState() const {
   STARTUPINFO si = {0};
@@ -259,6 +271,12 @@ bool BrowserDesktopRootWindowHostWin::ShouldUseNativeFrame() {
 void BrowserDesktopRootWindowHostWin::FrameTypeChanged() {
   views::DesktopRootWindowHostWin::FrameTypeChanged();
   did_gdi_clear_ = false;
+  SetWindowTransparency();
+}
+
+void BrowserDesktopRootWindowHostWin::SetFullscreen(bool fullscreen) {
+  DesktopRootWindowHostWin::SetFullscreen(fullscreen);
+  SetWindowTransparency();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -309,6 +327,11 @@ MARGINS BrowserDesktopRootWindowHostWin::GetDWMFrameMargins() const {
   return margins;
 }
 
+void BrowserDesktopRootWindowHostWin::ToggleFullScreen() {
+  DesktopRootWindowHostWin::ToggleFullScreen();
+  SetWindowTransparency();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserDesktopRootWindowHost, public:
 
@@ -317,12 +340,10 @@ BrowserDesktopRootWindowHost*
     BrowserDesktopRootWindowHost::CreateBrowserDesktopRootWindowHost(
         views::internal::NativeWidgetDelegate* native_widget_delegate,
         views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-        const gfx::Rect& initial_bounds,
         BrowserView* browser_view,
         BrowserFrame* browser_frame) {
   return new BrowserDesktopRootWindowHostWin(native_widget_delegate,
                                              desktop_native_widget_aura,
-                                             initial_bounds,
                                              browser_view,
                                              browser_frame);
 }

@@ -133,7 +133,8 @@ std::string InstantNTPPrerenderer::GetInstantURL() const {
 
   // TODO(kmadhusu): Remove start margin param from chrome::GetInstantURL().
   const GURL instant_url = chrome::GetInstantURL(profile_,
-                                                 chrome::kDisableStartMargin);
+                                                 chrome::kDisableStartMargin,
+                                                 false);
   if (!instant_url.is_valid())
     return GetLocalInstantURL();
 
@@ -204,21 +205,6 @@ void InstantNTPPrerenderer::InstantSupportDetermined(
 void InstantNTPPrerenderer::InstantPageAboutToNavigateMainFrame(
     const content::WebContents* /* contents */,
     const GURL& /* url */) {
-  NOTREACHED();
-}
-
-void InstantNTPPrerenderer::NavigateToURL(
-    const content::WebContents* /* contents */,
-    const GURL& /* url */,
-    content::PageTransition /* transition */,
-    WindowOpenDisposition /* disposition */,
-    bool /* is_search_type */) {
-  NOTREACHED();
-}
-
-void InstantNTPPrerenderer::PasteIntoOmnibox(
-    const content::WebContents* /* contents */,
-    const string16& /* text */) {
   NOTREACHED();
 }
 

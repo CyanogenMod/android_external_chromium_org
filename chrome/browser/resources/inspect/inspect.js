@@ -15,8 +15,8 @@ function activate(data) {
   chrome.send('activate', [data]);
 }
 
-function terminate(data) {
-  chrome.send('terminate', [data]);
+function close(data) {
+  chrome.send('close', [data]);
 }
 
 function reload(data) {
@@ -69,7 +69,7 @@ function selectTab(id) {
   window.location.hash = id;
 }
 
-function populateLists(data) {
+function populateWebContentsTargets(data) {
   removeChildren('pages-list');
   removeChildren('extensions-list');
   removeChildren('apps-list');
@@ -78,7 +78,7 @@ function populateLists(data) {
   for (var i = 0; i < data.length; i++) {
     if (data[i].type === 'page')
       addToPagesList(data[i]);
-    else if (data[i].type === 'extension')
+    else if (data[i].type === 'background_page')
       addToExtensionsList(data[i]);
     else if (data[i].type === 'app')
       addToAppsList(data[i]);
@@ -87,16 +87,21 @@ function populateLists(data) {
   }
 }
 
-function populateWorkersList(data) {
+function populateWorkerTargets(data) {
   removeChildren('workers-list');
 
   for (var i = 0; i < data.length; i++)
     addToWorkersList(data[i]);
 }
 
-function populateDeviceLists(devices) {
+function populateRemoteTargets(devices) {
   if (!devices)
     return;
+
+  if (window.modal) {
+    window.holdDevices = devices;
+    return;
+  }
 
   function alreadyDisplayed(element, data) {
     var json = JSON.stringify(data);
@@ -294,12 +299,12 @@ function populateDeviceLists(devices) {
           addFavicon(row, page);
         if (isChrome) {
           if (majorChromeVersion >= MIN_VERSION_TAB_ACTIVATE) {
-            addActionLink(row, 'activate', activate.bind(null, page), false);
+            addActionLink(row, 'focus tab', activate.bind(null, page), false);
           }
           addActionLink(row, 'reload', reload.bind(null, page), page.attached);
           if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
             addActionLink(
-                row, 'close', terminate.bind(null, page), page.attached);
+                row, 'close', close.bind(null, page), page.attached);
           }
         }
       }
@@ -330,8 +335,9 @@ function addToAppsList(data) {
 }
 
 function addToWorkersList(data) {
-  var row = addTargetToList(data, $('workers-list'), ['pid', 'url']);
-  addActionLink(row, 'terminate', terminate.bind(null, data), data.attached);
+  var row =
+      addTargetToList(data, $('workers-list'), ['name', 'description', 'url']);
+  addActionLink(row, 'terminate', close.bind(null, data), data.attached);
 }
 
 function addToOthersList(data) {
@@ -348,9 +354,6 @@ function formatValue(data, property) {
   var text = value ? String(value) : '';
   if (text.length > 100)
     text = text.substring(0, 100) + '\u2026';
-
-  if (property == 'pid')
-    text = 'Pid:' + text;
 
   var span = document.createElement('div');
   span.textContent = text;
@@ -426,10 +429,14 @@ function addWebViewThumbnail(row, webview, screenWidth, screenHeight) {
   var thumbnail = document.createElement('div');
   thumbnail.className = 'webview-thumbnail';
   var thumbnailWidth = 3 * screenRectWidth;
+  var thumbnailHeight = 60;
   thumbnail.style.width = thumbnailWidth + 'px';
+  thumbnail.style.height = thumbnailHeight + 'px';
 
   var screenRect = document.createElement('div');
   screenRect.className = 'screen-rect';
+  screenRect.style.left = screenRectWidth + 'px';
+  screenRect.style.top = (thumbnailHeight - screenRectHeight) / 2 + 'px';
   screenRect.style.width = screenRectWidth + 'px';
   screenRect.style.height = screenRectHeight + 'px';
   thumbnail.appendChild(screenRect);
@@ -457,6 +464,7 @@ function addTargetToList(data, list, properties) {
   row.className = 'row';
 
   var subrowBox = document.createElement('div');
+  subrowBox.className = 'subrow-box';
   row.appendChild(subrowBox);
 
   var subrow = document.createElement('div');
@@ -505,7 +513,7 @@ function initSettings() {
   $('port-forwarding-config-close').addEventListener(
       'click', closePortForwardingConfig);
   $('port-forwarding-config-done').addEventListener(
-      'click', commitPortForwardingConfig);
+      'click', commitPortForwardingConfig.bind(true));
 }
 
 function enableDiscoverUsbDevices(event) {
@@ -522,19 +530,54 @@ function handleKey(event) {
       if (event.target.nodeName == 'INPUT') {
         var line = event.target.parentNode;
         if (!line.classList.contains('fresh') ||
-            line.classList.contains('empty'))
-          commitPortForwardingConfig();
-        else
+            line.classList.contains('empty')) {
+          commitPortForwardingConfig(true);
+        } else {
           commitFreshLineIfValid(true /* select new line */);
+          commitPortForwardingConfig(false);
+        }
       } else {
-        commitPortForwardingConfig();
+        commitPortForwardingConfig(true);
       }
       break;
 
     case 27:
-      closePortForwardingConfig();
+      commitPortForwardingConfig(true);
       break;
   }
+}
+
+function setModal(dialog) {
+  dialog.deactivatedNodes = Array.prototype.filter.call(
+      document.querySelectorAll('*'),
+      function(n) {
+        return n != dialog && !dialog.contains(n) && n.tabIndex >= 0;
+      });
+
+  dialog.tabIndexes = dialog.deactivatedNodes.map(
+    function(n) { return n.getAttribute('tabindex'); });
+
+  dialog.deactivatedNodes.forEach(function(n) { n.tabIndex = -1; });
+  window.modal = dialog;
+}
+
+function unsetModal(dialog) {
+  for (var i = 0; i < dialog.deactivatedNodes.length; i++) {
+    var node = dialog.deactivatedNodes[i];
+    if (dialog.tabIndexes[i] === null)
+      node.removeAttribute('tabindex');
+    else
+      node.setAttribute('tabindex', tabIndexes[i]);
+  }
+
+  if (window.holdDevices) {
+    populateDeviceLists(window.holdDevices);
+    delete window.holdDevices;
+  }
+
+  delete dialog.deactivatedNodes;
+  delete dialog.tabIndexes;
+  delete window.modal;
 }
 
 function openPortForwardingConfig() {
@@ -548,11 +591,14 @@ function openPortForwardingConfig() {
     freshPort.focus();
   else
     $('port-forwarding-config-done').focus();
+
+  setModal($('port-forwarding-overlay'));
 }
 
 function closePortForwardingConfig() {
   $('port-forwarding-overlay').classList.remove('open');
   document.removeEventListener('keyup', handleKey);
+  unsetModal($('port-forwarding-overlay'));
 }
 
 function loadPortForwardingConfig(config) {
@@ -563,25 +609,28 @@ function loadPortForwardingConfig(config) {
   list.appendChild(createEmptyConfigLine());
 }
 
-function commitPortForwardingConfig() {
-  if (document.querySelector(
-      '.port-forwarding-pair:not(.fresh) input.invalid'))
-    return;
+function commitPortForwardingConfig(closeConfig) {
+  if (closeConfig)
+    closePortForwardingConfig();
 
-  if (document.querySelector(
-      '.port-forwarding-pair.fresh:not(.empty) input.invalid'))
-    return;
-
-  closePortForwardingConfig();
   commitFreshLineIfValid();
   var lines = document.querySelectorAll('.port-forwarding-pair');
   var config = {};
   for (var i = 0; i != lines.length; i++) {
     var line = lines[i];
-    var portInput = line.querySelector('.port:not(.invalid)');
-    var locationInput = line.querySelector('.location:not(.invalid)');
-    if (portInput && locationInput)
-      config[portInput.value] = locationInput.value;
+    var portInput = line.querySelector('.port');
+    var locationInput = line.querySelector('.location');
+
+    var port = portInput.classList.contains('invalid') ?
+               portInput.lastValidValue :
+               portInput.value;
+
+    var location = locationInput.classList.contains('invalid') ?
+                   locationInput.lastValidValue :
+                   locationInput.value;
+
+    if (port && location)
+      config[port] = location;
   }
   chrome.send('set-port-forwarding-config', [config]);
 }
@@ -679,6 +728,7 @@ function createConfigField(value, className, hint, validate) {
   input.type = 'text';
   input.placeholder = hint;
   input.value = value;
+  input.lastValidValue = value;
 
   function checkInput() {
     if (validate(input))
@@ -693,6 +743,11 @@ function createConfigField(value, className, hint, validate) {
   input.addEventListener('keyup', checkInput);
   input.addEventListener('focus', function() {
     selectLine(input.parentNode);
+  });
+
+  input.addEventListener('blur', function() {
+    if (validate(input))
+      input.lastValidValue = input.value;
   });
 
   return input;

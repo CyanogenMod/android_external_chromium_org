@@ -420,6 +420,11 @@ Google Chrome is unable to recover your settings.
           Do you want Google Chrome to save your password for this site?
         </message>
       </if>
+      <if expr="is_macosx">
+        <message name="IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before revealing plaintext passwords on the password page.">
+          Google Chrome is trying to show passwords.
+        </message>
+      </if>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_EXIT_BUTTON" desc="Text on button of dialog that closes Chrome if we can't create a directory for this user.">
         Exit Chrome
       </message>
@@ -580,13 +585,8 @@ Google Chrome is unable to recover your settings.
       </message>
 
       <message name="IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS"
-               desc="Message shown on the download shelf when the download is known to change browser settings.">
-        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> may change your Chrome settings.
-      </message>
-
-      <message name="IDS_PROMPT_DOWNLOAD_CHANGES_SEARCH_SETTINGS"
-               desc="Message shown on the download shelf when the download is known to change search engine settings in the browser.">
-        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> may change how your searches work in Chrome.
+               desc="Message shown on the download shelf when the download is known to change settings in the browser.">
+        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> makes settings changes similar to some malware, so Chrome has blocked it.
       </message>
 
       <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_URL"
@@ -771,23 +771,6 @@ For Google Chrome, processes used to display diagnostics information (such as th
         </message>
         <message name="IDS_SHORT_HELPER_NAME" desc="The helper application's short name, used for the Mac's application menu, activity monitor, etc. Example: Chrome Helper, not Google Chrome Helper.">
           Chrome Helper
-        </message>
-
-        <!-- TODO(mark): All helper tasks are currently handled by the helper process.  The following strings exist in support of possibly changing things so that there's a distinct .app bundle for each of the various tasks.  This ensures that if and when a split is made, translated names will be available.  If the helper process is not split into multiple .app bundles, these strings can be removed. -->
-        <message name="IDS_RENDERER_APP_NAME" desc="The renderer application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Renderer.">
-          Google Chrome Renderer
-        </message>
-        <message name="IDS_PLUGIN_APP_NAME" desc="The plug-in host application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Plug-In Host.">
-          Google Chrome Plug-In Host
-        </message>
-        <message name="IDS_SHORT_PLUGIN_APP_NAME" desc="The plug-in host application's short name, used for the Mac's application menu, activity monitor, etc. Example: Chrome Plug-In Host, not Google Chrome Plug-In Host.">
-          Chrome Plug-In Host
-        </message>
-        <message name="IDS_WORKER_APP_NAME" desc="The worker application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Worker.">
-          Google Chrome Worker
-        </message>
-        <message name="IDS_UTILITY_APP_NAME" desc="The utility application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Utility.">
-          Google Chrome Utility
         </message>
       </if>
 

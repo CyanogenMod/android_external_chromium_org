@@ -28,7 +28,6 @@
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/feature_switch.h"
 #include "chrome/common/extensions/manifest_handlers/icons_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
@@ -37,6 +36,7 @@
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permission_message_provider.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -60,7 +60,7 @@ static const int kTitleIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   IDS_EXTENSION_PERMISSIONS_PROMPT_TITLE,
   IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE,
   IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_TITLE,
-  IDS_EXTENSION_FIRST_RUN_PROMPT_TITLE,
+  IDS_EXTENSION_LAUNCH_APP_PROMPT_TITLE,
 };
 static const int kHeadingIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   IDS_EXTENSION_INSTALL_PROMPT_HEADING,
@@ -70,7 +70,7 @@ static const int kHeadingIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   IDS_EXTENSION_PERMISSIONS_PROMPT_HEADING,
   0,  // External installs use different strings for extensions/apps.
   IDS_EXTENSION_POST_INSTALL_PERMISSIONS_PROMPT_HEADING,
-  IDS_EXTENSION_FIRST_RUN_PROMPT_HEADING,
+  IDS_EXTENSION_LAUNCH_APP_PROMPT_HEADING,
 };
 static const int kButtons[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL,
@@ -90,7 +90,7 @@ static const int kAcceptButtonIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   IDS_EXTENSION_PROMPT_PERMISSIONS_BUTTON,
   0,  // External installs use different strings for extensions/apps.
   IDS_EXTENSION_PROMPT_PERMISSIONS_CLEAR_RETAINED_FILES_BUTTON,
-  IDS_EXTENSION_PROMPT_FIRST_RUN_ACCEPT_BUTTON
+  IDS_EXTENSION_PROMPT_LAUNCH_BUTTON,
 };
 static const int kAbortButtonIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   0,  // These all use the platform's default cancel label.
@@ -111,7 +111,7 @@ static const int kPermissionsHeaderIds[
   IDS_EXTENSION_PROMPT_WANTS_ACCESS_TO,
   IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
   IDS_EXTENSION_PROMPT_CAN_ACCESS,
-  IDS_EXTENSION_PROMPT_CAN_ACCESS,
+  IDS_EXTENSION_PROMPT_WILL_HAVE_ACCESS_TO,
 };
 static const int kOAuthHeaderIds[ExtensionInstallPrompt::NUM_PROMPT_TYPES] = {
   IDS_EXTENSION_PROMPT_OAUTH_HEADER,
@@ -404,21 +404,18 @@ void ExtensionInstallPrompt::Prompt::AppendRatingStars(
 
 string16 ExtensionInstallPrompt::Prompt::GetRatingCount() const {
   CHECK_EQ(INLINE_INSTALL_PROMPT, type_);
-  return l10n_util::GetStringFUTF16(
-        IDS_EXTENSION_RATING_COUNT,
-        UTF8ToUTF16(base::IntToString(rating_count_)));
+  return l10n_util::GetStringFUTF16(IDS_EXTENSION_RATING_COUNT,
+                                    base::IntToString16(rating_count_));
 }
 
 string16 ExtensionInstallPrompt::Prompt::GetUserCount() const {
   CHECK_EQ(INLINE_INSTALL_PROMPT, type_);
 
   if (show_user_count_) {
-    return l10n_util::GetStringFUTF16(
-        IDS_EXTENSION_USER_COUNT,
-        UTF8ToUTF16(localized_user_count_));
-  } else {
-    return string16();
+    return l10n_util::GetStringFUTF16(IDS_EXTENSION_USER_COUNT,
+                                      base::UTF8ToUTF16(localized_user_count_));
   }
+  return base::string16();
 }
 
 size_t ExtensionInstallPrompt::Prompt::GetPermissionCount() const {
@@ -471,7 +468,7 @@ size_t ExtensionInstallPrompt::Prompt::GetRetainedFileCount() const {
 
 string16 ExtensionInstallPrompt::Prompt::GetRetainedFile(size_t index) const {
   CHECK_LT(index, retained_files_.size());
-  return base::UTF8ToUTF16(retained_files_[index].AsUTF8Unsafe());
+  return retained_files_[index].AsUTF16Unsafe();
 }
 
 bool ExtensionInstallPrompt::Prompt::ShouldDisplayRevokeFilesButton() const {
@@ -628,17 +625,6 @@ void ExtensionInstallPrompt::ConfirmReEnable(Delegate* delegate,
   delegate_ = delegate;
   prompt_.set_type(RE_ENABLE_PROMPT);
 
-  LoadImageIfNeeded();
-}
-
-void ExtensionInstallPrompt::ConfirmDefaultInstallFirstRun(
-    Delegate* delegate,
-    const Extension* extension) {
-  DCHECK(ui_loop_ == base::MessageLoop::current());
-  extension_ = extension;
-  permissions_ = extension->GetActivePermissions();
-  delegate_ = delegate;
-  prompt_.set_type(DEFAULT_INSTALL_FIRST_RUN_PROMPT);
   LoadImageIfNeeded();
 }
 
@@ -812,10 +798,10 @@ void ExtensionInstallPrompt::ShowConfirmation() {
   switch (prompt_.type()) {
     case PERMISSIONS_PROMPT:
     case RE_ENABLE_PROMPT:
-    case DEFAULT_INSTALL_FIRST_RUN_PROMPT:
     case INLINE_INSTALL_PROMPT:
     case EXTERNAL_INSTALL_PROMPT:
     case INSTALL_PROMPT:
+    case LAUNCH_PROMPT:
     case POST_INSTALL_PERMISSIONS_PROMPT: {
       prompt_.set_extension(extension_);
       prompt_.set_icon(gfx::Image::CreateFrom1xBitmap(icon_));

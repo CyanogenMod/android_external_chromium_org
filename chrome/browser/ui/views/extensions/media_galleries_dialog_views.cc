@@ -20,6 +20,7 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
@@ -93,8 +94,6 @@ MediaGalleriesDialogViews::MediaGalleriesDialogViews(
       controller->web_contents()->GetView()->GetNativeView(),
       modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
   web_contents_modal_dialog_manager->ShowDialog(window_->GetNativeView());
-  web_contents_modal_dialog_manager->SetCloseOnInterstitialWebUI(
-      window_->GetNativeView(), true);
 }
 
 MediaGalleriesDialogViews::~MediaGalleriesDialogViews() {}
@@ -150,6 +149,7 @@ void MediaGalleriesDialogViews::InitChildViews() {
 
   // Add attached galleries checkboxes.
   checkbox_map_.clear();
+  new_checkbox_map_.clear();
   GalleryPermissionsVector permissions = controller_->AttachedPermissions();
   for (GalleryPermissionsVector::const_iterator iter = permissions.begin();
        iter != permissions.end(); ++iter) {
@@ -203,14 +203,7 @@ void MediaGalleriesDialogViews::InitChildViews() {
                   dialog_content_width, kScrollAreaHeight);
 }
 
-void MediaGalleriesDialogViews::UpdateGallery(
-    const MediaGalleryPrefInfo& gallery,
-    bool permitted) {
-  InitChildViews();
-  contents_->Layout();
-}
-
-void MediaGalleriesDialogViews::ForgetGallery(MediaGalleryPrefId gallery) {
+void MediaGalleriesDialogViews::UpdateGalleries() {
   InitChildViews();
   contents_->Layout();
 }
@@ -225,7 +218,8 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   string16 details = gallery.GetGalleryAdditionalDetails();
 
   CheckboxMap::iterator iter = checkbox_map_.find(gallery.pref_id);
-  if (iter != checkbox_map_.end()) {
+  if (iter != checkbox_map_.end() &&
+      gallery.pref_id != kInvalidMediaGalleryPrefId) {
     views::Checkbox* checkbox = iter->second;
     checkbox->SetChecked(permitted);
     checkbox->SetText(label);
@@ -237,15 +231,17 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
     views::Label* secondary_text =
         static_cast<views::Label*>(checkbox_view->child_at(1));
     secondary_text->SetText(details);
-
-    // Why is this returning false? Looks like that will mean it doesn't paint.
     return false;
   }
 
   views::Checkbox* checkbox = new views::Checkbox(label);
   checkbox->set_listener(this);
+  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
+    checkbox->set_context_menu_controller(this);
   checkbox->SetTooltipText(tooltip_text);
   views::Label* secondary_text = new views::Label(details);
+  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
+    secondary_text->set_context_menu_controller(this);
   secondary_text->SetTooltipText(tooltip_text);
   secondary_text->SetEnabledColor(kDeemphasizedTextColor);
   secondary_text->SetTooltipText(tooltip_text);
@@ -256,6 +252,8 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
       views::kRelatedControlSmallHorizontalSpacing));
 
   views::View* checkbox_view = new views::View();
+  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
+    checkbox_view->set_context_menu_controller(this);
   checkbox_view->set_border(views::Border::CreateEmptyBorder(
       0,
       views::kPanelHorizMargin,
@@ -269,7 +267,10 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   container->AddChildView(checkbox_view);
 
   checkbox->SetChecked(permitted);
-  checkbox_map_[gallery.pref_id] = checkbox;
+  if (gallery.pref_id != kInvalidMediaGalleryPrefId)
+    checkbox_map_[gallery.pref_id] = checkbox;
+  else
+    new_checkbox_map_[checkbox] = gallery;
 
   return true;
 }
@@ -362,6 +363,40 @@ void MediaGalleriesDialogViews::ButtonPressed(views::Button* sender,
                                       iter->second->checked());
       return;
     }
+  }
+  for (NewCheckboxMap::const_iterator iter = new_checkbox_map_.begin();
+       iter != new_checkbox_map_.end(); ++iter) {
+    if (sender == iter->first) {
+      controller_->DidToggleNewGallery(iter->second, iter->first->checked());
+    }
+  }
+}
+
+void MediaGalleriesDialogViews::ShowContextMenuForView(
+    views::View* source,
+    const gfx::Point& point,
+    ui::MenuSourceType source_type) {
+  for (CheckboxMap::const_iterator iter = checkbox_map_.begin();
+       iter != checkbox_map_.end(); ++iter) {
+    if (iter->second->parent()->Contains(source)) {
+      ShowContextMenu(point, source_type, iter->first);
+      return;
+    }
+  }
+}
+
+void MediaGalleriesDialogViews::ShowContextMenu(const gfx::Point& point,
+                                                ui::MenuSourceType source_type,
+                                                MediaGalleryPrefId id) {
+  context_menu_runner_.reset(new views::MenuRunner(
+      controller_->GetContextMenuModel(id)));
+
+  if (context_menu_runner_->RunMenuAt(
+          GetWidget(), NULL, gfx::Rect(point.x(), point.y(), 0, 0),
+          views::MenuItemView::TOPLEFT, source_type,
+          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      views::MenuRunner::MENU_DELETED) {
+    return;
   }
 }
 

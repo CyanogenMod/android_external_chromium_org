@@ -40,6 +40,7 @@
         'content_resources.gyp:content_resources',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../components/components.gyp:breakpad_component',
         '../ipc/ipc.gyp:ipc',
         '../media/media.gyp:media',
         '../net/net.gyp:net',
@@ -67,6 +68,8 @@
         'shell/android/shell_manager.h',
         'shell/app/paths_mac.h',
         'shell/app/paths_mac.mm',
+        'shell/app/shell_breakpad_client.cc',
+        'shell/app/shell_breakpad_client.h',
         'shell/app/shell_main_delegate.cc',
         'shell/app/shell_main_delegate.h',
         'shell/app/shell_main_delegate_mac.h',
@@ -208,6 +211,11 @@
             'test_support_content',
           ],
         }],  # OS=="android"
+        ['os_posix == 1 and OS != "mac" and android_webview_build != 1', {
+          'dependencies': [
+            '../components/components.gyp:breakpad_host',
+          ],
+        }],
         ['(os_posix==1 and use_aura==1 and linux_use_tcmalloc==1) or (android_use_tcmalloc==1)', {
           'dependencies': [
             # This is needed by content/app/content_main_runner.cc
@@ -542,8 +550,15 @@
           'mac_bundle_resources': [
             'shell/app/English.lproj/HttpAuth.xib',
             'shell/app/English.lproj/MainMenu.xib',
-            '<(PRODUCT_DIR)/content_shell.pak'
+            '<(PRODUCT_DIR)/content_shell.pak',
+            'shell/app/framework-Info.plist',
           ],
+          'mac_bundle_resources!': [
+            'shell/app/framework-Info.plist',
+          ],
+          'xcode_settings': {
+            'INFOPLIST_FILE': 'shell/app/framework-Info.plist',
+          },
           'dependencies': [
             'content_shell_lib',
           ],
@@ -554,12 +569,37 @@
             'shell/app/shell_content_main.cc',
             'shell/app/shell_content_main.h',
           ],
+         'postbuilds': [
+           {
+             # Modify the Info.plist as needed.  The script explains why
+             # this is needed.  This is also done in the chrome target.
+             # The framework needs the Breakpad keys if this feature is
+             # enabled.  It does not need the Keystone keys; these always
+             # come from the outer application bundle.  The framework
+             # doesn't currently use the SCM keys for anything,
+             # but this seems like a really good place to store them.
+             'postbuild_name': 'Tweak Info.plist',
+             'action': ['../build/mac/tweak_info_plist.py',
+                        '--breakpad=1',
+                        '--keystone=0',
+                        '--scm=1',
+                        '--version=<(content_shell_version)',
+                        '--branding=<(content_shell_product_name)'],
+           },
+         ],
           'copies': [
             {
               # Copy FFmpeg binaries for audio/video support.
               'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
               'files': [
                 '<(PRODUCT_DIR)/ffmpegsumo.so',
+              ],
+            },
+            {
+              'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Resources',
+              'files': [
+                '<(PRODUCT_DIR)/crash_inspector',
+                '<(PRODUCT_DIR)/crash_report_sender.app'
               ],
             },
           ],
@@ -768,6 +808,29 @@
         },
       ],
     }],  # OS=="android"
+    ['OS=="win"', {
+      'targets': [
+        {
+          'target_name': 'content_shell_crash_service',
+          'type': 'executable',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../components/components.gyp:breakpad_crash_service',
+          ],
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'shell/tools/content_shell_crash_service.cc',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+            },
+          },
+        },
+      ],
+    }],  # OS=="win"
     ['OS=="win" and fastbuild==0 and target_arch=="ia32"', {
       'variables': {
         'dest_dir': '<(PRODUCT_DIR)/syzygy',

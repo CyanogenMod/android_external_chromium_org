@@ -236,12 +236,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   RendererWebCookieJarImpl* cookie_jar() { return &cookie_jar_; }
 
-#if defined(OS_ANDROID)
-  RendererMediaPlayerManager* media_player_manager() {
-    return media_player_manager_.get();
-  }
-#endif
-
   // Lazily initialize this view's BrowserPluginManager and return it.
   BrowserPluginManager* GetBrowserPluginManager();
 
@@ -386,6 +380,11 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Change the device scale factor and force the compositor to resize.
   void SetDeviceScaleFactorForTesting(float factor);
+
+  // Used to force the size of a window when running layout tests.
+  void ForceResizeForTesting(const gfx::Size& new_size);
+
+  void UseSynchronousResizeModeForTesting(bool enable);
 
   // Control autoresize mode.
   void EnableAutoResizeForTesting(const gfx::Size& min_size,
@@ -919,7 +918,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnSetEditCommandsForNextKeyEvent(const EditCommands& edit_commands);
   void OnUndo();
   void OnUnselect();
-
   void OnAllowBindings(int enabled_bindings_flags);
   void OnAllowScriptToClose(bool script_can_close);
   void OnCancelDownload(int32 download_id);
@@ -970,10 +968,7 @@ class CONTENT_EXPORT RenderViewImpl
       const base::FilePath& local_directory_name);
   void OnMediaPlayerActionAt(const gfx::Point& location,
                              const WebKit::WebMediaPlayerAction& action);
-
-  // Screen has rotated. 0 = default (portrait), 90 = one turn right, and so on.
   void OnOrientationChangeEvent(int orientation);
-
   void OnPluginActionAt(const gfx::Point& location,
                         const WebKit::WebPluginAction& action);
   void OnMoveOrResizeStarted();
@@ -1010,16 +1005,12 @@ class CONTENT_EXPORT RenderViewImpl
   void OnUpdateTargetURLAck();
   void OnUpdateTimezone();
   void OnUpdateWebPreferences(const WebPreferences& prefs);
-
   void OnZoom(PageZoom zoom);
   void OnZoomFactor(PageZoom zoom, int zoom_center_x, int zoom_center_y);
-
   void OnEnableViewSourceMode();
-
-  void OnJavaBridgeInit();
-
   void OnDisownOpener();
-
+  void OnWindowSnapshotCompleted(const int snapshot_id,
+      const gfx::Size& size, const std::vector<unsigned char>& png);
 #if defined(OS_ANDROID)
   void OnActivateNearestFindResult(int request_id, float x, float y);
   void OnFindMatchRects(int current_version);
@@ -1040,10 +1031,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnWindowFrameChanged(const gfx::Rect& window_frame,
                             const gfx::Rect& view_frame);
 #endif
-
-  void OnWindowSnapshotCompleted(const int snapshot_id,
-      const gfx::Size& size, const std::vector<unsigned char>& png);
-
 
   // Adding a new message handler? Please add it in alphabetical order above
   // and put it in the same position in the .cc file.
@@ -1419,9 +1406,6 @@ class CONTENT_EXPORT RenderViewImpl
   // AccessibilityModeOff.
   RendererAccessibility* renderer_accessibility_;
 
-  // Java Bridge dispatcher attached to this view; lazily initialized.
-  JavaBridgeDispatcher* java_bridge_dispatcher_;
-
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
 
@@ -1441,12 +1425,9 @@ class CONTENT_EXPORT RenderViewImpl
   typedef std::vector< linked_ptr<ContentDetector> > ContentDetectorList;
   ContentDetectorList content_detectors_;
 
-  // Proxy class for WebMediaPlayer to communicate with the real media player
-  // objects in browser process.
-  WebMediaPlayerProxyAndroid* media_player_proxy_;
-
-  // The media player manager for managing all the media players on this view.
-  scoped_ptr<RendererMediaPlayerManager> media_player_manager_;
+  // The media player manager for managing all the media players on this view
+  // for communicating with the real media player objects in browser process.
+  RendererMediaPlayerManager* media_player_manager_;
 
   // A date/time picker object for date and time related input elements.
   scoped_ptr<RendererDateTimePicker> date_time_picker_client_;

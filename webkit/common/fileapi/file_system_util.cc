@@ -193,6 +193,7 @@ FileSystemType QuotaStorageTypeToFileSystemType(
       return kFileSystemTypePersistent;
     case quota::kStorageTypeSyncable:
       return kFileSystemTypeSyncable;
+    case quota::kStorageTypeQuotaNotManaged:
     case quota::kStorageTypeUnknown:
       return kFileSystemTypeUnknown;
   }
@@ -208,6 +209,8 @@ quota::StorageType FileSystemTypeToQuotaStorageType(FileSystemType type) {
     case kFileSystemTypeSyncable:
     case kFileSystemTypeSyncableForInternalSync:
       return quota::kStorageTypeSyncable;
+    case kFileSystemTypePluginPrivate:
+      return quota::kStorageTypeQuotaNotManaged;
     default:
       return quota::kStorageTypeUnknown;
   }
@@ -367,6 +370,14 @@ bool CrackIsolatedFileSystemName(const std::string& filesystem_name,
     return false;
 
   return true;
+}
+
+bool ValidateIsolatedFileSystemId(const std::string& filesystem_id) {
+  const size_t kExpectedFileSystemIdSize = 32;
+  if (filesystem_id.size() != kExpectedFileSystemIdSize)
+    return false;
+  const std::string kExpectedChars("ABCDEF0123456789");
+  return ContainsOnlyChars(filesystem_id, kExpectedChars);
 }
 
 std::string GetIsolatedFileSystemRootURIString(

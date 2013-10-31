@@ -112,6 +112,7 @@ class AutofillDialogViews : public AutofillDialogView,
       const base::string16& text) OVERRIDE;
   virtual void ActivateInput(const DetailInput& input) OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
+  virtual content::WebContents* GetSignInWebContents() OVERRIDE;
 
   // views::View implementation.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -129,6 +130,7 @@ class AutofillDialogViews : public AutofillDialogView,
       OVERRIDE;
   virtual bool ShouldDefaultButtonBeBlue() const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
+  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual views::View* CreateExtraView() OVERRIDE;
   virtual views::View* CreateTitlebarExtraView() OVERRIDE;
   virtual views::View* CreateFootnoteView() OVERRIDE;
@@ -168,6 +170,13 @@ class AutofillDialogViews : public AutofillDialogView,
                                    const gfx::Point& point) OVERRIDE;
 
  protected:
+  // Exposed for testing.
+  views::View* GetLoadingShieldForTesting();
+  views::WebView* GetSignInWebViewForTesting();
+  views::View* GetNotificationAreaForTesting();
+  views::View* GetScrollableAreaForTesting();
+
+ private:
   // What the entire dialog should be doing (e.g. gathering info from the user,
   // asking the user to sign in, etc.).
   enum DialogMode {
@@ -176,18 +185,6 @@ class AutofillDialogViews : public AutofillDialogView,
     SIGN_IN,
   };
 
-  // Changes the function of the whole dialog. Currently this can show a loading
-  // shield, an embedded sign in web view, or the more typical detail input mode
-  // (suggestions and form inputs).
-  void ShowDialogInMode(DialogMode dialog_mode);
-
-  // Exposed for testing.
-  views::View* GetLoadingShieldForTesting();
-  views::WebView* GetSignInWebViewForTesting();
-  views::View* GetNotificationAreaForTesting();
-  views::View* GetScrollableAreaForTesting();
-
- private:
   // A class that creates and manages a widget for error messages.
   class ErrorBubble : public views::BubbleDelegateView {
    public:
@@ -554,6 +551,11 @@ class AutofillDialogViews : public AutofillDialogView,
   // returned.
   views::View* InitInputsView(DialogSection section);
 
+  // Changes the function of the whole dialog. Currently this can show a loading
+  // shield, an embedded sign in web view, or the more typical detail input mode
+  // (suggestions and form inputs).
+  void ShowDialogInMode(DialogMode dialog_mode);
+
   // Updates the given section to match the state provided by |delegate_|. If
   // |clobber_inputs| is true, the current state of the textfields will be
   // ignored, otherwise their contents will be preserved.
@@ -569,6 +571,9 @@ class AutofillDialogViews : public AutofillDialogView,
   // Gets a pointer to the DetailsGroup that's associated with a given |view|.
   // Returns NULL if no DetailsGroup was found.
   DetailsGroup* GroupForView(views::View* view);
+
+  // Explicitly focuses the initially focusable view.
+  void FocusInitialView();
 
   // Sets the visual state for an input to be either valid or invalid. This
   // should work on Comboboxes or DecoratedTextfields. If |message| is empty,

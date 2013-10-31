@@ -81,6 +81,7 @@ std::string EventTypeName(ui::EventType type) {
     CASE_TYPE(ET_GESTURE_SCROLL_BEGIN);
     CASE_TYPE(ET_GESTURE_SCROLL_END);
     CASE_TYPE(ET_GESTURE_SCROLL_UPDATE);
+    CASE_TYPE(ET_GESTURE_SHOW_PRESS);
     CASE_TYPE(ET_GESTURE_TAP);
     CASE_TYPE(ET_GESTURE_TAP_DOWN);
     CASE_TYPE(ET_GESTURE_TAP_CANCEL);
@@ -571,7 +572,9 @@ KeyEvent* KeyEvent::Copy() const {
 #if defined(USE_OZONE)
   KeyEvent* copy = new KeyEvent(*this);
 #else
-  KeyEvent* copy = new KeyEvent(::CopyNativeEvent(native_event()), is_char());
+  KeyEvent* copy = HasNativeEvent() ?
+      new KeyEvent(::CopyNativeEvent(native_event()), is_char()) :
+      new KeyEvent(*this);
 #endif
 #if defined(USE_X11)
   copy->set_delete_native_event(true);

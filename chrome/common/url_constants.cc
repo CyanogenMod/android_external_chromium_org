@@ -472,10 +472,7 @@ const char kSyncLearnMoreURL[] =
     "https://support.google.com/chrome/?p=settings_sign_in";
 
 const char kDownloadScanningLearnMoreURL[] =
-    "https://support.google.com/chrome/?p=ib_download_scan";
-
-const char kDownloadPotentiallyUnwantedLearnMoreURL[] =
-    "https://support.google.com/chrome/?p=ui_protect_settings";
+    "https://support.google.com/chrome/?p=ib_download_blocked";
 
 const char kDownloadInterruptedLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_download_errors";
@@ -489,6 +486,9 @@ const char kCloudPrintLearnMoreURL[] =
 #else
     "https://support.google.com/chrome/?p=settings_cloud_print";
 #endif
+
+const char kCloudPrintNoDestinationsLearnMoreURL[] =
+    "https://www.google.com/cloudprint/learn/";
 
 const char kAppLauncherHelpURL[] =
     "https://support.google.com/chrome_webstore/?p=cws_app_launcher";
@@ -518,6 +518,9 @@ const char kLearnMoreEnterpriseURL[] =
 
 const char kNotificationsHelpURL[] =
     "https://support.google.com/chrome/?p=ui_notifications";
+
+const char kNotificationWelcomeLearnMoreURL[] =
+    "https://support.google.com/chrome/?p=ib_google_now_welcome";
 
 // Add hosts here to be included in chrome://chrome-urls (about:about).
 // These hosts will also be suggested by BuiltinProvider.

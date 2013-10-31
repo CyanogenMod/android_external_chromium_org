@@ -165,13 +165,8 @@ class PeopleProviderTest : public InProcessBrowserTest {
   virtual ~PeopleProviderTest() {}
 
   // InProcessBrowserTest overrides:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kEnablePeopleSearch);
-  }
-
   virtual void SetUpOnMainThread() OVERRIDE {
-    test_server_.reset(new EmbeddedTestServer(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+    test_server_.reset(new EmbeddedTestServer);
 
     ASSERT_TRUE(test_server_->InitializeAndWaitUntilReady());
     test_server_->RegisterRequestHandler(

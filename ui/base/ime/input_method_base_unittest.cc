@@ -110,13 +110,11 @@ class ClientChangeVerifier {
   DISALLOW_COPY_AND_ASSIGN(ClientChangeVerifier);
 };
 
-class MockInputMethodBase : public InputMethodBase {
+class SimpleMockInputMethodBase : public InputMethodBase {
  public:
-  // Note: this class does not take the ownership of |verifier|.
-  explicit MockInputMethodBase(ClientChangeVerifier* verifier)
-      : verifier_(verifier) {
+  SimpleMockInputMethodBase() {
   }
-  virtual ~MockInputMethodBase() {
+  virtual ~SimpleMockInputMethodBase() {
   }
 
  private:
@@ -132,13 +130,9 @@ class MockInputMethodBase : public InputMethodBase {
   virtual bool DispatchFabricatedKeyEvent(const ui::KeyEvent&) OVERRIDE {
     return false;
   }
-  virtual void OnCaretBoundsChanged(const TextInputClient* clien) OVERRIDE {
+  virtual void CancelComposition(const TextInputClient* client) OVERRIDE {
   }
-  virtual void CancelComposition(const TextInputClient* clien) OVERRIDE {
-  }
-  virtual void OnInputLocaleChanged() OVERRIDE {
-  }
-  virtual std::string GetInputLocale() OVERRIDE {
+  virtual std::string GetInputLocale() OVERRIDE{
     return "";
   }
   virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE {
@@ -150,7 +144,19 @@ class MockInputMethodBase : public InputMethodBase {
   virtual bool IsCandidatePopupOpen() const OVERRIDE {
     return false;
   }
+  DISALLOW_COPY_AND_ASSIGN(SimpleMockInputMethodBase);
+};
 
+class MockInputMethodBase : public SimpleMockInputMethodBase {
+ public:
+  // Note: this class does not take the ownership of |verifier|.
+  explicit MockInputMethodBase(ClientChangeVerifier* verifier)
+      : verifier_(verifier) {
+  }
+  virtual ~MockInputMethodBase() {
+  }
+
+ private:
   // Overriden from InputMethodBase.
   virtual void OnWillChangeFocusedClient(TextInputClient* focused_before,
                                          TextInputClient* focused) OVERRIDE {
@@ -166,7 +172,53 @@ class MockInputMethodBase : public InputMethodBase {
   DISALLOW_COPY_AND_ASSIGN(MockInputMethodBase);
 };
 
-class MockInputMethodObserver : public InputMethodObserver {
+class SimpleMockInputMethodObserver : public InputMethodObserver {
+ public:
+  SimpleMockInputMethodObserver()
+      : on_caret_bounds_changed_(0),
+        on_input_locale_changed_(0) {
+  }
+  virtual ~SimpleMockInputMethodObserver() {
+  }
+  void Reset() {
+    on_caret_bounds_changed_ = 0;
+    on_input_locale_changed_ = 0;
+  }
+  size_t on_caret_bounds_changed() const {
+    return on_caret_bounds_changed_;
+  }
+  size_t on_input_locale_changed() const {
+    return on_input_locale_changed_;
+  }
+
+ private:
+  // Overriden from InputMethodObserver.
+  virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE{
+  }
+  virtual void OnFocus() OVERRIDE{
+  }
+  virtual void OnBlur() OVERRIDE{
+  }
+  virtual void OnUntranslatedIMEMessage(
+    const base::NativeEvent& event) OVERRIDE{
+  }
+  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE{
+    ++on_caret_bounds_changed_;
+  }
+  virtual void OnInputLocaleChanged() OVERRIDE{
+    ++on_input_locale_changed_;
+  }
+  virtual void OnTextInputStateChanged(const TextInputClient* client) OVERRIDE{
+  }
+  virtual void OnInputMethodDestroyed(const InputMethod* client) OVERRIDE{
+  }
+
+  size_t on_caret_bounds_changed_;
+  size_t on_input_locale_changed_;
+  DISALLOW_COPY_AND_ASSIGN(SimpleMockInputMethodObserver);
+};
+
+class MockInputMethodObserver : public SimpleMockInputMethodObserver {
  public:
   // Note: this class does not take the ownership of |verifier|.
   explicit MockInputMethodObserver(ClientChangeVerifier* verifier)
@@ -176,23 +228,9 @@ class MockInputMethodObserver : public InputMethodObserver {
   }
 
  private:
-  virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE {
-  }
-  virtual void OnFocus() OVERRIDE {
-  }
-  virtual void OnBlur() OVERRIDE {
-  }
-  virtual void OnUntranslatedIMEMessage(
-      const base::NativeEvent& event) OVERRIDE {
-  }
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE {
-  }
-  virtual void OnInputLocaleChanged() OVERRIDE {
-  }
-  virtual void OnTextInputStateChanged(const TextInputClient* client) OVERRIDE {
+  // Overriden from SimpleMockInputMethodObserver.
+  virtual void OnTextInputStateChanged(const TextInputClient* client) OVERRIDE{
     verifier_->OnTextInputStateChanged(client);
-  }
-  virtual void OnInputMethodDestroyed(const InputMethod* client) OVERRIDE {
   }
 
   ClientChangeVerifier* verifier_;
@@ -304,13 +342,12 @@ TEST(InputMethodBaseTest, DetachTextInputClient) {
   }
 }
 
-TEST(InputMethodBaseTest, SetStickyFocusedTextInputClient) {
-  DummyTextInputClient sticky_client;
-  DummyTextInputClient non_sticky_client;
+TEST(InputMethodBaseTest, OnCaretBoundsChanged) {
+  DummyTextInputClient text_input_client;
+  DummyTextInputClient text_input_client_the_other;
 
-  ClientChangeVerifier verifier;
-  MockInputMethodBase input_method(&verifier);
-  MockInputMethodObserver input_method_observer(&verifier);
+  SimpleMockInputMethodBase input_method;
+  SimpleMockInputMethodObserver input_method_observer;
   InputMethodScopedObserver scoped_observer(&input_method_observer);
   scoped_observer.Add(&input_method);
 
@@ -318,77 +355,65 @@ TEST(InputMethodBaseTest, SetStickyFocusedTextInputClient) {
   input_method.OnFocus();
 
   {
-    SCOPED_TRACE("Focus from NULL to non-sticky client");
-
+    SCOPED_TRACE("OnCaretBoundsChanged callback must not be fired when no text "
+        "input client is focused");
     ASSERT_EQ(NULL, input_method.GetTextInputClient());
-    verifier.ExpectClientChange(NULL, &non_sticky_client);
-    input_method.SetFocusedTextInputClient(&non_sticky_client);
-    EXPECT_EQ(&non_sticky_client, input_method.GetTextInputClient());
-    verifier.Verify();
+
+    input_method_observer.Reset();
+    input_method.OnCaretBoundsChanged(&text_input_client);
+    EXPECT_EQ(0u, input_method_observer.on_caret_bounds_changed());
+    input_method.OnCaretBoundsChanged(NULL);
+    EXPECT_EQ(0u, input_method_observer.on_caret_bounds_changed());
   }
 
   {
-    SCOPED_TRACE("Focus from non-sticky to sticky client");
+    SCOPED_TRACE("OnCaretBoundsChanged callback must be fired when and only "
+        "the event is notified from the focused text input client");
 
-    ASSERT_EQ(&non_sticky_client, input_method.GetTextInputClient());
-    verifier.ExpectClientChange(&non_sticky_client, &sticky_client);
-    input_method.SetStickyFocusedTextInputClient(&sticky_client);
-    EXPECT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.Verify();
+    input_method.SetFocusedTextInputClient(&text_input_client);
+    ASSERT_EQ(&text_input_client, input_method.GetTextInputClient());
+
+    // Must fire the event
+    input_method_observer.Reset();
+    input_method.OnCaretBoundsChanged(&text_input_client);
+    EXPECT_EQ(1u, input_method_observer.on_caret_bounds_changed());
+
+    // Must not fire the event
+    input_method_observer.Reset();
+    input_method.OnCaretBoundsChanged(NULL);
+    EXPECT_EQ(0u, input_method_observer.on_caret_bounds_changed());
+
+    // Must not fire the event
+    input_method_observer.Reset();
+    input_method.OnCaretBoundsChanged(&text_input_client_the_other);
+    EXPECT_EQ(0u, input_method_observer.on_caret_bounds_changed());
   }
+}
+
+TEST(InputMethodBaseTest, OnInputLocaleChanged) {
+  DummyTextInputClient text_input_client;
+
+  SimpleMockInputMethodBase input_method;
+  SimpleMockInputMethodObserver input_method_observer;
+  InputMethodScopedObserver scoped_observer(&input_method_observer);
+  scoped_observer.Add(&input_method);
+
+  // Assume that the top-level-widget gains focus.
+  input_method.OnFocus();
 
   {
-    SCOPED_TRACE("Focus from sticky to non-sticky client -> must fail");
+    SCOPED_TRACE("OnInputLocaleChanged callback can be fired even when no text "
+        "input client is focused");
+    ASSERT_EQ(NULL, input_method.GetTextInputClient());
 
-    ASSERT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.ExpectClientDoesNotChange();
-    input_method.SetFocusedTextInputClient(&non_sticky_client);
-    EXPECT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.Verify();
-  }
+    input_method_observer.Reset();
+    input_method.OnInputLocaleChanged();
+    EXPECT_EQ(1u, input_method_observer.on_input_locale_changed());
 
-  {
-    SCOPED_TRACE("Focus from sticky to NULL -> must fail");
-
-    verifier.ExpectClientDoesNotChange();
-    input_method.SetFocusedTextInputClient(NULL);
-    EXPECT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.Verify();
-  }
-
-  {
-    SCOPED_TRACE("SetStickyFocusedTextInputClient(NULL) must be supported");
-
-    ASSERT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.ExpectClientChange(&sticky_client, NULL);
-    input_method.SetStickyFocusedTextInputClient(NULL);
-    EXPECT_EQ(NULL, input_method.GetTextInputClient());
-    verifier.Verify();
-
-    // |SetStickyFocusedTextInputClient(NULL)| must be equivalent to
-    // |SetFocusedTextInputClient(NULL)|. We should be able to use
-    // |SetFocusedTextInputClient(&non_sticky_client)| here.
-    verifier.ExpectClientChange(NULL, &non_sticky_client);
-    input_method.SetFocusedTextInputClient(&non_sticky_client);
-    EXPECT_EQ(&non_sticky_client, input_method.GetTextInputClient());
-    verifier.Verify();
-  }
-
-  {
-    SCOPED_TRACE("Set stick client again for the next test");
-    verifier.ExpectClientChange(&non_sticky_client, &sticky_client);
-    input_method.SetStickyFocusedTextInputClient(&sticky_client);
-    verifier.Verify();
-  }
-
-  {
-    SCOPED_TRACE("DetachTextInputClient must be supported for sticky client");
-
-    ASSERT_EQ(&sticky_client, input_method.GetTextInputClient());
-    verifier.ExpectClientChange(&sticky_client, NULL);
-    input_method.DetachTextInputClient(&sticky_client);
-    EXPECT_EQ(NULL, input_method.GetTextInputClient());
-    verifier.Verify();
+    input_method.SetFocusedTextInputClient(&text_input_client);
+    input_method_observer.Reset();
+    input_method.OnInputLocaleChanged();
+    EXPECT_EQ(1u, input_method_observer.on_input_locale_changed());
   }
 }
 

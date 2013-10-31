@@ -130,6 +130,11 @@ class BrowserPolicyConnector {
   // previously set delegate is removed. Passing NULL removes the current
   // delegate, if there is one.
   void SetUserPolicyDelegate(ConfigurationPolicyProvider* user_policy_provider);
+
+  // Sets the install attributes for testing. Must be called before the browser
+  // is created. Takes ownership of |attributes|.
+  static void SetInstallAttributesForTesting(
+      EnterpriseInstallAttributes* attributes);
 #endif
 
   // Sets a |provider| that will be included in PolicyServices returned by
@@ -165,7 +170,7 @@ class BrowserPolicyConnector {
   // may trigger policy updates during shutdown, which will result in
   // |handler_list_| being consulted for policy translation.
   // Therefore, it's important to destroy |handler_list_| after the providers.
-  ConfigurationPolicyHandlerList handler_list_;
+  scoped_ptr<ConfigurationPolicyHandlerList> handler_list_;
 
   scoped_ptr<ConfigurationPolicyProvider> platform_provider_;
 

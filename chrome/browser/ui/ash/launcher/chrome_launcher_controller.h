@@ -252,15 +252,15 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Gets the shelf auto-hide behavior on |root_window|.
   ash::ShelfAutoHideBehavior GetShelfAutoHideBehavior(
-      aura::RootWindow* root_window) const;
+      aura::Window* root_window) const;
 
   // Returns |true| if the user is allowed to modify the shelf auto-hide
   // behavior on |root_window|.
-  bool CanUserModifyShelfAutoHideBehavior(aura::RootWindow* root_window) const;
+  bool CanUserModifyShelfAutoHideBehavior(aura::Window* root_window) const;
 
   // Toggles the shelf auto-hide behavior on |root_window|. Does nothing if the
   // user is not allowed to modify the auto-hide behavior.
-  void ToggleShelfAutoHideBehavior(aura::RootWindow* root_window);
+  void ToggleShelfAutoHideBehavior(aura::Window* root_window);
 
   // The tab no longer represents its previously identified application.
   void RemoveTabFromRunningApp(content::WebContents* tab,
@@ -308,7 +308,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
                        const content::NotificationDetails& details) OVERRIDE;
 
   // ash::ShellObserver overrides:
-  virtual void OnShelfAlignmentChanged(aura::RootWindow* root_window) OVERRIDE;
+  virtual void OnShelfAlignmentChanged(aura::Window* root_window) OVERRIDE;
 
   // ash::DisplayController::Observer overrides:
   virtual void OnDisplayConfigurationChanging() OVERRIDE;
@@ -330,11 +330,14 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // ash::ShelfLayoutManagerObserver overrides:
   virtual void OnAutoHideBehaviorChanged(
-      aura::RootWindow* root_window,
+      aura::Window* root_window,
       ash::ShelfAutoHideBehavior new_behavior) OVERRIDE;
 
   // Called when the active user has changed.
   void ActiveUserChanged(const std::string& user_email);
+
+  // Called when a user got added to the session.
+  void AdditionalUserAddedToSession(Profile* profile);
 
   // Get the list of all running incarnations of this item.
   // |event_flags| specifies the flags which were set by the event which
@@ -372,6 +375,14 @@ class ChromeLauncherController : public ash::LauncherDelegate,
       GetBrowserShortcutLauncherItemController();
 
   LauncherItemController* GetLauncherItemController(const ash::LauncherID id);
+
+  // Returns true if |browser| is owned by the active user.
+  bool IsBrowserFromActiveUser(Browser* browser);
+
+  // Access to the BrowserStatusMonitor for tests.
+  BrowserStatusMonitor* browser_status_monitor_for_test() {
+    return browser_status_monitor_.get();
+  }
 
  protected:
   // Creates a new app shortcut item and controller on the launcher at |index|.
@@ -433,7 +444,7 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // Persists the shelf auto-hide behavior to prefs.
   void SetShelfAutoHideBehaviorPrefs(ash::ShelfAutoHideBehavior behavior,
-                                     aura::RootWindow* root_window);
+                                     aura::Window* root_window);
 
   // Sets the shelf auto-hide behavior from prefs.
   void SetShelfAutoHideBehaviorFromPrefs();
@@ -512,6 +523,9 @@ class ChromeLauncherController : public ash::LauncherDelegate,
   // Forget the current profile to allow attaching to a new one.
   void ReleaseProfile();
 
+  // Update the state of all V1 shortcut launcher items after a user switch.
+  void UpdateV1AppStatesAfterUserSwitch();
+
   static ChromeLauncherController* instance_;
 
   ash::LauncherModel* model_;
@@ -558,6 +572,9 @@ class ChromeLauncherController : public ash::LauncherDelegate,
 
   // If true, incoming pinned state changes should be ignored.
   bool ignore_persist_pinned_state_change_;
+
+  // True if each user has an own desktop.
+  bool multi_profile_desktop_separation_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherController);
 };

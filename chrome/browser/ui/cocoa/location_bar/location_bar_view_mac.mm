@@ -353,9 +353,9 @@ void LocationBarViewMac::Layout() {
 
   // Iterate through |content_setting_decorations_| in reverse order so that
   // the order in which the decorations are drawn matches the Views code.
-  for (ScopedVector<ContentSettingDecoration>::reverse_iterator i =
-       content_setting_decorations_.rbegin();
-       i != content_setting_decorations_.rend(); ++i) {
+  for (ScopedVector<ContentSettingDecoration>::iterator i =
+       content_setting_decorations_.begin();
+       i != content_setting_decorations_.end(); ++i) {
     [cell addRightDecoration:*i];
   }
 
@@ -515,7 +515,8 @@ const ToolbarModel* LocationBarViewMac::GetToolbarModel() const {
 NSImage* LocationBarViewMac::GetKeywordImage(const string16& keyword) {
   const TemplateURL* template_url = TemplateURLServiceFactory::GetForProfile(
       profile_)->GetTemplateURLForKeyword(keyword);
-  if (template_url && template_url->IsExtensionKeyword()) {
+  if (template_url &&
+      (template_url->GetType() == TemplateURL::OMNIBOX_API_EXTENSION)) {
     return extensions::OmniboxAPI::Get(profile_)->
         GetOmniboxIcon(template_url->GetExtensionId()).AsNSImage();
   }

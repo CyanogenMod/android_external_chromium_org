@@ -214,7 +214,7 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
     MSG_WM_SIZE(OnSize)
   END_MSG_MAP()
 
-  ContainerWindow(HWND parent, const gfx::Rect& bounds) : child_(NULL) {
+  ContainerWindow(HWND parent, const gfx::Rect& bounds) : widget_(NULL) {
     RECT rect = bounds.ToRECT();
     Create(parent, rect);
   }
@@ -224,11 +224,12 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
     return m_hWnd;
   }
 
-  // Sets the child window (the DRWHW). The child is made activateable as part
-  // of the operation.
-  void SetChild(HWND window) {
-    child_ = window;
+  // Sets the Widget. The widget's HWND is made activateable as part of the
+  // operation.
+  void SetWidget(views::Widget* widget) {
+    widget_ = widget;
 
+    HWND window = child();
     ::SetWindowLong(
         window, GWL_STYLE,
         (::GetWindowLong(window, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
@@ -244,21 +245,35 @@ class ContainerWindow : public ATL::CWindowImpl<ContainerWindow,
   }
 
  private:
+  HWND child() {
+    return views::HWNDForWidget(widget_);
+  }
+
   void OnMove(const CPoint& position) {
-    ::SetWindowPos(child_, NULL, position.x, position.y, 0, 0,
+    if (!widget_)
+      return;
+    ::SetWindowPos(child(), NULL, position.x, position.y, 0, 0,
                    SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
   }
 
   void OnShowWindow(BOOL show, UINT status) {
-    ::ShowWindow(child_, SW_SHOWNA);
+    if (!widget_)
+      return;
+    // We need to show |widget_| without changing focus. Contrary to the name,
+    // Widget::ShowInactive() still changes activation.  So, we inline the
+    // implementation minus the focus change.
+    ::ShowWindow(child(), SW_SHOWNA);
+    widget_->GetNativeView()->Show();
   }
 
   void OnSize(UINT type, const CSize& size) {
-    ::SetWindowPos(child_, NULL, 0, 0, size.cx, size.cy,
+    if (!widget_)
+      return;
+    ::SetWindowPos(child(), NULL, 0, 0, size.cx, size.cy,
                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER);
   }
 
-  HWND child_;
+  views::Widget* widget_;
 
   DISALLOW_COPY_AND_ASSIGN(ContainerWindow);
 };
@@ -271,11 +286,9 @@ class ExternalTabRootWindowHost : public views::DesktopRootWindowHostWin {
  public:
   ExternalTabRootWindowHost(
       views::internal::NativeWidgetDelegate* native_widget_delegate,
-      views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-      const gfx::Rect& initial_bounds)
+      views::DesktopNativeWidgetAura* desktop_native_widget_aura)
       : views::DesktopRootWindowHostWin(native_widget_delegate,
-                                        desktop_native_widget_aura,
-                                        initial_bounds) {}
+                                        desktop_native_widget_aura) {}
 
  protected:
   // HWNDMessageHandlerDelegate methods:
@@ -302,9 +315,6 @@ ExternalTabContainerWin::ExternalTabContainerWin(
     AutomationResourceMessageFilter* filter)
     : widget_(NULL),
       automation_(automation),
-      rvh_callback_(base::Bind(
-          &ExternalTabContainerWin::RegisterRenderViewHostForAutomation,
-          base::Unretained(this), false)),
       tab_contents_container_(NULL),
       tab_handle_(0),
       ignore_next_load_notification_(false),
@@ -370,14 +380,14 @@ bool ExternalTabContainerWin::Init(Profile* profile,
       new views::DesktopNativeWidgetAura(widget_);
   params.native_widget = native_widget;
   params.desktop_root_window_host =
-      new ExternalTabRootWindowHost(widget_, native_widget, params.bounds);
+      new ExternalTabRootWindowHost(widget_, native_widget);
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
   params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
 #endif
   widget_->Init(params);
 
 #if defined(USE_AURA)
-  tab_container_window_->SetChild(views::HWNDForWidget(widget_));
+  tab_container_window_->SetWidget(widget_);
 #endif
 
   // TODO(jcampan): limit focus traversal to contents.
@@ -405,8 +415,6 @@ bool ExternalTabContainerWin::Init(Profile* profile,
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
                  content::Source<WebContents>(existing_contents));
-
-  content::RenderViewHost::AddCreatedCallback(rvh_callback_);
   content::WebContentsObserver::Observe(existing_contents);
 
   BrowserTabContents::AttachTabHelpers(existing_contents);
@@ -451,7 +459,6 @@ bool ExternalTabContainerWin::Init(Profile* profile,
 
 void ExternalTabContainerWin::Uninitialize() {
   registrar_.RemoveAll();
-  content::RenderViewHost::RemoveCreatedCallback(rvh_callback_);
   if (web_contents_.get()) {
     tab_contents_container_->SetWebContents(NULL);
     UnregisterRenderViewHost(web_contents_->GetRenderViewHost());

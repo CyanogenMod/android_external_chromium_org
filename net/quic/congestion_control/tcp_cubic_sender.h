@@ -20,6 +20,9 @@
 
 namespace net {
 
+// Default maximum packet size used in Linux TCP implementations.
+const QuicByteCount kDefaultTCPMSS = 1460;
+
 namespace test {
 class TcpCubicSenderPeer;
 }  // namespace test
@@ -57,6 +60,8 @@ class NET_EXPORT_PRIVATE TcpCubicSender : public SendAlgorithmInterface {
   virtual QuicBandwidth BandwidthEstimate() OVERRIDE;
   virtual QuicTime::Delta SmoothedRtt() OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() OVERRIDE;
+  virtual QuicByteCount GetCongestionWindow() OVERRIDE;
+  virtual void SetCongestionWindow(QuicByteCount window) OVERRIDE;
   // End implementation of SendAlgorithmInterface.
 
  private:

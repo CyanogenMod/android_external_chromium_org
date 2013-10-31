@@ -685,7 +685,6 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
   }
   if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_TEXTURE_SHARING)) {
     command_line->AppendSwitch(switches::kDisableImageTransportSurface);
-    reduce_sandbox = true;
   }
   if (gpu_driver_bugs_.find(gpu::DISABLE_D3D11) != gpu_driver_bugs_.end())
     command_line->AppendSwitch(switches::kDisableD3D11);
@@ -1006,7 +1005,7 @@ GpuDataManagerImplPrivate::GpuDataManagerImplPrivate(
   if (command_line->HasSwitch(switches::kEnableSoftwareCompositing))
     use_software_compositor_ = true;
   //TODO(jbauman): enable for Chrome OS and Linux
-#if defined(USE_AURA) && defined(OS_WIN)
+#if defined(USE_AURA) && !defined(OS_CHROMEOS)
   use_software_compositor_ = true;
 #endif
   if (command_line->HasSwitch(switches::kGpuSwitching)) {

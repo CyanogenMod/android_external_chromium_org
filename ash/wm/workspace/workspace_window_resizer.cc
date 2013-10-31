@@ -47,9 +47,12 @@ scoped_ptr<WindowResizer> CreateWindowResizer(
     aura::client::WindowMoveSource source) {
   DCHECK(window);
   wm::WindowState* window_state = wm::GetWindowState(window);
-  // No need to return a resizer when the window cannot get resized.
-  if (!window_state->CanResize() && window_component != HTCAPTION)
+  // No need to return a resizer when the window cannot get resized or when a
+  // resizer already exists for this window.
+  if ((!window_state->CanResize() && window_component != HTCAPTION) ||
+      window_state->window_resizer()) {
     return scoped_ptr<WindowResizer>();
+  }
 
   // TODO(varkha): The chaining of window resizers causes some of the logic
   // to be repeated and the logic flow difficult to control. With some windows
@@ -102,6 +105,7 @@ scoped_ptr<WindowResizer> CreateWindowResizer(
     window_resizer = internal::DockedWindowResizer::Create(
         window_resizer, window, point_in_parent, window_component, source);
   }
+  window_state->set_window_resizer_(window_resizer);
   return make_scoped_ptr<WindowResizer>(window_resizer);
 }
 
@@ -390,7 +394,7 @@ void WorkspaceWindowResizer::Drag(const gfx::Point& location_in_parent,
   gfx::Point location_in_screen = location_in_parent;
   wm::ConvertPointToScreen(window()->parent(), &location_in_screen);
 
-  aura::RootWindow* root = NULL;
+  aura::Window* root = NULL;
   gfx::Display display =
       ScreenAsh::FindDisplayContainingPoint(location_in_screen);
   // Track the last screen that the pointer was on to keep the snap phantom
@@ -822,25 +826,26 @@ bool WorkspaceWindowResizer::StickToWorkAreaOnMove(
   const int right_edge = work_area.right();
   const int top_edge = work_area.y();
   const int bottom_edge = work_area.bottom();
+  bool updated = false;
   if (ShouldStickToEdge(bounds->x() - left_edge, sticky_size)) {
     bounds->set_x(left_edge);
-    return true;
+    updated = true;
   } else if (ShouldStickToEdge(right_edge - bounds->right(), sticky_size)) {
     bounds->set_x(right_edge - bounds->width());
-    return true;
+    updated = true;
   }
   if (ShouldStickToEdge(bounds->y() - top_edge, sticky_size)) {
     bounds->set_y(top_edge);
-    return true;
+    updated = true;
   } else if (ShouldStickToEdge(bottom_edge - bounds->bottom(), sticky_size) &&
              bounds->height() < (bottom_edge - top_edge)) {
     // Only snap to the bottom if the window is smaller than the work area.
     // Doing otherwise can lead to window snapping in weird ways as it bounces
     // between snapping to top then bottom.
     bounds->set_y(bottom_edge - bounds->height());
-    return true;
+    updated = true;
   }
-  return false;
+  return updated;
 }
 
 void WorkspaceWindowResizer::StickToWorkAreaOnResize(

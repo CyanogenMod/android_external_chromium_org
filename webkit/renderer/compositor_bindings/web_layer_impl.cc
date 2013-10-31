@@ -193,9 +193,7 @@ void WebLayerImpl::setAnimationDelegate(
 bool WebLayerImpl::addAnimation(WebKit::WebAnimation* animation) {
   bool result = layer_->AddAnimation(
       static_cast<WebAnimationImpl*>(animation)->PassAnimation());
-#if defined(ANIMATION_OWNERSHIP_TRANSFER)
   delete animation;
-#endif
   return result;
 }
 
@@ -217,10 +215,6 @@ void WebLayerImpl::pauseAnimation(int animation_id, double time_offset) {
 
 void WebLayerImpl::suspendAnimations(double monotonic_time) {
   layer_->SuspendAnimations(monotonic_time);
-}
-
-void WebLayerImpl::resumeAnimations(double monotonic_time) {
-  layer_->ResumeAnimations(monotonic_time);
 }
 
 bool WebLayerImpl::hasActiveAnimation() { return layer_->HasActiveAnimation(); }

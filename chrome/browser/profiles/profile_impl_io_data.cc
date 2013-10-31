@@ -45,8 +45,8 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
-#if defined(OS_ANDROID)
-#include "chrome/app/android/chrome_data_reduction_proxy_android.h"
+#if defined(OS_ANDROID) || defined(OS_IOS)
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
 #endif
 
 namespace {
@@ -63,11 +63,19 @@ net::BackendType ChooseCacheBackendType() {
   }
   const std::string experiment_name =
       base::FieldTrialList::FindFullName("SimpleCacheTrial");
+#if defined(OS_ANDROID)
+  if (experiment_name == "ExperimentNo" ||
+      experiment_name == "ExperimentControl") {
+    return net::CACHE_BACKEND_BLOCKFILE;
+  }
+  return net::CACHE_BACKEND_SIMPLE;
+#else
   if (experiment_name == "ExperimentYes" ||
       experiment_name == "ExperimentYes2") {
     return net::CACHE_BACKEND_SIMPLE;
   }
   return net::CACHE_BACKEND_BLOCKFILE;
+#endif
 }
 
 }  // namespace
@@ -432,8 +440,9 @@ void ProfileImplIOData::InitializeInternal(
       network_session_params, main_backend);
   main_cache->InitializeInfiniteCache(lazy_params_->infinite_cache_path);
 
-#if defined(OS_ANDROID)
-  ChromeDataReductionProxyAndroid::Init(main_cache->GetSession());
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  DataReductionProxySettings::InitDataReductionProxySession(
+      main_cache->GetSession());
 #endif
 
   if (record_mode || playback_mode) {

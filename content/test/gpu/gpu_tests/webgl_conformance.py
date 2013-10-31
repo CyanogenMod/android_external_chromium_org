@@ -48,7 +48,6 @@ conformance_harness_script = r"""
 
   window.webglTestHarness = testHarness;
   window.parent.webglTestHarness = testHarness;
-  console.log("Harness injected.");
   window.console.log = testHarness.log;
 """
 
@@ -73,7 +72,6 @@ class WebglConformanceValidator(page_test.PageTest):
 
 class WebglConformance(test_module.Test):
   """Conformance with Khronos WebGL Conformance Tests"""
-  enabled = False
   test = WebglConformanceValidator
 
   @staticmethod

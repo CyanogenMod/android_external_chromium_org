@@ -837,15 +837,13 @@ bool GpuControlList::GpuControlListEntry::SetOsInfo(
 bool GpuControlList::GpuControlListEntry::SetVendorId(
     const std::string& vendor_id_string) {
   vendor_id_ = 0;
-  return base::HexStringToInt(vendor_id_string,
-                              reinterpret_cast<int*>(&vendor_id_));
+  return base::HexStringToUInt(vendor_id_string, &vendor_id_);
 }
 
 bool GpuControlList::GpuControlListEntry::AddDeviceId(
     const std::string& device_id_string) {
   uint32 device_id = 0;
-  if (base::HexStringToInt(device_id_string,
-                           reinterpret_cast<int*>(&device_id))) {
+  if (base::HexStringToUInt(device_id_string, &device_id)) {
     device_id_list_.push_back(device_id);
     return true;
   }
@@ -1035,8 +1033,8 @@ void GpuControlList::GpuControlListEntry::LogControlListMatch(
     const std::string& control_list_logging_name) const {
   static const char kControlListMatchMessage[] =
       "Control list match for rule #%u in %s.";
-  LOG(INFO) << base::StringPrintf(kControlListMatchMessage, id_,
-                                  control_list_logging_name.c_str());
+  VLOG(1) << base::StringPrintf(kControlListMatchMessage, id_,
+                                control_list_logging_name.c_str());
 }
 
 bool GpuControlList::GpuControlListEntry::Contains(

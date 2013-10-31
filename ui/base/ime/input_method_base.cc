@@ -14,7 +14,6 @@ namespace ui {
 InputMethodBase::InputMethodBase()
   : delegate_(NULL),
     text_input_client_(NULL),
-    is_sticky_text_input_client_(false),
     system_toplevel_window_focused_(false) {
 }
 
@@ -44,13 +43,6 @@ void InputMethodBase::OnBlur() {
 }
 
 void InputMethodBase::SetFocusedTextInputClient(TextInputClient* client) {
-  if (is_sticky_text_input_client_)
-    return;
-  SetFocusedTextInputClientInternal(client);
-}
-
-void InputMethodBase::SetStickyFocusedTextInputClient(TextInputClient* client) {
-  is_sticky_text_input_client_ = (client != NULL);
   SetFocusedTextInputClientInternal(client);
 }
 
@@ -58,7 +50,6 @@ void InputMethodBase::DetachTextInputClient(TextInputClient* client) {
   if (text_input_client_ == client) {
     OnWillChangeFocusedClient(client, NULL);
     text_input_client_ = NULL;
-    is_sticky_text_input_client_ = false;
     OnDidChangeFocusedClient(client, NULL);
     NotifyTextInputStateChanged(text_input_client_);
   }
@@ -72,6 +63,20 @@ void InputMethodBase::OnTextInputTypeChanged(const TextInputClient* client) {
   if (!IsTextInputClientFocused(client))
     return;
   NotifyTextInputStateChanged(client);
+}
+
+void InputMethodBase::OnCaretBoundsChanged(const TextInputClient* client) {
+  if (!IsTextInputClientFocused(client))
+    return;
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnCaretBoundsChanged(client));
+}
+
+void InputMethodBase::OnInputLocaleChanged() {
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnInputLocaleChanged());
 }
 
 TextInputType InputMethodBase::GetTextInputType() const {

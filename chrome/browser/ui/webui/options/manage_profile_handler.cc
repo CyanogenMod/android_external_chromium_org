@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
@@ -15,7 +16,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/gaia_info_update_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -30,6 +30,7 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/webui/options/options_handlers_helper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
@@ -363,7 +364,8 @@ void ManageProfileHandler::SwitchAppListProfile(const ListValue* args) {
       !base::GetValueAsFilePath(*file_path_value, &profile_file_path))
     return;
 
-  AppListService* app_list_service = AppListService::Get();
+  AppListService* app_list_service = AppListService::Get(
+      options::helper::GetDesktopType(web_ui()));
   app_list_service->SetProfilePath(profile_file_path);
   app_list_service->Show();
 

@@ -18,13 +18,14 @@
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/range/range.h"
 
 @interface AutofillMainContainer (Private)
-- (void)buildWindowButtonsForFrame:(NSRect)frame;
+- (void)buildWindowButtons;
 - (void)layoutButtons;
 - (NSSize)preferredLegalDocumentSizeForWidth:(CGFloat)width;
 @end
@@ -42,7 +43,7 @@
 }
 
 - (void)loadView {
-  [self buildWindowButtonsForFrame:NSZeroRect];
+  [self buildWindowButtons];
 
   base::scoped_nsobject<NSView> view([[NSView alloc] initWithFrame:NSZeroRect]);
   [view setAutoresizesSubviews:YES];
@@ -59,6 +60,15 @@
   [self updateSaveInChrome];
   [saveInChromeCheckbox_ sizeToFit];
   [[self view] addSubview:saveInChromeCheckbox_];
+
+  saveInChromeTooltip_.reset([[NSImageView alloc] initWithFrame:NSZeroRect]);
+  [saveInChromeTooltip_ setImage:
+      ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+          IDR_AUTOFILL_TOOLTIP_ICON).ToNSImage()];
+  [saveInChromeTooltip_ setToolTip:
+      base::SysUTF16ToNSString(delegate_->SaveLocallyTooltip())];
+  [saveInChromeTooltip_ setFrameSize:[[saveInChromeTooltip_ image] size]];
+  [[self view] addSubview:saveInChromeTooltip_];
 
   detailsContainer_.reset(
       [[AutofillDetailsContainer alloc] initWithDelegate:delegate_]);
@@ -105,7 +115,7 @@
 
   NSSize size = NSMakeSize(std::max(buttonSize.width, detailsSize.width),
                            buttonSize.height + detailsSize.height);
-  size.height += autofill::kDetailBottomPadding;
+  size.height += 2 * autofill::kDetailVerticalPadding;
 
   if (![legalDocumentsView_ isHidden]) {
     NSSize legalDocumentSize =
@@ -126,19 +136,23 @@
   if (![legalDocumentsView_ isHidden]) {
     [legalDocumentsView_ setFrameSize:
         [self preferredLegalDocumentSizeForWidth:NSWidth(bounds)]];
-    currentY = NSMaxY([legalDocumentsView_ frame]) +
-        autofill::kVerticalSpacing;
+    currentY = NSMaxY([legalDocumentsView_ frame]) + autofill::kVerticalSpacing;
   }
 
   NSRect buttonFrame = [buttonContainer_ frame];
   buttonFrame.origin.y = currentY;
   [buttonContainer_ setFrameOrigin:buttonFrame.origin];
+  currentY = NSMaxY(buttonFrame) + autofill::kDetailVerticalPadding;
 
   NSRect checkboxFrame = [saveInChromeCheckbox_ frame];
   [saveInChromeCheckbox_ setFrameOrigin:
       NSMakePoint(chrome_style::kHorizontalPadding,
                   NSMidY(buttonFrame) - NSHeight(checkboxFrame) / 2.0)];
-  currentY = NSMaxY(buttonFrame) + autofill::kDetailBottomPadding;
+
+  NSRect tooltipFrame = [saveInChromeTooltip_ frame];
+  [saveInChromeTooltip_ setFrameOrigin:
+      NSMakePoint(NSMaxX([saveInChromeCheckbox_ frame]) + autofill::kButtonGap,
+                  NSMidY(buttonFrame) - (NSHeight(tooltipFrame) / 2.0))];
 
   NSRect notificationFrame = NSZeroRect;
   notificationFrame.size = [notificationContainer_ preferredSizeForWidth:
@@ -147,19 +161,20 @@
   // Buttons/checkbox/legal take up lower part of view, notifications the
   // upper part. Adjust the detailsContainer to take up the remainder.
   CGFloat remainingHeight =
-      NSHeight(bounds) - currentY - NSHeight(notificationFrame);
+      NSHeight(bounds) - currentY - NSHeight(notificationFrame) -
+      autofill::kDetailVerticalPadding;
   NSRect containerFrame =
       NSMakeRect(0, currentY, NSWidth(bounds), remainingHeight);
   [[detailsContainer_ view] setFrame:containerFrame];
   [detailsContainer_ performLayout];
 
   notificationFrame.origin =
-      NSMakePoint(0, NSMaxY(containerFrame) + autofill::kDetailTopPadding);
+      NSMakePoint(0, NSMaxY(containerFrame) + autofill::kDetailVerticalPadding);
   [[notificationContainer_ view] setFrame:notificationFrame];
   [notificationContainer_ performLayout];
 }
 
-- (void)buildWindowButtonsForFrame:(NSRect)frame {
+- (void)buildWindowButtons {
   if (buttonContainer_.get())
     return;
 
@@ -188,11 +203,9 @@
   [button sizeToFit];
   [buttonContainer_ addSubview:button];
 
-  frame = NSMakeRect(
-      NSWidth(frame) - NSMaxX([button frame]), 0,
+  NSRect frame = NSMakeRect(
+      -NSMaxX([button frame]) - chrome_style::kHorizontalPadding, 0,
       NSMaxX([button frame]), NSHeight([button frame]));
-  frame = NSOffsetRect(frame, -chrome_style::kHorizontalPadding, 0);
-
   [buttonContainer_ setFrame:frame];
 }
 
@@ -285,6 +298,7 @@
 
 - (void)updateSaveInChrome {
   [saveInChromeCheckbox_ setHidden:!delegate_->ShouldOfferToSaveInChrome()];
+  [saveInChromeTooltip_ setHidden:[saveInChromeCheckbox_ isHidden]];
   [saveInChromeCheckbox_ setState:
       (delegate_->ShouldSaveInChrome() ? NSOnState : NSOffState)];
 }

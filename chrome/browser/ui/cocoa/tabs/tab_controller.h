@@ -20,6 +20,7 @@ enum TabLoadingState {
   kTabCrashed,
 };
 
+@class GTMFadeTruncatingTextFieldCell;
 @class MediaIndicatorView;
 @class MenuController;
 namespace TabControllerInternal {
@@ -43,6 +44,7 @@ class MenuDelegate;
  @private
   base::scoped_nsobject<NSView> iconView_;
   base::scoped_nsobject<NSTextField> titleView_;
+  GTMFadeTruncatingTextFieldCell* titleViewCell_;  // weak
   base::scoped_nsobject<MediaIndicatorView> mediaIndicatorView_;
   base::scoped_nsobject<HoverCloseButton> closeButton_;
 
@@ -69,6 +71,7 @@ class MenuDelegate;
 @property(assign, nonatomic) BOOL app;
 @property(assign, nonatomic) BOOL mini;
 @property(assign, nonatomic) BOOL pinned;
+@property(assign, nonatomic) NSString* toolTip;
 // Note that |-selected| will return YES if the controller is |-active|, too.
 // |-setSelected:| affects the selection, while |-setActive:| affects the key
 // status/focus of the content.
@@ -115,7 +118,6 @@ class MenuDelegate;
 @end
 
 @interface TabController(TestingAPI)
-- (NSString*)toolTip;
 - (int)iconCapacity;
 - (BOOL)shouldShowIcon;
 - (BOOL)shouldShowMediaIndicator;

@@ -70,20 +70,34 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
 
   virtual void useProgram(WebKit::WebGLId program);
 
+  virtual void genBuffers(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void genFramebuffers(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void genRenderbuffers(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void genTextures(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+
+  virtual void deleteBuffers(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void deleteFramebuffers(
+      WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void deleteRenderbuffers(
+      WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+  virtual void deleteTextures(WebKit::WGC3Dsizei count, WebKit::WebGLId* ids);
+
   virtual WebKit::WebGLId createBuffer();
   virtual WebKit::WebGLId createFramebuffer();
-  virtual WebKit::WebGLId createProgram();
   virtual WebKit::WebGLId createRenderbuffer();
-  virtual WebKit::WebGLId createShader(WebKit::WGC3Denum);
   virtual WebKit::WebGLId createTexture();
-  virtual WebKit::WebGLId createExternalTexture();
 
   virtual void deleteBuffer(WebKit::WebGLId id);
   virtual void deleteFramebuffer(WebKit::WebGLId id);
-  virtual void deleteProgram(WebKit::WebGLId id);
   virtual void deleteRenderbuffer(WebKit::WebGLId id);
+  virtual void deleteTexture(WebKit::WebGLId id);
+
+  virtual WebKit::WebGLId createProgram();
+  virtual WebKit::WebGLId createShader(WebKit::WGC3Denum);
+  virtual WebKit::WebGLId createExternalTexture();
+
+  virtual void deleteProgram(WebKit::WebGLId id);
   virtual void deleteShader(WebKit::WebGLId id);
-  virtual void deleteTexture(WebKit::WebGLId texture_id);
 
   virtual void endQueryEXT(WebKit::WGC3Denum target);
   virtual void getQueryObjectuivEXT(
@@ -106,11 +120,6 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
 
   virtual void loseContextCHROMIUM(WebKit::WGC3Denum current,
                                    WebKit::WGC3Denum other);
-
-  virtual void signalSyncPoint(unsigned sync_point,
-                               WebGraphicsSyncPointCallback* callback);
-  virtual void signalQuery(WebKit::WebGLId query,
-                           WebGraphicsSyncPointCallback* callback);
 
   virtual void setSwapBuffersCompleteCallbackCHROMIUM(
       WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* callback);
@@ -193,6 +202,9 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   }
   void set_have_discard_framebuffer(bool have) {
     test_capabilities_.discard_framebuffer = have;
+  }
+  void set_support_compressed_texture_etc1(bool support) {
+    test_capabilities_.texture_format_etc1 = support;
   }
 
   // When this context is lost, all contexts in its share group are also lost.
@@ -290,7 +302,6 @@ class CC_EXPORT TestWebGraphicsContext3D : public FakeWebGraphicsContext3D {
   int times_map_buffer_chromium_succeeds_;
   WebGraphicsContextLostCallback* context_lost_callback_;
   WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* swap_buffers_callback_;
-  std::vector<WebGraphicsSyncPointCallback*> sync_point_callbacks_;
   base::hash_set<WebKit::WebGLId> used_textures_;
   std::vector<WebKit::WebGraphicsContext3D*> shared_contexts_;
   int max_texture_size_;

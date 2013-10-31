@@ -12,6 +12,7 @@
 #include "ash/system/user/tray_user.h"
 #include "ash/wm/coordinate_conversion.h"
 #include "ash/wm/drag_window_controller.h"
+#include "ash/wm/window_state.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
@@ -30,6 +31,9 @@ namespace {
 // The maximum opacity of the drag phantom window.
 const float kMaxOpacity = 0.8f;
 
+// The opacity of the window when dragging it over a user item in the tray.
+const float kOpacityWhenDraggedOverUserIcon = 0.4f;
+
 // Returns true if Ash has more than one root window.
 bool HasSecondaryRootWindow() {
   return Shell::GetAllRootWindows().size() > 1;
@@ -37,7 +41,7 @@ bool HasSecondaryRootWindow() {
 
 // When there are two root windows, returns one of the root windows which is not
 // |root_window|. Returns NULL if only one root window exists.
-aura::RootWindow* GetAnotherRootWindow(aura::RootWindow* root_window) {
+aura::RootWindow* GetAnotherRootWindow(aura::Window* root_window) {
   Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
   if (root_windows.size() < 2)
     return NULL;
@@ -53,6 +57,8 @@ aura::RootWindow* GetAnotherRootWindow(aura::RootWindow* root_window) {
 DragWindowResizer* DragWindowResizer::instance_ = NULL;
 
 DragWindowResizer::~DragWindowResizer() {
+  if (GetTarget())
+    wm::GetWindowState(GetTarget())->set_window_resizer_(NULL);
   Shell* shell = Shell::GetInstance();
   shell->mouse_cursor_filter()->set_mouse_warp_mode(
       MouseCursorEventFilter::WARP_ALWAYS);
@@ -77,11 +83,12 @@ void DragWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   base::WeakPtr<DragWindowResizer> resizer(weak_ptr_factory_.GetWeakPtr());
 
   // If we are on top of a window to desktop transfer button, we move the window
-  // temporarily back to where it was initially (showing that we do something).
-  gfx::Point filtered_location = GetTrayUserItemAtPoint(location) ?
-      details_.initial_location_in_parent : location;
+  // temporarily back to where it was initially and make it semi-transparent.
+  GetTarget()->layer()->SetOpacity(
+      GetTrayUserItemAtPoint(location) ? kOpacityWhenDraggedOverUserIcon :
+                                         details_.initial_opacity);
 
-  next_window_resizer_->Drag(filtered_location, event_flags);
+  next_window_resizer_->Drag(location, event_flags);
 
   if (!resizer)
     return;
@@ -168,7 +175,7 @@ void DragWindowResizer::UpdateDragWindow(const gfx::Rect& bounds,
     return;
 
   // It's available. Show a phantom window on the display if needed.
-  aura::RootWindow* another_root =
+  aura::Window* another_root =
       GetAnotherRootWindow(GetTarget()->GetRootWindow());
   const gfx::Rect root_bounds_in_screen(another_root->GetBoundsInScreen());
   const gfx::Rect bounds_in_screen =
@@ -257,6 +264,7 @@ bool DragWindowResizer::TryDraggingToNewUser() {
   // it's thing and return the transparency to its original value.
   int old_opacity = GetTarget()->layer()->opacity();
   GetTarget()->layer()->SetOpacity(0);
+  GetTarget()->SetBounds(details_.initial_bounds_in_parent);
   if (!tray_user->TransferWindowToUser(details_.window)) {
     GetTarget()->layer()->SetOpacity(old_opacity);
     return false;

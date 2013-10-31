@@ -126,7 +126,6 @@ extern const char kWebKitAllowDisplayingInsecureContent[];
 extern const char kWebKitAllowRunningInsecureContent[];
 #if defined(OS_ANDROID)
 extern const char kWebKitFontScaleFactor[];
-extern const char kWebKitFontScaleFactorQuirk[];
 extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
 #endif
@@ -218,6 +217,7 @@ extern const char kLanguageRemapSearchKeyTo[];
 extern const char kLanguageRemapControlKeyTo[];
 extern const char kLanguageRemapAltKeyTo[];
 extern const char kLanguageRemapDiamondKeyTo[];
+extern const char kLanguageSendFunctionKeys[];
 extern const char kLanguageXkbAutoRepeatEnabled[];
 extern const char kLanguageXkbAutoRepeatDelay[];
 extern const char kLanguageXkbAutoRepeatInterval[];
@@ -242,8 +242,10 @@ extern const char kUseSharedProxies[];
 extern const char kDisplayPowerState[];
 extern const char kDisplayProperties[];
 extern const char kSecondaryDisplays[];
+extern const char kSessionUserActivitySeen[];
 extern const char kSessionStartTime[];
 extern const char kSessionLengthLimit[];
+extern const char kSessionWaitForInitialUserActivity[];
 extern const char kPowerAcScreenDimDelayMs[];
 extern const char kPowerAcScreenOffDelayMs[];
 extern const char kPowerAcScreenLockDelayMs[];
@@ -262,6 +264,7 @@ extern const char kPowerUseVideoActivity[];
 extern const char kPowerAllowScreenWakeLocks[];
 extern const char kPowerPresentationScreenDimDelayFactor[];
 extern const char kPowerUserActivityScreenDimDelayFactor[];
+extern const char kPowerWaitForInitialUserActivity[];
 extern const char kTermsOfServiceURL[];
 extern const char kUsedPolicyCertificatesOnce[];
 extern const char kAttestationEnabled[];
@@ -389,10 +392,11 @@ extern const char kManagedUsers[];
 extern const char kMessageCenterDisabledExtensionIds[];
 extern const char kMessageCenterDisabledSystemComponentIds[];
 extern const char kMessageCenterEnabledSyncNotifierIds[];
-extern const char kWelcomeNotificationDismissed[];
 extern const char kEnabledSyncedNotificationSendingServices[];
 extern const char kInitializedSyncedNotificationSendingServices[];
 extern const char kSyncedNotificationFirstRun[];
+extern const char kWelcomeNotificationDismissed[];
+extern const char kWelcomeNotificationPreviouslyPoppedUp[];
 
 extern const char kExtensionsPref[];
 extern const char kExtensionsLastChromeVersion[];
@@ -452,6 +456,7 @@ extern const char kProfilesNumCreated[];
 extern const char kProfileInfoCache[];
 extern const char kProfileCreatedByVersion[];
 
+extern const char kStabilityExecutionPhase[];
 extern const char kStabilityExitedCleanly[];
 extern const char kStabilityStatsVersion[];
 extern const char kStabilityStatsBuildTime[];
@@ -629,6 +634,7 @@ extern const char kSyncSuppressStart[];
 extern const char kGoogleServicesLastUsername[];
 extern const char kGoogleServicesUsername[];
 extern const char kGoogleServicesUsernamePattern[];
+extern const char kGoogleServicesPasswordHash[];
 extern const char kSyncUsingSecondaryPassphrase[];
 extern const char kSyncEncryptionBootstrapToken[];
 extern const char kSyncKeystoreEncryptionBootstrapToken[];
@@ -729,6 +735,7 @@ extern const char kVideoCaptureAllowed[];
 extern const char kVideoCaptureAllowedUrls[];
 
 extern const char kHotwordSearchEnabled[];
+extern const char kHotwordSearchIncognitoEnabled[];
 
 #if defined(OS_ANDROID)
 extern const char kProtectedMediaIdentifierEnabled[];
@@ -833,9 +840,6 @@ extern const char kShelfChromeIconIndex[];
 extern const char kPinnedLauncherApps[];
 extern const char kShowLogoutButtonInTray[];
 extern const char kShelfPreferences[];
-
-extern const char kImmersiveModeRevealDelayMs[];
-extern const char kImmersiveModeRevealXThresholdPixels[];
 #endif
 
 #if defined(USE_AURA)
@@ -861,6 +865,7 @@ extern const char kRailBreakProportion[];
 extern const char kRailStartProportion[];
 extern const char kScrollPredictionSeconds[];
 extern const char kSemiLongPressTimeInSeconds[];
+extern const char kShowPressDelayInMS[];
 extern const char kTabScrubActivationDelayInMS[];
 extern const char kFlingAccelerationCurveCoefficient0[];
 extern const char kFlingAccelerationCurveCoefficient1[];

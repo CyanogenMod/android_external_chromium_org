@@ -22,13 +22,10 @@ MEDIA_EXPORT extern const char kDisableVp8AlphaPlayback[];
 
 MEDIA_EXPORT extern const char kVideoThreads[];
 
-MEDIA_EXPORT extern const char kOverrideEncryptedMediaCanPlayType[];
-
 MEDIA_EXPORT extern const char kEnableMP3StreamParser[];
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
-MEDIA_EXPORT extern const char kEnableMediaDrm[];
 MEDIA_EXPORT extern const char kMediaDrmEnableNonCompositing[];
 #endif
 
@@ -43,6 +40,7 @@ MEDIA_EXPORT extern const char kAlsaOutputDevice[];
 
 #if defined(OS_MACOSX)
 MEDIA_EXPORT extern const char kDisableMainThreadAudio[];
+MEDIA_EXPORT extern const char kEnableAVFoundation[];
 #endif
 
 #if defined(OS_WIN)

@@ -12,11 +12,11 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
+#include "content/browser/frame_host/navigation_controller_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
+#include "content/browser/frame_host/web_contents_screenshot_manager.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/web_contents/navigation_controller_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/browser/web_contents/web_contents_screenshot_manager.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
@@ -150,7 +150,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
     NavigateToURL(shell(), test_url);
     aura::Window* content =
         shell()->web_contents()->GetView()->GetContentNativeView();
-    content->GetRootWindow()->SetHostSize(gfx::Size(800, 600));
+    content->GetDispatcher()->SetHostSize(gfx::Size(800, 600));
 
     WebContentsImpl* web_contents =
         static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -331,21 +331,21 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(1, GetCurrentIndex());
 
   aura::Window* content = web_contents->GetView()->GetContentNativeView();
-  aura::RootWindow* root_window = content->GetRootWindow();
+  aura::WindowEventDispatcher* dispatcher = content->GetDispatcher();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
 
   base::TimeDelta timestamp;
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
       gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
       0, timestamp);
-  root_window->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
+  dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&press);
   EXPECT_EQ(1, GetCurrentIndex());
 
   timestamp += base::TimeDelta::FromMilliseconds(10);
   ui::TouchEvent move1(ui::ET_TOUCH_MOVED,
       gfx::Point(bounds.right() - 10, bounds.y() + 5),
       0, timestamp);
-  root_window->AsRootWindowHostDelegate()->OnHostTouchEvent(&move1);
+  dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&move1);
   EXPECT_EQ(1, GetCurrentIndex());
 
   // Swipe back from the right edge, back to the left edge, back to the right
@@ -356,7 +356,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    root_window->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 
@@ -365,7 +365,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    root_window->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 
@@ -374,7 +374,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
     ui::TouchEvent inc(ui::ET_TOUCH_MOVED,
         gfx::Point(x, bounds.y() + 5),
         0, timestamp);
-    root_window->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
+    dispatcher->AsRootWindowHostDelegate()->OnHostTouchEvent(&inc);
     EXPECT_EQ(1, GetCurrentIndex());
   }
 

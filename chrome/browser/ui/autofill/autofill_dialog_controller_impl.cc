@@ -17,6 +17,7 @@
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -25,7 +26,6 @@
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_common.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
@@ -139,16 +139,6 @@ class ScopedViewUpdates {
 
   DISALLOW_COPY_AND_ASSIGN(ScopedViewUpdates);
 };
-
-// Returns true if |card_type| is supported by Wallet.
-bool IsWalletSupportedCard(const std::string& card_type,
-                           const wallet::WalletItems& wallet_items) {
-  return card_type == autofill::kVisaCard ||
-         card_type == autofill::kMasterCard ||
-         card_type == autofill::kDiscoverCard ||
-         (card_type == autofill::kAmericanExpressCard &&
-             wallet_items.is_amex_allowed());
-}
 
 // Returns true if |input| should be used to fill a site-requested |field| which
 // is notated with a "shipping" tag, for use when the user has decided to use
@@ -791,7 +781,6 @@ string16 AutofillDialogControllerImpl::LegalDocumentsText() {
   if (!IsPayingWithWallet())
     return string16();
 
-  EnsureLegalDocumentsText();
   return legal_documents_text_;
 }
 
@@ -802,6 +791,14 @@ bool AutofillDialogControllerImpl::ShouldDisableSignInLink() const {
 bool AutofillDialogControllerImpl::ShouldShowSpinner() const {
   return account_chooser_model_.WalletIsSelected() &&
          SignedInState() == REQUIRES_RESPONSE;
+}
+
+bool AutofillDialogControllerImpl::ShouldShowSignInWebView() const {
+  return !signin_registrar_.IsEmpty();
+}
+
+GURL AutofillDialogControllerImpl::SignInUrl() const {
+  return wallet::GetSignInUrl();
 }
 
 bool AutofillDialogControllerImpl::ShouldOfferToSaveInChrome() const {
@@ -916,7 +913,6 @@ DialogOverlayState AutofillDialogControllerImpl::GetDialogOverlay() {
 
 const std::vector<gfx::Range>& AutofillDialogControllerImpl::
     LegalDocumentLinks() {
-  EnsureLegalDocumentsText();
   return legal_document_link_ranges_;
 }
 
@@ -1077,41 +1073,57 @@ void AutofillDialogControllerImpl::OnWalletFormFieldError(
   UpdateForErrors();
 }
 
-void AutofillDialogControllerImpl::EnsureLegalDocumentsText() {
+void AutofillDialogControllerImpl::ConstructLegalDocumentsText() {
   if (!wallet_items_ || wallet_items_->legal_documents().empty())
     return;
-
-  // The text has already been constructed, no need to recompute.
-  if (!legal_documents_text_.empty())
-    return;
+  NOTIMPLEMENTED();
 
   const std::vector<wallet::WalletItems::LegalDocument*>& documents =
       wallet_items_->legal_documents();
-  DCHECK_LE(documents.size(), 3U);
+  // There should never be just one document because the privacy policy doc gets
+  // tacked on the end of other documents.
   DCHECK_GE(documents.size(), 2U);
-  const bool new_user = wallet_items_->HasRequiredAction(wallet::SETUP_WALLET);
 
-  const string16 privacy_policy_display_name =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_DIALOG_PRIVACY_POLICY_LINK);
-  string16 text;
-  if (documents.size() == 2U) {
-    text = l10n_util::GetStringFUTF16(
-        new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2 :
-                   IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_2,
-        documents[0]->display_name(),
-        documents[1]->display_name());
-  } else {
-    text = l10n_util::GetStringFUTF16(
-        new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3 :
-                   IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_3,
-        documents[0]->display_name(),
-        documents[1]->display_name(),
-        documents[2]->display_name());
+  std::vector<base::string16> link_names;
+  for (size_t i = 0; i < documents.size(); ++i) {
+    link_names.push_back(documents[i]->display_name());
   }
 
+  const bool new_user = wallet_items_->HasRequiredAction(wallet::SETUP_WALLET);
+  int resource_id = 0;
+  switch (documents.size()) {
+    case 2U:
+      resource_id = new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2 :
+                               IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_2;
+      break;
+    case 3U:
+      resource_id = new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3 :
+                               IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_3;
+      break;
+    case 4U:
+      resource_id = new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_4 :
+                               IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_4;
+      break;
+    case 5U:
+      resource_id = new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_5 :
+                               IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_5;
+      break;
+    case 6U:
+      resource_id = new_user ? IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_6 :
+                               IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_6;
+      break;
+    default:
+      // We can only handle so many documents. For lack of a better way of
+      // handling document overflow, just error out if there are too many.
+      DisableWallet(wallet::WalletClient::UNKNOWN_ERROR);
+      return;
+  }
+
+  std::vector<size_t> offsets;
+  string16 text = l10n_util::GetStringFUTF16(resource_id, link_names, &offsets);
   legal_document_link_ranges_.clear();
   for (size_t i = 0; i < documents.size(); ++i) {
-    size_t link_start = text.find(documents[i]->display_name());
+    size_t link_start = offsets[i];
     legal_document_link_ranges_.push_back(gfx::Range(
         link_start, link_start + documents[i]->display_name().size()));
   }
@@ -2170,11 +2182,16 @@ void AutofillDialogControllerImpl::Observe(
   DCHECK_EQ(type, content::NOTIFICATION_NAV_ENTRY_COMMITTED);
   content::LoadCommittedDetails* load_details =
       content::Details<content::LoadCommittedDetails>(details).ptr();
-  if (wallet::IsSignInContinueUrl(load_details->entry->GetVirtualURL())) {
+  if (IsSignInContinueUrl(load_details->entry->GetVirtualURL())) {
     // TODO(estade): will need to update this when we fix <crbug.com/247755>.
     account_chooser_model_.SelectActiveWalletAccount();
     FetchWalletCookieAndUserName();
-    HideSignIn();
+
+    // NOTE: |HideSignIn()| may delete the WebContents which doesn't expect to
+    // be deleted while committing a nav entry. Just call |HideSignIn()| later.
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+        base::Bind(&AutofillDialogControllerImpl::HideSignIn,
+                   base::Unretained(this)));
   }
 }
 
@@ -2352,6 +2369,7 @@ void AutofillDialogControllerImpl::OnDidGetWalletItems(
 
   wallet_items_ = wallet_items.Pass();
   OnWalletOrSigninUpdate();
+  ConstructLegalDocumentsText();
 }
 
 void AutofillDialogControllerImpl::OnDidSaveToWallet(
@@ -2483,6 +2501,15 @@ void AutofillDialogControllerImpl::SubmitButtonDelayEndForTesting() {
 void AutofillDialogControllerImpl::
     ClearLastWalletItemsFetchTimestampForTesting() {
   last_wallet_items_fetch_timestamp_ = base::TimeTicks();
+}
+
+const AccountChooserModel& AutofillDialogControllerImpl::
+    AccountChooserModelForTesting() const {
+  return account_chooser_model_;
+}
+
+bool AutofillDialogControllerImpl::IsSignInContinueUrl(const GURL& url) const {
+  return wallet::IsSignInContinueUrl(url);
 }
 
 AutofillDialogControllerImpl::AutofillDialogControllerImpl(
@@ -2989,13 +3016,9 @@ base::string16 AutofillDialogControllerImpl::CreditCardNumberValidityMessage(
         IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_NUMBER);
   }
 
-  // Wallet only accepts MasterCard, Visa and Discover. No AMEX.
-  if (IsPayingWithWallet() &&
-      !IsWalletSupportedCard(CreditCard::GetCreditCardType(number),
-                             *wallet_items_)) {
-    return l10n_util::GetStringUTF16(
-        IDS_AUTOFILL_DIALOG_VALIDATION_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET);
-  }
+  base::string16 message;
+  if (IsPayingWithWallet() && !wallet_items_->SupportsCard(number, &message))
+    return message;
 
   // Card number is good and supported.
   return base::string16();

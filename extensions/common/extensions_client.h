@@ -7,9 +7,12 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 namespace extensions {
 
+class APIPermissionSet;
+class Extension;
 class FeatureProvider;
 class PermissionMessage;
 class PermissionMessageProvider;
@@ -20,6 +23,8 @@ class URLPatternSet;
 // process. This should be implemented by the client of the extensions system.
 class ExtensionsClient {
  public:
+  typedef std::vector<std::string> ScriptingWhitelist;
+
   // Initializes global state. Not done in the constructor because unit tests
   // can create additional ExtensionsClients because the utility thread runs
   // in-process.
@@ -44,6 +49,19 @@ class ExtensionsClient {
       const URLPatternSet& hosts,
       URLPatternSet* new_hosts,
       std::set<PermissionMessage>* messages) const = 0;
+
+  // Replaces the scripting whitelist with |whitelist|. Used in the renderer;
+  // only used for testing in the browser process.
+  virtual void SetScriptingWhitelist(const ScriptingWhitelist& whitelist) = 0;
+
+  // Return the whitelist of extensions that can run content scripts on
+  // any origin.
+  virtual const ScriptingWhitelist& GetScriptingWhitelist() const = 0;
+
+  // Get the set of chrome:// hosts that |extension| can run content scripts on.
+  virtual URLPatternSet GetPermittedChromeSchemeHosts(
+      const Extension* extension,
+      const APIPermissionSet& api_permissions) const = 0;
 
   // Return the extensions client.
   static ExtensionsClient* Get();

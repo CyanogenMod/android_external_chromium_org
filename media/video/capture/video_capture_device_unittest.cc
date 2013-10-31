@@ -64,7 +64,8 @@ namespace media {
 
 class MockClient : public media::VideoCaptureDevice::Client {
  public:
-  MOCK_METHOD0(ReserveOutputBuffer, scoped_refptr<media::VideoFrame>());
+  MOCK_METHOD1(ReserveOutputBuffer,
+      scoped_refptr<media::VideoFrame>(const gfx::Size&));
   MOCK_METHOD0(OnErr, void());
   MOCK_METHOD1(OnFrameInfo, void(const VideoCaptureCapability&));
   MOCK_METHOD1(OnFrameInfoChanged, void(const VideoCaptureCapability&));
@@ -161,8 +162,6 @@ TEST_F(VideoCaptureDeviceTest, CaptureVGA) {
                                         480,
                                         30,
                                         PIXEL_FORMAT_I420,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format,
                            client_.PassAs<Client>());
@@ -197,8 +196,6 @@ TEST_F(VideoCaptureDeviceTest, Capture720p) {
                                         720,
                                         30,
                                         PIXEL_FORMAT_I420,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format,
                            client_.PassAs<Client>());
@@ -229,8 +226,6 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_AllocateBadSize) {
                                         472,
                                         35,
                                         PIXEL_FORMAT_I420,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format,
                            client_.PassAs<Client>());
@@ -263,8 +258,6 @@ TEST_F(VideoCaptureDeviceTest, ReAllocateCamera) {
         resolution.height(),
         30,
         PIXEL_FORMAT_I420,
-        0,
-        false,
         ConstantResolutionVideoCaptureDevice);
 
     // The device (if it is an async implementation) may or may not get as far
@@ -283,8 +276,6 @@ TEST_F(VideoCaptureDeviceTest, ReAllocateCamera) {
       240,
       30,
       PIXEL_FORMAT_I420,
-      0,
-      false,
       ConstantResolutionVideoCaptureDevice);
 
   base::RunLoop run_loop;
@@ -329,8 +320,6 @@ TEST_F(VideoCaptureDeviceTest, DeAllocateCameraWhileRunning) {
                                         480,
                                         30,
                                         PIXEL_FORMAT_I420,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format, client_.PassAs<Client>());
   // Get captured video frames.
@@ -364,8 +353,6 @@ TEST_F(VideoCaptureDeviceTest, FakeCapture) {
                                         480,
                                         30,
                                         PIXEL_FORMAT_I420,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format,
                            client_.PassAs<Client>());
@@ -399,8 +386,6 @@ TEST_F(VideoCaptureDeviceTest, MAYBE_CaptureMjpeg) {
                                         720,
                                         30,
                                         PIXEL_FORMAT_MJPEG,
-                                        0,
-                                        false,
                                         ConstantResolutionVideoCaptureDevice);
   device->AllocateAndStart(capture_format, client_.PassAs<Client>());
   // Get captured video frames.

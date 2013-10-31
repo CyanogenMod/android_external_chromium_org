@@ -666,8 +666,8 @@ EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKET)
 EVENT_TYPE(TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS)
 
 
-// A backup socket is created due to slow connect
-EVENT_TYPE(SOCKET_BACKUP_CREATED)
+// A backup connect job is created due to slow connect.
+EVENT_TYPE(BACKUP_CONNECT_JOB_CREATED)
 
 // This event is sent when a connect job is eventually bound to a request
 // (because of late binding and socket backup jobs, we don't assign the job to
@@ -726,14 +726,16 @@ EVENT_TYPE(URL_REQUEST_START_JOB)
 //   }
 EVENT_TYPE(URL_REQUEST_REDIRECTED)
 
-// Measures the time a net::URLRequest is blocked waiting for either the
-// NetworkDelegate or a URLRequest::Delegate to respond.
-//
-// The parameters attached to the event are:
+// Measures the time between when a net::URLRequest calls a delegate that can
+// block it, and when the delegate allows the request to resume.
+EVENT_TYPE(URL_REQUEST_DELEGATE)
+
+// Logged when a delegate informs the URL_REQUEST of what's currently blocking
+// the request. The parameters attached to the begin event are:
 //   {
-//     "delegate": <What's blocking the request, if known>,
+//     "delegate_info": <Information about what's blocking the request>,
 //   }
-EVENT_TYPE(URL_REQUEST_BLOCKED_ON_DELEGATE)
+EVENT_TYPE(DELEGATE_INFO)
 
 // The specified number of bytes were read from the net::URLRequest.
 // The filtered event is used when the bytes were passed through a filter before

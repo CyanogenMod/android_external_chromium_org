@@ -55,10 +55,6 @@ const char kBuildArgs_Help[] =
     "  arguments to apply to multiple buildfiles.\n";
 
 Args::Args() {
-  // These system values are always overridden and won't appear in a
-  // declare_args call, so mark them as used to prevent a warning later.
-  declared_arguments_[variables::kOs] = Value();
-  declared_arguments_[variables::kCpuArch] = Value();
 }
 
 Args::Args(const Args& other)
@@ -139,9 +135,12 @@ bool Args::DeclareArgs(const Scope::KeyValueMap& args,
     }
 
     // Only set on the current scope to the new value if it hasn't been already
-    // set.
-    if (!scope_to_set->GetValue(i->first))
+    // set. Mark the variable used so the build script can override it in
+    // certain cases without getting unused value errors.
+    if (!scope_to_set->GetValue(i->first)) {
       scope_to_set->SetValue(i->first, i->second, i->second.origin());
+      scope_to_set->MarkUsed(i->first);
+    }
   }
 
   return true;
@@ -178,8 +177,6 @@ void Args::SetSystemVars(Scope* dest) const {
   Value os_val(NULL, std::string(os));
   dest->SetValue(variables::kBuildOs, os_val, NULL);
   dest->SetValue(variables::kOs, os_val, NULL);
-  declared_arguments_[variables::kBuildOs] = os_val;
-  declared_arguments_[variables::kOs] = os_val;
 
   // Host architecture.
   static const char kIa32[] = "ia32";
@@ -221,11 +218,17 @@ void Args::SetSystemVars(Scope* dest) const {
   Value arch_val(NULL, std::string(arch));
   dest->SetValue(variables::kBuildCpuArch, arch_val, NULL);
   dest->SetValue(variables::kCpuArch, arch_val, NULL);
-  declared_arguments_[variables::kBuildOs] = arch_val;
-  declared_arguments_[variables::kOs] = arch_val;
 
+  // Save the OS and architecture as build arguments that are implicitly
+  // declared. This is so they can be overridden in a toolchain build args
+  // override, and so that they will appear in the "gn args" output.
+  //
+  // Do not declare the build* variants since these shouldn't be changed.
+  //
   // Mark these variables used so the build config file can override them
   // without geting a warning about overwriting an unused variable.
+  declared_arguments_[variables::kOs] = os_val;
+  declared_arguments_[variables::kCpuArch] = arch_val;
   dest->MarkUsed(variables::kCpuArch);
   dest->MarkUsed(variables::kOs);
 }

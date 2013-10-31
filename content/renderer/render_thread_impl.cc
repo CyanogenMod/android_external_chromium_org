@@ -44,7 +44,9 @@
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_constants.h"
@@ -102,7 +104,6 @@
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebScriptController.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
-#include "third_party/WebKit/public/web/WebSharedWorkerRepository.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
@@ -636,8 +637,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   webkit_platform_support_.reset(new RendererWebKitPlatformSupportImpl);
   WebKit::initialize(webkit_platform_support_.get());
-  WebKit::setSharedWorkerRepository(
-      webkit_platform_support_.get()->sharedWorkerRepository());
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -869,24 +868,28 @@ scoped_refptr<RendererGpuVideoAcceleratorFactories>
 RenderThreadImpl::GetGpuFactories() {
   DCHECK(IsMainThread());
 
+  scoped_refptr<GpuChannelHost> gpu_channel_host = GetGpuChannel();
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories;
   if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     if (!gpu_va_context_provider_ ||
         gpu_va_context_provider_->DestroyedOnMainThread()) {
+      if (!gpu_channel_host) {
+        gpu_channel_host = EstablishGpuChannelSync(
+            CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE);
+      }
       gpu_va_context_provider_ = ContextProviderCommandBuffer::Create(
           make_scoped_ptr(
               WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-                  this,
+                  gpu_channel_host.get(),
                   WebKit::WebGraphicsContext3D::Attributes(),
                   GURL("chrome://gpu/RenderThreadImpl::GetGpuVDAContext3D"))),
           "GPU-VideoAccelerator-Offscreen");
     }
   }
-  GpuChannelHost* gpu_channel_host = GetGpuChannel();
   if (gpu_channel_host) {
     gpu_factories = new RendererGpuVideoAcceleratorFactories(
-        gpu_channel_host, gpu_va_context_provider_);
+        gpu_channel_host.get(), gpu_va_context_provider_);
   }
   return gpu_factories;
 }
@@ -900,9 +903,11 @@ RenderThreadImpl::CreateOffscreenContext3d() {
   attributes.antialias = false;
   attributes.noAutomaticFlushes = true;
 
+  scoped_refptr<GpuChannelHost> gpu_channel_host(EstablishGpuChannelSync(
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
   return make_scoped_ptr(
       WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-          this,
+          gpu_channel_host.get(),
           attributes,
           GURL("chrome://gpu/RenderThreadImpl::CreateOffscreenContext3d")));
 }
@@ -1050,6 +1055,47 @@ void RenderThreadImpl::CreateImage(
 
 void RenderThreadImpl::DeleteImage(int32 image_id, int32 sync_point) {
   NOTREACHED();
+}
+
+scoped_ptr<gfx::GpuMemoryBuffer> RenderThreadImpl::AllocateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat) {
+  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  size_t size = width * height *
+      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
+  if (size > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  gfx::GpuMemoryBufferHandle handle;
+  bool success;
+  IPC::Message* message =
+      new ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer(size, &handle);
+
+  // Allow calling this from the compositor thread.
+  if (base::MessageLoop::current() == message_loop())
+    success = ChildThread::Send(message);
+  else
+    success = sync_message_filter()->Send(message);
+
+  if (!success)
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  // Currently, shared memory is the only supported buffer type.
+  if (handle.type != gfx::SHARED_MEMORY_BUFFER)
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  if (!base::SharedMemory::IsHandleValid(handle.handle))
+    return scoped_ptr<gfx::GpuMemoryBuffer>();
+
+  return make_scoped_ptr<gfx::GpuMemoryBuffer>(
+      new GpuMemoryBufferImpl(
+          make_scoped_ptr(new base::SharedMemory(handle.handle, false)),
+          width,
+          height,
+          internalformat));
 }
 
 void RenderThreadImpl::DoNotSuspendWebKitSharedTimer() {

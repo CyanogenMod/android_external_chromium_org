@@ -19,11 +19,13 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "ui/base/window_open_disposition.h"
 
 namespace content {
 class WebContents;
 }
 
+class GURL;
 class InstantPageTest;
 class InstantService;
 class Profile;
@@ -74,6 +76,12 @@ class SearchTabHelper : public content::NotificationObserver,
   // Tells the page that the user pressed Enter in the omnibox.
   void Submit(const string16& text);
 
+  // Called when the tab corresponding to |this| instance is activated.
+  void OnTabActivated();
+
+  // Called when the tab corresponding to |this| instance is deactivated.
+  void OnTabDeactivated();
+
  private:
   friend class content::WebContentsUserData<SearchTabHelper>;
   friend class InstantPageTest;
@@ -108,6 +116,7 @@ class SearchTabHelper : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            AppropriateMessagesSentToIncognitoPages);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest, SubmitQuery);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest, ProcessNavigateToURL);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            ProcessDeleteMostVisitedItem);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
@@ -115,16 +124,25 @@ class SearchTabHelper : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            ProcessUndoAllMostVisitedDeletions);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           ProcessPasteIntoOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           DoNotProcessPasteIntoOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
                            DoNotProcessMessagesForIncognitoPage);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterPolicyTest,
+                           DoNotProcessMessagesForInactiveTab);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessVoiceSearchSupportMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreVoiceSearchSupportMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessFocusOmniboxMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreFocusOmniboxMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, HandleTabChangedEvents);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, SendSetPromoInformationMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            DoNotSendSetPromoInformationMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessLogEventMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreLogEventMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessNavigateToURLMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnoreNavigateToURLMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            ProcessDeleteMostVisitedItemMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
@@ -140,8 +158,6 @@ class SearchTabHelper : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            IgnoreMessageIfThePageIsNotActive);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
-                           SendSetDisplayInstantResultsMsg);
-  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest,
                            DoNotSendSetDisplayInstantResultsMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, SendMostVisitedItemsMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, DoNotSendMostVisitedItemsMsg);
@@ -150,6 +166,8 @@ class SearchTabHelper : public content::NotificationObserver,
                            DoNotSendThemeBackgroundInfoMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, SendSubmitMsg);
   FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, DoNotSendSubmitMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, ProcessPasteAndOpenDropdownMsg);
+  FRIEND_TEST_ALL_PREFIXES(SearchIPCRouterTest, IgnorePasteAndOpenDropdownMsg);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
                            DetermineIfPageSupportsInstant_Local);
   FRIEND_TEST_ALL_PREFIXES(InstantPageTest,
@@ -189,10 +207,14 @@ class SearchTabHelper : public content::NotificationObserver,
   virtual void OnInstantSupportDetermined(bool supports_instant) OVERRIDE;
   virtual void OnSetVoiceSearchSupport(bool supports_voice_search) OVERRIDE;
   virtual void FocusOmnibox(OmniboxFocusState state) OVERRIDE;
+  virtual void NavigateToURL(const GURL& url,
+                             WindowOpenDisposition disposition,
+                             bool is_most_visited_item_url) OVERRIDE;
   virtual void OnDeleteMostVisitedItem(const GURL& url) OVERRIDE;
   virtual void OnUndoMostVisitedDeletion(const GURL& url) OVERRIDE;
   virtual void OnUndoAllMostVisitedDeletions() OVERRIDE;
   virtual void OnLogEvent(NTPLoggingEventType event) OVERRIDE;
+  virtual void PasteIntoOmnibox(const string16& text) OVERRIDE;
 
   // Overridden from InstantServiceObserver:
   virtual void ThemeInfoChanged(const ThemeBackgroundInfo& theme_info) OVERRIDE;

@@ -4,10 +4,13 @@
 
 #include "chrome/browser/ui/tabs/tab_utils.h"
 
+#include "base/strings/string16.h"
 #include "chrome/browser/media/audio_stream_indicator.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_capture_indicator.h"
+#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/multi_animation.h"
 
@@ -97,14 +100,9 @@ bool ShouldTabShowMediaIndicator(int capacity,
                                  TabMediaState media_state) {
   if (media_state == TAB_MEDIA_STATE_NONE)
     return false;
-  const bool audio_playback_active =
-      (media_state == TAB_MEDIA_STATE_AUDIO_PLAYING);
-  int required_capacity = (has_favicon && audio_playback_active) ?
-      2 :  // Must have capacity to also show the favicon.
-      1;  // Only need capacity to show the capturing/recording indicator.
   if (ShouldTabShowCloseButton(capacity, is_pinned_tab, is_active_tab))
-    ++required_capacity;
-  return capacity >= required_capacity;
+    return capacity >= 2;
+  return capacity >= 1;
 }
 
 bool ShouldTabShowCloseButton(int capacity,
@@ -181,6 +179,34 @@ scoped_ptr<gfx::Animation> CreateTabMediaIndicatorFadeAnimation(
       new gfx::MultiAnimation(parts, interval));
   animation->set_continuous(false);
   return animation.PassAs<gfx::Animation>();
+}
+
+base::string16 AssembleTabTooltipText(const base::string16& title,
+                                      TabMediaState media_state) {
+  if (media_state == TAB_MEDIA_STATE_NONE)
+    return title;
+
+  base::string16 result = title;
+  if (!result.empty())
+    result.append(1, '\n');
+  switch (media_state) {
+    case TAB_MEDIA_STATE_AUDIO_PLAYING:
+      result.append(
+          l10n_util::GetStringUTF16(IDS_TOOLTIP_TAB_MEDIA_STATE_AUDIO_PLAYING));
+      break;
+    case TAB_MEDIA_STATE_RECORDING:
+      result.append(
+          l10n_util::GetStringUTF16(IDS_TOOLTIP_TAB_MEDIA_STATE_RECORDING));
+      break;
+    case TAB_MEDIA_STATE_CAPTURING:
+      result.append(
+          l10n_util::GetStringUTF16(IDS_TOOLTIP_TAB_MEDIA_STATE_CAPTURING));
+      break;
+    case TAB_MEDIA_STATE_NONE:
+      NOTREACHED();
+      break;
+  }
+  return result;
 }
 
 }  // namespace chrome

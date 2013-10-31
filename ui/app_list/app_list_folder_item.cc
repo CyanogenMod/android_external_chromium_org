@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "ui/app_list/app_list_folder_item.h"
+
+#include "ui/app_list/app_list_item_list.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -15,7 +17,7 @@ const int kIconDimension = 48;
 const size_t kNumTopApps = 4;
 const int kItemIconDimension = 16;
 
-// Genearats the folder icon with the top 4 child item icons laid in 2x2 tile.
+// Generates the folder icon with the top 4 child item icons laid in 2x2 tile.
 class FolderImageSource : public gfx::CanvasImageSource {
  public:
   typedef std::vector<gfx::ImageSkia> Icons;
@@ -45,11 +47,11 @@ class FolderImageSource : public gfx::CanvasImageSource {
   virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
     // Draw folder circle.
     gfx::Point center = gfx::Point(size().width() / 2 , size().height() / 2);
-    const SkColor kCirclColor = SkColorSetRGB(0xE1, 0xE1, 0xE1);
+    const SkColor kCircleColor = SkColorSetRGB(0xE1, 0xE1, 0xE1);
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     paint.setAntiAlias(true);
-    paint.setColor(kCirclColor);
+    paint.setColor(kCircleColor);
     canvas->DrawCircle(center, size().width() / 2, paint);
 
     if (icons_.size() == 0)
@@ -91,38 +93,14 @@ class FolderImageSource : public gfx::CanvasImageSource {
 
 AppListFolderItem::AppListFolderItem(const std::string& id)
     : AppListItemModel(id),
-      apps_(new Apps) {
+      item_list_(new AppListItemList) {
+  item_list_->AddObserver(this);
 }
 
 AppListFolderItem::~AppListFolderItem() {
   for (size_t i = 0; i < top_items_.size(); ++i)
     top_items_[i]->RemoveObserver(this);
-}
-
-void AppListFolderItem::AddItem(AppListItemModel* item) {
-  std::string sort_order = item->GetSortOrder();
-  // Note: ui::ListModel is not a sorted list.
-  size_t index = 0;
-  for (; index < apps_->item_count(); ++index) {
-    if (sort_order < apps_->GetItemAt(index)->GetSortOrder())
-      break;
-  }
-  apps_->AddAt(index, item);
-  if (index <= kNumTopApps)
-    UpdateTopItems();
-}
-
-void AppListFolderItem::DeleteItem(const std::string& id) {
-  for (size_t i = 0; i < apps_->item_count(); ++i) {
-    AppListItemModel* item = apps_->GetItemAt(i);
-    if (item->id() == id) {
-      scoped_ptr<AppListItemModel> to_be_deleted(apps_->RemoveAt(i));
-      DCHECK(item == to_be_deleted.get());
-      if (i <= kNumTopApps)
-        UpdateTopItems();
-      return;
-    }
-  }
+  item_list_->RemoveObserver(this);
 }
 
 void AppListFolderItem::UpdateIcon() {
@@ -137,15 +115,8 @@ void AppListFolderItem::UpdateIcon() {
   SetIcon(icon, false);
 }
 
-std::string AppListFolderItem::GetSortOrder() const {
-  // For now, put folders at the end of the list.
-  // TODO(stevenjb): Implement synced app list ordering.
-  return "zzzzzzzz";
-}
-
 void AppListFolderItem::Activate(int event_flags) {
-  // TODO(stevenjb/jennyz): Implement.
-  VLOG(1) << "AppListFolderItem::Activate";
+  // Folder handling is implemented by the View, so do nothing.
 }
 
 // static
@@ -176,13 +147,33 @@ void AppListFolderItem::ItemIsInstallingChanged() {
 void AppListFolderItem::ItemPercentDownloadedChanged() {
 }
 
+void AppListFolderItem::OnListItemAdded(size_t index,
+                                        AppListItemModel* item) {
+  if (index <= kNumTopApps)
+    UpdateTopItems();
+}
+
+void AppListFolderItem::OnListItemRemoved(size_t index,
+                                          AppListItemModel* item) {
+  if (index <= kNumTopApps)
+    UpdateTopItems();
+}
+
+void AppListFolderItem::OnListItemMoved(size_t from_index,
+                                        size_t to_index,
+                                        AppListItemModel* item) {
+  if (from_index <= kNumTopApps || to_index <= kNumTopApps)
+    UpdateTopItems();
+}
+
 void AppListFolderItem::UpdateTopItems() {
   for (size_t i = 0; i < top_items_.size(); ++i)
     top_items_[i]->RemoveObserver(this);
   top_items_.clear();
 
-  for (size_t i = 0; i < kNumTopApps && i < apps_->item_count(); ++i) {
-    AppListItemModel* item = apps_->GetItemAt(i);
+  for (size_t i = 0;
+       i < kNumTopApps && i < item_list_->item_count(); ++i) {
+    AppListItemModel* item = item_list_->item_at(i);
     item->AddObserver(this);
     top_items_.push_back(item);
   }

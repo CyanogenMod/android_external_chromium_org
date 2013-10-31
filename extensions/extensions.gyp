@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'chromium_code': 1,
+  },
   'targets': [
     {
       'target_name': 'extensions_common',
@@ -72,6 +75,8 @@
         'common/permissions/permission_message.h',
         'common/permissions/permission_message_provider.cc',
         'common/permissions/permission_message_provider.h',
+        'common/permissions/permission_set.cc',
+        'common/permissions/permission_set.h',
         'common/permissions/permissions_info.cc',
         'common/permissions/permissions_info.h',
         'common/permissions/permissions_provider.h',
@@ -107,10 +112,14 @@
         'browser/extension_prefs_scope.h',
         'browser/extension_error.cc',
         'browser/extension_error.h',
+        'browser/extensions_browser_client.cc',
+        'browser/extensions_browser_client.h',
         'browser/file_highlighter.cc',
         'browser/file_highlighter.h',
         'browser/file_reader.cc',
         'browser/file_reader.h',
+        'browser/lazy_background_task_queue.cc',
+        'browser/lazy_background_task_queue.h',
         'browser/pref_names.cc',
         'browser/pref_names.h',
         'browser/view_type_utils.cc',

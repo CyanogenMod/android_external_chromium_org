@@ -141,7 +141,7 @@ class Type(object):
       self.ref_type = json['$ref']
     elif 'enum' in json and json_type == 'string':
       self.property_type = PropertyType.ENUM
-      self.enum_values = [value for value in json['enum']]
+      self.enum_values = [EnumValue(value) for value in json['enum']]
     elif json_type == 'any':
       self.property_type = PropertyType.ANY
     elif json_type == 'binary':
@@ -343,6 +343,20 @@ class Property(object):
 
   unix_name = property(GetUnixName, SetUnixName)
 
+class EnumValue(object):
+  """A single value from an enum.
+  Properties:
+  - |name| name of the property as in the json.
+  - |description| a description of the property (if provided)
+  """
+  def __init__(self, json):
+    if isinstance(json, dict):
+      self.name = json['name']
+      self.description = json.get('description')
+    else:
+      self.name = json
+      self.description = None
+
 class _Enum(object):
   """Superclass for enum types with a "name" field, setting up repr/eq/ne.
   Enums need to do this so that equality/non-equality work over pickling.
@@ -486,8 +500,11 @@ class Platforms(object):
   WIN = _PlatformInfo("win")
 
 def _GetPlatforms(json):
-  if 'platforms' not in json:
+  if 'platforms' not in json or json['platforms'] == None:
     return None
+  # Sanity check: platforms should not be an empty list.
+  if not json['platforms']:
+    raise ValueError('"platforms" cannot be an empty list')
   platforms = []
   for platform_name in json['platforms']:
     for platform_enum in _Enum.GetAll(Platforms):

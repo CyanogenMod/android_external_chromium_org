@@ -115,6 +115,7 @@ LOCAL_SRC_FILES := \
 	net/cert/x509_certificate_net_log_param.cc \
 	net/cert/x509_certificate_openssl.cc \
 	net/cert/x509_util.cc \
+	net/cert/x509_util_android.cc \
 	net/cert/x509_util_openssl.cc \
 	net/cookies/canonical_cookie.cc \
 	net/cookies/cookie_constants.cc \
@@ -209,6 +210,7 @@ LOCAL_SRC_FILES := \
 	net/http/http_auth_handler_factory.cc \
 	net/http/http_auth_handler_ntlm.cc \
 	net/http/http_auth_handler_ntlm_portable.cc \
+	net/http/http_basic_state.cc \
 	net/http/http_basic_stream.cc \
 	net/http/http_byte_range.cc \
 	net/http/http_cache.cc \
@@ -313,22 +315,24 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/scoped_evp_cipher_ctx.cc \
 	net/quic/crypto/strike_register.cc \
 	net/quic/crypto/source_address_token.cc \
+	net/quic/iovector.cc \
 	net/quic/quic_ack_notifier.cc \
 	net/quic/quic_ack_notifier_manager.cc \
 	net/quic/quic_alarm.cc \
 	net/quic/quic_bandwidth.cc \
 	net/quic/quic_client_session.cc \
-	net/quic/quic_config.cc \
-	net/quic/quic_crypto_client_stream.cc \
-	net/quic/quic_crypto_server_stream.cc \
-	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_clock.cc \
+	net/quic/quic_config.cc \
 	net/quic/quic_connection.cc \
 	net/quic/quic_connection_helper.cc \
 	net/quic/quic_connection_logger.cc \
 	net/quic/quic_connection_stats.cc \
+	net/quic/quic_crypto_client_stream.cc \
+	net/quic/quic_crypto_server_stream.cc \
+	net/quic/quic_crypto_stream.cc \
 	net/quic/quic_data_reader.cc \
 	net/quic/quic_data_writer.cc \
+	net/quic/quic_default_packet_writer.cc \
 	net/quic/quic_fec_group.cc \
 	net/quic/quic_framer.cc \
 	net/quic/quic_http_stream.cc \
@@ -383,8 +387,6 @@ LOCAL_SRC_FILES := \
 	net/spdy/buffered_spdy_framer.cc \
 	net/spdy/spdy_buffer.cc \
 	net/spdy/spdy_buffer_producer.cc \
-	net/spdy/spdy_credential_builder.cc \
-	net/spdy/spdy_credential_state.cc \
 	net/spdy/spdy_frame_builder.cc \
 	net/spdy/spdy_frame_reader.cc \
 	net/spdy/spdy_framer.cc \
@@ -451,6 +453,7 @@ LOCAL_SRC_FILES := \
 	net/url_request/view_cache_helper.cc \
 	net/websockets/websocket_basic_stream.cc \
 	net/websockets/websocket_channel.cc \
+	net/websockets/websocket_deflate_predictor_impl.cc \
 	net/websockets/websocket_deflate_stream.cc \
 	net/websockets/websocket_deflater.cc \
 	net/websockets/websocket_errors.cc \
@@ -503,13 +506,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -595,13 +598,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \

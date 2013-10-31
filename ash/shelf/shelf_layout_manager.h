@@ -212,9 +212,9 @@ class ASH_EXPORT ShelfLayoutManager :
   // Is the shelf's alignment horizontal?
   bool IsHorizontalAlignment() const;
 
-  // Tests if the browser is currently in fullscreen mode with minimal
-  // Chrome. When minimal Chrome is present the shelf should be displayed.
-  bool FullscreenWithMinimalChrome() const;
+  // Returns true if there is a fullscreen window and the shelf needs to be
+  // hidden for the topmost fullscreen window.
+  bool FullscreenWithHiddenShelf() const;
 
   // Returns a ShelfLayoutManager on the display which has a launcher for
   // given |window|. See RootWindowController::ForLauncher for more info.
@@ -342,7 +342,7 @@ class ASH_EXPORT ShelfLayoutManager :
   // The RootWindow is cached so that we don't invoke Shell::GetInstance() from
   // our destructor. We avoid that as at the time we're deleted Shell is being
   // deleted too.
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   // True when inside UpdateBoundsAndOpacity() method. Used to prevent calling
   // UpdateBoundsAndOpacity() again from SetChildBounds().

@@ -25,7 +25,9 @@
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
+#include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
+#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/mime_registry_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
@@ -45,7 +47,6 @@
 #include "content/renderer/renderer_clipboard_client.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webcrypto/webcrypto_impl.h"
-#include "content/renderer/websharedworkerrepository_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
@@ -203,7 +204,6 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
-      shared_worker_repository_(new WebSharedWorkerRepositoryImpl),
       child_thread_loop_(base::MessageLoopProxy::current()) {
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(
@@ -217,6 +217,7 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
     sync_message_filter_ = ChildThread::current()->sync_message_filter();
     thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
     quota_message_filter_ = ChildThread::current()->quota_message_filter();
+    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_));
   }
 }
 
@@ -604,22 +605,6 @@ long long RendererWebKitPlatformSupportImpl::databaseGetSpaceAvailableForOrigin(
                                                  sync_message_filter_.get());
 }
 
-WebKit::WebSharedWorkerRepository*
-RendererWebKitPlatformSupportImpl::sharedWorkerRepository() {
-#if !defined(OS_ANDROID)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSharedWorkers)) {
-    return shared_worker_repository_.get();
-  } else {
-    return NULL;
-  }
-#else
-  // Shared workers are unsupported on Android. Returning NULL will prevent the
-  // window.SharedWorker constructor from being exposed. http://crbug.com/154571
-  return NULL;
-#endif
-}
-
 bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   GpuChannelHost* host = thread->EstablishGpuChannelSync(
@@ -842,9 +827,7 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 //------------------------------------------------------------------------------
 
 WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
-  // thread_safe_sender_ can be NULL when running some tests.
-  if (!blob_registry_.get() && thread_safe_sender_.get())
-    blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
+  // blob_registry_ can be NULL when running some tests.
   return blob_registry_.get();
 }
 
@@ -936,8 +919,14 @@ bool RendererWebKitPlatformSupportImpl::processMemorySizesInBytes(
 WebKit::WebGraphicsContext3D*
 RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
     const WebKit::WebGraphicsContext3D::Attributes& attributes) {
+  if (!RenderThreadImpl::current())
+    return NULL;
+
+  scoped_refptr<GpuChannelHost> gpu_channel_host(
+      RenderThreadImpl::current()->EstablishGpuChannelSync(
+          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
   return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
-      RenderThreadImpl::current(),
+      gpu_channel_host.get(),
       attributes,
       GURL(attributes.topDocumentURL));
 }

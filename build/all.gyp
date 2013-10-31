@@ -13,6 +13,7 @@
         '../base/base.gyp:*',
         '../chrome/chrome.gyp:*',
         '../content/content.gyp:*',
+        '../content/content_shell_and_tests.gyp:*',
         '../crypto/crypto.gyp:*',
         '../net/net.gyp:*',
         '../sdch/sdch.gyp:*',
@@ -33,6 +34,7 @@
           'dependencies': [
             '../cc/cc_tests.gyp:*',
             '../components/components.gyp:*',
+            '../components/components_tests.gyp:*',
             '../device/bluetooth/bluetooth.gyp:*',
             '../device/device_tests.gyp:*',
             '../device/usb/usb.gyp:*',
@@ -220,7 +222,7 @@
         '../crypto/crypto.gyp:crypto_unittests',
         '../net/net.gyp:net_unittests',
         '../sql/sql.gyp:sql_unittests',
-        '../ui/ui.gyp:ui_unittests',
+        '../ui/ui_unittests.gyp:ui_unittests',
         '../url/url.gyp:url_unittests',
       ],
       'conditions': [
@@ -236,7 +238,7 @@
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:sync_integration_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
@@ -427,6 +429,16 @@
                 '../chrome/chrome.gyp:linux_symbols'
               ],
             }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
+              ],
+            }],
           ],
         }, # target_name: chromium_gpu_builder
         {
@@ -452,6 +464,16 @@
             ['OS=="linux"', {
               'dependencies': [
                 '../chrome/chrome.gyp:linux_symbols'
+              ],
+            }],
+            ['OS=="win"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service',
+              ],
+            }],
+            ['OS=="win" and target_arch=="ia32"', {
+              'dependencies': [
+                '../chrome/chrome.gyp:crash_service_win64',
               ],
             }],
           ],
@@ -586,7 +608,7 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -604,7 +626,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -620,7 +642,7 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -637,7 +659,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
           ],
@@ -675,7 +697,7 @@
             '../base/base.gyp:base_unittests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -690,7 +712,7 @@
             '../sync/sync.gyp:sync_unit_tests',
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../url/url.gyp:url_unittests',
           ],
         },
@@ -715,7 +737,7 @@
             '../chrome/chrome.gyp:sync_integration_tests',
             '../chrome/chrome.gyp:unit_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             # mini_installer_tests depends on mini_installer. This should be
@@ -737,7 +759,7 @@
             '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_unittests',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber_unittests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:url_unittests',
             '../webkit/renderer/compositor_bindings/compositor_bindings_tests.gyp:webkit_compositor_bindings_unittests',
@@ -784,7 +806,7 @@
           'dependencies': [
             '../base/base.gyp:base_unittests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../ipc/ipc.gyp:ipc_tests',
@@ -807,7 +829,7 @@
             '../chrome/chrome.gyp:unit_tests',
             '../chrome/chrome.gyp:browser_tests',
             '../cloud_print/cloud_print.gyp:cloud_print_unittests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../crypto/crypto.gyp:crypto_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -892,7 +914,7 @@
             '../chrome/chrome.gyp:chrome',
             '../chrome/chrome.gyp:interactive_ui_tests',
             '../chrome/chrome.gyp:unit_tests',
-            '../components/components.gyp:components_unittests',
+            '../components/components_tests.gyp:components_unittests',
             '../content/content_shell_and_tests.gyp:content_browsertests',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../device/device_tests.gyp:device_unittests',
@@ -902,7 +924,7 @@
             '../ui/aura/aura.gyp:*',
             '../ui/compositor/compositor.gyp:*',
             '../ui/message_center/message_center.gyp:*',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
             '../ui/snapshot/snapshot.gyp:snapshot_unittests',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_examples_with_content_exe',

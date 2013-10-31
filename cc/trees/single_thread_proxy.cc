@@ -15,6 +15,7 @@
 #include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "ui/gfx/frame_time.h"
 
 namespace cc {
 
@@ -59,7 +60,7 @@ bool SingleThreadProxy::CompositeAndReadback(void* pixels, gfx::Rect rect) {
   gfx::Rect device_viewport_damage_rect = rect;
 
   LayerTreeHostImpl::FrameData frame;
-  if (!CommitAndComposite(base::TimeTicks::Now(),
+  if (!CommitAndComposite(gfx::FrameTime::Now(),
                           device_viewport_damage_rect,
                           true,  // for_readback
                           &frame))
@@ -254,6 +255,8 @@ void SingleThreadProxy::SetDeferCommits(bool defer_commits) {
 
 bool SingleThreadProxy::CommitRequested() const { return false; }
 
+bool SingleThreadProxy::BeginMainFrameRequested() const { return false; }
+
 size_t SingleThreadProxy::MaxPartialTextureUpdates() const {
   return std::numeric_limits<size_t>::max();
 }
@@ -327,11 +330,6 @@ bool SingleThreadProxy::ReduceContentsTextureMemoryOnImplThread(
 
   return layer_tree_host_->contents_texture_manager()->ReduceMemoryOnImplThread(
       limit_bytes, priority_cutoff, layer_tree_host_impl_->resource_provider());
-}
-
-void SingleThreadProxy::ReduceWastedContentsTextureMemoryOnImplThread() {
-  // Impl-side painting only.
-  NOTREACHED();
 }
 
 void SingleThreadProxy::SendManagedMemoryStats() {
@@ -455,7 +453,7 @@ bool SingleThreadProxy::CommitAndComposite(
                             device_viewport_damage_rect,
                             for_readback,
                             frame);
-  layer_tree_host_->DidBeginFrame();
+  layer_tree_host_->DidBeginMainFrame();
   return result;
 }
 

@@ -95,10 +95,11 @@ bool LayerTreeHost::AnyLayerTreeHostInstanceExists() {
 
 scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
     LayerTreeHostClient* client,
+    SharedBitmapManager* manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(client,
-                                                              settings));
+  scoped_ptr<LayerTreeHost> layer_tree_host(
+      new LayerTreeHost(client, manager, settings));
   if (!layer_tree_host->Initialize(impl_task_runner))
     return scoped_ptr<LayerTreeHost>();
   return layer_tree_host.Pass();
@@ -107,6 +108,7 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::Create(
 static int s_next_tree_id = 1;
 
 LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
+                             SharedBitmapManager* manager,
                              const LayerTreeSettings& settings)
     : next_ui_resource_id_(1),
       animating_(false),
@@ -134,7 +136,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       in_paint_layer_contents_(false),
       total_frames_used_for_lcd_text_metrics_(0),
       tree_id_(s_next_tree_id++),
-      next_commit_forces_redraw_(false) {
+      next_commit_forces_redraw_(false),
+      shared_bitmap_manager_(manager) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   s_num_layer_tree_instances++;
@@ -258,8 +261,8 @@ void LayerTreeHost::AcquireLayerTextures() {
   proxy_->AcquireLayerTextures();
 }
 
-void LayerTreeHost::DidBeginFrame() {
-  client_->DidBeginFrame();
+void LayerTreeHost::DidBeginMainFrame() {
+  client_->DidBeginMainFrame();
 }
 
 void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
@@ -310,7 +313,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     host_impl->set_max_memory_needed_bytes(
         contents_texture_manager_->MaxMemoryNeededBytes());
 
-    contents_texture_manager_->UpdateBackingsInDrawingImplTree();
+    contents_texture_manager_->UpdateBackingsState(
+        host_impl->resource_provider());
   }
 
   // In impl-side painting, synchronize to the pending tree so that it has
@@ -469,7 +473,9 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
       LayerTreeHostImpl::Create(settings_,
                                 client,
                                 proxy_.get(),
-                                rendering_stats_instrumentation_.get());
+                                rendering_stats_instrumentation_.get(),
+                                shared_bitmap_manager_);
+  shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
     top_controls_manager_weak_ptr_ =
@@ -566,6 +572,11 @@ void LayerTreeHost::SetNeedsRedrawRect(gfx::Rect damage_rect) {
 bool LayerTreeHost::CommitRequested() const {
   return proxy_->CommitRequested();
 }
+
+bool LayerTreeHost::BeginMainFrameRequested() const {
+  return proxy_->BeginMainFrameRequested();
+}
+
 
 void LayerTreeHost::SetNextCommitWaitsForActivation() {
   proxy_->SetNextCommitWaitsForActivation();
@@ -688,8 +699,9 @@ void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
     bitmap_copy.setImmutable();
   }
 
-  overhang_ui_resource_ = ScopedUIResource::Create(
-      this, UIResourceBitmap(bitmap_copy, UIResourceBitmap::REPEAT));
+  UIResourceBitmap overhang_bitmap(bitmap_copy);
+  overhang_bitmap.SetWrapMode(UIResourceBitmap::REPEAT);
+  overhang_ui_resource_ = ScopedUIResource::Create(this, overhang_bitmap);
 }
 
 void LayerTreeHost::SetVisible(bool visible) {

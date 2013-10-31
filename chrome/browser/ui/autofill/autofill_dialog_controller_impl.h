@@ -113,6 +113,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   virtual string16 LegalDocumentsText() OVERRIDE;
   virtual bool ShouldDisableSignInLink() const OVERRIDE;
   virtual bool ShouldShowSpinner() const OVERRIDE;
+  virtual bool ShouldShowSignInWebView() const OVERRIDE;
+  virtual GURL SignInUrl() const OVERRIDE;
   virtual bool ShouldOfferToSaveInChrome() const OVERRIDE;
   virtual bool ShouldSaveInChrome() const OVERRIDE;
   virtual ui::MenuModel* MenuModelForAccountChooser() OVERRIDE;
@@ -308,6 +310,12 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   // Resets |last_wallet_items_fetch_timestamp_| for testing.
   void ClearLastWalletItemsFetchTimestampForTesting();
 
+  // Allows tests to inspect the state of the account chooser.
+  const AccountChooserModel& AccountChooserModelForTesting() const;
+
+  // Returns whether |url| matches the sign in continue URL.
+  virtual bool IsSignInContinueUrl(const GURL& url) const;
+
  private:
   enum DialogSignedInState {
     REQUIRES_RESPONSE,
@@ -343,9 +351,8 @@ class AutofillDialogControllerImpl : public AutofillDialogViewDelegate,
   void OnWalletFormFieldError(
       const std::vector<wallet::FormFieldError>& form_field_errors);
 
-  // Calculates |legal_documents_text_| and |legal_document_link_ranges_| if
-  // they have not already been calculated.
-  void EnsureLegalDocumentsText();
+  // Calculates |legal_documents_text_| and |legal_document_link_ranges_|.
+  void ConstructLegalDocumentsText();
 
   // Clears previously entered manual input and removes |section| from
   // |section_editing_state_|. Does not update the view.

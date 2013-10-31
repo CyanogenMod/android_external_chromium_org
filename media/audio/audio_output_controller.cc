@@ -8,10 +8,10 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/task_runner_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "media/audio/shared_memory_util.h"
 #include "media/base/scoped_histogram_timer.h"
 
 using base::Time;
@@ -109,6 +109,24 @@ void AudioOutputController::Close(const base::Closure& closed_task) {
 void AudioOutputController::SetVolume(double volume) {
   message_loop_->PostTask(FROM_HERE, base::Bind(
       &AudioOutputController::DoSetVolume, this, volume));
+}
+
+void AudioOutputController::GetOutputDeviceId(
+    base::Callback<void(const std::string&)> callback) const {
+  base::PostTaskAndReplyWithResult(
+      message_loop_.get(),
+      FROM_HERE,
+      base::Bind(&AudioOutputController::DoGetOutputDeviceId, this),
+      callback);
+}
+
+void AudioOutputController::SwitchOutputDevice(
+    const std::string& output_device_id, const base::Closure& callback) {
+  message_loop_->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&AudioOutputController::DoSwitchOutputDevice, this,
+                 output_device_id),
+      callback);
 }
 
 void AudioOutputController::DoCreate(bool is_for_device_change) {
@@ -221,8 +239,10 @@ void AudioOutputController::DoPause() {
   if (state_ != kPaused)
     return;
 
-  // Send a special pause mark to the low-latency audio thread.
-  sync_reader_->UpdatePendingBytes(kPauseMark);
+  // Let the renderer know we've stopped.  Necessary to let PPAPI clients know
+  // audio has been shutdown.  TODO(dalecurtis): This stinks.  PPAPI should have
+  // a better way to know when it should exit PPB_Audio_Shared::Run().
+  sync_reader_->UpdatePendingBytes(-1);
 
 #if defined(AUDIO_POWER_MONITORING)
   // Paused means silence follows.
@@ -261,6 +281,28 @@ void AudioOutputController::DoSetVolume(double volume) {
   }
 }
 
+std::string AudioOutputController::DoGetOutputDeviceId() const {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+  return output_device_id_;
+}
+
+void AudioOutputController::DoSwitchOutputDevice(
+    const std::string& output_device_id) {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  if (state_ == kClosed)
+    return;
+
+  output_device_id_ = output_device_id;
+
+  // If output is currently diverted, we must not call OnDeviceChange
+  // since it would break the diverted setup. Once diversion is
+  // finished using StopDiverting() the output will switch to the new
+  // device ID.
+  if (stream_ != diverting_to_stream_)
+    OnDeviceChange();
+}
+
 void AudioOutputController::DoReportError() {
   DCHECK(message_loop_->BelongsToCurrentThread());
   if (state_ != kClosed)
@@ -278,26 +320,9 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   DisallowEntryToOnMoreIOData();
   TRACE_EVENT0("audio", "AudioOutputController::OnMoreIOData");
 
-  // The OS level audio APIs on Linux and Windows all have problems requesting
-  // data on a fixed interval.  Sometimes they will issue calls back to back
-  // which can cause glitching, so wait until the renderer is ready.
-  //
-  // We also need to wait when diverting since the virtual stream will call this
-  // multiple times without waiting.
-  //
-  // NEVER wait on OSX unless a virtual stream is connected, otherwise we can
-  // end up hanging the entire OS.
-  //
-  // See many bugs for context behind this decision: http://crbug.com/170498,
-  // http://crbug.com/171651, http://crbug.com/174985, and more.
-#if defined(OS_WIN) || defined(OS_LINUX)
-    const bool kShouldBlock = true;
-#else
-    const bool kShouldBlock = diverting_to_stream_ != NULL;
-#endif
+  sync_reader_->Read(source, dest);
 
-  const int frames = sync_reader_->Read(kShouldBlock, source, dest);
-  DCHECK_LE(0, frames);
+  const int frames = dest->frames();
   sync_reader_->UpdatePendingBytes(
       buffers_state.total_bytes() + frames * params_.GetBytesPerFrame());
 

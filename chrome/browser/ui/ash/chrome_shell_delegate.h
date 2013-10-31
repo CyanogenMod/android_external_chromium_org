@@ -26,6 +26,7 @@ class KeyboardControllerProxy;
 }
 
 class ChromeLauncherController;
+class ChromeNewWindowDelegate;
 
 class ChromeShellDelegate : public ash::ShellDelegate,
                             public content::NotificationObserver {
@@ -42,30 +43,9 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   virtual void PreInit() OVERRIDE;
   virtual void Shutdown() OVERRIDE;
   virtual void Exit() OVERRIDE;
-  virtual void NewTab() OVERRIDE;
-  virtual void NewWindow(bool is_incognito) OVERRIDE;
-  virtual void ToggleFullscreen() OVERRIDE;
-  virtual void OpenFileManager() OVERRIDE;
-  virtual void OpenCrosh() OVERRIDE;
-  virtual void RestoreTab() OVERRIDE;
-  virtual void ShowKeyboardOverlay() OVERRIDE;
   virtual keyboard::KeyboardControllerProxy*
       CreateKeyboardControllerProxy() OVERRIDE;
-  virtual void ShowTaskManager() OVERRIDE;
   virtual content::BrowserContext* GetCurrentBrowserContext() OVERRIDE;
-  virtual void ToggleHighContrast() OVERRIDE;
-  virtual bool IsSpokenFeedbackEnabled() const OVERRIDE;
-  virtual void ToggleSpokenFeedback(
-      ash::AccessibilityNotificationVisibility notify) OVERRIDE;
-  virtual bool IsHighContrastEnabled() const OVERRIDE;
-  virtual void SetMagnifierEnabled(bool enabled) OVERRIDE;
-  virtual void SetMagnifierType(ash::MagnifierType type) OVERRIDE;
-  virtual bool IsMagnifierEnabled() const OVERRIDE;
-  virtual ash::MagnifierType GetMagnifierType() const OVERRIDE;
-  virtual void SetLargeCursorEnabled(bool enabled) OVERRIDE;
-  virtual bool IsLargeCursorEnabled() const OVERRIDE;
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const OVERRIDE;
-  virtual void SilenceSpokenFeedback() const OVERRIDE;
   virtual app_list::AppListViewDelegate* CreateAppListViewDelegate() OVERRIDE;
   virtual ash::LauncherDelegate* CreateLauncherDelegate(
       ash::LauncherModel* model) OVERRIDE;
@@ -73,15 +53,14 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   virtual ash::UserWallpaperDelegate* CreateUserWallpaperDelegate() OVERRIDE;
   virtual ash::CapsLockDelegate* CreateCapsLockDelegate() OVERRIDE;
   virtual ash::SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
+  virtual ash::AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
+  virtual ash::NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
   virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
-  virtual void OpenFeedbackPage() OVERRIDE;
   virtual void RecordUserMetricsAction(ash::UserMetricsAction action) OVERRIDE;
   virtual void HandleMediaNextTrack() OVERRIDE;
   virtual void HandleMediaPlayPause() OVERRIDE;
   virtual void HandleMediaPrevTrack() OVERRIDE;
-  virtual void SaveScreenMagnifierScale(double scale) OVERRIDE;
-  virtual double GetSavedScreenMagnifierScale() OVERRIDE;
-  virtual ui::MenuModel* CreateContextMenu(aura::RootWindow* root) OVERRIDE;
+  virtual ui::MenuModel* CreateContextMenu(aura::Window* root) OVERRIDE;
   virtual ash::RootWindowHostFactory* CreateRootWindowHostFactory() OVERRIDE;
   virtual string16 GetProductName() const OVERRIDE;
 
@@ -91,26 +70,13 @@ class ChromeShellDelegate : public ash::ShellDelegate,
                        const content::NotificationDetails& details) OVERRIDE;
 
  private:
-  class TabRestoreHelper;
-
   void PlatformInit();
-
-  // Returns the browser for active ash window if any. Otherwise it searches
-  // for a browser or create one for default profile and returns it.
-  Browser* GetTargetBrowser();
-
-  // This returns the active ash window if any. Unlike the method above, it
-  // does not create a window if one isn't available, instead it returns NULL
-  // in that case.
-  Browser* GetTargetBrowserIfAvailable();
 
   static ChromeShellDelegate* instance_;
 
   content::NotificationRegistrar registrar_;
 
   ChromeLauncherController* launcher_delegate_;
-
-  scoped_ptr<TabRestoreHelper> tab_restore_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeShellDelegate);
 };

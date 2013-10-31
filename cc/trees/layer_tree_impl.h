@@ -123,7 +123,7 @@ class CC_EXPORT LayerTreeImpl {
                                 int outer_viewport_scroll_layer_id);
   void ClearViewportLayers();
   void ApplySentScrollAndScaleDeltasFromAbortedCommit();
-  void ApplyScrollDeltasSinceBeginFrame();
+  void ApplyScrollDeltasSinceBeginMainFrame();
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -211,6 +211,8 @@ class CC_EXPORT LayerTreeImpl {
 
   ResourceProvider::ResourceId ResourceIdForUIResource(UIResourceId uid) const;
   void ProcessUIResourceRequestQueue();
+
+  bool IsUIResourceOpaque(UIResourceId uid) const;
 
   void AddLayerWithCopyOutputRequest(LayerImpl* layer);
   void RemoveLayerWithCopyOutputRequest(LayerImpl* layer);

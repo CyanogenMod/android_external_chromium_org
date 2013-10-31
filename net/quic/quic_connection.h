@@ -28,6 +28,7 @@
 #include "net/base/iovec.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/congestion_control/quic_congestion_manager.h"
+#include "net/quic/iovector.h"
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_alarm.h"
@@ -36,6 +37,7 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_packet_generator.h"
+#include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/quic_sent_entropy_manager.h"
@@ -77,8 +79,8 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 
   // Called when the connection is closed either locally by the framer, or
   // remotely by the peer.
-  virtual void ConnectionClose(QuicErrorCode error,
-                               bool from_peer) = 0;
+  virtual void OnConnectionClosed(QuicErrorCode error,
+                                  bool from_peer) = 0;
 
   // Called once a specific QUIC version is agreed by both endpoints.
   virtual void OnSuccessfulVersionNegotiation(const QuicVersion& version) = 0;
@@ -159,27 +161,11 @@ class NET_EXPORT_PRIVATE QuicConnectionHelperInterface {
  public:
   virtual ~QuicConnectionHelperInterface() {}
 
-  // Sets the QuicConnection to be used by this helper.  This method
-  // must only be called once.
-  virtual void SetConnection(QuicConnection* connection) = 0;
-
   // Returns a QuicClock to be used for all time related functions.
   virtual const QuicClock* GetClock() const = 0;
 
   // Returns a QuicRandom to be used for all random number related functions.
   virtual QuicRandom* GetRandomGenerator() = 0;
-
-  // Sends the packet out to the peer, possibly simulating packet
-  // loss if FLAGS_fake_packet_loss_percentage is set.  If the write
-  // succeeded, the result's status is WRITE_STATUS_OK and bytes_written is
-  // populated. If the write failed, the result's status is WRITE_STATUS_BLOCKED
-  // or WRITE_STATUS_ERROR and error_code will populated.
-  virtual WriteResult WritePacketToWire(const QuicEncryptedPacket& packet) = 0;
-
-  // Returns true if the helper buffers and subsequently rewrites data
-  // when an attempt to write results in the underlying socket becoming
-  // write blocked.
-  virtual bool IsWriteBlockedDataBuffered() = 0;
 
   // Creates a new platform-specific alarm which will be configured to
   // notify |delegate| when the alarm fires.  Caller takes ownership
@@ -204,32 +190,31 @@ class NET_EXPORT_PRIVATE QuicConnection
   };
 
   // Constructs a new QuicConnection for the specified |guid| and |address|.
-  // |helper| will be owned by this connection.
+  // |helper| and |writer| must outlive this connection.
   QuicConnection(QuicGuid guid,
                  IPEndPoint address,
                  QuicConnectionHelperInterface* helper,
+                 QuicPacketWriter* writer,
                  bool is_server,
-                 QuicVersion version);
+                 const QuicVersionVector& supported_versions);
   virtual ~QuicConnection();
 
-  // Send the data in |iov| to the peer in as few packets as possible.
+  // Send the data in |data| to the peer in as few packets as possible.
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
   // if the socket was unexpectedly blocked.
-  QuicConsumedData SendvStreamData(QuicStreamId id,
-                                   const struct iovec* iov,
-                                   int iov_count,
-                                   QuicStreamOffset offset,
-                                   bool fin);
+  QuicConsumedData SendStreamData(QuicStreamId id,
+                                  const IOVector& data,
+                                  QuicStreamOffset offset,
+                                  bool fin);
 
-  // Same as SendvStreamData, except the provided delegate will be informed
+  // Same as SendStreamData, except the provided delegate will be informed
   // once ACKs have been received for all the packets written.
   // The |delegate| is not owned by the QuicConnection and must outlive it.
-  QuicConsumedData SendvStreamDataAndNotifyWhenAcked(
+  QuicConsumedData SendStreamDataAndNotifyWhenAcked(
       QuicStreamId id,
-      const struct iovec* iov,
-      int iov_count,
+      const IOVector& data,
       QuicStreamOffset offset,
       bool fin,
       QuicAckNotifier::DelegateInterface* delegate);
@@ -341,7 +326,7 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   QuicPacketCreator::Options* options() { return packet_creator_.options(); }
 
-  bool connected() { return connected_; }
+  bool connected() const { return connected_; }
 
   size_t NumFecGroups() const { return group_map_.size(); }
 
@@ -367,10 +352,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // If the connection has timed out, this will close the connection and return
   // true.  Otherwise, it will return false and will reset the timeout alarm.
   bool CheckForTimeout();
-
-  // Returns true of the next packet to be sent should be "lost" by
-  // not actually writing it to the wire.
-  bool ShouldSimulateLostPacket();
 
   // Sets up a packet with an QuicAckFrame and sends it out.
   void SendAck();
@@ -419,8 +400,6 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   bool is_server() const { return is_server_; }
 
-  static bool g_acks_do_not_instigate_acks;
-
  protected:
   // Send a packet to the peer using encryption |level|. If |sequence_number|
   // is present in the |retransmission_map_|, then contents of this packet will
@@ -437,6 +416,7 @@ class NET_EXPORT_PRIVATE QuicConnection
                                  QuicPacketEntropyHash entropy_hash,
                                  TransmissionType transmission_type,
                                  HasRetransmittableData retransmittable,
+                                 IsHandshake handshake,
                                  Force forced);
 
   // Writes the given packet to socket, encrypted with |level|, with the help
@@ -452,16 +432,13 @@ class NET_EXPORT_PRIVATE QuicConnection
                    QuicPacket* packet,
                    TransmissionType transmission_type,
                    HasRetransmittableData retransmittable,
+                   IsHandshake handshake,
                    Force force);
-
-  WriteResult WritePacketToWire(QuicPacketSequenceNumber sequence_number,
-                                EncryptionLevel level,
-                                const QuicEncryptedPacket& packet);
 
   // Make sure an ack we got from our peer is sane.
   bool ValidateAckFrame(const QuicAckFrame& incoming_ack);
 
-  QuicConnectionHelperInterface* helper() { return helper_.get(); }
+  QuicConnectionHelperInterface* helper() { return helper_; }
 
   // Selects and updates the version of the protocol being used by selecting a
   // version from |available_versions| which is also supported. Returns true if
@@ -471,23 +448,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicFramer framer_;
 
  private:
-  // Simple random number generator used to compute random numbers suitable
-  // for pseudo-randomly dropping packets in tests.  It works by computing
-  // the sha1 hash of the current seed, and using the first 64 bits as
-  // the next random number, and the next seed.
-  class SimpleRandom {
-   public:
-    SimpleRandom() : seed_(0) {}
-
-    // Returns a random number in the range [0, kuint64max].
-    uint64 RandUint64();
-
-    void set_seed(uint64 seed) { seed_ = seed; }
-
-   private:
-    uint64 seed_;
-  };
-
   // Stores current batch state for connection, puts the connection
   // into batch mode, and destruction restores the stored batch state.
   // While the bundler is in scope, any generated frames are bundled
@@ -523,12 +483,14 @@ class NET_EXPORT_PRIVATE QuicConnection
                  EncryptionLevel level,
                  TransmissionType transmission_type,
                  HasRetransmittableData retransmittable,
+                 IsHandshake handshake,
                  Force forced)
         : sequence_number(sequence_number),
           packet(packet),
           encryption_level(level),
           transmission_type(transmission_type),
           retransmittable(retransmittable),
+          handshake(handshake),
           forced(forced) {
     }
 
@@ -537,6 +499,7 @@ class NET_EXPORT_PRIVATE QuicConnection
     const EncryptionLevel encryption_level;
     TransmissionType transmission_type;
     HasRetransmittableData retransmittable;
+    IsHandshake handshake;
     Force forced;
   };
 
@@ -610,14 +573,13 @@ class NET_EXPORT_PRIVATE QuicConnection
                               RetransmissionTimeComparator>
       RetransmissionTimeouts;
 
-  // Inner helper function for SendvStreamData and
-  // SendvStreamDataAndNotifyWhenAcked.
-  QuicConsumedData SendvStreamDataInner(QuicStreamId id,
-                                        const struct iovec* iov,
-                                        int iov_count,
-                                        QuicStreamOffset offset,
-                                        bool fin,
-                                        QuicAckNotifier *notifier);
+  // Inner helper function for SendStreamData and
+  // SendStreamDataAndNotifyWhenAcked.
+  QuicConsumedData SendStreamDataInner(QuicStreamId id,
+                                       const IOVector& data,
+                                       QuicStreamOffset offset,
+                                       bool fin,
+                                       QuicAckNotifier *notifier);
 
   // Sends a version negotiation packet to the peer.
   void SendVersionNegotiationPacket();
@@ -654,6 +616,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Writes as many pending retransmissions as possible.
   void WritePendingRetransmissions();
 
+  // Returns true if the packet should be discarded and not sent.
+  bool ShouldDiscardPacket(EncryptionLevel level,
+                           QuicPacketSequenceNumber sequence_number,
+                           HasRetransmittableData retransmittable);
+
   // Queues |packet| in the hopes that it can be decrypted in the
   // future, when a new key is installed.
   void QueueUndecryptablePacket(const QuicEncryptedPacket& packet);
@@ -685,7 +652,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Closes any FEC groups protecting packets before |sequence_number|.
   void CloseFecGroupsBefore(QuicPacketSequenceNumber sequence_number);
 
-  scoped_ptr<QuicConnectionHelperInterface> helper_;
+  QuicConnectionHelperInterface* helper_;  // Not owned.
+  QuicPacketWriter* writer_;  // Not owned.
   EncryptionLevel encryption_level_;
   const QuicClock* clock_;
   QuicRandom* random_generator_;
@@ -806,7 +774,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // True if the last ack received from the peer may have been truncated.  False
   // otherwise.
   bool received_truncated_ack_;
-  bool send_ack_in_response_to_packet_;
 
   // Set to true if the udp packet headers have a new self or peer address.
   // This is checked later on validating a data or version negotiation packet.
@@ -816,9 +783,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   // all packets that a given block of data was sent in. The AckNotifierManager
   // maintains the currently active notifiers.
   AckNotifierManager ack_notifier_manager_;
-
-  // Only used to configure fake packet loss.
-  SimpleRandom simple_random_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

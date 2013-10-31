@@ -36,6 +36,11 @@
 #include "content/public/browser/browser_thread.h"
 #endif
 
+#if defined(USE_AURA)
+#include "content/browser/aura/image_transport_factory.h"
+#include "ui/compositor/test/test_context_factory.h"
+#endif
+
 namespace content {
 namespace {
 
@@ -114,8 +119,7 @@ class LocalHostResolverProc : public net::HostResolverProc {
 extern int BrowserMain(const MainFunctionParams&);
 
 BrowserTestBase::BrowserTestBase()
-    : embedded_test_server_io_thread_("EmbeddedTestServer io thread"),
-      allow_test_contexts_(true),
+    : allow_test_contexts_(true),
       allow_osmesa_(true) {
 #if defined(OS_MACOSX)
   base::mac::SetOverrideAmIBundled(true);
@@ -126,15 +130,7 @@ BrowserTestBase::BrowserTestBase()
   handle_sigterm_ = true;
 #endif
 
-  // Create a separate thread for the test server to run on. It's tempting to
-  // use actual browser threads, but that doesn't work for cases where the test
-  // server needs to be started before the browser, for example when the server
-  // URL should be passed in command-line parameters.
-  base::Thread::Options thread_options;
-  thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
-  CHECK(embedded_test_server_io_thread_.StartWithOptions(thread_options));
-  embedded_test_server_.reset(new net::test_server::EmbeddedTestServer(
-      embedded_test_server_io_thread_.message_loop_proxy()));
+  embedded_test_server_.reset(new net::test_server::EmbeddedTestServer);
 }
 
 BrowserTestBase::~BrowserTestBase() {
@@ -157,11 +153,23 @@ void BrowserTestBase::SetUp() {
   // GPU blacklisting decisions were made.
   command_line->AppendSwitch(switches::kLogGpuControlListDecisions);
 
+#if defined(OS_CHROMEOS)
+  // If the test is running on the chromeos envrionment (such as
+  // device or vm bots), always use real contexts.
+  if (base::SysInfo::IsRunningOnChromeOS())
+    allow_test_contexts_ = false;
+#endif
+
 #if defined(USE_AURA)
+  if (command_line->HasSwitch(switches::kDisableTestCompositor))
+    allow_test_contexts_  = false;
+
   // Use test contexts for browser tests unless they override and force us to
   // use a real context.
-  if (allow_test_contexts_)
-    command_line->AppendSwitch(switches::kTestCompositor);
+  if (allow_test_contexts_) {
+    content::ImageTransportFactory::InitializeForUnitTests(
+        scoped_ptr<ui::ContextFactory>(new ui::TestContextFactory));
+  }
 #endif
 
   // When using real GL contexts, we usually use OSMesa as this works on all

@@ -13,9 +13,10 @@
 #include "net/tools/quic/quic_reliable_client_stream.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using testing::_;
 using net::test::CryptoTestUtils;
+using net::test::DefaultQuicConfig;
 using net::test::PacketSavingConnection;
+using testing::_;
 
 namespace net {
 namespace tools {
@@ -30,7 +31,7 @@ class ToolsQuicClientSessionTest : public ::testing::Test {
       : guid_(1),
         connection_(new PacketSavingConnection(guid_, IPEndPoint(), false)) {
     crypto_config_.SetDefaults();
-    session_.reset(new QuicClientSession(kServerHostname, QuicConfig(),
+    session_.reset(new QuicClientSession(kServerHostname, DefaultQuicConfig(),
                                          connection_, &crypto_config_));
     session_->config()->SetDefaults();
   }
@@ -48,19 +49,11 @@ class ToolsQuicClientSessionTest : public ::testing::Test {
 };
 
 TEST_F(ToolsQuicClientSessionTest, CryptoConnect) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
   CompleteCryptoHandshake();
 }
 
 TEST_F(ToolsQuicClientSessionTest, MaxNumStreams) {
   session_->config()->set_max_streams_per_connection(1, 1);
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
   // FLAGS_max_streams_per_connection = 1;
   // Initialize crypto before the client session will create a stream.
   CompleteCryptoHandshake();
@@ -77,11 +70,6 @@ TEST_F(ToolsQuicClientSessionTest, MaxNumStreams) {
 }
 
 TEST_F(ToolsQuicClientSessionTest, GoAwayReceived) {
-  if (!Aes128Gcm12Encrypter::IsSupported()) {
-    LOG(INFO) << "AES GCM not supported. Test skipped.";
-    return;
-  }
-
   CompleteCryptoHandshake();
 
   // After receiving a GoAway, I should no longer be able to create outgoing

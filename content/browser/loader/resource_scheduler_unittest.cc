@@ -155,6 +155,7 @@ class ResourceSchedulerTest : public testing::Test {
         PAGE_TRANSITION_LINK,              // transition_type
         false,                             // is_download
         false,                             // is_stream
+        false,                             // is_detachable
         true,                              // allow_download
         false,                             // has_user_gesture
         WebKit::WebReferrerPolicyDefault,  // referrer_policy
@@ -428,6 +429,16 @@ TEST_F(ResourceSchedulerTest, ReprioritizedRequestGoesToBackOfQueue) {
   scheduler_.OnWillInsertBody(kChildId, kRouteId);
   EXPECT_FALSE(request->started());
   EXPECT_FALSE(idle->started());
+}
+
+TEST_F(ResourceSchedulerTest, NonHTTPSchedulesImmediately) {
+  // Dummies to enforce scheduling.
+  scoped_ptr<TestRequest> high(NewRequest("http://host/high", net::HIGHEST));
+  scoped_ptr<TestRequest> low(NewRequest("http://host/high", net::LOWEST));
+
+  scoped_ptr<TestRequest> request(
+      NewRequest("chrome-extension://req", net::LOWEST));
+  EXPECT_TRUE(request->started());
 }
 
 }  // unnamed namespace

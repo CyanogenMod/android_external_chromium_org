@@ -15,7 +15,7 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
   // LayerTreeHostImplClient implementation.
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE {}
   virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE {}
-  virtual void BeginFrameOnImplThread(const BeginFrameArgs& args)
+  virtual void BeginImplFrame(const BeginFrameArgs& args)
       OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE {}
   virtual void NotifyReadyToActivate() OVERRIDE {}
@@ -30,7 +30,6 @@ class FakeLayerTreeHostImplClient : public LayerTreeHostImplClient {
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
       int priority_cutoff) OVERRIDE;
-  virtual void ReduceWastedContentsTextureMemoryOnImplThread() OVERRIDE {}
   virtual void SendManagedMemoryStats() OVERRIDE {}
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE {}

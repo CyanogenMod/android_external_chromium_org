@@ -27,6 +27,7 @@ class SystemTrayItem;
 namespace internal {
 class SystemBubbleWrapper;
 class TrayAccessibility;
+class TrayDate;
 class TrayUser;
 }
 
@@ -60,6 +61,9 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Shows the default view of all items.
   void ShowDefaultView(BubbleCreationType creation_type);
+
+  // Shows default view that ingnores outside clicks and activation loss.
+  void ShowPersistentDefaultView();
 
   // Shows details of a particular item. If |close_delay_in_seconds| is
   // non-zero, then the view is automatically closed after the specified time.
@@ -115,6 +119,10 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Closes system bubble and returns true if it did exist.
   bool CloseSystemBubble() const;
 
+  // Returns view for help button if default view is shown. Returns NULL
+  // otherwise.
+  views::View* GetHelpButtonView() const;
+
   // Accessors for testing.
 
   // Returns true if the bubble exists.
@@ -146,6 +154,10 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   // Get the tray item view (or NULL) for a given |tray_item| in a unit test.
   views::View* GetTrayItemViewForTest(SystemTrayItem* tray_item);
 
+  // Add a tray user item for testing purposes. Note: The passed |tray_user|
+  // will be owned by the SystemTray after the call.
+  void AddTrayUserItemForTest(internal::TrayUser* tray_user);
+
  private:
   // Creates the default set of items for the sytem tray.
   void CreateItems(SystemTrayDelegate* delegate);
@@ -162,7 +174,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
 
   // Shows the default view and its arrow position is shifted by |x_offset|.
   void ShowDefaultViewWithOffset(BubbleCreationType creation_type,
-                                 int x_offset);
+                                 int x_offset,
+                                 bool persistent);
 
   // Constructs or re-constructs |system_bubble_| and populates it with |items|.
   // Specify |change_tray_status| to true if want to change the tray background
@@ -171,7 +184,8 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
                  bool details,
                  bool activate,
                  BubbleCreationType creation_type,
-                 int x_offset);
+                 int x_offset,
+                 bool persistent);
 
   // Constructs or re-constructs |notification_bubble_| and populates it with
   // |notification_items_|, or destroys it if there are no notification items.
@@ -223,6 +237,7 @@ class ASH_EXPORT SystemTray : public internal::TrayBackgroundView,
   bool full_system_tray_menu_;
 
   internal::TrayAccessibility* tray_accessibility_;  // not owned
+  internal::TrayDate* tray_date_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTray);
 };

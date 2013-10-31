@@ -32,11 +32,13 @@ class SearchIPCRouterPolicyImpl : public SearchIPCRouter::Policy {
 
   // Overridden from SearchIPCRouter::Policy:
   virtual bool ShouldProcessSetVoiceSearchSupport() OVERRIDE;
-  virtual bool ShouldProcessFocusOmnibox() OVERRIDE;
+  virtual bool ShouldProcessFocusOmnibox(bool is_active_tab) OVERRIDE;
+  virtual bool ShouldProcessNavigateToURL(bool is_active_tab) OVERRIDE;
   virtual bool ShouldProcessDeleteMostVisitedItem() OVERRIDE;
   virtual bool ShouldProcessUndoMostVisitedDeletion() OVERRIDE;
   virtual bool ShouldProcessUndoAllMostVisitedDeletions() OVERRIDE;
   virtual bool ShouldProcessLogEvent() OVERRIDE;
+  virtual bool ShouldProcessPasteIntoOmnibox(bool is_active_tab) OVERRIDE;
   virtual bool ShouldSendSetPromoInformation() OVERRIDE;
   virtual bool ShouldSendSetDisplayInstantResults() OVERRIDE;
   virtual bool ShouldSendSetSuggestionToPrefetch() OVERRIDE;

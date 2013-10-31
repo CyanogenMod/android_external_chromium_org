@@ -6,7 +6,7 @@ config("wtf-config") {
   include_dirs = [ ".." ]
   if (is_win) {
     include_dirs += [ "os-win32" ]
-    defines += [
+    defines = [
       "__STD_C",
       "_CRT_SECURE_NO_DEPRECATE",
       "_SCL_SECURE_NO_DEPRECATE",
@@ -25,7 +25,7 @@ config("wtf-config") {
   if (is_linux) { # (gcc_version >= 46) {
     # Disable warnings about c++0x compatibility, as some names (such as
     # nullptr) conflict with upcoming c++0x types.
-    cflags_cc += [ "-Wno-c++0x-compat" ]
+    cflags_cc = [ "-Wno-c++0x-compat" ]
   }
 
 #  # Some warnings occur in WTF headers, so they must also be disabled
@@ -291,9 +291,9 @@ component("wtf") {
       "ThreadSpecificWin.cpp",
       "ThreadingWin.cpp",
     ]
-    include_dirs -= [
+#    include_dirs -= [
 #      "<(SHARED_INTERMEDIATE_DIR)/blink',
-    ]
+#    ]
   } else {
     sources += [
       "ThreadIdentifierDataPthreads.cpp",

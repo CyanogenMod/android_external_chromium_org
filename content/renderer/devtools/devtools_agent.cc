@@ -43,6 +43,8 @@ using base::debug::TraceLog;
 
 namespace content {
 
+base::subtle::AtomicWord DevToolsAgent::event_callback_;
+
 namespace {
 
 class WebKitClientMessageLoopImpl
@@ -135,13 +137,36 @@ void DevToolsAgent::clearBrowserCookies() {
 
 void DevToolsAgent::setTraceEventCallback(TraceEventCallback cb) {
   TraceLog* trace_log = TraceLog::GetInstance();
-  trace_log->SetEventCallback(cb);
+  trace_log->SetEventCallback(cb ? TraceEventCallbackWrapper : 0);
+  base::subtle::NoBarrier_Store(&event_callback_,
+                                reinterpret_cast<base::subtle::AtomicWord>(cb));
   if (!!cb) {
     trace_log->SetEnabled(base::debug::CategoryFilter(
         base::debug::CategoryFilter::kDefaultCategoryFilterString),
         TraceLog::RECORD_UNTIL_FULL);
   } else {
     trace_log->SetDisabled();
+  }
+}
+
+void DevToolsAgent::TraceEventCallbackWrapper(
+    base::TimeTicks timestamp,
+    char phase,
+    const unsigned char* category_group_enabled,
+    const char* name,
+    unsigned long long id,
+    int num_args,
+    const char* const arg_names[],
+    const unsigned char arg_types[],
+    const unsigned long long arg_values[],
+    unsigned char flags) {
+  TraceEventCallback callback =
+      reinterpret_cast<TraceEventCallback>(
+          base::subtle::NoBarrier_Load(&event_callback_));
+  if (callback) {
+    double timestamp_seconds = (timestamp - base::TimeTicks()).InSecondsF();
+    callback(phase, category_group_enabled, name, id, num_args,
+             arg_names, arg_types, arg_values, flags, timestamp_seconds);
   }
 }
 
@@ -209,6 +234,7 @@ void DevToolsAgent::OnDetach() {
 }
 
 void DevToolsAgent::OnDispatchOnInspectorBackend(const std::string& message) {
+  TRACE_EVENT0("devtools", "DevToolsAgent::OnDispatchOnInspectorBackend");
   WebDevToolsAgent* web_agent = GetWebAgent();
   if (web_agent)
     web_agent->dispatchOnInspectorBackend(WebString::fromUTF8(message));

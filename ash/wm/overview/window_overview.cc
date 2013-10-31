@@ -27,13 +27,30 @@ namespace ash {
 
 namespace {
 
+// Conceptually the window overview is a table or grid of cells having this
+// fixed aspect ratio. The number of columns is determined by maximizing the
+// area of them based on the number of windows.
 const float kCardAspectRatio = 4.0f / 3.0f;
+
+// In the conceptual overview table, the window margin is the space reserved
+// around the window within the cell. This margin does not overlap so the
+// closest distance between adjacent windows will be twice this amount.
 const int kWindowMargin = 30;
+
+// The minimum number of cards along the major axis (i.e. horizontally on a
+// landscape orientation).
 const int kMinCardsMajor = 3;
+
+// The duration of transition animations on the overview selector.
 const int kOverviewSelectorTransitionMilliseconds = 100;
+
+// The color and opacity of the overview selector.
 const SkColor kWindowOverviewSelectionColor = SK_ColorBLACK;
 const float kWindowOverviewSelectionOpacity = 0.5f;
-const int kWindowOverviewSelectionPadding = 15;
+
+// The padding or amount of the window selector widget visible around the edges
+// of the currently selected window.
+const int kWindowOverviewSelectionPadding = 25;
 
 // A comparator for locating a given target window.
 struct WindowSelectorItemComparator
@@ -100,7 +117,7 @@ void CleanupWidgetAfterAnimationObserver::OnLayerAnimationScheduled(
 
 WindowOverview::WindowOverview(WindowSelector* window_selector,
                                WindowSelectorItemList* windows,
-                               aura::RootWindow* single_root_window)
+                               aura::Window* single_root_window)
     : window_selector_(window_selector),
       windows_(windows),
       selection_index_(0),
@@ -117,6 +134,7 @@ WindowOverview::WindowOverview(WindowSelector* window_selector,
       windows_->front()->GetRootWindow());
   if (cursor_client_) {
     cursor_client_->SetCursor(ui::kCursorPointer);
+    cursor_client_->ShowCursor();
     // TODO(flackr): Only prevent cursor changes for windows in the overview.
     // This will be easier to do without exposing the overview mode code if the
     // cursor changes are moved to ToplevelWindowEventHandler::HandleMouseMoved
@@ -167,8 +185,8 @@ void WindowOverview::SetSelection(size_t index) {
         change -= windows;
     }
     if (selection_index_ < windows_->size() &&
-        (*windows_)[selection_index_]->bounds().y() !=
-            (*windows_)[index]->bounds().y() &&
+        (*windows_)[selection_index_]->target_bounds().y() !=
+            (*windows_)[index]->target_bounds().y() &&
         abs(change) == 1) {
       // The selection has changed forward or backwards by one with a change
       // in the height of the target. In this case create a new selection widget
@@ -177,7 +195,7 @@ void WindowOverview::SetSelection(size_t index) {
           selection_widget_->GetNativeWindow())->GetDisplayMatching(
               target_bounds);
       gfx::Vector2d fade_out_direction(
-          change * ((*windows_)[selection_index_]->bounds().width() +
+          change * ((*windows_)[selection_index_]->target_bounds().width() +
                     2 * kWindowMargin), 0);
       aura::Window* old_selection = selection_widget_->GetNativeWindow();
 
@@ -221,7 +239,7 @@ void WindowOverview::OnWindowsChanged() {
   PositionWindows();
 }
 
-void WindowOverview::MoveToSingleRootWindow(aura::RootWindow* root_window) {
+void WindowOverview::MoveToSingleRootWindow(aura::Window* root_window) {
   single_root_window_ = root_window;
   PositionWindows();
 }
@@ -263,7 +281,7 @@ void WindowOverview::OnTouchEvent(ui::TouchEvent* event) {
   // the window, perhaps a transparent window in front of the target window
   // or using EventClientImpl::CanProcessEventsWithinSubtree and then a tap
   // gesture could be used to activate the window.
-  event->StopPropagation();
+  event->SetHandled();
   window_selector_->SelectWindow(target);
 }
 
@@ -330,7 +348,7 @@ void WindowOverview::PositionWindows() {
   }
 }
 
-void WindowOverview::PositionWindowsFromRoot(aura::RootWindow* root_window) {
+void WindowOverview::PositionWindowsFromRoot(aura::Window* root_window) {
   std::vector<WindowSelectorItem*> windows;
   for (WindowSelectorItemList::iterator iter = windows_->begin();
        iter != windows_->end(); ++iter) {
@@ -341,7 +359,7 @@ void WindowOverview::PositionWindowsFromRoot(aura::RootWindow* root_window) {
 }
 
 void WindowOverview::PositionWindowsOnRoot(
-    aura::RootWindow* root_window,
+    aura::Window* root_window,
     const std::vector<WindowSelectorItem*>& windows) {
   if (windows.empty())
     return;

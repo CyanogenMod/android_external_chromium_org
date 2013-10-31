@@ -9,6 +9,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -32,7 +33,6 @@
 #include "gpu/config/gpu_info.h"
 #include "grit/common_resources.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
-#include "remoting/client/plugin/pepper_entrypoints.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -44,9 +44,12 @@
 #if defined(OS_WIN)
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
-#include "sandbox/win/src/sandbox.h"
 #elif defined(OS_MACOSX)
 #include "components/nacl/common/nacl_sandbox_type_mac.h"
+#endif
+
+#if defined(ENABLE_REMOTING)
+#include "remoting/client/plugin/pepper_entrypoints.h"
 #endif
 
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS) && \
@@ -287,6 +290,28 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
           kWidevineCdmPluginMimeType,
           kWidevineCdmPluginExtension,
           kWidevineCdmPluginMimeTypeDescription);
+
+      // Add the supported codecs as if they came from the component manifest.
+      std::vector<std::string> codecs;
+      codecs.push_back(kCdmSupportedCodecVorbis);
+      codecs.push_back(kCdmSupportedCodecVp8);
+#if defined(USE_PROPRIETARY_CODECS)
+// TODO(ddorwin): Rename these macros to reflect their real meaning: whether the
+// CDM Chrome was built [and shipped] with support these types.
+#if defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
+      codecs.push_back(kCdmSupportedCodecAac);
+#endif
+#if defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
+      codecs.push_back(kCdmSupportedCodecAvc1);
+#endif
+#endif  // defined(USE_PROPRIETARY_CODECS)
+      std::string codec_string =
+          JoinString(codecs, kCdmSupportedCodecsValueDelimiter);
+      widevine_cdm_mime_type.additional_param_names.push_back(
+          base::ASCIIToUTF16(kCdmSupportedCodecsParamName));
+      widevine_cdm_mime_type.additional_param_values.push_back(
+          base::ASCIIToUTF16(codec_string));
+
       widevine_cdm.mime_types.push_back(widevine_cdm_mime_type);
       widevine_cdm.permissions = kWidevineCdmPluginPermissions;
       plugins->push_back(widevine_cdm);

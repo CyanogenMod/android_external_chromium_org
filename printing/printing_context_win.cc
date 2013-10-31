@@ -55,7 +55,7 @@ HWND GetRootWindow(gfx::NativeView view) {
   HWND window = NULL;
 #if defined(USE_AURA)
   if (view)
-    window = view->GetRootWindow()->GetAcceleratedWidget();
+    window = view->GetDispatcher()->GetAcceleratedWidget();
 #else
   if (view && IsWindow(view)) {
     window = GetAncestor(view, GA_ROOTOWNER);
@@ -189,11 +189,11 @@ PrintingContextWin::~PrintingContextWin() {
   ReleaseContext();
 }
 
-// TODO(vitalybuka): Implement as ui::BaseShellDialog crbug.com/180997.
 void PrintingContextWin::AskUserForSettings(
     gfx::NativeView view, int max_pages, bool has_selection,
     const PrintSettingsCallback& callback) {
   DCHECK(!in_print_job_);
+  // TODO(scottmg): Possibly this has to move into the threaded runner too?
   if (win8::IsSingleWindowMetroMode()) {
     // The system dialog can not be opened while running in Metro.
     // But we can programatically launch the Metro print device charm though.
@@ -226,40 +226,40 @@ void PrintingContextWin::AskUserForSettings(
   // - Cancel, the settings are not changed, the previous setting, if it was
   //   initialized before, are kept. CANCEL is returned.
   // On failure, the settings are reset and FAILED is returned.
-  PRINTDLGEX dialog_options = { sizeof(PRINTDLGEX) };
-  dialog_options.hwndOwner = window;
+  PRINTDLGEX* dialog_options =
+      reinterpret_cast<PRINTDLGEX*>(malloc(sizeof(PRINTDLGEX)));
+  ZeroMemory(dialog_options, sizeof(PRINTDLGEX));
+  dialog_options->lStructSize = sizeof(PRINTDLGEX);
+  dialog_options->hwndOwner = window;
   // Disable options we don't support currently.
   // TODO(maruel):  Reuse the previously loaded settings!
-  dialog_options.Flags = PD_RETURNDC | PD_USEDEVMODECOPIESANDCOLLATE  |
-                         PD_NOCURRENTPAGE | PD_HIDEPRINTTOFILE;
+  dialog_options->Flags = PD_RETURNDC | PD_USEDEVMODECOPIESANDCOLLATE |
+                          PD_NOCURRENTPAGE | PD_HIDEPRINTTOFILE;
   if (!has_selection)
-    dialog_options.Flags |= PD_NOSELECTION;
+    dialog_options->Flags |= PD_NOSELECTION;
 
-  PRINTPAGERANGE ranges[32];
-  dialog_options.nStartPage = START_PAGE_GENERAL;
+  const size_t max_page_ranges = 32;
+  PRINTPAGERANGE* ranges = new PRINTPAGERANGE[max_page_ranges];
+  dialog_options->lpPageRanges = ranges;
+  dialog_options->nStartPage = START_PAGE_GENERAL;
   if (max_pages) {
     // Default initialize to print all the pages.
     memset(ranges, 0, sizeof(ranges));
     ranges[0].nFromPage = 1;
     ranges[0].nToPage = max_pages;
-    dialog_options.nPageRanges = 1;
-    dialog_options.nMaxPageRanges = arraysize(ranges);
-    dialog_options.nMinPage = 1;
-    dialog_options.nMaxPage = max_pages;
-    dialog_options.lpPageRanges = ranges;
+    dialog_options->nPageRanges = 1;
+    dialog_options->nMaxPageRanges = max_page_ranges;
+    dialog_options->nMinPage = 1;
+    dialog_options->nMaxPage = max_pages;
   } else {
     // No need to bother, we don't know how many pages are available.
-    dialog_options.Flags |= PD_NOPAGENUMS;
+    dialog_options->Flags |= PD_NOPAGENUMS;
   }
 
-  HRESULT hr = (*print_dialog_func_)(&dialog_options);
-  if (hr != S_OK) {
-    ResetSettings();
-    callback.Run(FAILED);
-  }
-
-  // TODO(maruel):  Support PD_PRINTTOFILE.
-  callback.Run(ParseDialogResultEx(dialog_options));
+  callback_ = callback;
+  print_settings_dialog_ = new ui::PrintSettingsDialogWin(this);
+  print_settings_dialog_->GetPrintSettings(
+      print_dialog_func_, window, dialog_options);
 }
 
 PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
@@ -308,33 +308,12 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
 }
 
 PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
-    const DictionaryValue& job_settings,
-    const PageRanges& ranges) {
+    bool target_is_pdf,
+    bool external_preview) {
   DCHECK(!in_print_job_);
+  DCHECK(!external_preview) << "Not implemented";
 
-  bool collate;
-  int color;
-  bool landscape;
-  bool print_to_pdf;
-  bool is_cloud_dialog;
-  int copies;
-  int duplex_mode;
-  base::string16 device_name;
-
-  if (!job_settings.GetBoolean(kSettingLandscape, &landscape) ||
-      !job_settings.GetBoolean(kSettingCollate, &collate) ||
-      !job_settings.GetInteger(kSettingColor, &color) ||
-      !job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
-      !job_settings.GetInteger(kSettingDuplexMode, &duplex_mode) ||
-      !job_settings.GetInteger(kSettingCopies, &copies) ||
-      !job_settings.GetString(kSettingDeviceName, &device_name) ||
-      !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog)) {
-    return OnError();
-  }
-
-  bool print_to_cloud = job_settings.HasKey(kSettingCloudPrintId);
-
-  if (print_to_pdf || print_to_cloud || is_cloud_dialog) {
+  if (target_is_pdf) {
     // Default fallback to Letter size.
     gfx::Size paper_size;
     gfx::Rect paper_rect;
@@ -362,15 +341,14 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
       }
     }
     paper_rect.SetRect(0, 0, paper_size.width(), paper_size.height());
-    settings_.SetPrinterPrintableArea(paper_size, paper_rect, kPDFDpi);
+    settings_.SetPrinterPrintableArea(paper_size, paper_rect, kPDFDpi, true);
     settings_.set_dpi(kPDFDpi);
-    settings_.SetOrientation(landscape);
-    settings_.ranges = ranges;
     return OK;
   }
 
   ScopedPrinterHandle printer;
-  LPWSTR device_name_wide = const_cast<wchar_t*>(device_name.c_str());
+  LPWSTR device_name_wide =
+      const_cast<wchar_t*>(settings_.device_name().c_str());
   if (!printer.OpenPrinter(device_name_wide))
     return OnError();
 
@@ -394,15 +372,17 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
     return OnError();
   }
 
-  if (color == GRAY)
+  if (settings_.color() == GRAY)
     dev_mode->dmColor = DMCOLOR_MONOCHROME;
   else
     dev_mode->dmColor = DMCOLOR_COLOR;
 
-  dev_mode->dmCopies = std::max(copies, 1);
-  if (dev_mode->dmCopies > 1)  // do not change collate unless multiple copies
-    dev_mode->dmCollate = collate ? DMCOLLATE_TRUE : DMCOLLATE_FALSE;
-  switch (duplex_mode) {
+  dev_mode->dmCopies = std::max(settings_.copies(), 1);
+  if (dev_mode->dmCopies > 1) { // do not change collate unless multiple copies
+    dev_mode->dmCollate = settings_.collate() ? DMCOLLATE_TRUE :
+                                                DMCOLLATE_FALSE;
+  }
+  switch (settings_.duplex_mode()) {
     case LONG_EDGE:
       dev_mode->dmDuplex = DMDUP_VERTICAL;
       break;
@@ -415,7 +395,8 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
     default:  // UNKNOWN_DUPLEX_MODE
       break;
   }
-  dev_mode->dmOrientation = landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
+  dev_mode->dmOrientation = settings_.landscape() ? DMORIENT_LANDSCAPE :
+                                                    DMORIENT_PORTRAIT;
 
   // Update data using DocumentProperties.
   if (DocumentProperties(NULL, printer, device_name_wide, dev_mode, dev_mode,
@@ -424,12 +405,11 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   }
 
   // Set printer then refresh printer settings.
-  if (!AllocateContext(device_name, dev_mode, &context_)) {
+  if (!AllocateContext(settings_.device_name(), dev_mode, &context_)) {
     return OnError();
   }
   PrintSettingsInitializerWin::InitPrintSettings(context_, *dev_mode,
-                                                 ranges, device_name,
-                                                 false, &settings_);
+                                                 &settings_);
   return OK;
 }
 
@@ -565,6 +545,20 @@ gfx::NativeDrawingContext PrintingContextWin::context() const {
   return context_;
 }
 
+void PrintingContextWin::PrintSettingsConfirmed(PRINTDLGEX* dialog_options) {
+  // TODO(maruel):  Support PD_PRINTTOFILE.
+  callback_.Run(ParseDialogResultEx(*dialog_options));
+  delete [] dialog_options->lpPageRanges;
+  free(dialog_options);
+}
+
+void PrintingContextWin::PrintSettingsCancelled(PRINTDLGEX* dialog_options) {
+  ResetSettings();
+  callback_.Run(FAILED);
+  delete [] dialog_options->lpPageRanges;
+  free(dialog_options);
+}
+
 // static
 BOOL PrintingContextWin::AbortProc(HDC hdc, int nCode) {
   if (nCode) {
@@ -612,11 +606,10 @@ bool PrintingContextWin::InitializeSettings(const DEVMODE& dev_mode,
     }
   }
 
-  PrintSettingsInitializerWin::InitPrintSettings(context_,
-                                                 dev_mode,
-                                                 ranges_vector,
-                                                 new_device_name,
-                                                 selection_only,
+  settings_.set_ranges(ranges_vector);
+  settings_.set_device_name(new_device_name);
+  settings_.set_selection_only(selection_only);
+  PrintSettingsInitializerWin::InitPrintSettings(context_, dev_mode,
                                                  &settings_);
 
   return true;

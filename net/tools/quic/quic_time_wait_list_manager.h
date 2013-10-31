@@ -14,10 +14,10 @@
 #include "base/strings/string_piece.h"
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_framer.h"
+#include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_epoll_clock.h"
-#include "net/tools/quic/quic_packet_writer.h"
 
 namespace net {
 namespace tools {
@@ -37,7 +37,8 @@ class QuicTimeWaitListManager : public QuicBlockedWriterInterface,
   // writer - the entity that writes to the socket. (Owned by the dispatcher)
   // epoll_server - used to run clean up alarms. (Owned by the dispatcher)
   QuicTimeWaitListManager(QuicPacketWriter* writer,
-                          EpollServer* epoll_server);
+                          EpollServer* epoll_server,
+                          const QuicVersionVector& supported_versions);
   virtual ~QuicTimeWaitListManager();
 
   // Adds the given guid to time wait state for kTimeWaitPeriod. Henceforth,

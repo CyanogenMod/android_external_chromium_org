@@ -62,13 +62,14 @@ See :doc:`Dynamic Linking & Loading with glibc <dynamic-loading>`
 for information about these libraries, including factors to help you
 decide which to use.
 
+.. _building_cpp_libraries:
 
 C++ libraries
 -------------
 
 The PNaCl SDK can use either
 `libstdc++ <http://gcc.gnu.org/libstdc++>`_ (the current default)
-or LLVM's `libc++ <http://libcxx.llvm.org/>`_ (preliminary support).
+or LLVM's `libc++ <http://libcxx.llvm.org/>`_ (experimental support).
 The ``-stdlib=[libstdc++|libc++]`` command line argument can be used
 to choose which standard library to use.
 
@@ -78,7 +79,8 @@ The GCC-based Native Client SDK only has support for
 C++11 library support is only complete in libc++ but other non-library
 language features should work regardless of which standard library is
 used. The ``-std=[c++98|c++11]`` command line argument can be used to
-indicate which C++ language standard to use.
+indicate which C++ language standard to use (or ``-std=gnu++11`` with
+non-standard extensions).
 
 SDK toolchains
 --------------
@@ -94,7 +96,7 @@ toolchains are located in directories named
 * *<architecture>* is your target architecture (x86 or arm)
 * *<library>* is the C library you are compiling with (newlib or glibc)
 
-The compilers, linkers, and other tools are located in the ``bin/`` 
+The compilers, linkers, and other tools are located in the ``bin/``
 subdirectory in each toolchain. For example, the tools in the Windows SDK
 for PNaCl has a C++ compiler in ``toolchain/win_pnacl/bin/pnacl-clang++``.
 As another example, the GCC-based C++ compiler that targets the x86 and uses the
@@ -154,6 +156,8 @@ architecture-specific .nexe (e.g., for debugging purposes).
 Each tool's name is preceded by the prefix "pnacl-". Some of the useful
 tools include:
 
+pnacl-abicheck
+  Check that the **pexe** follows the PNaCl ABI rules.
 pnacl-ar
   Creates archives (e.g., static libraries)
 pnacl-clang
@@ -618,5 +622,37 @@ Here is one way to find the appropriate library for a given symbol:
   <NACL_SDK_ROOT>/toolchain/<platform>_pnacl/bin/pnacl-nm -o \
     toolchain/<platform>_pnacl/usr/lib/*.a | grep <MySymbolName>
 
-.. TODO(jvoung): Add some notes about debugging GNU-extensions not
-.. supported by PNaCl ABI stabilization passes, like computed gotos?
+
+PNaCl ABI Verification errors
+-----------------------------
+
+PNaCl has restrictions on what is supported in bitcode. There is a bitcode
+ABI verifier which checks that the application conforms to the ABI restrictions,
+before it is translated and run in the browser. However, it is best to
+avoid runtime errors for users, so the verifier also runs on the developer's
+machine at link time.
+
+For example, the following program which uses 128-bit integers
+would compile with NaCl GCC for the x86-64 target. However, it is not
+portable and would not compile with NaCl GCC for the i686 target.
+With PNaCl, it would fail to pass the ABI verifier:
+
+.. naclcode::
+
+  typedef unsigned int uint128_t __attribute__((mode(TI)));
+
+  uint128_t foo(uint128_t x) {
+    return x;
+  }
+
+With PNaCl you would get the following error at link time:
+
+.. naclcode::
+
+  Function foo has disallowed type: i128 (i128)
+  LLVM ERROR: PNaCl ABI verification failed
+
+When faced with a PNaCl ABI verification error, check the list of features
+that are :ref:`not supported by PNaCl <when-to-use-nacl>`.
+If the problem you face is not listed as restricted,
+:ref:`let us know <help>`!

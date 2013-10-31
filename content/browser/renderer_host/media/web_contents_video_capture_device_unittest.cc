@@ -311,18 +311,14 @@ class StubClient : public media::VideoCaptureDevice::Client {
              const base::Closure& error_callback)
       : color_callback_(color_callback),
         error_callback_(error_callback) {
-    buffer_pool_ = new VideoCaptureBufferPool(
-        media::VideoFrame::AllocationSize(media::VideoFrame::I420,
-                                          gfx::Size(kTestWidth, kTestHeight)),
-        2);
-    EXPECT_TRUE(buffer_pool_->Allocate());
+    buffer_pool_ = new VideoCaptureBufferPool(2);
   }
   virtual ~StubClient() {}
 
-  virtual scoped_refptr<media::VideoFrame> ReserveOutputBuffer() OVERRIDE {
-    return buffer_pool_->ReserveI420VideoFrame(gfx::Size(kTestWidth,
-                                                         kTestHeight),
-                                               0);
+  virtual scoped_refptr<media::VideoFrame> ReserveOutputBuffer(
+      const gfx::Size& size) OVERRIDE {
+    int buffer_id_to_drop = VideoCaptureBufferPool::kInvalidId;  // Ignored.
+    return buffer_pool_->ReserveI420VideoFrame(size, 0, &buffer_id_to_drop);
   }
 
   virtual void OnIncomingCapturedFrame(
@@ -358,10 +354,7 @@ class StubClient : public media::VideoCaptureDevice::Client {
   }
 
   virtual void OnFrameInfo(const media::VideoCaptureCapability& info) OVERRIDE {
-    EXPECT_EQ(kTestWidth, info.width);
-    EXPECT_EQ(kTestHeight, info.height);
     EXPECT_EQ(kTestFramesPerSecond, info.frame_rate);
-    EXPECT_EQ(media::PIXEL_FORMAT_I420, info.color);
   }
 
  private:
@@ -583,8 +576,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, InvalidInitialWebContentsError) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -600,8 +591,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, WebContentsDestroyed) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -628,8 +617,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest,
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -654,8 +641,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, StopWithRendererWorkToDo) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -678,8 +663,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, DeviceRestart) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -721,8 +704,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, GoesThroughAllTheMotions) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   device()->AllocateAndStart(
       capture_format, client_observer()->PassClient());
@@ -776,8 +757,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, RejectsInvalidAllocateParams) {
       720,
       -2,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -801,8 +780,6 @@ TEST_F(WebContentsVideoCaptureDeviceTest, BadFramesGoodFrames) {
       kTestHeight,
       kTestFramesPerSecond,
       media::PIXEL_FORMAT_I420,
-      0,
-      false,
       media::ConstantResolutionVideoCaptureDevice);
   // 1x1 is too small to process; we intend for this to result in an error.
   source()->SetCopyResultSize(1, 1);

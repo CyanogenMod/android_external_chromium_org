@@ -41,7 +41,6 @@
 #include "chrome/common/extensions/manifest_handlers/kiosk_mode_info.h"
 #include "chrome/common/extensions/manifest_handlers/shared_module_info.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -49,6 +48,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/permissions/permission_message_provider.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/user_script.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -523,7 +523,7 @@ void CrxInstaller::OnBlacklistChecked(
 
   blacklist_state_ = blacklist_state;
 
-  if (blacklist_state_ == extensions::Blacklist::BLACKLISTED &&
+  if (blacklist_state_ == extensions::Blacklist::BLACKLISTED_MALWARE &&
       !allow_silent_install_) {
     // User tried to install a blacklisted extension. Show an error and
     // refuse to install it.

@@ -46,8 +46,14 @@ const int kForceMaximizeWidthLimitDisabled = 640;
 // through an automatic "intelligent" window management option.
 const int kWindowAutoMoveDurationMS = 125;
 
+// If set to true all window repositioning actions will be ignored. Set through
+// WindowPositioner::SetIgnoreActivations().
+static bool disable_auto_positioning = false;
+
 // Check if any management should be performed (with a given |window|).
 bool UseAutoWindowManager(const aura::Window* window) {
+  if (disable_auto_positioning)
+    return false;
   const wm::WindowState* window_state = wm::GetWindowState(window);
   return window_state->tracked_by_workspace() &&
       window_state->window_position_managed();
@@ -57,6 +63,8 @@ bool UseAutoWindowManager(const aura::Window* window) {
 // not minimized/maximized/the user has changed it's size by hand already.
 // It furthermore checks for the WindowIsManaged status.
 bool WindowPositionCanBeManaged(const aura::Window* window) {
+  if (disable_auto_positioning)
+    return false;
   const wm::WindowState* window_state = wm::GetWindowState(window);
   return window_state->window_position_managed() &&
       !window_state->IsMinimized() &&
@@ -138,7 +146,7 @@ void AutoPlaceSingleWindow(aura::Window* window, bool animated) {
 }
 
 // Get the first open (non minimized) window which is on the screen defined.
-aura::Window* GetReferenceWindow(const aura::RootWindow* root_window,
+aura::Window* GetReferenceWindow(const aura::Window* root_window,
                                  const aura::Window* exclude,
                                  bool *single_window) {
   if (single_window)
@@ -212,27 +220,25 @@ void WindowPositioner::GetBoundsAndShowStateForNewWindow(
     ui::WindowShowState* show_state_out) {
 
   // Always open new window in the target display.
-  aura::RootWindow* target = Shell::GetTargetRootWindow();
+  aura::Window* target = Shell::GetTargetRootWindow();
 
   aura::Window* top_window = GetReferenceWindow(target, NULL, NULL);
   // Our window should not have any impact if we are already on top.
   if (top_window == new_window)
     top_window = NULL;
 
-  // If there is no valid other window we take the coordinates as is.
+  // If there is no valid other window we take and adjust the passed coordinates
+  // and show state.
   if (!top_window) {
     gfx::Rect work_area = screen->GetDisplayNearestWindow(target).work_area();
 
-    if (is_saved_bounds) {
-      // Restore to saved state - if there is one.
-      bounds_in_out->AdjustToFit(work_area);
+    bounds_in_out->AdjustToFit(work_area);
+    // Use adjusted saved bounds, if there is one.
+    if (is_saved_bounds)
       return;
-    }
-
     // When using "small screens" we want to always open in full screen mode.
     if (show_state_in == ui::SHOW_STATE_DEFAULT &&
-        work_area.width() <=
-        WindowPositioner::GetForceMaximizedWidthLimit() &&
+        work_area.width() <= GetForceMaximizedWidthLimit() &&
         (!new_window || !wm::GetWindowState(new_window)->IsFullscreen())) {
       *show_state_out = ui::SHOW_STATE_MAXIMIZED;
     }
@@ -264,6 +270,13 @@ void WindowPositioner::RearrangeVisibleWindowOnHideOrRemove(
       !WindowPositionCanBeManaged(other_shown_window))
     return;
   AutoPlaceSingleWindow(other_shown_window, true);
+}
+
+// static
+bool WindowPositioner::DisableAutoPositioning(bool ignore) {
+  bool old_state = disable_auto_positioning;
+  disable_auto_positioning = ignore;
+  return old_state;
 }
 
 // static

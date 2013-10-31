@@ -28,6 +28,7 @@
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
 #include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
+#include "webkit/browser/fileapi/sandbox_prioritized_origin_database.h"
 #include "webkit/browser/fileapi/timed_task_helper.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/common/database/database_identifier.h"
@@ -256,13 +257,15 @@ ObfuscatedFileUtil::ObfuscatedFileUtil(
     const base::FilePath& file_system_directory,
     base::SequencedTaskRunner* file_task_runner,
     const GetTypeStringForURLCallback& get_type_string_for_url,
-    const std::set<std::string>& known_type_strings)
+    const std::set<std::string>& known_type_strings,
+    SandboxFileSystemBackendDelegate* sandbox_delegate)
     : special_storage_policy_(special_storage_policy),
       file_system_directory_(file_system_directory),
       db_flush_delay_seconds_(10 * 60),  // 10 mins.
       file_task_runner_(file_task_runner),
       get_type_string_for_url_(get_type_string_for_url),
-      known_type_strings_(known_type_strings) {
+      known_type_strings_(known_type_strings),
+      sandbox_delegate_(sandbox_delegate) {
 }
 
 ObfuscatedFileUtil::~ObfuscatedFileUtil() {
@@ -277,10 +280,10 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpen(
                                                  file_handle, created);
   if (*file_handle != base::kInvalidPlatformFileValue &&
       file_flags & base::PLATFORM_FILE_WRITE &&
-      context->quota_limit_type() == quota::kQuotaLimitTypeUnlimited) {
+      context->quota_limit_type() == quota::kQuotaLimitTypeUnlimited &&
+      sandbox_delegate_) {
     DCHECK_EQ(base::PLATFORM_FILE_OK, error);
-    context->file_system_context()->sandbox_delegate()->
-        StickyInvalidateUsageCache(url.origin(), url.type());
+    sandbox_delegate_->StickyInvalidateUsageCache(url.origin(), url.type());
   }
   return error;
 }
@@ -899,7 +902,7 @@ bool ObfuscatedFileUtil::DeleteDirectoryForOriginAndType(
   }
 
   // No other directories seem exist. Try deleting the entire origin directory.
-  InitOriginDatabase(false);
+  InitOriginDatabase(origin, false);
   if (origin_database_) {
     origin_database_->RemovePathForOrigin(
         webkit_database::GetIdentifierFromOrigin(origin));
@@ -914,7 +917,7 @@ ObfuscatedFileUtil::AbstractOriginEnumerator*
 ObfuscatedFileUtil::CreateOriginEnumerator() {
   std::vector<SandboxOriginDatabase::OriginRecord> origins;
 
-  InitOriginDatabase(false);
+  InitOriginDatabase(GURL(), false);
   return new ObfuscatedOriginEnumerator(
       origin_database_.get(), file_system_directory_);
 }
@@ -943,6 +946,37 @@ bool ObfuscatedFileUtil::DestroyDirectoryDatabase(
 // static
 int64 ObfuscatedFileUtil::ComputeFilePathCost(const base::FilePath& path) {
   return UsageForPath(VirtualPath::BaseName(path).value().size());
+}
+
+void ObfuscatedFileUtil::MaybePrepopulateDatabase(
+    const std::vector<std::string>& type_strings_to_prepopulate) {
+  SandboxPrioritizedOriginDatabase database(file_system_directory_);
+  std::string origin_string = database.GetPrimaryOrigin();
+  if (origin_string.empty() || !database.HasOriginPath(origin_string))
+    return;
+  const GURL origin = webkit_database::GetOriginFromIdentifier(origin_string);
+
+  // Prepopulate the directory database(s) if and only if this instance
+  // has primary origin and the directory database is already there.
+  for (size_t i = 0; i < type_strings_to_prepopulate.size(); ++i) {
+    const std::string type_string = type_strings_to_prepopulate[i];
+    // Only handles known types.
+    if (!ContainsKey(known_type_strings_, type_string))
+      continue;
+    PlatformFileError error = base::PLATFORM_FILE_ERROR_FAILED;
+    base::FilePath path = GetDirectoryForOriginAndType(
+        origin, type_string, false, &error);
+    if (error != base::PLATFORM_FILE_OK)
+      continue;
+    scoped_ptr<SandboxDirectoryDatabase> db(new SandboxDirectoryDatabase(path));
+    if (db->Init(SandboxDirectoryDatabase::FAIL_ON_CORRUPTION)) {
+      directories_[GetDirectoryDatabaseKey(origin, type_string)] = db.release();
+      MarkUsed();
+      // Don't populate more than one database, as it may rather hurt
+      // performance.
+      break;
+    }
+  }
 }
 
 base::FilePath ObfuscatedFileUtil::GetDirectoryForURL(
@@ -1104,10 +1138,6 @@ std::string ObfuscatedFileUtil::GetDirectoryDatabaseKey(
     return std::string();
   }
   // For isolated origin we just use a type string as a key.
-  if (HasIsolatedStorage(origin)) {
-    CHECK_EQ(isolated_origin_.spec(), origin.spec());
-    return type_string;
-  }
   return webkit_database::GetIdentifierFromOrigin(origin) +
       type_string;
 }
@@ -1143,11 +1173,7 @@ SandboxDirectoryDatabase* ObfuscatedFileUtil::GetDirectoryDatabase(
 
 base::FilePath ObfuscatedFileUtil::GetDirectoryForOrigin(
     const GURL& origin, bool create, base::PlatformFileError* error_code) {
-  if (HasIsolatedStorage(origin)) {
-    CHECK_EQ(isolated_origin_.spec(), origin.spec());
-  }
-
-  if (!InitOriginDatabase(create)) {
+  if (!InitOriginDatabase(origin, create)) {
     if (error_code) {
       *error_code = create ?
           base::PLATFORM_FILE_ERROR_FAILED :
@@ -1201,8 +1227,8 @@ void ObfuscatedFileUtil::InvalidateUsageCache(
     FileSystemOperationContext* context,
     const GURL& origin,
     FileSystemType type) {
-  context->file_system_context()->sandbox_delegate()->
-      InvalidateUsageCache(origin, type);
+  if (sandbox_delegate_)
+    sandbox_delegate_->InvalidateUsageCache(origin, type);
 }
 
 void ObfuscatedFileUtil::MarkUsed() {
@@ -1227,7 +1253,8 @@ void ObfuscatedFileUtil::DropDatabases() {
   timer_.reset();
 }
 
-bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
+bool ObfuscatedFileUtil::InitOriginDatabase(const GURL& origin_hint,
+                                            bool create) {
   if (origin_database_)
     return true;
 
@@ -1239,18 +1266,29 @@ bool ObfuscatedFileUtil::InitOriginDatabase(bool create) {
     return false;
   }
 
-  origin_database_.reset(
-      new SandboxOriginDatabase(file_system_directory_));
+  SandboxPrioritizedOriginDatabase* prioritized_origin_database =
+      new SandboxPrioritizedOriginDatabase(file_system_directory_);
+  origin_database_.reset(prioritized_origin_database);
 
+  if (origin_hint.is_empty() || !HasIsolatedStorage(origin_hint))
+    return true;
+
+  const std::string isolated_origin_string =
+      webkit_database::GetIdentifierFromOrigin(origin_hint);
+
+  // TODO(kinuko): Deprecate this after a few release cycles, e.g. around M33.
   base::FilePath isolated_origin_dir = file_system_directory_.Append(
-      SandboxIsolatedOriginDatabase::kOriginDirectory);
+      SandboxIsolatedOriginDatabase::kObsoleteOriginDirectory);
   if (base::DirectoryExists(isolated_origin_dir) &&
-      !isolated_origin_.is_empty()) {
-    SandboxIsolatedOriginDatabase::MigrateBackDatabase(
-        webkit_database::GetIdentifierFromOrigin(isolated_origin_),
+      prioritized_origin_database->GetSandboxOriginDatabase()) {
+    SandboxIsolatedOriginDatabase::MigrateBackFromObsoleteOriginDatabase(
+        isolated_origin_string,
         file_system_directory_,
-        static_cast<SandboxOriginDatabase*>(origin_database_.get()));
+        prioritized_origin_database->GetSandboxOriginDatabase());
   }
+
+  prioritized_origin_database->InitializePrimaryOrigin(
+      isolated_origin_string);
 
   return true;
 }
@@ -1365,24 +1403,8 @@ PlatformFileError ObfuscatedFileUtil::CreateOrOpenInternal(
 }
 
 bool ObfuscatedFileUtil::HasIsolatedStorage(const GURL& origin) {
-  if (special_storage_policy_.get() &&
-      special_storage_policy_->HasIsolatedStorage(origin)) {
-    if (isolated_origin_.is_empty())
-      isolated_origin_ = origin;
-    // Record isolated_origin_, but always disable for now.
-    // crbug.com/264429
-    if (isolated_origin_ != origin) {
-      UMA_HISTOGRAM_ENUMERATION("FileSystem.IsolatedOriginStatus",
-                                kIsolatedOriginDontMatch,
-                                kIsolatedOriginStatusMax);
-    } else {
-      UMA_HISTOGRAM_ENUMERATION("FileSystem.IsolatedOriginStatus",
-                                kIsolatedOriginMatch,
-                                kIsolatedOriginStatusMax);
-    }
-    return false;
-  }
-  return false;
+  return special_storage_policy_.get() &&
+      special_storage_policy_->HasIsolatedStorage(origin);
 }
 
 }  // namespace fileapi

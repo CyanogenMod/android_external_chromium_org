@@ -174,10 +174,14 @@ struct CONTENT_EXPORT MediaStreamRequest {
 
   ~MediaStreamRequest();
 
-  // The render process id generating this request.
+  // This is the render process id for the renderer associated with generating
+  // frames for a MediaStream. Any indicators associated with a capture will be
+  // displayed for this renderer.
   int render_process_id;
 
-  // The render view id generating this request.
+  // This is the render view id for the renderer associated with generating
+  // frames for a MediaStream. Any indicators associated with a capture will be
+  // displayed for this renderer.
   int render_view_id;
 
   // The unique id combined with render_process_id and render_view_id for

@@ -112,7 +112,7 @@ def _LoadConfigFile(path_to_file):
     print
     traceback.print_exc()
     print
-    return None
+    return {}
 
 
 def _OutputFailedResults(text_to_print):
@@ -211,6 +211,12 @@ def _RunPerformanceTest(config, path_to_file):
   cloud_file_link = [t for t in output.splitlines()
       if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
   if cloud_file_link:
+    # What we're getting here is basically "View online at http://..." so parse
+    # out just the url portion.
+    cloud_file_link = cloud_file_link[0]
+    cloud_file_link = [t for t in cloud_file_link.split(' ')
+        if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
+    assert cloud_file_link, "Couldn't parse url from output."
     cloud_file_link = cloud_file_link[0]
   else:
     cloud_file_link = ''
@@ -260,7 +266,8 @@ def _SetupAndRunPerformanceTest(config, path_to_file, path_to_goma):
     return 1
 
 
-def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
+def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma,
+    dry_run):
   """Attempts to execute src/tools/bisect-perf-regression.py with the parameters
   passed in.
 
@@ -271,10 +278,17 @@ def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
       the depot.
     path_to_file: Path to the bisect-perf-regression.py script.
     path_to_goma: Path to goma directory.
+    dry_run: Do a dry run, skipping sync, build, and performance testing steps.
 
   Returns:
     0 on success, otherwise 1.
   """
+  bisect_utils.OutputAnnotationStepStart('Config')
+  print
+  for k, v in config.iteritems():
+    print '  %s : %s' % (k, v)
+  print
+  bisect_utils.OutputAnnotationStepClosed()
 
   cmd = ['python', os.path.join(path_to_file, 'bisect-perf-regression.py'),
          '-c', config['command'],
@@ -313,6 +327,9 @@ def _RunBisectionScript(config, working_directory, path_to_file, path_to_goma):
   if path_to_goma:
     cmd.append('--use_goma')
 
+  if dry_run:
+    cmd.extend(['--debug_ignore_build', '--debug_ignore_sync',
+        '--debug_ignore_perf_test'])
   cmd = [str(c) for c in cmd]
 
   with Goma(path_to_goma) as goma:
@@ -342,6 +359,11 @@ def main():
                     type='str',
                     help='Path to goma directory. If this is supplied, goma '
                     'builds will be enabled.')
+  parser.add_option('--dry_run',
+                    action="store_true",
+                    help='The script will perform the full bisect, but '
+                    'without syncing, building, or running the performance '
+                    'tests.')
   (opts, args) = parser.parse_args()
 
   path_to_current_directory = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -361,21 +383,26 @@ def main():
       return 1
 
     return _RunBisectionScript(config, opts.working_directory,
-        path_to_current_directory, opts.path_to_goma)
+        path_to_current_directory, opts.path_to_goma, opts.dry_run)
   else:
-    path_to_perf_cfg = os.path.join(
-        os.path.abspath(os.path.dirname(sys.argv[0])), 'run-perf-test.cfg')
+    perf_cfg_files = ['run-perf-test.cfg', os.path.join('..', 'third_party',
+        'WebKit', 'Tools', 'run-perf-test.cfg')]
 
-    config = _LoadConfigFile(path_to_perf_cfg)
+    for current_perf_cfg_file in perf_cfg_files:
+      path_to_perf_cfg = os.path.join(
+          os.path.abspath(os.path.dirname(sys.argv[0])), current_perf_cfg_file)
 
-    if config:
-      return _SetupAndRunPerformanceTest(config, path_to_current_directory,
-          opts.path_to_goma)
-    else:
-      print 'Error: Could not load config file. Double check your changes to '\
-            'run-bisect-perf-regression.cfg for syntax errors.'
-      print
-      return 1
+      config = _LoadConfigFile(path_to_perf_cfg)
+      config_has_values = [v for v in config.values() if v]
+
+      if config and config_has_values:
+        return _SetupAndRunPerformanceTest(config, path_to_current_directory,
+            opts.path_to_goma)
+
+    print 'Error: Could not load config file. Double check your changes to '\
+          'run-bisect-perf-regression.cfg/run-perf-test.cfg for syntax errors.'
+    print
+    return 1
 
 
 if __name__ == '__main__':

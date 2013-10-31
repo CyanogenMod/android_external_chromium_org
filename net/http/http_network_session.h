@@ -77,7 +77,6 @@ class NET_EXPORT HttpNetworkSession
     uint16 testing_fixed_https_port;
     bool force_spdy_single_domain;
     bool enable_spdy_ip_pooling;
-    bool enable_spdy_credential_frames;
     bool enable_spdy_compression;
     bool enable_spdy_ping_based_connection_checking;
     NextProto spdy_default_protocol;
@@ -141,8 +140,8 @@ class NET_EXPORT HttpNetworkSession
   HttpStreamFactory* http_stream_factory() {
     return http_stream_factory_.get();
   }
-  HttpStreamFactory* websocket_stream_factory() {
-    return websocket_stream_factory_.get();
+  HttpStreamFactory* websocket_handshake_stream_factory() {
+    return websocket_handshake_stream_factory_.get();
   }
   NetLog* net_log() {
     return net_log_;
@@ -198,7 +197,7 @@ class NET_EXPORT HttpNetworkSession
   QuicStreamFactory quic_stream_factory_;
   SpdySessionPool spdy_session_pool_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
-  scoped_ptr<HttpStreamFactory> websocket_stream_factory_;
+  scoped_ptr<HttpStreamFactory> websocket_handshake_stream_factory_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;
 
   Params params_;

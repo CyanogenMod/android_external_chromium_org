@@ -531,7 +531,10 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   }
 
   virtual void ShowHelp() OVERRIDE {
-    chrome::ShowHelp(GetAppropriateBrowser(), chrome::HELP_SOURCE_MENU);
+    chrome::ShowHelpForProfile(
+        ProfileManager::GetDefaultProfileOrOffTheRecord(),
+        chrome::HOST_DESKTOP_TYPE_ASH,
+        chrome::HELP_SOURCE_MENU);
   }
 
   virtual void ShowAccessibilityHelp() OVERRIDE {
@@ -747,8 +750,9 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
   virtual void ManageBluetoothDevices() OVERRIDE {
     content::RecordAction(
         content::UserMetricsAction("ShowBluetoothSettingsPage"));
-    chrome::ShowSettingsSubPage(GetAppropriateBrowser(),
-                                chrome::kBluetoothAddDeviceSubPage);
+    std::string sub_page = std::string(chrome::kSearchSubPage) + "#" +
+        l10n_util::GetStringUTF8(IDS_OPTIONS_SETTINGS_SECTION_TITLE_BLUETOOTH);
+    chrome::ShowSettingsSubPage(GetAppropriateBrowser(), sub_page);
   }
 
   virtual void ToggleBluetooth() OVERRIDE {
@@ -861,6 +865,11 @@ class SystemTrayDelegate : public ash::SystemTrayDelegate,
                    base::Unretained(this)));
     user_pref_registrar_->Add(
         prefs::kLargeCursorEnabled,
+        base::Bind(&SystemTrayDelegate::OnAccessibilityModeChanged,
+                   base::Unretained(this),
+                   ash::A11Y_NOTIFICATION_NONE));
+    user_pref_registrar_->Add(
+        prefs::kAutoclickEnabled,
         base::Bind(&SystemTrayDelegate::OnAccessibilityModeChanged,
                    base::Unretained(this),
                    ash::A11Y_NOTIFICATION_NONE));

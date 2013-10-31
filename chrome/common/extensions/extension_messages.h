@@ -10,16 +10,18 @@
 
 #include "base/memory/shared_memory.h"
 #include "base/values.h"
+#include "chrome/common/extensions/api/messaging/message.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/permissions/bluetooth_permission_data.h"
 #include "chrome/common/extensions/permissions/media_galleries_permission_data.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "chrome/common/extensions/permissions/usb_device_permission_data.h"
 #include "chrome/common/web_application_info.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/draggable_region.h"
+#include "extensions/common/extensions_client.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/view_type.h"
@@ -193,6 +195,11 @@ IPC_STRUCT_TRAITS_BEGIN(extensions::BluetoothPermissionData)
   IPC_STRUCT_TRAITS_MEMBER(uuid())
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(extensions::Message)
+  IPC_STRUCT_TRAITS_MEMBER(data)
+  IPC_STRUCT_TRAITS_MEMBER(user_gesture)
+IPC_STRUCT_TRAITS_END()
+
 // Singly-included section for custom IPC traits.
 #ifndef CHROME_COMMON_EXTENSIONS_EXTENSION_MESSAGES_H_
 #define CHROME_COMMON_EXTENSIONS_EXTENSION_MESSAGES_H_
@@ -341,7 +348,7 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_Unloaded,
 // only used for testing.
 IPC_MESSAGE_CONTROL1(ExtensionMsg_SetScriptingWhitelist,
                      // extension ids
-                     extensions::Extension::ScriptingWhitelist)
+                     extensions::ExtensionsClient::ScriptingWhitelist)
 
 // Notification that renderer should run some JavaScript code.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_ExecuteCode,
@@ -436,7 +443,7 @@ IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
                     int /* target_port_id */,
-                    std::string /* message */)
+                    extensions::Message)
 
 // Dispatch the Port.onDisconnect event for message channels.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DispatchOnDisconnect,
@@ -547,7 +554,7 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToTab,
 // by ViewHostMsg_OpenChannelTo*.
 IPC_MESSAGE_ROUTED2(ExtensionHostMsg_PostMessage,
                     int /* port_id */,
-                    std::string /* message */)
+                    extensions::Message)
 
 // Send a message to an extension process.  The handle is the value returned
 // by ViewHostMsg_OpenChannelTo*.

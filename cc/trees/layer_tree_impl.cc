@@ -271,17 +271,17 @@ void LayerTreeImpl::ApplySentScrollAndScaleDeltasFromAbortedCommit() {
       root_layer(), base::Bind(&ApplySentScrollDeltasFromAbortedCommitTo));
 }
 
-static void ApplyScrollDeltasSinceBeginFrameTo(LayerImpl* layer) {
-  layer->ApplyScrollDeltasSinceBeginFrame();
+static void ApplyScrollDeltasSinceBeginMainFrameTo(LayerImpl* layer) {
+  layer->ApplyScrollDeltasSinceBeginMainFrame();
 }
 
-void LayerTreeImpl::ApplyScrollDeltasSinceBeginFrame() {
+void LayerTreeImpl::ApplyScrollDeltasSinceBeginMainFrame() {
   DCHECK(IsPendingTree());
   if (!root_layer())
     return;
 
   LayerTreeHostCommon::CallFunctionForSubtree(
-      root_layer(), base::Bind(&ApplyScrollDeltasSinceBeginFrameTo));
+      root_layer(), base::Bind(&ApplyScrollDeltasSinceBeginMainFrameTo));
 }
 
 void LayerTreeImpl::SetViewportLayersFromIds(
@@ -708,6 +708,10 @@ void LayerTreeImpl::set_ui_resource_request_queue(
 ResourceProvider::ResourceId LayerTreeImpl::ResourceIdForUIResource(
     UIResourceId uid) const {
   return layer_tree_host_impl_->ResourceIdForUIResource(uid);
+}
+
+bool LayerTreeImpl::IsUIResourceOpaque(UIResourceId uid) const {
+  return layer_tree_host_impl_->IsUIResourceOpaque(uid);
 }
 
 void LayerTreeImpl::ProcessUIResourceRequestQueue() {

@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string16.h"
@@ -23,12 +24,16 @@ namespace {
 const char kKeyDown[] ="keydown";
 const char kKeyUp[] = "keyup";
 
-void SendProcessKeyEvent(ui::EventType type, aura::RootWindow* root_window) {
+void SendProcessKeyEvent(ui::EventType type,
+                         aura::WindowEventDispatcher* dispatcher) {
   ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
                                ui::VKEY_PROCESSKEY,
                                ui::EF_NONE);
-  root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+  dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
 }
+
+base::LazyInstance<base::Time> g_keyboard_load_time_start =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -36,10 +41,13 @@ namespace keyboard {
 
 bool IsKeyboardEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableVirtualKeyboard);
+      switches::kEnableVirtualKeyboard) ||
+          CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kKeyboardUsabilityTest);
+
 }
 
-bool InsertText(const base::string16& text, aura::RootWindow* root_window) {
+bool InsertText(const base::string16& text, aura::Window* root_window) {
   if (!root_window)
     return false;
 
@@ -63,8 +71,8 @@ bool InsertText(const base::string16& text, aura::RootWindow* root_window) {
 // ui::TextInputClient from that (see above in InsertText()).
 bool MoveCursor(int swipe_direction,
                 int modifier_flags,
-                aura::RootWindow* root_window) {
-  if (!root_window)
+                aura::WindowEventDispatcher* dispatcher) {
+  if (!dispatcher)
     return false;
   ui::KeyboardCode codex = ui::VKEY_UNKNOWN;
   ui::KeyboardCode codey = ui::VKEY_UNKNOWN;
@@ -81,17 +89,17 @@ bool MoveCursor(int swipe_direction,
   // First deal with the x movement.
   if (codex != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codex, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codex, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
   }
 
   // Then deal with the y movement.
   if (codey != ui::VKEY_UNKNOWN) {
     ui::KeyEvent press_event(ui::ET_KEY_PRESSED, codey, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&press_event);
     ui::KeyEvent release_event(ui::ET_KEY_RELEASED, codey, modifier_flags, 0);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&release_event);
   }
   return true;
 }
@@ -99,8 +107,8 @@ bool MoveCursor(int swipe_direction,
 bool SendKeyEvent(const std::string type,
                   int key_value,
                   int key_code,
-                  bool shift_modifier,
-                  aura::RootWindow* root_window) {
+                  int modifiers,
+                  aura::WindowEventDispatcher* dispatcher) {
   ui::EventType event_type = ui::ET_UNKNOWN;
   if (type == kKeyDown)
     event_type = ui::ET_KEY_PRESSED;
@@ -109,26 +117,22 @@ bool SendKeyEvent(const std::string type,
   if (event_type == ui::ET_UNKNOWN)
     return false;
 
-  int flags = ui::EF_NONE;
-  if (shift_modifier)
-    flags = ui::EF_SHIFT_DOWN;
-
   ui::KeyboardCode code = static_cast<ui::KeyboardCode>(key_code);
 
   if (code == ui::VKEY_UNKNOWN) {
     // Handling of special printable characters (e.g. accented characters) for
     // which there is no key code.
     if (event_type == ui::ET_KEY_RELEASED) {
-      ui::InputMethod* input_method = root_window->GetProperty(
+      ui::InputMethod* input_method = dispatcher->GetProperty(
           aura::client::kRootWindowInputMethodKey);
       if (!input_method)
         return false;
 
       ui::TextInputClient* tic = input_method->GetTextInputClient();
 
-      SendProcessKeyEvent(ui::ET_KEY_PRESSED, root_window);
+      SendProcessKeyEvent(ui::ET_KEY_PRESSED, dispatcher);
       tic->InsertChar(static_cast<uint16>(key_value), ui::EF_NONE);
-      SendProcessKeyEvent(ui::ET_KEY_RELEASED, root_window);
+      SendProcessKeyEvent(ui::ET_KEY_RELEASED, dispatcher);
     }
   } else {
     if (event_type == ui::ET_KEY_RELEASED) {
@@ -146,10 +150,30 @@ bool SendKeyEvent(const std::string type,
       }
     }
 
-    ui::KeyEvent event(event_type, code, flags, false);
-    root_window->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
+    ui::KeyEvent event(event_type, code, modifiers, false);
+    dispatcher->AsRootWindowHostDelegate()->OnHostKeyEvent(&event);
   }
   return true;
+}
+
+const void MarkKeyboardLoadStarted() {
+  if (!g_keyboard_load_time_start.Get().ToInternalValue())
+    g_keyboard_load_time_start.Get() = base::Time::Now();
+}
+
+const void MarkKeyboardLoadFinished() {
+  // It should not be possible to finish loading the keyboard without starting
+  // to load it first.
+  DCHECK(g_keyboard_load_time_start.Get().ToInternalValue());
+
+  static bool logged = false;
+  if (!logged) {
+    // Log the delta only once.
+    UMA_HISTOGRAM_TIMES(
+        "VirtualKeyboard.FirstLoadTime",
+        base::Time::Now() - g_keyboard_load_time_start.Get());
+    logged = true;
+  }
 }
 
 const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
@@ -176,6 +200,8 @@ const GritResourceMap* GetKeyboardExtensionResources(size_t* size) {
     {"keyboard/elements/kb-keyset.html", IDR_KEYBOARD_ELEMENTS_KEYSET},
     {"keyboard/elements/kb-modifier-key.html",
         IDR_KEYBOARD_ELEMENTS_MODIFIER_KEY},
+    {"keyboard/elements/kb-options-menu.html",
+        IDR_KEYBOARD_ELEMENTS_OPTIONS_MENU},
     {"keyboard/elements/kb-row.html", IDR_KEYBOARD_ELEMENTS_ROW},
     {"keyboard/elements/kb-shift-key.html", IDR_KEYBOARD_ELEMENTS_SHIFT_KEY},
     {"keyboard/layouts/function-key-row.html", IDR_KEYBOARD_FUNCTION_KEY_ROW},

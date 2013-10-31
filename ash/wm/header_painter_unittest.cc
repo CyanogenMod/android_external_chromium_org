@@ -17,6 +17,7 @@
 #include "grit/ash_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
@@ -207,7 +208,7 @@ class HeaderPainterTest : public ash::test::AshTestBase {
 TEST_F(HeaderPainterTest, CreateAndDeleteSingleWindow) {
   // Ensure that creating/deleting a window works well and doesn't cause
   // crashes.  See crbug.com/155634
-  aura::RootWindow* root = Shell::GetTargetRootWindow();
+  aura::Window* root = Shell::GetTargetRootWindow();
 
   scoped_ptr<Widget> widget(CreateTestWidget());
   scoped_ptr<HeaderPainter> painter(CreateTestPainter(widget.get()));
@@ -395,8 +396,8 @@ TEST_F(HeaderPainterTest, UseSoloWindowHeaderNotDrawn) {
   scoped_ptr<aura::Window> window(new aura::Window(NULL));
   window->SetType(aura::client::WINDOW_TYPE_NORMAL);
   window->Init(ui::LAYER_NOT_DRAWN);
-  window->SetDefaultParentByRootWindow(
-      widget->GetNativeWindow()->GetRootWindow(), gfx::Rect());
+  aura::client::ParentWindowWithContext(window.get(), widget->GetNativeWindow(),
+                                        gfx::Rect());
   window->Show();
 
   // Despite two windows, the first window should still be considered "solo"

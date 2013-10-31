@@ -23,6 +23,7 @@
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "ui/gfx/frame_time.h"
 #include "ui/gfx/size_conversions.h"
 
 namespace cc {
@@ -68,14 +69,15 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
       : LayerTreeHostImpl(settings,
                           host_impl_client,
                           proxy,
-                          stats_instrumentation),
+                          stats_instrumentation,
+                          NULL),
         test_hooks_(test_hooks),
         block_notify_ready_to_activate_for_testing_(false),
         notify_ready_to_activate_was_blocked_(false) {}
 
-  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {
+  virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE {
     test_hooks_->WillBeginImplFrameOnThread(this, args);
-    LayerTreeHostImpl::BeginFrame(args);
+    LayerTreeHostImpl::BeginImplFrame(args);
     test_hooks_->DidBeginImplFrameOnThread(this, args);
   }
 
@@ -233,7 +235,7 @@ class LayerTreeHostForTesting : public LayerTreeHost {
   LayerTreeHostForTesting(TestHooks* test_hooks,
                           LayerTreeHostClient* client,
                           const LayerTreeSettings& settings)
-      : LayerTreeHost(client, settings),
+      : LayerTreeHost(client, NULL, settings),
         test_hooks_(test_hooks),
         test_started_(false) {}
 
@@ -250,9 +252,13 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient {
   }
   virtual ~LayerTreeHostClientForTesting() {}
 
-  virtual void WillBeginFrame() OVERRIDE { test_hooks_->WillBeginFrame(); }
+  virtual void WillBeginMainFrame() OVERRIDE {
+    test_hooks_->WillBeginMainFrame();
+  }
 
-  virtual void DidBeginFrame() OVERRIDE { test_hooks_->DidBeginFrame(); }
+  virtual void DidBeginMainFrame() OVERRIDE {
+    test_hooks_->DidBeginMainFrame();
+  }
 
   virtual void Animate(double monotonic_time) OVERRIDE {
     test_hooks_->Animate(base::TimeTicks::FromInternalValue(
@@ -586,7 +592,7 @@ void LayerTreeTest::DispatchComposite() {
   }
 
   schedule_when_set_visible_true_ = false;
-  base::TimeTicks now = base::TimeTicks::Now();
+  base::TimeTicks now = gfx::FrameTime::Now();
   layer_tree_host_->Composite(now);
 }
 
@@ -602,7 +608,7 @@ void LayerTreeTest::RunTest(bool threaded,
 
   delegating_renderer_ = delegating_renderer;
 
-  // Spend less time waiting for BeginFrame because the output is
+  // Spend less time waiting for BeginImplFrame because the output is
   // mocked out.
   settings_.refresh_rate = 200.0;
   if (impl_side_painting) {

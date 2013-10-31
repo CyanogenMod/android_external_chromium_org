@@ -6,11 +6,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/accessibility/accessibility_event_router_views.h"
 #include "chrome/common/pref_names.h"
@@ -205,27 +205,16 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
        chrome::GetHostDesktopTypeForNativeView(params->parent) !=
           chrome::HOST_DESKTOP_TYPE_NATIVE);
 
-  if (!ui::win::IsAeroGlassEnabled()) {
-    // If we don't have composition (either because Glass is not enabled or
-    // because it was disabled at the command line), anything that requires
-    // transparency will be broken with a toplevel window, so force the use of
-    // a non toplevel window.
-    if (params->opacity == views::Widget::InitParams::TRANSLUCENT_WINDOW &&
-        params->type != views::Widget::InitParams::TYPE_MENU)
-      use_non_toplevel_window = true;
-  } else {
-    // If we're on Vista+ with composition enabled, then we can use toplevel
-    // windows for most things (they get blended via WS_EX_COMPOSITED, which
-    // allows for animation effects, but also exceeding the bounds of the parent
-    // window).
-    if (chrome::GetActiveDesktop() != chrome::HOST_DESKTOP_TYPE_ASH &&
-        params->parent &&
-        params->type != views::Widget::InitParams::TYPE_CONTROL &&
-        params->type != views::Widget::InitParams::TYPE_WINDOW) {
-      // When we set this to false, we get a DesktopNativeWidgetAura from the
-      // default case (not handled in this function).
-      use_non_toplevel_window = false;
-    }
+  // We can use toplevel windows for most things. On Vista+ with DWM, they get
+  // blended via WS_EX_COMPOSITED. Otherwise, they're rendered by the software
+  // compositor and the hwnd is converted to a WS_EX_LAYERED.
+  if (chrome::GetActiveDesktop() != chrome::HOST_DESKTOP_TYPE_ASH &&
+      params->parent &&
+      params->type != views::Widget::InitParams::TYPE_CONTROL &&
+      params->type != views::Widget::InitParams::TYPE_WINDOW) {
+    // When we set this to false, we get a DesktopNativeWidgetAura from the
+    // default case (not handled in this function).
+    use_non_toplevel_window = false;
   }
 #endif  // OS_WIN
 #endif  // USE_AURA
@@ -237,13 +226,15 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
   // but have neither a context nor a parent. Provide a fallback context so
   // users don't crash. Developers will hit the DCHECK and should provide a
   // context.
+  if (params->context)
+    params->context = params->context->GetRootWindow();
   DCHECK(params->parent || params->context || params->top_level)
       << "Please provide a parent or context for this widget.";
   if (!params->parent && !params->context)
     params->context = ash::Shell::GetPrimaryRootWindow();
 #elif defined(USE_AURA)
   // While the majority of the time, context wasn't plumbed through due to the
-  // existence of a global StackingClient, if this window is a toplevel, it's
+  // existence of a global WindowTreeClient, if this window is a toplevel, it's
   // possible that there is no contextual state that we can use.
   if (params->parent == NULL && params->context == NULL && params->top_level) {
     // We need to make a decision about where to place this window based on the

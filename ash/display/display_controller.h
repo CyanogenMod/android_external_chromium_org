@@ -42,6 +42,7 @@ class DisplayManager;
 class FocusActivationStore;
 class MirrorWindowController;
 class RootWindowController;
+class VirtualKeyboardWindowController;
 }
 
 // DisplayController owns and maintains RootWindows for each attached
@@ -93,10 +94,10 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   void RemoveObserver(Observer* observer);
 
   // Returns the root window for primary display.
-  aura::RootWindow* GetPrimaryRootWindow();
+  aura::Window* GetPrimaryRootWindow();
 
   // Returns the root window for |display_id|.
-  aura::RootWindow* GetRootWindowForDisplayId(int64 id);
+  aura::Window* GetRootWindowForDisplayId(int64 id);
 
   // Toggle mirror mode.
   void ToggleMirrorMode();
@@ -158,9 +159,9 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   virtual void OnRootWindowHostResized(const aura::RootWindow* root) OVERRIDE;
 
   // aura::DisplayManager::Delegate overrides:
-  virtual void CreateOrUpdateMirrorWindow(
+  virtual void CreateOrUpdateNonDesktopDisplay(
       const internal::DisplayInfo& info) OVERRIDE;
-  virtual void CloseMirrorWindow() OVERRIDE;
+  virtual void CloseNonDesktopDisplay() OVERRIDE;
   virtual void PreDisplayConfigurationChange(bool dispay_removed) OVERRIDE;
   virtual void PostDisplayConfigurationChange() OVERRIDE;
 
@@ -209,8 +210,9 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
 
   scoped_ptr<internal::FocusActivationStore> focus_activation_store_;
 
-
   scoped_ptr<internal::MirrorWindowController> mirror_window_controller_;
+  scoped_ptr<internal::VirtualKeyboardWindowController>
+      virtual_keyboard_window_controller_;
 
   // Stores the curent cursor location (in native coordinates) used to
   // restore the cursor location when display configuration

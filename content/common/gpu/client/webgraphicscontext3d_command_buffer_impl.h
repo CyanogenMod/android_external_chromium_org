@@ -13,7 +13,6 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
-#include "content/common/gpu/gpu_process_launch_causes.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/native_widget_types.h"
@@ -46,13 +45,9 @@ using WebKit::WGC3Dfloat;
 using WebKit::WGC3Dclampf;
 using WebKit::WGC3Dintptr;
 using WebKit::WGC3Dsizeiptr;
-using WebKit::WebGraphicsManagedMemoryStats;
-using WebKit::WebGraphicsMemoryAllocation;
 
 namespace content {
 class GpuChannelHost;
-class GpuChannelHostFactory;
-struct GpuMemoryAllocationForRenderer;
 
 const size_t kDefaultCommandBufferSize = 1024 * 1024;
 const size_t kDefaultStartTransferBufferSize = 1 * 1024 * 1024;
@@ -80,26 +75,26 @@ class WebGraphicsContext3DCommandBufferImpl
     kNoLimit = 0,
   };
 
+  struct SharedMemoryLimits {
+    SharedMemoryLimits();
+
+    size_t command_buffer_size;
+    size_t start_transfer_buffer_size;
+    size_t min_transfer_buffer_size;
+    size_t max_transfer_buffer_size;
+    size_t mapped_memory_reclaim_limit;
+  };
+
   WebGraphicsContext3DCommandBufferImpl(
       int surface_id,
       const GURL& active_url,
-      GpuChannelHostFactory* factory,
-      const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client);
+      GpuChannelHost* host,
+      const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client,
+      const Attributes& attributes,
+      bool bind_generates_resources,
+      const SharedMemoryLimits& limits);
 
   virtual ~WebGraphicsContext3DCommandBufferImpl();
-
-  bool Initialize(const Attributes& attributes,
-                  bool bind_generates_resources,
-                  CauseForGpuLaunch cause,
-                  size_t command_buffer_size,
-                  size_t start_transfer_buffer_size,
-                  size_t min_transfer_buffer_size,
-                  size_t max_transfer_buffer_size,
-                  size_t mapped_memory_reclaim_limit);
-
-  bool InitializeWithDefaultBufferSizes(const Attributes& attributes,
-                                        bool bind_generates_resources,
-                                        CauseForGpuLaunch cause);
 
   // The following 3 IDs let one uniquely identify this context.
   // Gets the GPU process ID for this context.
@@ -129,12 +124,12 @@ class WebGraphicsContext3DCommandBufferImpl
   // on any failure.
   static CONTENT_EXPORT WebGraphicsContext3DCommandBufferImpl*
       CreateOffscreenContext(
-          GpuChannelHostFactory* factory,
+          GpuChannelHost* host,
           const WebGraphicsContext3D::Attributes& attributes,
           const GURL& active_url);
 
   size_t GetMappedMemoryLimit() {
-    return mapped_memory_limit_;
+    return mem_limits_.mapped_memory_reclaim_limit;
   }
 
   //----------------------------------------------------------------------
@@ -149,10 +144,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual unsigned int insertSyncPoint();
   virtual void waitSyncPoint(unsigned int sync_point);
-  virtual void signalSyncPoint(unsigned sync_point,
-                               WebGraphicsSyncPointCallback* callback);
-  virtual void signalQuery(unsigned query,
-                           WebGraphicsSyncPointCallback* callback);
 
   virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
 
@@ -475,19 +466,31 @@ class WebGraphicsContext3DCommandBufferImpl
                         WGC3Dsizei width, WGC3Dsizei height);
 
   // Support for buffer creation and deletion
+  virtual void genBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genTextures(WGC3Dsizei count, WebGLId* ids);
+
+  virtual void deleteBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteTextures(WGC3Dsizei count, WebGLId* ids);
+
   virtual WebGLId createBuffer();
   virtual WebGLId createFramebuffer();
-  virtual WebGLId createProgram();
   virtual WebGLId createRenderbuffer();
-  virtual WebGLId createShader(WGC3Denum);
   virtual WebGLId createTexture();
 
   virtual void deleteBuffer(WebGLId);
   virtual void deleteFramebuffer(WebGLId);
-  virtual void deleteProgram(WebGLId);
   virtual void deleteRenderbuffer(WebGLId);
-  virtual void deleteShader(WebGLId);
   virtual void deleteTexture(WebGLId);
+
+  virtual WebGLId createProgram();
+  virtual WebGLId createShader(WGC3Denum);
+
+  virtual void deleteProgram(WebGLId);
+  virtual void deleteShader(WebGLId);
 
   virtual void synthesizeGLError(WGC3Denum);
 
@@ -514,12 +517,6 @@ class WebGraphicsContext3DCommandBufferImpl
                                      const WGC3Denum* attachments);
   virtual void discardBackbufferCHROMIUM();
   virtual void ensureBackbufferCHROMIUM();
-
-  virtual void setMemoryAllocationChangedCallbackCHROMIUM(
-      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
-
-  virtual void sendManagedMemoryStatsCHROMIUM(
-      const WebGraphicsManagedMemoryStats* stats);
 
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
@@ -640,6 +637,15 @@ class WebGraphicsContext3DCommandBufferImpl
       WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount);
   virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor);
 
+  // GL_CHROMIUM_map_image
+  virtual WGC3Duint createImageCHROMIUM(
+      WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat);
+  virtual void destroyImageCHROMIUM(WGC3Duint image_id);
+  virtual void getImageParameterivCHROMIUM(
+      WGC3Duint image_id, WGC3Denum pname, WGC3Dint* params);
+  virtual void* mapImageCHROMIUM(WGC3Duint image_id, WGC3Denum access);
+  virtual void unmapImageCHROMIUM(WGC3Duint image_id);
+
   virtual GrGLInterface* createGrGLInterface();
 
  private:
@@ -704,19 +710,7 @@ class WebGraphicsContext3DCommandBufferImpl
   // main thread.
   bool ShouldUseSwapClient();
 
-  // MemoryAllocationChanged callback.
-  void OnMemoryAllocationChanged(
-      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback,
-      const GpuMemoryAllocationForRenderer& allocation);
-
-  // Convert the gpu cutoff enum to the WebKit enum.
-  static WebGraphicsMemoryAllocation::PriorityCutoff WebkitPriorityCutoff(
-      GpuMemoryAllocationForRenderer::PriorityCutoff priorityCutoff);
-
   bool initialize_failed_;
-
-  // The channel factory to talk to the GPU process
-  GpuChannelHostFactory* factory_;
 
   bool visible_;
   bool free_command_buffer_when_invisible_;
@@ -757,11 +751,7 @@ class WebGraphicsContext3DCommandBufferImpl
   int frame_number_;
   bool bind_generates_resources_;
   bool use_echo_for_swap_ack_;
-  size_t command_buffer_size_;
-  size_t start_transfer_buffer_size_;
-  size_t min_transfer_buffer_size_;
-  size_t max_transfer_buffer_size_;
-  size_t mapped_memory_limit_;
+  SharedMemoryLimits mem_limits_;
 
   uint32_t flush_id_;
 };

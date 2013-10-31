@@ -173,6 +173,8 @@
             'browser/devtools/adb_client_socket.h',
             'browser/devtools/adb_web_socket.cc',
             'browser/devtools/adb_web_socket.h',
+            'browser/devtools/android_device.cc',
+            'browser/devtools/android_device.h',
             'browser/devtools/browser_list_tabcontents_provider.cc',
             'browser/devtools/browser_list_tabcontents_provider.h',
             'browser/devtools/devtools_adb_bridge.cc',
@@ -185,11 +187,15 @@
             'browser/devtools/devtools_file_system_indexer.h',
             'browser/devtools/devtools_protocol.cc',
             'browser/devtools/devtools_protocol.h',
+            'browser/devtools/devtools_target_impl.cc',
+            'browser/devtools/devtools_target_impl.h',
             'browser/devtools/devtools_toggle_action.h',
             'browser/devtools/devtools_window.cc',
             'browser/devtools/devtools_window.h',
             'browser/devtools/port_forwarding_controller.cc',
             'browser/devtools/port_forwarding_controller.h',
+            'browser/devtools/refcounted_adb_thread.cc',
+            'browser/devtools/refcounted_adb_thread.h',
             'browser/devtools/remote_debugging_server.cc',
             'browser/devtools/remote_debugging_server.h',
           ],
@@ -207,6 +213,7 @@
                 'browser/devtools/adb/android_rsa.cc',
                 'browser/devtools/browser_list_tabcontents_provider.cc',
                 'browser/devtools/devtools_file_system_indexer.cc',
+                'browser/devtools/devtools_target_impl.cc',
                 'browser/devtools/devtools_window.cc',
                 'browser/devtools/remote_debugging_server.cc',
               ],
@@ -353,22 +360,6 @@
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
-        },
-        {
-          'target_name': 'ipclist',
-          'type': 'executable',
-          'variables': { 'enable_wexit_time_destructors': 1, },
-          'dependencies': [
-            'test_support_common',
-            '../skia/skia.gyp:skia',
-            '../sync/sync.gyp:sync',
-          ],
-          'include_dirs': [
-             '..',
-          ],
-          'sources': [
-            'tools/ipclist/ipclist.cc',
-          ],
         },
       ],
     }],  # OS!="ios"
@@ -827,7 +818,7 @@
             '../content/content_shell_and_tests.gyp:content_shell',
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
-            '../ui/ui.gyp:ui_unittests',
+            '../ui/ui_unittests.gyp:ui_unittests',
           ],
           'conditions': [
             ['use_aura==1 or target_arch=="x64"', {

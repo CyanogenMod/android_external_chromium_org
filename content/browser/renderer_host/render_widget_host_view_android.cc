@@ -152,6 +152,9 @@ RenderWidgetHostViewAndroid::~RenderWidgetHostViewAndroid() {
 
   if (texture_layer_.get())
     texture_layer_->ClearClient();
+
+  if (resource_collection_.get())
+    resource_collection_->SetClient(NULL);
 }
 
 
@@ -681,14 +684,17 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
 
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
-    resource_collection_ = NULL;
+    if (resource_collection_.get()) {
+      resource_collection_->SetClient(NULL);
+      resource_collection_ = NULL;
+    }
     DestroyDelegatedContent();
   }
 
   if (!has_content) {
     DestroyDelegatedContent();
   } else {
-    if (!resource_collection_) {
+    if (!resource_collection_.get()) {
       resource_collection_ = new cc::DelegatedFrameResourceCollection;
       resource_collection_->SetClient(this);
     }
@@ -1302,10 +1308,10 @@ void RenderWidgetHostViewAndroid::PrepareTextureCopyOutputResult(
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    dst_size_in_pixel.width(), dst_size_in_pixel.height());
+                    dst_size_in_pixel.width(), dst_size_in_pixel.height(),
+                    0, kOpaque_SkAlphaType);
   if (!bitmap->allocPixels())
     return;
-  bitmap->setIsOpaque(true);
 
   ImageTransportFactoryAndroid* factory =
       ImageTransportFactoryAndroid::GetInstance();

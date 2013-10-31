@@ -12,7 +12,8 @@ SearchIPCRouter::SearchIPCRouter(content::WebContents* web_contents,
                                  Delegate* delegate, scoped_ptr<Policy> policy)
     : WebContentsObserver(web_contents),
       delegate_(delegate),
-      policy_(policy.Pass()) {
+      policy_(policy.Pass()),
+      is_active_tab_(false) {
   DCHECK(web_contents);
   DCHECK(delegate);
   DCHECK(policy_.get());
@@ -36,9 +37,10 @@ void SearchIPCRouter::SetDisplayInstantResults() {
   if (!policy_->ShouldSendSetDisplayInstantResults())
     return;
 
+  bool is_search_results_page = !chrome::GetSearchTerms(web_contents()).empty();
   Send(new ChromeViewMsg_SearchBoxSetDisplayInstantResults(
        routing_id(),
-       chrome::ShouldPrefetchSearchResultsOnSRP()));
+       is_search_results_page && chrome::ShouldPrefetchSearchResultsOnSRP()));
 }
 
 void SearchIPCRouter::SendThemeBackgroundInfo(
@@ -74,6 +76,14 @@ void SearchIPCRouter::Submit(const string16& text) {
   Send(new ChromeViewMsg_SearchBoxSubmit(routing_id(), text));
 }
 
+void SearchIPCRouter::OnTabActivated() {
+  is_active_tab_ = true;
+}
+
+void SearchIPCRouter::OnTabDeactivated() {
+  is_active_tab_ = false;
+}
+
 bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(SearchIPCRouter, message)
@@ -82,6 +92,8 @@ bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SetVoiceSearchSupported,
                         OnVoiceSearchSupportDetermined)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_FocusOmnibox, OnFocusOmnibox);
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxNavigate,
+                        OnSearchBoxNavigate);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem,
                         OnDeleteMostVisitedItem);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxUndoMostVisitedDeletion,
@@ -89,6 +101,8 @@ bool SearchIPCRouter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_SearchBoxUndoAllMostVisitedDeletions,
                         OnUndoAllMostVisitedDeletions);
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_LogEvent, OnLogEvent);
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PasteAndOpenDropdown,
+                        OnPasteAndOpenDropDown);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -121,10 +135,25 @@ void SearchIPCRouter::OnFocusOmnibox(int page_id,
     return;
 
   delegate_->OnInstantSupportDetermined(true);
-  if (!policy_->ShouldProcessFocusOmnibox())
+  if (!policy_->ShouldProcessFocusOmnibox(is_active_tab_))
     return;
 
   delegate_->FocusOmnibox(state);
+}
+
+void SearchIPCRouter::OnSearchBoxNavigate(
+    int page_id,
+    const GURL& url,
+    WindowOpenDisposition disposition,
+    bool is_most_visited_item_url) const {
+  if (!web_contents()->IsActiveEntry(page_id))
+    return;
+
+  delegate_->OnInstantSupportDetermined(true);
+  if (!policy_->ShouldProcessNavigateToURL(is_active_tab_))
+    return;
+
+  delegate_->NavigateToURL(url, disposition, is_most_visited_item_url);
 }
 
 void SearchIPCRouter::OnDeleteMostVisitedItem(int page_id,
@@ -171,6 +200,18 @@ void SearchIPCRouter::OnLogEvent(int page_id, NTPLoggingEventType event) const {
     return;
 
   delegate_->OnLogEvent(event);
+}
+
+void SearchIPCRouter::OnPasteAndOpenDropDown(int page_id,
+                                             const string16& text) const {
+  if (!web_contents()->IsActiveEntry(page_id))
+    return;
+
+  delegate_->OnInstantSupportDetermined(true);
+  if (!policy_->ShouldProcessPasteIntoOmnibox(is_active_tab_))
+    return;
+
+  delegate_->PasteIntoOmnibox(text);
 }
 
 void SearchIPCRouter::set_delegate(Delegate* delegate) {

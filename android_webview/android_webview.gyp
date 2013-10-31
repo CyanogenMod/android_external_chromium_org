@@ -5,8 +5,12 @@
   'variables': {
     'chromium_code': 1,
   },
-  'includes': [
-    'android_webview_tests.gypi',
+  'conditions': [
+    ['android_webview_build==0', {
+      'includes': [
+        'android_webview_tests.gypi',
+      ],
+    }],
   ],
   'targets': [
     {
@@ -17,6 +21,11 @@
         'android_webview_common',
       ],
       'conditions': [
+        # Avoid clashes between the versions of this library built with
+        # android_webview_build==1 by using a different name prefix.
+        [ 'android_webview_build==0', {
+          'product_prefix': 'libstandalone',
+        }],
         # The general approach is to allow the executable target to choose
         # the allocator, but as in the WebView case we are building a library
         # only, put the dependency on the allocator here
@@ -88,11 +97,11 @@
         '../components/components.gyp:visitedlink_renderer',
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
-        '../skia/skia.gyp:skia',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
+        '../skia/skia.gyp:skia',
         '../ui/gl/gl.gyp:gl',
-        '../ui/ui.gyp:shell_dialogs',
+        '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
         'android_webview_pak',
       ],

@@ -230,9 +230,9 @@ void OmniboxAPI::Observe(int type,
       if (url_service_) {
         url_service_->Load();
         if (url_service_->loaded()) {
-          url_service_->RegisterExtensionKeyword(extension->id(),
-                                                 extension->name(),
-                                                 keyword);
+          url_service_->RegisterOmniboxKeyword(extension->id(),
+                                               extension->name(),
+                                               keyword);
         } else {
           pending_extensions_.insert(extension);
         }
@@ -244,7 +244,7 @@ void OmniboxAPI::Observe(int type,
     if (!OmniboxInfo::GetKeyword(extension).empty()) {
       if (url_service_) {
         if (url_service_->loaded())
-          url_service_->UnregisterExtensionKeyword(extension->id());
+          url_service_->UnregisterOmniboxKeyword(extension->id());
         else
           pending_extensions_.erase(extension);
       }
@@ -269,9 +269,9 @@ void OmniboxAPI::OnTemplateURLsLoaded() {
   template_url_sub_.reset();
   for (PendingExtensions::const_iterator i(pending_extensions_.begin());
        i != pending_extensions_.end(); ++i) {
-    url_service_->RegisterExtensionKeyword((*i)->id(),
-                                           (*i)->name(),
-                                           OmniboxInfo::GetKeyword(*i));
+    url_service_->RegisterOmniboxKeyword((*i)->id(),
+                                         (*i)->name(),
+                                         OmniboxInfo::GetKeyword(*i));
   }
   pending_extensions_.clear();
 }
@@ -289,7 +289,7 @@ bool OmniboxSendSuggestionsFunction::RunImpl() {
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_EXTENSION_OMNIBOX_SUGGESTIONS_READY,
-      content::Source<Profile>(profile_->GetOriginalProfile()),
+      content::Source<Profile>(GetProfile()->GetOriginalProfile()),
       content::Details<SendSuggestions::Params>(params.get()));
 
   return true;
@@ -300,12 +300,11 @@ bool OmniboxSetDefaultSuggestionFunction::RunImpl() {
       SetDefaultSuggestion::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  if (SetOmniboxDefaultSuggestion(profile(),
-                                  extension_id(),
-                                  params->suggestion)) {
+  if (SetOmniboxDefaultSuggestion(
+          GetProfile(), extension_id(), params->suggestion)) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
-        content::Source<Profile>(profile_->GetOriginalProfile()),
+        content::Source<Profile>(GetProfile()->GetOriginalProfile()),
         content::NotificationService::NoDetails());
   }
 
@@ -371,8 +370,7 @@ void ApplyDefaultSuggestionForExtensionKeyword(
     const TemplateURL* keyword,
     const string16& remaining_input,
     AutocompleteMatch* match) {
-  DCHECK(keyword->IsExtensionKeyword());
-
+  DCHECK(keyword->GetType() == TemplateURL::OMNIBOX_API_EXTENSION);
 
   scoped_ptr<omnibox::SuggestResult> suggestion(
       GetOmniboxDefaultSuggestion(profile, keyword->GetExtensionId()));

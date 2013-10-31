@@ -56,8 +56,8 @@ TEST(QuicProtocolTest, QuicVersionToQuicTag) {
 #endif
 
   // Explicitly test a specific version.
-  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '0'),
-            QuicVersionToQuicTag(QUIC_VERSION_10));
+  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '1'),
+            QuicVersionToQuicTag(QUIC_VERSION_11));
 
   // Loop over all supported versions and make sure that we never hit the
   // default case (i.e. all supported versions should be successfully converted
@@ -95,8 +95,8 @@ TEST(QuicProtocolTest, QuicTagToQuicVersion) {
 #endif
 
   // Explicitly test specific versions.
-  EXPECT_EQ(QUIC_VERSION_10,
-            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '0')));
+  EXPECT_EQ(QUIC_VERSION_11,
+            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '1')));
 
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
     QuicVersion version = kSupportedQuicVersions[i];
@@ -132,13 +132,19 @@ TEST(QuicProtocolTest, QuicVersionToString) {
             QuicVersionToString(QUIC_VERSION_UNSUPPORTED));
 
   QuicVersion single_version[] = {QUIC_VERSION_10};
-  EXPECT_EQ("QUIC_VERSION_10,",
-            QuicVersionArrayToString(single_version,
-                                     arraysize(single_version)));
-  QuicVersion multiple_versions[] = {QUIC_VERSION_10, QUIC_VERSION_9};
-  EXPECT_EQ("QUIC_VERSION_10,QUIC_VERSION_9,",
-            QuicVersionArrayToString(multiple_versions,
-                                     arraysize(multiple_versions)));
+  QuicVersionVector versions_vector;
+  for (size_t i = 0; i < arraysize(single_version); ++i) {
+    versions_vector.push_back(single_version[i]);
+  }
+  EXPECT_EQ("QUIC_VERSION_10", QuicVersionVectorToString(versions_vector));
+
+  QuicVersion multiple_versions[] = {QUIC_VERSION_11, QUIC_VERSION_10};
+  versions_vector.clear();
+  for (size_t i = 0; i < arraysize(multiple_versions); ++i) {
+    versions_vector.push_back(multiple_versions[i]);
+  }
+  EXPECT_EQ("QUIC_VERSION_11,QUIC_VERSION_10",
+            QuicVersionVectorToString(versions_vector));
 
   // Make sure that all supported versions are present in QuicVersionToString.
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {

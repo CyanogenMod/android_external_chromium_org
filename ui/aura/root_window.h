@@ -66,6 +66,9 @@ class AURA_EXPORT RootWindow : public Window,
 
     gfx::Rect initial_bounds;
 
+    // If true, should try avoiding the use of a GPU for this window.
+    bool use_software_renderer;
+
     // A host to use in place of the default one that RootWindow will create.
     // NULL by default.
     RootWindowHost* host;
@@ -97,7 +100,7 @@ class AURA_EXPORT RootWindow : public Window,
 
   // Repost event for re-processing. Used when exiting context menus.
   // We only support the ET_MOUSE_PRESSED and ET_GESTURE_TAP_DOWN event
-  // types.
+  // types (although the latter is currently a no-op).
   void RepostEvent(const ui::LocatedEvent& event);
 
   RootWindowHostDelegate* AsRootWindowHostDelegate();
@@ -238,8 +241,8 @@ class AURA_EXPORT RootWindow : public Window,
   gfx::Transform GetRootTransform() const;
 
   // Overridden from Window:
-  virtual RootWindow* GetRootWindow() OVERRIDE;
-  virtual const RootWindow* GetRootWindow() const OVERRIDE;
+  virtual Window* GetRootWindow() OVERRIDE;
+  virtual const Window* GetRootWindow() const OVERRIDE;
   virtual void SetTransform(const gfx::Transform& transform) OVERRIDE;
   virtual bool CanFocus() const OVERRIDE;
   virtual bool CanReceiveEvents() const OVERRIDE;
@@ -281,7 +284,7 @@ class AURA_EXPORT RootWindow : public Window,
 
   // Called when a Window is attached or detached from the RootWindow.
   void OnWindowAddedToRootWindow(Window* window);
-  void OnWindowRemovedFromRootWindow(Window* window, RootWindow* new_root);
+  void OnWindowRemovedFromRootWindow(Window* window, Window* new_root);
 
   // Called when a window becomes invisible, either by being removed
   // from root window hierarchy, via SetVisible(false) or being destroyed.
@@ -304,6 +307,7 @@ class AURA_EXPORT RootWindow : public Window,
 
   // Overridden from aura::client::CaptureDelegate:
   virtual void UpdateCapture(Window* old_capture, Window* new_capture) OVERRIDE;
+  virtual void OnOtherRootGotCapture() OVERRIDE;
   virtual void SetNativeCapture() OVERRIDE;
   virtual void ReleaseNativeCapture() OVERRIDE;
 
@@ -312,7 +316,7 @@ class AURA_EXPORT RootWindow : public Window,
 
   // Overridden from ui::GestureEventHelper.
   virtual bool CanDispatchToConsumer(ui::GestureConsumer* consumer) OVERRIDE;
-  virtual void DispatchLongPressGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void DispatchPostponedGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void DispatchCancelTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
   // Overridden from ui::LayerAnimationObserver:
@@ -349,9 +353,6 @@ class AURA_EXPORT RootWindow : public Window,
   void DispatchMouseEventRepost(ui::MouseEvent* event);
   bool DispatchMouseEventToTarget(ui::MouseEvent* event, Window* target);
   bool DispatchTouchEventImpl(ui::TouchEvent* event);
-  // Reposts the gesture event to the Window which is a target for the event
-  // passed in.
-  bool DispatchGestureEventRepost(ui::GestureEvent* event);
   void DispatchHeldEvents();
 
   // Posts a task to send synthesized mouse move event if there

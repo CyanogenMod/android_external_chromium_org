@@ -29,13 +29,17 @@ class SoftwareSurfaceFactoryOzone : public SurfaceFactoryOzone {
   virtual gfx::AcceleratedWidget RealizeAcceleratedWidget(
       gfx::AcceleratedWidget w) OVERRIDE;
 
-  virtual bool LoadEGLGLES2Bindings() OVERRIDE;
+  virtual bool LoadEGLGLES2Bindings(
+      AddGLLibraryCallback add_gl_library,
+      SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE;
 
   virtual bool AttemptToResizeAcceleratedWidget(
       gfx::AcceleratedWidget w,
       const gfx::Rect& bounds) OVERRIDE;
 
   virtual bool SchedulePageFlip(gfx::AcceleratedWidget w) OVERRIDE;
+
+  virtual SkCanvas* GetCanvasForWidget(gfx::AcceleratedWidget w) OVERRIDE;
 
   virtual gfx::VSyncProvider* GetVSyncProvider(
       gfx::AcceleratedWidget w) OVERRIDE;

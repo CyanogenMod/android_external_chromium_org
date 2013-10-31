@@ -37,14 +37,14 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
   virtual void SetFocusedTextInputClient(TextInputClient* client) OVERRIDE;
-  virtual void SetStickyFocusedTextInputClient(
-      TextInputClient* client) OVERRIDE;
   virtual void DetachTextInputClient(TextInputClient* client) OVERRIDE;
   virtual TextInputClient* GetTextInputClient() const OVERRIDE;
 
   // If a derived class overrides this method, it should call parent's
   // implementation.
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
+  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
+  virtual void OnInputLocaleChanged() OVERRIDE;
 
   virtual TextInputType GetTextInputType() const OVERRIDE;
   virtual TextInputMode GetTextInputMode() const OVERRIDE;
@@ -94,7 +94,6 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
 
   internal::InputMethodDelegate* delegate_;
   TextInputClient* text_input_client_;
-  bool is_sticky_text_input_client_;
 
   ObserverList<InputMethodObserver> observer_list_;
 

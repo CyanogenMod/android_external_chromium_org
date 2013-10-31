@@ -15,7 +15,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/apps/app_launcher_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/first_run/first_run.h"
@@ -28,6 +27,7 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
@@ -477,6 +477,17 @@ void NTPResourceCache::CreateNewTabHTML() {
   load_time_data.SetBoolean("showApps", should_show_apps_page_);
   load_time_data.SetBoolean("showWebStoreIcon",
                             !prefs->GetBoolean(prefs::kHideWebStoreIcon));
+
+  bool streamlined_hosted_apps = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableStreamlinedHostedApps);
+  load_time_data.SetBoolean("enableStreamlinedHostedApps",
+                            streamlined_hosted_apps);
+  // Use a different string for launching as a regular tab for streamlined
+  // hosted apps.
+  if (streamlined_hosted_apps) {
+    load_time_data.SetString("applaunchtypetab",
+        l10n_util::GetStringUTF16(IDS_APP_CONTEXT_MENU_OPEN_TAB));
+  }
 
 #if defined(OS_MACOSX)
   load_time_data.SetBoolean(

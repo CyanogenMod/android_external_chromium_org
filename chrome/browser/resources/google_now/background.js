@@ -86,12 +86,6 @@ var ON_PUSH_MESSAGE_START_TASK_NAME = 'on-push-message';
 var LOCATION_WATCH_NAME = 'location-watch';
 
 /**
- * Chrome push messaging subchannel for messages causing an immediate poll.
- */
-var SUBCHANNEL_ID_POLL_NOW = 0;
-
-/**
-/**
  * Notification as it's sent by the server.
  *
  * @typedef {{
@@ -108,12 +102,15 @@ var UnmergedNotification;
 
 /**
  * Notification group as the client stores it. |cardsTimestamp| and |rank| are
- * defined if |cards| is non-empty.
+ * defined if |cards| is non-empty. |nextPollTime| is undefined if the server
+ * (1) never sent 'nextPollSeconds' for the group or
+ * (2) didn't send 'nextPollSeconds' with the last group update containing a
+ *     cards update and all the times after that.
  *
  * @typedef {{
  *   cards: Array.<UnmergedNotification>,
  *   cardsTimestamp: number=,
- *   nextPollTime: number,
+ *   nextPollTime: number=,
  *   rank: number=
  * }}
  */
@@ -153,12 +150,15 @@ wrapper.instrumentChromeApiFunction('location.onLocationUpdate.addListener', 0);
 wrapper.instrumentChromeApiFunction('metricsPrivate.getVariationParams', 1);
 wrapper.instrumentChromeApiFunction('notifications.clear', 1);
 wrapper.instrumentChromeApiFunction('notifications.create', 2);
+wrapper.instrumentChromeApiFunction('notifications.getPermissionLevel', 0);
 wrapper.instrumentChromeApiFunction('notifications.update', 2);
 wrapper.instrumentChromeApiFunction('notifications.getAll', 0);
 wrapper.instrumentChromeApiFunction(
     'notifications.onButtonClicked.addListener', 0);
 wrapper.instrumentChromeApiFunction('notifications.onClicked.addListener', 0);
 wrapper.instrumentChromeApiFunction('notifications.onClosed.addListener', 0);
+wrapper.instrumentChromeApiFunction(
+    'notifications.onPermissionLevelChanged.addListener', 0);
 wrapper.instrumentChromeApiFunction(
     'preferencesPrivate.googleGeolocationAccessEnabled.get',
     1);
@@ -229,7 +229,7 @@ function recordEvent(event) {
  *     parameter.
  */
 function setAuthorization(request, callbackBoolean) {
-  authenticationManager.isSignedIn(function(token) {
+  authenticationManager.getAuthToken(function(token) {
     if (!token) {
       callbackBoolean(false);
       return;
@@ -273,8 +273,6 @@ function showNotificationCards(cards) {
         instrumented.notifications.getAll(function(notifications) {
           console.log('showNotificationCards-getAll ' +
               JSON.stringify(notifications));
-          // TODO(vadimt): Figure out what to do when notifications are
-          // disabled for our extension.
           notifications = notifications || {};
 
           // Build a set of non-expired recent dismissals. It will be used for
@@ -431,10 +429,13 @@ function scheduleNextPoll(groups) {
 
   for (var groupName in groups) {
     var group = groups[groupName];
-    nextPollTime = nextPollTime == null ?
-        group.nextPollTime : Math.min(group.nextPollTime, nextPollTime);
+    if (group.nextPollTime !== undefined) {
+      nextPollTime = nextPollTime == null ?
+          group.nextPollTime : Math.min(group.nextPollTime, nextPollTime);
+    }
   }
 
+  // At least one of the groups must have nextPollTime.
   verify(nextPollTime != null, 'scheduleNextPoll: nextPollTime is null');
 
   var nextPollDelaySeconds = Math.max(
@@ -493,7 +494,7 @@ function parseAndShowNotificationCards(response) {
       var storageGroup = items.notificationGroups[groupName] || {
         cards: [],
         cardsTimestamp: undefined,
-        nextPollTime: now,
+        nextPollTime: undefined,
         rank: undefined
       };
 
@@ -501,11 +502,20 @@ function parseAndShowNotificationCards(response) {
         receivedGroup.cards = receivedGroup.cards || [];
 
       if (receivedGroup.cards) {
+        // If the group contains a cards update, all its fields will get new
+        // values.
         storageGroup.cards = receivedGroup.cards;
         storageGroup.cardsTimestamp = now;
         storageGroup.rank = receivedGroup.rank;
+        storageGroup.nextPollTime = undefined;
+        // The code below assigns nextPollTime a defined value if
+        // nextPollSeconds is specified in the received group.
+        // If the group's cards are not updated, and nextPollSeconds is
+        // unspecified, this method doesn't change group's nextPollTime.
       }
 
+      // 'nextPollSeconds' may be sent even for groups that don't contain cards
+      // updates.
       if (receivedGroup.nextPollSeconds !== undefined) {
         storageGroup.nextPollTime =
             now + receivedGroup.nextPollSeconds * MS_IN_SECOND;
@@ -575,7 +585,7 @@ function requestNotificationCards(position) {
 
       for (var groupName in items.notificationGroups) {
         var group = items.notificationGroups[groupName];
-        if (group.nextPollTime <= now)
+        if (group.nextPollTime !== undefined && group.nextPollTime <= now)
           groupsToRequest.push(groupName);
       }
     }
@@ -920,14 +930,19 @@ function setBackgroundEnable(backgroundEnable) {
  *     the geolocation option is enabled.
  * @param {boolean} enableBackground true if
  *     the background permission should be requested.
+ * @param {boolean} notificationEnabled true if
+ *     Google Now for Chrome is allowed to show notifications.
  */
 function updateRunningState(
     signedIn,
     geolocationEnabled,
-    enableBackground) {
+    enableBackground,
+    notificationEnabled) {
   console.log(
       'State Update signedIn=' + signedIn + ' ' +
-      'geolocationEnabled=' + geolocationEnabled);
+      'geolocationEnabled=' + geolocationEnabled + ' ' +
+      'enableBackground=' + enableBackground + ' ' +
+      'notificationEnabled=' + notificationEnabled);
 
   // TODO(vadimt): Remove this line once state machine design is finalized.
   geolocationEnabled = true;
@@ -935,7 +950,7 @@ function updateRunningState(
   var shouldPollCards = false;
   var shouldSetBackground = false;
 
-  if (signedIn) {
+  if (signedIn && notificationEnabled) {
     if (geolocationEnabled) {
       if (enableBackground)
         shouldSetBackground = true;
@@ -960,14 +975,15 @@ function updateRunningState(
  */
 function onStateChange() {
   tasks.add(STATE_CHANGED_TASK_NAME, function() {
-    authenticationManager.isSignedIn(function(token) {
-      var signedIn = !!token;
+    authenticationManager.isSignedIn(function(signedIn) {
       instrumented.metricsPrivate.getVariationParams(
           'GoogleNow',
           function(response) {
             var enableBackground =
                 (!response || (response.enableBackground != 'false'));
-            instrumented.
+            instrumented.notifications.getPermissionLevel(function(level) {
+              var notificationEnabled = (level == 'granted');
+              instrumented.
                 preferencesPrivate.
                 googleGeolocationAccessEnabled.
                 get({}, function(prefValue) {
@@ -975,8 +991,10 @@ function onStateChange() {
                   updateRunningState(
                       signedIn,
                       geolocationEnabled,
-                      enableBackground);
+                      enableBackground,
+                      notificationEnabled);
                 });
+            });
           });
     });
   });
@@ -1044,6 +1062,12 @@ instrumented.notifications.onButtonClicked.addListener(
 
 instrumented.notifications.onClosed.addListener(onNotificationClosed);
 
+instrumented.notifications.onPermissionLevelChanged.addListener(
+    function(permissionLevel) {
+      console.log('Notifications permissionLevel Change');
+      onStateChange();
+    });
+
 instrumented.location.onLocationUpdate.addListener(function(position) {
   recordEvent(GoogleNowEvent.LOCATION_UPDATE);
   updateNotificationsCards(position);
@@ -1055,15 +1079,26 @@ instrumented.pushMessaging.onMessage.addListener(function(message) {
   // So, we need to poll the server only when the payload is non-empty and has
   // changed.
   console.log('pushMessaging.onMessage ' + JSON.stringify(message));
-  if (message.subchannelId == SUBCHANNEL_ID_POLL_NOW && message.payload) {
+  if (message.payload.indexOf('REQUEST_CARDS') == 0) {
     tasks.add(ON_PUSH_MESSAGE_START_TASK_NAME, function() {
-      instrumented.storage.local.get('lastPollNowPayload', function(items) {
-        if (items && items.lastPollNowPayload != message.payload) {
-          chrome.storage.local.set({lastPollNowPayload: message.payload});
+      instrumented.storage.local.get('lastPollNowPayloads', function(items) {
+        // If storage.get fails, it's safer to do nothing, preventing polling
+        // the server when the payload really didn't change.
+        if (!items)
+          return;
+
+        // If this is the first time we get lastPollNowPayloads, initialize it.
+        items.lastPollNowPayloads = items.lastPollNowPayloads || {};
+
+        if (items.lastPollNowPayloads[message.subchannelId] !=
+            message.payload) {
+          items.lastPollNowPayloads[message.subchannelId] = message.payload;
+          chrome.storage.local.set(
+              {lastPollNowPayloads: items.lastPollNowPayloads});
 
           updateCardsAttempts.isRunning(function(running) {
             if (running)
-              requestNotificationGroups([]);
+              requestNotificationGroups(['PUSH' + message.subchannelId]);
           });
         }
       });

@@ -122,8 +122,7 @@ class TabControllerTest : public CocoaTest {
         [[controller mediaIndicatorView] mediaState];
     if ([controller mini]) {
       EXPECT_EQ(1, [controller iconCapacity]);
-      if (indicatorState == TAB_MEDIA_STATE_CAPTURING ||
-          indicatorState == TAB_MEDIA_STATE_RECORDING) {
+      if (indicatorState != TAB_MEDIA_STATE_NONE) {
         EXPECT_FALSE([controller shouldShowIcon]);
         EXPECT_TRUE([controller shouldShowMediaIndicator]);
       } else {
@@ -140,8 +139,7 @@ class TabControllerTest : public CocoaTest {
           EXPECT_FALSE([controller shouldShowMediaIndicator]);
           break;
         case 2:
-          if (indicatorState == TAB_MEDIA_STATE_CAPTURING ||
-              indicatorState == TAB_MEDIA_STATE_RECORDING) {
+          if (indicatorState != TAB_MEDIA_STATE_NONE) {
             EXPECT_FALSE([controller shouldShowIcon]);
             EXPECT_TRUE([controller shouldShowMediaIndicator]);
           } else {
@@ -167,8 +165,7 @@ class TabControllerTest : public CocoaTest {
           break;
         case 1:
           EXPECT_FALSE([controller shouldShowCloseButton]);
-          if (indicatorState == TAB_MEDIA_STATE_CAPTURING ||
-              indicatorState == TAB_MEDIA_STATE_RECORDING) {
+          if (indicatorState != TAB_MEDIA_STATE_NONE) {
             EXPECT_FALSE([controller shouldShowIcon]);
             EXPECT_TRUE([controller shouldShowMediaIndicator]);
           } else {
@@ -278,19 +275,6 @@ TEST_F(TabControllerTest, APISelection) {
   EXPECT_TRUE([controller selected]);
 
   [[controller view] removeFromSuperview];
-}
-
-// Tests that setting the title of a tab sets the tooltip as well.
-TEST_F(TabControllerTest, ToolTip) {
-  NSWindow* window = test_window();
-
-  base::scoped_nsobject<TabController> controller([[TabController alloc] init]);
-  [[window contentView] addSubview:[controller view]];
-
-  EXPECT_TRUE([[controller toolTip] length] == 0);
-  NSString *tooltip_string = @"Some text to use as a tab title";
-  [controller setTitle:tooltip_string];
-  EXPECT_NSEQ(tooltip_string, [controller toolTip]);
 }
 
 // Tests setting the |loading| property via code.
@@ -498,7 +482,8 @@ TEST_F(TabControllerTest, TitleViewLayout) {
 // throbber indicators, titile text, audio indicator, and close button) over all
 // relevant combinations of tab state.  This test overlaps with parts of the
 // other tests above.
-TEST_F(TabControllerTest, LayoutAndVisibilityOfSubviews) {
+// Flaky: https://code.google.com/p/chromium/issues/detail?id=311668
+TEST_F(TabControllerTest, DISABLED_LayoutAndVisibilityOfSubviews) {
   static const TabMediaState kMediaStatesToTest[] = {
     TAB_MEDIA_STATE_NONE, TAB_MEDIA_STATE_CAPTURING,
     TAB_MEDIA_STATE_AUDIO_PLAYING

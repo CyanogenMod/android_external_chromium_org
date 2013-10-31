@@ -4,7 +4,6 @@
 """Finds desktop browsers that can be controlled by telemetry."""
 
 import logging
-from operator import attrgetter
 import os
 import platform
 import subprocess
@@ -41,7 +40,8 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
     self.is_local_build = is_local_build
 
   def __repr__(self):
-    return 'PossibleDesktopBrowser(browser_type=%s)' % self.browser_type
+    return 'PossibleDesktopBrowser(browser_type=%s, executable=%s)' % (
+        self.browser_type, self._local_executable)
 
   def Create(self):
     backend = desktop_browser_backend.DesktopBrowserBackend(
@@ -61,7 +61,6 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
   def UpdateExecutableIfNeeded(self):
     pass
 
-  @property
   def last_modification_time(self):
     if os.path.exists(self._local_executable):
       return os.path.getmtime(self._local_executable)
@@ -70,7 +69,7 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
 def SelectDefaultBrowser(possible_browsers):
   local_builds_by_date = [
       b for b in sorted(possible_browsers,
-                        key=attrgetter('last_modification_time'))
+                        key=lambda b: b.last_modification_time())
       if b.is_local_build]
   if local_builds_by_date:
     return local_builds_by_date[-1]
@@ -97,8 +96,10 @@ def FindAllAvailableBrowsers(finder_options):
   else:
     chrome_root = util.GetChromiumSrcDir()
 
+  chromium_app_names = []
   if sys.platform == 'darwin':
-    chromium_app_name = 'Chromium.app/Contents/MacOS/Chromium'
+    chromium_app_names.append('Chromium.app/Contents/MacOS/Chromium')
+    chromium_app_names.append('Google Chrome.app/Contents/MacOS/Google Chrome')
     content_shell_app_name = 'Content Shell.app/Contents/MacOS/Content Shell'
     mac_dir = 'mac'
     if platform.architecture()[0] == '64bit':
@@ -107,7 +108,7 @@ def FindAllAvailableBrowsers(finder_options):
         chrome_root, 'third_party', 'adobe', 'flash', 'binaries', 'ppapi',
         mac_dir, 'PepperFlashPlayer.plugin')
   elif sys.platform.startswith('linux'):
-    chromium_app_name = 'chrome'
+    chromium_app_names.append('chrome')
     content_shell_app_name = 'content_shell'
     linux_dir = 'linux'
     if platform.architecture()[0] == '64bit':
@@ -116,7 +117,7 @@ def FindAllAvailableBrowsers(finder_options):
         chrome_root, 'third_party', 'adobe', 'flash', 'binaries', 'ppapi',
         linux_dir, 'libpepflashplayer.so')
   elif sys.platform.startswith('win'):
-    chromium_app_name = 'chrome.exe'
+    chromium_app_names.append('chrome.exe')
     content_shell_app_name = 'content_shell.exe'
     win_dir = 'win'
     if platform.architecture()[0] == '64bit':
@@ -156,8 +157,9 @@ def FindAllAvailableBrowsers(finder_options):
 
   # Add local builds
   for build_dir, build_type in util.GetBuildDirectories():
-    AddIfFound(build_type.lower(), build_dir, build_type,
-               chromium_app_name, False)
+    for chromium_app_name in chromium_app_names:
+      AddIfFound(build_type.lower(), build_dir, build_type,
+                 chromium_app_name, False)
     AddIfFound('content-shell-' + build_type.lower(), build_dir, build_type,
                content_shell_app_name, True)
 
@@ -203,11 +205,12 @@ def FindAllAvailableBrowsers(finder_options):
 
     def AddIfFoundWin(browser_name, app_path):
       browser_directory = os.path.join(path, app_path)
-      app = os.path.join(browser_directory, chromium_app_name)
-      if IsExecutable(app):
-        browsers.append(PossibleDesktopBrowser(browser_name, finder_options,
-                                               app, flash_path, False,
-                                               browser_directory))
+      for chromium_app_name in chromium_app_names:
+        app = os.path.join(browser_directory, chromium_app_name)
+        if IsExecutable(app):
+          browsers.append(PossibleDesktopBrowser(browser_name, finder_options,
+                                                 app, flash_path, False,
+                                                 browser_directory))
         return True
       return False
 

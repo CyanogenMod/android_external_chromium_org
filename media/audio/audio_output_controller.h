@@ -91,11 +91,10 @@ class MEDIA_EXPORT AudioOutputController
     // prepare more data and perform synchronization.
     virtual void UpdatePendingBytes(uint32 bytes) = 0;
 
-    // Attempt to completely fill |dest|, return the actual number of frames
-    // that could be read.  |source| may optionally be provided for input data.
-    // If |block| is specified, the Read() will block until data is available
-    // or a timeout is reached.
-    virtual int Read(bool block, const AudioBus* source, AudioBus* dest) = 0;
+    // Attempts to completely fill |dest|, zeroing |dest| if the request can not
+    // be fulfilled (due to timeout).  |source| may optionally be provided for
+    // input data.
+    virtual void Read(const AudioBus* source, AudioBus* dest) = 0;
 
     // Close this synchronous reader.
     virtual void Close() = 0;
@@ -134,6 +133,23 @@ class MEDIA_EXPORT AudioOutputController
 
   // Sets the volume of the audio output stream.
   void SetVolume(double volume);
+
+  // Calls |callback| (on the caller's thread) with the current output
+  // device ID.
+  void GetOutputDeviceId(
+      base::Callback<void(const std::string&)> callback) const;
+
+  // Changes which output device to use. If desired, you can provide a
+  // callback that will be notified (on the thread you called from)
+  // when the function has completed execution.
+  //
+  // Changing the output device causes the controller to go through
+  // the same state transition back to the current state as a call to
+  // OnDeviceChange (unless it is currently diverting, see
+  // Start/StopDiverting below, in which case the state transition
+  // will happen when StopDiverting is called).
+  void SwitchOutputDevice(const std::string& output_device_id,
+                          const base::Closure& callback);
 
   // AudioSourceCallback implementation.
   virtual int OnMoreData(AudioBus* dest,
@@ -185,6 +201,8 @@ class MEDIA_EXPORT AudioOutputController
   void DoPause();
   void DoClose();
   void DoSetVolume(double volume);
+  std::string DoGetOutputDeviceId() const;
+  void DoSwitchOutputDevice(const std::string& output_device_id);
   void DoReportError();
   void DoStartDiverting(AudioOutputStream* to_stream);
   void DoStopDiverting();
@@ -210,7 +228,7 @@ class MEDIA_EXPORT AudioOutputController
 
   // Specifies the device id of the output device to open or empty for the
   // default output device.
-  const std::string output_device_id_;
+  std::string output_device_id_;
 
   // Used by the unified IO to open the correct input device.
   const std::string input_device_id_;

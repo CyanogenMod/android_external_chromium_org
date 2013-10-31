@@ -883,6 +883,13 @@ void Tab::GetHitTestMask(gfx::Path* path) const {
 }
 
 bool Tab::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+  // TODO(miu): Rectify inconsistent tooltip behavior.  http://crbug.com/310947
+
+  if (data_.media_state != TAB_MEDIA_STATE_NONE) {
+    *tooltip = chrome::AssembleTabTooltipText(data_.title, data_.media_state);
+    return true;
+  }
+
   if (data_.title.empty())
     return false;
 
@@ -1462,9 +1469,7 @@ void Tab::PaintMediaIndicator(gfx::Canvas* canvas) {
 
 void Tab::PaintTitle(gfx::Canvas* canvas, SkColor title_color) {
   // Paint the Title.
-  const gfx::Rect& title_bounds = GetTitleBounds();
   string16 title = data().title;
-
   if (title.empty()) {
     title = data().loading ?
         l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :
@@ -1473,8 +1478,8 @@ void Tab::PaintTitle(gfx::Canvas* canvas, SkColor title_color) {
     Browser::FormatTitleForDisplay(&title);
   }
 
-  canvas->DrawFadeTruncatingString(title, gfx::Canvas::TruncateFadeTail, 0,
-                                   *font_, title_color, title_bounds);
+  canvas->DrawFadeTruncatingStringRect(title, gfx::Canvas::TruncateFadeTail,
+      gfx::FontList(*font_), title_color, GetTitleBounds());
 }
 
 void Tab::AdvanceLoadingAnimation(TabRendererData::NetworkState old_state,

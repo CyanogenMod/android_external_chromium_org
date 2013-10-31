@@ -172,6 +172,11 @@ public class ContentViewCore
         void super_onConfigurationChanged(Configuration newConfig);
 
         /**
+         * @see View#onScrollChanged(int, int, int, int)
+         */
+        void onScrollChanged(int lPix, int tPix, int oldlPix, int oldtPix);
+
+        /**
          * @see View#awakenScrollBars()
          */
         boolean awakenScrollBars();
@@ -772,6 +777,15 @@ public class ContentViewCore
     }
 
     /**
+     * Set the Container view Internals.
+     * @param internalDispatcher Handles dispatching all hidden or super methods to the
+     *                           containerView.
+     */
+    public void setContainerViewInternals(InternalAccessDelegate internalDispatcher) {
+        mContainerViewInternals = internalDispatcher;
+    }
+
+    /**
      * Initializes the View that will contain all Views created by the ContentViewCore.
      *
      * @param internalDispatcher Handles dispatching all hidden or super methods to the
@@ -1305,6 +1319,9 @@ public class ContentViewCore
                 return true;
             case ContentViewGestureHandler.GESTURE_SHOW_PRESS_CANCEL:
                 nativeShowPressCancel(mNativeContentViewCore, timeMs, x, y);
+                return true;
+            case ContentViewGestureHandler.GESTURE_TAP_DOWN:
+                nativeTapDown(mNativeContentViewCore, timeMs, x, y);
                 return true;
             case ContentViewGestureHandler.GESTURE_DOUBLE_TAP:
                 nativeDoubleTap(mNativeContentViewCore, timeMs, x, y);
@@ -2399,6 +2416,14 @@ public class ContentViewCore
 
         if (needHidePopupZoomer) mPopupZoomer.hide(true);
 
+        if (scrollChanged) {
+            mContainerViewInternals.onScrollChanged(
+                    (int) mRenderCoordinates.fromLocalCssToPix(scrollOffsetX),
+                    (int) mRenderCoordinates.fromLocalCssToPix(scrollOffsetY),
+                    (int) mRenderCoordinates.getScrollXPix(),
+                    (int) mRenderCoordinates.getScrollYPix());
+        }
+
         mRenderCoordinates.updateFrameInfo(
                 scrollOffsetX, scrollOffsetY,
                 contentWidth, contentHeight,
@@ -3014,7 +3039,7 @@ public class ContentViewCore
      * Inform WebKit that Fullscreen mode has been exited by the user.
      */
     public void exitFullscreen() {
-        nativeExitFullscreen(mNativeContentViewCore);
+        if (mNativeContentViewCore != 0) nativeExitFullscreen(mNativeContentViewCore);
     }
 
     /**
@@ -3026,7 +3051,10 @@ public class ContentViewCore
      */
     public void updateTopControlsState(boolean enableHiding, boolean enableShowing,
             boolean animate) {
-        nativeUpdateTopControlsState(mNativeContentViewCore, enableHiding, enableShowing, animate);
+        if (mNativeContentViewCore != 0) {
+            nativeUpdateTopControlsState(
+                    mNativeContentViewCore, enableHiding, enableShowing, animate);
+        }
     }
 
     /**
@@ -3215,6 +3243,9 @@ public class ContentViewCore
             int nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeShowPressCancel(
+            int nativeContentViewCoreImpl, long timeMs, float x, float y);
+
+    private native void nativeTapDown(
             int nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native void nativeDoubleTap(

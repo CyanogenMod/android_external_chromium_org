@@ -14,8 +14,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,skia_skia_gyp)/skia.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,skia_skia_library_gyp)/skia_skia_library_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_public_blink_minimal_gyp)/blink_minimal.stamp \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a \
-	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_ui_gyp)/ui_ui_gyp.a
+	$(call intermediates-dir-for,STATIC_LIBRARIES,ui_gl_gl_gyp)/ui_gl_gl_gyp.a
 
 GYP_GENERATED_OUTPUTS :=
 
@@ -31,7 +30,6 @@ LOCAL_SRC_FILES := \
 	webkit/common/gpu/context_provider_in_process.cc \
 	webkit/common/gpu/gl_bindings_skia_cmd_buffer.cc \
 	webkit/common/gpu/grcontext_for_webgraphicscontext3d.cc \
-	webkit/common/gpu/managed_memory_policy_convert.cc \
 	webkit/common/gpu/test_context_provider_factory.cc \
 	webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.cc \
 	webkit/common/gpu/webgraphicscontext3d_provider_impl.cc
@@ -78,13 +76,13 @@ MY_DEFS_Debug := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -97,8 +95,6 @@ MY_DEFS_Debug := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -132,8 +128,6 @@ LOCAL_C_INCLUDES_Debug := \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -193,13 +187,13 @@ MY_DEFS_Release := \
 	'-DANGLE_DX11' \
 	'-D_FILE_OFFSET_BITS=64' \
 	'-DNO_TCMALLOC' \
-	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
-	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DDISABLE_NACL' \
 	'-DCHROMIUM_BUILD' \
 	'-DUSE_LIBJPEG_TURBO=1' \
 	'-DUSE_PROPRIETARY_CODECS' \
 	'-DENABLE_CONFIGURATION_POLICY' \
+	'-DDISCARDABLE_MEMORY_ALWAYS_SUPPORTED_NATIVELY' \
+	'-DSYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE' \
 	'-DUSE_OPENSSL=1' \
 	'-DENABLE_EGLIMAGE=1' \
 	'-DCLD_VERSION=1' \
@@ -212,8 +206,6 @@ MY_DEFS_Release := \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
 	'-DMESA_EGL_NO_X11_HEADERS' \
-	'-DPOSIX_AVOID_MMAP' \
-	'-DU_USING_ICU_NAMESPACE=0' \
 	'-DANDROID' \
 	'-D__GNU_SOURCE=1' \
 	'-DUSE_STLPORT=1' \
@@ -247,8 +239,6 @@ LOCAL_C_INCLUDES_Release := \
 	$(LOCAL_PATH)/v8/include \
 	$(gyp_shared_intermediate_dir)/ui/gl \
 	$(LOCAL_PATH)/third_party/mesa/src/include \
-	$(PWD)/external/icu4c/common \
-	$(PWD)/external/icu4c/i18n \
 	$(PWD)/frameworks/wilhelm/include \
 	$(PWD)/bionic \
 	$(PWD)/external/stlport/stlport
@@ -310,8 +300,7 @@ LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
 LOCAL_STATIC_LIBRARIES := \
 	skia_skia_library_gyp \
-	ui_gl_gl_gyp \
-	ui_ui_gyp
+	ui_gl_gl_gyp
 
 # Enable grouping to fix circular references
 LOCAL_GROUP_STATIC_LIBRARIES := true

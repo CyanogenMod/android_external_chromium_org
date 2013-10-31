@@ -31,6 +31,9 @@
         'app_list_export.h',
         'app_list_folder_item.cc',
         'app_list_folder_item.h',
+        'app_list_item_list.cc',
+        'app_list_item_list.h',
+        'app_list_item_list_observer.h',
         'app_list_item_model.cc',
         'app_list_item_model.h',
         'app_list_item_model_observer.h',
@@ -75,9 +78,13 @@
         'search_result.h',
         'signin_delegate.cc',
         'signin_delegate.h',
+        'views/apps_container_view.cc',
+        'views/apps_container_view.h',
         'views/app_list_background.cc',
         'views/app_list_background.h',
         'views/app_list_drag_and_drop_host.h',
+        'views/app_list_folder_view.cc',
+        'views/app_list_folder_view.h',
         'views/app_list_item_view.cc',
         'views/app_list_item_view.h',
         'views/app_list_main_view.cc',
@@ -93,6 +100,9 @@
         'views/cached_label.h',
         'views/contents_view.cc',
         'views/contents_view.h',
+        'views/folder_header_view.cc',
+        'views/folder_header_view.h',
+        'views/folder_header_view_delegate.h',
         'views/page_switcher.cc',
         'views/page_switcher.h',
         'views/progress_bar_view.cc',
@@ -158,13 +168,19 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
+        # TODO: Remove this dependency. See comment for views_unittests.
+        '../../chrome/chrome_resources.gyp:packed_resources',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
         '../compositor/compositor.gyp:compositor',
-        '../ui.gyp:run_ui_unittests',
+        '../ui.gyp:ui',
+        '../ui.gyp:ui_resources',
+        '../ui_unittests.gyp:run_ui_unittests',
+        '../ui_unittests.gyp:ui_test_support',
         'app_list',
       ],
       'sources': [
+        'app_list_model_unittest.cc',
         'pagination_model_unittest.cc',
         'test/app_list_test_model.cc',
         'test/app_list_test_model.h',
@@ -197,7 +213,7 @@
         }],
         ['OS=="mac"', {
           'dependencies': [
-            '../ui.gyp:ui_test_support',
+            '../ui_unittests.gyp:ui_test_support',
           ],
           'conditions': [
             ['component=="static_library"', {
@@ -208,6 +224,11 @@
         }, {  # OS!="mac"
           'sources/': [
             ['exclude', 'cocoa/'],
+          ],
+        }],
+        ['use_glib == 1 or OS == "ios"', {
+          'dependencies': [
+            '../base/strings/ui_strings.gyp:ui_unittest_strings',
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.

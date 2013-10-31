@@ -55,7 +55,7 @@ void MoveToDisplayForRestore(wm::WindowState* window_state) {
         Shell::GetInstance()->display_controller();
     const gfx::Display& display =
         display_controller->GetDisplayMatching(restore_bounds);
-    aura::RootWindow* new_root =
+    aura::Window* new_root =
         display_controller->GetRootWindowForDisplayId(display.id());
     if (new_root != window_state->window()->GetRootWindow()) {
       aura::Window* new_container =
@@ -185,6 +185,14 @@ void WorkspaceLayoutManager::OnWindowShowTypeChanged(
       !window_state->always_restores_to_restore_bounds()) {
     restore = window_state->GetRestoreBoundsInScreen();
     window_state->SaveCurrentBoundsForRestore();
+  }
+  // Notify observers that fullscreen state may be changing.
+  if (old_state != new_state &&
+      (new_state == ui::SHOW_STATE_FULLSCREEN ||
+       old_state == ui::SHOW_STATE_FULLSCREEN)) {
+    ash::Shell::GetInstance()->NotifyFullscreenStateChange(
+        new_state == ui::SHOW_STATE_FULLSCREEN,
+        window_state->window()->GetRootWindow());
   }
 
   UpdateBoundsFromShowState(window_state, old_state);
@@ -341,7 +349,7 @@ void WorkspaceLayoutManager::UpdateBoundsFromShowState(
       MoveToDisplayForRestore(window_state);
       gfx::Rect new_bounds = ScreenAsh::GetDisplayBoundsInParent(
           window->parent()->parent());
-      if (window->GetProperty(kAnimateToFullscreenKey) &&
+      if (window_state->animate_to_fullscreen() &&
           last_show_state != ui::SHOW_STATE_MINIMIZED) {
         CrossFadeToBounds(window, new_bounds);
       } else {

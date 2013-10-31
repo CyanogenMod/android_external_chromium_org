@@ -115,7 +115,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.linu
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_dom.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_html.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform.target.linux-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform_geometry.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_prerequisites.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_remaining.target.linux-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_rendering.target.linux-mips.mk
@@ -208,7 +207,7 @@ include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/keycode_converter.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.linux-mips.mk
-include $(LOCAL_PATH)/ui/shell_dialogs.target.linux-mips.mk
+include $(LOCAL_PATH)/ui/shell_dialogs/shell_dialogs.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/surface/surface.target.linux-mips.mk
 include $(LOCAL_PATH)/ui/ui.target.linux-mips.mk

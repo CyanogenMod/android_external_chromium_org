@@ -7,9 +7,7 @@
     'chromium_code': 1,
   },
   'includes': [
-    'shell_dialogs.gypi',
     'ui_resources.gypi',
-    'ui_unittests.gypi',
   ],
   'targets': [
     {
@@ -182,8 +180,6 @@
         'base/gtk/gtk_floating_container.cc',
         'base/gtk/gtk_floating_container.h',
         'base/gtk/gtk_hig_constants.h',
-        'base/gtk/gtk_im_context_util.cc',
-        'base/gtk/gtk_im_context_util.h',
         'base/gtk/gtk_screen_util.cc',
         'base/gtk/gtk_screen_util.h',
         'base/gtk/gtk_signal.h',
@@ -460,9 +456,6 @@
                 'd3d10_1.lib',
                 'dwmapi.lib',
               ],
-            },
-            'VCCLCompilerTool': {
-              'ForcedIncludeFiles': [ 'build/intsafe_workaround.h' ],
             },
           },
           'link_settings': {

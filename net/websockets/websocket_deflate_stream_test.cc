@@ -5,6 +5,7 @@
 #include "net/websockets/websocket_deflate_stream.h"
 
 #include <stdint.h>
+#include <deque>
 #include <string>
 
 #include "base/basictypes.h"
@@ -15,7 +16,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/http/http_request_headers.h"
+#include "net/websockets/websocket_deflate_predictor.h"
 #include "net/websockets/websocket_deflater.h"
 #include "net/websockets/websocket_frame.h"
 #include "net/websockets/websocket_inflater.h"
@@ -23,19 +24,15 @@
 #include "net/websockets/websocket_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "url/gurl.h"
 
 namespace net {
-
-class HttpResponseInfo;
-
 namespace {
 
-typedef testing::MockFunction<void(int)> MockCallback;  // NOLINT
-using testing::_;
-using testing::InSequence;
-using testing::Invoke;
-using testing::Return;
+typedef ::testing::MockFunction<void(int)> MockCallback;  // NOLINT
+using ::testing::_;
+using ::testing::InSequence;
+using ::testing::Invoke;
+using ::testing::Return;
 
 typedef uint32_t FrameFlag;
 const FrameFlag kNoFlag = 0;
@@ -70,7 +67,7 @@ std::string ToString(const scoped_refptr<IOBuffer>& buffer, size_t size) {
   return ToString(buffer.get(), size);
 }
 
-std::string ToString(WebSocketFrame* frame) {
+std::string ToString(const WebSocketFrame* frame) {
   return frame->data ? ToString(frame->data, frame->header.payload_length) : "";
 }
 
@@ -104,11 +101,109 @@ class MockWebSocketStream : public WebSocketStream {
   MOCK_METHOD0(Close, void());
   MOCK_CONST_METHOD0(GetSubProtocol, std::string());
   MOCK_CONST_METHOD0(GetExtensions, std::string());
-  MOCK_METHOD4(SendHandshakeRequest, int(const GURL& url,
-                                         const HttpRequestHeaders& headers,
-                                         HttpResponseInfo* response_info,
-                                         const CompletionCallback& callback));
-  MOCK_METHOD1(ReadHandshakeResponse, int(const CompletionCallback& callback));
+};
+
+// This mock class relies on some assumptions.
+//  - RecordInputDataFrame is called after the corresponding WriteFrames
+//    call.
+//  - RecordWrittenDataFrame is called before writing the frame.
+class WebSocketDeflatePredictorMock : public WebSocketDeflatePredictor {
+ public:
+  WebSocketDeflatePredictorMock() : result_(DEFLATE) {}
+  virtual ~WebSocketDeflatePredictorMock() {
+    // Verify whether all expectaions are consumed.
+    if (!frames_to_be_input_.empty()) {
+      ADD_FAILURE() << "There are missing frames to be input.";
+      return;
+    }
+    if (!frames_written_.empty()) {
+      ADD_FAILURE() << "There are extra written frames.";
+      return;
+    }
+  }
+
+  // WebSocketDeflatePredictor functions.
+  virtual Result Predict(const ScopedVector<WebSocketFrame>& frames,
+                         size_t frame_index) OVERRIDE {
+    return result_;
+  }
+  virtual void RecordInputDataFrame(const WebSocketFrame* frame) OVERRIDE {
+    if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode)) {
+      ADD_FAILURE() << "Control frames should not be recorded.";
+      return;
+    }
+    if (frame->header.reserved1) {
+      ADD_FAILURE() << "Input frame may not be compressed.";
+      return;
+    }
+    if (frames_to_be_input_.empty()) {
+      ADD_FAILURE() << "Unexpected input data frame";
+      return;
+    }
+    if (frame != frames_to_be_input_.front()) {
+      ADD_FAILURE() << "Input data frame does not match the expectation.";
+      return;
+    }
+    frames_to_be_input_.pop_front();
+  }
+  virtual void RecordWrittenDataFrame(const WebSocketFrame* frame) OVERRIDE {
+    if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode)) {
+      ADD_FAILURE() << "Control frames should not be recorded.";
+      return;
+    }
+    frames_written_.push_back(frame);
+  }
+
+  // Sets |result_| for the |Predict| return value.
+  void set_result(Result result) { result_ = result; }
+
+  // Adds |frame| as an expectation of future |RecordInputDataFrame| call.
+  void AddFrameToBeInput(const WebSocketFrame* frame) {
+    if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode))
+      return;
+    frames_to_be_input_.push_back(frame);
+  }
+  // Verifies that |frame| is recorded in order.
+  void VerifySentFrame(const WebSocketFrame* frame) {
+    if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode))
+      return;
+    if (frames_written_.empty()) {
+      ADD_FAILURE() << "There are missing frames to be written.";
+      return;
+    }
+    if (frame != frames_written_.front()) {
+      ADD_FAILURE() << "Written data frame does not match the expectation.";
+      return;
+    }
+    frames_written_.pop_front();
+  }
+  void AddFramesToBeInput(const ScopedVector<WebSocketFrame>& frames) {
+    for (size_t i = 0; i < frames.size(); ++i)
+      AddFrameToBeInput(frames[i]);
+  }
+  void VerifySentFrames(const ScopedVector<WebSocketFrame>& frames) {
+    for (size_t i = 0; i < frames.size(); ++i)
+      VerifySentFrame(frames[i]);
+  }
+  // Call this method in order to disable checks in the destructor when
+  // WriteFrames fails.
+  void Clear() {
+    frames_to_be_input_.clear();
+    frames_written_.clear();
+  }
+
+ private:
+  Result result_;
+  // Data frames which will be recorded by |RecordInputFrames|.
+  // Pushed by |AddFrameToBeInput| and popped and verified by
+  // |RecordInputFrames|.
+  std::deque<const WebSocketFrame*> frames_to_be_input_;
+  // Data frames recorded by |RecordWrittenFrames|.
+  // Pushed by |RecordWrittenFrames| and popped and verified by
+  // |VerifySentFrame|.
+  std::deque<const WebSocketFrame*> frames_written_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebSocketDeflatePredictorMock);
 };
 
 class WebSocketDeflateStreamTest : public ::testing::Test {
@@ -116,15 +211,45 @@ class WebSocketDeflateStreamTest : public ::testing::Test {
   WebSocketDeflateStreamTest()
       : mock_stream_(NULL) {
     mock_stream_ = new testing::StrictMock<MockWebSocketStream>;
+    predictor_ = new WebSocketDeflatePredictorMock;
     deflate_stream_.reset(new WebSocketDeflateStream(
-        scoped_ptr<WebSocketStream>(mock_stream_)));
+        scoped_ptr<WebSocketStream>(mock_stream_),
+        WebSocketDeflater::TAKE_OVER_CONTEXT,
+        scoped_ptr<WebSocketDeflatePredictor>(predictor_)));
   }
   virtual ~WebSocketDeflateStreamTest() {}
 
  protected:
   scoped_ptr<WebSocketDeflateStream> deflate_stream_;
+  // Owned by |deflate_stream_|.
+  MockWebSocketStream* mock_stream_;
+  // Owned by |deflate_stream_|.
+  WebSocketDeflatePredictorMock* predictor_;
+};
+
+// Since WebSocketDeflater with DoNotTakeOverContext is well tested at
+// websocket_deflater_test.cc, we have only a few tests for this configuration
+// here.
+class WebSocketDeflateStreamWithDoNotTakeOverContextTest
+    : public ::testing::Test {
+ public:
+  WebSocketDeflateStreamWithDoNotTakeOverContextTest()
+      : mock_stream_(NULL) {
+    mock_stream_ = new testing::StrictMock<MockWebSocketStream>;
+    predictor_ = new WebSocketDeflatePredictorMock;
+    deflate_stream_.reset(new WebSocketDeflateStream(
+        scoped_ptr<WebSocketStream>(mock_stream_),
+        WebSocketDeflater::DO_NOT_TAKE_OVER_CONTEXT,
+        scoped_ptr<WebSocketDeflatePredictor>(predictor_)));
+  }
+  virtual ~WebSocketDeflateStreamWithDoNotTakeOverContextTest() {}
+
+ protected:
+  scoped_ptr<WebSocketDeflateStream> deflate_stream_;
   // |mock_stream_| will be deleted when |deflate_stream_| is destroyed.
   MockWebSocketStream* mock_stream_;
+  // |predictor_| will be deleted when |deflate_stream_| is destroyed.
+  WebSocketDeflatePredictorMock* predictor_;
 };
 
 // ReadFrameStub is a stub for WebSocketStream::ReadFrames.
@@ -161,20 +286,21 @@ class ReadFramesStub {
   ScopedVector<WebSocketFrame>* frames_passed_;
 };
 
-// WriteFrameStub is a stub for WebSocketStream::WriteFrames.
+// WriteFramesStub is a stub for WebSocketStream::WriteFrames.
 // It returns |result_| and |frames_| to the caller and
 // saves |callback| parameter to |callback_|.
 class WriteFramesStub {
  public:
-  explicit WriteFramesStub(int result) : result_(result) {}
+  explicit WriteFramesStub(WebSocketDeflatePredictorMock* predictor,
+                           int result)
+      : result_(result), predictor_(predictor) {}
 
   int Call(ScopedVector<WebSocketFrame>* frames,
            const CompletionCallback& callback) {
-    for (size_t i = 0; i < frames->size(); ++i) {
-      frames_.push_back((*frames)[i]);
-    }
+    frames_.insert(frames_.end(), frames->begin(), frames->end());
     frames->weak_clear();
     callback_ = callback;
+    predictor_->VerifySentFrames(frames_);
     return result_;
   }
 
@@ -186,6 +312,7 @@ class WriteFramesStub {
   int result_;
   CompletionCallback callback_;
   ScopedVector<WebSocketFrame> frames_;
+  WebSocketDeflatePredictorMock* predictor_;
 };
 
 TEST_F(WebSocketDeflateStreamTest, ReadFailedImmediately) {
@@ -779,14 +906,17 @@ TEST_F(WebSocketDeflateStreamTest, WriteFailedImmediately) {
   }
 
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "hello");
+  predictor_->AddFramesToBeInput(frames);
   EXPECT_EQ(ERR_FAILED, deflate_stream_->WriteFrames(&frames, callback));
+  predictor_->Clear();
 }
 
 TEST_F(WebSocketDeflateStreamTest, WriteFrameImmediately) {
   ScopedVector<WebSocketFrame> frames;
   CompletionCallback callback;
-  WriteFramesStub stub(OK);
+  WriteFramesStub stub(predictor_, OK);
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  predictor_->AddFramesToBeInput(frames);
   {
     InSequence s;
     EXPECT_CALL(*mock_stream_, WriteFrames(_, _))
@@ -803,7 +933,7 @@ TEST_F(WebSocketDeflateStreamTest, WriteFrameImmediately) {
 }
 
 TEST_F(WebSocketDeflateStreamTest, WriteFrameAsync) {
-  WriteFramesStub stub(ERR_IO_PENDING);
+  WriteFramesStub stub(predictor_, ERR_IO_PENDING);
   MockCallback mock_callback, checkpoint;
   CompletionCallback callback =
       base::Bind(&MockCallback::Call, base::Unretained(&mock_callback));
@@ -816,6 +946,7 @@ TEST_F(WebSocketDeflateStreamTest, WriteFrameAsync) {
     EXPECT_CALL(mock_callback, Call(OK));
   }
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  predictor_->AddFramesToBeInput(frames);
   ASSERT_EQ(ERR_IO_PENDING, deflate_stream_->WriteFrames(&frames, callback));
 
   checkpoint.Call(0);
@@ -835,7 +966,8 @@ TEST_F(WebSocketDeflateStreamTest, WriteControlFrameBetweenDataFrames) {
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kNoFlag, "Hel");
   AppendTo(&frames, WebSocketFrameHeader::kOpCodePing, kFinal);
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeContinuation, kFinal, "lo");
-  WriteFramesStub stub(OK);
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
   CompletionCallback callback;
 
   {
@@ -859,7 +991,8 @@ TEST_F(WebSocketDeflateStreamTest, WriteControlFrameBetweenDataFrames) {
 TEST_F(WebSocketDeflateStreamTest, WriteEmptyMessage) {
   ScopedVector<WebSocketFrame> frames;
   AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal);
-  WriteFramesStub stub(OK);
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
   CompletionCallback callback;
 
   {
@@ -876,10 +1009,39 @@ TEST_F(WebSocketDeflateStreamTest, WriteEmptyMessage) {
   EXPECT_EQ(std::string("\x02\x00", 2), ToString(frames_passed[0]));
 }
 
+TEST_F(WebSocketDeflateStreamTest, WriteUncompressedMessage) {
+  ScopedVector<WebSocketFrame> frames;
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kNoFlag, "AAAA");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeContinuation, kFinal, "AAA");
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
+  CompletionCallback callback;
+
+  predictor_->set_result(WebSocketDeflatePredictor::DO_NOT_DEFLATE);
+
+  {
+    InSequence s;
+    EXPECT_CALL(*mock_stream_, WriteFrames(&frames, _))
+        .WillOnce(Invoke(&stub, &WriteFramesStub::Call));
+  }
+  ASSERT_EQ(OK, deflate_stream_->WriteFrames(&frames, callback));
+  const ScopedVector<WebSocketFrame>& frames_passed = *stub.frames();
+  ASSERT_EQ(2u, frames_passed.size());
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[0]->header.opcode);
+  EXPECT_FALSE(frames_passed[0]->header.final);
+  EXPECT_FALSE(frames_passed[0]->header.reserved1);
+  EXPECT_EQ("AAAA", ToString(frames_passed[0]));
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeContinuation,
+            frames_passed[1]->header.opcode);
+  EXPECT_TRUE(frames_passed[1]->header.final);
+  EXPECT_FALSE(frames_passed[1]->header.reserved1);
+  EXPECT_EQ("AAA", ToString(frames_passed[1]));
+}
+
 TEST_F(WebSocketDeflateStreamTest, LargeDeflatedFramesShouldBeSplit) {
   WebSocketDeflater deflater(WebSocketDeflater::TAKE_OVER_CONTEXT);
   LinearCongruentialGenerator lcg(133);
-  WriteFramesStub stub(OK);
+  WriteFramesStub stub(predictor_, OK);
   CompletionCallback callback;
   const size_t size = 1024;
 
@@ -900,9 +1062,11 @@ TEST_F(WebSocketDeflateStreamTest, LargeDeflatedFramesShouldBeSplit) {
     deflater.AddBytes(data.data(), data.size());
     FrameFlag flag = is_final ? kFinal : kNoFlag;
     AppendTo(&frames, WebSocketFrameHeader::kOpCodeBinary, flag, data);
+    predictor_->AddFramesToBeInput(frames);
     ASSERT_EQ(OK, deflate_stream_->WriteFrames(&frames, callback));
-    for (size_t i = 0; i < stub.frames()->size(); ++i)
-      total_compressed_frames.push_back((*stub.frames())[i]);
+    total_compressed_frames.insert(total_compressed_frames.end(),
+                                   stub.frames()->begin(),
+                                   stub.frames()->end());
     stub.frames()->weak_clear();
     if (is_final)
       break;
@@ -927,6 +1091,114 @@ TEST_F(WebSocketDeflateStreamTest, LargeDeflatedFramesShouldBeSplit) {
   }
   EXPECT_EQ(total_deflated,
             ToString(deflater.GetOutput(deflater.CurrentOutputSize())));
+}
+
+TEST_F(WebSocketDeflateStreamTest, WriteMultipleMessages) {
+  ScopedVector<WebSocketFrame> frames;
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
+  CompletionCallback callback;
+
+  {
+    InSequence s;
+    EXPECT_CALL(*mock_stream_, WriteFrames(&frames, _))
+        .WillOnce(Invoke(&stub, &WriteFramesStub::Call));
+  }
+  ASSERT_EQ(OK, deflate_stream_->WriteFrames(&frames, callback));
+  const ScopedVector<WebSocketFrame>& frames_passed = *stub.frames();
+  ASSERT_EQ(2u, frames_passed.size());
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[0]->header.opcode);
+  EXPECT_TRUE(frames_passed[0]->header.final);
+  EXPECT_TRUE(frames_passed[0]->header.reserved1);
+  EXPECT_EQ(std::string("\xf2\x48\xcd\xc9\xc9\x07\x00", 7),
+            ToString(frames_passed[0]));
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[1]->header.opcode);
+  EXPECT_TRUE(frames_passed[1]->header.final);
+  EXPECT_TRUE(frames_passed[1]->header.reserved1);
+  EXPECT_EQ(std::string("\xf2\x00\x11\x00\x00", 5), ToString(frames_passed[1]));
+}
+
+TEST_F(WebSocketDeflateStreamWithDoNotTakeOverContextTest,
+       WriteMultipleMessages) {
+  ScopedVector<WebSocketFrame> frames;
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kFinal, "Hello");
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
+  CompletionCallback callback;
+
+  {
+    InSequence s;
+    EXPECT_CALL(*mock_stream_, WriteFrames(&frames, _))
+        .WillOnce(Invoke(&stub, &WriteFramesStub::Call));
+  }
+  ASSERT_EQ(OK, deflate_stream_->WriteFrames(&frames, callback));
+  const ScopedVector<WebSocketFrame>& frames_passed = *stub.frames();
+  ASSERT_EQ(2u, frames_passed.size());
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[0]->header.opcode);
+  EXPECT_TRUE(frames_passed[0]->header.final);
+  EXPECT_TRUE(frames_passed[0]->header.reserved1);
+  EXPECT_EQ(std::string("\xf2\x48\xcd\xc9\xc9\x07\x00", 7),
+            ToString(frames_passed[0]));
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[1]->header.opcode);
+  EXPECT_TRUE(frames_passed[1]->header.final);
+  EXPECT_TRUE(frames_passed[1]->header.reserved1);
+  EXPECT_EQ(std::string("\xf2\x48\xcd\xc9\xc9\x07\x00", 7),
+            ToString(frames_passed[1]));
+}
+
+// In order to check the stream works correctly for multiple
+// "PossiblyCompressedMessage"s, we test various messages at one test case.
+TEST_F(WebSocketDeflateStreamWithDoNotTakeOverContextTest,
+       WritePossiblyCompressMessages) {
+  ScopedVector<WebSocketFrame> frames;
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kNoFlag, "He");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeContinuation, kFinal, "llo");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kNoFlag, "AAAAAAAAAA");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeContinuation, kFinal, "AA");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeText, kNoFlag, "XX");
+  AppendTo(&frames, WebSocketFrameHeader::kOpCodeContinuation, kFinal, "YY");
+  predictor_->AddFramesToBeInput(frames);
+  WriteFramesStub stub(predictor_, OK);
+  CompletionCallback callback;
+  predictor_->set_result(WebSocketDeflatePredictor::TRY_DEFLATE);
+
+  {
+    InSequence s;
+    EXPECT_CALL(*mock_stream_, WriteFrames(&frames, _))
+        .WillOnce(Invoke(&stub, &WriteFramesStub::Call));
+  }
+  ASSERT_EQ(OK, deflate_stream_->WriteFrames(&frames, callback));
+  const ScopedVector<WebSocketFrame>& frames_passed = *stub.frames();
+  ASSERT_EQ(5u, frames_passed.size());
+
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[0]->header.opcode);
+  EXPECT_FALSE(frames_passed[0]->header.final);
+  EXPECT_FALSE(frames_passed[0]->header.reserved1);
+  EXPECT_EQ("He", ToString(frames_passed[0]));
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeContinuation,
+            frames_passed[1]->header.opcode);
+  EXPECT_TRUE(frames_passed[1]->header.final);
+  EXPECT_FALSE(frames_passed[1]->header.reserved1);
+  EXPECT_EQ("llo", ToString(frames_passed[1]));
+
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[2]->header.opcode);
+  EXPECT_TRUE(frames_passed[2]->header.final);
+  EXPECT_TRUE(frames_passed[2]->header.reserved1);
+  EXPECT_EQ(std::string("\x72\x74\x44\x00\x00\x00", 6),
+            ToString(frames_passed[2]));
+
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_passed[3]->header.opcode);
+  EXPECT_FALSE(frames_passed[3]->header.final);
+  EXPECT_FALSE(frames_passed[3]->header.reserved1);
+  EXPECT_EQ("XX", ToString(frames_passed[3]));
+  EXPECT_EQ(WebSocketFrameHeader::kOpCodeContinuation,
+            frames_passed[4]->header.opcode);
+  EXPECT_TRUE(frames_passed[4]->header.final);
+  EXPECT_FALSE(frames_passed[4]->header.reserved1);
+  EXPECT_EQ("YY", ToString(frames_passed[4]));
 }
 
 }  // namespace

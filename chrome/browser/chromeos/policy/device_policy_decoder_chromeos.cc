@@ -376,6 +376,13 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
                         container.report_network_interfaces()),
                     NULL);
     }
+    if (container.has_report_users()) {
+      policies->Set(key::kReportDeviceUsers,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateBooleanValue(container.report_users()),
+                    NULL);
+    }
   }
 }
 
@@ -672,6 +679,18 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
                     POLICY_SCOPE_MACHINE,
                     Value::CreateStringValue(
                         container.login_screen_power_management()),
+                    NULL);
+    }
+  }
+  if (policy.has_auto_clean_up_settings()) {
+    const em::AutoCleanupSettigsProto& container(
+        policy.auto_clean_up_settings());
+    if (container.has_clean_up_strategy()) {
+      policies->Set(key::kAutoCleanUpStrategy,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE,
+                    Value::CreateStringValue(
+                        container.clean_up_strategy()),
                     NULL);
     }
   }

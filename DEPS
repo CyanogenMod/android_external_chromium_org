@@ -1,3 +1,14 @@
+# This file is automatically processed to create .DEPS.git which is the file
+# that gclient uses under git.
+#
+# See http://code.google.com/p/chromium/wiki/UsingGit
+#
+# To test manually, run:
+#   python tools/deps2git/deps2git.py -o .DEPS.git
+#   gclient runhooks
+# DO NOT CHECK IN CHANGES TO .DEPS.git. It will be automatically updated by
+# a bot when you modify this one.
+#
 # When adding a new dependency, please update the top-level .gitignore file
 # to list the dependency's destination directory.
 
@@ -8,15 +19,15 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "160175",
+  "webkit_revision": "160934",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
-  "swig_revision": "69281",
-  "nacl_revision": "12284",
+  "swig_revision": "230490",
+  "nacl_revision": "12321",
   # After changing nacl_revision, run 'glient sync' and check native_client/DEPS
   # to update other nacl_*_revision's.
-  "nacl_tools_revision": "12279",  # native_client/DEPS: tools_rev
+  "nacl_tools_revision": "12289",  # native_client/DEPS: tools_rev
   "gtm_revision": "616",
 
   "libphonenumber_revision": "621",
@@ -30,12 +41,12 @@ vars = {
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "11899",
-  "skia_hash": "56c55885882870aff9fd5e5a7c085c6f7a920942",
+  "skia_revision": "12012",
+  "skia_hash": "e8166a5e9e9656909029d14d284c15c47acb653f",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "17310",
+  "v8_revision": "17429",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
@@ -45,11 +56,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarm_client
   # and whatever else without interference from each other.
-  "swarm_revision": "228254",
+  "swarm_revision": "230741",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
-  "openssl_revision": "207965",
+  "openssl_revision": "231572",
 }
 
 deps = {
@@ -67,7 +78,7 @@ deps = {
 
   "src/third_party/angle_dx11":
     Var("chromium_git") +
-    "/external/angle.git@b992a7d282a996d15da3e194695ddebff50fd956",
+    "/external/angle.git@0f0edf94bfe1fc28979b0d12747a900164bb966a",
 
   "src/third_party/trace-viewer":
     (Var("googlecode_url") % "trace-viewer") + "/trunk@1040",
@@ -104,7 +115,7 @@ deps = {
     (Var("googlecode_url") % "grit-i18n") + "/trunk@136",
 
   "src/tools/gyp":
-    (Var("googlecode_url") % "gyp") + "/trunk@1765",
+    (Var("googlecode_url") % "gyp") + "/trunk@1773",
 
   "src/tools/swarm_client":
     "/trunk/tools/swarm_client@" + Var("swarm_revision"),
@@ -151,7 +162,7 @@ deps = {
     (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
   "src/third_party/webgl_conformance":
-    "/trunk/deps/third_party/webgl/sdk/tests@229432",
+    "/trunk/deps/third_party/webgl/sdk/tests@230853",
 
   "src/third_party/swig/Lib":
     "/trunk/deps/third_party/swig/Lib@" + Var("swig_revision"),
@@ -229,7 +240,7 @@ deps = {
          Var("libphonenumber_revision"),
 
   "src/tools/deps2git":
-    "/trunk/tools/deps2git@214390",
+    "/trunk/tools/deps2git@230538",
 
   "src/third_party/webpagereplay":
     (Var("googlecode_url") % "web-page-replay") + "/trunk@522",
@@ -241,10 +252,10 @@ deps = {
     "/trunk/deps/third_party/opus@185324",
 
   "src/media/cdm/ppapi/api":
-    "/trunk/deps/cdm@229868",
+    "/trunk/deps/cdm@230180",
 
   "src/third_party/mesa/src":
-    "/trunk/deps/third_party/mesa@210110",
+    "/trunk/deps/third_party/mesa@229994",
 
   "src/third_party/cld_2/src":
     (Var("googlecode_url") % "cld2") + "/trunk@84",
@@ -257,7 +268,7 @@ deps_os = {
       "/trunk/deps/reference_builds/chrome_win@221746",
 
     "src/third_party/cygwin":
-      "/trunk/deps/third_party/cygwin@229213",
+      "/trunk/deps/third_party/cygwin@231940",
 
     "src/third_party/python_26":
       "/trunk/tools/third_party/python_26@89111",
@@ -394,7 +405,7 @@ deps_os = {
   "unix": {
     # Linux, really.
     "src/chrome/tools/test/reference_build/chrome_linux":
-      "/trunk/deps/reference_builds/chrome_linux@221746",
+      "/trunk/deps/reference_builds/chrome_linux@230875",
 
     "src/third_party/xdg-utils":
       "/trunk/deps/third_party/xdg-utils@203785",
@@ -428,7 +439,7 @@ deps_os = {
     # For Linux and Chromium OS.
     "src/third_party/cros_system_api":
       Var("chromiumos_git") + "/platform/system_api.git" +
-      "@0be3036f55a52d274d547d6be0d0b8ab201d7d24",
+      "@99bce39f55240926a75454bb70998ab9f5ce9f13",
 
     # Note that this is different from Android's freetype repo.
     "src/third_party/freetype2/src":
@@ -605,6 +616,27 @@ hooks = [
     "action": ["python", "src/build/util/lastchange.py",
                "-s", "src/third_party/WebKit",
                "-o", "src/build/util/LASTCHANGE.blink"],
+  },
+  # Pull GN binaries. This needs to be before running GYP below.
+  {
+    "name": "gn_win",
+    "pattern": "\\.sha1$",
+    "action": [ "download_from_google_storage",
+                "--platform=win32",
+                "--directory",
+                "--bucket", "chromium-gn",
+                "src/tools/gn/bin/win",
+    ],
+  },
+  {
+    "name": "gn_linux",
+    "pattern": "\\.sha1$",
+    "action": [ "download_from_google_storage",
+                "--platform=\"linux*\"",
+                "--directory",
+                "--bucket", "chromium-gn",
+                "src/tools/gn/bin/linux",
+    ],
   },
   {
     # A change to a .gyp, .gypi, or to GYP itself should run the generator.

@@ -11,6 +11,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/shell.h"
+#include "ash/shell/toplevel_window.h"
 #include "ash/test/ash_test_helper.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/test_session_state_delegate.h"
@@ -20,6 +21,7 @@
 #include "content/public/test/web_contents_tester.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
@@ -59,7 +61,7 @@ class AshEventGeneratorDelegate : public aura::test::EventGeneratorDelegate {
     gfx::Screen* screen = Shell::GetScreen();
     gfx::Display display = screen->GetDisplayNearestPoint(point_in_screen);
     return Shell::GetInstance()->display_controller()->
-        GetRootWindowForDisplayId(display.id());
+        GetRootWindowForDisplayId(display.id())->GetDispatcher();
   }
 
   virtual aura::client::ScreenPositionClient* GetScreenPositionClient(
@@ -100,6 +102,11 @@ AshTestBase::~AshTestBase() {
 
 void AshTestBase::SetUp() {
   setup_called_ = true;
+
+  // Clears the saved state so that test doesn't use on the wrong
+  // default state.
+  shell::ToplevelWindow::ClearSavedStateForTest();
+
   // TODO(jamescook): Can we do this without changing command line?
   // Use the origin (1,1) so that it doesn't over
   // lap with the native mouse cursor.
@@ -114,7 +121,7 @@ void AshTestBase::SetUp() {
   ash_test_helper_->SetUp(start_session_);
 
   Shell::GetPrimaryRootWindow()->Show();
-  Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  Shell::GetPrimaryRootWindow()->GetDispatcher()->ShowRootWindow();
   // Move the mouse cursor to far away so that native events doesn't
   // interfere test expectations.
   Shell::GetPrimaryRootWindow()->MoveCursorTo(gfx::Point(-1000, -1000));
@@ -206,7 +213,7 @@ void AshTestBase::UpdateDisplay(const std::string& display_specs) {
   display_manager_test_api.UpdateDisplay(display_specs);
 }
 
-aura::RootWindow* AshTestBase::CurrentContext() {
+aura::Window* AshTestBase::CurrentContext() {
   return ash_test_helper_->CurrentContext();
 }
 
@@ -249,24 +256,24 @@ aura::Window* AshTestBase::CreateTestWindowInShellWithDelegateAndType(
   window->Show();
 
   if (bounds.IsEmpty()) {
-    SetDefaultParentByPrimaryRootWindow(window);
+    ParentWindowInPrimaryRootWindow(window);
   } else {
     gfx::Display display =
         Shell::GetScreen()->GetDisplayMatching(bounds);
-    aura::RootWindow* root = ash::Shell::GetInstance()->display_controller()->
+    aura::Window* root = ash::Shell::GetInstance()->display_controller()->
         GetRootWindowForDisplayId(display.id());
     gfx::Point origin = bounds.origin();
     wm::ConvertPointFromScreen(root, &origin);
     window->SetBounds(gfx::Rect(origin, bounds.size()));
-    window->SetDefaultParentByRootWindow(root, bounds);
+    aura::client::ParentWindowWithContext(window, root, bounds);
   }
   window->SetProperty(aura::client::kCanMaximizeKey, true);
   return window;
 }
 
-void AshTestBase::SetDefaultParentByPrimaryRootWindow(aura::Window* window) {
-  window->SetDefaultParentByRootWindow(
-      Shell::GetPrimaryRootWindow(), gfx::Rect());
+void AshTestBase::ParentWindowInPrimaryRootWindow(aura::Window* window) {
+  aura::client::ParentWindowWithContext(
+      window, Shell::GetPrimaryRootWindow(), gfx::Rect());
 }
 
 void AshTestBase::RunAllPendingInMessageLoop() {
@@ -290,6 +297,11 @@ void AshTestBase::SetUserLoggedIn(bool user_logged_in) {
 void AshTestBase::SetCanLockScreen(bool can_lock_screen) {
   ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
       SetCanLockScreen(can_lock_screen);
+}
+
+void AshTestBase::SetShouldLockScreenBeforeSuspending(bool should_lock) {
+  ash_test_helper_->test_shell_delegate()->test_session_state_delegate()->
+      SetShouldLockScreenBeforeSuspending(should_lock);
 }
 
 void AshTestBase::SetUserAddingScreenRunning(bool user_adding_screen_running) {

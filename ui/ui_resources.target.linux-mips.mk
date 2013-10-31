@@ -24,7 +24,6 @@ $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h: $(LOCAL_PATH
 
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources_map.cc: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
 $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources_map.h: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
-$(gyp_shared_intermediate_dir)/ui/ui_resources/gfx_resources.pak: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
 $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_100_percent.pak: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
 $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_200_percent.pak: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
 $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_touch_100_percent.pak: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h ;
@@ -56,19 +55,10 @@ $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h: $(L
 $(gyp_shared_intermediate_dir)/ui/ui_resources/ui_unscaled_resources.rc: $(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h ;
 
 
-### Generated for copy rule.
-$(gyp_shared_intermediate_dir)/ui/gfx/gfx_resources.pak: $(gyp_shared_intermediate_dir)/ui/ui_resources/gfx_resources.pak $(GYP_TARGET_DEPENDENCIES) | $(ACP)
-	@echo Copying: $@
-	$(hide) mkdir -p $(dir $@)
-	$(hide) $(ACP) -r $< $@
-
-ui_ui_gyp_ui_resources_target_copies = $(gyp_shared_intermediate_dir)/ui/gfx/gfx_resources.pak
-
 GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources.h \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources_map.cc \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_resources_map.h \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources/gfx_resources.pak \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_100_percent.pak \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_200_percent.pak \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_resources_touch_100_percent.pak \
@@ -79,8 +69,7 @@ GYP_GENERATED_OUTPUTS := \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/webui_resources_map.h \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/webui_resources.pak \
 	$(gyp_shared_intermediate_dir)/ui/ui_resources/grit/ui_unscaled_resources.h \
-	$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_unscaled_resources.rc \
-	$(ui_ui_gyp_ui_resources_target_copies)
+	$(gyp_shared_intermediate_dir)/ui/ui_resources/ui_unscaled_resources.rc
 
 # Make sure our deps and generated files are built first.
 LOCAL_ADDITIONAL_DEPENDENCIES := $(GYP_TARGET_DEPENDENCIES) $(GYP_GENERATED_OUTPUTS)

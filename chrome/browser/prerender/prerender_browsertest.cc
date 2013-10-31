@@ -2626,8 +2626,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearHistory) {
 
 // Checks that when the cache is cleared, prerenders are cancelled but
 // prerendering history is not cleared.
-// Flaky/times out on linux_aura, win, mac - http://crbug.com/270948
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderClearCache) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderClearCache) {
   PrerenderTestURL("files/prerender/prerender_page.html",
                    FINAL_STATUS_CACHE_OR_HISTORY_CLEARED,
                    1);
@@ -2905,6 +2904,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCancelReferrerPolicy) {
 class PrerenderBrowserTestWithExtensions : public PrerenderBrowserTest,
                                            public ExtensionApiTest {
  public:
+  PrerenderBrowserTestWithExtensions() {
+    // The individual tests start the test server through ExtensionApiTest, so
+    // the port number can be passed through to the extension.
+    autostart_test_server_ = false;
+  }
+
   virtual void SetUp() OVERRIDE {
     PrerenderBrowserTest::SetUp();
   }
@@ -2930,9 +2935,14 @@ class PrerenderBrowserTestWithExtensions : public PrerenderBrowserTest,
 };
 
 // http://crbug.com/177163
+#if defined(OS_WIN) && !defined(NDEBUG)
+#define MAYBE_WebNavigation DISABLED_WebNavigation
+#else
+#define MAYBE_WebNavigation WebNavigation
+#endif  // defined(OS_WIN) && !defined(NDEBUG)
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions,
-                       DISABLED_WebNavigation) {
-  ASSERT_TRUE(StartEmbeddedTestServer());
+                       MAYBE_WebNavigation) {
+  ASSERT_TRUE(StartSpawnedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   CommandLine::ForCurrentProcess()->AppendSwitch(
@@ -2957,13 +2967,13 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions,
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(NDEBUG)
 #define MAYBE_TabsApi DISABLED_TabsApi
 #else
 #define MAYBE_TabsApi TabsApi
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(NDEBUG)
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTestWithExtensions, MAYBE_TabsApi) {
-  ASSERT_TRUE(StartEmbeddedTestServer());
+  ASSERT_TRUE(StartSpawnedTestServer());
   extensions::FrameNavigationState::set_allow_extension_scheme(true);
 
   // Wait for the extension to set itself up and return control to us.

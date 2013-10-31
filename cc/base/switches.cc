@@ -141,6 +141,9 @@ const char kDisableMapImage[] = "disable-map-image";
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
 
+// Makes pixel tests write their output instead of read it.
+const char kCCRebaselinePixeltests[] = "cc-rebaseline-pixeltests";
+
 // Disable textures using RGBA_4444 layout.
 const char kDisable4444Textures[] = "disable-4444-textures";
 
@@ -162,7 +165,8 @@ bool IsLCDTextEnabled() {
 #endif
 }
 
-bool IsImplSidePaintingEnabled() {
+namespace {
+bool CheckImplSidePaintingStatus() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
   if (command_line.HasSwitch(cc::switches::kDisableImplSidePainting))
@@ -175,6 +179,12 @@ bool IsImplSidePaintingEnabled() {
 #else
   return false;
 #endif
+}
+}  // namespace
+
+bool IsImplSidePaintingEnabled() {
+  static bool enabled = CheckImplSidePaintingStatus();
+  return enabled;
 }
 
 bool IsMapImageEnabled() {

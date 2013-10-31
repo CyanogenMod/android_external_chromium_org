@@ -339,7 +339,13 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneInvalidVerdict) {
   EXPECT_TRUE(Mock::VerifyAndClear(mock_extractor));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneNotPhishing) {
+#else
 TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneNotPhishing) {
+#endif
   // Case 1: client thinks the page is phishing.  The server does not agree.
   // No interstitial is shown.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -371,7 +377,12 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneNotPhishing) {
   EXPECT_TRUE(Mock::VerifyAndClear(ui_manager_.get()));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest, DISABLED_OnPhishingDetectionDoneDisabled) {
+#else
 TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneDisabled) {
+#endif
   // Case 2: client thinks the page is phishing and so does the server but
   // showing the interstitial is disabled => no interstitial is shown.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -403,7 +414,13 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneDisabled) {
   EXPECT_TRUE(Mock::VerifyAndClear(ui_manager_.get()));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneShowInterstitial) {
+#else
 TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneShowInterstitial) {
+#endif
   // Case 3: client thinks the page is phishing and so does the server.
   // We show an interstitial.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -453,7 +470,13 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneShowInterstitial) {
                  ui_manager_, resource.callback));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneMultiplePings) {
+#else
 TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneMultiplePings) {
+#endif
   // Case 4 & 5: client thinks a page is phishing then navigates to
   // another page which is also considered phishing by the client
   // before the server responds with a verdict.  After a while the
@@ -540,8 +563,14 @@ TEST_F(ClientSideDetectionHostTest, OnPhishingDetectionDoneMultiplePings) {
                  ui_manager_, resource.callback));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneVerdictNotPhishing) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneVerdictNotPhishing) {
+#endif
   // Case 6: renderer sends a verdict string that isn't phishing.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
       web_contents(),
@@ -558,8 +587,14 @@ TEST_F(ClientSideDetectionHostTest,
   EXPECT_TRUE(Mock::VerifyAndClear(mock_extractor));
 }
 
+#if defined(OS_WIN)
+// Fails on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneVerdictNotPhishingButSBMatch) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneVerdictNotPhishingButSBMatch) {
+#endif
   // Case 7: renderer sends a verdict string that isn't phishing but the URL
   // was on the regular phishing or malware lists.
   GURL url("http://not-phishing.com/");
@@ -587,7 +622,12 @@ TEST_F(ClientSideDetectionHostTest,
   EXPECT_TRUE(Mock::VerifyAndClear(csd_service_.get()));
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest, DISABLED_UpdateIPUrlMap) {
+#else
 TEST_F(ClientSideDetectionHostTest, UpdateIPUrlMap) {
+#endif
   BrowseInfo* browse_info = GetBrowseInfo();
 
   // Empty IP or host are skipped
@@ -640,8 +680,14 @@ TEST_F(ClientSideDetectionHostTest, UpdateIPUrlMap) {
   EXPECT_EQ(expected_urls, browse_info->ips["100.100.100.256"]);
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneVerdictNotPhishingNotMalwareIP) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneVerdictNotPhishingNotMalwareIP) {
+#endif
   // Case 7: renderer sends a verdict string that isn't phishing and not matches
   // malware bad IP list
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -667,8 +713,14 @@ TEST_F(ClientSideDetectionHostTest,
   EXPECT_TRUE(Mock::VerifyAndClear(mock_extractor));
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneVerdictNotPhishingButMalwareIP) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneVerdictNotPhishingButMalwareIP) {
+#endif
   // Case 8: renderer sends a verdict string that isn't phishing but matches
   // malware bad IP list
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -700,8 +752,14 @@ TEST_F(ClientSideDetectionHostTest,
   EXPECT_TRUE(Mock::VerifyAndClear(mock_extractor));
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneVerdictPhishingAndMalwareIP) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneVerdictPhishingAndMalwareIP) {
+#endif
   // Case 9: renderer sends a verdict string that is phishing and matches
   // malware bad IP list
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -743,8 +801,14 @@ TEST_F(ClientSideDetectionHostTest,
   ASSERT_FALSE(cb.is_null());
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_OnPhishingDetectionDoneShowMalwareInterstitial) {
+#else
 TEST_F(ClientSideDetectionHostTest,
        OnPhishingDetectionDoneShowMalwareInterstitial) {
+#endif
   // Case 10: client thinks the page match malware IP and so does the server.
   // We show an sub-resource malware interstitial.
   MockBrowserFeatureExtractor* mock_extractor = new MockBrowserFeatureExtractor(
@@ -802,7 +866,13 @@ TEST_F(ClientSideDetectionHostTest,
                  ui_manager_, resource.callback));
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest,
+       DISABLED_NavigationCancelsShouldClassifyUrl) {
+#else
 TEST_F(ClientSideDetectionHostTest, NavigationCancelsShouldClassifyUrl) {
+#endif
   // Test that canceling pending should classify requests works as expected.
 
   GURL first_url("http://first.phishy.url.com");
@@ -827,7 +897,12 @@ TEST_F(ClientSideDetectionHostTest, NavigationCancelsShouldClassifyUrl) {
   WaitAndCheckPreClassificationChecks();
 }
 
+#if defined(OS_WIN)
+// Crashes on Blink canary bots: http://crbug.com/299149
+TEST_F(ClientSideDetectionHostTest, DISABLED_ShouldClassifyUrl) {
+#else
 TEST_F(ClientSideDetectionHostTest, ShouldClassifyUrl) {
+#endif
   // Navigate the tab to a page.  We should see a StartPhishingDetection IPC.
   GURL url("http://host.com/");
   ExpectPreClassificationChecks(url, &kFalse, &kFalse, &kFalse, &kFalse,

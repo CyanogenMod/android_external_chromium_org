@@ -7,10 +7,12 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/autofill/account_chooser_model.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_view.h"
 #include "chrome/browser/ui/autofill/data_model_wrapper.h"
@@ -19,6 +21,7 @@
 #include "chrome/browser/ui/autofill/testable_autofill_dialog_view.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/risk/proto/fingerprint.pb.h"
@@ -32,13 +35,16 @@
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "url/gurl.h"
 
 namespace autofill {
 
@@ -97,6 +103,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
 
   virtual ~TestAutofillDialogController() {}
 
+  virtual GURL SignInUrl() const OVERRIDE {
+    return GURL(content::kAboutBlankURL);
+  }
+
   virtual void ViewClosed() OVERRIDE {
     message_loop_runner_->Quit();
     AutofillDialogControllerImpl::ViewClosed();
@@ -152,6 +162,7 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
   using AutofillDialogControllerImpl::IsManuallyEditingSection;
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
+  using AutofillDialogControllerImpl::AccountChooserModelForTesting;
 
   void set_use_validation(bool use_validation) {
     use_validation_ = use_validation;
@@ -172,6 +183,10 @@ class TestAutofillDialogController : public AutofillDialogControllerImpl {
 
   virtual wallet::WalletClient* GetWalletClient() OVERRIDE {
     return &mock_wallet_client_;
+  }
+
+  virtual bool IsSignInContinueUrl(const GURL& url) const OVERRIDE {
+    return true;
   }
 
  private:
@@ -286,6 +301,16 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
                 "document.forms[0].requestAutocomplete();"
                 "send('clicked');"
               "};"
+              "function getValueForFieldOfType(type) {"
+              "  var fields = document.getElementsByTagName('input');"
+              "  for (var i = 0; i < fields.length; i++) {"
+              "    if (fields[i].autocomplete == type) {"
+              "      send(fields[i].value);"
+              "      return;"
+              "    }"
+              "  }"
+              "  send('');"
+              "};"
             "</script>"
           "</body>"
         "</html>"));
@@ -311,6 +336,19 @@ class AutofillDialogControllerTest : public InProcessBrowserTest {
     ASSERT_TRUE(dom_message_queue_->WaitForMessage(&message));
     dom_message_queue_->ClearQueue();
     EXPECT_EQ("\"" + expected + "\"", message);
+  }
+
+  // Returns the value filled into the first field with autocomplete attribute
+  // equal to |autocomplete_type|, or an empty string if there is no such field.
+  std::string GetValueForHTMLFieldOfType(const std::string& autocomplete_type) {
+    content::RenderViewHost* render_view_host =
+        browser()->tab_strip_model()->GetActiveWebContents()->
+        GetRenderViewHost();
+    std::string script = "getValueForFieldOfType('" + autocomplete_type + "');";
+    std::string result;
+    EXPECT_TRUE(content::ExecuteScriptAndExtractString(render_view_host, script,
+                                                       &result));
+    return result;
   }
 
   void AddCreditcardToProfile(Profile* profile, const CreditCard& card) {
@@ -806,8 +844,6 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
 }
 #endif  // defined(TOOLKIT_VIEWS) || defined(OS_MACOSX)
 
-// TODO(groby): figure out if the CVC challenge code actually works on Mac.
-#if !defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                        GeneratedCardLastFourAfterVerifyCvv) {
   std::vector<std::string> usernames;
@@ -858,6 +894,52 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   EXPECT_EQ(1, test_generated_bubble_controller()->bubbles_shown());
   EXPECT_EQ(last_four, test_generated_bubble_controller()->backing_card_name());
 }
-#endif  // !defined(OS_MACOSX)
+
+// Simulates the user successfully signing in to the dialog for the first time.
+// The controller listens for nav entry commits and should not destroy the web
+// contents before its post load code runs (which would cause a crash).
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, SignInNoCrash) {
+  browser()->profile()->GetPrefs()->SetBoolean(
+      ::prefs::kAutofillDialogPayWithoutWallet,
+      true);
+
+  InitializeController();
+
+  ui_test_utils::UrlLoadObserver observer(
+      controller()->SignInUrl(),
+      content::NotificationService::AllSources());
+
+  controller()->SignInLinkClicked();
+
+  TestableAutofillDialogView* view = controller()->GetTestableView();
+  EXPECT_TRUE(view->GetSignInWebContents());
+  EXPECT_TRUE(controller()->ShouldShowSignInWebView());
+
+  const AccountChooserModel& account_chooser_model =
+      controller()->AccountChooserModelForTesting();
+  EXPECT_FALSE(account_chooser_model.WalletIsSelected());
+
+  observer.Wait();
+
+  // Wallet should now be selected and Chrome shouldn't have crashed.
+  EXPECT_TRUE(account_chooser_model.WalletIsSelected());
+}
+
+// Verify that filling a form works correctly, including filling the CVC when
+// that is requested separately.
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, FillFormIncludesCVC) {
+  AutofillDialogControllerImpl* controller =
+      SetUpHtmlAndInvoke("<input autocomplete='cc-csc'>");
+
+  AddCreditcardToProfile(controller->profile(), test::GetVerifiedCreditCard());
+  AddAutofillProfileToProfile(controller->profile(),
+                              test::GetVerifiedProfile());
+
+  TestableAutofillDialogView* view = controller->GetTestableView();
+  view->SetTextContentsOfSuggestionInput(SECTION_CC, ASCIIToUTF16("123"));
+  view->SubmitForTesting();
+  ExpectDomMessage("success");
+  EXPECT_EQ("123", GetValueForHTMLFieldOfType("cc-csc"));
+}
 
 }  // namespace autofill

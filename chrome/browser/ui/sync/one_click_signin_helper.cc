@@ -14,9 +14,11 @@
 #include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -29,7 +31,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_io_data.h"
@@ -323,7 +324,7 @@ void LogHistogramValue(signin::Source source, int action) {
       break;
     default:
       // This switch statement needs to be updated when the enum Source changes.
-      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 9,
+      COMPILE_ASSERT(signin::SOURCE_UNKNOWN == 11,
                      kSourceEnumHasChangedButNotThisSwitchStatement);
       NOTREACHED();
       return;
@@ -351,6 +352,17 @@ void RedirectToNtpOrAppsPage(content::WebContents* contents,
                                 content::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                 false);
   contents->OpenURL(params);
+}
+
+void RedirectToNtpOrAppsPageWithIds(int child_id,
+                                    int route_id,
+                                    signin::Source source) {
+  content::WebContents* web_contents = tab_util::GetWebContentsByID(child_id,
+                                                                    route_id);
+  if (!web_contents)
+    return;
+
+  RedirectToNtpOrAppsPage(web_contents, source);
 }
 
 // If the |source| is not settings page/webstore, redirects to
@@ -414,17 +426,21 @@ void StartExplicitSync(const StartSyncArgs& args,
     // the action is CREATE_NEW_USER because the "Create new user" page might
     // be opened in a different tab that is already showing settings.
     //
-    // Don't redirect when this callback is called while there is a navigation
-    // in progress. Otherwise, there would be 2 nested navigations and a crash
-    // would occur (crbug.com/293261).
-    //
-    // Also, don't redirect when the visible URL is not a blank page: if the
+    // Don't redirect when the visible URL is not a blank page: if the
     // source is SOURCE_WEBSTORE_INSTALL, |contents| might be showing an app
     // page that shouldn't be hidden.
-    if (!contents->IsLoading() &&
-        signin::IsContinueUrlForWebBasedSigninFlow(
+    //
+    // If redirecting, don't do so immediately, otherwise there may be 2 nested
+    // navigations and a crash would occur (crbug.com/293261).  Post the task
+    // to the current thread instead.
+    if (signin::IsContinueUrlForWebBasedSigninFlow(
             contents->GetVisibleURL())) {
-      RedirectToNtpOrAppsPage(contents, args.source);
+      base::MessageLoopProxy::current()->PostNonNestableTask(
+          FROM_HERE,
+          base::Bind(RedirectToNtpOrAppsPageWithIds,
+                     contents->GetRenderProcessHost()->GetID(),
+                     contents->GetRoutingID(),
+                     args.source));
     }
     if (action == ConfirmEmailDialogDelegate::CREATE_NEW_USER) {
       chrome::ShowSettingsSubPage(args.browser,

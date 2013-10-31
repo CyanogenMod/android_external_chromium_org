@@ -4,11 +4,11 @@
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/global_request_id.h"
@@ -113,8 +113,9 @@ class TestInterstitialPage : public InterstitialPageImpl {
                        InterstitialState* state,
                        bool* deleted)
       : InterstitialPageImpl(
-            contents, new_navigation, url,
-            new TestInterstitialPageDelegate(this)),
+            contents,
+            static_cast<RenderWidgetHostDelegate*>(contents),
+            new_navigation, url, new TestInterstitialPageDelegate(this)),
         state_(state),
         deleted_(deleted),
         command_received_count_(0),
@@ -1060,8 +1061,11 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
 
   // Simulate the pending renderer's response, which leads to an unload request
   // being sent to orig_rvh.
+  std::vector<GURL> url_chain;
+  url_chain.push_back(GURL());
   contents()->GetRenderManagerForTesting()->OnCrossSiteResponse(
-      pending_rvh, GlobalRequestID(0, 0), false, GURL(), Referrer(), 1);
+      pending_rvh, GlobalRequestID(0, 0), false, url_chain, Referrer(),
+      PAGE_TRANSITION_TYPED, 1);
 
   // Suppose the original renderer navigates now, while the unload request is in
   // flight.  We should ignore it, wait for the unload ack, and let the pending

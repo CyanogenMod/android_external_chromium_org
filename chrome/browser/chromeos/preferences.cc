@@ -12,6 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -27,7 +28,6 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/feedback/tracing_manager.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
@@ -244,6 +244,13 @@ void Preferences::RegisterProfilePrefs(
       prefs::kLanguageRemapDiamondKeyTo,
       input_method::kControlKey,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PRIORITY_PREF);
+  // The following pref isn't synced since the user may desire a different value
+  // depending on whether an external keyboard is attached to a particular
+  // device.
+  registry->RegisterBooleanPref(
+      prefs::kLanguageSendFunctionKeys,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   // We don't sync the following keyboard prefs since they are not user-
   // configurable.
   registry->RegisterBooleanPref(

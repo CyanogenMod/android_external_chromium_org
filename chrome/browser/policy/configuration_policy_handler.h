@@ -11,8 +11,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/common/content_settings.h"
 
 class PrefValueMap;
 
@@ -228,36 +226,6 @@ class IntPercentageToDoublePolicyHandler : public IntRangePolicyHandlerBase {
   DISALLOW_COPY_AND_ASSIGN(IntPercentageToDoublePolicyHandler);
 };
 
-// ConfigurationPolicyHandler for the SyncDisabled policy.
-class SyncPolicyHandler : public TypeCheckingPolicyHandler {
- public:
-  explicit SyncPolicyHandler(const char* pref_name);
-  virtual ~SyncPolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  const char* pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(SyncPolicyHandler);
-};
-
-// ConfigurationPolicyHandler for the AutofillEnabled policy.
-class AutofillPolicyHandler : public TypeCheckingPolicyHandler {
- public:
-  explicit AutofillPolicyHandler(const char* pref_name);
-  virtual ~AutofillPolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  const char* pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(AutofillPolicyHandler);
-};
-
 #if !defined(OS_ANDROID)
 
 // ConfigurationPolicyHandler for the DiskCacheDir policy.
@@ -276,99 +244,6 @@ class DiskCacheDirPolicyHandler : public TypeCheckingPolicyHandler {
 };
 
 #endif  // !defined(OS_ANDROID)
-
-// ConfigurationPolicyHandler for the FileSelectionDialogsHandler policy.
-class FileSelectionDialogsHandler : public TypeCheckingPolicyHandler {
- public:
-  FileSelectionDialogsHandler(const char* allow_dialogs_pref_name,
-                              const char* prompt_for_download_pref_name);
-  virtual ~FileSelectionDialogsHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  const char* allow_dialogs_pref_name_;
-  const char* prompt_for_download_pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(FileSelectionDialogsHandler);
-};
-
-// ConfigurationPolicyHandler for the incognito mode policies.
-class IncognitoModePolicyHandler : public ConfigurationPolicyHandler {
- public:
-  explicit IncognitoModePolicyHandler(const char* pref_name);
-  virtual ~IncognitoModePolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual bool CheckPolicySettings(const PolicyMap& policies,
-                                   PolicyErrorMap* errors) OVERRIDE;
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  IncognitoModePrefs::Availability GetAvailabilityValueAsEnum(
-      const Value* availability);
-
-  const char* pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(IncognitoModePolicyHandler);
-};
-
-// Handles JavaScript policies.
-class JavascriptPolicyHandler : public ConfigurationPolicyHandler {
- public:
-  explicit JavascriptPolicyHandler(const char* pref_name);
-  virtual ~JavascriptPolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual bool CheckPolicySettings(const PolicyMap& policies,
-                                   PolicyErrorMap* errors) OVERRIDE;
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  const char* pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(JavascriptPolicyHandler);
-};
-
-// Handles URLBlacklist policies.
-class URLBlacklistPolicyHandler : public ConfigurationPolicyHandler {
- public:
-  explicit URLBlacklistPolicyHandler(const char* pref_name);
-  virtual ~URLBlacklistPolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual bool CheckPolicySettings(const PolicyMap& policies,
-                                   PolicyErrorMap* errors) OVERRIDE;
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  const char* pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(URLBlacklistPolicyHandler);
-};
-
-// Handles RestoreOnStartup policy.
-class RestoreOnStartupPolicyHandler : public TypeCheckingPolicyHandler {
- public:
-  RestoreOnStartupPolicyHandler(const char* restore_on_startup_pref_name,
-                                const char* startup_url_list_pref_name);
-  virtual ~RestoreOnStartupPolicyHandler();
-
-  // ConfigurationPolicyHandler methods:
-  virtual bool CheckPolicySettings(const PolicyMap& policies,
-                                   PolicyErrorMap* errors) OVERRIDE;
-  virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) OVERRIDE;
-
- private:
-  void ApplyPolicySettingsFromHomePage(const PolicyMap& policies,
-                                       PrefValueMap* prefs);
-
-  const char* restore_on_startup_pref_name_;
-  const char* startup_url_list_pref_name_;
-  DISALLOW_COPY_AND_ASSIGN(RestoreOnStartupPolicyHandler);
-};
 
 }  // namespace policy
 

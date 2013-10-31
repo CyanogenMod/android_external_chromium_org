@@ -6,6 +6,10 @@
 
 namespace switches {
 
+// The number of MSAA samples for canvas2D. Requires MSAA support by GPU to
+// have an effect. 0 disables MSAA.
+const char kAcceleratedCanvas2dMSAASampleCount[] = "canvas-msaa-sample-count";
+
 // By default, file:// URIs cannot read other file:// URIs. This is an
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
@@ -344,13 +348,7 @@ const char kEnableAcceleratedScrollableFrames[] =
 // Turns on extremely verbose logging of accessibility events.
 const char kEnableAccessibilityLogging[]    = "enable-accessibility-logging";
 
-// Enable notifications of audible/silent audio output from a render view.
-//
-// TODO(miu): Remove --enable-audible-notifications once the feature goes
-// live.  http://crbug.com/178934
-const char kEnableAudibleNotifications[]    = "enable-audible-notifications";
-
-// Use a begin frame signal from browser to renderer to schedule rendering.
+// Use a BeginImplFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
 
 // Enables browser plugin for all types of pages.
@@ -417,11 +415,6 @@ const char kEnableExperimentalWebSocket[]   = "enable-experimental-websocket";
 
 // Enable the fast text autosizing implementation.
 const char kEnableFastTextAutosizing[]      = "enable-fast-text-autosizing";
-
-// By default, a page is laid out to fill the entire width of the window.
-// This flag fixes the layout of the page to a default of 980 CSS pixels,
-// or to a specified width and height using --enable-fixed-layout=w,h
-const char kEnableFixedLayout[]             = "enable-fixed-layout";
 
 const char kEnableFixedPositionCreatesStackingContext[]
     = "enable-fixed-position-creates-stacking-context";
@@ -821,10 +814,6 @@ const char kTabCaptureDownscaleQuality[]    = "tab-capture-downscale-quality";
 // Upscale defaults to "best".
 const char kTabCaptureUpscaleQuality[]      = "tab-capture-upscale-quality";
 
-// GestureTapDown events are deferred by this many miillseconds before
-// sending them to the renderer.
-const char kTapDownDeferralTimeMs[]         = "tap-down-deferral-time";
-
 // Allows for forcing socket connections to http/https to use fixed ports.
 const char kTestingFixedHttpPort[]          = "testing-fixed-http-port";
 const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
@@ -998,11 +987,6 @@ const char kUseCoreAnimation[]              = "use-core-animation";
 #if defined(OS_POSIX)
 // Causes the child processes to cleanly exit via calling exit().
 const char kChildCleanExit[]                = "child-clean-exit";
-#endif
-
-#if defined(USE_AURA)
-// Forces usage of the test compositor. Needed to run ui tests on bots.
-extern const char kTestCompositor[]         = "test-compositor";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

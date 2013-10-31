@@ -15,7 +15,6 @@ class AppListControllerDelegate;
 class Profile;
 
 namespace extensions {
-class Extension;
 class ContextMenuMatcher;
 }
 
@@ -37,11 +36,6 @@ class AppContextMenu : public ui::SimpleMenuModel::Delegate {
   ui::MenuModel* GetMenuModel();
 
  private:
-  const extensions::Extension* GetExtension() const;
-  void ShowExtensionOptions();
-  void ShowExtensionDetails();
-  void StartExtensionUninstall();
-
   // ui::SimpleMenuModel::Delegate overrides:
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
   virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;

@@ -145,7 +145,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
     feedback.tcp.accumulated_number_of_lost_packets = 0;
     feedback.tcp.receive_window = 256000;
 
-    QuicFramer framer(QuicVersionMax(), QuicTime::Zero(), false);
+    QuicFramer framer(QuicSupportedVersions(), QuicTime::Zero(), false);
     QuicFrames frames;
     frames.push_back(QuicFrame(&ack));
     frames.push_back(QuicFrame(&feedback));
@@ -178,11 +178,8 @@ class QuicNetworkTransactionTest : public PlatformTest {
 
   std::string SerializeHeaderBlock(const SpdyHeaderBlock& headers) {
     QuicSpdyCompressor compressor;
-    if (QuicVersionMax() >= QUIC_VERSION_9) {
-      return compressor.CompressHeadersWithPriority(
-          ConvertRequestPriorityToQuicPriority(DEFAULT_PRIORITY), headers);
-    }
-    return compressor.CompressHeaders(headers);
+    return compressor.CompressHeadersWithPriority(
+        ConvertRequestPriorityToQuicPriority(DEFAULT_PRIORITY), headers);
   }
 
   // Returns a newly created packet to send kData on stream 1.
@@ -201,7 +198,7 @@ class QuicNetworkTransactionTest : public PlatformTest {
   scoped_ptr<QuicEncryptedPacket> ConstructPacket(
       const QuicPacketHeader& header,
       const QuicFrame& frame) {
-    QuicFramer framer(QuicVersionMax(), QuicTime::Zero(), false);
+    QuicFramer framer(QuicSupportedVersions(), QuicTime::Zero(), false);
     QuicFrames frames;
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(

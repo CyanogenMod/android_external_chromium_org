@@ -10,8 +10,8 @@
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
 #include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
 #include "content/public/browser/notification_observer.h"
 #include "extensions/browser/extension_prefs_scope.h"
 
@@ -175,12 +175,12 @@ class PrefTransformerInterface {
 
 // A base class to provide functionality common to the other *PreferenceFunction
 // classes.
-class PreferenceFunction : public SyncExtensionFunction {
+class PreferenceFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~PreferenceFunction();
 
   // Given an |extension_pref_key|, provides its |browser_pref_key| from the
-  // static map in extension_preference.cc. Returns true if the corresponding
+  // static map in preference_api.cc. Returns true if the corresponding
   // browser pref exists and the extension has the API permission needed to
   // modify that pref. Sets |error_| if the extension doesn't have the needed
   // permission.

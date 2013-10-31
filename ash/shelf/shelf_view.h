@@ -34,9 +34,9 @@ class ShelfViewTestAPI;
 
 class LauncherDelegate;
 struct LauncherItem;
-class LauncherIconObserver;
 class LauncherItemDelegateManager;
 class LauncherModel;
+class ShelfIconObserver;
 
 namespace internal {
 
@@ -63,6 +63,8 @@ class ASH_EXPORT ShelfView : public views::View,
 
   ShelfTooltipManager* tooltip_manager() { return tooltip_.get(); }
 
+  ShelfLayoutManager* shelf_layout_manager() { return layout_manager_; }
+
   LauncherModel* model() { return model_; }
 
   void Init();
@@ -77,8 +79,8 @@ class ASH_EXPORT ShelfView : public views::View,
   // Repositions the icon for the specified item by the midpoint of the window.
   void UpdatePanelIconPosition(LauncherID id, const gfx::Point& midpoint);
 
-  void AddIconObserver(LauncherIconObserver* observer);
-  void RemoveIconObserver(LauncherIconObserver* observer);
+  void AddIconObserver(ShelfIconObserver* observer);
+  void RemoveIconObserver(ShelfIconObserver* observer);
 
   // Returns true if we're showing a menu.
   bool IsShowingMenu() const;
@@ -99,9 +101,6 @@ class ASH_EXPORT ShelfView : public views::View,
   // in the gaps, but the tooltip should hide if the mouse moved totally outside
   // of the buttons area.
   bool ShouldHideTooltip(const gfx::Point& cursor_location);
-
-  int leading_inset() const { return leading_inset_; }
-  void set_leading_inset(int leading_inset) { leading_inset_ = leading_inset; }
 
   // Returns rectangle bounding all visible launcher items. Used screen
   // coordinate system.
@@ -145,7 +144,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   enum RemovableState {
     REMOVABLE,     // Item can be removed when dragged away.
-    DRAGGABLE,     // Item can be removed, but will snap always back to origin.
+    DRAGGABLE,     // Item can be dragged, but will snap always back to origin.
     NOT_REMOVABLE, // Item is fixed and can never be removed.
   };
 
@@ -222,6 +221,9 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Invoked after the fading out animation for item deletion is ended.
   void OnFadeOutAnimationEnded();
+
+  // Fade in last visible item.
+  void StartFadeInLastVisibleItem();
 
   // Updates the visible range of overflow items in |overflow_view|.
   void UpdateOverflowRange(ShelfView* overflow_view);
@@ -319,7 +321,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Index of first visible launcher item. When it it greater than 0,
   // ShelfView is hosted in an overflow bubble. In this mode, it does not
-  // show browser, app list and overflow button.
+  // show app list, panel, and overflow button.
   int first_visible_index_;
 
   // Last index of a launcher button that is visible
@@ -357,7 +359,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   scoped_ptr<views::MenuRunner> launcher_menu_runner_;
 
-  ObserverList<LauncherIconObserver> observers_;
+  ObserverList<ShelfIconObserver> observers_;
 
   // Amount content is inset on the left edge (or top edge for vertical
   // alignment).
@@ -411,6 +413,9 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Holds LauncherItemDelegateManager.
   LauncherItemDelegateManager* item_manager_;
+
+  // Holds ShelfLayoutManager.
+  ShelfLayoutManager* layout_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ShelfView);
 };

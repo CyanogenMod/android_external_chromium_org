@@ -7,6 +7,10 @@
       "third_party/WebKit/PerformanceTests/"
     ]
   },
+  "canvasmark": {
+    "description": "Runs Canvasmark HTML5, Canvas 2D rendering and javascript benchmark.\n\nCanvasMark tests the HTML5 <canvas> rendering performance for commonly used operations in HTML5 games: bitmaps, canvas drawing, alpha blending, polygon fills, shadows and text functions.(http://www.kevs3d.co.uk/dev/canvasmark/)",
+    "code": ["chrome/src/tools/perf/benchmarks/canvasmark.py"]
+  },
   "cc_perftests":{
     "description":"Microbenchmarks for compositor (cc/) component.",
     "code":[
@@ -58,6 +62,10 @@
   },
   "dromaeo.jslibtraverseprototype":{
     "description":"Traversing a DOM structure using the Prototype JavaScript Library."
+  },
+   "html5gaming": {
+    "description": "Impact HTML5 Gaming benchmark.\n\nTests one very specific use case: smooth running games rendered with the <canvas> element. The score for the HTML5-Benchmark takes the total time the browser spent rendering frames (formula is 1000000/(sqrt(totalTime) + lagTime * 0.1)). The benchmark automatically runs at a reasonable screen size. Final score is a indicator for the browser's ability to smoothly run HTML5 games.",
+    "code": ["chrome/src/tools/perf/benchmark/html5gaming.py"]
   },
   "idb_perf":{
     "description":"Benchmarks for a variety of IndexedDB operations.",
@@ -133,7 +141,7 @@
     "description":"Loading benchmark for the Polymer toolkit's [Pica](http://www.polymer-project.org/polymer-all/projects/pica/index.html) demo app"
   },
   "page_cycler.netsim.top_10":{
-    "description":"Page loading benchmark for a set of 25 top pages recorded in Q2, 2012.  Despite the name, network simulation has not actually been enabled on this test yet."
+    "description":"Page loading benchmark for a set of 10 top pages recorded in June, 2013.  Pages are loaded under the simplisticly simulated bandwidth and RTT constraints of a cable modem (5Mbit/s down, 1Mbit/s up, 28ms RTT). Contention is realistically simulated, but slow start is not. DNS lookups are 'free'."
   },
   "page_cycler.tough_layout_cases":{
     "description":"Page loading benchmark for the slowest layouts observed in the Alexa top 1 million sites in July 2013."

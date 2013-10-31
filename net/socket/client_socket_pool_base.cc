@@ -39,28 +39,6 @@ const int kCleanupInterval = 10;  // DO NOT INCREASE THIS TIMEOUT.
 // after a certain timeout has passed without receiving an ACK.
 bool g_connect_backup_jobs_enabled = true;
 
-// Compares the effective priority of two results, and returns 1 if |request1|
-// has greater effective priority than |request2|, 0 if they have the same
-// effective priority, and -1 if |request2| has the greater effective priority.
-// Requests with |ignore_limits| set have higher effective priority than those
-// without.  If both requests have |ignore_limits| set/unset, then the request
-// with the highest Pririoty has the highest effective priority.  Does not take
-// into account the fact that Requests are serviced in FIFO order if they would
-// otherwise have the same priority.
-int CompareEffectiveRequestPriority(
-    const internal::ClientSocketPoolBaseHelper::Request& request1,
-    const internal::ClientSocketPoolBaseHelper::Request& request2) {
-  if (request1.ignore_limits() && !request2.ignore_limits())
-    return 1;
-  if (!request1.ignore_limits() && request2.ignore_limits())
-    return -1;
-  if (request1.priority() > request2.priority())
-    return 1;
-  if (request1.priority() < request2.priority())
-    return -1;
-  return 0;
-}
-
 }  // namespace
 
 ConnectJob::ConnectJob(const std::string& group_name,
@@ -430,9 +408,8 @@ int ClientSocketPoolBaseHelper::RequestSocketInternal(
     // If we don't have any sockets in this group, set a timer for potentially
     // creating a new one.  If the SYN is lost, this backup socket may complete
     // before the slow socket, improving end user latency.
-    if (connect_backup_jobs_enabled_ &&
-        group->IsEmpty() && !group->HasBackupJob()) {
-      group->StartBackupSocketTimer(group_name, this);
+    if (connect_backup_jobs_enabled_ && group->IsEmpty()) {
+      group->StartBackupJobTimer(group_name, this);
     }
 
     connecting_socket_count_++;
@@ -653,7 +630,8 @@ base::DictionaryValue* ClientSocketPoolBaseHelper::GetInfoAsValue(
     group_dict->SetBoolean("is_stalled",
                            group->IsStalledOnPoolMaxSockets(
                                max_sockets_per_group_));
-    group_dict->SetBoolean("has_backup_job", group->HasBackupJob());
+    group_dict->SetBoolean("backup_job_timer_is_running",
+                           group->BackupJobTimerIsRunning());
 
     all_groups_dict->SetWithoutPathExpansion(it->first, group_dict);
   }
@@ -952,11 +930,6 @@ void ClientSocketPoolBaseHelper::RemoveConnectJob(ConnectJob* job,
 
   DCHECK(group);
   group->RemoveJob(job);
-
-  // If we've got no more jobs for this group, then we no longer need a
-  // backup job either.
-  if (group->jobs().empty())
-    group->CleanupBackupJob();
 }
 
 void ClientSocketPoolBaseHelper::OnAvailableSocketSlot(
@@ -1158,26 +1131,32 @@ void ClientSocketPoolBaseHelper::TryToCloseSocketsInLayeredPools() {
 
 ClientSocketPoolBaseHelper::Group::Group()
     : unassigned_job_count_(0),
-      active_socket_count_(0),
-      weak_factory_(this) {}
+      // The number of priorities is doubled since requests with
+      // |ignore_limits| are prioritized over other requests.
+      pending_requests_(2 * NUM_PRIORITIES),
+      active_socket_count_(0) {}
 
 ClientSocketPoolBaseHelper::Group::~Group() {
-  CleanupBackupJob();
   DCHECK_EQ(0u, unassigned_job_count_);
 }
 
-void ClientSocketPoolBaseHelper::Group::StartBackupSocketTimer(
+void ClientSocketPoolBaseHelper::Group::StartBackupJobTimer(
     const std::string& group_name,
     ClientSocketPoolBaseHelper* pool) {
-  // Only allow one timer pending to create a backup socket.
-  if (weak_factory_.HasWeakPtrs())
+  // Only allow one timer to run at a time.
+  if (BackupJobTimerIsRunning())
     return;
 
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&Group::OnBackupSocketTimerFired, weak_factory_.GetWeakPtr(),
-                 group_name, pool),
-      pool->ConnectRetryInterval());
+  // Unretained here is okay because |backup_job_timer_| is
+  // automatically cancelled when it's destroyed.
+  backup_job_timer_.Start(
+      FROM_HERE, pool->ConnectRetryInterval(),
+      base::Bind(&Group::OnBackupJobTimerFired, base::Unretained(this),
+                 group_name, pool));
+}
+
+bool ClientSocketPoolBaseHelper::Group::BackupJobTimerIsRunning() const {
+  return backup_job_timer_.IsRunning();
 }
 
 bool ClientSocketPoolBaseHelper::Group::TryToUseUnassignedConnectJob() {
@@ -1211,9 +1190,14 @@ void ClientSocketPoolBaseHelper::Group::RemoveJob(ConnectJob* job) {
   size_t job_count = jobs_.size();
   if (job_count < unassigned_job_count_)
     unassigned_job_count_ = job_count;
+
+  // If we've got no more jobs for this group, then we no longer need a
+  // backup job either.
+  if (jobs_.empty())
+    backup_job_timer_.Stop();
 }
 
-void ClientSocketPoolBaseHelper::Group::OnBackupSocketTimerFired(
+void ClientSocketPoolBaseHelper::Group::OnBackupJobTimerFired(
     std::string group_name,
     ClientSocketPoolBaseHelper* pool) {
   // If there are no more jobs pending, there is no work to do.
@@ -1228,7 +1212,7 @@ void ClientSocketPoolBaseHelper::Group::OnBackupSocketTimerFired(
   if (pool->ReachedMaxSocketsLimit() ||
       !HasAvailableSocketSlot(pool->max_sockets_per_group_) ||
       (*jobs_.begin())->GetLoadState() == LOAD_STATE_RESOLVING_HOST) {
-    StartBackupSocketTimer(group_name, pool);
+    StartBackupJobTimer(group_name, pool);
     return;
   }
 
@@ -1237,8 +1221,8 @@ void ClientSocketPoolBaseHelper::Group::OnBackupSocketTimerFired(
 
   scoped_ptr<ConnectJob> backup_job =
       pool->connect_job_factory_->NewConnectJob(
-          group_name, **pending_requests_.begin(), pool);
-  backup_job->net_log().AddEvent(NetLog::TYPE_SOCKET_BACKUP_CREATED);
+          group_name, *pending_requests_.FirstMax().value(), pool);
+  backup_job->net_log().AddEvent(NetLog::TYPE_BACKUP_CONNECT_JOB_CREATED);
   SIMPLE_STATS_COUNTER("socket.backup_created");
   int rv = backup_job->Connect();
   pool->connecting_socket_count_++;
@@ -1259,13 +1243,14 @@ void ClientSocketPoolBaseHelper::Group::RemoveAllJobs() {
   STLDeleteElements(&jobs_);
   unassigned_job_count_ = 0;
 
-  // Cancel pending backup job.
-  weak_factory_.InvalidateWeakPtrs();
+  // Stop backup job timer.
+  backup_job_timer_.Stop();
 }
 
 const ClientSocketPoolBaseHelper::Request*
 ClientSocketPoolBaseHelper::Group::GetNextPendingRequest() const {
-  return pending_requests_.empty() ? NULL : *pending_requests_.begin();
+  return
+      pending_requests_.empty() ? NULL : pending_requests_.FirstMax().value();
 }
 
 bool ClientSocketPoolBaseHelper::Group::HasConnectJobForHandle(
@@ -1274,40 +1259,39 @@ bool ClientSocketPoolBaseHelper::Group::HasConnectJobForHandle(
   // If it's farther back in the deque than that, it doesn't have a
   // corresponding ConnectJob.
   size_t i = 0;
-  for (RequestQueue::const_iterator it = pending_requests_.begin();
-       it != pending_requests_.end() && i < jobs_.size(); ++it, ++i) {
-    if ((*it)->handle() == handle)
+  for (RequestQueue::Pointer pointer = pending_requests_.FirstMax();
+       !pointer.is_null() && i < jobs_.size();
+       pointer = pending_requests_.GetNextTowardsLastMin(pointer), ++i) {
+    if (pointer.value()->handle() == handle)
       return true;
   }
   return false;
 }
 
 void ClientSocketPoolBaseHelper::Group::InsertPendingRequest(
-    scoped_ptr<const Request> r) {
-  RequestQueue::iterator it = pending_requests_.begin();
-  // TODO(mmenke):  Should the network stack require requests with
-  //                |ignore_limits| have the highest priority?
-  while (it != pending_requests_.end() &&
-         CompareEffectiveRequestPriority(*r, *(*it)) <= 0) {
-    ++it;
-  }
-  pending_requests_.insert(it, r.release());
+    scoped_ptr<const Request> request) {
+  RequestQueue::Priority queue_priority = request->priority();
+  // Prioritize requests with |ignore_limits| over ones that don't.
+  if (request->ignore_limits())
+    queue_priority += NUM_PRIORITIES;
+  pending_requests_.Insert(request.release(), queue_priority);
 }
 
 scoped_ptr<const ClientSocketPoolBaseHelper::Request>
 ClientSocketPoolBaseHelper::Group::PopNextPendingRequest() {
   if (pending_requests_.empty())
     return scoped_ptr<const ClientSocketPoolBaseHelper::Request>();
-  return RemovePendingRequest(pending_requests_.begin());
+  return RemovePendingRequest(pending_requests_.FirstMax());
 }
 
 scoped_ptr<const ClientSocketPoolBaseHelper::Request>
 ClientSocketPoolBaseHelper::Group::FindAndRemovePendingRequest(
     ClientSocketHandle* handle) {
-  for (RequestQueue::iterator it = pending_requests_.begin();
-       it != pending_requests_.end(); ++it) {
-    if ((*it)->handle() == handle) {
-      scoped_ptr<const Request> request = RemovePendingRequest(it);
+  for (RequestQueue::Pointer pointer = pending_requests_.FirstMax();
+       !pointer.is_null();
+       pointer = pending_requests_.GetNextTowardsLastMin(pointer)) {
+    if (pointer.value()->handle() == handle) {
+      scoped_ptr<const Request> request = RemovePendingRequest(pointer);
       return request.Pass();
     }
   }
@@ -1316,12 +1300,12 @@ ClientSocketPoolBaseHelper::Group::FindAndRemovePendingRequest(
 
 scoped_ptr<const ClientSocketPoolBaseHelper::Request>
 ClientSocketPoolBaseHelper::Group::RemovePendingRequest(
-    const RequestQueue::iterator& it) {
-  scoped_ptr<const Request> request(*it);
-  pending_requests_.erase(it);
+    const RequestQueue::Pointer& pointer) {
+  scoped_ptr<const Request> request(pointer.value());
+  pending_requests_.Erase(pointer);
   // If there are no more requests, kill the backup timer.
   if (pending_requests_.empty())
-    CleanupBackupJob();
+    backup_job_timer_.Stop();
   return request.Pass();
 }
 

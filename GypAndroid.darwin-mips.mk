@@ -115,7 +115,6 @@ include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_derived.target.darw
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_dom.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_html.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform.target.darwin-mips.mk
-include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_platform_geometry.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_prerequisites.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_remaining.target.darwin-mips.mk
 include $(LOCAL_PATH)/third_party/WebKit/Source/core/webcore_rendering.target.darwin-mips.mk
@@ -208,7 +207,7 @@ include $(LOCAL_PATH)/ui/gl/gl_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/gl/surface_jni_headers.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/keycode_converter.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/native_theme/native_theme.target.darwin-mips.mk
-include $(LOCAL_PATH)/ui/shell_dialogs.target.darwin-mips.mk
+include $(LOCAL_PATH)/ui/shell_dialogs/shell_dialogs.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/snapshot/snapshot.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/surface/surface.target.darwin-mips.mk
 include $(LOCAL_PATH)/ui/ui.target.darwin-mips.mk

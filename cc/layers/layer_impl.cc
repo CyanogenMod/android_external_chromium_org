@@ -385,7 +385,7 @@ void LayerImpl::ApplySentScrollDeltasFromAbortedCommit() {
   sent_scroll_delta_ = gfx::Vector2d();
 }
 
-void LayerImpl::ApplyScrollDeltasSinceBeginFrame() {
+void LayerImpl::ApplyScrollDeltasSinceBeginMainFrame() {
   // Only the pending tree can have missing scrolls.
   DCHECK(layer_tree_impl()->IsPendingTree());
   if (!scrollable())
@@ -613,6 +613,13 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
 
   if (scrollable_)
     result->SetBoolean("Scrollable", scrollable_);
+
+  if (have_wheel_event_handlers_)
+    result->SetBoolean("WheelHandler", have_wheel_event_handlers_);
+  if (!touch_event_handler_region_.IsEmpty()) {
+    scoped_ptr<base::Value> region = touch_event_handler_region_.AsValue();
+    result->Set("TouchRegion", region.release());
+  }
 
   list = new base::ListValue;
   for (size_t i = 0; i < children_.size(); ++i)

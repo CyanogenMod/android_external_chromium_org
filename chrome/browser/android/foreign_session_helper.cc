@@ -7,8 +7,8 @@
 #include <jni.h>
 
 #include "base/android/jni_string.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -50,6 +50,12 @@ bool ShouldSkipTab(const SessionTab& tab) {
     int selected_index = tab.current_navigation_index;
     if (selected_index < 0 ||
         selected_index >= static_cast<int>(tab.navigations.size()))
+      return true;
+
+    const ::sessions::SerializedNavigationEntry& current_navigation =
+        tab.navigations.at(selected_index);
+
+    if (current_navigation.virtual_url().is_empty())
       return true;
 
     return false;

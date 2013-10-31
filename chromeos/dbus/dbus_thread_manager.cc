@@ -29,6 +29,8 @@
 #include "chromeos/dbus/image_burner_client.h"
 #include "chromeos/dbus/introspectable_client.h"
 #include "chromeos/dbus/modem_messaging_client.h"
+#include "chromeos/dbus/nfc_adapter_client.h"
+#include "chromeos/dbus/nfc_manager_client.h"
 #include "chromeos/dbus/permission_broker_client.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/power_policy_controller.h"
@@ -101,6 +103,8 @@ class DBusThreadManagerImpl : public DBusThreadManager {
     InitClient(image_burner_client_.get());
     InitClient(introspectable_client_.get());
     InitClient(modem_messaging_client_.get());
+    InitClient(nfc_manager_client_.get());
+    InitClient(nfc_adapter_client_.get());
     InitClient(permission_broker_client_.get());
     InitClient(power_manager_client_.get());
     InitClient(session_manager_client_.get());
@@ -261,6 +265,14 @@ class DBusThreadManagerImpl : public DBusThreadManager {
     return modem_messaging_client_.get();
   }
 
+  virtual NfcAdapterClient* GetNfcAdapterClient() OVERRIDE {
+    return nfc_adapter_client_.get();
+  }
+
+  virtual NfcManagerClient* GetNfcManagerClient() OVERRIDE {
+    return nfc_manager_client_.get();
+  }
+
   virtual PermissionBrokerClient* GetPermissionBrokerClient() OVERRIDE {
     return permission_broker_client_.get();
   }
@@ -354,6 +366,9 @@ class DBusThreadManagerImpl : public DBusThreadManager {
     image_burner_client_.reset(ImageBurnerClient::Create(client_type));
     introspectable_client_.reset(IntrospectableClient::Create(client_type));
     modem_messaging_client_.reset(ModemMessagingClient::Create(client_type));
+    nfc_manager_client_.reset(NfcManagerClient::Create(client_type));
+    nfc_adapter_client_.reset(
+        NfcAdapterClient::Create(client_type, nfc_manager_client_.get()));
     permission_broker_client_.reset(
         PermissionBrokerClient::Create(client_type));
     power_manager_client_.reset(
@@ -389,6 +404,11 @@ class DBusThreadManagerImpl : public DBusThreadManager {
   scoped_ptr<ImageBurnerClient> image_burner_client_;
   scoped_ptr<IntrospectableClient> introspectable_client_;
   scoped_ptr<ModemMessagingClient> modem_messaging_client_;
+  // NfcAdapterClient depends on NfcManagerClient. We declare NfcManagerClient
+  // first, so that it won't be deallocated before NfcAdapterClient is done
+  // cleaning up.
+  scoped_ptr<NfcManagerClient> nfc_manager_client_;
+  scoped_ptr<NfcAdapterClient> nfc_adapter_client_;
   scoped_ptr<PermissionBrokerClient> permission_broker_client_;
   scoped_ptr<SystemClockClient> system_clock_client_;
   scoped_ptr<PowerManagerClient> power_manager_client_;

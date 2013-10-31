@@ -17,6 +17,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
+#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/skia_benchmarking_extension.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
@@ -258,6 +259,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "  native function GetRenderingStats();"
           "  return GetRenderingStats();"
           "};"
+          "chrome.gpuBenchmarking.gpuRenderingStats = function() {"
+          "  native function GetGpuRenderingStats();"
+          "  return GetGpuRenderingStats();"
+          "};"
           "chrome.gpuBenchmarking.printToSkPicture = function(dirname) {"
           "  native function PrintToSkPicture();"
           "  return PrintToSkPicture(dirname);"
@@ -303,6 +308,10 @@ class GpuBenchmarkingWrapper : public v8::Extension {
           "  arguments = opt_arguments || {};"
           "  native function RunMicroBenchmark();"
           "  return RunMicroBenchmark(name, callback, arguments);"
+          "};"
+          "chrome.gpuBenchmarking.hasGpuProcess = function() {"
+          "  native function HasGpuProcess();"
+          "  return HasGpuProcess();"
           "};") {}
 
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
@@ -313,6 +322,8 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(SetRasterizeOnlyVisibleContent);
     if (name->Equals(v8::String::New("GetRenderingStats")))
       return v8::FunctionTemplate::New(GetRenderingStats);
+    if (name->Equals(v8::String::New("GetGpuRenderingStats")))
+      return v8::FunctionTemplate::New(GetGpuRenderingStats);
     if (name->Equals(v8::String::New("PrintToSkPicture")))
       return v8::FunctionTemplate::New(PrintToSkPicture);
     if (name->Equals(v8::String::New("BeginSmoothScroll")))
@@ -327,6 +338,8 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(ClearImageCache);
     if (name->Equals(v8::String::New("RunMicroBenchmark")))
       return v8::FunctionTemplate::New(RunMicroBenchmark);
+    if (name->Equals(v8::String::New("HasGpuProcess")))
+      return v8::FunctionTemplate::New(HasGpuProcess);
 
     return v8::Handle<v8::FunctionTemplate>();
   }
@@ -369,6 +382,23 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     stats.rendering_stats.EnumerateFields(&enumerator);
     gpu_stats.EnumerateFields(&enumerator);
     browser_stats.EnumerateFields(&enumerator);
+
+    args.GetReturnValue().Set(stats_object);
+  }
+
+  static void GetGpuRenderingStats(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+
+    GpuBenchmarkingContext context;
+    if (!context.Init(false))
+      return;
+
+    content::GpuRenderingStats gpu_stats;
+    context.render_view_impl()->GetGpuRenderingStats(&gpu_stats);
+
+    v8::Handle<v8::Object> stats_object = v8::Object::New();
+    RenderingStatsEnumerator enumerator(stats_object);
+    gpu_stats.EnumerateFields(&enumerator);
 
     args.GetReturnValue().Set(stats_object);
   }
@@ -654,6 +684,11 @@ class GpuBenchmarkingWrapper : public v8::Extension {
         std::string(*benchmark),
         value.Pass(),
         base::Bind(&OnMicroBenchmarkCompleted, callback_and_context)));
+  }
+
+  static void HasGpuProcess(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    GpuChannelHost* gpu_channel = RenderThreadImpl::current()->GetGpuChannel();
+    args.GetReturnValue().Set(!!gpu_channel);
   }
 };
 

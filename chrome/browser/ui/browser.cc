@@ -85,6 +85,7 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/autofill/tab_autofill_manager_delegate.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
@@ -96,6 +97,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_iterator.h"
+#include "chrome/browser/ui/browser_language_state_observer.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_tab_contents.h"
@@ -119,6 +121,7 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/search/search_delegate.h"
 #include "chrome/browser/ui/search/search_model.h"
+#include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/status_bubble.h"
@@ -142,7 +145,6 @@
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
@@ -344,7 +346,8 @@ Browser::Browser(const CreateParams& params)
           this, g_browser_process->profile_manager())),
       window_has_shown_(false),
       chrome_updater_factory_(this),
-      weak_factory_(this) {
+      weak_factory_(this),
+      language_state_observer_(new BrowserLanguageStateObserver(this)) {
   // If this causes a crash then a window is being opened using a profile type
   // that is disallowed by policy. The crash prevents the disabled window type
   // from opening at all, but the path that triggered it should be fixed.
@@ -1024,6 +1027,7 @@ void Browser::TabDetachedAt(WebContents* contents, int index) {
 void Browser::TabDeactivated(WebContents* contents) {
   fullscreen_controller_->OnTabDeactivated(contents);
   search_delegate_->OnTabDeactivated(contents);
+  SearchTabHelper::FromWebContents(contents)->OnTabDeactivated();
 
   // Save what the user's currently typing, so it can be restored when we
   // switch back to this tab.
@@ -1065,8 +1069,8 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
   // Propagate the profile to the location bar.
   UpdateToolbar((reason & CHANGE_REASON_REPLACED) == 0);
 
-  // Propagate tab state to toolbar, tab-strip, etc.
-  UpdateSearchState(new_contents);
+  if (chrome::IsInstantExtendedAPIEnabled())
+    search_delegate_->OnTabActivated(new_contents);
 
   // Update reload/stop state.
   command_controller_->LoadingStateChanged(new_contents->IsLoading(), true);
@@ -1098,12 +1102,13 @@ void Browser::ActiveTabChanged(WebContents* old_contents,
                                             tab_strip_model_->active_index());
   }
 
-  // This needs to be called after UpdateSearchState().
+  // This needs to be called after notifying SearchDelegate.
   if (instant_controller_)
     instant_controller_->ActiveTabChanged();
 
   autofill::TabAutofillManagerDelegate::FromWebContents(new_contents)->
       TabActivated(reason);
+  SearchTabHelper::FromWebContents(new_contents)->OnTabActivated();
 }
 
 void Browser::TabMoved(WebContents* contents,
@@ -1802,7 +1807,8 @@ void Browser::Observe(int type,
 
       // Close any tabs from the unloaded extension, unless it's terminated,
       // in which case let the sad tabs remain.
-      if (extension_info->reason != extension_misc::UNLOAD_REASON_TERMINATE) {
+      if (extension_info->reason !=
+          extensions::UnloadedExtensionInfo::REASON_TERMINATE) {
         const Extension* extension = extension_info->extension;
         // Iterate backwards as we may remove items while iterating.
         for (int i = tab_strip_model_->count() - 1; i >= 0; --i) {
@@ -1876,11 +1882,6 @@ void Browser::OnDevToolsDisabledChanged() {
 void Browser::UpdateToolbar(bool should_restore_state) {
   window_->UpdateToolbar(should_restore_state ?
       tab_strip_model_->GetActiveWebContents() : NULL);
-}
-
-void Browser::UpdateSearchState(WebContents* contents) {
-  if (chrome::IsInstantExtendedAPIEnabled())
-    search_delegate_->OnTabActivated(contents);
 }
 
 void Browser::ScheduleUIUpdate(const WebContents* source,
@@ -2088,6 +2089,10 @@ void Browser::SetAsDelegate(WebContents* web_contents, Browser* delegate) {
   CoreTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   SearchEngineTabHelper::FromWebContents(web_contents)->set_delegate(delegate);
   ZoomController::FromWebContents(web_contents)->set_observer(delegate);
+  TranslateTabHelper* translate_tab_helper =
+      TranslateTabHelper::FromWebContents(web_contents);
+  translate_tab_helper->language_state().set_observer(
+      delegate ? delegate->language_state_observer_.get() : NULL);
 }
 
 void Browser::CloseFrame() {

@@ -48,7 +48,7 @@ class TestSessionStateDelegate : public SessionStateDelegate {
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual bool TransferWindowToDesktopOfUser(
       aura::Window* window,
-      ash::MultiProfileIndex index) const OVERRIDE;
+      ash::MultiProfileIndex index) OVERRIDE;
 
   // TODO(oshima): Use state machine instead of using boolean variables.
 
@@ -69,9 +69,17 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // is an active user.
   void SetCanLockScreen(bool can_lock_screen);
 
+  // Updates |should_lock_screen_before_suspending_|.
+  void SetShouldLockScreenBeforeSuspending(bool should_lock);
+
   // Updates the internal state that indicates whether user adding screen is
   // running now.
   void SetUserAddingScreenRunning(bool user_adding_screen_running);
+
+  // Returns the number of calls to TransferWindowToDesktopOfUser.
+  int num_transfer_to_desktop_of_user_calls() {
+    return num_transfer_to_desktop_of_user_calls_;
+  }
 
  private:
   // Whether a session is in progress and there is an active user.
@@ -85,6 +93,9 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // Whether the screen can be locked. Locking will only actually be allowed
   // when this is |true| and there is an active user.
   bool can_lock_screen_;
+
+  // Return value for ShouldLockScreenBeforeSuspending().
+  bool should_lock_screen_before_suspending_;
 
   // Whether the screen is currently locked.
   bool screen_locked_;
@@ -100,6 +111,9 @@ class TestSessionStateDelegate : public SessionStateDelegate {
 
   // A test user image.
   gfx::ImageSkia null_image_;
+
+  // The number of calls which happened to TransferWindowToDesktopOfUser.
+  int num_transfer_to_desktop_of_user_calls_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSessionStateDelegate);
 };

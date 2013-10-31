@@ -4,14 +4,15 @@
 
 #include "chrome/browser/profile_resetter/automatic_profile_resetter_mementos.h"
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -19,10 +20,12 @@
 
 using base::DictionaryValue;
 
+
 // AutomaticProfileResetter::PreferenceHostedPromptMemento -------------------
 
 PreferenceHostedPromptMemento::PreferenceHostedPromptMemento(Profile* profile)
     : profile_(profile) {}
+
 PreferenceHostedPromptMemento::~PreferenceHostedPromptMemento() {}
 
 std::string PreferenceHostedPromptMemento::ReadValue() const {
@@ -37,10 +40,12 @@ void PreferenceHostedPromptMemento::StoreValue(const std::string& value) {
   prefs->SetString(prefs::kProfileResetPromptMemento, value);
 }
 
+
 // AutomaticProfileResetter::LocalStateHostedPromptMemento -------------------
 
 LocalStateHostedPromptMemento::LocalStateHostedPromptMemento(Profile* profile)
     : profile_(profile) {}
+
 LocalStateHostedPromptMemento::~LocalStateHostedPromptMemento() {}
 
 std::string LocalStateHostedPromptMemento::ReadValue() const {
@@ -52,12 +57,11 @@ std::string LocalStateHostedPromptMemento::ReadValue() const {
   std::string profile_key = GetProfileKey();
   if (!prompt_shown_dict || profile_key.empty()) {
     NOTREACHED();
-    return "";
+    return std::string();
   }
   std::string value;
-  return prompt_shown_dict->GetStringWithoutPathExpansion(profile_key, &value)
-             ? value
-             : "";
+  return prompt_shown_dict->GetStringWithoutPathExpansion(profile_key, &value) ?
+      value : std::string();
 }
 
 void LocalStateHostedPromptMemento::StoreValue(const std::string& value) {
@@ -79,10 +83,12 @@ std::string LocalStateHostedPromptMemento::GetProfileKey() const {
   return profile_->GetPath().BaseName().MaybeAsASCII();
 }
 
+
 // AutomaticProfileResetter::FileHostedPromptMemento -------------------------
 
 FileHostedPromptMemento::FileHostedPromptMemento(Profile* profile)
     : profile_(profile) {}
+
 FileHostedPromptMemento::~FileHostedPromptMemento() {}
 
 void FileHostedPromptMemento::ReadValue(

@@ -9,13 +9,12 @@
 # ANDROID_SDK_BUILD=1 will then be defined and used in the rest of the setup to
 # specifiy build type.
 
-# TODO(ilevy): Figure out the right check here. This breaks the webkit build as
-# is since it's sourced from another script:
-# http://build.webkit.org/builders/Chromium%20Android%20Release/builds/34681
-#if [ "$_" == "$0" ]; then
-#  echo "ERROR: envsetup must be sourced."
-#  exit 1
-#fi
+# Make sure we're being sourced (possibly by another script). Check for bash
+# since zsh sets $0 when sourcing.
+if [[ -n "$BASH_VERSION" && "${BASH_SOURCE:-$0}" == "$0" ]]; then
+  echo "ERROR: envsetup must be sourced."
+  exit 1
+fi
 
 # Source functions script.  The file is in the same directory as this script.
 SCRIPT_DIR="$(dirname "${BASH_SOURCE:-$0}")"
@@ -107,26 +106,6 @@ elif [[ -z "$ANDROID_BUILD_TOP" || \
   return 1
 elif [[ -n "$CHROME_ANDROID_BUILD_WEBVIEW" ]]; then
   webview_build_init
-fi
-
-java -version 2>&1 | grep -qs "Java HotSpot"
-if [ $? -ne 0 ]; then
-  echo "Please check and make sure you are using the Oracle Java SDK, and it"
-  echo "appears before other Java SDKs in your path."
-  echo "Refer to the \"Install prerequisites\" section here:"
-  echo "https://code.google.com/p/chromium/wiki/AndroidBuildInstructions"
-  return 1
-fi
-
-if [[ -n "$JAVA_HOME" && -x "$JAVA_HOME/bin/java" ]]; then
-  "$JAVA_HOME/bin/java" -version 2>&1 | grep -qs "Java HotSpot"
-  if [ $? -ne 0 ]; then
-    echo "If JAVA_HOME is defined then it must refer to the install location"
-    echo "of the Oracle Java SDK."
-    echo "Refer to the \"Install prerequisites\" section here:"
-    echo "https://code.google.com/p/chromium/wiki/AndroidBuildInstructions"
-    return 1
-  fi
 fi
 
 # Workaround for valgrind build

@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_APP_CURRENT_WINDOW_INTERNAL_APP_CURRENT_WINDOW_INTERNAL_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_APP_CURRENT_WINDOW_INTERNAL_APP_CURRENT_WINDOW_INTERNAL_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 
 namespace apps {
 class ShellWindow;
@@ -13,7 +13,8 @@ class ShellWindow;
 
 namespace extensions {
 
-class AppCurrentWindowInternalExtensionFunction : public SyncExtensionFunction {
+class AppCurrentWindowInternalExtensionFunction
+    : public ChromeSyncExtensionFunction {
  protected:
   virtual ~AppCurrentWindowInternalExtensionFunction() {}
 
@@ -130,6 +131,46 @@ class AppCurrentWindowInternalSetBoundsFunction
                              APP_CURRENTWINDOWINTERNAL_SETBOUNDS)
  protected:
   virtual ~AppCurrentWindowInternalSetBoundsFunction() {}
+  virtual bool RunWithWindow(apps::ShellWindow* window) OVERRIDE;
+};
+
+class AppCurrentWindowInternalSetMinWidthFunction
+    : public AppCurrentWindowInternalExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("app.currentWindowInternal.setMinWidth",
+                             APP_CURRENTWINDOWINTERNAL_SETMINWIDTH)
+ protected:
+  virtual ~AppCurrentWindowInternalSetMinWidthFunction() {}
+  virtual bool RunWithWindow(apps::ShellWindow* window) OVERRIDE;
+};
+
+class AppCurrentWindowInternalSetMinHeightFunction
+    : public AppCurrentWindowInternalExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("app.currentWindowInternal.setMinHeight",
+                             APP_CURRENTWINDOWINTERNAL_SETMINHEIGHT)
+ protected:
+  virtual ~AppCurrentWindowInternalSetMinHeightFunction() {}
+  virtual bool RunWithWindow(apps::ShellWindow* window) OVERRIDE;
+};
+
+class AppCurrentWindowInternalSetMaxWidthFunction
+    : public AppCurrentWindowInternalExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("app.currentWindowInternal.setMaxWidth",
+                             APP_CURRENTWINDOWINTERNAL_SETMAXWIDTH)
+ protected:
+  virtual ~AppCurrentWindowInternalSetMaxWidthFunction() {}
+  virtual bool RunWithWindow(apps::ShellWindow* window) OVERRIDE;
+};
+
+class AppCurrentWindowInternalSetMaxHeightFunction
+    : public AppCurrentWindowInternalExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("app.currentWindowInternal.setMaxHeight",
+                             APP_CURRENTWINDOWINTERNAL_SETMAXHEIGHT)
+ protected:
+  virtual ~AppCurrentWindowInternalSetMaxHeightFunction() {}
   virtual bool RunWithWindow(apps::ShellWindow* window) OVERRIDE;
 };
 

@@ -4,6 +4,7 @@
 
 #include "content/browser/devtools/renderer_overrides_handler.h"
 
+#include <map>
 #include <string>
 
 #include "base/barrier_closure.h"
@@ -183,13 +184,16 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
     return;
   }
 
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (!host->GetView())
+    return;
+
   last_frame_time_ = base::TimeTicks::Now();
   std::string format;
   int quality = kDefaultScreenshotQuality;
   double scale = 1;
   ParseCaptureParameters(screencast_command_.get(), &format, &quality, &scale);
 
-  RenderViewHost* host = agent_->GetRenderViewHost();
   RenderWidgetHostViewPort* view_port =
       RenderWidgetHostViewPort::FromRWHV(host->GetView());
 
@@ -227,14 +231,13 @@ void RendererOverridesHandler::ParseCaptureParameters(
   }
 
   RenderViewHost* host = agent_->GetRenderViewHost();
-  if (host->GetView()) {
-    gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-    float device_sf = last_compositor_frame_metadata_.device_scale_factor;
-    if (max_width > 0)
-      *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
-    if (max_height > 0)
-      *scale = std::min(*scale, max_height / view_bounds.height() / device_sf);
-  }
+  CHECK(host->GetView());
+  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
+  float device_sf = last_compositor_frame_metadata_.device_scale_factor;
+  if (max_width > 0)
+    *scale = std::min(*scale, max_width / view_bounds.width() / device_sf);
+  if (max_height > 0)
+    *scale = std::min(*scale, max_height / view_bounds.height() / device_sf);
 
   if (format->empty())
     *format = kPng;
@@ -422,12 +425,15 @@ RendererOverridesHandler::PageNavigateToHistoryEntry(
 scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageCaptureScreenshot(
     scoped_refptr<DevToolsProtocol::Command> command) {
+  RenderViewHost* host = agent_->GetRenderViewHost();
+  if (!host->GetView())
+    return command->InternalErrorResponse("Unable to access the view");
+
   std::string format;
   int quality = kDefaultScreenshotQuality;
   double scale = 1;
   ParseCaptureParameters(command.get(), &format, &quality, &scale);
 
-  RenderViewHost* host = agent_->GetRenderViewHost();
   gfx::Rect view_bounds = host->GetView()->GetViewBounds();
   gfx::Size snapshot_size = gfx::ToFlooredSize(
       gfx::ScaleSize(view_bounds.size(), scale));
@@ -661,10 +667,11 @@ std::string GetStorageTypeName(quota::StorageType type) {
       return devtools::Page::Usage::kItemPersistent;
     case quota::kStorageTypeSyncable:
       return devtools::Page::Usage::kItemSyncable;
-    default:
+    case quota::kStorageTypeQuotaNotManaged:
+    case quota::kStorageTypeUnknown:
       NOTREACHED();
-      return "";
   }
+  return "";
 }
 
 std::string GetQuotaClientName(quota::QuotaClient::ID id) {
@@ -698,23 +705,21 @@ void QueryUsageAndQuotaOnIOThread(
   };
 
   static const size_t kStorageTypeCount = quota::kStorageTypeUnknown;
-
-  base::ListValue* storage_type_lists[kStorageTypeCount];
+  std::map<quota::StorageType, base::ListValue*> storage_type_lists;
 
   for (size_t i = 0; i != kStorageTypeCount; i++) {
     const quota::StorageType type = static_cast<quota::StorageType>(i);
-    storage_type_lists[i] = new base::ListValue;
-    usage->Set(GetStorageTypeName(type), storage_type_lists[i]);
+    if (type == quota::kStorageTypeQuotaNotManaged)
+      continue;
+    storage_type_lists[type] = new base::ListValue;
+    usage->Set(GetStorageTypeName(type), storage_type_lists[type]);
   }
 
-  COMPILE_ASSERT(kStorageTypeCount == arraysize(storage_type_lists),
-      inconsistent_storage_type_list);
-
-  int kExpectedResults = 2 + arraysize(kQuotaClients) * kStorageTypeCount;
-
+  const int kExpectedResults =
+      2 + arraysize(kQuotaClients) * storage_type_lists.size();
   base::DictionaryValue* quota_raw_ptr = quota.get();
 
-  // Takes owneship on usage and quota.
+  // Takes ownership on usage and quota.
   base::Closure barrier = BarrierClosure(
       kExpectedResults,
       base::Bind(&QueryUsageAndQuotaCompletedOnIOThread,
@@ -736,16 +741,17 @@ void QueryUsageAndQuotaOnIOThread(
                  barrier));
 
   for (size_t i = 0; i != arraysize(kQuotaClients); i++) {
-    for (size_t j = 0; j != kStorageTypeCount; j++) {
-      const quota::StorageType type = static_cast<quota::StorageType>(j);
-      if (!quota_manager->IsTrackingHostUsage(type,
-                                              kQuotaClients[i])) {
+    std::map<quota::StorageType, base::ListValue*>::const_iterator iter;
+    for (iter = storage_type_lists.begin();
+         iter != storage_type_lists.end(); ++iter) {
+      const quota::StorageType type = (*iter).first;
+      if (!quota_manager->IsTrackingHostUsage(type, kQuotaClients[i])) {
         barrier.Run();
         continue;
       }
-      quota_manager->GetHostUsage(host, type,
-          kQuotaClients[i],
-          base::Bind(&DidGetHostUsage, storage_type_lists[j],
+      quota_manager->GetHostUsage(
+          host, type, kQuotaClients[i],
+          base::Bind(&DidGetHostUsage, (*iter).second,
                      GetQuotaClientName(kQuotaClients[i]),
                      barrier));
     }

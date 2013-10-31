@@ -27,7 +27,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_handlers/kiosk_mode_info.h"
-#include "chromeos/cryptohome/system_salt_getter.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -281,20 +280,6 @@ void StartupAppLauncher::InstallCallback(bool success,
 }
 
 void StartupAppLauncher::OnReadyToLaunch() {
-  // Defer app launch until system salt is loaded to make sure that identity
-  // api works with the enterprise kiosk app.
-  // TODO(xiyuan): Use async GetSystemSalt after merging to M31.
-  const std::string system_salt = SystemSaltGetter::Get()->GetSystemSaltSync();
-  if (system_salt.empty()) {
-    const int64 kRequestSystemSaltDelayMs = 500;
-    BrowserThread::PostDelayedTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&StartupAppLauncher::OnReadyToLaunch, AsWeakPtr()),
-        base::TimeDelta::FromMilliseconds(kRequestSystemSaltDelayMs));
-    return;
-  }
-
   ready_to_launch_ = true;
   FOR_EACH_OBSERVER(Observer, observer_list_, OnReadyToLaunch());
 }

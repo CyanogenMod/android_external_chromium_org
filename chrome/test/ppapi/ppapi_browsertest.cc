@@ -849,7 +849,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileIO) {
       LIST_TEST(FileIO_Mmap)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, FileIO) {
+// Flaky on XP; times out, http://crbug.com/313205
+#if defined(OS_WIN)
+#define MAYBE_FileIO DISABLED_FileIO
+#else
+#define MAYBE_FileIO FileIO
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)

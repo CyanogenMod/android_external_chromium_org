@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "6.12",
+  "version": "6.13",
   "entries": [
     {
       "id": 1,
@@ -652,7 +652,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 48,
-      // Please keep in sync with content/test/content_browser_test.cc.
       "description": "Accelerated video decode is unavailable on Mac and Linux.",
       "cr_bugs": [137247, 133828],
       "exceptions": [
@@ -1153,6 +1152,17 @@ LONG_STRING_CONST(
         "flash_3d",
         "flash_stage3d",
         "force_compositing_mode"
+      ]
+    },
+    {
+      "id": 80,
+      "description": "Texture sharing should be disabled on all Windows machines",
+      "cr_bugs": [304369],
+      "os": {
+        "type": "win"
+      },
+      "features": [
+        "texture_sharing"
       ]
     }
   ]

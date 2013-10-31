@@ -61,14 +61,7 @@ const char kAshDisableAutoMaximizing[] = "ash-disable-auto-maximizing";
 const char kAshDisableDisplayChangeLimiter[] =
     "ash-disable-display-change-limiter";
 
-// Disable immersive fullscreen mode, regardless of default setting.
-const char kAshDisableImmersiveFullscreen[] =
-    "ash-disable-immersive-fullscreen";
-
 #if defined(OS_CHROMEOS)
-// Disable compositor based mirroring.
-const char kAshDisableSoftwareMirroring[] = "ash-disable-software-mirroring";
-
 // Disable the notification when a low-power USB charger is connected.
 const char kAshDisableUsbChargerNotification[] =
     "ash-disable-usb-charger-notification";
@@ -91,9 +84,6 @@ const char kAshEnableAdvancedGestures[] = "ash-enable-advanced-gestures";
 const char kAshEnableAlternateFrameCaptionButtonStyle[] =
     "ash-enable-alternate-caption-button";
 
-// Enables settings ui to control the autoclick accessibility feature.
-const char kAshEnableAutoclick[] = "ash-enable-autoclick";
-
 // Always enable brightness control. Used by machines that don't report their
 // main monitor as internal.
 const char kAshEnableBrightnessControl[] = "ash-enable-brightness-control";
@@ -109,9 +99,6 @@ const char kAshDisableDragOffShelf[] = "ash-disable-drag-off-shelf";
 const char kAshEnableFullMultiProfileMode[] =
     "ash-enable-full-multi-profile-mode";
 #endif
-
-// Enable immersive fullscreen mode, regardless of default setting.
-const char kAshEnableImmersiveFullscreen[] = "ash-enable-immersive-fullscreen";
 
 #if defined(OS_LINUX)
 // Enable memory monitoring.
@@ -151,14 +138,13 @@ const char kAshHideNotificationsForFactory[] =
 // "1024x768*2" sets the scale factor to 2 for a high DPI display.
 const char kAshHostWindowBounds[] = "ash-host-window-bounds";
 
-// Hides the small tab indicators at the top of the screen during immersive
-// fullscreen mode.
-const char kAshImmersiveHideTabIndicators[] =
-    "ash-immersive-hide-tab-indicators";
-
 // OEM-supplied wallpaper (as paths to trusted, non-user-writable JPEG files).
 const char kAshOemWallpaperLarge[] = "ash-oem-wallpaper-large";
 const char kAshOemWallpaperSmall[] = "ash-oem-wallpaper-small";
+
+// Specifies the delay in milliseconds before beginning overview mode after
+// getting an alt tab keypress.
+const char kAshOverviewDelayOnAltTab[] = "ash-overview-delay-on-alt-tab";
 
 // Specifies the layout mode and offsets for the secondary display for
 // testing. The format is "<t|r|b|l>,<offset>" where t=TOP, r=RIGHT,

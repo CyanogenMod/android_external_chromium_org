@@ -27,7 +27,6 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_warning_badge_service.h"
 #include "chrome/browser/extensions/extension_warning_set.h"
-#include "chrome/browser/extensions/lazy_background_task_queue.h"
 #include "chrome/browser/extensions/management_policy.h"
 #include "chrome/browser/extensions/navigation_observer.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
@@ -36,7 +35,6 @@
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/sync/glue/sync_start_util.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -44,6 +42,7 @@
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/url_data_source.h"
+#include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/manifest.h"
 
@@ -77,6 +76,12 @@ ExtensionSystem::~ExtensionSystem() {
 // static
 ExtensionSystem* ExtensionSystem::Get(Profile* profile) {
   return ExtensionSystemFactory::GetForProfile(profile);
+}
+
+// static
+ExtensionSystem* ExtensionSystem::GetForBrowserContext(
+    content::BrowserContext* profile) {
+  return ExtensionSystemFactory::GetForProfile(static_cast<Profile*>(profile));
 }
 
 //
@@ -171,8 +176,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       autoupdate_enabled,
       extensions_enabled,
       &ready_));
-  extension_service_->SetSyncStartFlare(
-      sync_start_util::GetFlareForSyncableService(profile_->GetPath()));
 
   // These services must be registered before the ExtensionService tries to
   // load any extensions.
@@ -406,7 +409,7 @@ void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(
 
 void ExtensionSystemImpl::UnregisterExtensionWithRequestContexts(
     const std::string& extension_id,
-    const extension_misc::UnloadedExtensionReason reason) {
+    const UnloadedExtensionInfo::Reason reason) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&ExtensionInfoMap::RemoveExtension, info_map(),

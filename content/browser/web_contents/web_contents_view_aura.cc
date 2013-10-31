@@ -8,6 +8,8 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
@@ -17,8 +19,6 @@
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
 #include "content/browser/web_contents/aura/window_slider.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/touch_editable_impl_aura.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/notification_observer.h"
@@ -40,6 +40,7 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/drag_drop_delegate.h"
+#include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/root_window.h"
 #include "ui/aura/root_window_observer.h"
@@ -658,8 +659,8 @@ class WebContentsViewAura::WindowObserver
 
   virtual ~WindowObserver() {
     view_->window_->RemoveObserver(this);
-    if (view_->window_->GetRootWindow())
-      view_->window_->GetRootWindow()->RemoveRootWindowObserver(this);
+    if (view_->window_->GetDispatcher())
+      view_->window_->GetDispatcher()->RemoveRootWindowObserver(this);
     if (parent_)
       parent_->RemoveObserver(this);
   }
@@ -686,12 +687,12 @@ class WebContentsViewAura::WindowObserver
 
   virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE {
     if (window != parent_)
-      window->GetRootWindow()->AddRootWindowObserver(this);
+      window->GetDispatcher()->AddRootWindowObserver(this);
   }
 
   virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
     if (window != parent_)
-      window->GetRootWindow()->RemoveRootWindowObserver(this);
+      window->GetDispatcher()->RemoveRootWindowObserver(this);
   }
 
   // Overridden RootWindowObserver:
@@ -860,7 +861,7 @@ void WebContentsViewAura::SizeChangedCommon(const gfx::Size& size) {
 }
 
 void WebContentsViewAura::EndDrag(WebKit::WebDragOperationsMask ops) {
-  aura::RootWindow* root_window = GetNativeView()->GetRootWindow();
+  aura::Window* root_window = GetNativeView()->GetRootWindow();
   gfx::Point screen_loc =
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint();
   gfx::Point client_loc = screen_loc;
@@ -1145,7 +1146,7 @@ void WebContentsViewAura::CreateView(
   window_->SetType(aura::client::WINDOW_TYPE_CONTROL);
   window_->SetTransparent(false);
   window_->Init(ui::LAYER_NOT_DRAWN);
-  aura::RootWindow* root_window = context ? context->GetRootWindow() : NULL;
+  aura::Window* root_window = context ? context->GetRootWindow() : NULL;
   if (root_window) {
     // There are places where there is no context currently because object
     // hierarchies are built before they're attached to a Widget. (See
@@ -1156,8 +1157,8 @@ void WebContentsViewAura::CreateView(
     // explicitly add this WebContentsViewAura to their tree after they create
     // us.
     if (root_window) {
-      window_->SetDefaultParentByRootWindow(
-          root_window, root_window->GetBoundsInScreen());
+      aura::client::ParentWindowWithContext(
+          window_.get(), root_window, root_window->GetBoundsInScreen());
     }
   }
   window_->layer()->SetMasksToBounds(true);
@@ -1281,7 +1282,7 @@ void WebContentsViewAura::StartDragging(
     const gfx::ImageSkia& image,
     const gfx::Vector2d& image_offset,
     const DragEventSourceInfo& event_info) {
-  aura::RootWindow* root_window = GetNativeView()->GetRootWindow();
+  aura::Window* root_window = GetNativeView()->GetRootWindow();
   if (!aura::client::GetDragDropClient(root_window)) {
     web_contents_->SystemDragEnded();
     return;
@@ -1352,6 +1353,14 @@ void WebContentsViewAura::TakeFocus(bool reverse) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // WebContentsViewAura, OverscrollControllerDelegate implementation:
+
+gfx::Rect WebContentsViewAura::GetVisibleBounds() const {
+  RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
+  if (!rwhv || !rwhv->IsShowing())
+    return gfx::Rect();
+
+  return rwhv->GetViewBounds();
+}
 
 void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
   if (current_overscroll_gesture_ == OVERSCROLL_NONE)

@@ -320,6 +320,134 @@ TEST_F(
           JSON.stringify(mergedCards));
     });
 
+TEST_F(
+    'GoogleNowBackgroundUnitTest',
+    'MergeAndShowNotificationCards',
+    function() {
+      // Tests mergeAndShowNotificationCards function.
+      // The test passes 2 groups to mergeAndShowNotificationCards, checks that
+      // it calls mergeGroup() for each of these groups and calls
+      // showNotificationCards() with the results of these mergeGroup() calls.
+
+      // Setup and expectations.
+      var testGroups = {
+        'TEST GROUP 1': {testField: 'TEST VALUE 1'},
+        'TEST GROUP 2': {testField: 'TEST VALUE 2'}
+      };
+
+      this.makeAndRegisterMockGlobals(['mergeGroup', 'showNotificationCards']);
+
+      var mergeGroupSavedArgs = new SaveMockArguments();
+      this.mockGlobals.expects(once()).
+          mergeGroup(
+              mergeGroupSavedArgs.match(eqJSON({})),
+              mergeGroupSavedArgs.match(eqJSON({testField: 'TEST VALUE 1'}))).
+          will(callFunction(function() {
+            mergeGroupSavedArgs.arguments[0].card1 = {
+              testValue: 'TEST CARD VALUE 1'
+            };
+          }));
+      this.mockGlobals.expects(once()).
+          mergeGroup(
+              mergeGroupSavedArgs.match(
+                  eqJSON({card1: {testValue: 'TEST CARD VALUE 1'}})),
+              mergeGroupSavedArgs.match(
+                  eqJSON({testField: 'TEST VALUE 2'}))).
+          will(callFunction(function() {
+              mergeGroupSavedArgs.arguments[0].card2 = {
+                testValue: 'TEST CARD VALUE 2'
+              };
+          }));
+      this.mockGlobals.expects(once()).
+          showNotificationCards(eqJSON({
+            card1: {testValue: 'TEST CARD VALUE 1'},
+            card2: {testValue: 'TEST CARD VALUE 2'}
+          }));
+
+      // Invoking the tested function.
+      mergeAndShowNotificationCards(testGroups);
+    });
+
+// TODO(vadimt): Add more tests for parseAndShowNotificationCards().
+TEST_F(
+    'GoogleNowBackgroundUnitTest',
+    'ParseAndShowNotificationCardsAdd1Remove1',
+    function() {
+      // Tests parseAndShowNotificationCards function for the case when the
+      // extension has 2 groups, and the server sends update with 2 groups, one
+      // of which is new, and another one matches a stored group. The client
+      // has to delete the group that didn't receive an update, keep the
+      // existing group that received an update, and add a new stored group for
+      // the new group from the server.
+
+      // Setup and expectations.
+      var serverResponse = {
+        groups: {
+          GROUP1: {},
+          GROUP2: {}
+        }
+      };
+
+      var storedGroups = {
+        GROUP2: {
+          cards: ['c2'],
+          cardsTimestamp: 239,
+          nextPollTime: 10000,
+          rank: 1
+        },
+        GROUP3: {
+          cards: ['c3'],
+          cardsTimestamp: 240,
+          nextPollTime: 10001,
+          rank: 2
+        }
+      };
+
+      var expectedUpdatedGroups = {
+        GROUP1: {
+          cards: []
+        },
+        GROUP2: {
+          cards: ['c2'],
+          cardsTimestamp: 239,
+          nextPollTime: 10000,
+          rank: 1
+        }
+      };
+
+      this.makeAndRegisterMockGlobals(
+          ['scheduleNextPoll', 'mergeAndShowNotificationCards', 'recordEvent']);
+
+      this.makeAndRegisterMockApis([
+        'chrome.storage.local.set',
+        'instrumented.storage.local.get'
+      ]);
+
+      var storageGetSavedArgs = new SaveMockArguments();
+      this.mockApis.expects(once()).
+          instrumented_storage_local_get(
+              storageGetSavedArgs.match(eq('notificationGroups')),
+              storageGetSavedArgs.match(ANYTHING)).
+          will(invokeCallback(
+              storageGetSavedArgs, 1, {notificationGroups: storedGroups}));
+
+      this.mockGlobals.expects(once()).
+          scheduleNextPoll(eqJSON(expectedUpdatedGroups));
+
+      this.mockApis.expects(once()).
+          chrome_storage_local_set(
+              eqJSON({notificationGroups: expectedUpdatedGroups}));
+
+      this.mockGlobals.expects(once()).
+          mergeAndShowNotificationCards(eqJSON(expectedUpdatedGroups));
+
+      this.mockGlobals.expects(once()).
+          recordEvent(GoogleNowEvent.CARDS_PARSE_SUCCESS);
+
+      // Invoking the tested function.
+      parseAndShowNotificationCards(JSON.stringify(serverResponse));
+    });
+
 /**
  * Mocks global functions and APIs that initialize() depends upon.
  * @param {Test} fixture Test fixture.
@@ -336,6 +464,7 @@ function mockInitializeDependencies(fixture) {
     'chrome.storage.local.remove',
     'instrumented.metricsPrivate.getVariationParams',
     'instrumented.notifications.getAll',
+    'instrumented.notifications.getPermissionLevel',
     'instrumented.preferencesPrivate.googleGeolocationAccessEnabled.get',
     'instrumented.storage.local.get',
     'tasks.add',
@@ -354,13 +483,16 @@ function mockInitializeDependencies(fixture) {
  * @param {string} testIdentityToken getAuthToken callback token.
  * @param {boolean} testGeolocationPref Geolocation Preference callback value.
  * @param {object} testExperimentVariationParams Response of
- *     metricsPrivate.getVariationParams
+ *     metricsPrivate.getVariationParams.
+ * @param {string} testExperimentVariationParams Response of
+ *     notifications.getPermissionLevel.
  */
 function expectStateMachineCalls(
     fixture,
     testIdentityToken,
     testGeolocationPref,
-    testExperimentVariationParams) {
+    testExperimentVariationParams,
+    testNotificationPermissionLevel) {
   var authenticationManagerIsSignedInSavedArgs = new SaveMockArguments();
   fixture.mockApis.expects(once()).
       authenticationManager_isSignedIn(
@@ -385,6 +517,15 @@ function expectStateMachineCalls(
           googleGeolocationPrefGetSavedArgs.match(ANYTHING)).
       will(invokeCallback(
           googleGeolocationPrefGetSavedArgs, 1, {value: testGeolocationPref}));
+
+  var notificationGetPermissionLevelSavedArgs = new SaveMockArguments();
+  fixture.mockApis.expects(once()).
+      instrumented_notifications_getPermissionLevel(
+          notificationGetPermissionLevelSavedArgs.match(ANYTHING)).
+      will(invokeCallback(
+          notificationGetPermissionLevelSavedArgs,
+          0,
+          testNotificationPermissionLevel))
 
   fixture.mockGlobals.expects(once()).
       setBackgroundEnable(ANYTHING);
@@ -425,6 +566,7 @@ TEST_F(
       var testIdentityToken = undefined;
       var testGeolocationPref = false;
       var testExperimentVariationParams = {};
+      var testNotificationPermissionLevel = 'denied';
 
       mockInitializeDependencies(this);
 
@@ -440,7 +582,8 @@ TEST_F(
           this,
           testIdentityToken,
           testGeolocationPref,
-          testExperimentVariationParams);
+          testExperimentVariationParams,
+          testNotificationPermissionLevel);
 
       // Invoking the tested function.
       initialize();
@@ -458,6 +601,7 @@ TEST_F(
       var testIdentityToken = 'some identity token';
       var testGeolocationPref = false;
       var testExperimentVariationParams = {};
+      var testNotificationPermissionLevel = 'denied';
 
       mockInitializeDependencies(this);
 
@@ -470,7 +614,8 @@ TEST_F(
           this,
           testIdentityToken,
           testGeolocationPref,
-          testExperimentVariationParams);
+          testExperimentVariationParams,
+          testNotificationPermissionLevel);
 
       var chromeNotificationGetAllSavedArgs = new SaveMockArguments();
       this.mockApis.expects(exactly(1)).
@@ -492,6 +637,7 @@ TEST_F('GoogleNowBackgroundUnitTest', 'Initialize_RunGoogleNow', function() {
   var testIdentityToken = 'some identity token';
   var testGeolocationPref = true;
   var testExperimentVariationParams = {};
+  var testNotificationPermissionLevel = 'granted';
 
   mockInitializeDependencies(this);
 
@@ -504,7 +650,8 @@ TEST_F('GoogleNowBackgroundUnitTest', 'Initialize_RunGoogleNow', function() {
       this,
       testIdentityToken,
       testGeolocationPref,
-      testExperimentVariationParams);
+      testExperimentVariationParams,
+      testNotificationPermissionLevel);
 
   this.mockGlobals.expects(once()).startPollingCards();
 
@@ -523,6 +670,7 @@ TEST_F(
   var testIdentityToken = 'some identity token';
   var testGeolocationPref = false;
   var testExperimentVariationParams = {};
+  var testNotificationPermissionLevel = 'denied';
 
   mockInitializeDependencies(this);
 
@@ -538,7 +686,9 @@ TEST_F(
       this,
       testIdentityToken,
       testGeolocationPref,
-      testExperimentVariationParams);
+      testExperimentVariationParams,
+      testNotificationPermissionLevel,
+      testNotificationPermissionLevel);
 
   var chromeNotificationGetAllSavedArgs = new SaveMockArguments();
   this.mockApis.expects(exactly(2)).

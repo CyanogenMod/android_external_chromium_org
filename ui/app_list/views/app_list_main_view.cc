@@ -12,6 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item_model.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
@@ -160,12 +161,12 @@ void AppListMainView::PreloadIcons(PaginationModel* pagination_model,
   const int tiles_per_page = kPreferredCols * kPreferredRows;
   const int start_model_index = selected_page * tiles_per_page;
   const int end_model_index = std::min(
-      static_cast<int>(model_->apps()->item_count()),
+      static_cast<int>(model_->item_list()->item_count()),
       start_model_index + tiles_per_page);
 
   pending_icon_loaders_.clear();
   for (int i = start_model_index; i < end_model_index; ++i) {
-    AppListItemModel* item = model_->apps()->GetItemAt(i);
+    AppListItemModel* item = model_->item_list()->item_at(i);
     if (item->icon().HasRepresentation(scale))
       continue;
 
@@ -190,7 +191,11 @@ void AppListMainView::OnItemIconLoaded(IconLoader* loader) {
 }
 
 void AppListMainView::ActivateApp(AppListItemModel* item, int event_flags) {
-  item->Activate(event_flags);
+  // TODO(jennyz): Activate the folder via AppListModel notification.
+  if (item->GetAppType() == AppListFolderItem::kAppType)
+    contents_view_->ShowFolderContent(static_cast<AppListFolderItem*>(item));
+  else
+    item->Activate(event_flags);
 }
 
 void AppListMainView::GetShortcutPathForApp(

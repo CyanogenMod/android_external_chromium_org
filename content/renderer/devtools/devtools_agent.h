@@ -7,7 +7,9 @@
 
 #include <string>
 
+#include "base/atomicops.h"
 #include "base/basictypes.h"
+#include "base/time/time.h"
 #include "content/public/common/console_message_level.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebDevToolsAgentClient.h"
@@ -52,7 +54,14 @@ class DevToolsAgent : public RenderViewObserver,
   virtual void clearBrowserCache();
   virtual void clearBrowserCookies();
   virtual void visitAllocatedObjects(AllocatedObjectVisitor* visitor);
+
+  typedef void (*TraceEventCallback)(
+      char phase, const unsigned char*, const char* name, unsigned long long id,
+      int numArgs, const char* const* argNames, const unsigned char* argTypes,
+      const unsigned long long* argValues,
+      unsigned char flags, double timestamp);
   virtual void setTraceEventCallback(TraceEventCallback cb);
+
   virtual void enableDeviceEmulation(
       const WebKit::WebSize& device_size,
       const WebKit::WebRect& view_rect, float device_scale_factor,
@@ -69,8 +78,22 @@ class DevToolsAgent : public RenderViewObserver,
   void ContinueProgram();
   void OnSetupDevToolsClient();
 
+  static void TraceEventCallbackWrapper(
+      base::TimeTicks timestamp,
+      char phase,
+      const unsigned char* category_group_enabled,
+      const char* name,
+      unsigned long long id,
+      int num_args,
+      const char* const arg_names[],
+      const unsigned char arg_types[],
+      const unsigned long long arg_values[],
+      unsigned char flags);
+
   bool is_attached_;
   bool is_devtools_client_;
+
+  static base::subtle::AtomicWord /* TraceEventCallback */ event_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsAgent);
 };

@@ -53,16 +53,20 @@ RenderViewImpl* CreateWebTestProxy(RenderViewImplParams* params) {
   return render_view_proxy;
 }
 
+WebTestProxyBase* GetWebTestProxyBase(RenderViewImpl* render_view) {
+  typedef WebTestProxy<RenderViewImpl, RenderViewImplParams*> ViewProxy;
+
+  ViewProxy* render_view_proxy = static_cast<ViewProxy*>(render_view);
+  return static_cast<WebTestProxyBase*>(render_view_proxy);
+}
+
 RenderFrameImpl* CreateWebFrameTestProxy(
     RenderViewImpl* render_view,
     int32 routing_id) {
-  typedef WebTestProxy<RenderViewImpl, RenderViewImplParams*> ViewProxy;
   typedef WebFrameTestProxy<RenderFrameImpl, RenderViewImpl*, int32> FrameProxy;
 
-  ViewProxy* render_view_proxy = static_cast<ViewProxy*>(render_view);
-  WebTestProxyBase* base = static_cast<WebTestProxyBase*>(render_view_proxy);
   FrameProxy* render_frame_proxy = new FrameProxy(render_view, routing_id);
-  render_frame_proxy->setBaseProxy(base);
+  render_frame_proxy->setBaseProxy(GetWebTestProxyBase(render_view));
   render_frame_proxy->setVersion(3);
 
   return render_frame_proxy;
@@ -106,8 +110,8 @@ void EnableBrowserLayoutTestMode() {
 }
 
 int GetLocalSessionHistoryLength(RenderView* render_view) {
-  return static_cast<RenderViewImpl*>(render_view)
-      ->GetLocalSessionHistoryLengthForTesting();
+  return static_cast<RenderViewImpl*>(render_view)->
+      GetLocalSessionHistoryLengthForTesting();
 }
 
 void SyncNavigationState(RenderView* render_view) {
@@ -115,34 +119,37 @@ void SyncNavigationState(RenderView* render_view) {
 }
 
 void SetFocusAndActivate(RenderView* render_view, bool enable) {
-  static_cast<RenderViewImpl*>(render_view)
-      ->SetFocusAndActivateForTesting(enable);
+  static_cast<RenderViewImpl*>(render_view)->
+      SetFocusAndActivateForTesting(enable);
 }
 
 void ForceResizeRenderView(RenderView* render_view,
                            const WebSize& new_size) {
   RenderViewImpl* render_view_impl = static_cast<RenderViewImpl*>(render_view);
-  render_view_impl->setWindowRect(WebRect(render_view_impl->rootWindowRect().x,
-                                          render_view_impl->rootWindowRect().y,
-                                          new_size.width,
-                                          new_size.height));
+  render_view_impl->ForceResizeForTesting(new_size);
+  GetWebTestProxyBase(render_view_impl)->didForceResize();
 }
 
 void SetDeviceScaleFactor(RenderView* render_view, float factor) {
-  static_cast<RenderViewImpl*>(render_view)
-      ->SetDeviceScaleFactorForTesting(factor);
+  static_cast<RenderViewImpl*>(render_view)->
+      SetDeviceScaleFactorForTesting(factor);
+}
+
+void UseSynchronousResizeMode(RenderView* render_view, bool enable) {
+  static_cast<RenderViewImpl*>(render_view)->
+      UseSynchronousResizeModeForTesting(enable);
 }
 
 void EnableAutoResizeMode(RenderView* render_view,
                           const WebSize& min_size,
                           const WebSize& max_size) {
-  static_cast<RenderViewImpl*>(render_view)
-      ->EnableAutoResizeForTesting(min_size, max_size);
+  static_cast<RenderViewImpl*>(render_view)->
+      EnableAutoResizeForTesting(min_size, max_size);
 }
 
 void DisableAutoResizeMode(RenderView* render_view, const WebSize& new_size) {
-  static_cast<RenderViewImpl*>(render_view)
-      ->DisableAutoResizeForTesting(new_size);
+  static_cast<RenderViewImpl*>(render_view)->
+      DisableAutoResizeForTesting(new_size);
 }
 
 void UseMockMediaStreams(RenderView* render_view) {

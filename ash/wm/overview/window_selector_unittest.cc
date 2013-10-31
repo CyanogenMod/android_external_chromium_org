@@ -47,6 +47,55 @@ class NonActivatableActivationDelegate
   }
 };
 
+bool IsWindowAbove(aura::Window* w1, aura::Window* w2) {
+  aura::Window* parent = w1->parent();
+  DCHECK_EQ(parent, w2->parent());
+  for (aura::Window::Windows::const_iterator iter = parent->children().begin();
+       iter != parent->children().end(); ++iter) {
+    if (*iter == w1)
+      return false;
+    if (*iter == w2)
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
+aura::Window* GetWindowByName(aura::Window* container,
+                              const std::string& name) {
+  aura::Window* window = NULL;
+  for (aura::Window::Windows::const_iterator iter =
+       container->children().begin(); iter != container->children().end();
+       ++iter) {
+    if ((*iter)->name() == name) {
+      // The name should be unique.
+      DCHECK(!window);
+      window = *iter;
+    }
+  }
+  return window;
+}
+
+// Returns the copy of |window| created for overview. It is found using the
+// window name which should be the same as the source window's name with a
+// special suffix, and in the same container as the source window.
+aura::Window* GetCopyWindow(aura::Window* window) {
+  aura::Window* copy_window = NULL;
+  std::string copy_name = window->name() + " (Copy)";
+  std::vector<aura::Window*> containers(
+      Shell::GetContainersFromAllRootWindows(window->parent()->id(), NULL));
+  for (std::vector<aura::Window*>::iterator iter = containers.begin();
+       iter != containers.end(); ++iter) {
+    aura::Window* found = GetWindowByName(*iter, copy_name);
+    if (found) {
+      // There should only be one copy window.
+      DCHECK(!copy_window);
+      copy_window = found;
+    }
+  }
+  return copy_window;
+}
+
 }  // namespace
 
 class WindowSelectorTest : public test::AshTestBase {
@@ -170,7 +219,7 @@ class WindowSelectorTest : public test::AshTestBase {
 // Tests entering overview mode with two windows and selecting one.
 TEST_F(WindowSelectorTest, Basic) {
   gfx::Rect bounds(0, 0, 400, 400);
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   scoped_ptr<aura::Window> window1(CreateWindow(bounds));
   scoped_ptr<aura::Window> window2(CreateWindow(bounds));
   scoped_ptr<aura::Window> panel1(CreatePanelWindow(bounds));
@@ -181,6 +230,8 @@ TEST_F(WindowSelectorTest, Basic) {
   EXPECT_FALSE(wm::IsActiveWindow(window1.get()));
   EXPECT_TRUE(wm::IsActiveWindow(window2.get()));
   EXPECT_EQ(window2.get(), GetFocusedWindow());
+  // Hide the cursor before entering overview to test that it will be shown.
+  aura::client::GetCursorClient(root_window)->HideCursor();
 
   // In overview mode the windows should no longer overlap and focus should
   // be removed from the window.
@@ -192,9 +243,11 @@ TEST_F(WindowSelectorTest, Basic) {
   // item.
   EXPECT_TRUE(WindowsOverlapping(panel1.get(), panel2.get()));
 
-  // The cursor should be locked as a pointer
-  EXPECT_EQ(ui::kCursorPointer, root_window->last_cursor().native_type());
-  EXPECT_TRUE(GetCursorClient(root_window)->IsCursorLocked());
+  // The cursor should be visible and locked as a pointer
+  EXPECT_EQ(ui::kCursorPointer,
+            root_window->GetDispatcher()->last_cursor().native_type());
+  EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorLocked());
+  EXPECT_TRUE(aura::client::GetCursorClient(root_window)->IsCursorVisible());
 
   // Clicking window 1 should activate it.
   ClickWindow(window1.get());
@@ -203,7 +256,7 @@ TEST_F(WindowSelectorTest, Basic) {
   EXPECT_EQ(window1.get(), GetFocusedWindow());
 
   // Cursor should have been unlocked.
-  EXPECT_FALSE(GetCursorClient(root_window)->IsCursorLocked());
+  EXPECT_FALSE(aura::client::GetCursorClient(root_window)->IsCursorLocked());
 }
 
 // Tests that the shelf dimming state is removed while in overview and restored
@@ -307,6 +360,59 @@ TEST_F(WindowSelectorTest, BasicCycle) {
   EXPECT_FALSE(wm::IsActiveWindow(window1.get()));
   EXPECT_FALSE(wm::IsActiveWindow(window2.get()));
   EXPECT_TRUE(wm::IsActiveWindow(window3.get()));
+}
+
+// Tests that cycling through windows preserves the window stacking order.
+TEST_F(WindowSelectorTest, CyclePreservesStackingOrder) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window3(CreateWindow(bounds));
+  wm::ActivateWindow(window3.get());
+  wm::ActivateWindow(window2.get());
+  wm::ActivateWindow(window1.get());
+  // Window order from top to bottom is 1, 2, 3.
+  EXPECT_TRUE(IsWindowAbove(window1.get(), window2.get()));
+  EXPECT_TRUE(IsWindowAbove(window2.get(), window3.get()));
+
+  // On window 2.
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(IsWindowAbove(window2.get(), window1.get()));
+  EXPECT_TRUE(IsWindowAbove(window1.get(), window3.get()));
+
+  // On window 3.
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(IsWindowAbove(window3.get(), window1.get()));
+  EXPECT_TRUE(IsWindowAbove(window1.get(), window2.get()));
+
+  // Back on window 1.
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(IsWindowAbove(window1.get(), window2.get()));
+  EXPECT_TRUE(IsWindowAbove(window2.get(), window3.get()));
+  StopCycling();
+}
+
+// Tests that cycling through windows shows and minimizes windows as they
+// are passed.
+TEST_F(WindowSelectorTest, CyclePreservesMinimization) {
+  gfx::Rect bounds(0, 0, 400, 400);
+  scoped_ptr<aura::Window> window1(CreateWindow(bounds));
+  scoped_ptr<aura::Window> window2(CreateWindow(bounds));
+  wm::ActivateWindow(window2.get());
+  wm::GetWindowState(window2.get())->Minimize();
+  wm::ActivateWindow(window1.get());
+  EXPECT_TRUE(wm::IsWindowMinimized(window2.get()));
+
+  // On window 2.
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_FALSE(wm::IsWindowMinimized(window2.get()));
+
+  // Back on window 1.
+  Cycle(WindowSelector::FORWARD);
+  EXPECT_TRUE(wm::IsWindowMinimized(window2.get()));
+
+  StopCycling();
+  EXPECT_TRUE(wm::IsWindowMinimized(window2.get()));
 }
 
 // Tests beginning cycling while in overview mode.
@@ -641,8 +747,8 @@ TEST_F(WindowSelectorTest, MultipleDisplays) {
 }
 
 // Verifies that the single display overview used during alt tab cycling uses
-// the display of the currently selected window.
-TEST_F(WindowSelectorTest, CycleOverviewUsesCurrentDisplay) {
+// the display of the initial window by default.
+TEST_F(WindowSelectorTest, CycleOverviewUsesInitialDisplay) {
   if (!SupportsMultipleDisplays())
     return;
 
@@ -660,10 +766,79 @@ TEST_F(WindowSelectorTest, CycleOverviewUsesCurrentDisplay) {
   Cycle(WindowSelector::FORWARD);
   FireOverviewStartTimer();
 
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
       ToEnclosingRect(GetTransformedTargetBounds(window1.get()))));
-  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+  EXPECT_TRUE(root_windows[0]->GetBoundsInScreen().Contains(
       ToEnclosingRect(GetTransformedTargetBounds(window2.get()))));
+  StopCycling();
+}
+
+// Verifies that the windows being shown on another display are copied.
+TEST_F(WindowSelectorTest, CycleMultipleDisplaysCopiesWindows) {
+  if (!SupportsMultipleDisplays())
+    return;
+
+  UpdateDisplay("400x400,400x400");
+  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+
+  gfx::Rect root1_rect(0, 0, 100, 100);
+  gfx::Rect root2_rect(450, 0, 100, 100);
+  scoped_ptr<aura::Window> unmoved1(CreateWindow(root2_rect));
+  scoped_ptr<aura::Window> unmoved2(CreateWindow(root2_rect));
+  scoped_ptr<aura::Window> moved1_trans_parent(CreateWindow(root1_rect));
+  scoped_ptr<aura::Window> moved1(CreateWindow(root1_rect));
+  unmoved1->SetName("unmoved1");
+  unmoved2->SetName("unmoved2");
+  moved1->SetName("moved1");
+  moved1->SetProperty(aura::client::kModalKey,
+                      ui::MODAL_TYPE_WINDOW);
+  moved1_trans_parent->AddTransientChild(moved1.get());
+  moved1_trans_parent->SetName("moved1_trans_parent");
+
+  EXPECT_EQ(root_windows[0], moved1->GetRootWindow());
+  EXPECT_EQ(root_windows[0], moved1_trans_parent->GetRootWindow());
+  EXPECT_EQ(root_windows[1], unmoved1->GetRootWindow());
+  EXPECT_EQ(root_windows[1], unmoved2->GetRootWindow());
+  wm::ActivateWindow(unmoved2.get());
+  wm::ActivateWindow(unmoved1.get());
+
+  Cycle(WindowSelector::FORWARD);
+  FireOverviewStartTimer();
+
+  // All windows are moved to second root window.
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(unmoved1.get()))));
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(unmoved2.get()))));
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(moved1.get()))));
+  EXPECT_TRUE(root_windows[1]->GetBoundsInScreen().Contains(
+      ToEnclosingRect(GetTransformedTargetBounds(moved1_trans_parent.get()))));
+
+  // unmoved1 and unmoved2 were already on the correct display and should not
+  // have been copied.
+  EXPECT_TRUE(!GetCopyWindow(unmoved1.get()));
+  EXPECT_TRUE(!GetCopyWindow(unmoved2.get()));
+
+  // moved1 and its transient parent moved1_trans_parent should have also been
+  // copied for displaying on root_windows[1].
+  aura::Window* copy1 = GetCopyWindow(moved1.get());
+  aura::Window* copy1_trans_parent = GetCopyWindow(moved1_trans_parent.get());
+  ASSERT_FALSE(!copy1);
+  ASSERT_FALSE(!copy1_trans_parent);
+
+  // Verify that the bounds and transform of the copy match the original window
+  // but that it is on the other root window.
+  EXPECT_EQ(root_windows[1], copy1->GetRootWindow());
+  EXPECT_EQ(moved1->GetBoundsInScreen(), copy1->GetBoundsInScreen());
+  EXPECT_EQ(moved1->layer()->GetTargetTransform(),
+            copy1->layer()->GetTargetTransform());
+  StopCycling();
+
+  // After cycling the copy windows should have been destroyed.
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(!GetCopyWindow(moved1.get()));
+  EXPECT_TRUE(!GetCopyWindow(moved1_trans_parent.get()));
 }
 
 // Tests that beginning to cycle from overview mode moves windows to the
@@ -706,10 +881,13 @@ TEST_F(WindowSelectorTest, BoundsChangeDuringCycleOnOtherDisplay) {
 
   scoped_ptr<aura::Window> window1(CreateWindow(gfx::Rect(0, 0, 100, 100)));
   scoped_ptr<aura::Window> window2(CreateWindow(gfx::Rect(450, 0, 100, 100)));
+  scoped_ptr<aura::Window> window3(CreateWindow(gfx::Rect(450, 0, 100, 100)));
   EXPECT_EQ(root_windows[0], window1->GetRootWindow());
   EXPECT_EQ(root_windows[1], window2->GetRootWindow());
-  wm::ActivateWindow(window2.get());
+  EXPECT_EQ(root_windows[1], window3->GetRootWindow());
   wm::ActivateWindow(window1.get());
+  wm::ActivateWindow(window2.get());
+  wm::ActivateWindow(window3.get());
 
   Cycle(WindowSelector::FORWARD);
   FireOverviewStartTimer();

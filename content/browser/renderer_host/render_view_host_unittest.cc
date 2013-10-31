@@ -6,7 +6,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/web_contents/navigation_controller_impl.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/port/browser/render_view_host_delegate_view.h"
@@ -226,8 +225,7 @@ TEST_F(RenderViewHostTest, BadMessageHandlerRenderViewHost) {
   EXPECT_EQ(0, process()->bad_msg_count());
   // craft an incorrect ViewHostMsg_UpdateTargetURL message. The real one has
   // two payload items but the one we construct has none.
-  IPC::Message message(0, ViewHostMsg_UpdateTargetURL::ID,
-                       IPC::Message::PRIORITY_NORMAL);
+  IPC::Message message(0, ViewHostMsg_UpdateTargetURL::ID);
   test_rvh()->OnMessageReceived(message);
   EXPECT_EQ(1, process()->bad_msg_count());
 }
@@ -238,8 +236,7 @@ TEST_F(RenderViewHostTest, BadMessageHandlerRenderWidgetHost) {
   EXPECT_EQ(0, process()->bad_msg_count());
   // craft an incorrect ViewHostMsg_UpdateRect message. The real one has
   // one payload item but the one we construct has none.
-  IPC::Message message(0, ViewHostMsg_UpdateRect::ID,
-                       IPC::Message::PRIORITY_NORMAL);
+  IPC::Message message(0, ViewHostMsg_UpdateRect::ID);
   test_rvh()->OnMessageReceived(message);
   EXPECT_EQ(1, process()->bad_msg_count());
 }
@@ -251,8 +248,7 @@ TEST_F(RenderViewHostTest, BadMessageHandlerInputEventAck) {
   // the code actually expects it to have at least one int para, this this
   // bogus message will not fail at de-serialization but should fail in
   // OnInputEventAck() processing.
-  IPC::Message message(0, InputHostMsg_HandleInputEvent_ACK::ID,
-                       IPC::Message::PRIORITY_NORMAL);
+  IPC::Message message(0, InputHostMsg_HandleInputEvent_ACK::ID);
   test_rvh()->OnMessageReceived(message);
   EXPECT_EQ(1, process()->bad_msg_count());
 }

@@ -40,6 +40,7 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
+#include "ui/gfx/frame_time.h"
 #include "webkit/common/gpu/context_provider_in_process.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
@@ -153,7 +154,7 @@ CompositorImpl::~CompositorImpl() {
 
 void CompositorImpl::Composite() {
   if (host_)
-    host_->Composite(base::TimeTicks::Now());
+    host_->Composite(gfx::FrameTime::Now());
 }
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
@@ -229,7 +230,8 @@ void CompositorImpl::SetVisible(bool visible) {
         g_impl_thread ? g_impl_thread->message_loop()->message_loop_proxy()
                       : NULL;
 
-    host_ = cc::LayerTreeHost::Create(this, settings, impl_thread_task_runner);
+    host_ = cc::LayerTreeHost::Create(
+        this, NULL, settings, impl_thread_task_runner);
     host_->SetRootLayer(root_layer_);
 
     host_->SetVisible(true);
@@ -358,34 +360,35 @@ CreateGpuProcessViewContext(
     const WebKit::WebGraphicsContext3D::Attributes attributes,
     int surface_id,
     base::WeakPtr<CompositorImpl> compositor_impl) {
-  GpuChannelHostFactory* factory = BrowserGpuChannelHostFactory::instance();
+  BrowserGpuChannelHostFactory* factory =
+      BrowserGpuChannelHostFactory::instance();
+  scoped_refptr<GpuChannelHost> gpu_channel_host(factory->EstablishGpuChannelSync(
+      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
+  if (!gpu_channel_host)
+    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
+
   GURL url("chrome://gpu/Compositor::createContext3D");
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(surface_id,
-                                                url,
-                                                factory,
-                                                compositor_impl));
   static const size_t kBytesPerPixel = 4;
   gfx::DeviceDisplayInfo display_info;
   size_t full_screen_texture_size_in_bytes =
       display_info.GetDisplayHeight() *
       display_info.GetDisplayWidth() *
       kBytesPerPixel;
-  if (!context->Initialize(
-          attributes,
-          false,
-          CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE,
-          64 * 1024,  // command buffer size
-          64 * 1024,  // start transfer buffer size
-          64 * 1024,  // min transfer buffer size
-          std::min(3 * full_screen_texture_size_in_bytes,
-                   kDefaultMaxTransferBufferSize),
-          2 * 1024 * 1024  // mapped memory limit
-  )) {
-    LOG(ERROR) << "Failed to create 3D context for compositor.";
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  }
-  return context.Pass();
+  WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
+  limits.command_buffer_size = 64 * 1024;
+  limits.start_transfer_buffer_size = 64 * 1024;
+  limits.min_transfer_buffer_size = 64 * 1024;
+  limits.max_transfer_buffer_size = std::min(
+      3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
+  limits.mapped_memory_reclaim_limit = 2 * 1024 * 1024;
+  return make_scoped_ptr(
+      new WebGraphicsContext3DCommandBufferImpl(surface_id,
+                                                url,
+                                                gpu_channel_host.get(),
+                                                compositor_impl,
+                                                attributes,
+                                                false,
+                                                limits));
 }
 
 scoped_ptr<cc::OutputSurface> CompositorImpl::CreateOutputSurface(

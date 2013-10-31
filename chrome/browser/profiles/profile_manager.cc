@@ -16,6 +16,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -25,7 +26,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/bookmark_model_loaded_observer.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
@@ -227,7 +227,7 @@ bool ProfileManager::IsGetDefaultProfileAllowed() {
 // TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfile() {
   CHECK(s_allow_get_default_profile)
-      << "GetDefaultProfile() caled befofre allowed.";
+      << "GetDefaultProfile() called before allowed.";
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   return profile_manager->GetDefaultProfile(profile_manager->user_data_dir_);
 }
@@ -236,7 +236,7 @@ Profile* ProfileManager::GetDefaultProfile() {
 // TODO(nkostylev): Remove this method once all clients are migrated.
 Profile* ProfileManager::GetDefaultProfileOrOffTheRecord() {
   CHECK(s_allow_get_default_profile)
-      << "GetDefaultProfileOrOffTheRecord() caled befofre allowed.";
+      << "GetDefaultProfileOrOffTheRecord() called before allowed.";
   // TODO (mukai,nkostylev): In the long term we should fix those cases that
   // crash on Guest mode and have only one GetDefaultProfile() method.
   Profile* profile = GetDefaultProfile();
@@ -608,6 +608,7 @@ void ProfileManager::Observe(
     case chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST: {
       // Ignore any browsers closing from now on.
       closing_all_browsers_ = true;
+      save_active_profiles = true;
       break;
     }
     case chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED: {
@@ -672,7 +673,9 @@ void ProfileManager::Observe(
     std::vector<Profile*>::const_iterator it;
     for (it = active_profiles_.begin(); it != active_profiles_.end(); ++it) {
       std::string profile_path = (*it)->GetPath().BaseName().MaybeAsASCII();
-      if (profile_paths.find(profile_path) == profile_paths.end()) {
+      // Some profiles might become ephemeral after they are created.
+      if (!(*it)->GetPrefs()->GetBoolean(prefs::kForceEphemeralProfiles) &&
+          profile_paths.find(profile_path) == profile_paths.end()) {
         profile_paths.insert(profile_path);
         profile_list->Append(new StringValue(profile_path));
       }

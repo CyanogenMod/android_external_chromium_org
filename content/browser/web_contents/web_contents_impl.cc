@@ -16,9 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/sys_info.h"
 #include "base/time/time.h"
-#include "cc/base/switches.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
@@ -29,9 +27,8 @@
 #include "content/browser/download/download_stats.h"
 #include "content/browser/download/mhtml_generation_manager.h"
 #include "content/browser/download/save_package.h"
-#include "content/browser/gpu/compositor_util.h"
-#include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/message_port_message_filter.h"
@@ -41,8 +38,6 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/web_contents/interstitial_page_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_view_guest.h"
 #include "content/browser/webui/generic_handler.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -80,15 +75,11 @@
 #include "content/public/common/url_constants.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
-#include "net/base/network_change_notifier.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/layout.h"
-#include "ui/base/touch/touch_device.h"
-#include "ui/base/touch/touch_enabled.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gl/gl_switches.h"
@@ -96,16 +87,14 @@
 
 #if defined(OS_ANDROID)
 #include "content/browser/android/date_time_chooser_android.h"
+#include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
+#include "content/common/java_bridge_messages.h"
 #include "content/public/browser/android/content_view_core.h"
 #endif
 
 #if defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
 #include "ui/gl/io_surface_support_mac.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #endif
 
 // Cross-Site Navigations
@@ -252,6 +241,8 @@ void MakeNavigateParams(const NavigationEntryImpl& entry,
         entry.GetBrowserInitiatedPostData()->front() +
             entry.GetBrowserInitiatedPostData()->size());
   }
+
+  params->redirects = entry.redirect_chain();
 
   params->can_load_local_resources = entry.GetCanLoadLocalResources();
   params->frame_to_navigate = entry.GetFrameToNavigate();
@@ -472,220 +463,6 @@ BrowserPluginGuest* WebContentsImpl::CreateGuest(
   return new_contents->browser_plugin_guest_.get();
 }
 
-WebPreferences WebContentsImpl::GetWebkitPrefs(RenderViewHost* rvh,
-                                               const GURL& url) {
-  TRACE_EVENT0("browser", "WebContentsImpl::GetWebkitPrefs");
-  WebPreferences prefs;
-
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  prefs.javascript_enabled =
-      !command_line.HasSwitch(switches::kDisableJavaScript);
-  prefs.web_security_enabled =
-      !command_line.HasSwitch(switches::kDisableWebSecurity);
-  prefs.plugins_enabled =
-      !command_line.HasSwitch(switches::kDisablePlugins);
-  prefs.java_enabled =
-      !command_line.HasSwitch(switches::kDisableJava);
-
-  prefs.remote_fonts_enabled =
-      !command_line.HasSwitch(switches::kDisableRemoteFonts);
-  prefs.xslt_enabled =
-      !command_line.HasSwitch(switches::kDisableXSLT);
-  prefs.xss_auditor_enabled =
-      !command_line.HasSwitch(switches::kDisableXSSAuditor);
-  prefs.application_cache_enabled =
-      !command_line.HasSwitch(switches::kDisableApplicationCache);
-
-  prefs.local_storage_enabled =
-      !command_line.HasSwitch(switches::kDisableLocalStorage);
-  prefs.databases_enabled =
-      !command_line.HasSwitch(switches::kDisableDatabases);
-  prefs.webaudio_enabled =
-      !command_line.HasSwitch(switches::kDisableWebAudio);
-
-  prefs.experimental_webgl_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisable3DAPIs) &&
-      !command_line.HasSwitch(switches::kDisableExperimentalWebGL);
-
-  prefs.flash_3d_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableFlash3d);
-  prefs.flash_stage3d_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableFlashStage3d);
-  prefs.flash_stage3d_baseline_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableFlashStage3d);
-
-  prefs.gl_multisampling_enabled =
-      !command_line.HasSwitch(switches::kDisableGLMultisampling);
-  prefs.privileged_webgl_extensions_enabled =
-      command_line.HasSwitch(switches::kEnablePrivilegedWebGLExtensions);
-  prefs.site_specific_quirks_enabled =
-      !command_line.HasSwitch(switches::kDisableSiteSpecificQuirks);
-  prefs.allow_file_access_from_file_urls =
-      command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
-
-  prefs.accelerated_compositing_for_overflow_scroll_enabled = false;
-  if (command_line.HasSwitch(switches::kEnableAcceleratedOverflowScroll))
-    prefs.accelerated_compositing_for_overflow_scroll_enabled = true;
-  if (command_line.HasSwitch(switches::kDisableAcceleratedOverflowScroll))
-    prefs.accelerated_compositing_for_overflow_scroll_enabled = false;
-
-  prefs.accelerated_compositing_for_scrollable_frames_enabled = false;
-  if (command_line.HasSwitch(switches::kEnableAcceleratedScrollableFrames))
-    prefs.accelerated_compositing_for_scrollable_frames_enabled = true;
-  if (command_line.HasSwitch(switches::kDisableAcceleratedScrollableFrames))
-    prefs.accelerated_compositing_for_scrollable_frames_enabled = false;
-
-  prefs.composited_scrolling_for_frames_enabled = false;
-  if (command_line.HasSwitch(switches::kEnableCompositedScrollingForFrames))
-    prefs.composited_scrolling_for_frames_enabled = true;
-  if (command_line.HasSwitch(switches::kDisableCompositedScrollingForFrames))
-    prefs.composited_scrolling_for_frames_enabled = false;
-
-  prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = false;
-  if (command_line.HasSwitch(
-          switches::kEnableUniversalAcceleratedOverflowScroll))
-    prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = true;
-  if (command_line.HasSwitch(
-          switches::kDisableUniversalAcceleratedOverflowScroll))
-    prefs.universal_accelerated_compositing_for_overflow_scroll_enabled = false;
-
-  prefs.show_paint_rects =
-      command_line.HasSwitch(switches::kShowPaintRects);
-  prefs.accelerated_compositing_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableAcceleratedCompositing);
-  prefs.force_compositing_mode =
-      content::IsForceCompositingModeEnabled() &&
-      !command_line.HasSwitch(switches::kDisableForceCompositingMode);
-  prefs.accelerated_2d_canvas_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
-  prefs.antialiased_2d_canvas_disabled =
-      command_line.HasSwitch(switches::kDisable2dCanvasAntialiasing);
-  prefs.accelerated_filters_enabled =
-      GpuProcessHost::gpu_enabled() &&
-      command_line.HasSwitch(switches::kEnableAcceleratedFilters);
-  prefs.accelerated_compositing_for_3d_transforms_enabled =
-      prefs.accelerated_compositing_for_animation_enabled =
-          !command_line.HasSwitch(switches::kDisableAcceleratedLayers);
-  prefs.accelerated_compositing_for_plugins_enabled =
-      !command_line.HasSwitch(switches::kDisableAcceleratedPlugins);
-  prefs.accelerated_compositing_for_video_enabled =
-      !command_line.HasSwitch(switches::kDisableAcceleratedVideo);
-  prefs.fullscreen_enabled =
-      !command_line.HasSwitch(switches::kDisableFullScreen);
-  prefs.lazy_layout_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures);
-  prefs.region_based_columns_enabled =
-      command_line.HasSwitch(switches::kEnableRegionBasedColumns);
-  prefs.threaded_html_parser =
-      !command_line.HasSwitch(switches::kDisableThreadedHTMLParser);
-  prefs.experimental_websocket_enabled =
-      command_line.HasSwitch(switches::kEnableExperimentalWebSocket);
-  if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
-    prefs.pinch_virtual_viewport_enabled = true;
-    prefs.pinch_overlay_scrollbar_thickness = 10;
-  }
-  prefs.use_solid_color_scrollbars = command_line.HasSwitch(
-      switches::kEnableOverlayScrollbars);
-
-#if defined(OS_ANDROID)
-  prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
-      switches::kDisableGestureRequirementForMediaPlayback);
-  prefs.user_gesture_required_for_media_fullscreen = !command_line.HasSwitch(
-      switches::kDisableGestureRequirementForMediaFullscreen);
-#endif
-
-  prefs.touch_enabled = ui::AreTouchEventsEnabled();
-  prefs.device_supports_touch = prefs.touch_enabled &&
-      ui::IsTouchDevicePresent();
-#if defined(OS_ANDROID)
-  prefs.device_supports_mouse = false;
-#endif
-
-   prefs.touch_adjustment_enabled =
-       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
-   prefs.compositor_touch_hit_testing =
-       !command_line.HasSwitch(cc::switches::kDisableCompositorTouchHitTesting);
-
-#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
-  bool default_enable_scroll_animator = true;
-#else
-  bool default_enable_scroll_animator = false;
-#endif
-  prefs.enable_scroll_animator = default_enable_scroll_animator;
-  if (command_line.HasSwitch(switches::kEnableSmoothScrolling))
-    prefs.enable_scroll_animator = true;
-  if (command_line.HasSwitch(switches::kDisableSmoothScrolling))
-    prefs.enable_scroll_animator = false;
-
-  prefs.visual_word_movement_enabled =
-      command_line.HasSwitch(switches::kEnableVisualWordMovement);
-
-  // Certain GPU features might have been blacklisted.
-  GpuDataManagerImpl::GetInstance()->UpdateRendererWebPrefs(&prefs);
-
-  if (ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
-          rvh->GetProcess()->GetID())) {
-    prefs.loads_images_automatically = true;
-    prefs.javascript_enabled = true;
-  }
-
-  prefs.is_online = !net::NetworkChangeNotifier::IsOffline();
-
-#if !defined(USE_AURA)
-  // Force accelerated compositing and 2d canvas off for chrome: and about:
-  // pages (unless it's specifically allowed).
-  if ((url.SchemeIs(chrome::kChromeUIScheme) ||
-      (url.SchemeIs(chrome::kAboutScheme) &&
-       url.spec() != kAboutBlankURL)) &&
-      !command_line.HasSwitch(switches::kAllowWebUICompositing)) {
-    prefs.accelerated_compositing_enabled = false;
-    prefs.accelerated_2d_canvas_enabled = false;
-  }
-#endif
-
-  prefs.fixed_position_creates_stacking_context = !command_line.HasSwitch(
-      switches::kDisableFixedPositionCreatesStackingContext);
-
-#if defined(OS_CHROMEOS)
-  prefs.gesture_tap_highlight_enabled = !command_line.HasSwitch(
-      switches::kDisableGestureTapHighlight);
-#else
-  prefs.gesture_tap_highlight_enabled = command_line.HasSwitch(
-      switches::kEnableGestureTapHighlight);
-#endif
-
-  prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
-
-  prefs.viewport_enabled = command_line.HasSwitch(switches::kEnableViewport);
-
-  prefs.deferred_image_decoding_enabled =
-      command_line.HasSwitch(switches::kEnableDeferredImageDecoding) ||
-      cc::switches::IsImplSidePaintingEnabled();
-
-  prefs.spatial_navigation_enabled = command_line.HasSwitch(
-      switches::kEnableSpatialNavigation);
-
-  GetContentClient()->browser()->OverrideWebkitPrefs(rvh, url, &prefs);
-
-  // Disable compositing in guests until we have compositing path implemented
-  // for guests.
-  bool guest_compositing_enabled = !command_line.HasSwitch(
-      switches::kDisableBrowserPluginCompositing);
-  if (rvh->GetProcess()->IsGuest() && !guest_compositing_enabled) {
-    prefs.force_compositing_mode = false;
-    prefs.accelerated_compositing_enabled = false;
-  }
-
-  return prefs;
-}
-
 RenderViewHostManager* WebContentsImpl::GetRenderManagerForTesting() {
   return &render_manager_;
 }
@@ -748,6 +525,8 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                         OnFindMatchRectsReply)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenDateTimeDialog,
                         OnOpenDateTimeDialog)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(JavaBridgeHostMsg_GetChannelHandle,
+                                    OnJavaBridgeGetChannelHandle)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_MediaNotification, OnMediaNotification)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -1010,8 +789,9 @@ void WebContentsImpl::UpdateMaxPageIDForSiteInstance(
     max_page_ids_[site_instance->GetId()] = page_id;
 }
 
-void WebContentsImpl::CopyMaxPageIDsFrom(WebContentsImpl* web_contents) {
-  max_page_ids_ = web_contents->max_page_ids_;
+void WebContentsImpl::CopyMaxPageIDsFrom(WebContents* web_contents) {
+  WebContentsImpl* contents = static_cast<WebContentsImpl*>(web_contents);
+  max_page_ids_ = contents->max_page_ids_;
 }
 
 SiteInstance* WebContentsImpl::GetSiteInstance() const {
@@ -1148,12 +928,6 @@ void WebContentsImpl::WasShown() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, WasShown());
 
   should_normally_be_visible_ = true;
-
-  // TODO(avi): Remove. http://crbug.com/170921
-  NotificationService::current()->Notify(
-      NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-      Source<WebContents>(this),
-      Details<const bool>(&should_normally_be_visible_));
 }
 
 void WebContentsImpl::WasHidden() {
@@ -1175,12 +949,6 @@ void WebContentsImpl::WasHidden() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, WasHidden());
 
   should_normally_be_visible_ = false;
-
-  // TODO(avi): Remove. http://crbug.com/170921
-  NotificationService::current()->Notify(
-      NOTIFICATION_WEB_CONTENTS_VISIBILITY_CHANGED,
-      Source<WebContents>(this),
-      Details<const bool>(&should_normally_be_visible_));
 }
 
 bool WebContentsImpl::NeedToFireBeforeUnload() {
@@ -1228,6 +996,10 @@ void WebContentsImpl::Observe(int type,
     default:
       NOTREACHED();
   }
+}
+
+WebContents* WebContentsImpl::GetWebContents() {
+  return this;
 }
 
 void WebContentsImpl::Init(const WebContents::CreateParams& params) {
@@ -1278,9 +1050,6 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
 #if defined(OS_ANDROID)
   java_bridge_dispatcher_host_manager_.reset(
       new JavaBridgeDispatcherHostManager(this));
-#endif
-
-#if defined(OS_ANDROID)
   date_time_chooser_.reset(new DateTimeChooserAndroid());
 #endif
 }
@@ -2209,10 +1978,10 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
     // SiteInstance, and ensure the address bar updates accordingly.  We don't
     // know the referrer or extra headers at this point, but the referrer will
     // be set properly upon commit.
-    NavigationEntry* pending_entry = controller_.GetPendingEntry();
+    NavigationEntryImpl* pending_entry =
+        NavigationEntryImpl::FromNavigationEntry(controller_.GetPendingEntry());
     bool has_browser_initiated_pending_entry = pending_entry &&
-        !NavigationEntryImpl::FromNavigationEntry(pending_entry)->
-            is_renderer_initiated();
+        !pending_entry->is_renderer_initiated();
     if (!has_browser_initiated_pending_entry && !is_error_page) {
       NavigationEntryImpl* entry = NavigationEntryImpl::FromNavigationEntry(
           controller_.CreateNavigationEntry(validated_url,
@@ -2225,10 +1994,11 @@ void WebContentsImpl::DidStartProvisionalLoadForFrame(
           static_cast<SiteInstanceImpl*>(GetSiteInstance()));
       // TODO(creis): If there's a pending entry already, find a safe way to
       // update it instead of replacing it and copying over things like this.
-      if (pending_entry &&
-          NavigationEntryImpl::FromNavigationEntry(pending_entry)->
-              should_replace_entry()) {
-        entry->set_should_replace_entry(true);
+      if (pending_entry) {
+        entry->set_transferred_global_request_id(
+            pending_entry->transferred_global_request_id());
+        entry->set_should_replace_entry(pending_entry->should_replace_entry());
+        entry->set_redirect_chain(pending_entry->redirect_chain());
       }
       controller_.SetPendingEntry(entry);
       NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
@@ -2537,6 +2307,11 @@ void WebContentsImpl::OnOpenDateTimeDialog(
                                  value.step);
 }
 
+void WebContentsImpl::OnJavaBridgeGetChannelHandle(IPC::Message* reply_msg) {
+  java_bridge_dispatcher_host_manager_->OnGetChannelHandle(
+      message_source_, reply_msg);
+}
+
 #endif
 
 void WebContentsImpl::OnCrashedPlugin(const base::FilePath& plugin_path,
@@ -2692,6 +2467,13 @@ void WebContentsImpl::DidChangeVisibleSSLState() {
 void WebContentsImpl::NotifyBeforeFormRepostWarningShow() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_,
                     BeforeFormRepostWarningShow());
+}
+
+
+void WebContentsImpl::ActivateAndShowRepostFormWarningDialog() {
+  Activate();
+  if (delegate_)
+    delegate_->ShowRepostFormWarningDialog(this);
 }
 
 // Notifies the RenderWidgetHost instance about the fact that the page is
@@ -3320,49 +3102,58 @@ void WebContentsImpl::RequestOpenURL(RenderViewHost* rvh,
 
   // Delegate to RequestTransferURL because this is just the generic
   // case where |old_request_id| is empty.
-  RequestTransferURL(url, referrer, disposition, source_frame_id,
-                     GlobalRequestID(),
+  // TODO(creis): Pass the redirect_chain into this method to support client
+  // redirects.  http://crbug.com/311721.
+  std::vector<GURL> redirect_chain;
+  RequestTransferURL(url, redirect_chain, referrer, PAGE_TRANSITION_LINK,
+                     disposition, source_frame_id, GlobalRequestID(),
                      should_replace_current_entry, user_gesture);
 }
 
 void WebContentsImpl::RequestTransferURL(
     const GURL& url,
+    const std::vector<GURL>& redirect_chain,
     const Referrer& referrer,
+    PageTransition page_transition,
     WindowOpenDisposition disposition,
     int64 source_frame_id,
     const GlobalRequestID& old_request_id,
     bool should_replace_current_entry,
     bool user_gesture) {
   WebContents* new_contents = NULL;
-  PageTransition transition_type = PAGE_TRANSITION_LINK;
   GURL dest_url(url);
   if (!GetContentClient()->browser()->ShouldAllowOpenURL(
-      GetSiteInstance(), url))
+          GetSiteInstance(), url))
     dest_url = GURL(kAboutBlankURL);
 
+  OpenURLParams params(dest_url, referrer, source_frame_id, disposition,
+      page_transition, true /* is_renderer_initiated */);
+  if (redirect_chain.size() > 0)
+    params.redirect_chain = redirect_chain;
+  params.transferred_global_request_id = old_request_id;
+  params.should_replace_current_entry = should_replace_current_entry;
+  params.user_gesture = user_gesture;
+
   if (render_manager_.web_ui()) {
-    // When we're a Web UI, it will provide a page transition type for us (this
-    // is so the new tab page can specify AUTO_BOOKMARK for automatically
-    // generated suggestions).
-    //
+    // Web UI pages sometimes want to override the page transition type for
+    // link clicks (e.g., so the new tab page can specify AUTO_BOOKMARK for
+    // automatically generated suggestions).  We don't override other types
+    // like TYPED because they have different implications (e.g., autocomplete).
+    if (PageTransitionCoreTypeIs(params.transition, PAGE_TRANSITION_LINK))
+      params.transition = render_manager_.web_ui()->GetLinkTransitionType();
+
     // Note also that we hide the referrer for Web UI pages. We don't really
     // want web sites to see a referrer of "chrome://blah" (and some
     // chrome: URLs might have search terms or other stuff we don't want to
     // send to the site), so we send no referrer.
-    OpenURLParams params(dest_url, Referrer(), source_frame_id, disposition,
-        render_manager_.web_ui()->GetLinkTransitionType(),
-        false /* is_renderer_initiated */);
-    params.transferred_global_request_id = old_request_id;
-    new_contents = OpenURL(params);
-    transition_type = render_manager_.web_ui()->GetLinkTransitionType();
-  } else {
-    OpenURLParams params(dest_url, referrer, source_frame_id, disposition,
-        PAGE_TRANSITION_LINK, true /* is_renderer_initiated */);
-    params.transferred_global_request_id = old_request_id;
-    params.should_replace_current_entry = should_replace_current_entry;
-    params.user_gesture = user_gesture;
-    new_contents = OpenURL(params);
+    params.referrer = Referrer();
+
+    // Navigations in Web UI pages count as browser-initiated navigations.
+    params.is_renderer_initiated = false;
   }
+
+  new_contents = OpenURL(params);
+
   if (new_contents) {
     // Notify observers.
     FOR_EACH_OBSERVER(WebContentsObserver, observers_,
@@ -3370,7 +3161,7 @@ void WebContentsImpl::RequestTransferURL(
                                           dest_url,
                                           referrer,
                                           disposition,
-                                          transition_type,
+                                          params.transition,
                                           source_frame_id));
   }
 }
@@ -3545,7 +3336,8 @@ WebPreferences WebContentsImpl::GetWebkitPrefs() {
   // as it is deprecated and can be out of sync with GetRenderViewHost().
   GURL url = controller_.GetActiveEntry()
       ? controller_.GetActiveEntry()->GetURL() : GURL::EmptyGURL();
-  return GetWebkitPrefs(GetRenderViewHost(), url);
+
+  return render_manager_.current_host()->GetWebkitPrefs(url);
 }
 
 int WebContentsImpl::CreateSwappedOutRenderView(

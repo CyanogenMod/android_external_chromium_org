@@ -86,7 +86,8 @@ scoped_refptr<Picture> Picture::Create(gfx::Rect layer_rect) {
 }
 
 Picture::Picture(gfx::Rect layer_rect)
-    : layer_rect_(layer_rect) {
+  : layer_rect_(layer_rect),
+    cell_size_(layer_rect.size()) {
   // Instead of recording a trace event for object creation here, we wait for
   // the picture to be recorded in Picture::Record.
 }
@@ -155,7 +156,8 @@ Picture::Picture(SkPicture* picture,
                  gfx::Rect opaque_rect) :
     layer_rect_(layer_rect),
     opaque_rect_(opaque_rect),
-    picture_(skia::AdoptRef(picture)) {
+    picture_(skia::AdoptRef(picture)),
+    cell_size_(layer_rect.size()) {
 }
 
 Picture::Picture(const skia::RefPtr<SkPicture>& picture,
@@ -165,7 +167,8 @@ Picture::Picture(const skia::RefPtr<SkPicture>& picture,
     layer_rect_(layer_rect),
     opaque_rect_(opaque_rect),
     picture_(picture),
-    pixel_refs_(pixel_refs) {
+    pixel_refs_(pixel_refs),
+    cell_size_(layer_rect.size()) {
 }
 
 Picture::~Picture() {
@@ -294,16 +297,21 @@ void Picture::GatherPixelRefs(
 int Picture::Raster(
     SkCanvas* canvas,
     SkDrawPictureCallback* callback,
-    gfx::Rect content_rect,
+    const Region& negated_content_region,
     float contents_scale) {
   TRACE_EVENT_BEGIN1(
-      "cc", "Picture::Raster",
-      "data", AsTraceableRasterData(content_rect, contents_scale));
+      "cc",
+      "Picture::Raster",
+      "data",
+      AsTraceableRasterData(contents_scale));
 
   DCHECK(picture_);
 
   canvas->save();
-  canvas->clipRect(gfx::RectToSkRect(content_rect));
+
+  for (Region::Iterator it(negated_content_region); it.has_rect(); it.next())
+    canvas->clipRect(gfx::RectToSkRect(it.rect()), SkRegion::kDifference_Op);
+
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
   picture_->draw(canvas, callback);
@@ -382,8 +390,9 @@ Picture::PixelRefIterator::PixelRefIterator(
       current_index_(0) {
   gfx::Rect layer_rect = picture->layer_rect_;
   gfx::Size cell_size = picture->cell_size_;
+  DCHECK(!cell_size.IsEmpty());
 
-  // Early out if the query rect doesn't intersect this picture
+  // Early out if the query rect doesn't intersect this picture.
   if (!query_rect.Intersects(layer_rect)) {
     min_point_ = gfx::Point(0, 0);
     max_point_ = gfx::Point(0, 0);
@@ -460,14 +469,10 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
-    Picture::AsTraceableRasterData(gfx::Rect rect, float scale) const {
+    Picture::AsTraceableRasterData(float scale) const {
   scoped_ptr<base::DictionaryValue> raster_data(new base::DictionaryValue());
   raster_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
   raster_data->SetDouble("scale", scale);
-  raster_data->SetDouble("rect_x", rect.x());
-  raster_data->SetDouble("rect_y", rect.y());
-  raster_data->SetDouble("rect_width", rect.width());
-  raster_data->SetDouble("rect_height", rect.height());
   return TracedValue::FromValue(raster_data.release());
 }
 

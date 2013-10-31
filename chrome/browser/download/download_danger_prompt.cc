@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
@@ -17,6 +18,10 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
+
+// TODO(wittman): Create a native web contents modal dialog implementation of
+// this dialog for non-Views platforms, to support bold formatting of the
+// message lead.
 
 // Implements DownloadDangerPrompt using a TabModalConfirmDialog.
 class DownloadDangerPromptImpl : public DownloadDangerPrompt,
@@ -98,8 +103,19 @@ void DownloadDangerPromptImpl::OnDownloadUpdated(
 string16 DownloadDangerPromptImpl::GetTitle() {
   if (show_context_)
     return l10n_util::GetStringUTF16(IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
-  else
-    return l10n_util::GetStringUTF16(IDS_RESTORE_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+  switch (download_->GetDangerType()) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
+      return l10n_util::GetStringUTF16(
+          IDS_RESTORE_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+    default: {
+      return l10n_util::GetStringUTF16(
+          IDS_CONFIRM_KEEP_DANGEROUS_DOWNLOAD_TITLE);
+    }
+  }
 }
 
 string16 DownloadDangerPromptImpl::GetMessage() {
@@ -124,7 +140,7 @@ string16 DownloadDangerPromptImpl::GetMessage() {
       }
       case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
         return l10n_util::GetStringFUTF16(
-            IDS_PROMPT_DOWNLOAD_CHANGES_SEARCH_SETTINGS,
+            IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS,
             download_->GetFileNameToReportUser().LossyDisplayName());
       }
       case content::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS:
@@ -140,7 +156,10 @@ string16 DownloadDangerPromptImpl::GetMessage() {
       case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
       case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
         return l10n_util::GetStringUTF16(
-            IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD);
+            IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_LEAD) +
+            ASCIIToUTF16("\n\n") +
+            l10n_util::GetStringUTF16(
+                IDS_PROMPT_CONFIRM_KEEP_MALICIOUS_DOWNLOAD_BODY);
       }
       default: {
         return l10n_util::GetStringUTF16(
@@ -158,7 +177,8 @@ string16 DownloadDangerPromptImpl::GetAcceptButtonTitle() {
   switch (download_->GetDangerType()) {
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
       return l10n_util::GetStringUTF16(IDS_CONFIRM_DOWNLOAD_AGAIN_MALICIOUS);
     }
     default:
@@ -172,7 +192,8 @@ string16 DownloadDangerPromptImpl::GetCancelButtonTitle() {
   switch (download_->GetDangerType()) {
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
     case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
-    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST: {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_HOST:
+    case content::DOWNLOAD_DANGER_TYPE_POTENTIALLY_UNWANTED: {
       return l10n_util::GetStringUTF16(IDS_CONFIRM_CANCEL_AGAIN_MALICIOUS);
     }
     default:
@@ -208,6 +229,7 @@ void DownloadDangerPromptImpl::RunDone(Action action) {
 
 }  // namespace
 
+#if !(defined(OS_WIN) || defined(USE_AURA))
 // static
 DownloadDangerPrompt* DownloadDangerPrompt::Create(
     content::DownloadItem* item,
@@ -220,3 +242,4 @@ DownloadDangerPrompt* DownloadDangerPrompt::Create(
   TabModalConfirmDialog::Create(prompt, web_contents);
   return prompt;
 }
+#endif

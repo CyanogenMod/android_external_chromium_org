@@ -96,7 +96,7 @@ class TestEventHandler : public ui::EventHandler {
 
  private:
   gfx::Point mouse_location_;
-  aura::RootWindow* target_root_;
+  aura::Window* target_root_;
 
   float touch_radius_x_;
   float touch_radius_y_;
@@ -396,7 +396,7 @@ TEST_F(RootWindowTransformersTest, LetterBoxPillarBox) {
     return;
   test::MirrorWindowTestApi test_api;
   DisplayManager* display_manager = Shell::GetInstance()->display_manager();
-  display_manager->SetSoftwareMirroring(true);
+  display_manager->SetSecondDisplayMode(DisplayManager::MIRRORING);
   UpdateDisplay("400x200,500x500");
   scoped_ptr<aura::RootWindowTransformer> transformer(
       test_api.CreateCurrentRootWindowTransformer());

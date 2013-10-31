@@ -41,12 +41,17 @@ class Gtk2UI : public views::LinuxUI {
     const std::vector<views::FrameButton>& leading_buttons,
     const std::vector<views::FrameButton>& trailing_buttons);
 
+  // ui::LinuxInputMethodContextFactory:
+  virtual scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
+      ui::LinuxInputMethodContextDelegate* delegate) const OVERRIDE;
+
   // ui::LinuxShellDialog:
   virtual ui::SelectFileDialog* CreateSelectFileDialog(
       ui::SelectFileDialog::Listener* listener,
       ui::SelectFilePolicy* policy) const OVERRIDE;
 
   // ui::LinuxUI:
+  virtual void Initialize() OVERRIDE;
   virtual bool UseNativeTheme() const OVERRIDE;
   virtual gfx::Image GetThemeImageNamed(int id) const OVERRIDE;
   virtual bool GetColor(int id, SkColor* color) const OVERRIDE;

@@ -33,14 +33,15 @@
 #include "ash/launcher/launcher_item_delegate.h"
 #include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
+#include "ash/launcher/launcher_model_util.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/app_list_shelf_item_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
-#include "ash/shelf/shelf_util.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
@@ -95,6 +96,7 @@
 #include "ui/gfx/size.h"
 #include "ui/keyboard/keyboard.h"
 #include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/message_center/message_center.h"
 #include "ui/views/corewm/compound_event_filter.h"
@@ -201,12 +203,12 @@ Shell::RootWindowControllerList Shell::GetAllRootWindowControllers() {
 }
 
 // static
-aura::RootWindow* Shell::GetPrimaryRootWindow() {
+aura::Window* Shell::GetPrimaryRootWindow() {
   return GetInstance()->display_controller()->GetPrimaryRootWindow();
 }
 
 // static
-aura::RootWindow* Shell::GetTargetRootWindow() {
+aura::Window* Shell::GetTargetRootWindow() {
   Shell* shell = GetInstance();
   if (shell->scoped_target_root_window_)
     return shell->scoped_target_root_window_;
@@ -225,13 +227,13 @@ Shell::RootWindowList Shell::GetAllRootWindows() {
 }
 
 // static
-aura::Window* Shell::GetContainer(aura::RootWindow* root_window,
+aura::Window* Shell::GetContainer(aura::Window* root_window,
                                   int container_id) {
   return root_window->GetChildById(container_id);
 }
 
 // static
-const aura::Window* Shell::GetContainer(const aura::RootWindow* root_window,
+const aura::Window* Shell::GetContainer(const aura::Window* root_window,
                                         int container_id) {
   return root_window->GetChildById(container_id);
 }
@@ -239,7 +241,7 @@ const aura::Window* Shell::GetContainer(const aura::RootWindow* root_window,
 // static
 std::vector<aura::Window*> Shell::GetContainersFromAllRootWindows(
     int container_id,
-    aura::RootWindow* priority_root) {
+    aura::Window* priority_root) {
   std::vector<aura::Window*> containers;
   RootWindowList root_windows = GetAllRootWindows();
   for (RootWindowList::const_iterator it = root_windows.begin();
@@ -264,7 +266,7 @@ void Shell::ShowContextMenu(const gfx::Point& location_in_screen,
   if (session_state_delegate_->IsScreenLocked())
     return;
 
-  aura::RootWindow* root =
+  aura::Window* root =
       wm::GetRootWindowMatching(gfx::Rect(location_in_screen, gfx::Size()));
   internal::GetRootWindowController(root)->
       ShowContextMenu(location_in_screen, source_type);
@@ -337,6 +339,8 @@ void Shell::OnLoginStateChanged(user::LoginStatus status) {
     // TODO(bshe): Primary root window controller may not be the controller to
     // attach virtual keyboard. See http://crbug.com/303429
     InitKeyboard(GetPrimaryRootWindowController());
+    GetPrimaryRootWindowController()->ActivateKeyboard(
+        keyboard_controller_.get());
   }
   FOR_EACH_OBSERVER(ShellObserver, observers_, OnLoginStateChanged(status));
 }
@@ -399,19 +403,19 @@ void Shell::UpdateShelfVisibility() {
 }
 
 void Shell::SetShelfAutoHideBehavior(ShelfAutoHideBehavior behavior,
-                                     aura::RootWindow* root_window) {
+                                     aura::Window* root_window) {
   ash::internal::ShelfLayoutManager::ForLauncher(root_window)->
       SetAutoHideBehavior(behavior);
 }
 
 ShelfAutoHideBehavior Shell::GetShelfAutoHideBehavior(
-    aura::RootWindow* root_window) const {
+    aura::Window* root_window) const {
   return ash::internal::ShelfLayoutManager::ForLauncher(root_window)->
       auto_hide_behavior();
 }
 
 void Shell::SetShelfAlignment(ShelfAlignment alignment,
-                              aura::RootWindow* root_window) {
+                              aura::Window* root_window) {
   if (ash::internal::ShelfLayoutManager::ForLauncher(root_window)->
       SetAlignment(alignment)) {
     FOR_EACH_OBSERVER(
@@ -419,7 +423,7 @@ void Shell::SetShelfAlignment(ShelfAlignment alignment,
   }
 }
 
-ShelfAlignment Shell::GetShelfAlignment(aura::RootWindow* root_window) {
+ShelfAlignment Shell::GetShelfAlignment(aura::Window* root_window) {
   return internal::GetRootWindowController(root_window)->
       GetShelfLayoutManager()->GetAlignment();
 }
@@ -432,7 +436,7 @@ void Shell::SetDimming(bool should_dim) {
 }
 
 void Shell::NotifyFullscreenStateChange(bool is_fullscreen,
-                                        aura::RootWindow* root_window) {
+                                        aura::Window* root_window) {
   FOR_EACH_OBSERVER(ShellObserver, observers_, OnFullscreenStateChanged(
       is_fullscreen, root_window));
 }
@@ -491,16 +495,12 @@ LauncherDelegate* Shell::GetLauncherDelegate() {
     scoped_ptr<LauncherItemDelegate> controller(
         new internal::AppListShelfItemDelegate);
 
-    ash::LauncherID app_list_id = 0;
-    // TODO(simon.hong81): Make function for this in shelf_util.h
     // Finding the launcher model's location of the app list and setting its
     // LauncherItemDelegate.
-    for (size_t i = 0; i < launcher_model_->items().size(); ++i) {
-      if (launcher_model_->items()[i].type == ash::TYPE_APP_LIST) {
-        app_list_id = launcher_model_->items()[i].id;
-        break;
-      }
-    }
+    int app_list_index =
+        ash::GetLauncherItemIndexForType(ash::TYPE_APP_LIST, *launcher_model_);
+    DCHECK_GE(app_list_index, 0);
+    ash::LauncherID app_list_id = launcher_model_->items()[app_list_index].id;
     DCHECK(app_list_id);
     launcher_item_delegate_manager_->SetLauncherItemDelegate(
         app_list_id,
@@ -664,6 +664,7 @@ Shell::~Shell() {
   screen_position_controller_.reset();
 
   keyboard_controller_.reset();
+  accessibility_delegate_.reset();
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
    if (display_change_observer_)
@@ -695,6 +696,10 @@ void Shell::Init() {
   output_configurator_animation_.reset(
       new internal::OutputConfiguratorAnimation());
   output_configurator_->AddObserver(output_configurator_animation_.get());
+  if (command_line->HasSwitch(keyboard::switches::kKeyboardUsabilityTest)) {
+    display_manager_->SetSecondDisplayMode(
+        internal::DisplayManager::VIRTUAL_KEYBOARD);
+  }
   if (base::SysInfo::IsRunningOnChromeOS()) {
     display_change_observer_.reset(new internal::DisplayChangeObserver);
     // Register |display_change_observer_| first so that the rest of
@@ -703,8 +708,7 @@ void Shell::Init() {
     display_error_observer_.reset(new internal::DisplayErrorObserver());
     output_configurator_->AddObserver(display_error_observer_.get());
     output_configurator_->set_state_controller(display_change_observer_.get());
-    if (!command_line->HasSwitch(ash::switches::kAshDisableSoftwareMirroring))
-      output_configurator_->set_mirroring_controller(display_manager_.get());
+    output_configurator_->set_mirroring_controller(display_manager_.get());
     output_configurator_->Start(
         delegate_->IsFirstRunAfterBoot() ? kChromeOsBootColor : 0);
     display_initialized = true;
@@ -745,7 +749,7 @@ void Shell::Init() {
 
   display_controller_->Start();
   display_controller_->InitPrimaryDisplay();
-  aura::RootWindow* root_window = display_controller_->GetPrimaryRootWindow();
+  aura::Window* root_window = display_controller_->GetPrimaryRootWindow();
   target_root_window_ = root_window;
 
   resolution_notification_controller_.reset(
@@ -770,7 +774,7 @@ void Shell::Init() {
   AddShellObserver(overlay_filter_.get());
 
   input_method_filter_.reset(new views::corewm::InputMethodEventFilter(
-                                 root_window->GetAcceleratedWidget()));
+      root_window->GetDispatcher()->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
   accelerator_filter_.reset(new internal::AcceleratorFilter);
@@ -835,6 +839,8 @@ void Shell::Init() {
   caps_lock_delegate_.reset(delegate_->CreateCapsLockDelegate());
 
   session_state_delegate_.reset(delegate_->CreateSessionStateDelegate());
+  accessibility_delegate_.reset(delegate_->CreateAccessibilityDelegate());
+  new_window_delegate_.reset(delegate_->CreateNewWindowDelegate());
 
   if (!command_line->HasSwitch(views::corewm::switches::kNoDropShadows)) {
     resize_shadow_controller_.reset(new internal::ResizeShadowController());
@@ -858,7 +864,8 @@ void Shell::Init() {
   // TODO(oshima): Initialize all RootWindowControllers once, and
   // initialize controller/delegates above when initializing the
   // primary root window controller.
-  internal::RootWindowController::CreateForPrimaryDisplay(root_window);
+  internal::RootWindowController::CreateForPrimaryDisplay(
+      root_window->GetDispatcher());
 
   display_controller_->InitSecondaryDisplays();
 
@@ -892,13 +899,16 @@ void Shell::Init() {
       new internal::VideoActivityNotifier(video_detector_.get()));
 #endif
 
+  weak_display_manager_factory_.reset(
+      new base::WeakPtrFactory<internal::DisplayManager>(
+          display_manager_.get()));
   // The compositor thread and main message loop have to be running in
   // order to create mirror window. Run it after the main message loop
   // is started.
   base::MessageLoopForUI::current()->PostTask(
       FROM_HERE,
       base::Bind(&internal::DisplayManager::CreateMirrorWindowIfAny,
-                 base::Unretained(display_manager_.get())));
+                 weak_display_manager_factory_->GetWeakPtr()));
 }
 
 void Shell::InitKeyboard(internal::RootWindowController* root) {
@@ -914,7 +924,6 @@ void Shell::InitKeyboard(internal::RootWindowController* root) {
         delegate_->CreateKeyboardControllerProxy();
     keyboard_controller_.reset(
         new keyboard::KeyboardController(proxy));
-    root->ActivateKeyboard(keyboard_controller_.get());
   }
 }
 

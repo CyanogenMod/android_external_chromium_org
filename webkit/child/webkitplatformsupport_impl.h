@@ -76,7 +76,7 @@ class WEBKIT_CHILD_EXPORT WebKitPlatformSupportImpl :
   virtual const unsigned char* getTraceCategoryEnabledFlag(
       const char* category_name);
   virtual long* getTraceSamplingState(const unsigned thread_bucket);
-  virtual void addTraceEvent(
+  virtual TraceEventHandle addTraceEvent(
       char phase,
       const unsigned char* category_group_enabled,
       const char* name,
@@ -86,6 +86,7 @@ class WEBKIT_CHILD_EXPORT WebKitPlatformSupportImpl :
       const unsigned char* arg_types,
       const unsigned long long* arg_values,
       unsigned char flags);
+  virtual void updateTraceEventDuration(TraceEventHandle);
   virtual WebKit::WebData loadResource(const char* name);
   virtual WebKit::WebString queryLocalizedString(
       WebKit::WebLocalizedString::Name name);

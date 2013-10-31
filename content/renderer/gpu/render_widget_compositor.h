@@ -42,6 +42,7 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
 
   const base::WeakPtr<cc::InputHandler>& GetInputHandler();
   void SetSuppressScheduleComposite(bool suppress);
+  bool BeginMainFrameRequested() const;
   void Animate(base::TimeTicks time);
   void Composite(base::TimeTicks frame_begin_time);
   void SetNeedsDisplayOnAllLayers();
@@ -109,8 +110,8 @@ class RenderWidgetCompositor : public WebKit::WebLayerTreeView,
   virtual void setShowScrollBottleneckRects(bool show);
 
   // cc::LayerTreeHostClient implementation.
-  virtual void WillBeginFrame() OVERRIDE;
-  virtual void DidBeginFrame() OVERRIDE;
+  virtual void WillBeginMainFrame() OVERRIDE;
+  virtual void DidBeginMainFrame() OVERRIDE;
   virtual void Animate(double frame_begin_time) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,

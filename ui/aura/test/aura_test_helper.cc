@@ -16,11 +16,13 @@
 #include "ui/aura/test/env_test_helper.h"
 #include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/aura/test/test_stacking_client.h"
+#include "ui/aura/test/test_window_tree_client.h"
 #include "ui/base/ime/dummy_input_method.h"
+#include "ui/base/ime/input_method_initializer.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/gfx/screen.h"
 
 #if defined(USE_X11)
@@ -65,7 +67,7 @@ void AuraTestHelper::SetUp() {
 
   // The ContextFactory must exist before any Compositors are created.
   bool allow_test_contexts = true;
-  ui::Compositor::InitializeContextFactoryForTests(allow_test_contexts);
+  ui::InitializeContextFactoryForTests(allow_test_contexts);
 
   Env::CreateInstance();
   // Unit tests generally don't want to query the system, rather use the state
@@ -73,13 +75,15 @@ void AuraTestHelper::SetUp() {
   EnvTestHelper(Env::GetInstance()).SetInputStateLookup(
       scoped_ptr<InputStateLookup>());
 
+  ui::InitializeInputMethodForTesting();
+
   test_screen_.reset(TestScreen::Create());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_.get());
   root_window_.reset(test_screen_->CreateRootWindowForPrimaryDisplay());
 
   focus_client_.reset(new TestFocusClient);
   client::SetFocusClient(root_window_.get(), focus_client_.get());
-  stacking_client_.reset(new TestStackingClient(root_window_.get()));
+  stacking_client_.reset(new TestWindowTreeClient(root_window_.get()));
   activation_client_.reset(
       new client::DefaultActivationClient(root_window_.get()));
   capture_client_.reset(new client::DefaultCaptureClient(root_window_.get()));
@@ -109,7 +113,11 @@ void AuraTestHelper::TearDown() {
   ui::ResetXCursorCache();
 #endif
 
+  ui::ShutdownInputMethodForTesting();
+
   Env::DeleteInstance();
+
+  ui::TerminateContextFactoryForTests();
 }
 
 void AuraTestHelper::RunAllPendingInMessageLoop() {

@@ -4,6 +4,9 @@
 
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 
+#include "base/sha1.h"
+#include "net/quic/quic_connection.h"
+#include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 
@@ -14,30 +17,42 @@ namespace net {
 namespace tools {
 namespace test {
 
+QuicVersion QuicVersionMax() { return QuicSupportedVersions().front(); }
+
+QuicVersion QuicVersionMin() { return QuicSupportedVersions().back(); }
+
 MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                int fd,
                                EpollServer* eps,
                                bool is_server)
     : QuicConnection(guid, address,
-                     new QuicEpollConnectionHelper(fd, eps), is_server,
-                     QuicVersionMax()),
-      has_mock_helper_(false) {
+                     new QuicEpollConnectionHelper(eps),
+                     new QuicDefaultPacketWriter(fd), is_server,
+                     QuicSupportedVersions()),
+      has_mock_helper_(false),
+      writer_(net::test::QuicConnectionPeer::GetWriter(this)),
+      helper_(helper()) {
 }
 
 MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                bool is_server)
     : QuicConnection(guid, address, new testing::NiceMock<MockHelper>(),
-                     is_server, QuicVersionMax()),
-      has_mock_helper_(true) {
+                     new testing::NiceMock<MockPacketWriter>(),
+                     is_server, QuicSupportedVersions()),
+      has_mock_helper_(true),
+      writer_(net::test::QuicConnectionPeer::GetWriter(this)),
+      helper_(helper()) {
 }
 
 MockConnection::MockConnection(QuicGuid guid,
                                IPEndPoint address,
                                QuicConnectionHelperInterface* helper,
+                               QuicPacketWriter* writer,
                                bool is_server)
-    : QuicConnection(guid, address, helper, is_server, QuicVersionMax()),
+    : QuicConnection(guid, address, helper, writer, is_server,
+                     QuicSupportedVersions()),
       has_mock_helper_(false) {
 }
 
@@ -50,6 +65,13 @@ void MockConnection::AdvanceTime(QuicTime::Delta delta) {
   static_cast<MockHelper*>(helper())->AdvanceTime(delta);
 }
 
+uint64 SimpleRandom::RandUint64() {
+  unsigned char hash[base::kSHA1Length];
+  base::SHA1HashBytes(reinterpret_cast<unsigned char*>(&seed_), sizeof(seed_),
+                      hash);
+  memcpy(&seed_, hash, sizeof(seed_));
+  return seed_;
+}
 
 MockQuicSessionOwner::MockQuicSessionOwner() {
 }

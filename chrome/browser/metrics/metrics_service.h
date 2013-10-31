@@ -74,6 +74,17 @@ class MetricsService
       public net::URLFetcherDelegate,
       public MetricsServiceBase {
  public:
+  // The execution phase of the browser.
+  enum ExecutionPhase {
+    CLEAN_SHUTDOWN = 0,
+    START_METRICS_RECORDING = 100,
+    CREATE_PROFILE = 200,
+    STARTUP_TIMEBOMB_ARM = 300,
+    THREAD_WATCHER_START = 400,
+    MAIN_MESSAGE_LOOP_RUN = 500,
+    SHUTDOWN_TIMEBOMB_ARM = 600,
+  };
+
   MetricsService();
   virtual ~MetricsService();
 
@@ -164,6 +175,9 @@ class MetricsService
   static void LogNeedForCleanShutdown();
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
+  static void SetExecutionPhase(ExecutionPhase execution_phase) {
+    execution_phase_ = execution_phase;
+  }
   // Saves in the preferences if the crash report registration was successful.
   // This count is eventually send via UMA logs.
   void RecordBreakpadRegistration(bool success);
@@ -481,6 +495,9 @@ class MetricsService
   // This is used only for debugging.
   bool waiting_for_asynchronous_reporting_step_;
 
+  // Number of async histogram fetch requests in progress.
+  int num_async_histogram_fetches_in_progress_;
+
 #if defined(OS_CHROMEOS)
   // The external metric service is used to log ChromeOS UMA events.
   scoped_refptr<chromeos::ExternalMetrics> external_metrics_;
@@ -491,6 +508,9 @@ class MetricsService
 
   // Stores the time of the last call to |GetIncrementalUptime()|.
   base::TimeTicks last_updated_time_;
+
+  // Execution phase the browser is in.
+  static ExecutionPhase execution_phase_;
 
   // Reduntant marker to check that we completed our shutdown, and set the
   // exited-cleanly bit in the prefs.

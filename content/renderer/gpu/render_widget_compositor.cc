@@ -104,7 +104,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.throttle_frame_production =
       !cmd->HasSwitch(switches::kDisableGpuVsync);
-  settings.begin_frame_scheduling_enabled =
+  settings.begin_impl_frame_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
   settings.deadline_scheduling_enabled =
       cmd->HasSwitch(switches::kEnableDeadlineScheduling) &&
@@ -340,6 +340,10 @@ void RenderWidgetCompositor::SetSuppressScheduleComposite(bool suppress) {
   suppress_schedule_composite_ = suppress;
 }
 
+bool RenderWidgetCompositor::BeginMainFrameRequested() const {
+  return layer_tree_host_->BeginMainFrameRequested();
+}
+
 void RenderWidgetCompositor::Animate(base::TimeTicks time) {
   layer_tree_host_->UpdateClientAnimations(time);
 }
@@ -412,9 +416,8 @@ bool RenderWidgetCompositor::ScheduleMicroBenchmark(
 bool RenderWidgetCompositor::initialize(cc::LayerTreeSettings settings) {
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy =
       RenderThreadImpl::current()->compositor_message_loop_proxy();
-  layer_tree_host_ = cc::LayerTreeHost::Create(this,
-                                               settings,
-                                               compositor_message_loop_proxy);
+  layer_tree_host_ = cc::LayerTreeHost::Create(
+      this, NULL, settings, compositor_message_loop_proxy);
   return layer_tree_host_;
 }
 
@@ -586,12 +589,12 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
-void RenderWidgetCompositor::WillBeginFrame() {
+void RenderWidgetCompositor::WillBeginMainFrame() {
   widget_->InstrumentWillBeginFrame();
   widget_->willBeginCompositorFrame();
 }
 
-void RenderWidgetCompositor::DidBeginFrame() {
+void RenderWidgetCompositor::DidBeginMainFrame() {
   widget_->InstrumentDidBeginFrame();
 }
 

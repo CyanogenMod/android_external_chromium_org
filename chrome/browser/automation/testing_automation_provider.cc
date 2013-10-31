@@ -116,7 +116,6 @@
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "chrome/common/extensions/permissions/permissions_data.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
@@ -140,6 +139,7 @@
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/webplugininfo.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "net/cookies/cookie_store.h"
@@ -160,10 +160,6 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #endif
-
-#if !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
-#include "third_party/tcmalloc/chromium/src/gperftools/heap-profiler.h"
-#endif  // !defined(NO_TCMALLOC) && (defined(OS_LINUX) || defined(OS_CHROMEOS))
 
 using automation_util::SendErrorIfModalDialogActive;
 using content::BrowserChildProcessHostIterator;

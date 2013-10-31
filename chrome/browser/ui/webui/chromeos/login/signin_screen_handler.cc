@@ -12,6 +12,7 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -35,7 +36,6 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/native_window_delegate.h"
@@ -397,7 +397,8 @@ SigninScreenHandler::SigninScreenHandler(
       is_first_update_state_call_(true),
       offline_login_active_(false),
       last_network_state_(NetworkStateInformer::UNKNOWN),
-      has_pending_auth_ui_(false) {
+      has_pending_auth_ui_(false),
+      wait_for_auto_enrollment_check_(false) {
   DCHECK(network_state_informer_.get());
   DCHECK(error_screen_actor_);
   DCHECK(core_oobe_actor_);
@@ -420,9 +421,12 @@ SigninScreenHandler::SigninScreenHandler(
   registrar_.Add(this,
                  chrome::NOTIFICATION_AUTH_CANCELLED,
                  content::NotificationService::AllSources());
+
+  WallpaperManager::Get()->AddObserver(this);
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
+  WallpaperManager::Get()->RemoveObserver(this);
   weak_factory_.InvalidateWeakPtrs();
   SystemKeyEventListener* key_event_listener =
       SystemKeyEventListener::GetInstance();
@@ -1284,6 +1288,11 @@ void SigninScreenHandler::HandleLoadWallpaper(const std::string& email) {
     delegate_->LoadWallpaper(email);
 }
 
+void SigninScreenHandler::OnWallpaperAnimationFinished(
+    const std::string& email) {
+  CallJS("login.AccountPickerScreen.onWallpaperLoaded", email);
+}
+
 void SigninScreenHandler::HandleRebootSystem() {
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
 }
@@ -1321,8 +1330,13 @@ void SigninScreenHandler::HandleToggleEnrollmentScreen() {
 
 void SigninScreenHandler::HandleToggleKioskEnableScreen() {
   if (delegate_ &&
+      !wait_for_auto_enrollment_check_ &&
       !g_browser_process->browser_policy_connector()->IsEnterpriseManaged()) {
-    delegate_->ShowKioskEnableScreen();
+    wait_for_auto_enrollment_check_ = true;
+
+    LoginDisplayHostImpl::default_host()->GetAutoEnrollmentCheckResult(
+        base::Bind(&SigninScreenHandler::ContinueKioskEnableFlow,
+                   weak_factory_.GetWeakPtr()));
   }
 }
 
@@ -1779,6 +1793,24 @@ void SigninScreenHandler::SubmitLoginFormForTest() {
   // Test properties are cleared in HandleCompleteLogin because the form
   // submission might fail and login will not be attempted after reloading
   // if they are cleared here.
+}
+
+void SigninScreenHandler::ContinueKioskEnableFlow(bool should_auto_enroll) {
+  wait_for_auto_enrollment_check_ = false;
+
+  // Do not proceed with kiosk enable when auto enroll will be enforced.
+  // TODO(xiyuan): Add an error UI feedkback so user knows what happens.
+  if (should_auto_enroll) {
+    LOG(WARNING) << "Kiosk enable flow aborted because auto enrollment is "
+                    "going to be enforced.";
+
+    if (!kiosk_enable_flow_aborted_callback_for_test_.is_null())
+      kiosk_enable_flow_aborted_callback_for_test_.Run();
+    return;
+  }
+
+  if (delegate_)
+    delegate_->ShowKioskEnableScreen();
 }
 
 }  // namespace chromeos

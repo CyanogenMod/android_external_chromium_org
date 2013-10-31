@@ -7,6 +7,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/feedback_private/feedback_service.h"
@@ -17,6 +18,19 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "url/url_util.h"
+
+namespace {
+
+// Getting the filename of a blob prepends a "C:\fakepath" to the filename.
+// This is undesirable, strip it if it exists.
+std::string StripFakepath(const std::string& path) {
+  const char kFakePathStr[] = "C:\\fakepath\\";
+  if (StartsWithASCII(path, kFakePathStr, false))
+    return path.substr(arraysize(kFakePathStr) - 1);
+  return path;
+}
+
+}  // namespace
 
 namespace extensions {
 
@@ -117,9 +131,9 @@ bool FeedbackPrivateGetStringsFunction::RunImpl() {
 bool FeedbackPrivateGetUserEmailFunction::RunImpl() {
   // TODO(rkc): Remove logging once crbug.com/284662 is closed.
   LOG(WARNING) << "FEEDBACK_DEBUG: User e-mail requested.";
-  FeedbackService* service =
-      FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
-          profile())->GetService();
+  FeedbackService* service = FeedbackPrivateAPI::GetFactoryInstance()
+                                 ->GetForProfile(GetProfile())
+                                 ->GetService();
   DCHECK(service);
   SetResult(new base::StringValue(service->GetUserEmail()));
   return true;
@@ -128,9 +142,9 @@ bool FeedbackPrivateGetUserEmailFunction::RunImpl() {
 bool FeedbackPrivateGetSystemInformationFunction::RunImpl() {
   // TODO(rkc): Remove logging once crbug.com/284662 is closed.
   LOG(WARNING) << "FEEDBACK_DEBUG: System information requested.";
-  FeedbackService* service =
-      FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
-          profile())->GetService();
+  FeedbackService* service = FeedbackPrivateAPI::GetFactoryInstance()
+                                 ->GetForProfile(GetProfile())
+                                 ->GetService();
   DCHECK(service);
   service->GetSystemInformation(
       base::Bind(
@@ -164,7 +178,7 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
 
   // Populate feedback data.
   scoped_refptr<FeedbackData> feedback_data(new FeedbackData());
-  feedback_data->set_profile(profile_);
+  feedback_data->set_profile(GetProfile());
   feedback_data->set_description(feedback_info.description);
 
   if (feedback_info.category_tag.get())
@@ -176,7 +190,7 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
 
   if (!attached_file_uuid.empty()) {
     feedback_data->set_attached_filename(
-        (*feedback_info.attached_file.get()).name);
+        StripFakepath((*feedback_info.attached_file.get()).name));
     feedback_data->set_attached_file_uuid(attached_file_uuid);
   }
 
@@ -197,13 +211,14 @@ bool FeedbackPrivateSendFeedbackFunction::RunImpl() {
   }
   feedback_data->SetAndCompressSystemInfo(sys_logs.Pass());
 
-  FeedbackService* service = FeedbackPrivateAPI::GetFactoryInstance()->
-      GetForProfile(profile())->GetService();
+  FeedbackService* service = FeedbackPrivateAPI::GetFactoryInstance()
+                                 ->GetForProfile(GetProfile())
+                                 ->GetService();
   DCHECK(service);
-  service->SendFeedback(profile(),
-      feedback_data, base::Bind(
-          &FeedbackPrivateSendFeedbackFunction::OnCompleted,
-          this));
+  service->SendFeedback(
+      GetProfile(),
+      feedback_data,
+      base::Bind(&FeedbackPrivateSendFeedbackFunction::OnCompleted, this));
   return true;
 }
 

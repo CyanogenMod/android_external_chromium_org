@@ -468,7 +468,12 @@ long* WebKitPlatformSupportImpl::getTraceSamplingState(
   return NULL;
 }
 
-void WebKitPlatformSupportImpl::addTraceEvent(
+COMPILE_ASSERT(
+    sizeof(WebKit::Platform::TraceEventHandle) ==
+        sizeof(base::debug::TraceEventHandle),
+    TraceEventHandle_types_must_be_same_size);
+
+WebKit::Platform::TraceEventHandle WebKitPlatformSupportImpl::addTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
@@ -478,11 +483,20 @@ void WebKitPlatformSupportImpl::addTraceEvent(
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
     unsigned char flags) {
-  TRACE_EVENT_API_ADD_TRACE_EVENT(phase, category_group_enabled, name, id,
-                                  num_args, arg_names, arg_types,
-                                  arg_values, NULL, flags);
+  base::debug::TraceEventHandle handle = TRACE_EVENT_API_ADD_TRACE_EVENT(
+      phase, category_group_enabled, name, id,
+      num_args, arg_names, arg_types, arg_values, NULL, flags);
+  WebKit::Platform::TraceEventHandle result;
+  memcpy(&result, &handle, sizeof(result));
+  return result;
 }
 
+void WebKitPlatformSupportImpl::updateTraceEventDuration(
+    TraceEventHandle handle) {
+  base::debug::TraceEventHandle traceEventHandle;
+  memcpy(&traceEventHandle, &handle, sizeof(handle));
+  TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(traceEventHandle);
+}
 
 namespace {
 

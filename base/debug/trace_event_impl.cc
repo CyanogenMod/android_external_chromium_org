@@ -63,8 +63,10 @@ const size_t kTraceEventRingBufferChunks = kTraceEventVectorBufferChunks / 4;
 const size_t kTraceEventBatchChunks = 1000 / kTraceBufferChunkSize;
 // Can store results for 30 seconds with 1 ms sampling interval.
 const size_t kMonitorTraceEventBufferChunks = 30000 / kTraceBufferChunkSize;
+// ECHO_TO_CONSOLE needs a small buffer to hold the unfinished COMPLETE events.
+const size_t kEchoToConsoleTraceEventBufferChunks = 256;
 
-const int kThreadFlushTimeoutMs = 1000;
+const int kThreadFlushTimeoutMs = 3000;
 
 #define MAX_CATEGORY_GROUPS 100
 
@@ -105,42 +107,6 @@ TimeTicks ThreadNow() {
   return TimeTicks::IsThreadNowSupported() ?
       TimeTicks::ThreadNow() : TimeTicks();
 }
-
-class TraceBufferDiscardsEvents : public TraceBuffer {
- public:
-  TraceBufferDiscardsEvents() {}
-
-  virtual scoped_ptr<TraceBufferChunk> GetChunk(size_t* index) OVERRIDE {
-    return scoped_ptr<TraceBufferChunk>();
-  }
-  virtual void ReturnChunk(size_t index,
-                           scoped_ptr<TraceBufferChunk>) OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual bool IsFull() const OVERRIDE { return false; }
-  virtual size_t Size() const OVERRIDE { return 0; }
-
-  // As this buffer is never full, we can return any positive number.
-  virtual size_t Capacity() const OVERRIDE { return 1; }
-
-  virtual TraceEvent* GetEventByHandle(TraceEventHandle handle) OVERRIDE {
-    return NULL;
-  }
-
-  virtual const TraceBufferChunk* NextChunk() OVERRIDE {
-    NOTREACHED();
-    return NULL;
-  }
-
-  virtual scoped_ptr<TraceBuffer> CloneForIteration() const OVERRIDE {
-    NOTIMPLEMENTED();
-    return scoped_ptr<TraceBuffer>();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TraceBufferDiscardsEvents);
-};
 
 class TraceBufferRingBuffer : public TraceBuffer {
  public:
@@ -242,13 +208,33 @@ class TraceBufferRingBuffer : public TraceBuffer {
   }
 
  private:
-  class ClonedTraceBuffer : public TraceBufferDiscardsEvents {
+  class ClonedTraceBuffer : public TraceBuffer {
    public:
     ClonedTraceBuffer() : current_iteration_index_(0) {}
 
+    // The only implemented method.
     virtual const TraceBufferChunk* NextChunk() OVERRIDE {
       return current_iteration_index_ < chunks_.size() ?
           chunks_[current_iteration_index_++] : NULL;
+    }
+
+    virtual scoped_ptr<TraceBufferChunk> GetChunk(size_t* index) OVERRIDE {
+      NOTIMPLEMENTED();
+      return scoped_ptr<TraceBufferChunk>();
+    }
+    virtual void ReturnChunk(size_t index,
+                             scoped_ptr<TraceBufferChunk>) OVERRIDE {
+      NOTIMPLEMENTED();
+    }
+    virtual bool IsFull() const OVERRIDE { return false; }
+    virtual size_t Size() const OVERRIDE { return 0; }
+    virtual size_t Capacity() const OVERRIDE { return 0; }
+    virtual TraceEvent* GetEventByHandle(TraceEventHandle handle) OVERRIDE {
+      return NULL;
+    }
+    virtual scoped_ptr<TraceBuffer> CloneForIteration() const OVERRIDE {
+      NOTIMPLEMENTED();
+      return scoped_ptr<TraceBuffer>();
     }
 
     size_t current_iteration_index_;
@@ -432,11 +418,30 @@ class TraceLog::OptionalAutoLock {
     }
   }
 
+  void EnsureReleased() {
+    if (locked_) {
+      lock_.Release();
+      locked_ = false;
+    }
+  }
+
  private:
   Lock& lock_;
   bool locked_;
   DISALLOW_COPY_AND_ASSIGN(OptionalAutoLock);
 };
+
+// Use this function instead of TraceEventHandle constructor to keep the
+// overhead of ScopedTracer (trace_event.h) constructor minimum.
+void MakeHandle(uint32 chunk_seq, size_t chunk_index, size_t event_index,
+                TraceEventHandle* handle) {
+  DCHECK(chunk_seq);
+  DCHECK(chunk_index < (1u << 16));
+  DCHECK(event_index < (1u << 16));
+  handle->chunk_seq = chunk_seq;
+  handle->chunk_index = static_cast<uint16>(chunk_index);
+  handle->event_index = static_cast<uint16>(event_index);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -966,10 +971,6 @@ class TraceLog::ThreadLocalEventBuffer
 
   void FlushWhileLocked();
 
-  void CheckGeneration() const {
-    DCHECK(trace_log_->CheckGeneration(generation_));
-  }
-
   void CheckThisIsCurrentBuffer() const {
     DCHECK(trace_log_->thread_local_event_buffer_.Get() == this);
   }
@@ -1003,9 +1004,6 @@ TraceLog::ThreadLocalEventBuffer::ThreadLocalEventBuffer(TraceLog* trace_log)
 TraceLog::ThreadLocalEventBuffer::~ThreadLocalEventBuffer() {
   CheckThisIsCurrentBuffer();
   MessageLoop::current()->RemoveDestructionObserver(this);
-
-  if (!trace_log_->CheckGeneration(generation_))
-    return;
 
   // Zero event_count_ happens in either of the following cases:
   // - no event generated for the thread;
@@ -1049,7 +1047,8 @@ TraceEvent* TraceLog::ThreadLocalEventBuffer::AddTraceEvent(
   size_t event_index;
   TraceEvent* trace_event = chunk_->AddTraceEvent(&event_index);
   if (trace_event && handle)
-    *handle = TraceEventHandle(chunk_->seq(), chunk_index_, event_index);
+    MakeHandle(chunk_->seq(), chunk_index_, event_index, handle);
+
   return trace_event;
 }
 
@@ -1060,7 +1059,6 @@ void TraceLog::ThreadLocalEventBuffer::ReportOverhead(
   if (!g_category_group_enabled[g_category_trace_event_overhead])
     return;
 
-  CheckGeneration();
   CheckThisIsCurrentBuffer();
 
   event_count_++;
@@ -1087,9 +1085,16 @@ void TraceLog::ThreadLocalEventBuffer::WillDestroyCurrentMessageLoop() {
 }
 
 void TraceLog::ThreadLocalEventBuffer::FlushWhileLocked() {
+  if (!chunk_)
+    return;
+
   trace_log_->lock_.AssertAcquired();
-  DCHECK(chunk_);
-  trace_log_->logged_events_->ReturnChunk(chunk_index_, chunk_.Pass());
+  if (trace_log_->CheckGeneration(generation_)) {
+    // Return the chunk to the buffer only if the generation matches,
+    trace_log_->logged_events_->ReturnChunk(chunk_index_, chunk_.Pass());
+  }
+  // Otherwise this method may be called from the destructor, or TraceLog will
+  // find the generation mismatch and delete this buffer soon.
 }
 
 TraceLog::NotificationHelper::NotificationHelper(TraceLog* trace_log)
@@ -1459,7 +1464,7 @@ TraceBuffer* TraceLog::CreateTraceBuffer() {
   else if (options & MONITOR_SAMPLING)
     return new TraceBufferRingBuffer(kMonitorTraceEventBufferChunks);
   else if (options & ECHO_TO_CONSOLE)
-    return new TraceBufferDiscardsEvents();
+    return new TraceBufferRingBuffer(kEchoToConsoleTraceEventBufferChunks);
   return new TraceBufferVector();
 }
 
@@ -1484,8 +1489,8 @@ TraceEvent* TraceLog::AddEventToThreadSharedChunkWhileLocked(
   size_t event_index;
   TraceEvent* trace_event = thread_shared_chunk_->AddTraceEvent(&event_index);
   if (trace_event && handle) {
-    *handle = TraceEventHandle(thread_shared_chunk_->seq(),
-                               thread_shared_chunk_index_, event_index);
+    MakeHandle(thread_shared_chunk_->seq(), thread_shared_chunk_index_,
+               event_index, handle);
   }
   return trace_event;
 }
@@ -1628,12 +1633,10 @@ void TraceLog::FlushCurrentThread(int generation) {
   // This will flush the thread local buffer.
   delete thread_local_event_buffer_.Get();
 
-  {
-    AutoLock lock(lock_);
-    if (!CheckGeneration(generation) || !flush_message_loop_proxy_ ||
-        thread_message_loops_.size())
-      return;
-  }
+  AutoLock lock(lock_);
+  if (!CheckGeneration(generation) || !flush_message_loop_proxy_ ||
+      thread_message_loops_.size())
+    return;
 
   flush_message_loop_proxy_->PostTask(
       FROM_HERE,
@@ -1716,7 +1719,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     const unsigned long long* arg_values,
     const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
-  TraceEventHandle handle;
+  TraceEventHandle handle = { 0, 0, 0 };
   if (!*category_group_enabled)
     return handle;
 
@@ -1749,6 +1752,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     }
   }
 
+  OptionalAutoLock lock(lock_);
   // Check and update the current thread name only if the event is for the
   // current thread to avoid locks in most cases.
   if (thread_id == static_cast<int>(PlatformThread::CurrentId())) {
@@ -1762,7 +1766,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
         new_name && *new_name) {
       g_current_thread_name.Get().Set(new_name);
 
-      AutoLock lock(lock_);
+      lock.EnsureAcquired();
       hash_map<int, std::string>::iterator existing_name =
           thread_names_.find(thread_id);
       if (existing_name == thread_names_.end()) {
@@ -1784,10 +1788,10 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     }
   }
 
+  TraceEvent* trace_event = NULL;
   if (!subtle::NoBarrier_Load(&buffer_is_full_)) {
-    TraceEvent* trace_event;
-    OptionalAutoLock lock(lock_);
     if (thread_local_event_buffer) {
+      lock.EnsureReleased();
       trace_event = thread_local_event_buffer->AddTraceEvent(&notifier,
                                                              &handle);
     } else {
@@ -1804,25 +1808,33 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 #if defined(OS_ANDROID)
       trace_event->SendToATrace();
 #endif
-
-      if (trace_options() & ECHO_TO_CONSOLE) {
-        lock.EnsureAcquired();
-        OutputEventToConsoleWhileLocked(trace_event);
-      }
     }
+  }
+
+  if (trace_options() & ECHO_TO_CONSOLE) {
+    lock.EnsureAcquired();
+    OutputEventToConsoleWhileLocked(
+        phase == TRACE_EVENT_PHASE_COMPLETE ? TRACE_EVENT_PHASE_BEGIN : phase,
+        timestamp, trace_event);
   }
 
   if (reinterpret_cast<const unsigned char*>(subtle::NoBarrier_Load(
       &watch_category_)) == category_group_enabled) {
-    AutoLock lock(lock_);
+    lock.EnsureAcquired();
     if (watch_event_name_ == name)
       notifier.AddNotificationWhileLocked(EVENT_WATCH_NOTIFICATION);
   }
 
+  lock.EnsureReleased();
   EventCallback event_callback = reinterpret_cast<EventCallback>(
       subtle::NoBarrier_Load(&event_callback_));
   if (event_callback) {
-    event_callback(phase, category_group_enabled, name, id,
+    // TODO(wangxianzhu): Should send TRACE_EVENT_PHASE_COMPLETE directly to
+    // clients if it is beneficial and feasible.
+    event_callback(now,
+                   phase == TRACE_EVENT_PHASE_COMPLETE ?
+                       TRACE_EVENT_PHASE_BEGIN : phase,
+                   category_group_enabled, name, id,
                    num_args, arg_names, arg_types, arg_values,
                    flags);
   }
@@ -1835,19 +1847,21 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
   return handle;
 }
 
-void TraceLog::OutputEventToConsoleWhileLocked(TraceEvent* trace_event) {
+// May be called when a COMPELETE event ends and the unfinished event has been
+// recycled (phase == TRACE_EVENT_PHASE_END and trace_event == NULL).
+void TraceLog::OutputEventToConsoleWhileLocked(unsigned char phase,
+                                               const TimeTicks& timestamp,
+                                               TraceEvent* trace_event) {
+  // The caller should translate TRACE_EVENT_PHASE_COMPLETE to
+  // TRACE_EVENT_PHASE_BEGIN or TRACE_EVENT_END.
+  DCHECK(phase != TRACE_EVENT_PHASE_COMPLETE);
   lock_.AssertAcquired();
 
   TimeDelta duration;
-  unsigned char phase = trace_event->phase();
-  int thread_id = trace_event->thread_id();
+  int thread_id = trace_event ?
+      trace_event->thread_id() : PlatformThread::CurrentId();
   if (phase == TRACE_EVENT_PHASE_END) {
-    duration = trace_event->timestamp() -
-        thread_event_start_times_[thread_id].top();
-    thread_event_start_times_[thread_id].pop();
-  } else if (phase == TRACE_EVENT_PHASE_COMPLETE &&
-             trace_event->duration().ToInternalValue() != -1) {
-    duration = trace_event->duration();
+    duration = timestamp - thread_event_start_times_[thread_id].top();
     thread_event_start_times_[thread_id].pop();
   }
 
@@ -1868,14 +1882,15 @@ void TraceLog::OutputEventToConsoleWhileLocked(TraceEvent* trace_event) {
   for (size_t i = 0; i < depth; ++i)
     log << "| ";
 
-  trace_event->AppendPrettyPrinted(&log);
+  if (trace_event)
+    trace_event->AppendPrettyPrinted(&log);
   if (phase == TRACE_EVENT_PHASE_END)
     log << base::StringPrintf(" (%.3f ms)", duration.InMillisecondsF());
 
   LOG(ERROR) << log.str() << "\x1b[0;m";
 
-  if (phase == TRACE_EVENT_PHASE_BEGIN || phase == TRACE_EVENT_PHASE_COMPLETE)
-    thread_event_start_times_[thread_id].push(trace_event->timestamp());
+  if (phase == TRACE_EVENT_PHASE_BEGIN)
+    thread_event_start_times_[thread_id].push(timestamp);
 }
 
 void TraceLog::AddTraceEventEtw(char phase,
@@ -1905,20 +1920,37 @@ void TraceLog::UpdateTraceEventDuration(TraceEventHandle handle) {
   OptionalAutoLock lock(lock_);
 
   TraceEvent* trace_event = GetEventByHandleInternal(handle, &lock);
-  if (!trace_event) {
-    // The event has been recycled.
-    return;
-  }
-
-  trace_event->UpdateDuration();
-
+  if (trace_event) {
+    DCHECK(trace_event->phase() == TRACE_EVENT_PHASE_COMPLETE);
+    trace_event->UpdateDuration();
 #if defined(OS_ANDROID)
-  trace_event->SendToATrace();
+    trace_event->SendToATrace();
 #endif
+  }
 
   if (trace_options() & ECHO_TO_CONSOLE) {
     lock.EnsureAcquired();
-    OutputEventToConsoleWhileLocked(trace_event);
+    OutputEventToConsoleWhileLocked(TRACE_EVENT_PHASE_END,
+                                    TimeTicks::NowFromSystemTraceTime(),
+                                    trace_event);
+  }
+
+  EventCallback event_callback = reinterpret_cast<EventCallback>(
+      subtle::NoBarrier_Load(&event_callback_));
+  if (event_callback && trace_event) {
+    // The copy is needed when trace_event is from the main buffer in which case
+    // the lock has been locked.
+    TraceEvent event_copy;
+    event_copy.CopyFrom(*trace_event);
+    lock.EnsureReleased();
+    DCHECK(event_copy.duration().InMicroseconds() >= 0);
+    // TODO(wangxianzhu): Should send TRACE_EVENT_PHASE_COMPLETE directly to
+    // clients if it is beneficial and feasible.
+    event_callback(event_copy.timestamp() + event_copy.duration(),
+                   TRACE_EVENT_PHASE_END,
+                   event_copy.category_group_enabled(),
+                   event_copy.name(), event_copy.id(),
+                   0, NULL, NULL, NULL, event_copy.flags());
   }
 }
 
@@ -2011,6 +2043,9 @@ TraceEvent* TraceLog::GetEventByHandle(TraceEventHandle handle) {
 
 TraceEvent* TraceLog::GetEventByHandleInternal(TraceEventHandle handle,
                                                OptionalAutoLock* lock) {
+  if (!handle.chunk_seq)
+    return NULL;
+
   if (thread_local_event_buffer_.Get()) {
     TraceEvent* trace_event =
         thread_local_event_buffer_.Get()->GetEventByHandle(handle);
