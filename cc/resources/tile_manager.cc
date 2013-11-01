@@ -67,9 +67,15 @@ inline ManagedTileBin BinFromTilePriority(const TilePriority& prio,
                                           TreePriority tree_priority,
                                           bool is_ready_to_draw,
                                           bool is_active) {
-  // The amount of time for which we want to have prepainting coverage.
+  // The amount of time/pixels for which we want to have prepainting coverage.
+  // Note: All very arbitrary constants: metric-based tuning is welcome!
   const float kPrepaintingWindowTimeSeconds = 1.0f;
   const float kBackflingGuardDistancePixels = 314.0f;
+  // Note: The max distances here assume that SOON_BIN will never help overcome
+  // raster being too slow (only caching in advance will do that), so we just
+  // need enough padding to handle some latency and per-tile variability.
+  const float kMaxPrepaintingDistancePixelsHighRes = 2000.0f;
+  const float kMaxPrepaintingDistancePixelsLowRes = 4000.0f;
 
   // Don't let low res tiles be in the now bin unless we're in a mode where
   // we're prioritizing checkerboard prevention.
@@ -86,8 +92,16 @@ inline ManagedTileBin BinFromTilePriority(const TilePriority& prio,
   if (prio.resolution == NON_IDEAL_RESOLUTION)
     return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
 
+  float max_prepainting_distance_pixels =
+      (prio.resolution == HIGH_RESOLUTION)
+          ? kMaxPrepaintingDistancePixelsHighRes
+          : kMaxPrepaintingDistancePixelsLowRes;
+
+  // Soon bin if we are within backfling-guard, or under both the time window
+  // and the max distance window.
   if (prio.distance_to_visible_in_pixels < kBackflingGuardDistancePixels ||
-      prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds)
+      (prio.time_to_visible_in_seconds < kPrepaintingWindowTimeSeconds &&
+       prio.distance_to_visible_in_pixels <= max_prepainting_distance_pixels))
     return SOON_BIN;
 
   return is_active ? EVENTUALLY_AND_ACTIVE_BIN : EVENTUALLY_BIN;
