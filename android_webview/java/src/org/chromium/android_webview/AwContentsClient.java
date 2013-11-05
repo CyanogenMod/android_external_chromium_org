@@ -20,6 +20,7 @@ import android.view.View;
 import android.webkit.ConsoleMessage;
 import android.webkit.GeolocationPermissions;
 import android.webkit.SslErrorHandler;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 
@@ -56,6 +57,8 @@ public abstract class AwContentsClient {
     private int mCachedRendererBackgroundColor = INVALID_COLOR;
 
     private static final int INVALID_COLOR = 0;
+
+    private AwSettings mSettings;
 
     class AwWebContentsObserver extends WebContentsObserverAndroid {
         public AwWebContentsObserver(ContentViewCore contentViewCore) {
@@ -133,13 +136,20 @@ public abstract class AwContentsClient {
         final public ContentVideoViewClient getContentVideoViewClient() {
             return new AwContentVideoViewClient();
         }
+
+        @Override
+        public boolean shouldBlockMediaRequest(String url) {
+            return mSettings != null ?
+                    mSettings.getBlockNetworkLoads() && URLUtil.isNetworkUrl(url) : true;
+        }
     }
 
-    final void installWebContentsObserver(ContentViewCore contentViewCore) {
+    final void installWebContentsObserver(ContentViewCore contentViewCore, AwSettings settings) {
         if (mWebContentsObserver != null) {
             mWebContentsObserver.detachFromWebContents();
         }
         mWebContentsObserver = new AwWebContentsObserver(contentViewCore);
+        mSettings = settings;
     }
 
     private class AwContentVideoViewClient implements ContentVideoViewClient {
