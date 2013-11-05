@@ -301,6 +301,10 @@
       # by the GYP command line or by ~/.gyp/include.gypi.
       'component%': 'static_library',
 
+      #By default swe_component is set to shared_library and it can used
+      #where you want to dynamically link to any library.
+      'swe_component%' : 'shared_library',
+
       # Set to select the Title Case versions of strings in GRD files.
       'use_titlecase_in_grd_files%': 0,
 
@@ -919,6 +923,7 @@
     'sysroot%': '<(sysroot)',
     'system_libdir%': '<(system_libdir)',
     'component%': '<(component)',
+    'swe_component%': '<(swe_component)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
