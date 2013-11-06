@@ -7,9 +7,7 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
 #include "content/browser/loader/resource_loader_delegate.h"
@@ -30,6 +28,7 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
+#include "net/url_request/url_request_status.h"
 #include "webkit/browser/appcache/appcache_interceptor.h"
 
 using base::TimeDelta;
@@ -37,13 +36,6 @@ using base::TimeTicks;
 
 namespace content {
 namespace {
-
-// TODO(jkarlin): The value is high to reduce the chance of the detachable
-// request timing out, forcing a blocked second request to open a new connection
-// and start over. Reduce this value once we have a better idea of what it
-// should be and once we stop blocking multiple simultaneous requests for the
-// same resource (see bugs 46104 and 31014).
-const int kDefaultDetachableDelayOnCancelMs = 30000;
 
 void PopulateResourceResponse(net::URLRequest* request,
                               ResourceResponse* response) {
@@ -83,7 +75,6 @@ ResourceLoader::ResourceLoader(scoped_ptr<net::URLRequest> request,
       last_upload_position_(0),
       waiting_for_upload_progress_ack_(false),
       is_transferring_(false),
-      detachable_delay_on_cancel_ms_(kDefaultDetachableDelayOnCancelMs),
       weak_ptr_factory_(this) {
   request_->set_delegate(this);
   handler_->SetController(this);
@@ -439,18 +430,6 @@ void ResourceLoader::StartRequestInternal() {
   delegate_->DidStartRequest(this);
 }
 
-void ResourceLoader::Detach() {
-  ResourceRequestInfoImpl* info = GetRequestInfo();
-
-  if (info->is_detached())
-    return;
-  info->set_detached();
-  detached_timer_.reset(new base::OneShotTimer<ResourceLoader>());
-  detached_timer_->Start(
-      FROM_HERE, TimeDelta::FromMilliseconds(detachable_delay_on_cancel_ms_),
-      this, &ResourceLoader::Cancel);
-}
-
 void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   VLOG(1) << "CancelRequestInternal: " << request_->url().spec();
 
@@ -461,11 +440,6 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
   // browser.
   if (from_renderer && (info->is_download() || info->is_stream()))
     return;
-
-  if (from_renderer && info->is_detachable()) {
-    Detach();
-    return;
-  }
 
   // TODO(darin): Perhaps we should really be looking to see if the status is
   // IO_PENDING?
@@ -630,6 +604,7 @@ void ResourceLoader::CompleteRead(int bytes_read) {
 
 void ResourceLoader::ResponseCompleted() {
   VLOG(1) << "ResponseCompleted: " << request_->url().spec();
+  RecordHistograms();
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   std::string security_info;
@@ -655,6 +630,39 @@ void ResourceLoader::ResponseCompleted() {
 
 void ResourceLoader::CallDidFinishLoading() {
   delegate_->DidFinishLoading(this);
+}
+
+void ResourceLoader::RecordHistograms() {
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+
+  if (info->GetResourceType() == ResourceType::PREFETCH) {
+    PrefetchStatus status = STATUS_UNDEFINED;
+    TimeDelta total_time = base::TimeTicks::Now() - request_->creation_time();
+
+    switch (request_->status().status()) {
+      case net::URLRequestStatus::SUCCESS:
+        if (request_->was_cached()) {
+          status = STATUS_SUCCESS_FROM_CACHE;
+          UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeSpentPrefetchingFromCache",
+                              total_time);
+        } else {
+          status = STATUS_SUCCESS_FROM_NETWORK;
+          UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeSpentPrefetchingFromNetwork",
+                              total_time);
+        }
+        break;
+      case net::URLRequestStatus::CANCELED:
+        status = STATUS_CANCELED;
+        UMA_HISTOGRAM_TIMES("Net.Prefetch.TimeBeforeCancel", total_time);
+        break;
+      case net::URLRequestStatus::IO_PENDING:
+      case net::URLRequestStatus::FAILED:
+        status = STATUS_UNDEFINED;
+        break;
+    }
+
+    UMA_HISTOGRAM_ENUMERATION("Net.Prefetch.Pattern", status, STATUS_MAX);
+  }
 }
 
 }  // namespace content

@@ -19,7 +19,7 @@ vars = {
   "sourceforge_url": "http://svn.code.sf.net/p/%(repo)s/code",
   "webkit_trunk": "http://src.chromium.org/blink/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "160934",
+  "webkit_revision": "161254",
   "chromium_git": "https://chromium.googlesource.com",
   "chromiumos_git": "https://chromium.googlesource.com/chromiumos",
   "skia_git": "https://skia.googlesource.com",
@@ -31,32 +31,32 @@ vars = {
   "gtm_revision": "616",
 
   "libphonenumber_revision": "621",
-  "libvpx_revision": "228256",
+  "libvpx_revision": "232686",
   "lss_revision": "24",
 
   # These two FFmpeg variables must be updated together.  One is used for SVN
   # checkouts and the other for Git checkouts.
-  "ffmpeg_revision": "229188",
-  "ffmpeg_hash": "3cd1dee6583cb4e019c518945083d64f1b990300",
+  "ffmpeg_revision": "232187",
+  "ffmpeg_hash": "79ff844dd6746854847e65a08535673de811930b",
 
   "sfntly_revision": "228",
   "lighttpd_revision": "33737",
-  "skia_revision": "12012",
-  "skia_hash": "e8166a5e9e9656909029d14d284c15c47acb653f",
+  "skia_revision": "12108",
+  "skia_hash": "d7f0e2db655b6f023e996bf7c8389d69000dab3a",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
-  "v8_revision": "17429",
+  "v8_revision": "17449",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
-  "webrtc_revision": "4982",
+  "webrtc_revision": "5080",
   "jsoncpp_revision": "248",
-  "nss_revision": "228205",
+  "nss_revision": "231937",
   # Three lines of non-changing comments so that
-  # the commit queue can handle CLs rolling swarm_client
+  # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  "swarm_revision": "230741",
+  "swarming_revision": "141ef86f4abf255e578320bfe6e42006c251bc39",
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openssl
   # and whatever else without interference from each other.
@@ -81,7 +81,7 @@ deps = {
     "/external/angle.git@0f0edf94bfe1fc28979b0d12747a900164bb966a",
 
   "src/third_party/trace-viewer":
-    (Var("googlecode_url") % "trace-viewer") + "/trunk@1040",
+    (Var("googlecode_url") % "trace-viewer") + "/trunk@1055",
 
   "src/third_party/WebKit":
     Var("webkit_trunk") + "@" + Var("webkit_revision"),
@@ -117,8 +117,9 @@ deps = {
   "src/tools/gyp":
     (Var("googlecode_url") % "gyp") + "/trunk@1773",
 
-  "src/tools/swarm_client":
-    "/trunk/tools/swarm_client@" + Var("swarm_revision"),
+  "src/tools/swarming_client":
+    Var("chromium_git") + "/external/swarming.client.git@" +
+        Var("swarming_revision"),
 
   "src/v8":
     (Var("googlecode_url") % "v8") + "/trunk@" + Var("v8_revision"),
@@ -252,7 +253,7 @@ deps = {
     "/trunk/deps/third_party/opus@185324",
 
   "src/media/cdm/ppapi/api":
-    "/trunk/deps/cdm@230180",
+    "/trunk/deps/cdm@231683",
 
   "src/third_party/mesa/src":
     "/trunk/deps/third_party/mesa@229994",
@@ -405,7 +406,7 @@ deps_os = {
   "unix": {
     # Linux, really.
     "src/chrome/tools/test/reference_build/chrome_linux":
-      "/trunk/deps/reference_builds/chrome_linux@230875",
+      "/trunk/deps/reference_builds/chrome_linux64@232223",
 
     "src/third_party/xdg-utils":
       "/trunk/deps/third_party/xdg-utils@203785",

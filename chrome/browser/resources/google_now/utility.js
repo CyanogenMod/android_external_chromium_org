@@ -27,7 +27,7 @@
 /**
  * Notification server URL.
  */
-var NOTIFICATION_CARDS_URL = 'https://www.googleapis.com/chromenow/v1beta1';
+var NOTIFICATION_CARDS_URL = 'https://www.googleapis.com/chromenow/v1';
 
 var DEBUG_MODE = localStorage['debug_mode'];
 
@@ -42,6 +42,12 @@ function initializeDebug() {
 }
 
 initializeDebug();
+
+/**
+ * Location Card Storage.
+ */
+if (localStorage['locationCardsShown'] === undefined)
+  localStorage['locationCardsShown'] = 0;
 
 /**
  * Builds an error object with a message that may be sent to the server.

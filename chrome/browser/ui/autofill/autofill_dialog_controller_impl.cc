@@ -16,6 +16,7 @@
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/rand_util.h"
@@ -580,7 +581,12 @@ base::WeakPtr<AutofillDialogControllerImpl>
 }
 
 // static
-void AutofillDialogControllerImpl::RegisterProfilePrefs(
+void AutofillDialogController::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterListPref(::prefs::kAutofillDialogWalletLocationAcceptance);
+}
+
+// static
+void AutofillDialogController::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   // TODO(estade): this pref is no longer used, but may prove to be valuable.
   // Remove it if we don't wind up using it at some point.
@@ -617,12 +623,6 @@ base::WeakPtr<AutofillDialogController> AutofillDialogController::Create(
                                               form_structure,
                                               source_url,
                                               callback);
-}
-
-// static
-void AutofillDialogController::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  AutofillDialogControllerImpl::RegisterProfilePrefs(registry);
 }
 
 void AutofillDialogControllerImpl::Show() {
@@ -696,13 +696,12 @@ void AutofillDialogControllerImpl::Show() {
   view_->Show();
   GetManager()->AddObserver(this);
 
-  // Try to see if the user is already signed-in. If signed-in, fetch the user's
-  // Wallet data. Otherwise, see if the user could be signed in passively.
-  // TODO(aruslan): UMA metrics for sign-in.
-  FetchWalletCookieAndUserName();
-
-  if (!account_chooser_model_.WalletIsSelected())
+  if (!account_chooser_model_.WalletIsSelected()) {
     LogDialogLatencyToShow();
+  } else {
+    // TODO(aruslan): UMA metrics for sign-in.
+    FetchWalletCookieAndUserName();
+  }
 }
 
 void AutofillDialogControllerImpl::Hide() {
@@ -747,9 +746,12 @@ string16 AutofillDialogControllerImpl::AccountChooserText() const {
 }
 
 string16 AutofillDialogControllerImpl::SignInLinkText() const {
-  return l10n_util::GetStringUTF16(
+  int ids = SignedInState() == NOT_CHECKED ?
+      IDS_AUTOFILL_DIALOG_USE_WALLET_LINK :
       signin_registrar_.IsEmpty() ? IDS_AUTOFILL_DIALOG_SIGN_IN :
-                                    IDS_AUTOFILL_DIALOG_CANCEL_SIGN_IN);
+                                    IDS_AUTOFILL_DIALOG_CANCEL_SIGN_IN;
+
+  return l10n_util::GetStringUTF16(ids);
 }
 
 string16 AutofillDialogControllerImpl::SpinnerText() const {
@@ -816,7 +818,7 @@ int AutofillDialogControllerImpl::GetDialogButtons() const {
   if (waiting_for_explicit_sign_in_response_)
     return ui::DIALOG_BUTTON_NONE;
 
-  if (ShouldShowSpinner())
+  if (ShouldShowSpinner() && !handling_use_wallet_link_click_)
     return ui::DIALOG_BUTTON_CANCEL;
 
   return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
@@ -860,7 +862,6 @@ DialogOverlayState AutofillDialogControllerImpl::GetDialogOverlay() {
   const SkColor final_top_color = SkColorSetRGB(0x52, 0x9F, 0xF8);
   const SkColor final_bottom_color = SkColorSetRGB(0x22, 0x75, 0xE5);
 
-  // First-run, post-submit, Wallet expository page.
   if (full_wallet_ && full_wallet_->required_actions().empty()) {
     card_scrambling_delay_.Stop();
     card_scrambling_refresher_.Stop();
@@ -933,6 +934,8 @@ bool AutofillDialogControllerImpl::SectionIsActive(DialogSection section)
 void AutofillDialogControllerImpl::GetWalletItems() {
   ScopedViewUpdates updates(view_.get());
 
+  wallet_items_requested_ = true;
+
   previously_selected_instrument_id_.clear();
   previously_selected_shipping_address_id_.clear();
   if (wallet_items_) {
@@ -970,8 +973,11 @@ AutofillDialogControllerImpl::DialogSignedInState
   if (wallet_error_notification_)
     return SIGN_IN_DISABLED;
 
-  if (signin_helper_ || !wallet_items_)
+  if (signin_helper_ || (wallet_items_requested_ && !wallet_items_))
     return REQUIRES_RESPONSE;
+
+  if (!wallet_items_requested_)
+    return NOT_CHECKED;
 
   if (wallet_items_->HasRequiredAction(wallet::GAIA_AUTH))
     return REQUIRES_SIGN_IN;
@@ -1005,11 +1011,15 @@ void AutofillDialogControllerImpl::SignedInStateUpdated() {
       break;
 
     case REQUIRES_SIGN_IN:
+      if (handling_use_wallet_link_click_)
+        SignInLinkClicked();
+      // Fall through.
     case SIGN_IN_DISABLED:
       // Switch to the local account and refresh the dialog.
       signin_helper_.reset();
       username_fetcher_.reset();
       OnWalletSigninError();
+      handling_use_wallet_link_click_ = false;
       break;
 
     case REQUIRES_PASSIVE_SIGN_IN:
@@ -1025,6 +1035,7 @@ void AutofillDialogControllerImpl::SignedInStateUpdated() {
       signin_helper_->StartPassiveSignin();
       break;
 
+    case NOT_CHECKED:
     case REQUIRES_RESPONSE:
       break;
   }
@@ -1074,9 +1085,30 @@ void AutofillDialogControllerImpl::OnWalletFormFieldError(
 }
 
 void AutofillDialogControllerImpl::ConstructLegalDocumentsText() {
-  if (!wallet_items_ || wallet_items_->legal_documents().empty())
+  legal_documents_text_.clear();
+  legal_document_link_ranges_.clear();
+
+  if (!wallet_items_)
     return;
-  NOTIMPLEMENTED();
+
+  PrefService* local_state = g_browser_process->local_state();
+  // List of users who have accepted location sharing for fraud protection
+  // on this device.
+  const base::ListValue* accepted =
+      local_state->GetList(::prefs::kAutofillDialogWalletLocationAcceptance);
+  bool has_accepted_location_sharing =
+      accepted->Find(base::StringValue(
+          account_chooser_model_.GetActiveWalletAccountName())) !=
+      accepted->end();
+
+  if (wallet_items_->legal_documents().empty()) {
+    if (!has_accepted_location_sharing) {
+      legal_documents_text_ = l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_DIALOG_LOCATION_DISCLOSURE);
+    }
+
+    return;
+  }
 
   const std::vector<wallet::WalletItems::LegalDocument*>& documents =
       wallet_items_->legal_documents();
@@ -1121,9 +1153,18 @@ void AutofillDialogControllerImpl::ConstructLegalDocumentsText() {
 
   std::vector<size_t> offsets;
   string16 text = l10n_util::GetStringFUTF16(resource_id, link_names, &offsets);
-  legal_document_link_ranges_.clear();
+
+  // Tack on the location string if need be.
+  size_t base_offset = 0;
+  if (!has_accepted_location_sharing) {
+    text = l10n_util::GetStringFUTF16(
+        IDS_AUTOFILL_DIALOG_LOCATION_DISCLOSURE_WITH_LEGAL_DOCS,
+        text,
+        &base_offset);
+  }
+
   for (size_t i = 0; i < documents.size(); ++i) {
-    size_t link_start = offsets[i];
+    size_t link_start = offsets[i] + base_offset;
     legal_document_link_ranges_.push_back(gfx::Range(
         link_start, link_start + documents[i]->display_name().size()));
   }
@@ -1904,6 +1945,7 @@ void AutofillDialogControllerImpl::UserEditedOrActivatedInput(
   popup_controller_ = AutofillPopupControllerImpl::GetOrCreate(
       popup_controller_,
       weak_ptr_factory_.GetWeakPtr(),
+      NULL,
       parent_view,
       content_bounds,
       base::i18n::IsRTL() ?
@@ -2009,7 +2051,12 @@ void AutofillDialogControllerImpl::LinkClicked(const GURL& url) {
 void AutofillDialogControllerImpl::SignInLinkClicked() {
   ScopedViewUpdates updates(view_.get());
 
-  if (signin_registrar_.IsEmpty()) {
+  if (SignedInState() == NOT_CHECKED) {
+    handling_use_wallet_link_click_ = true;
+    account_chooser_model_.SelectActiveWalletAccount();
+    FetchWalletCookieAndUserName();
+    view_->UpdateAccountChooser();
+  } else if (signin_registrar_.IsEmpty()) {
     // Start sign in.
     DCHECK(!IsPayingWithWallet());
 
@@ -2058,6 +2105,7 @@ bool AutofillDialogControllerImpl::OnCancel() {
 }
 
 bool AutofillDialogControllerImpl::OnAccept() {
+  ScopedViewUpdates updates(view_.get());
   choose_another_instrument_or_address_ = false;
   wallet_server_validation_recoverable_ = true;
   HidePopup();
@@ -2090,11 +2138,13 @@ bool AutofillDialogControllerImpl::OnAccept() {
 
   if (IsSubmitPausedOn(wallet::VERIFY_CVV)) {
     DCHECK(!active_instrument_id_.empty());
+    full_wallet_.reset();
     GetWalletClient()->AuthenticateInstrument(
         active_instrument_id_,
         UTF16ToUTF8(view_->GetCvc()));
+    view_->UpdateOverlay();
   } else if (IsPayingWithWallet()) {
-    AcceptLegalDocuments();
+    AcceptLegalTerms();
   } else {
     FinishSubmit();
   }
@@ -2113,16 +2163,14 @@ content::WebContents* AutofillDialogControllerImpl::GetWebContents() {
 ////////////////////////////////////////////////////////////////////////////////
 // AutofillPopupDelegate implementation.
 
-void AutofillDialogControllerImpl::OnPopupShown(
-    content::RenderWidgetHost::KeyPressEventCallback* callback) {
+void AutofillDialogControllerImpl::OnPopupShown() {
   ScopedViewUpdates update(view_.get());
   view_->UpdateErrorBubble();
 
   GetMetricLogger().LogDialogPopupEvent(AutofillMetrics::DIALOG_POPUP_SHOWN);
 }
 
-void AutofillDialogControllerImpl::OnPopupHidden(
-    content::RenderWidgetHost::KeyPressEventCallback* callback) {}
+void AutofillDialogControllerImpl::OnPopupHidden() {}
 
 bool AutofillDialogControllerImpl::ShouldRepostEvent(
     const ui::MouseEvent& event) {
@@ -2368,8 +2416,8 @@ void AutofillDialogControllerImpl::OnDidGetWalletItems(
   has_accepted_legal_documents_ = false;
 
   wallet_items_ = wallet_items.Pass();
-  OnWalletOrSigninUpdate();
   ConstructLegalDocumentsText();
+  OnWalletOrSigninUpdate();
 }
 
 void AutofillDialogControllerImpl::OnDidSaveToWallet(
@@ -2478,7 +2526,7 @@ void AutofillDialogControllerImpl::ShowNewCreditCardBubble(
     scoped_ptr<CreditCard> new_card,
     scoped_ptr<AutofillProfile> billing_profile) {
 #if !defined(OS_ANDROID)
-  NewCreditCardBubbleController::Show(profile(),
+  NewCreditCardBubbleController::Show(web_contents(),
                                       new_card.Pass(),
                                       billing_profile.Pass());
 #endif
@@ -2524,8 +2572,11 @@ AutofillDialogControllerImpl::AutofillDialogControllerImpl(
       invoked_from_same_origin_(true),
       source_url_(source_url),
       callback_(callback),
-      account_chooser_model_(this, profile_->GetPrefs(), metric_logger_),
+      account_chooser_model_(this, profile_, metric_logger_),
       wallet_client_(profile_->GetRequestContext(), this, source_url),
+      wallet_items_requested_(false),
+      handling_use_wallet_link_click_(false),
+      country_combobox_model_(*GetManager()),
       suggested_cc_(this),
       suggested_billing_(this),
       suggested_cc_billing_(this),
@@ -3104,10 +3155,15 @@ bool AutofillDialogControllerImpl::AreLegalDocumentsCurrent() const {
       (wallet_items_ && wallet_items_->legal_documents().empty());
 }
 
-void AutofillDialogControllerImpl::AcceptLegalDocuments() {
+void AutofillDialogControllerImpl::AcceptLegalTerms() {
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&UserDidOptIntoLocationServices));
+  PrefService* local_state = g_browser_process->local_state();
+  ListPrefUpdate accepted(
+      local_state, ::prefs::kAutofillDialogWalletLocationAcceptance);
+  accepted->AppendIfNotPresent(new base::StringValue(
+      account_chooser_model_.GetActiveWalletAccountName()));
 
   if (AreLegalDocumentsCurrent()) {
     LoadRiskFingerprintData();
@@ -3248,7 +3304,6 @@ void AutofillDialogControllerImpl::HandleSaveOrUpdateRequiredActions(
 
 void AutofillDialogControllerImpl::FinishSubmit() {
   if (IsPayingWithWallet()) {
-    // To get past this point, the view must call back OverlayButtonPressed.
     ScopedViewUpdates updates(view_.get());
     view_->UpdateOverlay();
 

@@ -209,7 +209,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     }.bind(this));
 
     // TODO(yoshiki): Remove the flag when the feature is launched.
-    this.enableExperimentalWebstoreIntegration_ = true;
+    this.enableExperimentalWebstoreIntegration_ = false;
+    group.add(function(done) {
+      chrome.commandLinePrivate.hasSwitch(
+          'file-manager-enable-webstore-integration', function(flag) {
+        this.enableExperimentalWebstoreIntegration_ = flag;
+        done();
+      }.bind(this));
+    }.bind(this));
 
     group.run(callback);
   };
@@ -537,7 +544,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.initializeCore = function() {
     this.initializeQueue_.add(this.initGeneral_.bind(this), [], 'initGeneral');
-    this.initializeQueue_.add(this.initStrings_.bind(this), [], 'initStrings');
     this.initializeQueue_.add(this.initBackgroundPage_.bind(this),
                               [], 'initBackgroundPage');
     this.initializeQueue_.add(this.initPreferences_.bind(this),
@@ -555,10 +561,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
     this.initializeQueue_.add(
         this.initEssentialUI_.bind(this),
-        ['initGeneral', 'initStrings'],
+        ['initGeneral', 'initBackgroundPage'],
         'initEssentialUI');
     this.initializeQueue_.add(this.initAdditionalUI_.bind(this),
-        ['initEssentialUI', 'initBackgroundPage'], 'initAdditionalUI');
+        ['initEssentialUI'], 'initAdditionalUI');
     this.initializeQueue_.add(
         this.initFileSystemUI_.bind(this),
         ['initAdditionalUI', 'initPreferences'], 'initFileSystemUI');
@@ -596,28 +602,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * One time initialization of strings (mostly i18n).
-   *
-   * @param {function()} callback Completion callback.
-   * @private
-   */
-  FileManager.prototype.initStrings_ = function(callback) {
-    // Fetch the strings via the private api if running in the browser window.
-    // Otherwise, read cached strings from the local storage.
-    if (util.platform.runningInBrowser()) {
-      chrome.fileBrowserPrivate.getStrings(function(strings) {
-        loadTimeData.data = strings;
-        callback();
-      });
-    } else {
-      chrome.storage.local.get('strings', function(items) {
-        loadTimeData.data = items['strings'];
-        callback();
-      });
-    }
-  };
-
-  /**
    * Initialize the background page.
    * @param {function()} callback Completion callback.
    * @private
@@ -625,7 +609,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   FileManager.prototype.initBackgroundPage_ = function(callback) {
     chrome.runtime.getBackgroundPage(function(backgroundPage) {
       this.backgroundPage_ = backgroundPage;
-      callback();
+      this.backgroundPage_.background.ready(function() {
+        loadTimeData.data = this.backgroundPage_.background.stringData;
+        callback();
+      }.bind(this));
     }.bind(this));
   };
 
@@ -2112,8 +2099,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
       }
 
-      var filename = util.extractFilePath(url);
-      var extension = PathUtil.extractExtension(filename);
+      var path = util.extractFilePath(url);
+      var basename = PathUtil.basename(path);
+      var splitted = PathUtil.splitExtension(basename);
+      var filename = splitted[0];
+      var extension = splitted[1];
       var mime = props[0].contentMimeType;
 
       // Returns with failure if the file has neither extension nor mime.
@@ -2122,20 +2112,25 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
         return;
       }
 
-      this.suggestAppsDialog.show(
-          extension, mime,
-          function(result) {
-            switch (result) {
-              case SuggestAppsDialog.Result.INSTALL_SUCCESSFUL:
-                onSuccess();
-                break;
-              case SuggestAppsDialog.Result.FAILED:
-                onFailure();
-                break;
-              default:
-                onCancelled();
-            }
-          });
+      var onDialogClosed = function(result) {
+        switch (result) {
+          case SuggestAppsDialog.Result.INSTALL_SUCCESSFUL:
+            onSuccess();
+            break;
+          case SuggestAppsDialog.Result.FAILED:
+            onFailure();
+            break;
+          default:
+            onCancelled();
+        }
+      };
+
+      if (FileTasks.EXECUTABLE_EXTENSIONS.indexOf(extension) !== -1) {
+        this.suggestAppsDialog.showByFilename(filename, onDialogClosed);
+      } else {
+        this.suggestAppsDialog.showByExtensionAndMime(
+            extension, mime, onDialogClosed);
+      }
     }.bind(this));
   };
 

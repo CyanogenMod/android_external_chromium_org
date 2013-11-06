@@ -75,6 +75,7 @@
         }, { #  'OS=="ios"'
           'dependencies': [
             '../ios/ios.gyp:*',
+            '../ui/ui_unittests.gyp:ui_unittests',
           ],
         }],
         ['OS!="android" and OS!="ios"', {
@@ -368,6 +369,18 @@
           'dependencies': [
             '../third_party/WebKit/public/all.gyp:all_blink',
             '../content/content_shell_and_tests.gyp:content_shell',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '../content/content_shell_and_tests.gyp:content_shell_crash_service',
+              ],
+            }, {  # OS!="win"
+              'dependencies': [
+                '../breakpad/breakpad.gyp:dump_syms',
+                '../breakpad/breakpad.gyp:minidump_stackwalk',
+              ],
+            }],
           ],
         }, # target_name: all_webkit
         {

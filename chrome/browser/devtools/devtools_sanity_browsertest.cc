@@ -137,7 +137,7 @@ class DevToolsSanityTest : public InProcessBrowserTest {
         content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
         content::Source<content::WebContents>(window_->web_contents()));
     DevToolsWindow::ToggleDevToolsWindow(inspected_rvh_, false,
-        DEVTOOLS_TOGGLE_ACTION_TOGGLE);
+        DevToolsToggleAction::Toggle());
     close_observer.Wait();
   }
 
@@ -403,7 +403,7 @@ class WorkerDevToolsSanityTest : public InProcessBrowserTest {
   void OpenDevToolsWindowForSharedWorker(WorkerData* worker_data) {
     Profile* profile = browser()->profile();
     window_ = DevToolsWindow::CreateDevToolsWindowForWorker(profile);
-    window_->Show(DEVTOOLS_TOGGLE_ACTION_SHOW);
+    window_->Show(DevToolsToggleAction::Show());
     scoped_refptr<DevToolsAgentHost> agent_host(
         DevToolsAgentHost::GetForWorker(
             worker_data->worker_process_id,
@@ -434,7 +434,13 @@ class WorkerDevToolsSanityTest : public InProcessBrowserTest {
 };
 
 // Test beforeunload event delivery.
-IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestBeforeUnloadEvents) {
+// Crashes on Win only.  http://crbug.com/313658
+#if defined(OS_WIN)
+#define MAYBE_TestBeforeUnloadEvents DISABLED_TestBeforeUnloadEvents
+#else
+#define MAYBE_TestBeforeUnloadEvents TestBeforeUnloadEvents
+#endif
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, MAYBE_TestBeforeUnloadEvents) {
   OpenDevToolsWindow(kDebuggerTestPage);
   scoped_ptr<DevToolsWindowBeforeUnloadObserver> contents_observer;
   contents_observer.reset(
@@ -444,7 +450,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestBeforeUnloadEvents) {
 }
 
 // Tests scripts panel showing.
-// Disabled: http://crbug.com/309822
+// TODO(pfeldman): figure out flake.
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, DISABLED_TestShowScriptsTab) {
   RunTest("testShowScriptsTab", kDebuggerTestPage);
 }
@@ -452,10 +458,9 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, DISABLED_TestShowScriptsTab) {
 // Tests that scripts tab is populated with inspected scripts even if it
 // hadn't been shown by the moment inspected paged refreshed.
 // @see http://crbug.com/26312
-// Disabled: http://crbug.com/309822
 IN_PROC_BROWSER_TEST_F(
     DevToolsSanityTest,
-    DISABLED_TestScriptsTabIsPopulatedOnInspectedPageRefresh) {
+    TestScriptsTabIsPopulatedOnInspectedPageRefresh) {
   // Clear inspector settings to ensure that Elements will be
   // current panel when DevTools window is open.
   content::BrowserContext* browser_context =
@@ -499,25 +504,22 @@ IN_PROC_BROWSER_TEST_F(DevToolsExperimentalExtensionTest,
 
 // Tests that a content script is in the scripts list.
 // http://crbug.com/114104
-// Disabled: http://crbug.com/309822
 IN_PROC_BROWSER_TEST_F(DevToolsExtensionTest,
-                       DISABLED_TestContentScriptIsPresent) {
+                       TestContentScriptIsPresent) {
   LoadExtension("simple_content_script");
   RunTest("testContentScriptIsPresent", kPageWithContentScript);
 }
 
 // Tests that scripts are not duplicated after Scripts Panel switch.
-// Disabled: http://crbug.com/309822
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
-                       DISABLED_TestNoScriptDuplicatesOnPanelSwitch) {
+                       TestNoScriptDuplicatesOnPanelSwitch) {
   RunTest("testNoScriptDuplicatesOnPanelSwitch", kDebuggerTestPage);
 }
 
 // Tests that debugger works correctly if pause event occurs when DevTools
 // frontend is being loaded.
-// Disabled: http://crbug.com/309822
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
-                       DISABLED_TestPauseWhenLoadingDevTools) {
+                       TestPauseWhenLoadingDevTools) {
   RunTest("testPauseWhenLoadingDevTools", kPauseWhenLoadingDevTools);
 }
 
@@ -532,9 +534,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
 #else
 #define MAYBE_TestPauseWhenScriptIsRunning TestPauseWhenScriptIsRunning
 #endif
-// Disabled: http://crbug.com/309822
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest,
-                       DISABLED_TestPauseWhenScriptIsRunning) {
+                       MAYBE_TestPauseWhenScriptIsRunning) {
   RunTest("testPauseWhenScriptIsRunning", kPauseWhenScriptIsRunning);
 }
 

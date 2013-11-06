@@ -56,10 +56,6 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-fno-stack-protector \
 	-Os \
 	-g \
@@ -114,8 +110,7 @@ LOCAL_CPPFLAGS_Debug := \
 	-Wsign-compare \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 # Flags passed to both C and C++ files.
@@ -146,10 +141,6 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
-	-Wno-address \
-	-Wno-format-security \
-	-Wno-return-type \
-	-Wno-sequence-point \
 	-fno-stack-protector \
 	-Os \
 	-fno-ident \
@@ -183,7 +174,8 @@ MY_DEFS_Release := \
 	'-DCHROME_BUILD_ID=""' \
 	'-DNDEBUG' \
 	'-DNVALGRIND' \
-	'-DDYNAMIC_ANNOTATIONS_ENABLED=0'
+	'-DDYNAMIC_ANNOTATIONS_ENABLED=0' \
+	'-D_FORTIFY_SOURCE=2'
 
 
 # Include paths placed before CFLAGS/CPPFLAGS
@@ -206,8 +198,7 @@ LOCAL_CPPFLAGS_Release := \
 	-Wsign-compare \
 	-Wno-error=c++0x-compat \
 	-Wno-non-virtual-dtor \
-	-Wno-sign-promo \
-	-Wno-non-virtual-dtor
+	-Wno-sign-promo
 
 
 LOCAL_CFLAGS := $(MY_CFLAGS_$(GYP_CONFIGURATION)) $(MY_DEFS_$(GYP_CONFIGURATION))

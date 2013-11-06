@@ -8,9 +8,7 @@
 
 #include <algorithm>
 
-#include "base/command_line.h"
 #include "cc/output/compositor_frame.h"
-#include "content/public/common/content_switches.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -201,11 +199,7 @@ class CCMessagesTest : public testing::Test {
 };
 
 TEST_F(CCMessagesTest, AllQuads) {
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (!command_line.HasSwitch(switches::kAllowFiltersOverIPC))
-    command_line.AppendSwitch(switches::kAllowFiltersOverIPC);
-
-  IPC::Message msg(1, 2);
+  IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
 
   Transform arbitrary_matrix;
   arbitrary_matrix.Scale(3, 3);
@@ -499,7 +493,7 @@ TEST_F(CCMessagesTest, AllQuads) {
 }
 
 TEST_F(CCMessagesTest, Resources) {
-  IPC::Message msg(1, 2);
+  IPC::Message msg(1, 2, IPC::Message::PRIORITY_NORMAL);
   gfx::Size arbitrary_size(757, 1281);
   unsigned int arbitrary_uint1 = 71234838;
   unsigned int arbitrary_uint2 = 53589793;

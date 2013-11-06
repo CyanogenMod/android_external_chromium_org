@@ -10,7 +10,6 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
@@ -25,12 +24,12 @@
 #include "chrome/browser/safe_browsing/download_feedback_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/signature_util.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/test/mock_download_item.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/cert/x509_certificate.h"
+#include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -158,8 +157,6 @@ class DownloadProtectionServiceTest : public testing::Test {
   }
   virtual void SetUp() {
     content::RenderProcessHost::SetRunRendererInProcess(true);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kSbEnableDownloadFeedback);
     // Start real threads for the IO and File threads so that the DCHECKs
     // to test that we're on the correct thread work.
     sb_service_ = new StrictMock<FakeSafeBrowsingService>();
@@ -404,7 +401,9 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadFetchFailed) {
   net::FakeURLFetcherFactory factory(NULL);
   // HTTP request will fail.
   factory.SetFakeResponse(
-      DownloadProtectionService::GetDownloadRequestUrl(), std::string(), false);
+      DownloadProtectionService::GetDownloadRequestUrl(),
+      std::string(),
+      net::HTTP_INTERNAL_SERVER_ERROR);
 
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_exe(FILE_PATH_LITERAL("a.exe"));
@@ -446,7 +445,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_exe(FILE_PATH_LITERAL("a.exe"));
@@ -484,7 +483,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializePartialAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -502,7 +501,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -522,7 +521,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -547,7 +546,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -569,7 +568,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -590,7 +589,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadHTTPS) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_exe(FILE_PATH_LITERAL("a.exe"));
@@ -636,7 +635,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadZip) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   base::ScopedTempDir download_dir;
   ASSERT_TRUE(download_dir.CreateUniqueTempDir());
@@ -703,7 +702,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientDownloadZip) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   download_service_->CheckClientDownload(
       &item,
@@ -766,7 +765,7 @@ TEST_F(DownloadProtectionServiceTest, CheckClientCrxDownloadSuccess) {
   factory.SetFakeResponse(
       DownloadProtectionService::GetDownloadRequestUrl(),
       response.SerializeAsString(),
-      true);
+      net::HTTP_OK);
 
   base::FilePath a_tmp(FILE_PATH_LITERAL("a.tmp"));
   base::FilePath a_crx(FILE_PATH_LITERAL("a.crx"));

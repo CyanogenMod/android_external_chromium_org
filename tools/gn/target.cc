@@ -22,12 +22,11 @@ void TargetResolvedThunk(const base::Callback<void(const Target*)>& cb,
 // not be added again.
 void MergeDirectDependentConfigsFrom(const Target* from_target,
                                      ConfigSet* unique_configs,
-                                     std::vector<const Config*>* dest) {
-  const std::vector<const Config*>& direct =
-      from_target->direct_dependent_configs();
+                                     LabelConfigVector* dest) {
+  const LabelConfigVector& direct = from_target->direct_dependent_configs();
   for (size_t i = 0; i < direct.size(); i++) {
-    if (unique_configs->find(direct[i]) == unique_configs->end()) {
-      unique_configs->insert(direct[i]);
+    if (unique_configs->find(direct[i].ptr) == unique_configs->end()) {
+      unique_configs->insert(direct[i].ptr);
       dest->push_back(direct[i]);
     }
   }
@@ -38,20 +37,19 @@ void MergeDirectDependentConfigsFrom(const Target* from_target,
 // the dest target given in *all_dest.
 void MergeAllDependentConfigsFrom(const Target* from_target,
                                   ConfigSet* unique_configs,
-                                  std::vector<const Config*>* dest,
-                                  std::vector<const Config*>* all_dest) {
-  const std::vector<const Config*>& all =
-      from_target->all_dependent_configs();
+                                  LabelConfigVector* dest,
+                                  LabelConfigVector* all_dest) {
+  const LabelConfigVector& all = from_target->all_dependent_configs();
   for (size_t i = 0; i < all.size(); i++) {
     // Always add it to all_dependent_configs_ since it might not be in that
     // list even if we've seen it applied to this target before. This may
     // introduce some duplicates in all_dependent_configs_, but those will
     // we removed when they're actually applied to a target.
     all_dest->push_back(all[i]);
-    if (unique_configs->find(all[i]) == unique_configs->end()) {
+    if (unique_configs->find(all[i].ptr) == unique_configs->end()) {
       // One we haven't seen yet, also apply it to ourselves.
       dest->push_back(all[i]);
-      unique_configs->insert(all[i]);
+      unique_configs->insert(all[i].ptr);
     }
   }
 }
@@ -59,8 +57,7 @@ void MergeAllDependentConfigsFrom(const Target* from_target,
 }  // namespace
 
 Target::Target(const Settings* settings, const Label& label)
-    : Item(label),
-      settings_(settings),
+    : Item(settings, label),
       output_type_(UNKNOWN),
       hard_dep_(false),
       external_(false),
@@ -110,7 +107,7 @@ void Target::OnResolved() {
   // flags, etc. that it specifies itself are applied to us.
   size_t original_deps_size = deps_.size();
   for (size_t i = 0; i < original_deps_size; i++) {
-    const Target* dep = deps_[i];
+    const Target* dep = deps_[i].ptr;
     if (dep->output_type_ == GROUP) {
       deps_.insert(deps_.begin() + i + 1, dep->deps_.begin(), dep->deps_.end());
       i += dep->deps_.size();
@@ -120,21 +117,21 @@ void Target::OnResolved() {
   // Only add each config once. First remember the target's configs.
   ConfigSet unique_configs;
   for (size_t i = 0; i < configs_.size(); i++)
-    unique_configs.insert(configs_[i]);
+    unique_configs.insert(configs_[i].ptr);
 
   // Copy our own dependent configs to the list of configs applying to us.
   for (size_t i = 0; i < all_dependent_configs_.size(); i++) {
-    const Config* cur = all_dependent_configs_[i];
-    if (unique_configs.find(cur) == unique_configs.end()) {
-      unique_configs.insert(cur);
-      configs_.push_back(cur);
+    if (unique_configs.find(all_dependent_configs_[i].ptr) ==
+        unique_configs.end()) {
+      unique_configs.insert(all_dependent_configs_[i].ptr);
+      configs_.push_back(all_dependent_configs_[i]);
     }
   }
   for (size_t i = 0; i < direct_dependent_configs_.size(); i++) {
-    const Config* cur = direct_dependent_configs_[i];
-    if (unique_configs.find(cur) == unique_configs.end()) {
-      unique_configs.insert(cur);
-      configs_.push_back(cur);
+    if (unique_configs.find(direct_dependent_configs_[i].ptr) ==
+        unique_configs.end()) {
+      unique_configs.insert(direct_dependent_configs_[i].ptr);
+      configs_.push_back(direct_dependent_configs_[i]);
     }
   }
 
@@ -157,9 +154,9 @@ void Target::OnResolved() {
   }
 
   // Mark as resolved.
-  if (!settings_->build_settings()->target_resolved_callback().is_null()) {
+  if (!settings()->build_settings()->target_resolved_callback().is_null()) {
     g_scheduler->ScheduleWork(base::Bind(&TargetResolvedThunk,
-        settings_->build_settings()->target_resolved_callback(),
+        settings()->build_settings()->target_resolved_callback(),
         this));
   }
 }
@@ -181,7 +178,7 @@ bool Target::IsLinkable() const {
 void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
   // Gather info from our dependents we need.
   for (size_t dep_i = 0; dep_i < deps_.size(); dep_i++) {
-    const Target* dep = deps_[dep_i];
+    const Target* dep = deps_[dep_i].ptr;
     MergeAllDependentConfigsFrom(dep, unique_configs, &configs_,
                                  &all_dependent_configs_);
     MergeDirectDependentConfigsFrom(dep, unique_configs, &configs_);
@@ -212,15 +209,16 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
 
   // Forward direct dependent configs if requested.
   for (size_t dep = 0; dep < forward_dependent_configs_.size(); dep++) {
-    const Target* from_target = forward_dependent_configs_[dep];
+    const Target* from_target = forward_dependent_configs_[dep].ptr;
 
     // The forward_dependent_configs_ must be in the deps already, so we
     // don't need to bother copying to our configs, only forwarding.
-    DCHECK(std::find(deps_.begin(), deps_.end(), from_target) !=
+    DCHECK(std::find_if(deps_.begin(), deps_.end(),
+                        LabelPtrPtrEquals<Target>(from_target)) !=
            deps_.end());
-    const std::vector<const Config*>& direct =
-        from_target->direct_dependent_configs();
-    for (size_t i = 0; i < direct.size(); i++)
-      direct_dependent_configs_.push_back(direct[i]);
+    direct_dependent_configs_.insert(
+        direct_dependent_configs_.end(),
+        from_target->direct_dependent_configs().begin(),
+        from_target->direct_dependent_configs().end());
   }
 }

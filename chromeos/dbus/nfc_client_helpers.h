@@ -62,6 +62,14 @@ class CHROMEOS_EXPORT DBusObjectMap {
     // signals and update the properties.
     virtual NfcPropertySet* CreateProperties(
         dbus::ObjectProxy* object_proxy) = 0;
+
+    // Notifies the delegate that an object was added with object path
+    // |object_path|.
+    virtual void ObjectAdded(const dbus::ObjectPath& object_path) {}
+
+    // Notifies the delegate that an object was removed with object path
+    // |object_path|.
+    virtual void ObjectRemoved(const dbus::ObjectPath& object_path) {}
   };
 
   // Constructor takes in the D-Bus service name the proxies belong to and
@@ -81,6 +89,11 @@ class CHROMEOS_EXPORT DBusObjectMap {
   // |object_path|. If no properties structure exists for |object_path|,
   // returns NULL.
   NfcPropertySet* GetObjectProperties(const dbus::ObjectPath& object_path);
+
+  // Updates the object proxies from the given list of object paths
+  // |object_paths|. It notifies the delegate of each added and removed object
+  // via |Delegate::ObjectAdded| and |Delegate::ObjectRemoved|.
+  void UpdateObjects(const std::vector<dbus::ObjectPath>& object_paths);
 
   // Creates and stores an object proxy and properties structure for a remote
   // object with object path |object_path|. If an object proxy was already

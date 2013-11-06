@@ -10,6 +10,7 @@
 #include "ash/default_user_wallpaper_delegate.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/keyboard_controller_proxy_stub.h"
+#include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
 #include "ash/session_state_delegate_stub.h"
@@ -51,6 +52,19 @@ class NewWindowDelegateImpl : public NewWindowDelegate {
   DISALLOW_COPY_AND_ASSIGN(NewWindowDelegateImpl);
 };
 
+class MediaDelegateImpl : public MediaDelegate {
+ public:
+  MediaDelegateImpl() {}
+  virtual ~MediaDelegateImpl() {}
+
+  virtual void HandleMediaNextTrack() OVERRIDE {}
+  virtual void HandleMediaPlayPause() OVERRIDE {}
+  virtual void HandleMediaPrevTrack() OVERRIDE {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
+};
+
 }  // namespace
 
 ShellDelegateImpl::ShellDelegateImpl()
@@ -69,6 +83,10 @@ void ShellDelegateImpl::SetWatcher(WindowWatcher* watcher) {
 
 bool ShellDelegateImpl::IsFirstRunAfterBoot() const {
   return false;
+}
+
+bool ShellDelegateImpl::IsIncognitoAllowed() const {
+  return true;
 }
 
 bool ShellDelegateImpl::IsMultiProfilesEnabled() const {
@@ -132,20 +150,15 @@ ash::NewWindowDelegate* ShellDelegateImpl::CreateNewWindowDelegate() {
   return new NewWindowDelegateImpl;
 }
 
+ash::MediaDelegate* ShellDelegateImpl::CreateMediaDelegate() {
+  return new MediaDelegateImpl;
+}
+
 aura::client::UserActionClient* ShellDelegateImpl::CreateUserActionClient() {
   return NULL;
 }
 
 void ShellDelegateImpl::RecordUserMetricsAction(UserMetricsAction action) {
-}
-
-void ShellDelegateImpl::HandleMediaNextTrack() {
-}
-
-void ShellDelegateImpl::HandleMediaPlayPause() {
-}
-
-void ShellDelegateImpl::HandleMediaPrevTrack() {
 }
 
 ui::MenuModel* ShellDelegateImpl::CreateContextMenu(aura::Window* root) {

@@ -403,5 +403,110 @@ TEST_F(MultiUserWindowManagerTest, ActiveWindowTests) {
   EXPECT_EQ(window(1), activation_client->GetActiveWindow());
 }
 
+// Test that Transient windows are handled properly.
+TEST_F(MultiUserWindowManagerTest, TransientWindows) {
+  SetUpForThisManyWindows(10);
+
+  // We create a hierarchy like this:
+  //    0 (A)  4 (B)   7 (-)   - The top level owned/not owned windows
+  //    |      |       |
+  //    1      5 - 6   8       - Transient child of the owned windows.
+  //    |              |
+  //    2              9       - A transtient child of a transient child.
+  //    |
+  //    3                      - ..
+  multi_user_window_manager()->SetWindowOwner(window(0), "A");
+  multi_user_window_manager()->SetWindowOwner(window(4), "B");
+  window(0)->AddTransientChild(window(1));
+  // We first attach 2->3 and then 1->2 to see that the ownership gets
+  // properly propagated through the sub tree upon assigning.
+  window(2)->AddTransientChild(window(3));
+  window(1)->AddTransientChild(window(2));
+  window(4)->AddTransientChild(window(5));
+  window(4)->AddTransientChild(window(6));
+  window(7)->AddTransientChild(window(8));
+  window(7)->AddTransientChild(window(9));
+
+  // By now the hierarchy should have updated itself to show all windows of A
+  // and hide all windows of B. Unowned windows should remain in what ever state
+  // they are in.
+  EXPECT_EQ("S[A], S[], S[], S[], H[B], H[], H[], S[], S[], S[]", GetStatus());
+
+  // Trying to show a hidden transient window shouldn't change anything for now.
+  window(5)->Show();
+  window(6)->Show();
+  EXPECT_EQ("S[A], S[], S[], S[], H[B], H[], H[], S[], S[], S[]", GetStatus());
+
+  // Hiding on the other hand a shown window should work and hide also its
+  // children. Note that hide will have an immediate impact on itself and all
+  // transient children. It furthermore should remember this state when the
+  // transient children are removed from its owner later on.
+  window(2)->Hide();
+  window(9)->Hide();
+  EXPECT_EQ("S[A], S[], H[], H[], H[B], H[], H[], S[], S[], H[]", GetStatus());
+
+  // Switching users and switch back should return to the previous state.
+  multi_user_window_manager()->ActiveUserChanged("B");
+  EXPECT_EQ("H[A], H[], H[], H[], S[B], S[], S[], S[], S[], H[]", GetStatus());
+  multi_user_window_manager()->ActiveUserChanged("A");
+  EXPECT_EQ("S[A], S[], H[], H[], H[B], H[], H[], S[], S[], H[]", GetStatus());
+
+  // Removing a window from its transient parent should return to the previously
+  // set visibility state.
+  // Note: Window2 was explicitly hidden above and that state should remain.
+  // Note furthermore that Window3 should also be hidden since it was hidden
+  // implicitly by hiding Window2.
+  // set hidden above).
+  //    0 (A)  4 (B)   7 (-)   2(-)   3 (-)    6(-)
+  //    |      |       |
+  //    1      5       8
+  //                   |
+  //                   9
+  window(2)->RemoveTransientChild(window(3));
+  window(4)->RemoveTransientChild(window(6));
+  EXPECT_EQ("S[A], S[], H[], H[], H[B], H[], S[], S[], S[], H[]", GetStatus());
+  // Before we leave we need to reverse all transient window ownerships.
+  window(0)->RemoveTransientChild(window(1));
+  window(1)->RemoveTransientChild(window(2));
+  window(4)->RemoveTransientChild(window(5));
+  window(7)->RemoveTransientChild(window(8));
+  window(7)->RemoveTransientChild(window(9));
+}
+
+// Test that the initial visibility state gets remembered.
+TEST_F(MultiUserWindowManagerTest, PreserveInitialVisibility) {
+  SetUpForThisManyWindows(4);
+
+  // Set our initial show state before we assign an owner.
+  window(0)->Show();
+  window(1)->Hide();
+  window(2)->Show();
+  window(3)->Hide();
+  EXPECT_EQ("S[], H[], S[], H[]", GetStatus());
+
+  // First test: The show state gets preserved upon user switch.
+  multi_user_window_manager()->SetWindowOwner(window(0), "A");
+  multi_user_window_manager()->SetWindowOwner(window(1), "A");
+  multi_user_window_manager()->SetWindowOwner(window(2), "B");
+  multi_user_window_manager()->SetWindowOwner(window(3), "B");
+  EXPECT_EQ("S[A], H[A], H[B], H[B]", GetStatus());
+  multi_user_window_manager()->ActiveUserChanged("B");
+  EXPECT_EQ("H[A], H[A], S[B], H[B]", GetStatus());
+  multi_user_window_manager()->ActiveUserChanged("A");
+  EXPECT_EQ("S[A], H[A], H[B], H[B]", GetStatus());
+
+  // Second test: Transferring the window to another desktop preserves the
+  // show state.
+  multi_user_window_manager()->ShowWindowForUser(window(0), "B");
+  multi_user_window_manager()->ShowWindowForUser(window(1), "B");
+  multi_user_window_manager()->ShowWindowForUser(window(2), "A");
+  multi_user_window_manager()->ShowWindowForUser(window(3), "A");
+  EXPECT_EQ("H[A,B], H[A,B], S[B,A], H[B,A]", GetStatus());
+  multi_user_window_manager()->ActiveUserChanged("B");
+  EXPECT_EQ("S[A,B], H[A,B], H[B,A], H[B,A]", GetStatus());
+  multi_user_window_manager()->ActiveUserChanged("A");
+  EXPECT_EQ("H[A,B], H[A,B], S[B,A], H[B,A]", GetStatus());
+}
+
 }  // namespace test
 }  // namespace ash

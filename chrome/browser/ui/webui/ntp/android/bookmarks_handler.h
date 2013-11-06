@@ -7,9 +7,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/android/bookmarks/managed_bookmarks_shim.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/ui/webui/ntp/android/managed_bookmarks_shim.h"
 #include "chrome/browser/ui/webui/ntp/android/partner_bookmarks_shim.h"
 #include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -87,6 +87,7 @@ class BookmarksHandler : public content::WebUIMessageHandler,
                                    const BookmarkNode* node) OVERRIDE;
 
   // Override the methods of PartnerBookmarksShim::Observer
+  virtual void PartnerShimChanged(PartnerBookmarksShim* shim) OVERRIDE;
   virtual void PartnerShimLoaded(PartnerBookmarksShim* shim) OVERRIDE;
   virtual void ShimBeingDeleted(PartnerBookmarksShim* shim) OVERRIDE;
 
@@ -151,6 +152,12 @@ class BookmarksHandler : public content::WebUIMessageHandler,
 
   // Returns the parent of |node|, or NULL if it's the root node.
   const BookmarkNode* GetParentOf(const BookmarkNode* node) const;
+
+  // Returns the title of |node|, possibly remapped (if a partner bookmark).
+  base::string16 GetTitle(const BookmarkNode* node) const;
+
+  // Returns true if the node is reachable.
+  bool IsReachable(const BookmarkNode* node) const;
 
   // Returns true if |node| can be modified by the user.
   bool IsEditable(const BookmarkNode* node) const;

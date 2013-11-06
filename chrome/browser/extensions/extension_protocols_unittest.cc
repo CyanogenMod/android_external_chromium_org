@@ -18,6 +18,7 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/constants.h"
+#include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_status.h"
@@ -31,10 +32,12 @@ scoped_refptr<Extension> CreateTestExtension(const std::string& name,
   DictionaryValue manifest;
   manifest.SetString("name", name);
   manifest.SetString("version", "1");
+  manifest.SetInteger("manifest_version", 2);
   manifest.SetString("incognito", incognito_split_mode ? "split" : "spanning");
 
   base::FilePath path;
-  EXPECT_TRUE(file_util::GetCurrentDirectory(&path));
+  EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &path));
+  path = path.AppendASCII("extensions").AppendASCII("response_headers");
 
   std::string error;
   scoped_refptr<Extension> extension(
@@ -170,6 +173,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
       // is blocked, we should see ADDRESS_UNREACHABLE. Otherwise, the request
       // should just fail because the file doesn't exist.
       net::URLRequest request(extension->GetResourceURL("404.html"),
+                              net::DEFAULT_PRIORITY,
                               &test_delegate_,
                               resource_context_.GetRequestContext());
       StartRequest(&request, ResourceType::MAIN_FRAME);
@@ -187,6 +191,7 @@ TEST_F(ExtensionProtocolTest, IncognitoRequest) {
     // Now do a subframe request.
     {
       net::URLRequest request(extension->GetResourceURL("404.html"),
+                              net::DEFAULT_PRIORITY,
                               &test_delegate_,
                               resource_context_.GetRequestContext());
       StartRequest(&request, ResourceType::SUB_FRAME);
@@ -225,6 +230,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
   // First test it with the extension enabled.
   {
     net::URLRequest request(extension->GetResourceURL("webstore_icon_16.png"),
+                            net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
     StartRequest(&request, ResourceType::MEDIA);
@@ -237,6 +243,7 @@ TEST_F(ExtensionProtocolTest, ComponentResourceRequest) {
                                        UnloadedExtensionInfo::REASON_DISABLE);
   {
     net::URLRequest request(extension->GetResourceURL("webstore_icon_16.png"),
+                            net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
     StartRequest(&request, ResourceType::MEDIA);
@@ -256,6 +263,7 @@ TEST_F(ExtensionProtocolTest, ResourceRequestResponseHeaders) {
 
   {
     net::URLRequest request(extension->GetResourceURL("test.dat"),
+                            net::DEFAULT_PRIORITY,
                             &test_delegate_,
                             resource_context_.GetRequestContext());
     StartRequest(&request, ResourceType::MEDIA);
@@ -276,6 +284,44 @@ TEST_F(ExtensionProtocolTest, ResourceRequestResponseHeaders) {
     request.GetResponseHeaderByName("Access-Control-Allow-Origin",
                                     &access_control);
     EXPECT_EQ("*", access_control);
+  }
+}
+
+// Tests that a URL request for main frame or subframe from an extension
+// succeeds, but subresources fail. See http://crbug.com/312269.
+TEST_F(ExtensionProtocolTest, AllowFrameRequests) {
+  // Register a non-incognito extension protocol handler.
+  SetProtocolHandler(false);
+
+  scoped_refptr<Extension> extension = CreateTestExtension("foo", false);
+  extension_info_map_->AddExtension(extension.get(), base::Time::Now(), false);
+
+  // All MAIN_FRAME and SUB_FRAME requests should succeed.
+  {
+    net::URLRequest request(extension->GetResourceURL("test.dat"),
+                            net::DEFAULT_PRIORITY,
+                            &test_delegate_,
+                            resource_context_.GetRequestContext());
+    StartRequest(&request, ResourceType::MAIN_FRAME);
+    EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
+  }
+  {
+    net::URLRequest request(extension->GetResourceURL("test.dat"),
+                            net::DEFAULT_PRIORITY,
+                            &test_delegate_,
+                            resource_context_.GetRequestContext());
+    StartRequest(&request, ResourceType::SUB_FRAME);
+    EXPECT_EQ(net::URLRequestStatus::SUCCESS, request.status().status());
+  }
+
+  // And subresource types, such as media, should fail.
+  {
+    net::URLRequest request(extension->GetResourceURL("test.dat"),
+                            net::DEFAULT_PRIORITY,
+                            &test_delegate_,
+                            resource_context_.GetRequestContext());
+    StartRequest(&request, ResourceType::MEDIA);
+    EXPECT_EQ(net::URLRequestStatus::FAILED, request.status().status());
   }
 }
 

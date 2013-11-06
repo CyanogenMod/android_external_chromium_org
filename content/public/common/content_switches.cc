@@ -14,9 +14,6 @@ const char kAcceleratedCanvas2dMSAASampleCount[] = "canvas-msaa-sample-count";
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
 
-// Allows filters (SkImageFilter objects) to be sent between processes over IPC
-const char kAllowFiltersOverIPC[]           = "allow-filters-over-ipc";
-
 // Enables the sandboxed processes to run without a job object assigned to them.
 // This flag is required to allow Chrome to run in RemoteApps or Citrix. This
 // flag can reduce the security of the sandboxed processes and allow them to do
@@ -169,6 +166,9 @@ const char kDisableExperimentalWebGL[]      = "disable-webgl";
 
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
+
+// Disables sending filters (SkImageFilter objects) between processes over IPC
+const char kDisableFiltersOverIPC[]         = "disable-filters-over-ipc";
 
 const char kDisableFixedPositionCreatesStackingContext[]
     = "disable-fixed-position-creates-stacking-context";
@@ -488,6 +488,10 @@ const char kEnablePruneGpuCommandBuffers[] =
 // Enables the CSS multicol implementation that uses the regions implementation.
 const char kEnableRegionBasedColumns[] =
     "enable-region-based-columns";
+
+// Enables the new layout/paint system which paints after layout is complete.
+const char kEnableRepaintAfterLayout[] =
+    "enable-repaint-after-layout";
 
 // Cause the OS X sandbox write to syslog every time an access to a resource
 // is denied by the sandbox.
@@ -921,6 +925,10 @@ const char kDisableSCTPDataChannels[]       = "disable-sctp-data-channels";
 
 // Disables HW decode acceleration for WebRTC.
 const char kDisableWebRtcHWDecoding[]       = "disable-webrtc-hw-decoding";
+
+// Disables encryption of RTP Media for WebRTC. When Chrome embeds Content, it
+// ignores this switch on its stable and beta channels.
+const char kDisableWebRtcEncryption[]      = "disable-webrtc-encryption";
 
 // Disables HW encode acceleration for WebRTC.
 const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";

@@ -37,8 +37,8 @@ class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
   virtual void Init(dbus::Bus* bus) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual Properties* GetProperties(const dbus::ObjectPath& object_path)
-      OVERRIDE;
+  virtual Properties* GetProperties(
+      const dbus::ObjectPath& object_path) OVERRIDE;
   virtual void StartPollLoop(
       const dbus::ObjectPath& object_path,
       const std::string& mode,
@@ -50,9 +50,6 @@ class CHROMEOS_EXPORT FakeNfcAdapterClient : public NfcAdapterClient {
       const nfc_client_helpers::ErrorCallback& error_callback) OVERRIDE;
 
  private:
-  // Property callback passed when we create Properties* structures.
-  void OnPropertyChanged(const std::string& property_name);
-
   DISALLOW_COPY_AND_ASSIGN(FakeNfcAdapterClient);
 };
 

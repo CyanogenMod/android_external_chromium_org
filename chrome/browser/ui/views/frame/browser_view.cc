@@ -13,7 +13,6 @@
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -1627,6 +1626,7 @@ void BrowserView::SaveWindowPlacement(const gfx::Rect& bounds,
 }
 
 bool BrowserView::GetSavedWindowPlacement(
+    const views::Widget* widget,
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
   if (!ShouldSaveOrRestoreWindowPos())

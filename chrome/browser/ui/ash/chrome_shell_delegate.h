@@ -26,7 +26,6 @@ class KeyboardControllerProxy;
 }
 
 class ChromeLauncherController;
-class ChromeNewWindowDelegate;
 
 class ChromeShellDelegate : public ash::ShellDelegate,
                             public content::NotificationObserver {
@@ -39,6 +38,7 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   // ash::ShellDelegate overrides;
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
   virtual bool IsMultiProfilesEnabled() const OVERRIDE;
+  virtual bool IsIncognitoAllowed() const OVERRIDE;
   virtual bool IsRunningInForcedAppMode() const OVERRIDE;
   virtual void PreInit() OVERRIDE;
   virtual void Shutdown() OVERRIDE;
@@ -55,11 +55,9 @@ class ChromeShellDelegate : public ash::ShellDelegate,
   virtual ash::SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
   virtual ash::AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
   virtual ash::NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
+  virtual ash::MediaDelegate* CreateMediaDelegate() OVERRIDE;
   virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
   virtual void RecordUserMetricsAction(ash::UserMetricsAction action) OVERRIDE;
-  virtual void HandleMediaNextTrack() OVERRIDE;
-  virtual void HandleMediaPlayPause() OVERRIDE;
-  virtual void HandleMediaPrevTrack() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(aura::Window* root) OVERRIDE;
   virtual ash::RootWindowHostFactory* CreateRootWindowHostFactory() OVERRIDE;
   virtual string16 GetProductName() const OVERRIDE;

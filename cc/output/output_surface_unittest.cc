@@ -5,14 +5,14 @@
 #include "cc/output/output_surface.h"
 
 #include "base/test/test_simple_task_runner.h"
-#include "cc/debug/test_context_provider.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/scheduler_test_common.h"
+#include "cc/test/test_context_provider.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/frame_time.h"
@@ -430,42 +430,21 @@ TEST(OutputSurfaceTest, MemoryAllocation) {
   policy.bytes_limit_when_visible = 1234;
   policy.priority_cutoff_when_visible =
       gpu::MemoryAllocation::CUTOFF_ALLOW_REQUIRED_ONLY;
-  policy.bytes_limit_when_not_visible = 4567;
-  policy.priority_cutoff_when_not_visible =
-      gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING;
 
-  bool discard_backbuffer_when_not_visible = false;
-
-  context_provider->SetMemoryAllocation(policy,
-                                        discard_backbuffer_when_not_visible);
+  context_provider->SetMemoryAllocation(policy);
   EXPECT_EQ(1234u, client.memory_policy().bytes_limit_when_visible);
   EXPECT_EQ(gpu::MemoryAllocation::CUTOFF_ALLOW_REQUIRED_ONLY,
             client.memory_policy().priority_cutoff_when_visible);
-  EXPECT_EQ(4567u, client.memory_policy().bytes_limit_when_not_visible);
-  EXPECT_EQ(gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
-            client.memory_policy().priority_cutoff_when_not_visible);
-  EXPECT_FALSE(client.discard_backbuffer_when_not_visible());
-
-  discard_backbuffer_when_not_visible = true;
-  context_provider->SetMemoryAllocation(policy,
-                                        discard_backbuffer_when_not_visible);
-  EXPECT_TRUE(client.discard_backbuffer_when_not_visible());
 
   policy.priority_cutoff_when_visible =
       gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING;
-  policy.priority_cutoff_when_not_visible =
-      gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
-  context_provider->SetMemoryAllocation(policy,
-                                        discard_backbuffer_when_not_visible);
+  context_provider->SetMemoryAllocation(policy);
   EXPECT_EQ(gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
             client.memory_policy().priority_cutoff_when_visible);
-  EXPECT_EQ(gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            client.memory_policy().priority_cutoff_when_not_visible);
 
   // 0 bytes limit should be ignored.
   policy.bytes_limit_when_visible = 0;
-  context_provider->SetMemoryAllocation(policy,
-                                        discard_backbuffer_when_not_visible);
+  context_provider->SetMemoryAllocation(policy);
   EXPECT_EQ(1234u, client.memory_policy().bytes_limit_when_visible);
 }
 

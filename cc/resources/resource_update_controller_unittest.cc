@@ -5,12 +5,12 @@
 #include "cc/resources/resource_update_controller.h"
 
 #include "base/test/test_simple_task_runner.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/scheduler_test_common.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"  // For DebugScopedSetImplThread
 #include "testing/gtest/include/gtest/gtest.h"
@@ -137,7 +137,7 @@ class ResourceUpdateControllerTest : public Test {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false);
+        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
   }
 
   void AppendFullUploadsOfIndexedTextureToUpdateQueue(int count,

@@ -30,11 +30,11 @@ LOCAL_GENERATED_SOURCES :=
 GYP_COPIED_SOURCE_ORIGIN_DIRS :=
 
 LOCAL_SRC_FILES := \
-	ui/android/ui_jni_registrar.cc \
-	ui/android/view_android.cc \
-	ui/android/window_android.cc \
 	ui/base/accelerators/accelerator.cc \
 	ui/base/accelerators/accelerator_manager.cc \
+	ui/base/android/ui_jni_registrar.cc \
+	ui/base/android/view_android.cc \
+	ui/base/android/window_android.cc \
 	ui/base/base_window.cc \
 	ui/base/clipboard/clipboard.cc \
 	ui/base/clipboard/clipboard_android.cc \
@@ -128,6 +128,8 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -244,6 +246,8 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

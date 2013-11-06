@@ -66,9 +66,6 @@ class AURA_EXPORT RootWindow : public Window,
 
     gfx::Rect initial_bounds;
 
-    // If true, should try avoiding the use of a GPU for this window.
-    bool use_software_renderer;
-
     // A host to use in place of the default one that RootWindow will create.
     // NULL by default.
     RootWindowHost* host;
@@ -135,6 +132,9 @@ class AURA_EXPORT RootWindow : public Window,
 
   // Clips the cursor movement to the root_window.
   bool ConfineCursorToWindow();
+
+  // Restores the cursor movement beyond the root window.
+  void UnConfineCursor();
 
   // Draw the damage_rect.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
@@ -399,13 +399,11 @@ class AURA_EXPORT RootWindow : public Window,
 
   scoped_ptr<RootWindowTransformer> transformer_;
 
-  // Use to post mouse move event.
-  base::WeakPtrFactory<RootWindow> event_factory_;
+  // Used for references we don't need to invalidate.
+  base::WeakPtrFactory<RootWindow> weak_factory_;
 
   // Used to schedule DispatchHeldEvents() when |move_hold_count_| goes to 0.
   base::WeakPtrFactory<RootWindow> held_event_factory_;
-
-  base::WeakPtrFactory<RootWindow> repostable_event_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindow);
 };

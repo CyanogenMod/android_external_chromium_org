@@ -41,6 +41,8 @@
       'SK_SUPPORT_GPU=<(skia_support_gpu)',
       'GR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"',
       'SK_ENABLE_LEGACY_API_ALIASING=1',
+      'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+      'SK_SUPPORT_LEGACY_COLORTYPE=1',
     ],
 
     'default_font_cache_limit%': '(20*1024*1024)',
@@ -419,6 +421,10 @@
     # it ever gets used the processes that use it need to call
     # SkGraphics::Init().
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=0',
+
+    # Forcing the unoptimized path for the offset image filter in skia until
+    # all filters used in Blink support the optimized path properly
+    'SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION',
 
     # Disable this check because it is too strict for some Chromium-specific
     # subclasses of SkPixelRef. See bug: crbug.com/171776.

@@ -49,19 +49,18 @@ BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
                                                 src, delegate, factory);
 }
 
+BrowserAccessibilityManagerAndroid*
+BrowserAccessibilityManager::ToBrowserAccessibilityManagerAndroid() {
+  return static_cast<BrowserAccessibilityManagerAndroid*>(this);
+}
+
 BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     ScopedJavaLocalRef<jobject> content_view_core,
     const AccessibilityNodeData& src,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(src, delegate, factory) {
-  if (content_view_core.is_null())
-    return;
-
-  JNIEnv* env = AttachCurrentThread();
-  java_ref_ = JavaObjectWeakGlobalRef(
-      env, Java_BrowserAccessibilityManager_create(
-          env, reinterpret_cast<jint>(this), content_view_core.obj()).obj());
+  SetContentViewCore(content_view_core);
 }
 
 BrowserAccessibilityManagerAndroid::~BrowserAccessibilityManagerAndroid() {
@@ -80,6 +79,17 @@ AccessibilityNodeData BrowserAccessibilityManagerAndroid::GetEmptyDocument() {
   empty_document.role = WebKit::WebAXRoleRootWebArea;
   empty_document.state = 1 << WebKit::WebAXStateReadonly;
   return empty_document;
+}
+
+void BrowserAccessibilityManagerAndroid::SetContentViewCore(
+    ScopedJavaLocalRef<jobject> content_view_core) {
+  if (content_view_core.is_null())
+    return;
+
+  JNIEnv* env = AttachCurrentThread();
+  java_ref_ = JavaObjectWeakGlobalRef(
+      env, Java_BrowserAccessibilityManager_create(
+          env, reinterpret_cast<jint>(this), content_view_core.obj()).obj());
 }
 
 void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
@@ -182,11 +192,9 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
     Java_BrowserAccessibilityManager_setAccessibilityNodeInfoParent(
         env, obj, info, node->parent()->renderer_id());
   }
-  if (!node->IsLeaf()) {
-    for (unsigned i = 0; i < node->child_count(); ++i) {
-      Java_BrowserAccessibilityManager_addAccessibilityNodeInfoChild(
-          env, obj, info, node->children()[i]->renderer_id());
-    }
+  for (unsigned i = 0; i < node->PlatformChildCount(); ++i) {
+    Java_BrowserAccessibilityManager_addAccessibilityNodeInfoChild(
+        env, obj, info, node->children()[i]->renderer_id());
   }
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoBooleanAttributes(
       env, obj, info,
@@ -328,11 +336,9 @@ void BrowserAccessibilityManagerAndroid::FuzzyHitTestImpl(
     return;
   }
 
-  if (!node->IsLeaf()) {
-    for (uint32 i = 0; i < node->child_count(); i++) {
-      BrowserAccessibility* child = node->GetChild(i);
-      FuzzyHitTestImpl(x, y, child, nearest_candidate, nearest_distance);
-    }
+  for (uint32 i = 0; i < node->PlatformChildCount(); i++) {
+    BrowserAccessibility* child = node->PlatformGetChild(i);
+    FuzzyHitTestImpl(x, y, child, nearest_candidate, nearest_distance);
   }
 }
 

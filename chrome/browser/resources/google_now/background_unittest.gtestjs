@@ -359,13 +359,15 @@ TEST_F(
               };
           }));
       this.mockGlobals.expects(once()).
-          showNotificationCards(eqJSON({
-            card1: {testValue: 'TEST CARD VALUE 1'},
-            card2: {testValue: 'TEST CARD VALUE 2'}
-          }));
+          showNotificationCards(
+              eqJSON({
+                card1: {testValue: 'TEST CARD VALUE 1'},
+                card2: {testValue: 'TEST CARD VALUE 2'}
+              }),
+              ANYTHING);
 
       // Invoking the tested function.
-      mergeAndShowNotificationCards(testGroups);
+      mergeAndShowNotificationCards(testGroups, function() {});
     });
 
 // TODO(vadimt): Add more tests for parseAndShowNotificationCards().
@@ -432,14 +434,15 @@ TEST_F(
               storageGetSavedArgs, 1, {notificationGroups: storedGroups}));
 
       this.mockGlobals.expects(once()).
-          scheduleNextPoll(eqJSON(expectedUpdatedGroups));
+          scheduleNextPoll(eqJSON(expectedUpdatedGroups), true);
 
       this.mockApis.expects(once()).
           chrome_storage_local_set(
               eqJSON({notificationGroups: expectedUpdatedGroups}));
 
       this.mockGlobals.expects(once()).
-          mergeAndShowNotificationCards(eqJSON(expectedUpdatedGroups));
+          mergeAndShowNotificationCards(
+              eqJSON(expectedUpdatedGroups), ANYTHING);
 
       this.mockGlobals.expects(once()).
           recordEvent(GoogleNowEvent.CARDS_PARSE_SUCCESS);
@@ -486,13 +489,16 @@ function mockInitializeDependencies(fixture) {
  *     metricsPrivate.getVariationParams.
  * @param {string} testExperimentVariationParams Response of
  *     notifications.getPermissionLevel.
+ * @param {boolean} testGoogleNowEnabled True if the user is opted in to Google
+ *     Now.
  */
 function expectStateMachineCalls(
     fixture,
     testIdentityToken,
     testGeolocationPref,
     testExperimentVariationParams,
-    testNotificationPermissionLevel) {
+    testNotificationPermissionLevel,
+    testGoogleNowEnabled) {
   var authenticationManagerIsSignedInSavedArgs = new SaveMockArguments();
   fixture.mockApis.expects(once()).
       authenticationManager_isSignedIn(
@@ -526,6 +532,14 @@ function expectStateMachineCalls(
           notificationGetPermissionLevelSavedArgs,
           0,
           testNotificationPermissionLevel))
+
+   var storageGetSavedArgs = new SaveMockArguments();	 
+   fixture.mockApis.expects(once()).	 
+       instrumented_storage_local_get(	 
+           storageGetSavedArgs.match(eq('googleNowEnabled')),	 
+           storageGetSavedArgs.match(ANYTHING)).	 
+       will(invokeCallback(
+          storageGetSavedArgs, 1, {googleNowEnabled: testGoogleNowEnabled}));	 
 
   fixture.mockGlobals.expects(once()).
       setBackgroundEnable(ANYTHING);
@@ -567,6 +581,7 @@ TEST_F(
       var testGeolocationPref = false;
       var testExperimentVariationParams = {};
       var testNotificationPermissionLevel = 'denied';
+      var testGoogleNowEnabled = undefined;
 
       mockInitializeDependencies(this);
 
@@ -583,7 +598,8 @@ TEST_F(
           testIdentityToken,
           testGeolocationPref,
           testExperimentVariationParams,
-          testNotificationPermissionLevel);
+          testNotificationPermissionLevel,
+          testGoogleNowEnabled);
 
       // Invoking the tested function.
       initialize();
@@ -602,6 +618,7 @@ TEST_F(
       var testGeolocationPref = false;
       var testExperimentVariationParams = {};
       var testNotificationPermissionLevel = 'denied';
+      var testGoogleNowEnabled = undefined;
 
       mockInitializeDependencies(this);
 
@@ -615,7 +632,8 @@ TEST_F(
           testIdentityToken,
           testGeolocationPref,
           testExperimentVariationParams,
-          testNotificationPermissionLevel);
+          testNotificationPermissionLevel,
+          testGoogleNowEnabled);
 
       var chromeNotificationGetAllSavedArgs = new SaveMockArguments();
       this.mockApis.expects(exactly(1)).
@@ -638,6 +656,7 @@ TEST_F('GoogleNowBackgroundUnitTest', 'Initialize_RunGoogleNow', function() {
   var testGeolocationPref = true;
   var testExperimentVariationParams = {};
   var testNotificationPermissionLevel = 'granted';
+  var testGoogleNowEnabled = true;
 
   mockInitializeDependencies(this);
 
@@ -651,7 +670,8 @@ TEST_F('GoogleNowBackgroundUnitTest', 'Initialize_RunGoogleNow', function() {
       testIdentityToken,
       testGeolocationPref,
       testExperimentVariationParams,
-      testNotificationPermissionLevel);
+      testNotificationPermissionLevel,
+      testGoogleNowEnabled);
 
   this.mockGlobals.expects(once()).startPollingCards();
 
@@ -671,6 +691,8 @@ TEST_F(
   var testGeolocationPref = false;
   var testExperimentVariationParams = {};
   var testNotificationPermissionLevel = 'denied';
+  var testGoogleNowEnabled = undefined;
+
 
   mockInitializeDependencies(this);
 
@@ -688,7 +710,8 @@ TEST_F(
       testGeolocationPref,
       testExperimentVariationParams,
       testNotificationPermissionLevel,
-      testNotificationPermissionLevel);
+      testNotificationPermissionLevel,
+      testGoogleNowEnabled);
 
   var chromeNotificationGetAllSavedArgs = new SaveMockArguments();
   this.mockApis.expects(exactly(2)).

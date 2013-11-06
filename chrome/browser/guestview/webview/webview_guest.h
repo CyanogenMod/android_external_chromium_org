@@ -26,14 +26,14 @@ class WebViewGuest : public GuestView,
                      public content::NotificationObserver,
                      public content::WebContentsObserver {
  public:
-  explicit WebViewGuest(content::WebContents* guest_web_contents);
+  WebViewGuest(content::WebContents* guest_web_contents,
+               const std::string& extension_id);
 
   static WebViewGuest* From(int embedder_process_id, int instance_id);
   static WebViewGuest* FromWebContents(content::WebContents* contents);
 
   // GuestView implementation.
   virtual void Attach(content::WebContents* embedder_web_contents,
-                      const std::string& extension_id,
                       const base::DictionaryValue& args) OVERRIDE;
   virtual GuestView::Type GetViewType() const OVERRIDE;
   virtual WebViewGuest* AsWebView() OVERRIDE;
@@ -62,6 +62,7 @@ class WebViewGuest : public GuestView,
       const base::DictionaryValue& request_info,
       const PermissionResponseCallback& callback,
       bool allowed_by_default) OVERRIDE;
+  virtual GURL ResolveURL(const std::string& src) OVERRIDE;
   virtual void SizeChanged(const gfx::Size& old_size, const gfx::Size& new_size)
       OVERRIDE;
 
@@ -157,6 +158,8 @@ class WebViewGuest : public GuestView,
   void LoadRedirect(const GURL& old_url,
                     const GURL& new_url,
                     bool is_top_level);
+
+  static bool AllowChromeExtensionURLs();
 
   void AddWebViewToExtensionRendererState();
   static void RemoveWebViewFromExtensionRendererState(

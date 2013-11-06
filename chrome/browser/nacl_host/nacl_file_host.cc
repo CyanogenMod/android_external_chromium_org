@@ -11,11 +11,10 @@
 #include "base/platform_file.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
+#include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/common/nacl_browser_delegate.h"
 #include "components/nacl/common/nacl_host_messages.h"
-#include "components/nacl/common/pnacl_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/site_instance.h"
@@ -37,37 +36,6 @@ void NotifyRendererOfError(
     IPC::Message* reply_msg) {
   reply_msg->set_reply_error();
   nacl_host_message_filter->Send(reply_msg);
-}
-
-void TryInstallPnacl(
-    const nacl_file_host::InstallCallback& done_callback,
-    const nacl_file_host::InstallProgressCallback& progress_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  // TODO(jvoung): Figure out a way to get progress events and
-  // call progress_callback.
-  NaClBrowser::GetDelegate()->TryInstallPnacl(done_callback);
-}
-
-void DoEnsurePnaclInstalled(
-    const nacl_file_host::InstallCallback& done_callback,
-    const nacl_file_host::InstallProgressCallback& progress_callback) {
-  DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-  // If already installed, return reply w/ success immediately.
-  base::FilePath pnacl_dir;
-  if (NaClBrowser::GetDelegate()->GetPnaclDirectory(&pnacl_dir)
-      && !pnacl_dir.empty()
-      && base::PathExists(pnacl_dir)) {
-    done_callback.Run(true);
-    return;
-  }
-
-  // Otherwise, request an install (but send some "unknown" progress first).
-  progress_callback.Run(nacl::PnaclInstallProgress::Unknown());
-  // TryInstall after sending the progress event so that they are more ordered.
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&TryInstallPnacl, done_callback, progress_callback));
 }
 
 bool PnaclDoOpenFile(const base::FilePath& file_to_open,
@@ -93,7 +61,7 @@ void DoOpenPnaclFile(
 
   // PNaCl must be installed.
   base::FilePath pnacl_dir;
-  if (!NaClBrowser::GetDelegate()->GetPnaclDirectory(&pnacl_dir) ||
+  if (!nacl::NaClBrowser::GetDelegate()->GetPnaclDirectory(&pnacl_dir) ||
       !base::PathExists(pnacl_dir)) {
     NotifyRendererOfError(nacl_host_message_filter.get(), reply_msg);
     return;
@@ -134,7 +102,7 @@ void DoRegisterOpenedNaClExecutableFile(
   // IO thread owns the NaClBrowser singleton.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
+  nacl::NaClBrowser* nacl_browser = nacl::NaClBrowser::GetInstance();
   uint64 file_token_lo = 0;
   uint64 file_token_hi = 0;
   nacl_browser->PutFilePath(file_path, &file_token_lo, &file_token_hi);
@@ -159,7 +127,7 @@ void DoOpenNaClExecutableOnThreadPool(
   DCHECK(BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
 
   base::FilePath file_path;
-  if (!NaClBrowser::GetDelegate()->MapUrlToLocalFilePath(
+  if (!nacl::NaClBrowser::GetDelegate()->MapUrlToLocalFilePath(
           file_url, true /* use_blocking_api */, &file_path)) {
     NotifyRendererOfError(nacl_host_message_filter.get(), reply_msg);
     return;
@@ -185,18 +153,6 @@ void DoOpenNaClExecutableOnThreadPool(
 }  // namespace
 
 namespace nacl_file_host {
-
-void EnsurePnaclInstalled(
-    const InstallCallback& done_callback,
-    const InstallProgressCallback& progress_callback) {
-  if (!BrowserThread::PostBlockingPoolTask(
-          FROM_HERE,
-          base::Bind(&DoEnsurePnaclInstalled,
-                     done_callback,
-                     progress_callback))) {
-    done_callback.Run(false);
-  }
-}
 
 void GetReadonlyPnaclFd(
     scoped_refptr<NaClHostMessageFilter> nacl_host_message_filter,
@@ -234,7 +190,7 @@ bool PnaclCanOpenFile(const std::string& filename,
 
   // PNaCl must be installed.
   base::FilePath pnacl_dir;
-  if (!NaClBrowser::GetDelegate()->GetPnaclDirectory(&pnacl_dir) ||
+  if (!nacl::NaClBrowser::GetDelegate()->GetPnaclDirectory(&pnacl_dir) ||
       pnacl_dir.empty())
     return false;
 

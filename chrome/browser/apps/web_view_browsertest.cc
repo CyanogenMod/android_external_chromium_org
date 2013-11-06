@@ -681,6 +681,13 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestChromeExtensionURL) {
              "web_view/shim");
 }
 
+IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestChromeExtensionRelativePath) {
+  TestHelper("testChromeExtensionRelativePath",
+             "DoneShimTest.PASSED",
+             "DoneShimTest.FAILED",
+             "web_view/shim");
+}
+
 IN_PROC_BROWSER_TEST_F(WebViewTest, Shim_TestInvalidChromeExtensionURL) {
   TestHelper("testInvalidChromeExtensionURL",
              "DoneShimTest.PASSED",
@@ -1837,6 +1844,8 @@ IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestConfirmDialogDefaultCancel) {
              "web_view/dialog");
 }
 
+// TODO(fsamuel): This test consistently times out when run in parallel with
+// other tests, but consistently passes when retried http://crbug.com/314809
 IN_PROC_BROWSER_TEST_F(WebViewTest, Dialog_TestConfirmDialogDefaultGCCancel) {
   TestHelper("testConfirmDialogDefaultGCCancel",
              "DoneDialogTest.PASSED",

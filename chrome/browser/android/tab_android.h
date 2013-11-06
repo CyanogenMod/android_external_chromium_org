@@ -57,6 +57,7 @@ class TabAndroid : public CoreTabHelperDelegate,
   // Return specific id information regarding this TabAndroid.
   const SessionID& session_id() const { return session_tab_id_; }
   int GetAndroidId() const;
+  int GetSyncId() const;
 
   // Return the tab title.
   string16 GetTitle() const;
@@ -72,6 +73,8 @@ class TabAndroid : public CoreTabHelperDelegate,
   content::ContentViewCore* GetContentViewCore() const;
   Profile* GetProfile() const;
   browser_sync::SyncedTabDelegate* GetSyncedTabDelegate() const;
+
+  void SetSyncId(int sync_id);
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params) = 0;
 
@@ -94,7 +97,10 @@ class TabAndroid : public CoreTabHelperDelegate,
       int r_value, int g_value, int b_value) = 0;
 
   // Called when a bookmark node should be edited.
-  virtual void EditBookmark(int64 node_id, bool is_folder) = 0;
+  virtual void EditBookmark(int64 node_id,
+                            const base::string16& node_title,
+                            bool is_folder,
+                            bool is_partner_bookmark) = 0;
 
   // Called to determine if chrome://welcome should contain links to the terms
   // of service and the privacy notice.
@@ -102,10 +108,6 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   // Called to notify that the new tab page has completely rendered.
   virtual void OnNewTabPageReady() = 0;
-
-  // Used by sync to get/set the sync id of tab.
-  virtual int GetSyncId() const = 0;
-  virtual void SetSyncId(int sync_id) = 0;
 
   static void InitTabHelpers(content::WebContents* web_contents);
 

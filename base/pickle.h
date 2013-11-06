@@ -114,7 +114,7 @@ class BASE_EXPORT Pickle {
   // instead the data is merely referenced by this Pickle.  Only const methods
   // should be used on the Pickle when initialized this way.  The header
   // padding size is deduced from the data length.
-  Pickle(const char* data, size_t data_len);
+  Pickle(const char* data, int data_len);
 
   // Initializes a Pickle as a deep copy of another Pickle.
   Pickle(const Pickle& other);
@@ -342,6 +342,7 @@ class BASE_EXPORT Pickle {
   FRIEND_TEST_ALL_PREFIXES(PickleTest, Resize);
   FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNext);
   FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNextWithIncompleteHeader);
+  FRIEND_TEST_ALL_PREFIXES(PickleTest, FindNextOverflow);
 };
 
 #endif  // BASE_PICKLE_H__

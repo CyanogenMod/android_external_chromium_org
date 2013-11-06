@@ -6,7 +6,9 @@
 # This is a Sphinx extension.
 #
 
+from __future__ import print_function
 import codecs
+from collections import namedtuple, OrderedDict
 import os
 import string
 from docutils import nodes
@@ -46,7 +48,7 @@ ${doc_body}
 '''.lstrip())
 
 DEVSITE_PREFIX = r'''
-{% setvar pepperversion %}pepper''' + PEPPER_VERSION + ''' {% endsetvar %}
+{% setvar pepperversion %}pepper''' + PEPPER_VERSION + '''{% endsetvar %}
 {% include "native-client/_local_variables.html" %}'''
 
 DEVSITE_BUTTERBAR = '{{butterbar}}'
@@ -57,6 +59,9 @@ DEVSITE_BUTTERBAR = '{{butterbar}}'
 NONPROD_CSS = '<link href="/_static/css/local_extensions.css"'\
               'rel="stylesheet" type="text/css"/>'
 NONPROD_META_HEAD = '<meta charset="utf-8" />'
+
+# Path to the top-level YAML table-of-contents file for the devsite
+BOOK_TOC_TEMPLATE = '_book_template.yaml'
 
 
 class DevsiteHTMLTranslator(HTMLTranslator):
@@ -237,8 +242,8 @@ class DevsiteBuilder(StandaloneHTMLBuilder):
   def init(self):
     self.devsite_production_mode = int(self.config.devsite_production_mode) == 1
     self.kill_internal_links = int(self.config.kill_internal_links) == 1
-    print "----> Devsite builder with production mode = %d" % (
-        self.devsite_production_mode,)
+    self.info("----> Devsite builder with production mode = %d" % (
+        self.devsite_production_mode,))
     self.config_hash = ''
     self.tags_hash = ''
     self.theme = None       # no theme necessary
@@ -248,36 +253,18 @@ class DevsiteBuilder(StandaloneHTMLBuilder):
 
   def finish(self):
     super(DevsiteBuilder, self).finish()
-
     if self.devsite_production_mode:
-      self.info(bold('generating yaml files... '), nonl=True)
-
-      substitutions = {
+      # We decided to keep the manual _book.yaml for now;
+      # The code for auto-generating YAML TOCs from index.rst was removed in
+      # https://codereview.chromium.org/57923006/
+      self.info(bold('generating YAML table-of-contents... '))
+      subs = {
         'version': PEPPER_VERSION,
-        'folder': self.config.devsite_foldername
-      }
-
-      olddir = os.getcwd()
-      try:
-        os.chdir(self.env.srcdir)
-        for root, dirs, files in os.walk('.'):
-          root = os.path.normpath(root)
-          if root.startswith("_"):
-            continue
-          for filename in files:
-            if os.path.splitext(filename)[1] != ".yaml":
-              continue
-            filename = os.path.join(root, filename)
-            outfile = os.path.join(self.outdir, filename)
-            with open(filename) as f:
-              template = string.Template(f.read())
-
-            with open(outfile, 'w') as f:
-              f.write(template.substitute(substitutions))
-      finally:
-        os.chdir(olddir)
-
-      self.info()
+        'folder': self.config.devsite_foldername or ''}
+      with open(os.path.join(self.env.srcdir, '_book.yaml')) as in_f:
+        with open(os.path.join(self.outdir, '_book.yaml'), 'w') as out_f:
+          out_f.write(string.Template(in_f.read()).substitute(subs))
+    self.info()
 
   def dump_inventory(self):
     # We don't want an inventory file when building for devsite
@@ -365,7 +352,6 @@ class NaclCodeDirective(Directive):
     literal = nodes.literal_block(code, code)
     literal['prettyprint'] = self.options.get('prettyprint', 1)
     return [literal]
-
 
 def setup(app):
   """ Extension registration hook.

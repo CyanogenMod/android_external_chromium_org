@@ -5,8 +5,6 @@
 #include "cc/trees/layer_tree_host.h"
 
 #include "base/basictypes.h"
-#include "cc/debug/test_context_provider.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
@@ -34,6 +32,8 @@
 #include "cc/test/fake_video_frame_provider.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/render_pass_test_common.h"
+#include "cc/test/test_context_provider.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -937,10 +937,10 @@ TEST_F(LayerTreeHostContextTestLostContextAndEvictTextures,
   RunTest(true, true, true);
 }
 
-class LayerTreeHostContextTestLostContextWhileUpdatingResources
+class DISABLED_LayerTreeHostContextTestLostContextWhileUpdatingResources
     : public LayerTreeHostContextTest {
  public:
-  LayerTreeHostContextTestLostContextWhileUpdatingResources()
+  DISABLED_LayerTreeHostContextTestLostContextWhileUpdatingResources()
       : parent_(FakeContentLayer::Create(&client_)),
         num_children_(50),
         times_to_lose_on_end_query_(3) {}
@@ -994,8 +994,9 @@ class LayerTreeHostContextTestLostContextWhileUpdatingResources
   int times_to_lose_on_end_query_;
 };
 
+// Disabled (crbug.com/313790)
 SINGLE_AND_MULTI_THREAD_NOIMPL_TEST_F(
-    LayerTreeHostContextTestLostContextWhileUpdatingResources);
+    DISABLED_LayerTreeHostContextTestLostContextWhileUpdatingResources);
 
 class LayerTreeHostContextTestLayersNotified
     : public LayerTreeHostContextTest {
@@ -1090,7 +1091,11 @@ class LayerTreeHostContextTestDontUseLostResources
     child_output_surface_ = FakeOutputSurface::Create3d();
     child_output_surface_->BindToClient(&output_surface_client_);
     child_resource_provider_ =
-        ResourceProvider::Create(child_output_surface_.get(), NULL, 0, false);
+        ResourceProvider::Create(child_output_surface_.get(),
+                                 NULL,
+                                 0,
+                                 false,
+                                 1);
   }
 
   static void EmptyReleaseCallback(unsigned sync_point, bool lost) {}
@@ -1798,6 +1803,9 @@ SINGLE_AND_MULTI_THREAD_TEST_F(
 class UIResourceLostTest : public LayerTreeHostContextTest {
  public:
   UIResourceLostTest() : time_step_(0) {}
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->texture_id_allocation_chunk_size = 1;
+  }
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
   virtual void AfterTest() OVERRIDE {}
 

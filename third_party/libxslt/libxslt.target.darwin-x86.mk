@@ -70,11 +70,11 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -161,11 +161,11 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-fno-ident \
 	-fdata-sections \

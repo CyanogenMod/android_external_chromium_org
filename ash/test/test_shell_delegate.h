@@ -31,6 +31,7 @@ class TestShellDelegate : public ShellDelegate {
 
   // Overridden from ShellDelegate:
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
+  virtual bool IsIncognitoAllowed() const OVERRIDE;
   virtual bool IsMultiProfilesEnabled() const OVERRIDE;
   virtual bool IsRunningInForcedAppMode() const OVERRIDE;
   virtual void PreInit() OVERRIDE;
@@ -48,11 +49,9 @@ class TestShellDelegate : public ShellDelegate {
   virtual SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
   virtual AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
   virtual NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
+  virtual MediaDelegate* CreateMediaDelegate() OVERRIDE;
   virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
   virtual void RecordUserMetricsAction(UserMetricsAction action) OVERRIDE;
-  virtual void HandleMediaNextTrack() OVERRIDE;
-  virtual void HandleMediaPlayPause() OVERRIDE;
-  virtual void HandleMediaPrevTrack() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(aura::Window* root) OVERRIDE;
   virtual RootWindowHostFactory* CreateRootWindowHostFactory() OVERRIDE;
   virtual base::string16 GetProductName() const OVERRIDE;

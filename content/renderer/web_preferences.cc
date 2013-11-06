@@ -318,8 +318,7 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
   settings->setSupportsMultipleWindows(prefs.supports_multiple_windows);
 
   settings->setViewportEnabled(prefs.viewport_enabled);
-  settings->setInitializeAtMinimumPageScale(
-      prefs.initialize_at_minimum_page_scale);
+  settings->setLoadWithOverviewMode(prefs.initialize_at_minimum_page_scale);
 
   settings->setSmartInsertDeleteEnabled(prefs.smart_insert_delete_enabled);
 
@@ -330,8 +329,8 @@ void ApplyWebPreferences(const WebPreferences& prefs, WebView* web_view) {
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
   settings->setTextAutosizingEnabled(prefs.text_autosizing_enabled);
-  settings->setTextAutosizingFontScaleFactor(
-      prefs.text_autosizing_font_scale_factor);
+  settings->setTextAutosizingFontScaleFactor(prefs.font_scale_factor);
+  settings->setDeviceScaleAdjustment(prefs.device_scale_adjustment);
   web_view->setIgnoreViewportTagScaleLimits(prefs.force_enable_zoom);
   settings->setAutoZoomFocusedNodeToLegibleScale(true);
   settings->setDoubleTapToZoomEnabled(prefs.double_tap_to_zoom_enabled);

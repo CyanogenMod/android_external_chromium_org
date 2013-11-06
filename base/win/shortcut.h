@@ -38,9 +38,11 @@ struct ShortcutProperties {
     PROPERTIES_ICON = 1 << 4,
     PROPERTIES_APP_ID = 1 << 5,
     PROPERTIES_DUAL_MODE = 1 << 6,
+    PROPERTIES_HOTKEY = 1 << 7,
   };
 
-  ShortcutProperties() : icon_index(-1), dual_mode(false), options(0U) {}
+  ShortcutProperties()
+      : icon_index(-1), dual_mode(false), hotkey(0), options(0U) {}
 
   void set_target(const FilePath& target_in) {
     target = target_in;
@@ -82,6 +84,11 @@ struct ShortcutProperties {
     options |= PROPERTIES_DUAL_MODE;
   }
 
+  void set_hotkey(int hotkey_in) {
+    hotkey = hotkey_in;
+    options |= PROPERTIES_HOTKEY;
+  }
+
   // The target to launch from this shortcut. This is mandatory when creating
   // a shortcut.
   FilePath target;
@@ -101,6 +108,8 @@ struct ShortcutProperties {
   string16 app_id;
   // Whether this is a dual mode shortcut (Win8+).
   bool dual_mode;
+  // The shell launch hotkey.
+  int hotkey;
   // Bitfield made of IndividualProperties. Properties set in |options| will be
   // set on the shortcut, others will be ignored.
   uint32 options;
@@ -130,11 +139,13 @@ BASE_EXPORT bool ResolveShortcut(const FilePath& shortcut_path,
                                  string16* args);
 
 // Pins a shortcut to the Windows 7 taskbar. The shortcut file must already
-// exist and be a shortcut that points to an executable.
+// exist and be a shortcut that points to an executable. The app id of the
+// shortcut is used to group windows and must be set correctly.
 BASE_EXPORT bool TaskbarPinShortcutLink(const wchar_t* shortcut);
 
 // Unpins a shortcut from the Windows 7 taskbar. The shortcut must exist and
-// already be pinned to the taskbar.
+// already be pinned to the taskbar. The app id of the shortcut is used as the
+// identifier for the taskbar item to remove and must be set correctly.
 BASE_EXPORT bool TaskbarUnpinShortcutLink(const wchar_t* shortcut);
 
 }  // namespace win

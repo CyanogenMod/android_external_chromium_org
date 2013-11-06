@@ -22,7 +22,7 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_intermediate_dir
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c: $(LOCAL_PATH)/third_party/yasm/source/patched-yasm/modules/arch/x86/gen_x86_insn.py $(GYP_TARGET_DEPENDENCIES)
-	@echo "Gyp action: Running source/patched-yasm/modules/arch/x86/gen_x86_insn.py. ($@)"
+	@echo "Gyp action: Running source/patched-yasm/modules/arch/x86/gen_x86_insn.py ($@)"
 	$(hide)cd $(gyp_local_path)/third_party/yasm; mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; python source/patched-yasm/modules/arch/x86/gen_x86_insn.py "$(gyp_shared_intermediate_dir)/third_party/yasm"
 
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86insn_gas.gperf: $(gyp_shared_intermediate_dir)/third_party/yasm/x86insns.c ;
@@ -34,14 +34,14 @@ $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_intermediate_di
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))
 $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac: $(gyp_shared_intermediate_dir)/genversion $(GYP_TARGET_DEPENDENCIES)
-	@echo "Gyp action: Generating yasm version file: $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac. ($@)"
+	@echo "Gyp action: Generating yasm version file: $(gyp_shared_intermediate_dir)/third_party/yasm/version.mac ($@)"
 	$(hide)cd $(gyp_local_path)/third_party/yasm; mkdir -p $(gyp_shared_intermediate_dir)/third_party/yasm; "$(gyp_shared_intermediate_dir)/genversion" "$(gyp_shared_intermediate_dir)/third_party/yasm/version.mac"
 
 
 
 
 ### Generated for rule "third_party_yasm_yasm_gyp_generate_files_host_generate_gperf":
-# "{'inputs': ['$(gyp_shared_intermediate_dir)/genperf'], 'extension': 'gperf', 'process_outputs_as_sources': '0', 'outputs': ['$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'rule_name': 'generate_gperf', 'rule_sources': ['source/patched-yasm/modules/arch/x86/x86cpu.gperf', 'source/patched-yasm/modules/arch/x86/x86regtmod.gperf'], 'action': ['$(gyp_shared_intermediate_dir)/genperf', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'message': 'yasm genperf for $(RULE_SOURCES).'}":
+# "{'inputs': ['$(gyp_shared_intermediate_dir)/genperf'], 'extension': 'gperf', 'process_outputs_as_sources': '0', 'outputs': ['$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'rule_name': 'generate_gperf', 'rule_sources': ['source/patched-yasm/modules/arch/x86/x86cpu.gperf', 'source/patched-yasm/modules/arch/x86/x86regtmod.gperf'], 'action': ['$(gyp_shared_intermediate_dir)/genperf', '$(RULE_SOURCES)', '$(gyp_shared_intermediate_dir)/third_party/yasm/%(INPUT_ROOT)s.c'], 'message': 'yasm genperf for $(RULE_SOURCES)'}":
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_local_path := $(LOCAL_PATH)
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_intermediate_dir := $(abspath $(gyp_intermediate_dir))
 $(gyp_shared_intermediate_dir)/third_party/yasm/x86cpu.c: gyp_shared_intermediate_dir := $(abspath $(gyp_shared_intermediate_dir))

@@ -7,7 +7,6 @@
 #include <set>
 
 #include "cc/base/math_util.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
@@ -19,6 +18,7 @@
 #include "cc/test/pixel_test.h"
 #include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -220,8 +220,8 @@ class GLRendererTest : public testing::Test {
         context3d.PassAs<TestWebGraphicsContext3D>()).Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false).Pass();
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), NULL, 0, false, 1).Pass();
     renderer_ = make_scoped_ptr(new FakeRendererGL(&renderer_client_,
                                                    &settings_,
                                                    output_surface_.get(),
@@ -312,8 +312,8 @@ class GLRendererShaderTest : public testing::Test {
             new ShaderCreatorMockGraphicsContext())).Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false).Pass();
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), NULL, 0, false, 1).Pass();
     renderer_.reset(new FakeRendererGL(&renderer_client_,
                                        &settings_,
                                        output_surface_.get(),
@@ -385,18 +385,6 @@ class GLRendererShaderTest : public testing::Test {
 
 namespace {
 
-// Test GLRenderer discardBackbuffer functionality:
-// Suggest recreating framebuffer when one already exists.
-// Expected: it does nothing.
-TEST_F(GLRendererTest, SuggestBackbufferYesWhenItAlreadyExistsShouldDoNothing) {
-  renderer_->SetDiscardBackBufferWhenNotVisible(false);
-  EXPECT_EQ(0, renderer_client_.set_full_root_layer_damage_count());
-  EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
-
-  SwapBuffers();
-  EXPECT_EQ(1, context3d_->frame_count());
-}
-
 // Test GLRenderer DiscardBackbuffer functionality:
 // Suggest discarding framebuffer when one exists and the renderer is not
 // visible.
@@ -405,7 +393,6 @@ TEST_F(
     GLRendererTest,
     SuggestBackbufferNoShouldDiscardBackbufferAndDamageRootLayerIfNotVisible) {
   renderer_->SetVisible(false);
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
   EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 }
@@ -415,7 +402,6 @@ TEST_F(
 // Expected: the allocation is ignored.
 TEST_F(GLRendererTest, SuggestBackbufferNoDoNothingWhenVisible) {
   renderer_->SetVisible(true);
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_EQ(0, renderer_client_.set_full_root_layer_damage_count());
   EXPECT_FALSE(renderer_->IsBackbufferDiscarded());
 }
@@ -425,11 +411,9 @@ TEST_F(GLRendererTest, SuggestBackbufferNoDoNothingWhenVisible) {
 // Expected: it does nothing.
 TEST_F(GLRendererTest, SuggestBackbufferNoWhenItDoesntExistShouldDoNothing) {
   renderer_->SetVisible(false);
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
   EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
   EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
 }
@@ -439,7 +423,6 @@ TEST_F(GLRendererTest, SuggestBackbufferNoWhenItDoesntExistShouldDoNothing) {
 // Expected: will recreate framebuffer.
 TEST_F(GLRendererTest, DiscardedBackbufferIsRecreatedForScopeDuration) {
   renderer_->SetVisible(false);
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
@@ -454,7 +437,6 @@ TEST_F(GLRendererTest, DiscardedBackbufferIsRecreatedForScopeDuration) {
 
 TEST_F(GLRendererTest, FramebufferDiscardedAfterReadbackWhenNotVisible) {
   renderer_->SetVisible(false);
-  renderer_->SetDiscardBackBufferWhenNotVisible(true);
   EXPECT_TRUE(renderer_->IsBackbufferDiscarded());
   EXPECT_EQ(1, renderer_client_.set_full_root_layer_damage_count());
 
@@ -634,7 +616,7 @@ TEST(GLRendererTest2, InitializationDoesNotMakeSynchronousCalls) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -679,7 +661,7 @@ TEST(GLRendererTest2, InitializationWithQuicklyLostContextDoesNotAssert) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -714,7 +696,7 @@ TEST(GLRendererTest2, OpaqueBackground) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -752,7 +734,7 @@ TEST(GLRendererTest2, TransparentBackground) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -784,7 +766,7 @@ TEST(GLRendererTest2, OffscreenOutputSurface) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -860,7 +842,7 @@ TEST(GLRendererTest2, VisibilityChangeIsLastCall) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -920,7 +902,7 @@ TEST(GLRendererTest2, ActiveTextureState) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -1007,7 +989,7 @@ TEST(GLRendererTest2, ShouldClearRootRenderPass) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   settings.should_clear_root_render_pass = false;
@@ -1095,7 +1077,7 @@ TEST(GLRendererTest2, ScissorTestWhenClearing) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -1181,7 +1163,7 @@ TEST(GLRendererTest2, NoDiscardOnPartialUpdates) {
   output_surface->set_fixed_size(gfx::Size(100, 100));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   settings.partial_swap_enabled = true;
@@ -1360,7 +1342,7 @@ TEST(GLRendererTest2, ScissorAndViewportWithinNonreshapableSurface) {
   CHECK(output_surface->BindToClient(&output_surface_client));
 
   scoped_ptr<ResourceProvider> resource_provider(
-      ResourceProvider::Create(output_surface.get(), NULL, 0, false));
+      ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1));
 
   LayerTreeSettings settings;
   FakeRendererClient renderer_client;
@@ -1714,7 +1696,7 @@ class MockOutputSurfaceTest : public testing::Test, public FakeRendererClient {
     CHECK(output_surface_.BindToClient(&output_surface_client_));
 
     resource_provider_ =
-        ResourceProvider::Create(&output_surface_, NULL, 0, false).Pass();
+        ResourceProvider::Create(&output_surface_, NULL, 0, false, 1).Pass();
 
     renderer_.reset(new FakeRendererGL(
         this, &settings_, &output_surface_, resource_provider_.get()));

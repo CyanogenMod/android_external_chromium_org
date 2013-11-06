@@ -6,6 +6,7 @@ import logging
 import os
 import posixpath
 
+from compiled_file_system import SingleFile
 from file_system import FileNotFoundError
 from future import Gettable, Future
 from schema_util import ProcessSchema
@@ -13,6 +14,7 @@ from svn_constants import API_PATH
 from third_party.json_schema_compiler.model import Namespace, UnixName
 
 
+@SingleFile
 def _CreateAPIModel(path, data):
   schema = ProcessSchema(path, data)
   if os.path.splitext(path)[1] == '.json':
@@ -30,7 +32,15 @@ class APIModels(object):
         file_system, _CreateAPIModel, APIModels)
 
   def GetNames(self):
-    return self._features_bundle.GetAPIFeatures().keys()
+    # API names appear alongside some of their methods/events/etc in the
+    # features file. APIs are those which either implicitly or explicitly have
+    # no parent feature (e.g. app, app.window, and devtools.inspectedWindow are
+    # APIs; runtime.onConnectNative is not).
+    api_features = self._features_bundle.GetAPIFeatures()
+    return [name for name, feature in api_features.iteritems()
+            if ('.' not in name or
+                name.rsplit('.', 1)[0] not in api_features or
+                feature.get('noparent'))]
 
   def GetModel(self, api_name):
     # Callers sometimes specify a filename which includes .json or .idl - if

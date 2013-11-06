@@ -846,8 +846,7 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_PreservedSections) {
 
 IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
                        GeneratedCardLastFourAfterVerifyCvv) {
-  std::vector<std::string> usernames;
-  usernames.push_back("user@example.com");
+  std::vector<std::string> usernames(1, "user@example.com");
   controller()->OnUserNameFetchSuccess(usernames);
   controller()->OnDidFetchWalletCookieValue(std::string());
 
@@ -860,8 +859,11 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
       wallet_items->instruments()[0]->TypeAndLastFourDigits();
   controller()->OnDidGetWalletItems(wallet_items.Pass());
 
+  TestableAutofillDialogView* test_view = controller()->GetTestableView();
+  EXPECT_FALSE(test_view->IsShowingOverlay());
   EXPECT_CALL(*controller(), LoadRiskFingerprintData());
   controller()->OnAccept();
+  EXPECT_TRUE(test_view->IsShowingOverlay());
 
   EXPECT_CALL(*controller()->GetTestingWalletClient(), GetFullWallet(_));
   scoped_ptr<risk::Fingerprint> fingerprint(new risk::Fingerprint());
@@ -876,13 +878,14 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   ASSERT_TRUE(controller()->IsSubmitPausedOn(wallet::VERIFY_CVV));
 
   std::string fake_cvc("123");
-  TestableAutofillDialogView* test_view = controller()->GetTestableView();
   test_view->SetTextContentsOfSuggestionInput(SECTION_CC_BILLING,
                                               ASCIIToUTF16(fake_cvc));
 
+  EXPECT_FALSE(test_view->IsShowingOverlay());
   EXPECT_CALL(*controller()->GetTestingWalletClient(),
               AuthenticateInstrument(_, fake_cvc));
   controller()->OnAccept();
+  EXPECT_TRUE(test_view->IsShowingOverlay());
 
   EXPECT_CALL(*controller()->GetTestingWalletClient(), GetFullWallet(_));
   controller()->OnDidAuthenticateInstrument(true);
@@ -895,30 +898,41 @@ IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest,
   EXPECT_EQ(last_four, test_generated_bubble_controller()->backing_card_name());
 }
 
+// See http://crbug.com/314627
+#if defined(OS_WIN)
+#define MAYBE_SignInNoCrash DISABLED_SignInNoCrash
+#else
+#define MAYBE_SignInNoCrash SignInNoCrash
+#endif
+
 // Simulates the user successfully signing in to the dialog for the first time.
 // The controller listens for nav entry commits and should not destroy the web
 // contents before its post load code runs (which would cause a crash).
-IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, SignInNoCrash) {
+IN_PROC_BROWSER_TEST_F(AutofillDialogControllerTest, MAYBE_SignInNoCrash) {
   browser()->profile()->GetPrefs()->SetBoolean(
       ::prefs::kAutofillDialogPayWithoutWallet,
       true);
 
   InitializeController();
 
+  const AccountChooserModel& account_chooser_model =
+      controller()->AccountChooserModelForTesting();
+  EXPECT_FALSE(account_chooser_model.WalletIsSelected());
+
   ui_test_utils::UrlLoadObserver observer(
       controller()->SignInUrl(),
       content::NotificationService::AllSources());
 
   controller()->SignInLinkClicked();
+  std::vector<std::string> usernames(1, "user@example.com");
+  controller()->OnUserNameFetchSuccess(usernames);
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  controller()->OnDidGetWalletItems(
+      wallet::GetTestWalletItemsWithRequiredAction(wallet::GAIA_AUTH));
 
   TestableAutofillDialogView* view = controller()->GetTestableView();
   EXPECT_TRUE(view->GetSignInWebContents());
   EXPECT_TRUE(controller()->ShouldShowSignInWebView());
-
-  const AccountChooserModel& account_chooser_model =
-      controller()->AccountChooserModelForTesting();
-  EXPECT_FALSE(account_chooser_model.WalletIsSelected());
-
   observer.Wait();
 
   // Wallet should now be selected and Chrome shouldn't have crashed.

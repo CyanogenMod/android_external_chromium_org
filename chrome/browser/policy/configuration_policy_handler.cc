@@ -14,18 +14,12 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/external_data_fetcher.h"
 #include "chrome/browser/policy/policy_error_map.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "grit/generated_resources.h"
-#include "policy/policy_constants.h"
 #include "url/gurl.h"
-
-#if !defined(OS_ANDROID)
-#include "chrome/browser/policy/policy_path_parser.h"
-#endif
 
 namespace policy {
 
@@ -344,32 +338,5 @@ void SimplePolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
   if (value)
     prefs->SetValue(pref_path_, value->DeepCopy());
 }
-
-
-// Android doesn't support these policies, and doesn't have a policy_path_parser
-// implementation.
-#if !defined(OS_ANDROID)
-
-// DiskCacheDirPolicyHandler implementation ------------------------------------
-
-DiskCacheDirPolicyHandler::DiskCacheDirPolicyHandler(const char* pref_name)
-    : TypeCheckingPolicyHandler(key::kDiskCacheDir, Value::TYPE_STRING),
-      pref_name_(pref_name) {}
-
-DiskCacheDirPolicyHandler::~DiskCacheDirPolicyHandler() {
-}
-
-void DiskCacheDirPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
-                                                    PrefValueMap* prefs) {
-  const Value* value = policies.GetValue(policy_name());
-  base::FilePath::StringType string_value;
-  if (value && value->GetAsString(&string_value)) {
-    base::FilePath::StringType expanded_value =
-        policy::path_parser::ExpandPathVariables(string_value);
-    prefs->SetValue(pref_name_, Value::CreateStringValue(expanded_value));
-  }
-}
-
-#endif  // !defined(OS_ANDROID)
 
 }  // namespace policy

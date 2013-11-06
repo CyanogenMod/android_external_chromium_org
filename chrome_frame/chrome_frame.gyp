@@ -769,8 +769,6 @@
         'registry_list_preferences_holder.h',
         'stream_impl.cc',
         'stream_impl.h',
-        'turndown_prompt/reshow_state.cc',
-        'turndown_prompt/reshow_state.h',
         'turndown_prompt/turndown_prompt.cc',
         'turndown_prompt/turndown_prompt.h',
         'turndown_prompt/turndown_prompt_content.cc',
@@ -837,7 +835,7 @@
           'process_outputs_as_sources': 1,
           'message':
               'Assembling <(RULE_INPUT_PATH) to ' \
-              '<(INTERMEDIATE_DIR)\<(RULE_INPUT_ROOT).obj.',
+              '<(INTERMEDIATE_DIR)\<(RULE_INPUT_ROOT).obj',
         },
       ],
       'msvs_settings': {
@@ -976,7 +974,7 @@
           'type': 'none',
           'actions': [
             {
-              'message': 'Coverage is now complete.',
+              'message': 'Coverage is now complete',
               # MSVS must have an input file and an output file.
               'inputs': [ '<(PRODUCT_DIR)/gcf_coverage.info' ],
               'outputs': [ '<(PRODUCT_DIR)/gcf_coverage-build-and-run.stamp' ],

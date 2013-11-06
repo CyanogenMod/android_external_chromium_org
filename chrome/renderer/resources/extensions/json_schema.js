@@ -54,7 +54,10 @@ function isOptionalValue(value) {
 }
 
 function enumToString(enumValue) {
-  return enumValue.name || enumValue;
+  if (enumValue.name === undefined)
+    return enumValue;
+
+  return enumValue.name;
 }
 
 /**

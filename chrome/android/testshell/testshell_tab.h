@@ -57,14 +57,15 @@ class TestShellTab : public TabAndroid {
                                      int r_value,
                                      int g_value,
                                      int b_value) OVERRIDE;
-  virtual void EditBookmark(int64 node_id, bool is_folder) OVERRIDE;
+  virtual void EditBookmark(int64 node_id,
+                            const base::string16& node_title,
+                            bool is_folder,
+                            bool is_partner_bookmark) OVERRIDE;
 
   virtual bool ShouldWelcomePageLinkToTermsOfService() OVERRIDE;
   virtual void OnNewTabPageReady() OVERRIDE;
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params) OVERRIDE;
-  virtual int GetSyncId() const OVERRIDE;
-  virtual void SetSyncId(int sync_id) OVERRIDE;
 
   // Register the Tab's native methods through JNI.
   static bool RegisterTestShellTab(JNIEnv* env);

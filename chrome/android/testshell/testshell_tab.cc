@@ -13,7 +13,7 @@
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/TestShellTab_jni.h"
-#include "ui/android/window_android.h"
+#include "ui/base/android/window_android.h"
 #include "url/gurl.h"
 
 using base::android::ConvertJavaStringToUTF8;
@@ -58,7 +58,10 @@ void TestShellTab::AddShortcutToBookmark(
   NOTIMPLEMENTED();
 }
 
-void TestShellTab::EditBookmark(int64 node_id, bool is_folder) {
+void TestShellTab::EditBookmark(int64 node_id,
+                                const base::string16& node_title,
+                                bool is_folder,
+                                bool is_partner_bookmark) {
   NOTIMPLEMENTED();
 }
 
@@ -95,10 +98,3 @@ ScopedJavaLocalRef<jstring> TestShellTab::FixupUrl(JNIEnv* env,
 static jint Init(JNIEnv* env, jobject obj) {
   return reinterpret_cast<jint>(new TestShellTab(env, obj));
 }
-
-int TestShellTab::GetSyncId() const {
-  NOTIMPLEMENTED();
-  return 0;
-}
-
-void TestShellTab::SetSyncId(int sync_id) { NOTIMPLEMENTED(); }

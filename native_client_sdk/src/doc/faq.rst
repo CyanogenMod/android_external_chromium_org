@@ -1,5 +1,3 @@
-.. _faq:
-
 ##########################
 Frequently Asked Questions
 ##########################
@@ -105,7 +103,7 @@ LLVM:
 +--------+-----+
 | x86-32 | 15% |
 +--------+-----+
-| x86-64 | 20% |
+| x86-64 | 25% |
 +--------+-----+
 |  ARM   | 10% |
 +--------+-----+
@@ -118,11 +116,9 @@ lower overheads whereas very branch-heavy code often performs worse.
 For details, see:
 
 * `Adapting Software Fault Isolation to Contemporary CPU Architectures
-  <https://nativeclient.googlecode.com/svn/data/site/NaCl_SFI.pdf>`_
-  (PDF).
+  <https://nativeclient.googlecode.com/svn/data/site/NaCl_SFI.pdf>`_ (PDF).
 * `Native Client: A Sandbox for Portable, Untrusted x86 Code
-  <https://src.chromium.org/viewvc/native_client/data/docs_tarball/nacl/googleclient/native_client/documentation/nacl_paper.pdf>`_
-  (PDF).
+  <http://research.google.com/pubs/pub34913.html>`_ (PDF).
 
 If your code isn't performing as close to native speed as you'd expect,
 :doc:`let us know <help>`!
@@ -161,8 +157,7 @@ What development environment and development operating system do you recommend?
 You can develop on Windows, Mac, or Linux, and the resulting Native
 Client or Portable Native Client application will run inside the Google
 Chrome browser on all those platforms as well as ChromeOS. You can also
-develop on ChromeOS with `Crouton
-<https://github.com/dnschneid/crouton>`_, and we're working on
+develop on ChromeOS with Crouton_, and we're working on
 self-hosting a full development environment on Portable Native Client.
 
 Any editor+shell combination should work as well as IDEs like Eclipse,
@@ -190,7 +185,7 @@ Is Native Client open? Is it a standard?
 ----------------------------------------
 
 Native Client is completely open: the executable format is open and the
-`source code is open <https://code.google.com/p/nativeclient/>`_. Right
+`source code is open <nacl_project_>`_. Right
 now the Native Client project is in its early stages, so it's premature
 to consider Native Client for standardization.
 
@@ -239,8 +234,8 @@ or support Fortran with `flang
 <https://flang-gsoc.blogspot.ie/2013/09/end-of-gsoc-report.html>`_), or
 transpile languages to C/C++ (source-to-source compilation).
 
-If you're interested in getting other languages working, please contact
-the Native Client team by way of the `native-client-discuss mailing list
+If you're interested in getting other languages working, please contact the
+Native Client team by way of the `native-client-discuss mailing list
 <https://groups.google.com/group/native-client-discuss>`_.
 
 Will you only support Chrome? What about other browsers?
@@ -284,13 +279,12 @@ Can I use Native Client for 3D graphics?
 Yes. Native Client supports `OpenGL ES 2.0
 <https://www.khronos.org/opengles/>`_.
 
-
 To alert the user regarding their hardware platform's 3D feature set
 before loading a large NaCl application, see :doc:`Vetting the driver in
 Javascript <devguide/coding/3D-graphics>`.
 
 Some GL extensions are exposed to Native Client applications, see the
-`GL ES 2 file
+`GLES2 file
 <https://src.chromium.org/viewvc/chrome/trunk/src/ppapi/lib/gl/gles2/gles2.c>`_.
 This file is part of the GL wrapper supplied by the library
 ``ppapi_gles2`` which you'll want to include in your project.  In most
@@ -384,8 +378,7 @@ output.
 In addition to static analysis of untrusted code, the Native Client
 runtime also includes an outer sandbox that mediates system calls. For
 more details about both sandboxes, see `Native Client: A Sandbox for
-Portable, Untrusted x86 Code
-<https://src.chromium.org/viewvc/native_client/data/docs_tarball/nacl/googleclient/native_client/documentation/nacl_paper.pdf>`_
+Portable, Untrusted x86 Code <http://research.google.com/pubs/pub34913.html>`_
 (PDF).
 
 How does Google know that the safety measures in Native Client are sufficient?
@@ -403,7 +396,6 @@ Google is committed to making Native Client safer than JavaScript and
 other popular browser technologies. If you have suggestions for security
 improvements, let the team know, by way of the `native-client-discuss
 mailing list <https://groups.google.com/group/native-client-discuss>`_.
-
 
 Development
 ===========
@@ -460,8 +452,7 @@ Is my favorite third-party library available for Native Client?
 ---------------------------------------------------------------
 
 Google has ported several third-party libraries to Native Client; such
-libraries are available in the `naclports
-<https://code.google.com/p/naclports>`_ project. We encourage you to
+libraries are available in the naclports_ project. We encourage you to
 contribute libraries to naclports, and/or to host your own ported
 libraries, and to `let the team know about it
 <https://groups.google.com/group/native-client-discuss>`_ when you do.
@@ -469,14 +460,12 @@ libraries, and to `let the team know about it
 Do all the files in an application need to be served from the same domain?
 --------------------------------------------------------------------------
 
-The ``.html``, ``.nmf``, and ``.nexe`` or ``.pexe`` files must be served
-from the same domain and the Chrome Web Store manifest file (for
-applications installed from the Chrome Web Store) must include the
-correct, verified domain. Other files can be served from the same or
-another domain.
+The ``.nmf``, and ``.nexe`` or ``.pexe`` files must either be served from the
+same origin as the embedding page or an origin that has been configured
+correctly using CORS_.
 
-.. TODO This isn't the case anymore. +ncbray?
-
+For applications installed from the Chrome Web Store the Web Store manifest
+must include the correct, verified domain of the embedding page.
 
 Portability
 ===========
@@ -517,13 +506,13 @@ The following kinds of code may be more challenging to port:
 * Code that creates processes, including UNIX forks. Creating processes
   is not supported for security reasons. However, threads are supported.
 * Code that needs to do local file I/O. Native Client is restricted to
-  accessing URLs and to local storage in the browser (the Pepper file
-  I/O API has access to the same per-application storage that JavaScript
-  has via Local Storage). HTML5 File System can be used, among
-  others. You can also use nacl_io.
-
-.. TODO More on nacl_io, and a link.
-
+  accessing URLs and to local storage in the browser (the Pepper file I/O API
+  has access to the same per-application storage that JavaScript has via Local
+  Storage). HTML5 File System can be used, among others. For POSIX compatabiliy
+  the Native Client SDK includes a library called nacl_io which allows the
+  application to interact with all these types of files via standard POSIX I/O
+  functions (e.g. open/fopen/read/write/...). See :doc:`Using NaCl I/O
+  <devguide/coding/nacl_io>` for more details.
 
 .. _faq_troubleshooting:
 
@@ -576,3 +565,7 @@ Here are ways to resolve some common problems that can prevent loading:
   select a processor-specific ``.nexe`` goes away with Portable Native
   Client.
 * If things still aren't working, :doc:`ask for help <help>`!
+
+.. _CORS: http://en.wikipedia.org/wiki/Cross-origin_resource_sharing
+.. _naclports: https://code.google.com/p/naclports
+.. _Crouton: https://github.com/dnschneid/crouton

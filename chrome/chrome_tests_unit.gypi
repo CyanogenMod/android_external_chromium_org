@@ -338,6 +338,7 @@
         ['configuration_policy==0', {
           'sources/': [
             ['exclude', '^browser/policy'],
+            ['exclude', 'browser/net/disk_cache_dir_policy_handler_unittest.cc'],
           ],
         }],
         ['configuration_policy==1', {
@@ -661,6 +662,7 @@
         'browser/chromeos/file_manager/file_watcher_unittest.cc',
         'browser/chromeos/file_manager/mime_util_unittest.cc',
         'browser/chromeos/file_manager/mounted_disk_monitor_unittest.cc',
+        'browser/chromeos/file_manager/path_util_unittest.cc',
         'browser/chromeos/file_manager/url_util_unittest.cc',
         'browser/chromeos/file_manager/volume_manager_unittest.cc',
         'browser/chromeos/extensions/device_local_account_management_policy_provider_unittest.cc',
@@ -1013,7 +1015,6 @@
         'browser/metrics/variations/variations_request_scheduler_unittest.cc',
         'browser/nacl_host/nacl_file_host_unittest.cc',
         'browser/nacl_host/nacl_process_host_unittest.cc',
-        'browser/nacl_host/nacl_validation_cache_unittest.cc',
         'browser/nacl_host/pnacl_translation_cache_unittest.cc',
         'browser/nacl_host/pnacl_host_unittest.cc',
         'browser/net/chrome_fraudulent_certificate_reporter_unittest.cc',
@@ -1470,6 +1471,7 @@
         'browser/ui/cocoa/autofill/autofill_suggestion_container_unittest.mm',
         'browser/ui/cocoa/autofill/down_arrow_popup_menu_cell_unittest.mm',
         'browser/ui/cocoa/autofill/layout_view_unittest.mm',
+        'browser/ui/cocoa/autofill/new_credit_card_bubble_cocoa_unittest.mm',
         'browser/ui/cocoa/autofill/simple_grid_layout_unittest.mm',
         'browser/ui/cocoa/background_gradient_view_unittest.mm',
         'browser/ui/cocoa/base_bubble_controller_unittest.mm',
@@ -1961,7 +1963,6 @@
 
         # TODO(caitkp): Move to //components/components_tests.gypi once
         # remaining dependencies back to //chrome are eliminated.
-        '../components/autofill/core/browser/webdata/autofill_entry_unittest.cc',
         '../components/autofill/core/browser/webdata/autofill_table_unittest.cc',
         '../components/autofill/core/browser/webdata/web_data_service_unittest.cc',
 
@@ -2107,7 +2108,6 @@
           'sources!':[
             'browser/nacl_host/nacl_file_host_unittest.cc',
             'browser/nacl_host/nacl_process_host_unittest.cc',
-            'browser/nacl_host/nacl_validation_cache_unittest.cc',
             'browser/nacl_host/pnacl_host_unittest.cc',
             'browser/nacl_host/pnacl_translation_cache_unittest.cc',
             # TODO(yael): Move to //components/components_tests.gypi once
@@ -2222,7 +2222,13 @@
         ['configuration_policy==0', {
           'sources!': [
             'browser/extensions/api/storage/policy_value_store_unittest.cc',
+            'browser/extensions/policy_handlers_unittest.cc',
+            'browser/net/proxy_policy_handler_unittest.cc',
             'browser/prefs/proxy_policy_unittest.cc',
+            'browser/profiles/incognito_mode_policy_handler_unittest.cc',
+            'browser/search_engines/default_search_policy_handler_unittest.cc',
+            'browser/sessions/restore_on_startup_policy_handler_unittest.cc',
+            'browser/sync/sync_policy_handler_unittest.cc',
           ],
           'sources/': [
             ['exclude', '^browser/policy/'],
@@ -2440,10 +2446,10 @@
         }],
         ['OS!="mac" and OS!="ios"', {
           'dependencies': [
+            '../third_party/hunspell/hunspell.gyp:hunspell',
             'chrome_resources.gyp:packed_extra_resources',
             'chrome_resources.gyp:packed_resources',
-            'convert_dict_lib',
-            '../third_party/hunspell/hunspell.gyp:hunspell',
+            'tools/convert_dict/convert_dict.gyp:convert_dict_lib',
           ],
         }],
         ['OS!="win" and OS!="mac"', {
@@ -2680,9 +2686,10 @@
             }],
           ],
         }],  # OS == android
-        ['OS!="android" and OS!="ios" and chromeos==0', {
+        ['OS!="android" and OS!="ios" and chromeos==0 and configuration_policy==1', {
           'sources': [
             'browser/download/download_dir_policy_handler_unittest.cc',
+            'browser/net/disk_cache_dir_policy_handler_unittest.cc',
           ],
         }],
         ['enable_printing!=1', {

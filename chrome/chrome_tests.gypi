@@ -999,6 +999,7 @@
         'browser/apps/app_browsertest.cc',
         'browser/apps/app_browsertest_util.cc',
         'browser/apps/app_browsertest_util.h',
+        'browser/apps/app_crash_browsertest.cc',
         'browser/apps/app_url_redirector_browsertest.cc',
         'browser/apps/event_page_browsertest.cc',
         'browser/apps/speech_recognition_browsertest.cc',
@@ -1121,6 +1122,7 @@
         'browser/extensions/api/braille_display_private/braille_display_private_apitest.cc',
         'browser/extensions/api/bookmarks/bookmark_apitest.cc',
         'browser/extensions/api/browsing_data/browsing_data_test.cc',
+        'browser/extensions/api/cast_channel/cast_channel_apitest.cc',
         'browser/extensions/api/cloud_print_private/cloud_print_private_apitest.cc',
         'browser/extensions/api/command_line_private/command_line_private_apitest.cc',
         'browser/extensions/api/commands/command_service_browsertest.cc',
@@ -1477,6 +1479,7 @@
         'browser/ui/views/frame/app_non_client_frame_view_ash_browsertest.cc',
         'browser/ui/views/frame/browser_non_client_frame_view_ash_browsertest.cc',
         'browser/ui/views/frame/browser_view_browsertest.cc',
+        'browser/ui/views/frame/browser_window_property_manager_browsertest_win.cc',
         'browser/ui/views/frame/immersive_mode_controller_ash_browsertest.cc',
         'browser/ui/views/location_bar/zoom_bubble_view_browsertest.cc',
         'browser/ui/views/new_avatar_menu_button_browsertest.cc',
@@ -1684,6 +1687,8 @@
                 'test/nacl/nacl_browsertest_uma.cc',
                 'test/nacl/nacl_browsertest_util.cc',
                 'test/nacl/nacl_browsertest_util.h',
+                'test/nacl/pnacl_header_test.cc',
+                'test/nacl/pnacl_header_test.h',
               ],
               'dependencies': [
                 'test/data/nacl/nacl_test_data.gyp:*',
@@ -1771,8 +1776,9 @@
             ['exclude', '^browser/policy/'],
           ],
           'sources!': [
-            'browser/ui/webui/policy_ui_browsertest.cc',
+            'browser/ui/webui/options/certificate_manager_browsertest.cc',
             'browser/ui/webui/options/preferences_browsertest.cc',
+            'browser/ui/webui/policy_ui_browsertest.cc',
           ],
         }],
         ['input_speech==0', {
@@ -1930,6 +1936,11 @@
             'browser/media_galleries/fileapi/picasa_data_provider_browsertest.cc',
           ],
         }],
+        ['OS=="mac"', {
+          'sources': [
+            'browser/media_galleries/fileapi/iphoto_data_provider_browsertest.cc',
+          ],
+        }],
         ['os_posix == 0 or chromeos == 1', {
           'sources!': [
             'common/time_format_browsertest.cc',
@@ -2003,6 +2014,12 @@
           'sources!': [
             'browser/extensions/api/braille_display_private/braille_display_private_apitest.cc'
             ]
+        }],
+        ['buildtype=="Official"', {
+          'sources!': [
+            # crbug.com/230471
+            'test/data/webui/accessibility_audit_browsertest.js'
+          ]
         }],
       ],  # conditions
     },  # target browser_tests
@@ -2732,7 +2749,7 @@
                           '<@(swig_args)',
                           'test/pyautolib/pyautolib.i',
               ],
-              'message': 'Generating swig wrappers for pyautolib.',
+              'message': 'Generating swig wrappers for pyautolib',
               'msvs_cygwin_shell': 1,
             },
           ],  # actions
@@ -2930,7 +2947,7 @@
           'type': 'none',
           'actions': [
             {
-              'message': 'Coverage is now complete.',
+              'message': 'Coverage is now complete',
               # MSVS must have an input file and an output file.
               'inputs': [ '<(PRODUCT_DIR)/coverage.info' ],
               'outputs': [ '<(PRODUCT_DIR)/coverage-build-and-run.stamp' ],
@@ -3019,7 +3036,7 @@
               # 'message' for Linux/scons in particular.  Scons
               # requires the 'coverage' target be run from within
               # src/chrome.
-              'message': 'Compiling coverage bundles.',
+              'message': 'Compiling coverage bundles',
               # MSVS must have an input file and an output file.
               #
               # TODO(jrg):
@@ -3073,7 +3090,7 @@
               # 'message' for Linux/scons in particular.  Scons
               # requires the 'coverage' target be run from within
               # src/chrome.
-              'message': 'Running the coverage script.  NOT building anything.',
+              'message': 'Running the coverage script, NOT building anything',
               # MSVS must have an input file and an output file.
               'inputs': [ '<(PRODUCT_DIR)/coverage_bundles.py' ],
               'outputs': [ '<(PRODUCT_DIR)/coverage.info' ],

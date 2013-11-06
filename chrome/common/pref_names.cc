@@ -507,7 +507,7 @@ const char kUrlWhitelist[] = "policy.url_whitelist";
 const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
 
 // A list of bookmarks to include in a Managed Bookmarks root node. Each
-// list item is a dictionary containig a "name" and an "url" entry, detailing
+// list item is a dictionary containing a "name" and an "url" entry, detailing
 // the bookmark name and target URL respectively.
 const char kManagedBookmarks[] = "policy.managed_bookmarks";
 #endif
@@ -843,12 +843,6 @@ const char kOpenNetworkConfiguration[] = "onc";
 // A boolean pref that tracks whether the user has already given consent for
 // enabling remote attestation for content protection.
 const char kRAConsentFirstTime[] = "settings.privacy.ra_consent";
-// A DictionaryValue pref that tracks domains for which the user has explicitly
-// allowed or denied.
-const char kRAConsentDomains[] = "settings.privacy.ra_consent_domains";
-// A boolean pref that tracks whether the user indicated they wish to be asked
-// for consent for every site that uses remote attestation.
-const char kRAConsentAlways[] = "settings.privacy.ra_consent_always";
 
 // A boolean pref recording whether user has dismissed the multiprofile
 // notification.
@@ -1003,7 +997,7 @@ const char kCheckDefaultBrowser[] = "browser.check_default_browser";
 #if defined(OS_WIN)
 // By default, setting Chrome as default during first run on Windows 8 will
 // trigger shutting down the current instance and spawning a new (Metro)
-// Chrome. This boolean preference supresses this behaviour.
+// Chrome. This boolean preference suppresses this behaviour.
 const char kSuppressSwitchToMetroModeOnSetDefault[] =
     "browser.suppress_switch_to_metro_mode_on_set_default";
 #endif
@@ -1082,6 +1076,11 @@ const char kAutofillDialogHasPaidWithWallet[] = "autofill.has_paid_with_wallet";
 // the autofill dialog's account chooser and set explicitly on dialog submission
 // (but not cancel). If this isn't set, the dialog assumes it's the first run.
 const char kAutofillDialogPayWithoutWallet[] = "autofill.pay_without_wallet";
+
+// Which GAIA users have accepted that use of Google Wallet implies their
+// location will be shared with fraud protection services.
+const char kAutofillDialogWalletLocationAcceptance[] =
+    "autofill.wallet_location_disclosure";
 
 // The number of times the dialog has been shown (all time).
 const char kAutofillDialogShowCount[] = "autofill.show_count";
@@ -1644,8 +1643,10 @@ const char kRestartLastSessionOnShutdown[] = "restart.last.session.on.shutdown";
 const char kWasRestarted[] = "was.restarted";
 
 #if defined(OS_WIN)
-// On Windows 8 chrome can restart in desktop or in metro mode.
-const char kRestartSwitchMode[] = "restart.switch_mode";
+// Preference to be used while relaunching Chrome. This preference dictates if
+// Chrome should be launched in Metro or Desktop mode.
+// For more info take a look at ChromeRelaunchMode enum.
+const char kRelaunchMode[] = "relaunch.mode";
 #endif
 
 // Placeholder preference for disabling voice / video chat if it is ever added.
@@ -2191,6 +2192,16 @@ extern const char kEchoCheckedOffers[] = "EchoCheckedOffers";
 // Key name of a dictionary in local state to store cached multiprofle user
 // behavior policy value.
 const char kCachedMultiProfileUserBehavior[] = "CachedMultiProfileUserBehavior";
+
+// A string pref with initial locale set in VPD or manifest.
+const char kInitialLocale[] = "intl.initial_locale";
+
+// A boolean pref of the OOBE complete flag (first OOBE part before login).
+const char kOobeComplete[] = "OobeComplete";
+
+// A boolean pref of the device registered flag (second part after first login).
+const char kDeviceRegistered[] = "DeviceRegistered";
+
 #endif
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -2587,5 +2598,14 @@ const char kProfilePreferenceHashes[] = "profile.preference_hashes";
 // Stores a pair of local time and corresponding network time to bootstrap
 // network time tracker when browser starts.
 const char kNetworkTimeMapping[] = "profile.network_time_mapping";
+
+#if defined(OS_ANDROID)
+// A list of partner bookmark rename/remove mappings.
+// Each list item is a dictionary containing a "url", a "provider_title" and
+// "mapped_title" entries, detailing the bookmark target URL (if any), the title
+// given by the PartnerBookmarksProvider and either the user-visible renamed
+// title or an empty string if the bookmark node was removed.
+const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
+#endif
 
 }  // namespace prefs

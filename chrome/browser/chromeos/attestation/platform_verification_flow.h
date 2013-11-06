@@ -9,10 +9,13 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "url/gurl.h"
 
+class HostContentSettingsMap;
 class PrefService;
 
 namespace content {
@@ -36,14 +39,27 @@ class User;
 namespace attestation {
 
 class AttestationFlow;
+class PlatformVerificationFlowTest;
 
 // This class allows platform verification for the content protection use case.
 // All methods must only be called on the UI thread.  Example:
-//   PlatformVerificationFlow verifier;
+//   scoped_refptr<PlatformVerificationFlow> verifier =
+//       new PlatformVerificationFlow();
 //   PlatformVerificationFlow::Callback callback = base::Bind(&MyCallback);
-//   verifier.ChallengePlatformKey(my_web_contents, "my_id", "some_challenge",
-//                                 callback);
-class PlatformVerificationFlow {
+//   verifier->ChallengePlatformKey(my_web_contents, "my_id", "some_challenge",
+//                                  callback);
+//
+// This class is RefCountedThreadSafe because it may need to outlive its caller.
+// The attestation flow that needs to happen to establish a certified platform
+// key may take minutes on some hardware.  This class will timeout after a much
+// shorter time so the caller can proceed without platform verification but it
+// is important that the pending operation be allowed to finish.  If the
+// attestation flow is aborted at any stage, it will need to start over.  If we
+// use weak pointers, the attestation flow will stop when the next callback is
+// run.  So we need the instance to stay alive until the platform key is fully
+// certified so the next time ChallegePlatformKey() is invoked it will be quick.
+class PlatformVerificationFlow
+    : public base::RefCountedThreadSafe<PlatformVerificationFlow> {
  public:
   enum Result {
     SUCCESS,                // The operation succeeded.
@@ -53,19 +69,13 @@ class PlatformVerificationFlow {
                             // - It is not running a verified OS image.
     USER_REJECTED,          // The user explicitly rejected the operation.
     POLICY_REJECTED,        // The operation is not allowed by policy/settings.
-  };
-
-  enum ConsentType {
-    CONSENT_TYPE_NONE,         // No consent necessary.
-    CONSENT_TYPE_ATTESTATION,  // Consent to use attestation.
-    CONSENT_TYPE_ALWAYS,       // Consent because 'Always Ask' was requested.
+    TIMEOUT,                // The operation timed out.
   };
 
   enum ConsentResponse {
     CONSENT_RESPONSE_NONE,
     CONSENT_RESPONSE_ALLOW,
     CONSENT_RESPONSE_DENY,
-    CONSENT_RESPONSE_ALWAYS_ASK,
   };
 
   // An interface which allows settings and UI to be abstracted for testing
@@ -78,10 +88,11 @@ class PlatformVerificationFlow {
     // consent request of the specified |type|.
     typedef base::Callback<void(ConsentResponse response)> ConsentCallback;
 
-    // Invokes consent UI of the given |type| within the context of
-    // |web_contents| and calls |callback| when the user responds.
-    virtual void ShowConsentPrompt(ConsentType type,
-                                   content::WebContents* web_contents,
+    // Invokes consent UI within the context of |web_contents| and calls
+    // |callback| when the user responds.
+    // Precondition: The last committed URL for |web_contents| has a valid
+    //               origin.
+    virtual void ShowConsentPrompt(content::WebContents* web_contents,
                                    const ConsentCallback& callback) = 0;
   };
 
@@ -111,8 +122,6 @@ class PlatformVerificationFlow {
                            UserManager* user_manager,
                            Delegate* delegate);
 
-  virtual ~PlatformVerificationFlow();
-
   // Invokes an asynchronous operation to challenge a platform key.  Any user
   // interaction will be associated with |web_contents|.  The |service_id| is an
   // arbitrary value but it should uniquely identify the origin of the request
@@ -130,60 +139,75 @@ class PlatformVerificationFlow {
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* prefs);
 
-  void set_testing_prefs(PrefService* testing_prefs) {
-    testing_prefs_ = testing_prefs;
-  }
-
-  void set_testing_url(const GURL& testing_url) {
-    testing_url_ = testing_url;
+  void set_timeout_delay(const base::TimeDelta& timeout_delay) {
+    timeout_delay_ = timeout_delay;
   }
 
  private:
+  friend class base::RefCountedThreadSafe<PlatformVerificationFlow>;
+  friend class PlatformVerificationFlowTest;
+
+  // Holds the arguments of a ChallengePlatformKey call.  This is convenient for
+  // use with base::Bind so we don't get too many arguments.
+  struct ChallengeContext {
+    ChallengeContext(content::WebContents* web_contents,
+                     const std::string& service_id,
+                     const std::string& challenge,
+                     const ChallengeCallback& callback);
+    ~ChallengeContext();
+
+    content::WebContents* web_contents;
+    std::string service_id;
+    std::string challenge;
+    ChallengeCallback callback;
+  };
+
+  ~PlatformVerificationFlow();
+
   // Checks whether we need to prompt the user for consent before proceeding and
-  // invokes the consent UI if so.  All parameters are the same as in
-  // ChallengePlatformKey except for the additional |attestation_enrolled| which
-  // specifies whether attestation has been enrolled for this device.
-  void CheckConsent(content::WebContents* web_contents,
-                    const std::string& service_id,
-                    const std::string& challenge,
-                    const ChallengeCallback& callback,
+  // invokes the consent UI if so.  The arguments to ChallengePlatformKey are
+  // in |context| and |attestation_enrolled| specifies whether attestation has
+  // been enrolled for this device.
+  void CheckConsent(const ChallengeContext& context,
                     bool attestation_enrolled);
 
-  // A callback called when the user has given their consent response.  All
-  // parameters are the same as in ChallengePlatformKey except for the
-  // additional |consent_type| and |consent_response| which indicate the consent
-  // type and user response, respectively.  If the response indicates that the
-  // operation should proceed, this method invokes a certificate request.
-  void OnConsentResponse(content::WebContents* web_contents,
-                         const std::string& service_id,
-                         const std::string& challenge,
-                         const ChallengeCallback& callback,
-                         ConsentType consent_type,
+  // A callback called when the user has given their consent response.  The
+  // arguments to ChallengePlatformKey are in |context|.  |consent_required| and
+  // |consent_response| indicate whether consent was required and user response,
+  // respectively.  If the response indicates that the operation should proceed,
+  // this method invokes a certificate request.
+  void OnConsentResponse(const ChallengeContext& context,
+                         bool consent_required,
                          ConsentResponse consent_response);
 
   // A callback called when an attestation certificate request operation
-  // completes.  |service_id|, |challenge|, and |callback| are the same as in
-  // ChallengePlatformKey.  |user_id| identifies the user for which the
-  // certificate was requested.  |operation_success| is true iff the certificate
-  // request operation succeeded.  |certificate| holds the certificate for the
-  // platform key on success.  If the certificate request was successful, this
-  // method invokes a request to sign the challenge.
-  void OnCertificateReady(const std::string& user_id,
-                          const std::string& service_id,
-                          const std::string& challenge,
-                          const ChallengeCallback& callback,
+  // completes.  The arguments to ChallengePlatformKey are in |context|.
+  // |user_id| identifies the user for which the certificate was requested.
+  // |operation_success| is true iff the certificate request operation
+  // succeeded.  |certificate| holds the certificate for the platform key on
+  // success.  If the certificate request was successful, this method invokes a
+  // request to sign the challenge.  If the operation timed out prior to this
+  // method being called, this method does nothing - notably, the callback is
+  // not invoked.
+  void OnCertificateReady(const ChallengeContext& context,
+                          const std::string& user_id,
+                          scoped_ptr<base::Timer> timer,
                           bool operation_success,
                           const std::string& certificate);
 
+  // A callback run after a constant delay to handle timeouts for lengthy
+  // certificate requests.  |context.callback| will be invoked with a TIMEOUT
+  // result.
+  void OnCertificateTimeout(const ChallengeContext& context);
+
   // A callback called when a challenge signing request has completed.  The
   // |certificate| is the platform certificate for the key which signed the
-  // |challenge|.  |callback| is the same as in ChallengePlatformKey.
+  // |challenge|.  The arguments to ChallengePlatformKey are in |context|.
   // |operation_success| is true iff the challenge signing operation was
   // successful.  If it was successful, |response_data| holds the challenge
-  // response and the method will invoke |callback|.
-  void OnChallengeReady(const std::string& certificate,
-                        const std::string& challenge,
-                        const ChallengeCallback& callback,
+  // response and the method will invoke |context.callback|.
+  void OnChallengeReady(const ChallengeContext& context,
+                        const std::string& certificate,
                         bool operation_success,
                         const std::string& response_data);
 
@@ -201,37 +225,44 @@ class PlatformVerificationFlow {
   // current active user will be returned.
   User* GetUser(content::WebContents* web_contents);
 
+  // Gets the content settings map associated with the given |web_contents|.  If
+  // |testing_content_settings_| is set, then this is always returned.
+  HostContentSettingsMap* GetContentSettings(
+      content::WebContents* web_contents);
+
   // Checks whether policy or profile settings associated with |web_contents|
   // have attestation for content protection explicitly disabled.
   bool IsAttestationEnabled(content::WebContents* web_contents);
 
-  // Checks whether this is the first use on this device for the user associated
-  // with |web_contents|.
-  bool IsFirstUse(content::WebContents* web_contents);
-
-  // Checks if settings indicate that consent is required for the web origin
-  // represented by |web_contents| because the user requested to be prompted.
-  bool IsAlwaysAskRequired(content::WebContents* web_contents);
-
   // Updates user settings for the profile associated with |web_contents| based
   // on the |consent_response| to the request of type |consent_type|.
   bool UpdateSettings(content::WebContents* web_contents,
-                      ConsentType consent_type,
                       ConsentResponse consent_response);
 
-  // Finds the domain-specific consent pref for the domain associated with
-  // |web_contents|.  If a pref exists for the domain, returns true and sets
-  // |pref_value| if it is not NULL.
-  //
-  // Precondition: A valid PrefService must be available via GetPrefs().
-  bool GetDomainPref(content::WebContents* web_contents, bool* pref_value);
+  // Finds the domain-specific consent pref in |content_settings| for |url|.  If
+  // a pref exists for the domain, returns true and sets |pref_value| if it is
+  // not NULL.
+  bool GetDomainPref(HostContentSettingsMap* content_settings,
+                     const GURL& url,
+                     bool* pref_value);
 
-  // Records the domain-specific consent pref for the domain associated with
-  // |web_contents|.  The pref will be set to |allow_domain|.
-  //
-  // Precondition: A valid PrefService must be available via GetPrefs().
-  void RecordDomainConsent(content::WebContents* web_contents,
+  // Records the domain-specific consent pref in |content_settings| for |url|.
+  // The pref will be set to |allow_domain|.
+  void RecordDomainConsent(HostContentSettingsMap* content_settings,
+                           const GURL& url,
                            bool allow_domain);
+
+  void set_testing_prefs(PrefService* testing_prefs) {
+    testing_prefs_ = testing_prefs;
+  }
+
+  void set_testing_url(const GURL& testing_url) {
+    testing_url_ = testing_url;
+  }
+
+  void set_testing_content_settings(HostContentSettingsMap* settings) {
+    testing_content_settings_ = settings;
+  }
 
   AttestationFlow* attestation_flow_;
   scoped_ptr<AttestationFlow> default_attestation_flow_;
@@ -242,10 +273,8 @@ class PlatformVerificationFlow {
   scoped_ptr<Delegate> default_delegate_;
   PrefService* testing_prefs_;
   GURL testing_url_;
-
-  // Note: This should remain the last member so it'll be destroyed and
-  // invalidate the weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<PlatformVerificationFlow> weak_factory_;
+  HostContentSettingsMap* testing_content_settings_;
+  base::TimeDelta timeout_delay_;
 
   DISALLOW_COPY_AND_ASSIGN(PlatformVerificationFlow);
 };

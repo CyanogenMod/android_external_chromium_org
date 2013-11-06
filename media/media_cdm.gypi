@@ -83,6 +83,7 @@
         'cdm/ppapi/cdm_video_decoder.h',
         'cdm/ppapi/clear_key_cdm.cc',
         'cdm/ppapi/clear_key_cdm.h',
+        'cdm/ppapi/clear_key_cdm_common.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
@@ -104,6 +105,7 @@
         'cdm/ppapi/cdm_helpers.h',
         'cdm/ppapi/cdm_wrapper.h',
         'cdm/ppapi/linked_ptr.h',
+        'cdm/ppapi/supported_cdm_versions.h',
       ],
       'conditions': [
         ['os_posix == 1 and OS != "mac" and enable_pepper_cdms==1', {

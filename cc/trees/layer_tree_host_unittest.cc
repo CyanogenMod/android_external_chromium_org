@@ -10,7 +10,6 @@
 #include "base/synchronization/lock.h"
 #include "cc/animation/timing_function.h"
 #include "cc/debug/frame_rate_counter.h"
-#include "cc/debug/test_web_graphics_context_3d.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/io_surface_layer.h"
@@ -41,6 +40,7 @@
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/occlusion_tracker_test_common.h"
+#include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
@@ -1131,18 +1131,27 @@ SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestFrameTimeUpdatesAfterDraw);
 
 // Verifies that StartPageScaleAnimation events propagate correctly
 // from LayerTreeHost to LayerTreeHostImpl in the MT compositor.
-class DISABLED_LayerTreeHostTestStartPageScaleAnimation
+class LayerTreeHostTestStartPageScaleAnimation
     : public LayerTreeHostTest {
  public:
-  DISABLED_LayerTreeHostTestStartPageScaleAnimation() {}
+  LayerTreeHostTestStartPageScaleAnimation() {}
 
   virtual void SetupTree() OVERRIDE {
     LayerTreeHostTest::SetupTree();
 
-    scroll_layer_ = FakeContentLayer::Create(&client_);
+    if (layer_tree_host()->settings().impl_side_painting) {
+      scoped_refptr<FakePictureLayer> layer =
+          FakePictureLayer::Create(&client_);
+      layer->set_always_update_resources(true);
+      scroll_layer_ = layer;
+    } else {
+      scroll_layer_ = FakeContentLayer::Create(&client_);
+    }
+
     scroll_layer_->SetScrollable(true);
     scroll_layer_->SetScrollOffset(gfx::Vector2d());
     layer_tree_host()->root_layer()->AddChild(scroll_layer_);
+    layer_tree_host()->SetPageScaleFactorAndLimits(1.f, 0.5f, 2.f);
   }
 
   virtual void BeginTest() OVERRIDE {
@@ -1157,7 +1166,6 @@ class DISABLED_LayerTreeHostTestStartPageScaleAnimation
   }
 
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
-    impl->ProcessScrollDeltas();
     // We get one commit before the first draw, and the animation doesn't happen
     // until the second draw.
     switch (impl->active_tree()->source_frame_number()) {
@@ -1167,7 +1175,6 @@ class DISABLED_LayerTreeHostTestStartPageScaleAnimation
         break;
       case 1:
         EXPECT_EQ(1.f, impl->active_tree()->page_scale_factor());
-        PostSetNeedsRedrawToMainThread();
         break;
       case 2:
         EXPECT_EQ(1.25f, impl->active_tree()->page_scale_factor());
@@ -1181,7 +1188,6 @@ class DISABLED_LayerTreeHostTestStartPageScaleAnimation
   virtual void DidCommitAndDrawFrame() OVERRIDE {
     switch (layer_tree_host()->source_frame_number()) {
       case 1:
-        layer_tree_host()->SetPageScaleFactorAndLimits(1.f, 0.5f, 2.f);
         layer_tree_host()->StartPageScaleAnimation(
             gfx::Vector2d(), false, 1.25f, base::TimeDelta());
         break;
@@ -1191,11 +1197,10 @@ class DISABLED_LayerTreeHostTestStartPageScaleAnimation
   virtual void AfterTest() OVERRIDE {}
 
   FakeContentLayerClient client_;
-  scoped_refptr<FakeContentLayer> scroll_layer_;
+  scoped_refptr<Layer> scroll_layer_;
 };
 
-// Disabled. See: crbug.com/280508
-MULTI_THREAD_NOIMPL_TEST_F(DISABLED_LayerTreeHostTestStartPageScaleAnimation);
+MULTI_THREAD_TEST_F(LayerTreeHostTestStartPageScaleAnimation);
 
 class LayerTreeHostTestSetVisible : public LayerTreeHostTest {
  public:
@@ -1441,6 +1446,7 @@ MULTI_THREAD_TEST_F(LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers);
 class LayerTreeHostTestDirectRendererAtomicCommit : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->texture_id_allocation_chunk_size = 1;
     // Make sure partial texture updates are turned off.
     settings->max_partial_texture_updates = 0;
     // Linear fade animator prevents scrollbars from drawing immediately.
@@ -1619,6 +1625,7 @@ class LayerTreeHostTestAtomicCommitWithPartialUpdate
     : public LayerTreeHostTest {
  public:
   virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->texture_id_allocation_chunk_size = 1;
     // Allow one partial texture update.
     settings->max_partial_texture_updates = 1;
     // No partial updates when impl side painting is enabled.
@@ -1903,7 +1910,6 @@ class LayerTreeHostTestSurfaceNotAllocatedForLayersOutsideMemoryLimit
         // surface. This prevents any contents drawing into surfaces
         // from being allocated.
         host_impl->SetMemoryPolicy(ManagedMemoryPolicy(100 * 100 * 4 * 2));
-        host_impl->SetDiscardBackBufferWhenNotVisible(true);
         break;
       case 1:
         EXPECT_FALSE(renderer->HasAllocatedResourcesForTesting(
@@ -2431,9 +2437,17 @@ class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
 
   virtual void DidSetVisibleOnImplTree(LayerTreeHostImpl* host_impl,
                                        bool visible) OVERRIDE {
-    // One backing should remain unevicted.
-    EXPECT_EQ(100u * 100u * 4u * 1u,
-              layer_tree_host()->contents_texture_manager()->MemoryUseBytes());
+    if (visible) {
+      // One backing should remain unevicted.
+      EXPECT_EQ(
+          100u * 100u * 4u * 1u,
+          layer_tree_host()->contents_texture_manager()->MemoryUseBytes());
+    } else {
+      EXPECT_EQ(
+          0u,
+          layer_tree_host()->contents_texture_manager()->MemoryUseBytes());
+    }
+
     // Make sure that contents textures are marked as having been
     // purged.
     EXPECT_TRUE(host_impl->active_tree()->ContentsTexturesPurged());
@@ -2454,10 +2468,7 @@ class LayerTreeHostTestShutdownWithOnlySomeResourcesEvicted
         host_impl->SetMemoryPolicy(
             ManagedMemoryPolicy(100 * 100 * 4 * 2,
                                 gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
-                                100 * 100 * 4 * 1,
-                                gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
                                 1000));
-        host_impl->SetDiscardBackBufferWhenNotVisible(true);
         break;
       case 2:
         // Only two backings should have memory.
@@ -3751,6 +3762,10 @@ class LayerTreeHostTestUIResource : public LayerTreeHostTest {
  public:
   LayerTreeHostTestUIResource() : num_ui_resources_(0), num_commits_(0) {}
 
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    settings->texture_id_allocation_chunk_size = 1;
+  }
+
   virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
 
   virtual void DidCommit() OVERRIDE {
@@ -4978,8 +4993,6 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
         impl->SetMemoryPolicy(ManagedMemoryPolicy(
             16u*1024u*1024u,
             gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            0,
-            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
             1000));
         break;
       case 2:
@@ -4988,8 +5001,6 @@ class LayerTreeHostTestMemoryLimits : public LayerTreeHostTest {
         impl->SetMemoryPolicy(ManagedMemoryPolicy(
             32u*1024u*1024u,
             gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            0,
-            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
             1000));
         break;
       case 3:
@@ -5142,8 +5153,6 @@ class LayerTreeHostTestSetMemoryPolicyOnLostOutputSurface
                 second_output_surface_memory_limit_ :
                 first_output_surface_memory_limit_,
             gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-            0,
-            gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING,
             ManagedMemoryPolicy::kDefaultNumResourcesLimit)));
     return output_surface.PassAs<OutputSurface>();
   }

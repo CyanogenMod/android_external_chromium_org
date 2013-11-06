@@ -1979,85 +1979,101 @@ Even if you have downloaded files from this website before, the website might ha
       <!-- Download Context Menu Items -->
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_DOWNLOAD_MENU_OPEN_WHEN_COMPLETE"
-                 desc="Download context menu open when download is finished">
+                 desc="Download context menu: Open when download is finished">
           Open when &amp;done
         </message>
         <message name="IDS_DOWNLOAD_MENU_OPEN"
-                 desc="Download context menu open download">
+                 desc="Download context menu: Open download">
           &amp;Open
         </message>
         <message name="IDS_DOWNLOAD_MENU_ALWAYS_OPEN_TYPE"
-                 desc="Download context menu open when download is finished">
+                 desc="Download context menu: Open when download is finished">
           &amp;Always open files of this type
         </message>
+        <message name="IDS_DOWNLOAD_MENU_PLATFORM_OPEN"
+        desc="Download context menu: Open the download using the default handler for the platform.">
+          Open with system viewer
+        </message>
         <message name="IDS_DOWNLOAD_MENU_CANCEL"
-                 desc="Download context menu cancel">
+                 desc="Download context menu: Cancel">
           &amp;Cancel
         </message>
         <message name="IDS_DOWNLOAD_MENU_PAUSE_ITEM"
-                 desc="Download context menu pause download">
+                 desc="Download context menu: Pause download">
           &amp;Pause
         </message>
         <message name="IDS_DOWNLOAD_MENU_RESUME_ITEM"
-                 desc="Download context menu resume download">
+                 desc="Download context menu: Resume download">
           &amp;Resume
         </message>
         <message name="IDS_DOWNLOAD_MENU_DISCARD"
-                 desc="Download context menu discard malicious download">
+                 desc="Download context menu: Discard malicious download">
           &amp;Discard
         </message>
+        <message name="IDS_DOWNLOAD_MENU_REPORT"
+                 desc="Download context menu: option to upload a malicious file to Google for analysis">
+          &amp;Report to Google
+        </message>
         <message name="IDS_DOWNLOAD_MENU_KEEP"
-                 desc="Download context menu keep malicious download">
+                 desc="Download context menu: Keep malicious download">
           &amp;Keep
         </message>
         <message name="IDS_DOWNLOAD_MENU_LEARN_MORE_SCANNING"
-                 desc="Download context menu show information about download scanning">
+                 desc="Download context menu: Show information about download scanning">
           &amp;Learn more
         </message>
         <message name="IDS_DOWNLOAD_MENU_LEARN_MORE_INTERRUPTED"
-                 desc="Download context menu show information about interrupted downloads">
+                 desc="Download context menu: Show information about interrupted downloads">
           &amp;More information
         </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_DOWNLOAD_MENU_OPEN_WHEN_COMPLETE"
-                 desc="In Title Case: Download context menu open when download is finished">
+                 desc="In Title Case: Download context menu: Open when download is finished">
           Open When &amp;Done
         </message>
         <message name="IDS_DOWNLOAD_MENU_OPEN"
-                 desc="In Title Case: Download context menu open download">
+                 desc="In Title Case: Download context menu: Open download">
           &amp;Open
         </message>
         <message name="IDS_DOWNLOAD_MENU_ALWAYS_OPEN_TYPE"
-                 desc="In Title Case: Download context menu open when download is finished">
+                 desc="In Title Case: Download context menu: Open when download is finished">
           &amp;Always Open Files of This Type
         </message>
+        <message name="IDS_DOWNLOAD_MENU_PLATFORM_OPEN"
+                 desc="In Title Case: Download context menu: Open the download using the default handler for the platform.">
+          Open With System Viewer
+        </message>
         <message name="IDS_DOWNLOAD_MENU_CANCEL"
-                 desc="In Title Case: Download context menu cancel">
+                 desc="In Title Case: Download context menu: Cancel">
           &amp;Cancel
         </message>
         <message name="IDS_DOWNLOAD_MENU_PAUSE_ITEM"
-                 desc="In Title Case: Download context menu pause download">
+                 desc="In Title Case: Download context menu: Pause download">
           &amp;Pause
         </message>
         <message name="IDS_DOWNLOAD_MENU_RESUME_ITEM"
-                 desc="In Title Case: Download context menu resume download">
+                 desc="In Title Case: Download context menu: Resume download">
           &amp;Resume
         </message>
         <message name="IDS_DOWNLOAD_MENU_DISCARD"
-                 desc="In Title Case: Download context menu discard malicious download">
+                 desc="In Title Case: Download context menu: Discard malicious download">
           &amp;Discard
         </message>
         <message name="IDS_DOWNLOAD_MENU_KEEP"
-                 desc="In Title Case: Download context menu keep malicious download">
+                 desc="In Title Case: Download context menu: Keep malicious download">
           &amp;Keep
         </message>
+        <message name="IDS_DOWNLOAD_MENU_REPORT"
+                 desc="In Title Case: Download context menu: option to upload a malicious file to Google for analysis">
+          &amp;Report to Google
+        </message>
         <message name="IDS_DOWNLOAD_MENU_LEARN_MORE_SCANNING"
-                 desc="In Title Case: Download context menu show information about download scanning">
+                 desc="In Title Case: Download context menu: Show information about download scanning">
           &amp;Learn More
         </message>
         <message name="IDS_DOWNLOAD_MENU_LEARN_MORE_INTERRUPTED"
-                 desc="Download context menu show information about interrupted downloads">
+                 desc="In Title Case: Download context menu: Show information about interrupted downloads">
           &amp;More Information
         </message>
       </if>
@@ -4371,6 +4387,15 @@ Make sure you do not expose any sensitive information.
       <message name="IDS_EXTENSION_PROMPT_WARNING_NETWORK_STATE" desc="Permission string for network list access.">
         Access list of network connections
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_SEARCH_SETTINGS_OVERRIDE" desc="Permission string for search settings override.">
+        Change your search settings to: <ph name="SEARCH_HOST">$1<ex>url.search.com</ex></ph>
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_HOME_PAGE_SETTING_OVERRIDE" desc="Permission string for home page override.">
+        Change your home page to: <ph name="START_PAGE">$1<ex>home.page.com/home.html</ex></ph>
+      </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_START_PAGE_SETTING_OVERRIDE" desc="Permission string for start page override.">
+        Change your start page to: <ph name="START_PAGE">$1<ex>start.page.com/start.html</ex></ph>
+      </message>
 
       <!-- Extension/App error messages -->
       <message name="IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH" desc="Warning displayed in pack dialog when the absolute path to the extension directory can not be found.">
@@ -4764,6 +4789,9 @@ Make sure you do not expose any sensitive information.
       </message>
       <message name="IDS_EXTENSIONS_ERROR_VIEW_SOURCE" desc="The link to view the source code for a file relating to an extension error.">
         View source
+      </message>
+      <message name="IDS_EXTENSIONS_ERROR_INSPECT" desc="The link to open the inspector (developer tools) for the location of a particular error.">
+        Inspect
       </message>
       <message name="IDS_EXTENSIONS_ERROR_CONTEXT" desc="The label for the context of an extension's error.">
         Context:
@@ -6617,6 +6645,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PASSWORD_MANAGER_REAUTHENTICATION_DESCRIPTION" desc="Description of the flag for the password manager reauthentication option.">
         Prompt the user for their OS password before revealing passwords on the passwords page.
       </message>
+      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_NAME" desc="Name of the flag to enable people search.">
+        Enable people search.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_PEOPLE_SEARCH_DESCRIPTION" desc="Description of flag to enable people search.">
+        Enable searching for people directly from the apps list search.
+      </message>
       <message name="IDS_FLAGS_PERFORMANCE_MONITOR_GATHERING_NAME" desc="Name for the flag to enable Performance Monitor.">
         Enable performance monitoring
       </message>
@@ -8209,6 +8243,9 @@ The following plug-in is unresponsive: <ph name="PLUGIN_NAME">$1
         </message>
         <message name="IDS_PROTECTED_CONTENT_ENABLE" desc="The label of the checkbox for enabling protected content.">
           Allow identifiers for protected content (computer restart may be required)
+        </message>
+        <message name="IDS_PROTECTED_CONTENT_HEADER" desc="Text label for the managing exceptions of Protected Content.">
+          Protected content exceptions
         </message>
       </if>
       <message name="IDS_PPAPI_BROKER_TAB_LABEL" desc="Label for PPAPI broker tab on Content Settings dialog">
@@ -10321,6 +10358,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_AUTOFILL_DIALOG_USE_WALLET" desc="Text that shows on top of the autofill dialog when using data Google Wallet already knows about the user.">
         Protect my payment with Google Wallet.
       </message>
+      <message name="IDS_AUTOFILL_DIALOG_USE_WALLET_LINK" desc="Text that shows as a link at the top of the autofill dialog to select to use Google wallet.">
+        Use Google Wallet
+      </message>
       <message name="IDS_AUTOFILL_DIALOG_SAVE_DETAILS_IN_WALLET" desc="Text that shows on the top of the autofill dialog promoting saving info in Google Wallet.">
         Save and protect my details with Google Wallet.
       </message>
@@ -10439,36 +10479,42 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
 
       <!-- Autofill dialog: legal documents -->
+      <message name="IDS_AUTOFILL_DIALOG_LOCATION_DISCLOSURE" desc="Text at the bottom of the autofill dialog which stands alone to inform the user that they'll be sharing their location with Google Wallet if they choose to proceed.">
+        By clicking Continue you agree to use Google Wallet. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
+      <message name="IDS_AUTOFILL_DIALOG_LOCATION_DISCLOSURE_WITH_LEGAL_DOCS" desc="Text at the bottom of the autofill dialog which informs the user that they'll be sharing their location with Google Wallet if they choose to proceed, appended to a message about accepting other legal documents like Terms of Service.">
+        <ph name="LEGAL_DOC_AGREEMENT">$1<ex>By clicking Continue you agree to the Google Wallet Terms of Service and Privacy Policy.</ex></ph> To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+      </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph>.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_NEW_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept new legal documents (ex: Privacy Policy, Terms Of Service).">
-        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph>. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        By clicking Continue you agree to the <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Further Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Further Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph>.
       </message>
 
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_2" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph> and <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_3" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_4" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_5" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
       <message name="IDS_AUTOFILL_DIALOG_LEGAL_LINKS_UPDATED_6" desc="Label at the bottom of the autofill dialog that is shown when a user needs to accept updated legal documents (ex: Privacy Policy, Terms Of Service).">
-        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Yet More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes. To protect you from fraud, information about your computer (including its location) will be shared with Google Wallet.
+        The <ph name="LEGAL_DOC_LINK_TEXT_1">$1<ex>Google Wallet Terms Of Service</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_2">$2<ex>Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_3">$3<ex>Further Terms Of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_4">$4<ex>Even More Terms of Use</ex></ph>, <ph name="LEGAL_DOC_LINK_TEXT_5">$5<ex>Yet More Terms of Use</ex></ph>, and <ph name="LEGAL_DOC_LINK_TEXT_6">$6<ex>Privacy Policy</ex></ph> have been updated. By clicking Continue you verify that you accept these changes.
       </message>
 
       <!-- Autofill dialog: validation messages -->
@@ -10618,6 +10664,12 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_CONTROLLED_SETTING_EXTENSION" desc="Text displayed in the controlled settings bubble when a setting's value is enforced by an extension.">
         This setting is enforced by an extension.
       </message>
+      <message name="IDS_OPTIONS_CONTROLLED_SETTING_EXTENSION_WITH_NAME" desc="Text displayed in the controlled settings bubble when a setting's value is enforced by an extension. The name of the extension would be displayed on the following line, thus the ending with ':'.">
+        This setting is controlled by:
+      </message>
+      <message name="IDS_OPTIONS_CONTROLLED_SETTING_MANAGE_EXTENSIONS" desc="Text displayed for a link to manage extensions from the controlled settings bubble.">
+        Manage extensions
+      </message>
       <message name="IDS_OPTIONS_CONTROLLED_SETTING_RECOMMENDED" desc="Text displayed in the controlled settings bubble when a value is recommended for a setting through policy and the user has not overridden this recommendation.">
         You are following the administrator's recommendation for this setting.
       </message>
@@ -10633,6 +10685,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS_CONTROLLED_SETTINGS_EXTENSION" desc="Text displayed in the controlled settings bubble when it is shown for a group of settings whose values are enforced by an extension.">
         These settings are enforced by an extension.
       </message>
+      <message name="IDS_OPTIONS_CONTROLLED_SETTINGS_EXTENSION_WITH_NAME" desc="Text displayed in the controlled settings bubble when it is shown for a group of settings whose values are enforced by an extension. The name of the extension would be displayed on the following line, thus the ending with ':'.">
+        These settings are controlled by:
+      </message>
 
       <!-- Extension install location strings -->
       <message name="IDS_OPTIONS_INSTALL_LOCATION_UNKNOWN" desc="The text explaining the the installation location is unknown.">
@@ -10643,6 +10698,17 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_OPTIONS_INSTALL_LOCATION_ENTERPRISE" desc="The text explaining the the installation of the extension came from an enterprise policy.">
         Installed by enterprise policy.
+      </message>
+
+      <!-- Extension blacklist state -->
+      <message name="IDS_OPTIONS_BLACKLISTED_SECURITY_VULNERABILITY" desc="The text explaining the reason for disabling extension or app. The extension in question has a security vulnerability.">
+        This extension contains a serious security vulnerability.
+      </message>
+      <message name="IDS_OPTIONS_BLACKLISTED_CWS_POLICY_VIOLATION" desc="The text explaining the reason for disabling extension or app. The extension in question violates Chrome Web Store policy.">
+        This extension violates the Chrome Web Store policy.
+      </message>
+      <message name="IDS_OPTIONS_BLACKLISTED_POTENTIALLY_UNWANTED" desc="The text explaining the reason for disabling extension or app. The extension in question might have been installed without user consent.">
+        This extension may have been added without your knowledge.
       </message>
 
       <!-- Options search page strings. -->
@@ -11505,6 +11571,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       </message>
       <message name="IDS_PROFILES_DELETE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user to delete their profile.">
         Delete...
+      </message>
+      <message name="IDS_PROFILES_SUPERVISED_USER_DASHBOARD_TIP" desc="A message that appears below the Users section on the Settings page when the current user manages supervised users on the machine, providing a link to the external management dashboard page.">
+        Manage your supervised users via the <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://chrome.com/manage"&gt;</ph>Supervised Users Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
       </message>
       <message name="IDS_PROFILES_DELETE_SINGLE_BUTTON_LABEL" desc="The label that appears on the profile delete button in the options dialog to allow a user with only one profile to delete it.">
         Delete this user
@@ -12437,6 +12506,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         My Photos
       </message>
 
+      <message name="IDS_FILE_BROWSER_RECOVERED_FILES_FROM_GOOGLE_DRIVE_DIRECTORY_NAME" desc="The name of the direcotry which stores files recovered from Google Drive directory when the locally stored Google Drive data is found to be broken.">
+        Recovered files from Google Drive
+      </message>
+
       <message name="IDS_FILE_BROWSER_CONFLICT_DIALOG_TITLE" desc="Title of the conflict dialog shown when a file transfer operation is conflicted.">
         Conflict
       </message>
@@ -12504,29 +12577,11 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Share
       </message>
 
-      <message name="IDS_FILE_BROWSER_TRANSFER_ITEMS_REMAINING" desc="File Manager status message. 'Item' is used here as a generic term for file or directory. 'Transferring' is used in the sense 'copying or moving files'.">
-        Transferring $1 items.
-      </message>
-      <message name="IDS_FILE_BROWSER_TRANSFER_CANCELLED" desc="File Manager status message. 'Transferring' is used in the sense 'copying or moving files'.">
-        Transfer cancelled.
-      </message>
-      <message name="IDS_FILE_BROWSER_TRANSFER_TARGET_EXISTS_ERROR" desc="File Manager error message. 'Item' is used here as a generic term for file or directory. 'Transferring' is used in the sense 'copying or moving files'.">
-        Transfer failed, item exists: "$1"
-      </message>
-      <message name="IDS_FILE_BROWSER_TRANSFER_FILESYSTEM_ERROR" desc="File Manager error message. 'Transferring' is used in the sense 'copying or moving files'.">
-        Transfer failed. <ph name="ERROR_MESSAGE">$1<ex>An error occurred (code: ABORT)</ex></ph>
-      </message>
-      <message name="IDS_FILE_BROWSER_TRANSFER_UNEXPECTED_ERROR" desc="File Manager error message. 'Transferring' is used in the sense 'copying or moving files'.">
-        Transfer failed, unexpected error: $1
-      </message>
       <message name="IDS_FILE_BROWSER_COPY_FILE_NAME" desc="File Manager status message.">
-        Copying <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>
+        Copying <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>...
       </message>
       <message name="IDS_FILE_BROWSER_COPY_ITEMS_REMAINING" desc="File Manager status message. 'Item' is used here as a generic term for file or directory.">
-        Copying $1 items.
-      </message>
-      <message name="IDS_FILE_BROWSER_COPY_CANCELLED" desc="File Manager status message.">
-        Copy operation cancelled.
+        Copying $1 items...
       </message>
       <message name="IDS_FILE_BROWSER_COPY_TARGET_EXISTS_ERROR" desc="File Manager error message. 'Item' is used here as a generic term for file or directory.">
         Copy operation failed, item exists: "$1"
@@ -12538,13 +12593,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Copy operation failed, unexpected error: $1
       </message>
       <message name="IDS_FILE_BROWSER_MOVE_FILE_NAME" desc="File Manager status message.">
-        Moving <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>
+        Moving <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>...
       </message>
       <message name="IDS_FILE_BROWSER_MOVE_ITEMS_REMAINING" desc="File Manager status message. 'Item' is used here as a generic term for file or directory.">
-        Moving $1 items.
-      </message>
-      <message name="IDS_FILE_BROWSER_MOVE_CANCELLED" desc="File Manager status message.">
-        Move cancelled.
+        Moving $1 items...
       </message>
       <message name="IDS_FILE_BROWSER_MOVE_TARGET_EXISTS_ERROR" desc="File Manager error message. 'Item' is used here as a generic term for file or directory.">
         Move failed, item exists: "$1"
@@ -12556,13 +12608,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Move failed, unexpected error: $1
       </message>
       <message name="IDS_FILE_BROWSER_ZIP_FILE_NAME" desc="File Manager status message.">
-        Zipping <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>
+        Zipping <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>...
       </message>
       <message name="IDS_FILE_BROWSER_ZIP_ITEMS_REMAINING" desc="File Manager status message. 'Item' is used here as a generic term for file or directory.">
-        Zipping $1 items.
-      </message>
-      <message name="IDS_FILE_BROWSER_ZIP_CANCELLED" desc="File Manager status message.">
-        Zipping cancelled.
+        Zipping $1 items...
       </message>
       <message name="IDS_FILE_BROWSER_ZIP_TARGET_EXISTS_ERROR" desc="File Manager error message. 'Item' is used here as a generic term for file or directory.">
         Zipping failed, item exists: "$1"
@@ -12576,19 +12625,41 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_FILE_BROWSER_SHARE_ERROR" desc="File Manager error message when sharing a file or a directory on Drive fails because of internet connection problems.">
         Sharing failed. Check your connection and try again later.
       </message>
-      <message name="IDS_FILE_BROWSER_DELETED_MESSAGE_PLURAL" desc="Message informing about deleting multiple items.">
-        Deleted <ph name="COUNT">$1<ex>10</ex></ph> items
+      <message name="IDS_FILE_BROWSER_DELETE_FILE_NAME" desc="File Manager status message.">
+        Deleting "<ph name="FILENAME">$1<ex>photo.jpg</ex></ph>"...
       </message>
-      <message name="IDS_FILE_BROWSER_DELETED_MESSAGE" desc="Message informing about deleting single item.">
-        Deleted "<ph name="FILENAME">$1<ex>photo.jpg</ex></ph>"
+      <message name="IDS_FILE_BROWSER_DELETE_ITEMS_REMAINING" desc="File Manager status message. 'Item' is used here as a generic term for file or directory.">
+        Deleting <ph name="COUNT">$1<ex>10</ex></ph> items...
       </message>
       <message name="IDS_FILE_BROWSER_DELETE_ERROR" desc="Message informing about error while deleting an item or items.">
         An error occured. Some items may not have been deleted.
       </message>
+
+      <message name="IDS_FILE_BROWSER_COPY_PROGRESS_SUMMARY" desc="Summary message for multiple copying tasks above the progress bar.">
+        Copying...
+      </message>
+      <message name="IDS_FILE_BROWSER_MOVE_PROGRESS_SUMMARY" desc="Summary message for multiple moveing tasks above the progress bar.">
+        Moveing...
+      </message>
+      <message name="IDS_FILE_BROWSER_ZIP_PROGRESS_SUMMARY" desc="Summary message for multiple zipping tasks above the progress bar.">
+        Zipping...
+      </message>
+      <message name="IDS_FILE_BROWSER_DELETE_PROGRESS_SUMMARY" desc="Summary message for multiple deleting tasks above the progress bar.">
+        Deleting...
+      </message>
+      <message name="IDS_FILE_BROWSER_TRANSFER_PROGRESS_SUMMARY" desc="Summary message for mixed operation tasks above the progress bar. 'Transferring' is used here as a generic term for copying, moving, zipping, or deleting.">
+        Transferring...
+      </message>
+      <message name="IDS_FILE_BROWSER_ERROR_PROGRESS_SUMMARY" desc="Summary message for an error above the progress bar. This message may be placed at the next to ohter *_PROGERSS_SUMMARY messages.">
+        1 error.
+      </message>
+      <message name="IDS_FILE_BROWSER_ERROR_PROGRESS_SUMMARY_PLURAL" desc="Summary message for multiple errors above the progress bar. This message may be placed at the next to ohter *_PROGERSS_SUMMARY messages.">
+        <ph name="COUNT">$1<ex>10</ex></ph> errors.
+      </message>
+
       <message name="IDS_FILE_BROWSER_UNDO_DELETE" desc="Text on the button to undo the delete operation.">
         Undo
       </message>
-
       <message name="IDS_FILE_BROWSER_CANCEL_LABEL" desc="Cancel label.">
         Cancel
       </message>
@@ -12643,6 +12714,9 @@ Some features may be unavailable.  Please check that the profile exists and you 
       </message>
       <message name="IDS_FILE_BROWSER_SUGGEST_DIALOG_INSTALLATION_FAILED" desc="Error message when the installation of the app from WebStore is failed.">
         Installation failed.
+      </message>
+      <message name="IDS_FILE_BROWSER_SUGGEST_DIALOG_MESSAGE_FOR_EXECUTABLE" desc="Information message in the suggest app dialog. It is shown when Files.app is suggesting an altanative application from Chrome WebStore becauase the user is trying to open an executable file which doesn't support on ChromeOS.">
+        It looks like you're trying to run a classic application. Please try one of these newer web-based apps as an alternative.
       </message>
 
       <message name="IDS_FILE_BROWSER_SELECT_FOLDER_TITLE" desc="Select folder title.">
@@ -14448,10 +14522,10 @@ Some features may be unavailable.  Please check that the profile exists and you 
         Cancel
       </message>
       <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_OK" desc="OK button text in the device requisition poup.">
-        Set Requisition
+        Restart
       </message>
       <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_TEXT" desc="Prompt shown in the device requisition prompt popup.">
-        Use this device requisition when enrolling the device for enterprise management:
+        You're almost there. Restart the device to continue setup.
       </message>
 
       <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_REGISTRATION_FAILED" desc="Error message shown on the enrollment screen upon failed device registration.">
@@ -15054,7 +15128,7 @@ Do you accept?
       Enable inline signin flows
     </message>
     <message name="IDS_FLAGS_ENABLE_INLINE_SIGNIN_DESCRIPTION" desc="Description for the flag to enable inline signin flows">
-      Enables inline sign flows, still using the existing gaia template.
+      Enables inline sign flows, still using the existing full-page template for Google signin.
     </message>
     <message name="IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_NAME" desc="Title for the flag to enable the google profile information">
       Enable Google profile name and icon

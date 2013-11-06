@@ -1139,6 +1139,7 @@ TEST_F(RenderTextTest, StringSizeEmptyString) {
   const FontList font_list("Arial,Symbol, 16px");
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(font_list);
+  render_text->SetDisplayRect(Rect(0, 0, 0, font_list.GetHeight()));
 
   // The empty string respects FontList metrics for non-zero height
   // and baseline.
@@ -1180,7 +1181,9 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   // Check |smaller_font_text| is rendered with the smaller font.
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetText(UTF8ToUTF16(smaller_font_text));
-  render_text->SetFont(smaller_font);
+  render_text->SetFontList(FontList(smaller_font));
+  render_text->SetDisplayRect(Rect(0, 0, 0,
+                                   render_text->font_list().GetHeight()));
   EXPECT_EQ(smaller_font.GetHeight(), render_text->GetStringSize().height());
   EXPECT_EQ(smaller_font.GetBaseline(), render_text->GetBaseline());
 
@@ -1192,6 +1195,8 @@ TEST_F(RenderTextTest, StringSizeRespectsFontListMetrics) {
   fonts.push_back(larger_font);
   const FontList font_list(fonts);
   render_text->SetFontList(font_list);
+  render_text->SetDisplayRect(Rect(0, 0, 0,
+                                   render_text->font_list().GetHeight()));
   EXPECT_LT(smaller_font.GetHeight(), render_text->GetStringSize().height());
   EXPECT_LT(smaller_font.GetBaseline(), render_text->GetBaseline());
   EXPECT_EQ(font_list.GetHeight(), render_text->GetStringSize().height());
@@ -1293,21 +1298,19 @@ TEST_F(RenderTextTest, GetTextOffset) {
 
   // Set display area's size equal to the font size.
   const Size font_size(render_text->GetContentWidth(),
-                       render_text->GetStringSize().height());
+                       render_text->font_list().GetHeight());
   Rect display_rect(font_size);
   render_text->SetDisplayRect(display_rect);
 
   Vector2d offset = render_text->GetLineOffset(0);
   EXPECT_TRUE(offset.IsZero());
 
-  // Set display area's size greater than font size.
-  const int kEnlargement = 2;
-  display_rect.Inset(0, 0, -kEnlargement, -kEnlargement);
+  const int kEnlargementX = 2;
+  display_rect.Inset(0, 0, -kEnlargementX, 0);
   render_text->SetDisplayRect(display_rect);
 
-  // Check the default horizontal and vertical alignment.
+  // Check the default horizontal alignment.
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.y());
   EXPECT_EQ(0, offset.x());
 
   // Check explicitly setting the horizontal alignment.
@@ -1316,21 +1319,20 @@ TEST_F(RenderTextTest, GetTextOffset) {
   EXPECT_EQ(0, offset.x());
   render_text->SetHorizontalAlignment(ALIGN_CENTER);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.x());
+  EXPECT_EQ(kEnlargementX / 2, offset.x());
   render_text->SetHorizontalAlignment(ALIGN_RIGHT);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement, offset.x());
+  EXPECT_EQ(kEnlargementX, offset.x());
 
-  // Check explicitly setting the vertical alignment.
-  render_text->SetVerticalAlignment(ALIGN_TOP);
+  // Check that text is vertically centered within taller display rects.
+  const int kEnlargementY = display_rect.height();
+  display_rect.Inset(0, 0, 0, -kEnlargementY);
+  render_text->SetDisplayRect(display_rect);
+  const Vector2d prev_offset = render_text->GetLineOffset(0);
+  display_rect.Inset(0, 0, 0, -2 * kEnlargementY);
+  render_text->SetDisplayRect(display_rect);
   offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(0, offset.y());
-  render_text->SetVerticalAlignment(ALIGN_VCENTER);
-  offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement / 2, offset.y());
-  render_text->SetVerticalAlignment(ALIGN_BOTTOM);
-  offset = render_text->GetLineOffset(0);
-  EXPECT_EQ(kEnlargement, offset.y());
+  EXPECT_EQ(prev_offset.y() + kEnlargementY, offset.y());
 
   SetRTL(was_rtl);
 }
@@ -1725,6 +1727,26 @@ TEST_F(RenderTextTest, Multiline_SufficientWidth) {
     render_text->Draw(&canvas);
     EXPECT_EQ(1U, render_text->lines_.size());
   }
+}
+
+TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
+  scoped_ptr<RenderTextWin> render_text(
+      static_cast<RenderTextWin*>(RenderText::CreateInstance()));
+
+  // The '\x25B6' "play character" should break runs. http://crbug.com/278913
+  render_text->SetText(WideToUTF16(L"x\x25B6y"));
+  render_text->EnsureLayout();
+  ASSERT_EQ(3U, render_text->runs_.size());
+  EXPECT_EQ(Range(0, 1), render_text->runs_[0]->range);
+  EXPECT_EQ(Range(1, 2), render_text->runs_[1]->range);
+  EXPECT_EQ(Range(2, 3), render_text->runs_[2]->range);
+
+  render_text->SetText(WideToUTF16(L"x \x25B6 y"));
+  render_text->EnsureLayout();
+  ASSERT_EQ(3U, render_text->runs_.size());
+  EXPECT_EQ(Range(0, 2), render_text->runs_[0]->range);
+  EXPECT_EQ(Range(2, 3), render_text->runs_[1]->range);
+  EXPECT_EQ(Range(3, 5), render_text->runs_[2]->range);
 }
 #endif  // defined(OS_WIN)
 

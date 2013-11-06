@@ -47,6 +47,13 @@ class TestPostMessage : public TestCase {
   // at the time of invocation.
   int WaitForMessages();
 
+  // Posts a message from JavaScript to the plugin and wait for it to arrive.
+  // |func| should be a JavaScript function(callback) which calls |callback|
+  // with the variable to post. This function will block until the message
+  // arrives on the plugin side (there is no need to use WaitForMessages()).
+  // Returns the number of messages that were pending at the time of invocation.
+  int PostAsyncMessageFromJavaScriptAndWait(const std::string& func);
+
   // Verifies that the given javascript assertions are true of the message
   // (|test_data|) passed via PostMessage().
   std::string CheckMessageProperties(
@@ -70,6 +77,10 @@ class TestPostMessage : public TestCase {
 
   // Test sending Dictionary vars in both directions.
   std::string TestSendingDictionary();
+
+  // Test sending Resource vars from JavaScript to the plugin.
+  // TODO(mgiuca): Test sending Resource vars in both directions.
+  std::string TestSendingResource();
 
   // Test sending a complex var with references and cycles in both directions.
   std::string TestSendingComplexVar();

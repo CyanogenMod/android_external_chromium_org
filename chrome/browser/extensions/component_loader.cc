@@ -18,6 +18,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/pref_names.h"
@@ -315,6 +316,11 @@ void ComponentLoader::AddBookmarksExtensions() {
 #endif
 }
 
+void ComponentLoader::AddNetworkSpeechSynthesisExtension() {
+  Add(IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("network_speech_synthesis")));
+}
+
 void ComponentLoader::AddWithName(int manifest_resource_id,
                                   const base::FilePath& root_directory,
                                   const std::string& name) {
@@ -514,18 +520,38 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   std::string enable_prefix(kEnablePrefix);
   std::string field_trial_result =
       base::FieldTrialList::FindFullName(kFieldTrialName);
-  if (((field_trial_result.compare(
-          0,
-          enable_prefix.length(),
-          enable_prefix) == 0) &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGoogleNowIntegration)) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableGoogleNowIntegration)) {
+
+  bool enabled_via_field_trial = field_trial_result.compare(
+      0,
+      enable_prefix.length(),
+      enable_prefix) == 0;
+
+  // Enable the feature on trybots.
+  bool enabled_via_trunk_build = chrome::VersionInfo::GetChannel() ==
+      chrome::VersionInfo::CHANNEL_UNKNOWN;
+
+  bool enabled_via_flag =
+      chrome::VersionInfo::GetChannel() !=
+          chrome::VersionInfo::CHANNEL_STABLE &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGoogleNowIntegration);
+
+  bool enabled =
+      enabled_via_field_trial || enabled_via_trunk_build || enabled_via_flag;
+
+  bool disabled_via_flag =
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGoogleNowIntegration);
+
+  if (enabled && !disabled_via_flag) {
     Add(IDR_GOOGLE_NOW_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("google_now")));
   }
 #endif
+
+#if defined(GOOGLE_CHROME_BUILD)
+  AddNetworkSpeechSynthesisExtension();
+#endif  // defined(GOOGLE_CHROME_BUILD)
 }
 
 void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {

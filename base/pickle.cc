@@ -170,15 +170,15 @@ Pickle::Pickle(int header_size)
   header_->payload_size = 0;
 }
 
-Pickle::Pickle(const char* data, size_t data_len)
+Pickle::Pickle(const char* data, int data_len)
     : header_(reinterpret_cast<Header*>(const_cast<char*>(data))),
       header_size_(0),
       capacity_after_header_(kCapacityReadOnly),
       write_offset_(0) {
-  if (data_len >= sizeof(Header))
+  if (data_len >= static_cast<int>(sizeof(Header)))
     header_size_ = data_len - header_->payload_size;
 
-  if (header_size_ > data_len)
+  if (header_size_ > static_cast<unsigned int>(data_len))
     header_size_ = 0;
 
   if (header_size_ != AlignInt(header_size_, sizeof(uint32)))
@@ -286,16 +286,14 @@ const char* Pickle::FindNext(size_t header_size,
   DCHECK_EQ(header_size, AlignInt(header_size, sizeof(uint32)));
   DCHECK_LE(header_size, static_cast<size_t>(kPayloadUnit));
 
-  if (static_cast<size_t>(end - start) < sizeof(Header))
+  size_t length = static_cast<size_t>(end - start);
+  if (length < sizeof(Header))
     return NULL;
 
   const Header* hdr = reinterpret_cast<const Header*>(start);
-  const char* payload_base = start + header_size;
-  const char* payload_end = payload_base + hdr->payload_size;
-  if (payload_end < payload_base)
+  if (length < header_size || length - header_size < hdr->payload_size)
     return NULL;
-
-  return (payload_end > end) ? NULL : payload_end;
+  return start + header_size + hdr->payload_size;
 }
 
 template <size_t length> void Pickle::WriteBytesStatic(const void* data) {

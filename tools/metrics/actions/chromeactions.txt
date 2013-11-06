@@ -1131,11 +1131,13 @@
 0x23f55337b40c7686	MobileNTPBookmark
 0x2927c5a40258df17	MobileNTPForeignSession
 0x5a4f535062ffe001	MobileNTPMostVisited
+0x89a6184c5dabd612	MobileNTPRecentlyClosed
 0xc172db5c29ae2771	MobileNTPSwitchToBookmarks
 0xd4df8c01afe71935	MobileNTPSwitchToIncognito
 0x46c727e82f8494bc	MobileNTPSwitchToMostVisited
 0x2f3ff7588b15e4b5	MobileNTPSwitchToOpenTabs
 0xd6643e725ce30ed4	MobileNewTabOpened
+0x5e3971df3da04b41	MobileOmniboxRefineSuggestion
 0x90071ab23ccdcd96	MobileOmniboxSearch
 0x23037bbea96a8ceb	MobileOmniboxVoiceSearch
 0xb1249f32bf64d5e8	MobilePageLoaded
@@ -1631,6 +1633,7 @@
 0xedf6e4b0b320885f	ToggleItalic
 0x904d810f7dd68a8e	ToggleUnderline
 0xb92bc75c64039682	Toolbar_DragStar
+0xa7e3acf7f6fac337	Touchpad_Gesture_Overview
 0x8ce9fbd537e4983c	TouchscreenScroll
 0x112c55c811540624	TouchscreenScrollFling
 0x05691d7006369070	Touchscreen_Down
@@ -1660,6 +1663,7 @@
 0xf3768ba285ebca7e	ViewAboutFlash
 0xd3879291d67e1389	ViewAboutNaCl
 0xfb4a178539bac6bd	ViewSource
+0x91586aefc4a53dc7	VirtualKeyboardLoaded
 0x6932875212d36f57	WP_EditImage
 0x34a770eb3bbf5632	WP_Gallery
 0x462194a5096cab5e	WebView.ClearData

@@ -326,7 +326,6 @@ void DesktopNativeWidgetAura::InitNativeWidget(
     content_window_->SetProperty(aura::client::kAnimationsDisabledKey, true);
   }
   content_window_->SetType(GetAuraWindowTypeForWidgetType(params.type));
-  content_window_->SetTransparent(true);
   content_window_->Init(params.layer_type);
   corewm::SetShadowType(content_window_, corewm::SHADOW_TYPE_NONE);
 
@@ -366,6 +365,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   desktop_root_window_host_->OnRootWindowCreated(root_window_.get(), params);
 
   native_widget_delegate_->OnNativeWidgetCreated(true);
+
+  UpdateWindowTransparency();
 
   capture_client_.reset(new DesktopCaptureClient(root_window_.get()));
 
@@ -457,6 +458,7 @@ bool DesktopNativeWidgetAura::ShouldUseNativeFrame() const {
 
 void DesktopNativeWidgetAura::FrameTypeChanged() {
   desktop_root_window_host_->FrameTypeChanged();
+  UpdateWindowTransparency();
 }
 
 Widget* DesktopNativeWidgetAura::GetWidget() {
@@ -1025,6 +1027,7 @@ void DesktopNativeWidgetAura::OnDragExited() {
 
 int DesktopNativeWidgetAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   DCHECK(drop_helper_.get() != NULL);
+  Activate();
   return drop_helper_->OnDrop(event.data(), event.location(),
       last_drop_operation_);
 }
@@ -1046,14 +1049,6 @@ void DesktopNativeWidgetAura::OnRootWindowHostResized(
     return;
 
   gfx::Rect new_bounds = gfx::Rect(root->bounds().size());
-  // TODO(ananta)
-  // This code by default scales the bounds rectangle by 1.
-  // We could probably get rid of this and similar logic from
-  // the DesktopNativeWidgetAura::SetBounds function.
-#if defined(OS_WIN)
-  gfx::Size dip_size = gfx::win::ScreenToDIPSize(new_bounds.size());
-  new_bounds = gfx::Rect(dip_size);
-#endif
   content_window_->SetBounds(new_bounds);
   // Can be NULL at start.
   if (content_window_container_)
@@ -1082,6 +1077,10 @@ void DesktopNativeWidgetAura::InstallInputMethodEventFilter() {
   input_method_event_filter_->SetInputMethodPropertyInRootWindow(
       root_window_.get());
   root_window_event_filter_->AddHandler(input_method_event_filter_.get());
+}
+
+void DesktopNativeWidgetAura::UpdateWindowTransparency() {
+  content_window_->SetTransparent(ShouldUseNativeFrame());
 }
 
 }  // namespace views

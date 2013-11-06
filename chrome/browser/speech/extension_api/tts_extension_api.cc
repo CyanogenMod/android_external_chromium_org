@@ -92,13 +92,18 @@ void TtsExtensionEventHandler::OnTtsEvent(Utterance* utterance,
                                           TtsEventType event_type,
                                           int char_index,
                                           const std::string& error_message) {
-  if (utterance->src_id() < 0)
+  if (utterance->src_id() < 0) {
+    if (utterance->finished())
+      delete this;
     return;
+  }
 
   const std::set<TtsEventType>& desired_event_types =
       utterance->desired_event_types();
   if (desired_event_types.size() > 0 &&
       desired_event_types.find(event_type) == desired_event_types.end()) {
+    if (utterance->finished())
+      delete this;
     return;
   }
 
@@ -307,6 +312,7 @@ bool TtsGetVoicesFunction::RunImpl() {
     const VoiceData& voice = voices[i];
     DictionaryValue* result_voice = new DictionaryValue();
     result_voice->SetString(constants::kVoiceNameKey, voice.name);
+    result_voice->SetBoolean(constants::kRemoteKey, voice.remote);
     if (!voice.lang.empty())
       result_voice->SetString(constants::kLangKey, voice.lang);
     if (voice.gender == TTS_GENDER_MALE)

@@ -64,12 +64,12 @@ class RenderTextWin : public RenderText {
 
   // Overridden from RenderText:
   virtual Size GetStringSize() OVERRIDE;
-  virtual int GetBaseline() OVERRIDE;
   virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
   virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
 
  protected:
   // Overridden from RenderText:
+  virtual int GetLayoutTextBaseline() OVERRIDE;
   virtual SelectionModel AdjacentCharSelectionModel(
       const SelectionModel& selection,
       VisualCursorDirection direction) OVERRIDE;
@@ -86,6 +86,7 @@ class RenderTextWin : public RenderText {
   virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_BreakRunsByUnicodeBlocks);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_MinWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);

@@ -63,6 +63,7 @@
 #include "chrome/renderer/searchbox/searchbox_extension.h"
 #include "chrome/renderer/tts_dispatcher.h"
 #include "chrome/renderer/validation_message_agent.h"
+#include "chrome/renderer/worker_permission_client_proxy.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/autofill/content/renderer/password_generation_agent.h"
@@ -208,24 +209,12 @@ bool ShouldUseJavaScriptSettingForPlugin(const WebPluginInfo& plugin) {
   return false;
 }
 
-#if defined(ENABLE_PLUGINS)
-const char* kPredefinedAllowedFileHandleOrigins[] = {
-  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/234789
-  "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/234789
-};
-#endif
-
 }  // namespace
 
 namespace chrome {
 
 ChromeContentRendererClient::ChromeContentRendererClient() {
   g_current_client = this;
-
-#if defined(ENABLE_PLUGINS)
-  for (size_t i = 0; i < arraysize(kPredefinedAllowedFileHandleOrigins); ++i)
-    allowed_file_handle_origins_.insert(kPredefinedAllowedFileHandleOrigins[i]);
-#endif
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() {
@@ -1306,23 +1295,6 @@ bool ChromeContentRendererClient::IsExternalPepperPlugin(
   return module_name == "Native Client";
 }
 
-bool ChromeContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
-    WebKit::WebPluginContainer* container) {
-#if defined(ENABLE_PLUGINS)
-  if (!container)
-    return false;
-  GURL url = container->element().document().baseURL();
-  const ExtensionSet* extension_set = extension_dispatcher_->extensions();
-
-  return IsExtensionOrSharedModuleWhitelisted(url, extension_set,
-                                              allowed_file_handle_origins_) ||
-         IsHostAllowedByCommandLine(url, extension_set,
-                                    switches::kAllowNaClFileHandleAPI);
-#else
-  return false;
-#endif
-}
-
 WebKit::WebSpeechSynthesizer*
 ChromeContentRendererClient::OverrideSpeechSynthesizer(
     WebKit::WebSpeechSynthesizerClient* client) {
@@ -1394,6 +1366,13 @@ bool ChromeContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   // flag on.
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   return !command_line->HasSwitch(switches::kExtensionProcess);
+}
+
+WebKit::WebWorkerPermissionClientProxy*
+ChromeContentRendererClient::CreateWorkerPermissionClientProxy(
+    content::RenderView* render_view,
+    WebKit::WebFrame* frame) {
+  return new WorkerPermissionClientProxy(render_view, frame);
 }
 
 }  // namespace chrome

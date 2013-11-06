@@ -438,6 +438,7 @@
       # Platform sends memory pressure signals natively.
       'native_memory_pressure_signals%': 0,
 
+      'data_reduction_fallback_host%' : '',
       'spdy_proxy_auth_origin%' : '',
       'spdy_proxy_auth_property%' : '',
       'spdy_proxy_auth_value%' : '',
@@ -698,7 +699,7 @@
         # Whether tests targets should be run, archived or just have the
         # dependencies verified. All the tests targets have the '_run' suffix,
         # e.g. base_unittests_run runs the target base_unittests. The test
-        # target always calls tools/swarm_client/isolate.py. See the script's
+        # target always calls tools/swarming_client/isolate.py. See the script's
         # --help for more information and the valid --mode values. Meant to be
         # overriden with GYP_DEFINES.
         # TODO(maruel): Remove the conditions as more configurations are
@@ -886,6 +887,7 @@
     'enable_managed_users%': '<(enable_managed_users)',
     'native_discardable_memory%': '<(native_discardable_memory)',
     'native_memory_pressure_signals%': '<(native_memory_pressure_signals)',
+    'data_reduction_fallback_host%': '<(data_reduction_fallback_host)',
     'spdy_proxy_auth_origin%': '<(spdy_proxy_auth_origin)',
     'spdy_proxy_auth_property%': '<(spdy_proxy_auth_property)',
     'spdy_proxy_auth_value%': '<(spdy_proxy_auth_value)',
@@ -1792,6 +1794,15 @@
       [ 'chromeos==1', {
         'use_brlapi%': 1,
       }],
+
+      ['use_ozone==1', {
+        # This is the default platform
+        'ozone_platform%': "test",
+
+        # Enable built-in ozone platforms if ozone is enabled.
+        'ozone_platform_dri%': 1,
+        'ozone_platform_test%': 1,
+      }],
     ],
 
 
@@ -1891,7 +1902,7 @@
       'nacl_untrusted_build%': 0,
 
       'pnacl_compile_flags': [
-        # pnacl uses the clang compiler so we need to supress all the
+        # pnacl uses the clang compiler so we need to suppress all the
         # same warnings as we do for clang.
         # TODO(sbc): Remove these if/when they are removed from the clang
         # build.
@@ -2335,6 +2346,10 @@
       ['enable_managed_users==1', {
         'defines': ['ENABLE_MANAGED_USERS=1'],
       }],
+      ['data_reduction_fallback_host != ""', {
+        'defines': [
+          'DATA_REDUCTION_FALLBACK_HOST="<(data_reduction_fallback_host)"'],
+      }],
       ['spdy_proxy_auth_origin != ""', {
         'defines': ['SPDY_PROXY_AUTH_ORIGIN="<(spdy_proxy_auth_origin)"'],
       }],
@@ -2722,13 +2737,17 @@
           ['win_use_allocator_shim==0', {
             'defines': ['NO_TCMALLOC'],
           }],
-          ['os_posix==1 and chromium_code==1', {
-            # Non-chromium code is not guaranteed to compile cleanly
-            # with _FORTIFY_SOURCE. Also, fortified build may fail
-            # when optimizations are disabled, so only do that for Release
-            # build.
-            'defines': [
-              '_FORTIFY_SOURCE=2',
+          ['os_posix==1', {
+            'target_conditions': [
+              ['chromium_code==1', {
+                # Non-chromium code is not guaranteed to compile cleanly
+                # with _FORTIFY_SOURCE. Also, fortified build may fail
+                # when optimizations are disabled, so only do that for Release
+                # build.
+                'defines': [
+                  '_FORTIFY_SOURCE=2',
+                ],
+              }],
             ],
           }],
           ['OS=="linux" or OS=="android"', {
@@ -3699,20 +3718,24 @@
                   '-Wno-sign-promo',
                 ],
               }],
-              ['android_webview_build==1 and chromium_code==0', {
-                'cflags': [
-                  # There is a class of warning which:
-                  #  1) Android always enables and also treats as errors
-                  #  2) Chromium ignores in third party code
-                  # So we re-enable those warnings when building Android.
-                  '-Wno-address',
-                  '-Wno-format-security',
-                  '-Wno-return-type',
-                  '-Wno-sequence-point',
+              ['android_webview_build==1', {
+                'target_conditions': [
+                  ['chromium_code==0', {
+                    'cflags': [
+                      # There is a class of warning which:
+                      #  1) Android always enables and also treats as errors
+                      #  2) Chromium ignores in third party code
+                      # So we re-enable those warnings when building Android.
+                      '-Wno-address',
+                      '-Wno-format-security',
+                      '-Wno-return-type',
+                      '-Wno-sequence-point',
+                    ],
+                    'cflags_cc': [
+                      '-Wno-non-virtual-dtor',
+                    ],
+                  }],
                 ],
-                'cflags_cc': [
-                  '-Wno-non-virtual-dtor',
-                ]
               }],
               ['target_arch == "arm"', {
                 'ldflags': [
@@ -4368,20 +4391,23 @@
               '<(windows_driver_kit_path)/inc/atl71',
               '<(windows_driver_kit_path)/inc/mfc42',
             ],
-          }],
-          # Workaround for intsafe in 2010 Express + WDK. ATL code uses
-          # intsafe.h and both intsafe.h and stdint.h define INT8_MIN et al.
-          # We can't use this workaround in third_party code because it has
-          # various levels of intolerance for including stdint.h.
-          ['msvs_express and chromium_code', {
-            'msvs_system_include_dirs': [
-              '<(DEPTH)/build',
+            'target_conditions': [
+              ['chromium_code', {
+                # Workaround for intsafe in 2010 Express + WDK.
+                # ATL code uses intsafe.h and both intsafe.h and stdint.h
+                # define INT8_MIN et al.
+                # We can't use this workaround in third_party code because
+                # it has various levels of intolerance for including stdint.h.
+                'msvs_system_include_dirs': [
+                  '<(DEPTH)/build',
+                ],
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                    'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
+                  },
+                },
+              }],
             ],
-            'msvs_settings': {
-              'VCCLCompilerTool': {
-                'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
-              },
-            },
           }],
         ],
         'msvs_system_include_dirs': [
@@ -4642,6 +4668,11 @@
       ['target_arch=="x64"', {
         'ARCHS': [
           'x86_64'
+         ],
+      }],
+      ['target_arch=="ia32"', {
+        'ARCHS': [
+          'i386'
          ],
       }],
     ],

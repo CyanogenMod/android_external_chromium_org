@@ -33,15 +33,16 @@
 #include "ash/launcher/launcher_item_delegate.h"
 #include "ash/launcher/launcher_item_delegate_manager.h"
 #include "ash/launcher/launcher_model.h"
-#include "ash/launcher/launcher_model_util.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_ash.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shelf/app_list_shelf_item_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_model_util.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
@@ -498,7 +499,7 @@ LauncherDelegate* Shell::GetLauncherDelegate() {
     // Finding the launcher model's location of the app list and setting its
     // LauncherItemDelegate.
     int app_list_index =
-        ash::GetLauncherItemIndexForType(ash::TYPE_APP_LIST, *launcher_model_);
+        GetShelfItemIndexForType(ash::TYPE_APP_LIST, *launcher_model_);
     DCHECK_GE(app_list_index, 0);
     ash::LauncherID app_list_id = launcher_model_->items()[app_list_index].id;
     DCHECK(app_list_id);
@@ -665,6 +666,8 @@ Shell::~Shell() {
 
   keyboard_controller_.reset();
   accessibility_delegate_.reset();
+  new_window_delegate_.reset();
+  media_delegate_.reset();
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
    if (display_change_observer_)
@@ -691,16 +694,17 @@ void Shell::Init() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
   delegate_->PreInit();
-  bool display_initialized = false;
-#if defined(OS_CHROMEOS) && defined(USE_X11)
-  output_configurator_animation_.reset(
-      new internal::OutputConfiguratorAnimation());
-  output_configurator_->AddObserver(output_configurator_animation_.get());
   if (command_line->HasSwitch(keyboard::switches::kKeyboardUsabilityTest)) {
     display_manager_->SetSecondDisplayMode(
         internal::DisplayManager::VIRTUAL_KEYBOARD);
   }
-  if (base::SysInfo::IsRunningOnChromeOS()) {
+  bool display_initialized = display_manager_->InitFromCommandLine();
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+  output_configurator_animation_.reset(
+      new internal::OutputConfiguratorAnimation());
+  output_configurator_->AddObserver(output_configurator_animation_.get());
+
+  if (!display_initialized && base::SysInfo::IsRunningOnChromeOS()) {
     display_change_observer_.reset(new internal::DisplayChangeObserver);
     // Register |display_change_observer_| first so that the rest of
     // observer gets invoked after the root windows are configured.
@@ -715,7 +719,7 @@ void Shell::Init() {
   }
 #endif  // defined(OS_CHROMEOS) && defined(USE_X11)
   if (!display_initialized)
-    display_manager_->InitFromCommandLine();
+    display_manager_->InitDefaultDisplay();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Launcher, and WallPaper could be created by the factory.
@@ -841,6 +845,7 @@ void Shell::Init() {
   session_state_delegate_.reset(delegate_->CreateSessionStateDelegate());
   accessibility_delegate_.reset(delegate_->CreateAccessibilityDelegate());
   new_window_delegate_.reset(delegate_->CreateNewWindowDelegate());
+  media_delegate_.reset(delegate_->CreateMediaDelegate());
 
   if (!command_line->HasSwitch(views::corewm::switches::kNoDropShadows)) {
     resize_shadow_controller_.reset(new internal::ResizeShadowController());

@@ -216,6 +216,7 @@
             'content.gyp:content_renderer',
             'content.gyp:content_utility',
             'content.gyp:content_worker',
+            '../cc/cc_tests.gyp:cc_test_support',
             '../media/media.gyp:media',
             '../ppapi/ppapi_internal.gyp:ppapi_host',
             '../ppapi/ppapi_internal.gyp:ppapi_proxy',
@@ -441,6 +442,7 @@
         'browser/renderer_host/pepper/browser_ppapi_host_test.h',
         'browser/renderer_host/pepper/pepper_gamepad_host_unittest.cc',
         'browser/renderer_host/pepper/pepper_printing_host_unittest.cc',
+        'browser/renderer_host/pepper/quota_file_io_unittest.cc',
         'browser/renderer_host/render_view_host_unittest.cc',
         'browser/renderer_host/render_widget_host_unittest.cc',
         'browser/renderer_host/render_widget_host_view_aura_unittest.cc',
@@ -533,7 +535,6 @@
         'renderer/pepper/host_var_tracker_unittest.cc',
         'renderer/pepper/mock_resource.h',
         'renderer/pepper/pepper_broker_unittest.cc',
-        'renderer/pepper/quota_file_io_unittest.cc',
         'renderer/pepper/v8_var_converter_unittest.cc',
         'renderer/render_thread_impl_unittest.cc',
         'renderer/render_view_impl_unittest.cc',
@@ -908,7 +909,6 @@
             'browser/download/save_package_browsertest.cc',
             'browser/fileapi/file_system_browsertest.cc',
             'browser/gpu/compositor_util_browsertest.cc',
-            'browser/gpu/gpu_functional_browsertest.cc',
             'browser/gpu/gpu_ipc_browsertests.cc',
             'browser/indexed_db/indexed_db_browsertest.cc',
             'browser/loader/resource_dispatcher_host_browsertest.cc',
@@ -1048,7 +1048,6 @@
             ['use_aura==1', {
               'sources!': [
                 'browser/accessibility/accessibility_win_browsertest.cc',
-                'browser/accessibility/dump_accessibility_tree_browsertest.cc',
                 'browser/plugin_browsertest.cc',
               ],
             }, {

@@ -42,6 +42,7 @@ class CapsLockDelegate;
 class LauncherDelegate;
 class LauncherModel;
 struct LauncherItem;
+class MediaDelegate;
 class NewWindowDelegate;
 class RootWindowHostFactory;
 class AccessibilityDelegate;
@@ -75,6 +76,7 @@ enum UserMetricsAction {
   UMA_MOUSE_DOWN,
   UMA_TOGGLE_MAXIMIZE_CAPTION_CLICK,
   UMA_TOGGLE_MAXIMIZE_CAPTION_GESTURE,
+  UMA_TOUCHPAD_GESTURE_OVERVIEW,
   UMA_TOUCHSCREEN_TAP_DOWN,
   UMA_TRAY_HELP,
   UMA_TRAY_LOCK_SCREEN,
@@ -115,6 +117,10 @@ class ASH_EXPORT ShellDelegate {
 
   // Returns true if multi-profiles feature is enabled.
   virtual bool IsMultiProfilesEnabled() const = 0;
+
+  // Returns true if incognito mode is allowed for the user.
+  // Incognito windows are restricted for supervised users.
+  virtual bool IsIncognitoAllowed() const = 0;
 
   // Returns true if we're running in forced app mode.
   virtual bool IsRunningInForcedAppMode() const = 0;
@@ -163,20 +169,14 @@ class ASH_EXPORT ShellDelegate {
   // Creates an application delegate. Shell takes ownership of the delegate.
   virtual NewWindowDelegate* CreateNewWindowDelegate() = 0;
 
+  // Creates a media delegate. Shell takes ownership of the delegate.
+  virtual MediaDelegate* CreateMediaDelegate() = 0;
+
   // Creates a user action client. Shell takes ownership of the object.
   virtual aura::client::UserActionClient* CreateUserActionClient() = 0;
 
   // Records that the user performed an action.
   virtual void RecordUserMetricsAction(UserMetricsAction action) = 0;
-
-  // Handles the Next Track Media shortcut key.
-  virtual void HandleMediaNextTrack() = 0;
-
-  // Handles the Play/Pause Toggle Media shortcut key.
-  virtual void HandleMediaPlayPause() = 0;
-
-  // Handles the Previous Track Media shortcut key.
-  virtual void HandleMediaPrevTrack() = 0;
 
   // Creates a menu model of the context for the |root_window|.
   virtual ui::MenuModel* CreateContextMenu(aura::Window* root_window) = 0;

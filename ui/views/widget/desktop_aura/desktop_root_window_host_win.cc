@@ -44,6 +44,10 @@ namespace views {
 
 DEFINE_WINDOW_PROPERTY_KEY(aura::Window*, kContentWindowForRootWindow, NULL);
 
+// Identifies the DesktopRootWindowHostWin associated with the RootWindow.
+DEFINE_WINDOW_PROPERTY_KEY(DesktopRootWindowHostWin*, kDesktopRootWindowHostKey,
+                           NULL);
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopRootWindowHostWin, public:
 
@@ -119,8 +123,6 @@ void DesktopRootWindowHostWin::Init(
   message_handler_->Init(parent_hwnd, pixel_bounds);
 
   rw_create_params->host = this;
-  rw_create_params->use_software_renderer =
-      params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW;
 }
 
 void DesktopRootWindowHostWin::OnRootWindowCreated(
@@ -129,13 +131,14 @@ void DesktopRootWindowHostWin::OnRootWindowCreated(
   root_window_ = root;
 
   root_window_->SetProperty(kContentWindowForRootWindow, content_window_);
+  root_window_->SetProperty(kDesktopRootWindowHostKey, this);
 
   should_animate_window_close_ =
       content_window_->type() != aura::client::WINDOW_TYPE_NORMAL &&
       !views::corewm::WindowAnimationsDisabled(content_window_);
 
-  root_window_->compositor()->SetHostHasTransparentBackground(true);
-  root_window_->SetTransparent(true);
+// TODO this is not invoked *after* Init(), but should be ok.
+  SetWindowTransparency();
 }
 
 scoped_ptr<corewm::Tooltip> DesktopRootWindowHostWin::CreateTooltip() {
@@ -316,6 +319,7 @@ bool DesktopRootWindowHostWin::ShouldUseNativeFrame() {
 
 void DesktopRootWindowHostWin::FrameTypeChanged() {
   message_handler_->FrameTypeChanged();
+  SetWindowTransparency();
 }
 
 NonClientFrameView* DesktopRootWindowHostWin::CreateNonClientFrameView() {
@@ -325,6 +329,7 @@ NonClientFrameView* DesktopRootWindowHostWin::CreateNonClientFrameView() {
 
 void DesktopRootWindowHostWin::SetFullscreen(bool fullscreen) {
   message_handler_->fullscreen_handler()->SetFullscreen(fullscreen);
+  SetWindowTransparency();
 }
 
 bool DesktopRootWindowHostWin::IsFullscreen() const {
@@ -391,6 +396,7 @@ void DesktopRootWindowHostWin::Hide() {
 }
 
 void DesktopRootWindowHostWin::ToggleFullScreen() {
+  SetWindowTransparency();
 }
 
 // GetBounds and SetBounds work in pixel coordinates, whereas other get/set
@@ -467,13 +473,17 @@ bool DesktopRootWindowHostWin::QueryMouseLocation(gfx::Point* location_return) {
 }
 
 bool DesktopRootWindowHostWin::ConfineCursorToRootWindow() {
-  return false;
+  RECT window_rect = root_window_->GetBoundsInScreen().ToRECT();
+  ::ClipCursor(&window_rect);
+  return true;
 }
 
 void DesktopRootWindowHostWin::UnConfineCursor() {
+  ::ClipCursor(NULL);
 }
 
 void DesktopRootWindowHostWin::OnCursorVisibilityChanged(bool show) {
+  ::ShowCursor(!!show);
 }
 
 void DesktopRootWindowHostWin::MoveCursorTo(const gfx::Point& location) {
@@ -774,6 +784,25 @@ void DesktopRootWindowHostWin::HandleTouchEvent(
   // we attempt to process them.
   if (!GetWidget()->GetNativeView())
     return;
+
+  // Currently we assume the window that has capture gets touch events too.
+  aura::RootWindow* root =
+      aura::RootWindow::GetForAcceleratedWidget(GetCapture());
+  if (root) {
+    DesktopRootWindowHostWin* target =
+        root->GetProperty(kDesktopRootWindowHostKey);
+    if (target && target->HasCapture() && target != this) {
+      POINT target_location(event.location().ToPOINT());
+      ClientToScreen(GetHWND(), &target_location);
+      ScreenToClient(target->GetHWND(), &target_location);
+      ui::TouchEvent target_event(event, static_cast<View*>(NULL),
+                                  static_cast<View*>(NULL));
+      target_event.set_location(gfx::Point(target_location));
+      target_event.set_root_location(target_event.location());
+      target->root_window_host_delegate_->OnHostTouchEvent(&target_event);
+      return;
+    }
+  }
   root_window_host_delegate_->OnHostTouchEvent(
       const_cast<ui::TouchEvent*>(&event));
 }
@@ -845,6 +874,12 @@ const Widget* DesktopRootWindowHostWin::GetWidget() const {
 
 HWND DesktopRootWindowHostWin::GetHWND() const {
   return message_handler_->hwnd();
+}
+
+void DesktopRootWindowHostWin::SetWindowTransparency() {
+  bool transparent = ShouldUseNativeFrame() && !IsFullscreen();
+  root_window_->compositor()->SetHostHasTransparentBackground(transparent);
+  root_window_->SetTransparent(transparent);
 }
 
 bool DesktopRootWindowHostWin::IsModalWindowActive() const {

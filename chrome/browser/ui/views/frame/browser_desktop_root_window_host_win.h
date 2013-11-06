@@ -14,6 +14,7 @@
 
 class BrowserFrame;
 class BrowserView;
+class BrowserWindowPropertyManager;
 
 namespace views {
 class DesktopNativeWidgetAura;
@@ -31,22 +32,17 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   virtual ~BrowserDesktopRootWindowHostWin();
 
  private:
-  void SetWindowTransparency();
-
   views::NativeMenuWin* GetSystemMenu();
 
   // Overridden from BrowserDesktopRootWindowHost:
   virtual DesktopRootWindowHost* AsDesktopRootWindowHost() OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
   virtual bool UsesNativeSystemMenu() const OVERRIDE;
-  virtual void ToggleFullScreen() OVERRIDE;
 
   // Overridden from DesktopRootWindowHostWin:
-  virtual void OnRootWindowCreated(
-      aura::RootWindow* root,
-      const views::Widget::InitParams& params) OVERRIDE;
   virtual int GetInitialShowState() const OVERRIDE;
   virtual bool GetClientAreaInsets(gfx::Insets* insets) const OVERRIDE;
+  virtual void HandleCreate() OVERRIDE;
   virtual void HandleFrameChanged() OVERRIDE;
   virtual bool PreHandleMSG(UINT message,
                             WPARAM w_param,
@@ -58,7 +54,6 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   virtual bool IsUsingCustomFrame() const OVERRIDE;
   virtual bool ShouldUseNativeFrame() OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
-  virtual void SetFullscreen(bool fullscreen) OVERRIDE;
 
   void UpdateDWMFrame();
 
@@ -68,6 +63,8 @@ class BrowserDesktopRootWindowHostWin : public BrowserDesktopRootWindowHost,
   BrowserFrame* browser_frame_;
 
   MinimizeButtonMetrics minimize_button_metrics_;
+
+  scoped_ptr<BrowserWindowPropertyManager> browser_window_property_manager_;
 
   // The wrapped system menu itself.
   scoped_ptr<views::NativeMenuWin> system_menu_;

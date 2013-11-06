@@ -6,9 +6,6 @@
   'variables': {
     'chromium_code': 1,
   },
-  'target_defaults': {
-    'defines': ['MOJO_IMPLEMENTATION'],
-  },
   'targets': [
     {
       'target_name': 'mojo',
@@ -63,7 +60,6 @@
     },
     {
       'target_name': 'mojo_system',
-      # TODO(vtl): This should probably be '<(component)'; make it work.
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
@@ -139,18 +135,24 @@
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
         'mojo_system',
+        'mojo_utility',
+        'native_viewport',
       ],
       'sources': [
         'shell/app_container.cc',
         'shell/app_container.h',
         'shell/context.cc',
         'shell/context.h',
+        'shell/handle_watcher.cc',
+        'shell/handle_watcher.h',
         'shell/loader.cc',
         'shell/loader.h',
         'shell/network_delegate.cc',
         'shell/network_delegate.h',
         'shell/run.cc',
         'shell/run.h',
+        'shell/scoped_message_pipe.cc',
+        'shell/scoped_message_pipe.h',
         'shell/storage.cc',
         'shell/storage.h',
         'shell/switches.cc',
@@ -191,10 +193,43 @@
       ],
     },
     {
+      'target_name': 'mojo_shell_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../base/base.gyp:run_all_unittests',
+        '../testing/gtest.gyp:gtest',
+        'mojo_shell_lib',
+        'mojo_system',
+      ],
+      'sources': [
+        'shell/handle_watcher_unittest.cc',
+        'shell/test/run_all_unittests.cc',
+      ],
+      'conditions': [
+        ['OS == "win"', {
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [
+            4267,
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'mojo_utility',
+      'type': 'static_library',
+      'dependencies': [
+        'mojo_system'
+      ],
+      'sources': [
+        'public/utility/scoped_handle.cc',
+        'public/utility/scoped_handle.h',
+      ],
+    },
+    {
       'target_name': 'sample_app',
       'type': 'shared_library',
       'dependencies': [
-        '../base/base.gyp:base',
         'mojo_system',
       ],
       'sources': [
@@ -246,10 +281,55 @@
         'public/bindings/sample/sample_test.cc',
       ],
     },
+    {
+      'target_name': 'native_viewport',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../gpu/gpu.gyp:command_buffer_service',
+        '../gpu/gpu.gyp:gles2_implementation',
+        '../ui/events/events.gyp:events',
+        '../ui/gfx/gfx.gyp:gfx',
+      ],
+      'sources': [
+        'services/native_viewport/android/mojo_viewport.cc',
+        'services/native_viewport/android/mojo_viewport.h',
+        'services/native_viewport/native_viewport.h',
+        'services/native_viewport/native_viewport_android.cc',
+        'services/native_viewport/native_viewport_controller.cc',
+        'services/native_viewport/native_viewport_controller.h',
+        'services/native_viewport/native_viewport_stub.cc',
+        'services/native_viewport/native_viewport_win.cc',
+        'services/native_viewport/native_viewport_x11.cc',
+      ],
+      'conditions': [
+        ['OS=="win" or OS=="android" or OS=="linux"', {
+          'sources!': [
+            'services/native_viewport/native_viewport_stub.cc',
+          ],
+        }],
+        ['OS=="android"', {
+          'dependencies': [
+            'mojo_jni_headers',
+          ],
+        }],
+      ],
+    },
   ],
   'conditions': [
     ['OS=="android"', {
       'targets': [
+        {
+          'target_name': 'native_viewport_java',
+          'type': 'none',
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'variables': {
+            'java_in_dir': '<(DEPTH)/mojo/services/native_viewport/android',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
         {
           'target_name': 'java_set_jni_headers',
           'type': 'none',
@@ -271,8 +351,8 @@
             ],
           },
           'sources': [
+            'services/native_viewport/android/src/org/chromium/mojo/MojoViewport.java',
             'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoMain.java',
-            'shell/android/apk/src/org/chromium/mojo_shell_apk/MojoView.java',
           ],
           'variables': {
             'jni_gen_package': 'mojo'
@@ -294,8 +374,6 @@
             'shell/android/library_loader.cc',
             'shell/android/mojo_main.cc',
             'shell/android/mojo_main.h',
-            'shell/android/mojo_view.cc',
-            'shell/android/mojo_view.h',
           ],
         },
         {
@@ -304,6 +382,7 @@
           'dependencies': [
             '../base/base.gyp:base_java',
             '../net/net.gyp:net_java',
+            'native_viewport_java',
             'libmojo_shell',
           ],
           'variables': {

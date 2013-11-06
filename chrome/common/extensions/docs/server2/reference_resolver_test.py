@@ -12,17 +12,25 @@ from file_system import FileNotFoundError
 from reference_resolver import ReferenceResolver
 from test_object_store import TestObjectStore
 
+
 class FakeAPIDataSource(object):
   def __init__(self, json_data):
     self._json = json_data
 
-  def get(self, key):
+  def get(self, key, disable_refs=False):
+    assert disable_refs, 'ReferenceResolve should be disabling refs'
     if key not in self._json:
       raise FileNotFoundError(key)
     return self._json[key]
 
-  def GetAllNames(self):
-    return self._json.keys()
+
+class FakeAPIModels(object):
+  def __init__(self, names):
+    self._names = names
+
+  def GetNames(self):
+    return self._names
+
 
 class APIDataSourceTest(unittest.TestCase):
   def setUp(self):
@@ -33,10 +41,9 @@ class APIDataSourceTest(unittest.TestCase):
       return f.read()
 
   def testGetLink(self):
-    data_source = FakeAPIDataSource(
-        json.loads(self._ReadLocalFile('fake_data_source.json')))
-    resolver = ReferenceResolver(data_source,
-                                 data_source,
+    test_data = json.loads(self._ReadLocalFile('fake_data_source.json'))
+    resolver = ReferenceResolver(FakeAPIDataSource(test_data),
+                                 FakeAPIModels(test_data.keys()),
                                  TestObjectStore('test'))
     self.assertEqual({
       'href': 'foo.html',

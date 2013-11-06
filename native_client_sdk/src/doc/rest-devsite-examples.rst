@@ -1,5 +1,7 @@
 .. _getting_started:
 
+:orphan:
+
 ####################################################
 Examples of ReST markup for devsite (Document title)
 ####################################################
@@ -182,6 +184,20 @@ Sub-sub-subsection heading
 """"""""""""""""""""""""""
 
 It's probably not the best idea to go this far (renders to ``<h5>``).
+
+Expandable sections
+===================
+
+The devsite can render expandable sections when a special ``class`` is applied.
+This can be achieved by specifying the ``rst-class`` immediately before a
+section (or any other element), as follows:
+
+.. rst-class:: expandable
+
+Expandable Section
+------------------
+
+Look, ma! I'm expandable!
 
 Lists
 =====

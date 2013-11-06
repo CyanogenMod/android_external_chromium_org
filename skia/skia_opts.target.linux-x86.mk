@@ -27,7 +27,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp \
 	third_party/skia/src/opts/SkUtils_opts_SSE2.cpp \
 	third_party/skia/src/opts/SkXfermode_opts_none.cpp \
-	third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp
+	third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp \
+	third_party/skia/src/opts/SkMorphology_opts_SSE2.cpp
 
 
 # Flags passed to both C and C++ files.
@@ -57,11 +58,11 @@ MY_CFLAGS_Debug := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-g \
 	-fomit-frame-pointer \
@@ -143,11 +144,11 @@ MY_CFLAGS_Release := \
 	-Wno-extra \
 	-Wno-ignored-qualifiers \
 	-Wno-type-limits \
+	-fno-stack-protector \
 	-Wno-address \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-fno-stack-protector \
 	-Os \
 	-fno-ident \
 	-fdata-sections \

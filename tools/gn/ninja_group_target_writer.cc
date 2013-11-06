@@ -8,8 +8,9 @@
 #include "tools/gn/string_utils.h"
 
 NinjaGroupTargetWriter::NinjaGroupTargetWriter(const Target* target,
+                                               const Toolchain* toolchain,
                                                std::ostream& out)
-    : NinjaTargetWriter(target, out) {
+    : NinjaTargetWriter(target, toolchain, out) {
 }
 
 NinjaGroupTargetWriter::~NinjaGroupTargetWriter() {
@@ -21,19 +22,19 @@ void NinjaGroupTargetWriter::Run() {
   out_ << std::endl << "build ";
   path_output_.WriteFile(out_, helper_.GetTargetOutputFile(target_));
   out_ << ": "
-       << helper_.GetRulePrefix(target_->settings()->toolchain())
+       << helper_.GetRulePrefix(target_->settings())
        << "stamp";
 
-  const std::vector<const Target*>& deps = target_->deps();
+  const LabelTargetVector& deps = target_->deps();
   for (size_t i = 0; i < deps.size(); i++) {
     out_ << " ";
-    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(deps[i]));
+    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(deps[i].ptr));
   }
 
-  const std::vector<const Target*>& datadeps = target_->datadeps();
+  const LabelTargetVector& datadeps = target_->datadeps();
   for (size_t i = 0; i < datadeps.size(); i++) {
     out_ << " ";
-    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(datadeps[i]));
+    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(datadeps[i].ptr));
   }
   out_ << std::endl;
 }

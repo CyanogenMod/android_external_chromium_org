@@ -168,11 +168,6 @@ bool ContentRendererClient::IsExternalPepperPlugin(
   return false;
 }
 
-bool ContentRendererClient::IsPluginAllowedToCallRequestOSFileHandle(
-    WebKit::WebPluginContainer* container) {
-  return false;
-}
-
 bool ContentRendererClient::AllowBrowserPlugin(
     WebKit::WebPluginContainer* container) {
   return false;
@@ -193,6 +188,12 @@ bool ContentRendererClient::ShouldReportDetailedMessageForSource(
 
 bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return true;
+}
+
+WebKit::WebWorkerPermissionClientProxy*
+ContentRendererClient::CreateWorkerPermissionClientProxy(
+    RenderView* render_view, WebKit::WebFrame* frame) {
+  return NULL;
 }
 
 }  // namespace content

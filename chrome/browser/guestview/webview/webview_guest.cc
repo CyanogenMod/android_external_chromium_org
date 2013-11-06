@@ -5,6 +5,7 @@
 #include "chrome/browser/guestview/webview/webview_guest.h"
 
 #include "base/command_line.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/extensions/extension_web_contents_observer.h"
@@ -27,6 +28,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "extensions/common/constants.h"
 #include "net/base/net_errors.h"
 
 #if defined(ENABLE_PLUGINS)
@@ -107,8 +109,9 @@ void AttachWebViewHelpers(WebContents* contents) {
 
 }  // namespace
 
-WebViewGuest::WebViewGuest(WebContents* guest_web_contents)
-    : GuestView(guest_web_contents),
+WebViewGuest::WebViewGuest(WebContents* guest_web_contents,
+                           const std::string& extension_id)
+    : GuestView(guest_web_contents, extension_id),
       WebContentsObserver(guest_web_contents),
       script_executor_(new extensions::ScriptExecutor(guest_web_contents,
                                                       &script_observers_)),
@@ -141,7 +144,6 @@ WebViewGuest* WebViewGuest::FromWebContents(WebContents* contents) {
 }
 
 void WebViewGuest::Attach(WebContents* embedder_web_contents,
-                          const std::string& extension_id,
                           const base::DictionaryValue& args) {
   std::string user_agent_override;
   if (args.GetString(webview::kParameterUserAgentOverride,
@@ -151,8 +153,7 @@ void WebViewGuest::Attach(WebContents* embedder_web_contents,
     SetUserAgentOverride("");
   }
 
-  GuestView::Attach(
-      embedder_web_contents, extension_id, args);
+  GuestView::Attach(embedder_web_contents, args);
 
   AddWebViewToExtensionRendererState();
 }
@@ -521,6 +522,12 @@ void WebViewGuest::LoadRedirect(const GURL& old_url,
   DispatchEvent(new GuestView::Event(webview::kEventLoadRedirect, args.Pass()));
 }
 
+// static
+bool WebViewGuest::AllowChromeExtensionURLs() {
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  return channel <= chrome::VersionInfo::CHANNEL_DEV;
+}
+
 void WebViewGuest::AddWebViewToExtensionRendererState() {
   const GURL& site_url = web_contents()->GetSiteInstance()->GetSiteURL();
   ExtensionRendererState::WebViewInfo webview_info;
@@ -529,6 +536,7 @@ void WebViewGuest::AddWebViewToExtensionRendererState() {
   // TODO(fsamuel): Partition IDs should probably be a chrome-only concept. They
   // should probably be passed in via attach args.
   webview_info.partition_id =  site_url.query();
+  webview_info.allow_chrome_extension_urls = AllowChromeExtensionURLs();
 
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
@@ -550,6 +558,17 @@ void WebViewGuest::RemoveWebViewFromExtensionRendererState(
           base::Unretained(ExtensionRendererState::GetInstance()),
           web_contents->GetRenderProcessHost()->GetID(),
           web_contents->GetRoutingID()));
+}
+
+GURL WebViewGuest::ResolveURL(const std::string& src) {
+  if (extension_id().empty()) {
+    NOTREACHED();
+    return GURL(src);
+  }
+  GURL default_url(base::StringPrintf("%s://%s/",
+                                      extensions::kExtensionScheme,
+                                      extension_id().c_str()));
+  return default_url.Resolve(src);
 }
 
 void WebViewGuest::SizeChanged(const gfx::Size& old_size,

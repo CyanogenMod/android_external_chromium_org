@@ -583,7 +583,7 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
     // URL_WHAT_YOU_TYPED AutocompleteMatch. Note that using the most recent
     // input instead of the currently visible text means we'll ignore any
     // visible inline autocompletion: if a user types "foo" and is autocompleted
-    // to "foodnetwork.com", ctrl-enter will  navigate to "foo.com", not
+    // to "foodnetwork.com", ctrl-enter will navigate to "foo.com", not
     // "foodnetwork.com".  At the time of writing, this behavior matches
     // Internet Explorer, but not Firefox.
     const AutocompleteInput& old_input = autocomplete_controller()->input();
@@ -594,8 +594,9 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
       GURL(), old_input.current_page_classification(),
       old_input.prevent_inline_autocomplete(), old_input.prefer_keyword(),
       old_input.allow_exact_keyword_match(), old_input.matches_requested());
-    AutocompleteMatch url_match = HistoryURLProvider::SuggestExactInput(
-        autocomplete_controller()->history_url_provider(), input, true);
+    AutocompleteMatch url_match(
+        autocomplete_controller()->history_url_provider()->SuggestExactInput(
+            input.text(), input.canonicalized_url(), false));
 
     if (url_match.destination_url.is_valid()) {
       // We have a valid URL, we use this newly generated AutocompleteMatch.
@@ -714,8 +715,6 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
     if (match.transition == content::PAGE_TRANSITION_KEYWORD) {
       // The user is using a non-substituting keyword or is explicitly in
       // keyword mode.
-      const AutocompleteMatch& match = (index == OmniboxPopupModel::kNoMatch) ?
-          CurrentMatch(NULL) : result().match_at(index);
 
       // Don't increment usage count for extension keywords.
       if (delegate_->ProcessExtensionKeyword(template_url, match,
@@ -794,7 +793,7 @@ void OmniboxEditModel::OpenMatch(const AutocompleteMatch& match,
   }
 
   if (match.starred)
-    RecordBookmarkLaunch(BOOKMARK_LAUNCH_LOCATION_OMNIBOX);
+    RecordBookmarkLaunch(NULL, BOOKMARK_LAUNCH_LOCATION_OMNIBOX);
 }
 
 bool OmniboxEditModel::AcceptKeyword(EnteredKeywordModeMethod entered_method) {

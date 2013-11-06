@@ -133,15 +133,14 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual const void* CreatePPAPIInterface(
       const std::string& interface_name) OVERRIDE;
   virtual bool IsExternalPepperPlugin(const std::string& module_name) OVERRIDE;
-  // TODO(victorhsieh): move to ChromeContentBrowserClient once we migrate
-  // PPAPI FileIO host to browser.
-  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      WebKit::WebPluginContainer* container) OVERRIDE;
   virtual WebKit::WebSpeechSynthesizer* OverrideSpeechSynthesizer(
       WebKit::WebSpeechSynthesizerClient* client) OVERRIDE;
   virtual bool ShouldReportDetailedMessageForSource(
       const base::string16& source) const OVERRIDE;
   virtual bool ShouldEnableSiteIsolationPolicy() const OVERRIDE;
+  virtual WebKit::WebWorkerPermissionClientProxy*
+      CreateWorkerPermissionClientProxy(content::RenderView* render_view,
+                                        WebKit::WebFrame* frame) OVERRIDE;
   virtual bool AllowPepperMediaStreamAPI(const GURL& url) OVERRIDE;
   virtual void AddKeySystems(
       std::vector<content::KeySystemInfo>* key_systems) OVERRIDE;
@@ -218,10 +217,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   scoped_refptr<WebRtcLoggingMessageFilter> webrtc_logging_message_filter_;
 #endif
   scoped_ptr<SearchBouncer> search_bouncer_;
-
-#if defined(ENABLE_PLUGINS)
-  std::set<std::string> allowed_file_handle_origins_;
-#endif
 };
 
 }  // namespace chrome

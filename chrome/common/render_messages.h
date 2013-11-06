@@ -333,6 +333,10 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxThemeChanged,
                     ThemeBackgroundInfo /* value */)
 
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_ChromeIdentityCheckResult,
+                    string16 /* identity */,
+                    bool /* identity_match */)
+
 IPC_MESSAGE_ROUTED0(ChromeViewMsg_SearchBoxToggleVoiceSearch)
 
 // Toggles visual muting of the render view area. This is on when a constrained
@@ -639,6 +643,12 @@ IPC_SYNC_MESSAGE_ROUTED1_1(ChromeViewHostMsg_CanTriggerClipboardWrite,
                            GURL /* origin */,
                            bool /* allowed */)
 
+// Sent by the renderer to check if a URL has permission to access WebGL
+// extension WEBGL_debug_renderer_info.
+IPC_SYNC_MESSAGE_ROUTED1_1(ChromeViewHostMsg_IsWebGLDebugRendererInfoAllowed,
+                           GURL /* origin */,
+                           bool /* allowed */)
+
 // Sent when the renderer was prevented from displaying insecure content in
 // a secure page by a security policy.  The page may appear incomplete.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockDisplayingInsecureContent)
@@ -711,6 +721,11 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_FPS,
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_LogEvent,
                     int /* page_id */,
                     NTPLoggingEventType /* event */)
+
+// The Instant page asks for Chrome identity check against |identity|.
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ChromeIdentityCheck,
+                    int /* page_id */,
+                    string16 /* identity */)
 
 // Tells InstantExtended to set the omnibox focus state.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FocusOmnibox,

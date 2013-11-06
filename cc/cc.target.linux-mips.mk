@@ -48,21 +48,15 @@ LOCAL_SRC_FILES := \
 	cc/debug/benchmark_instrumentation.cc \
 	cc/debug/debug_colors.cc \
 	cc/debug/debug_rect_history.cc \
-	cc/debug/fake_web_graphics_context_3d.cc \
 	cc/debug/frame_rate_counter.cc \
 	cc/debug/layer_tree_debug_state.cc \
 	cc/debug/micro_benchmark.cc \
 	cc/debug/micro_benchmark_controller.cc \
-	cc/debug/ordered_texture_map.cc \
 	cc/debug/overdraw_metrics.cc \
 	cc/debug/paint_time_counter.cc \
 	cc/debug/picture_record_benchmark.cc \
 	cc/debug/rendering_stats.cc \
 	cc/debug/rendering_stats_instrumentation.cc \
-	cc/debug/test_context_provider.cc \
-	cc/debug/test_context_support.cc \
-	cc/debug/test_texture.cc \
-	cc/debug/test_web_graphics_context_3d.cc \
 	cc/debug/traced_picture.cc \
 	cc/debug/traced_value.cc \
 	cc/debug/unittest_only_benchmark.cc \
@@ -269,6 +263,8 @@ MY_DEFS_Debug := \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \
@@ -378,6 +374,8 @@ MY_DEFS_Release := \
 	'-DSK_SUPPORT_GPU=1' \
 	'-DGR_GL_CUSTOM_SETUP_HEADER="GrGLConfig_chrome.h"' \
 	'-DSK_ENABLE_LEGACY_API_ALIASING=1' \
+	'-DSK_ATTR_DEPRECATED=SK_NOTHING_ARG1' \
+	'-DSK_SUPPORT_LEGACY_COLORTYPE=1' \
 	'-DSK_BUILD_FOR_ANDROID' \
 	'-DSK_USE_POSIX_THREADS' \
 	'-DSK_DEFERRED_CANVAS_USES_FACTORIES=1' \

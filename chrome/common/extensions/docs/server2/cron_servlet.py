@@ -8,11 +8,12 @@ import traceback
 
 from app_yaml_helper import AppYamlHelper
 from appengine_wrappers import (
-    GetAppVersion, IsDeadlineExceededError, IsDevServer, logservice)
+    GetAppVersion, IsDeadlineExceededError, logservice)
 from branch_utility import BranchUtility
 from compiled_file_system import CompiledFileSystem
 from data_source_registry import CreateDataSources
 from empty_dir_file_system import EmptyDirFileSystem
+from environment import IsDevServer
 from file_system_util import CreateURLsFromPaths
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
@@ -195,7 +196,7 @@ class CronServlet(Servlet):
       for data_source in CreateDataSources(server_instance).values():
         run_cron(data_source)
 
-      run_cron(server_instance.redirector)
+      run_cron(server_instance.content_providers)
 
     except:
       results.append(False)

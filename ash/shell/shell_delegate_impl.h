@@ -28,6 +28,7 @@ class ShellDelegateImpl : public ash::ShellDelegate {
   void SetWatcher(WindowWatcher* watcher);
 
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
+  virtual bool IsIncognitoAllowed() const OVERRIDE;
   virtual bool IsMultiProfilesEnabled() const OVERRIDE;
   virtual bool IsRunningInForcedAppMode() const OVERRIDE;
   virtual void PreInit() OVERRIDE;
@@ -45,11 +46,9 @@ class ShellDelegateImpl : public ash::ShellDelegate {
   virtual ash::SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
   virtual ash::AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
   virtual ash::NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
+  virtual ash::MediaDelegate* CreateMediaDelegate() OVERRIDE;
   virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
   virtual void RecordUserMetricsAction(UserMetricsAction action) OVERRIDE;
-  virtual void HandleMediaNextTrack() OVERRIDE;
-  virtual void HandleMediaPlayPause() OVERRIDE;
-  virtual void HandleMediaPrevTrack() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
       aura::Window* root_window) OVERRIDE;
   virtual RootWindowHostFactory* CreateRootWindowHostFactory() OVERRIDE;

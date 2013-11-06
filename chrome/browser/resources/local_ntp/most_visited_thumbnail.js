@@ -16,18 +16,20 @@ window.addEventListener('DOMContentLoaded', function() {
     }
     function showDomainElement() {
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
-      var link = createMostVisitedLink(params, data.url, data.title);
+      var link = createMostVisitedLink(
+          params, data.url, data.title, undefined, data.ping);
       var domain = document.createElement('div');
       domain.textContent = data.domain;
       link.appendChild(domain);
       document.body.appendChild(link);
-    };
+    }
     function createAndAppendThumbnail(isVisible) {
       var image = new Image();
       image.onload = function() {
         var shadow = document.createElement('span');
         shadow.classList.add('shadow');
-        var link = createMostVisitedLink(params, data.url, data.title);
+        var link = createMostVisitedLink(
+            params, data.url, data.title, undefined, data.ping);
         link.appendChild(shadow);
         link.appendChild(image);
         // We add 'position: absolute' in anticipation that there could be more
@@ -40,7 +42,6 @@ window.addEventListener('DOMContentLoaded', function() {
       }
       return image;
     }
-
     if (data.thumbnailUrl) {
       var image = createAndAppendThumbnail(true);
       // If a backup thumbnail URL was provided, preload it in case the first
@@ -49,14 +50,27 @@ window.addEventListener('DOMContentLoaded', function() {
       // second URL that is only sometimes fetched.
       if (data.thumbnailUrl2) {
         var image2 = createAndAppendThumbnail(false);
-        image2.onerror = showDomainElement;
+        var imageFailed = false;
+        var image2Failed = false;
+        image2.onerror = function() {
+          image2Failed = true;
+          image2.style.visibility = 'hidden';
+          if (imageFailed) {
+            showDomainElement();
+          }
+        };
         image2.src = data.thumbnailUrl2;
         // The first thumbnail's onerror function will swap the visibility of
         // the two thumbnails.
         image.onerror = function() {
           logEvent(NTP_LOGGING_EVENT_TYPE.NTP_FALLBACK_THUMBNAIL_USED);
+          imageFailed = true;
           image.style.visibility = 'hidden';
-          image2.style.visibility = 'visible';
+          if (image2Failed) {
+            showDomainElement();
+          } else {
+            image2.style.visibility = 'visible';
+          }
         };
         logEvent(NTP_LOGGING_EVENT_TYPE.NTP_FALLBACK_THUMBNAIL_REQUESTED);
       } else {

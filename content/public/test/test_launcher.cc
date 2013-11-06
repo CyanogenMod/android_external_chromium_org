@@ -21,7 +21,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/launcher/parallel_test_launcher.h"
 #include "base/test/launcher/test_launcher.h"
 #include "base/test/test_suite.h"
 #include "base/test/test_switches.h"
@@ -87,12 +86,9 @@ void PrintUsage() {
 // wrapping a lower-level test launcher with content-specific code.
 class WrapperTestLauncherDelegate : public base::TestLauncherDelegate {
  public:
-  WrapperTestLauncherDelegate(content::TestLauncherDelegate* launcher_delegate,
-                              size_t jobs)
-      : launcher_delegate_(launcher_delegate),
-        timeout_count_(0),
-        printed_timeout_message_(false),
-        parallel_launcher_(jobs) {
+  explicit WrapperTestLauncherDelegate(
+      content::TestLauncherDelegate* launcher_delegate)
+      : launcher_delegate_(launcher_delegate) {
     CHECK(temp_dir_.CreateUniqueTempDir());
   }
 
@@ -129,15 +125,6 @@ class WrapperTestLauncherDelegate : public base::TestLauncherDelegate {
       const std::string& output);
 
   content::TestLauncherDelegate* launcher_delegate_;
-
-  // Number of times a test timeout occurred.
-  size_t timeout_count_;
-
-  // True after a message about too many timeouts has been printed,
-  // to avoid doing it more than once.
-  bool printed_timeout_message_;
-
-  base::ParallelTestLauncher parallel_launcher_;
 
   // Store dependent test name (map is indexed by full test name).
   typedef std::map<std::string, std::string> DependentTestMap;
@@ -188,15 +175,6 @@ bool WrapperTestLauncherDelegate::ShouldRunTest(
   if (StartsWithASCII(test_info->name(), kPreTestPrefix, true)) {
     // We will actually run PRE_ tests, but to ensure they run on the same shard
     // as dependent tests, handle all these details internally.
-    return false;
-  }
-
-  // Stop test execution after too many timeouts.
-  if (timeout_count_ > 5) {
-    if (!printed_timeout_message_) {
-      printed_timeout_message_ = true;
-      printf("Too many timeouts, aborting test\n");
-    }
     return false;
   }
 
@@ -349,7 +327,7 @@ void WrapperTestLauncherDelegate::DoRunTest(base::TestLauncher* test_launcher,
 
   char* browser_wrapper = getenv("BROWSER_WRAPPER");
 
-  parallel_launcher_.LaunchChildGTestProcess(
+  test_launcher->LaunchChildGTestProcess(
       new_cmd_line,
       browser_wrapper ? browser_wrapper : std::string(),
       TestTimeouts::action_max_timeout(),
@@ -419,7 +397,6 @@ void WrapperTestLauncherDelegate::GTestCallback(
   }
 
   test_launcher->OnTestFinished(result);
-  parallel_launcher_.ResetOutputWatchdog();
 }
 
 bool GetSwitchValueAsInt(const std::string& switch_name, int* result) {
@@ -533,8 +510,8 @@ int LaunchTests(TestLauncherDelegate* launcher_delegate,
 
   base::MessageLoopForIO message_loop;
 
-  WrapperTestLauncherDelegate delegate(launcher_delegate, jobs);
-  base::TestLauncher launcher(&delegate);
+  WrapperTestLauncherDelegate delegate(launcher_delegate);
+  base::TestLauncher launcher(&delegate, jobs);
   bool success = launcher.Run(argc, argv);
   return (success ? 0 : 1);
 }

@@ -49,7 +49,6 @@
 #include "chrome/browser/guestview/webview/webview_guest.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/metrics/chrome_browser_main_extra_parts_metrics.h"
-#include "chrome/browser/nacl_host/nacl_browser.h"
 #include "chrome/browser/nacl_host/nacl_browser_delegate_impl.h"
 #include "chrome/browser/nacl_host/nacl_host_message_filter.h"
 #include "chrome/browser/nacl_host/nacl_process_host.h"
@@ -93,6 +92,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/extensions/background_info.h"
 #include "chrome/common/extensions/extension.h"
@@ -110,6 +110,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_constants.h"
+#include "components/nacl/browser/nacl_browser.h"
 #include "components/nacl/common/nacl_process_type.h"
 #include "components/translate/common/translate_switches.h"
 #include "components/user_prefs/pref_registry_syncable.h"
@@ -262,6 +263,11 @@ namespace {
 base::LazyInstance<std::string> g_io_thread_application_locale;
 
 #if defined(ENABLE_PLUGINS)
+const char* kPredefinedAllowedFileHandleOrigins[] = {
+  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/234789
+  "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/234789
+};
+
 const char* kPredefinedAllowedSocketOrigins[] = {
   "okddffdblfhhnmhodogpojmfkjmhinfp",  // Test SSH Client
   "pnhechapfaindjhompbnflcldabbghjo",  // HTerm App (SSH Client)
@@ -594,7 +600,7 @@ void HandleSingleTabModeBlockOnUIThread(const BlockedWindowParams& params) {
   SingleTabModeTabHelper::FromWebContents(web_contents)->HandleOpenUrl(params);
 }
 
-float GetFontScaleMultiplier() {
+float GetDeviceScaleAdjustment() {
   static const float kMinFSM = 1.05f;
   static const int kWidthForMinFSM = 320;
   static const float kMaxFSM = 1.3f;
@@ -622,6 +628,8 @@ namespace chrome {
 
 ChromeContentBrowserClient::ChromeContentBrowserClient() {
 #if defined(ENABLE_PLUGINS)
+  for (size_t i = 0; i < arraysize(kPredefinedAllowedFileHandleOrigins); ++i)
+    allowed_file_handle_origins_.insert(kPredefinedAllowedFileHandleOrigins[i]);
   for (size_t i = 0; i < arraysize(kPredefinedAllowedSocketOrigins); ++i)
     allowed_socket_origins_.insert(kPredefinedAllowedSocketOrigins[i]);
 #endif
@@ -823,10 +831,37 @@ content::WebContentsViewDelegate*
 }
 
 void ChromeContentBrowserClient::GuestWebContentsCreated(
+    SiteInstance* guest_site_instance,
     WebContents* guest_web_contents,
     WebContents* opener_web_contents,
     content::BrowserPluginGuestDelegate** guest_delegate,
     scoped_ptr<base::DictionaryValue> extra_params) {
+  if (!guest_site_instance) {
+    NOTREACHED();
+    return;
+  }
+  GURL guest_site_url = guest_site_instance->GetSiteURL();
+  const std::string& extension_id = guest_site_url.host();
+
+  Profile* profile = Profile::FromBrowserContext(
+      guest_web_contents->GetBrowserContext());
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  if (!service) {
+    NOTREACHED();
+    return;
+  }
+
+  /// TODO(fsamuel): In the future, certain types of GuestViews won't require
+  // extension bindings. At that point, we should clear |extension_id| instead
+  // of exiting early.
+  if (!service->GetExtensionById(extension_id, false) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserPluginForAllViewTypes)) {
+    NOTREACHED();
+    return;
+  }
+
   if (opener_web_contents) {
     GuestView* guest = GuestView::FromWebContents(opener_web_contents);
     if (!guest) {
@@ -836,7 +871,9 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
 
     // Create a new GuestView of the same type as the opener.
     *guest_delegate =
-        GuestView::Create(guest_web_contents, guest->GetViewType());
+        GuestView::Create(guest_web_contents,
+                          extension_id,
+                          guest->GetViewType());
     return;
   }
 
@@ -847,48 +884,29 @@ void ChromeContentBrowserClient::GuestWebContentsCreated(
   std::string api_type;
   extra_params->GetString(guestview::kParameterApi, &api_type);
 
+  if (api_type.empty())
+    return;
+
   *guest_delegate =
       GuestView::Create(guest_web_contents,
+                        extension_id,
                         GuestView::GetViewTypeFromString(api_type));
 }
 
 void ChromeContentBrowserClient::GuestWebContentsAttached(
     WebContents* guest_web_contents,
     WebContents* embedder_web_contents,
-    const GURL& embedder_frame_url,
     const base::DictionaryValue& extra_params) {
-  Profile* profile = Profile::FromBrowserContext(
-      embedder_web_contents->GetBrowserContext());
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  if (!service) {
-    NOTREACHED();
-    return;
-  }
 
-  // We usually require BrowserPlugins to be hosted by a storage isolated
-  // extension. We treat WebUI pages as a special case if they host the
-  // BrowserPlugin in a component extension iframe. In that case, we use the
-  // iframe's URL to determine the extension.
-  const GURL& embedder_site_url =
-      embedder_web_contents->GetSiteInstance()->GetSiteURL();
-  const Extension* extension = service->extensions()->GetExtensionOrAppByURL(
-      content::HasWebUIScheme(embedder_site_url) ?
-          embedder_frame_url : embedder_site_url);
-  if (!extension) {
+  GuestView* guest = GuestView::FromWebContents(guest_web_contents);
+  if (!guest) {
     // It's ok to return here, since we could be running a browser plugin
     // outside an extension, and don't need to attach a
     // BrowserPluginGuestDelegate in that case;
     // e.g. running with flag --enable-browser-plugin-for-all-view-types.
     return;
   }
-
-  GuestView* guest = GuestView::FromWebContents(guest_web_contents);
-  if (!guest) {
-    NOTREACHED();
-    return;
-  }
-  guest->Attach(embedder_web_contents, extension->id(), extra_params);
+  guest->Attach(embedder_web_contents, extra_params);
 }
 
 void ChromeContentBrowserClient::RenderProcessHostCreated(
@@ -1422,6 +1440,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           chromeos::switches::kLoginProfile, login_profile);
 #endif
 
+#if defined(ENABLE_WEBRTC)
+    if (VersionInfo::GetChannel() <= VersionInfo::CHANNEL_DEV) {
+      static const char* const kWebRtcDevSwitchNames[] = {
+        switches::kDisableWebRtcEncryption,
+      };
+      command_line->CopySwitchesFrom(browser_command_line,
+                                     kWebRtcDevSwitchNames,
+                                     arraysize(kWebRtcDevSwitchNames));
+    }
+#endif
+
     content::RenderProcessHost* process =
         content::RenderProcessHost::FromID(child_process_id);
     if (process) {
@@ -1431,12 +1460,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
           extensions::ExtensionSystem::Get(profile)->extension_service();
       if (extension_service) {
         extensions::ProcessMap* process_map = extension_service->process_map();
-        if (process_map && process_map->Contains(process->GetID())) {
+        if (process_map && process_map->Contains(process->GetID()))
           command_line->AppendSwitch(switches::kExtensionProcess);
-#if defined(OS_WIN) && defined(USE_AURA)
-          command_line->AppendSwitch(switches::kDisableGpuCompositing);
-#endif
-        }
       }
 
       PrefService* prefs = profile->GetPrefs();
@@ -2219,9 +2244,9 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   web_prefs->allow_running_insecure_content =
       prefs->GetBoolean(prefs::kWebKitAllowRunningInsecureContent);
 #if defined(OS_ANDROID)
-  web_prefs->text_autosizing_font_scale_factor =
-      static_cast<float>(prefs->GetDouble(prefs::kWebKitFontScaleFactor)) *
-      GetFontScaleMultiplier();
+  web_prefs->font_scale_factor =
+      static_cast<float>(prefs->GetDouble(prefs::kWebKitFontScaleFactor));
+  web_prefs->device_scale_adjustment = GetDeviceScaleAdjustment();
   web_prefs->force_enable_zoom =
       prefs->GetBoolean(prefs::kWebKitForceEnableZoom);
 #endif
@@ -2231,16 +2256,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
       prefs->GetBoolean(prefs::kWebKitPasswordEchoEnabled);
 #else
   web_prefs->password_echo_enabled = browser_defaults::kPasswordEchoEnabled;
-#endif
-
-#if defined(OS_CHROMEOS)
-  // Enable password echo during OOBE when keyboard driven flag is set.
-  if (chromeos::UserManager::IsInitialized() &&
-      !chromeos::UserManager::Get()->IsUserLoggedIn() &&
-      !chromeos::StartupUtils::IsOobeCompleted() &&
-      chromeos::system::keyboard_settings::ForceKeyboardDrivenUINavigation()) {
-    web_prefs->password_echo_enabled = true;
-  }
 #endif
 
 #if defined(OS_ANDROID)

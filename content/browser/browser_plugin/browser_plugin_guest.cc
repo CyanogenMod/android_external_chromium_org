@@ -636,6 +636,7 @@ BrowserPluginGuest::~BrowserPluginGuest() {
 // static
 BrowserPluginGuest* BrowserPluginGuest::Create(
     int instance_id,
+    SiteInstance* guest_site_instance,
     WebContentsImpl* web_contents,
     scoped_ptr<base::DictionaryValue> extra_params) {
   RecordAction(UserMetricsAction("BrowserPlugin.Guest.Create"));
@@ -649,7 +650,7 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
   web_contents->SetBrowserPluginGuest(guest);
   BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
-      web_contents, NULL, &delegate, extra_params.Pass());
+      guest_site_instance, web_contents, NULL, &delegate, extra_params.Pass());
   guest->SetDelegate(delegate);
   return guest;
 }
@@ -666,6 +667,7 @@ BrowserPluginGuest* BrowserPluginGuest::CreateWithOpener(
   web_contents->SetBrowserPluginGuest(guest);
   BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
+      opener->GetWebContents()->GetSiteInstance(),
       web_contents, opener->GetWebContents(), &delegate,
       scoped_ptr<base::DictionaryValue>());
   guest->SetDelegate(delegate);
@@ -1339,7 +1341,7 @@ void BrowserPluginGuest::OnLockMouseAck(int instance_id, bool succeeded) {
 void BrowserPluginGuest::OnNavigateGuest(
     int instance_id,
     const std::string& src) {
-  GURL url(src);
+  GURL url = delegate_ ? delegate_->ResolveURL(src) : GURL(src);
   // We do not load empty urls in web_contents.
   // If a guest sets empty src attribute after it has navigated to some
   // non-empty page, the action is considered no-op. This empty src navigation

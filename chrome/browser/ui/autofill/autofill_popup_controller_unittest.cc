@@ -15,9 +15,11 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "components/autofill/core/browser/test_autofill_manager_delegate.h"
+#include "grit/webkit_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
 
@@ -68,7 +70,7 @@ class TestAutofillPopupController : public AutofillPopupControllerImpl {
       base::WeakPtr<AutofillExternalDelegate> external_delegate,
       const gfx::RectF& element_bounds)
       : AutofillPopupControllerImpl(
-            external_delegate, NULL, element_bounds,
+            external_delegate, NULL, NULL, element_bounds,
             base::i18n::UNKNOWN_DIRECTION) {}
   virtual ~TestAutofillPopupController() {}
 
@@ -142,7 +144,7 @@ class AutofillPopupControllerUnitTest : public ChromeRenderViewHostTestHarness {
 
     autofill_popup_controller_ =
         new testing::NiceMock<TestAutofillPopupController>(
-            external_delegate_->GetWeakPtr(), gfx::Rect());
+            external_delegate_->GetWeakPtr(),gfx::Rect());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -316,23 +318,25 @@ TEST_F(AutofillPopupControllerUnitTest, RowWidthWithoutText) {
   // all combinations of subtexts and icons.
   subtexts[1] = ASCIIToUTF16("x");
   subtexts[3] = ASCIIToUTF16("x");
-  icons[2] = ASCIIToUTF16("x");
-  icons[3] = ASCIIToUTF16("x");
+  icons[2] = ASCIIToUTF16("americanExpressCC");
+  icons[3] = ASCIIToUTF16("genericCC");
   autofill_popup_controller_->Show(names, subtexts, icons, ids);
 
   int base_size =
       AutofillPopupView::kEndPadding * 2 +
       AutofillPopupView::kBorderThickness * 2;
   int subtext_increase = AutofillPopupView::kNamePadding;
-  int icon_increase = AutofillPopupView::kIconPadding +
-      AutofillPopupView::kAutofillIconWidth;
 
   EXPECT_EQ(base_size, autofill_popup_controller_->RowWidthWithoutText(0));
   EXPECT_EQ(base_size + subtext_increase,
             autofill_popup_controller_->RowWidthWithoutText(1));
-  EXPECT_EQ(base_size + icon_increase,
+  EXPECT_EQ(base_size + AutofillPopupView::kIconPadding +
+                ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+                    IDR_AUTOFILL_CC_AMEX).Width(),
             autofill_popup_controller_->RowWidthWithoutText(2));
-  EXPECT_EQ(base_size + subtext_increase + icon_increase,
+  EXPECT_EQ(base_size + subtext_increase + AutofillPopupView::kIconPadding +
+                ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+                    IDR_AUTOFILL_CC_GENERIC).Width(),
             autofill_popup_controller_->RowWidthWithoutText(3));
 }
 
@@ -429,20 +433,21 @@ TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
 
   WeakPtr<AutofillPopupControllerImpl> controller =
       AutofillPopupControllerImpl::GetOrCreate(
-          WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(), NULL,
-          gfx::Rect(), base::i18n::UNKNOWN_DIRECTION);
+          WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(),
+          NULL, NULL, gfx::Rect(), base::i18n::UNKNOWN_DIRECTION);
   EXPECT_TRUE(controller.get());
 
   controller->Hide();
 
   controller = AutofillPopupControllerImpl::GetOrCreate(
-      WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(), NULL,
-      gfx::Rect(), base::i18n::UNKNOWN_DIRECTION);
+      WeakPtr<AutofillPopupControllerImpl>(), delegate.GetWeakPtr(),
+      NULL, NULL, gfx::Rect(), base::i18n::UNKNOWN_DIRECTION);
   EXPECT_TRUE(controller.get());
 
   WeakPtr<AutofillPopupControllerImpl> controller2 =
       AutofillPopupControllerImpl::GetOrCreate(controller,
                                                delegate.GetWeakPtr(),
+                                               NULL,
                                                NULL,
                                                gfx::Rect(),
                                                base::i18n::UNKNOWN_DIRECTION);
@@ -459,6 +464,7 @@ TEST_F(AutofillPopupControllerUnitTest, GetOrCreate) {
       AutofillPopupControllerImpl::GetOrCreate(
           test_controller->GetWeakPtr(),
           delegate.GetWeakPtr(),
+          NULL,
           NULL,
           bounds,
           base::i18n::UNKNOWN_DIRECTION);
@@ -484,6 +490,7 @@ TEST_F(AutofillPopupControllerUnitTest, ProperlyResetController) {
           popup_controller()->GetWeakPtr(),
           delegate()->GetWeakPtr(),
           NULL,
+          NULL,
           gfx::Rect(),
           base::i18n::UNKNOWN_DIRECTION);
   EXPECT_NE(0, controller->selected_line());
@@ -500,7 +507,7 @@ TEST_F(AutofillPopupControllerUnitTest, ElideText) {
   subtexts.push_back(ASCIIToUTF16("Label that will be trimmed"));
   subtexts.push_back(ASCIIToUTF16("Untrimmed"));
 
-  std::vector<string16> icons(2, string16());
+  std::vector<string16> icons(2, ASCIIToUTF16("genericCC"));
   std::vector<int> autofill_ids(2, 0);
 
   // Show the popup once so we can easily generate the size it needs.

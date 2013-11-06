@@ -19,7 +19,6 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
       ],
       'defines': [
@@ -258,6 +257,7 @@
         'page_setup_unittest.cc',
         'pdf_metafile_cg_mac_unittest.cc',
         'printed_page_unittest.cc',
+        'printing_context_win_unittest.cc',
         'units_unittest.cc',
       ],
       'conditions': [
@@ -269,11 +269,6 @@
         ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]}],
-        ['OS=="win" and use_aura == 0', {
-          'sources': [
-            'printing_context_win_unittest.cc',
-          ]
-        }],
         ['use_cups==1', {
           'defines': [
             'USE_CUPS',

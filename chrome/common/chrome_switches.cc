@@ -495,6 +495,11 @@ const char kDisableTLSChannelID[]           = "disable-tls-channel-id";
 // webcams and microphones, especially on non-HTTPS pages.
 const char kDisableUserMediaSecurity[]      = "disable-user-media-security";
 
+// Do not expose WebGL extension WEBGL_debug_renderer_info to unprivileged code
+// in the browser.
+const char kDisableWebGLDebugRendererInfo[] =
+    "disable-webgl-debug-renderer-info";
+
 // Disables the backend service for web resources.
 const char kDisableWebResources[]           = "disable-web-resources";
 
@@ -684,7 +689,7 @@ const char kEnableOmniboxAutoCompletionForIme[] =
 const char kEnablePanels[]                  = "enable-panels";
 
 // Enables searching for people from the apps list search box.
-const char kDisablePeopleSearch[]           = "disable-people-search";
+const char kEnablePeopleSearch[]            = "enable-people-search";
 
 // Disables the usage of Portable Native Client.
 const char kDisablePnacl[]                  = "disable-pnacl";
@@ -1287,10 +1292,6 @@ const char kSbDisableSideEffectFreeWhitelist[] =
 // URL to send safebrowsing download feedback reports to.
 const char kSbDownloadFeedbackURL[] = "safebrowsing-download-feedback-url";
 
-// Enable safebrowsing download feedback.
-const char kSbEnableDownloadFeedback[] =
-    "safebrowsing-enable-download-feedback";
-
 // Enables or disables extension scripts badges in the location bar.
 const char kScriptBadges[]                  = "script-badges";
 
@@ -1612,6 +1613,10 @@ const char kUseMockKeychain[]               = "use-mock-keychain";
 #endif
 
 #if defined(OS_WIN)
+// Force-enables the profile shortcut manager. This is needed for tests since
+// they use a custom-user-data-dir which disables this.
+const char kEnableProfileShortcutManager[]  = "enable-profile-shortcut-manager";
+
 // For the DelegateExecute verb handler to launch Chrome in metro mode on
 // Windows 8 and higher.  Used when relaunching metro Chrome.
 const char kForceImmersive[]                = "force-immersive";

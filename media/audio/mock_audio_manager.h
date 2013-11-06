@@ -67,9 +67,10 @@ class MockAudioManager : public media::AudioManager {
   virtual std::string GetAssociatedOutputDeviceID(
       const std::string& input_device_id) OVERRIDE;
 
- private:
+ protected:
   virtual ~MockAudioManager();
 
+ private:
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAudioManager);

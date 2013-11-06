@@ -28,6 +28,7 @@
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/manifest_constants.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "url/gurl.h"
 
@@ -173,7 +174,7 @@ class ConfigParserTest : public testing::Test {
       const GURL& url,
       net::URLFetcherDelegate* fetcher_delegate,
       const std::string& response_data,
-      bool success);
+      net::HttpStatusCode response_code);
 
   MOCK_METHOD0(Callback, void(void));
 
@@ -213,10 +214,13 @@ scoped_ptr<net::FakeURLFetcher> ConfigParserTest::CreateFakeURLFetcher(
     const GURL& url,
     net::URLFetcherDelegate* fetcher_delegate,
     const std::string& response_data,
-    bool success) {
+    net::HttpStatusCode response_code) {
   request_listener_.real_delegate = fetcher_delegate;
   scoped_ptr<net::FakeURLFetcher> fetcher(
-      new net::FakeURLFetcher(url, &request_listener_, response_data, success));
+      new net::FakeURLFetcher(url,
+                              &request_listener_,
+                              response_data,
+                              response_code));
   scoped_refptr<net::HttpResponseHeaders> download_headers =
       new net::HttpResponseHeaders("");
   download_headers->AddHeader("Content-Type: text/xml");
@@ -649,7 +653,7 @@ TEST_F(ProfileResetterTest, ResetFewFlags) {
 // Tries to load unavailable config file.
 TEST_F(ConfigParserTest, NoConnectivity) {
   const GURL url("http://test");
-  factory().SetFakeResponse(url, "", false);
+  factory().SetFakeResponse(url, "", net::HTTP_INTERNAL_SERVER_ERROR);
 
   scoped_ptr<BrandcodeConfigFetcher> fetcher = WaitForRequest(GURL(url));
   EXPECT_FALSE(fetcher->GetSettings());
@@ -663,7 +667,7 @@ TEST_F(ConfigParserTest, ParseConfig) {
   ReplaceString(&xml_config,
                 "placeholder_for_id",
                 "abbaabbaabbaabbaabbaabbaabbaabba");
-  factory().SetFakeResponse(url, xml_config, true);
+  factory().SetFakeResponse(url, xml_config, net::HTTP_OK);
 
   scoped_ptr<BrandcodeConfigFetcher> fetcher = WaitForRequest(GURL(url));
   scoped_ptr<BrandcodedDefaultSettings> settings = fetcher->GetSettings();
@@ -773,8 +777,7 @@ TEST_F(ProfileResetterTest, FeedbackSerializtionTest) {
                  expand_this_test);
   for (int field_mask = 0; field_mask <= ResettableSettingsSnapshot::ALL_FIELDS;
        ++field_mask) {
-    std::string report = SerializeSettingsReport(nonorganic_snap, field_mask,
-                                                 PROFILE_RESET_WEBUI);
+    std::string report = SerializeSettingsReport(nonorganic_snap, field_mask);
     JSONStringValueSerializer json(report);
     std::string error;
     scoped_ptr<base::Value> root(json.Deserialize(NULL, &error));
@@ -790,7 +793,6 @@ TEST_F(ProfileResetterTest, FeedbackSerializtionTest) {
     bool homepage_is_ntp = true;
     std::string default_search_engine;
     ListValue* extensions;
-    int initiator = 0;
 
     EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::STARTUP_MODE),
               dict->GetList("startup_urls", &startup_urls));
@@ -804,7 +806,6 @@ TEST_F(ProfileResetterTest, FeedbackSerializtionTest) {
               dict->GetString("default_search_engine", &default_search_engine));
     EXPECT_EQ(!!(field_mask & ResettableSettingsSnapshot::EXTENSIONS),
               dict->GetList("enabled_extensions", &extensions));
-    EXPECT_TRUE(dict->GetInteger("initiator", &initiator));
   }
 }
 

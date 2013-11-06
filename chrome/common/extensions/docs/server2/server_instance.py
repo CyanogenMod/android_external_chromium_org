@@ -5,11 +5,11 @@
 from api_data_source import APIDataSource
 from api_list_data_source import APIListDataSource
 from api_models import APIModels
-from appengine_wrappers import IsDevServer
 from availability_finder import AvailabilityFinder
 from compiled_file_system import CompiledFileSystem
-from directory_zipper import DirectoryZipper
+from content_providers import ContentProviders
 from empty_dir_file_system import EmptyDirFileSystem
+from environment import IsDevServer
 from features_bundle import FeaturesBundle
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
@@ -17,11 +17,10 @@ from host_file_system_iterator import HostFileSystemIterator
 from intro_data_source import IntroDataSource
 from object_store_creator import ObjectStoreCreator
 from path_canonicalizer import PathCanonicalizer
-from redirector import Redirector
 from reference_resolver import ReferenceResolver
 from samples_data_source import SamplesDataSource
 import svn_constants
-from template_data_source import TemplateDataSource
+from template_renderer import TemplateRenderer
 from test_branch_utility import TestBranchUtility
 from test_object_store import TestObjectStore
 
@@ -89,7 +88,6 @@ class ServerInstance(object):
     self.api_list_data_source_factory = APIListDataSource.Factory(
         self.compiled_fs_factory,
         host_fs_at_trunk,
-        svn_constants.PUBLIC_TEMPLATE_PATH,
         self.features_bundle,
         self.object_store_creator)
 
@@ -102,7 +100,7 @@ class ServerInstance(object):
 
     self.ref_resolver_factory = ReferenceResolver.Factory(
         self.api_data_source_factory,
-        self.api_list_data_source_factory,
+        self.api_models,
         object_store_creator)
 
     self.api_data_source_factory.SetReferenceResolverFactory(
@@ -134,37 +132,22 @@ class ServerInstance(object):
         self.ref_resolver_factory,
         [svn_constants.INTRO_PATH, svn_constants.ARTICLE_PATH])
 
-    self.directory_zipper = DirectoryZipper(
-        self.compiled_fs_factory,
-        host_fs_at_trunk)
-
     self.path_canonicalizer = PathCanonicalizer(
         self.compiled_fs_factory,
         host_fs_at_trunk)
 
-    self.redirector = Redirector(
+    self.content_providers = ContentProviders(
         self.compiled_fs_factory,
-        host_fs_at_trunk,
-        svn_constants.PUBLIC_TEMPLATE_PATH)
+        host_fs_at_trunk)
+
+    # TODO(kalman): Move all the remaining DataSources into DataSourceRegistry,
+    # then factor out the DataSource creation into a factory method, so that
+    # the entire ServerInstance doesn't need to be passed in here.
+    self.template_renderer = TemplateRenderer(self)
 
     self.strings_json_path = svn_constants.STRINGS_JSON_PATH
     self.manifest_json_path = svn_constants.MANIFEST_JSON_PATH
     self.manifest_features_path = svn_constants.MANIFEST_FEATURES_PATH
-
-    self.template_data_source_factory = TemplateDataSource.Factory(
-        self.api_data_source_factory,
-        self.api_list_data_source_factory,
-        self.intro_data_source_factory,
-        self.samples_data_source_factory,
-        self.compiled_fs_factory,
-        host_fs_at_trunk,
-        self.ref_resolver_factory,
-        svn_constants.PUBLIC_TEMPLATE_PATH,
-        svn_constants.PRIVATE_TEMPLATE_PATH,
-        base_path)
-
-    self.api_data_source_factory.SetTemplateDataSource(
-        self.template_data_source_factory)
 
   @staticmethod
   def ForTest(file_system, base_path='/'):

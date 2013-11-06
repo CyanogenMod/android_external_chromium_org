@@ -103,10 +103,12 @@ LOCAL_SRC_FILES := \
 	net/cert/cert_verify_proc_android.cc \
 	net/cert/cert_verify_result.cc \
 	net/cert/crl_set.cc \
+	net/cert/ct_serialization.cc \
 	net/cert/ev_root_ca_metadata.cc \
 	net/cert/jwk_serializer_openssl.cc \
 	net/cert/multi_threaded_cert_verifier.cc \
 	net/cert/pem_tokenizer.cc \
+	net/cert/signed_certificate_timestamp.cc \
 	net/cert/single_request_cert_verifier.cc \
 	net/cert/test_root_certs.cc \
 	net/cert/test_root_certs_android.cc \
@@ -299,7 +301,6 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/crypto_framer.cc \
 	net/quic/crypto/crypto_handshake.cc \
 	net/quic/crypto/crypto_secret_boxer.cc \
-	net/quic/crypto/crypto_server_config.cc \
 	net/quic/crypto/crypto_server_config_protobuf.cc \
 	net/quic/crypto/crypto_utils.cc \
 	net/quic/crypto/curve25519_key_exchange.cc \
@@ -309,6 +310,8 @@ LOCAL_SRC_FILES := \
 	net/quic/crypto/proof_source_chromium.cc \
 	net/quic/crypto/proof_verifier.cc \
 	net/quic/crypto/proof_verifier_chromium.cc \
+	net/quic/crypto/quic_crypto_client_config.cc \
+	net/quic/crypto/quic_crypto_server_config.cc \
 	net/quic/crypto/quic_decrypter.cc \
 	net/quic/crypto/quic_encrypter.cc \
 	net/quic/crypto/quic_random.cc \

@@ -19,6 +19,7 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
 #include "components/webdata/common/web_data_service_consumer.h"
 
+class PrefService;
 class RemoveAutofillTester;
 
 namespace content {
@@ -54,8 +55,9 @@ class PersonalDataManager : public WebDataServiceConsumer,
   explicit PersonalDataManager(const std::string& app_locale);
   virtual ~PersonalDataManager();
 
-  // Kicks off asynchronous loading of profiles and credit cards.
-  void Init(content::BrowserContext* context);
+  // Kicks off asynchronous loading of profiles and credit cards. |context| and
+  // |pref_service| must outlive this instance.
+  void Init(content::BrowserContext* context, PrefService* pref_service);
 
   // WebDataServiceConsumer:
   virtual void OnWebDataServiceRequestDone(
@@ -126,7 +128,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // lifetime is until the web database is updated with new profile and credit
   // card information, respectively.  |GetProfiles()| returns both web and
   // auxiliary profiles.  |web_profiles()| returns only web profiles.
-  virtual const std::vector<AutofillProfile*>& GetProfiles();
+  virtual const std::vector<AutofillProfile*>& GetProfiles() const;
   virtual const std::vector<AutofillProfile*>& web_profiles() const;
   virtual const std::vector<CreditCard*>& GetCreditCards() const;
 
@@ -181,6 +183,11 @@ class PersonalDataManager : public WebDataServiceConsumer,
       const std::string& app_locale,
       std::vector<AutofillProfile>* merged_profiles);
 
+  // Returns our best guess for the country a user is likely to use when
+  // inputting a new address. The value is calculated once and cached, so it
+  // will only update when Chrome is restarted.
+  const std::string& GetDefaultCountryCodeForNewAddress() const;
+
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
@@ -221,7 +228,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   virtual void LoadProfiles();
 
   // Loads the auxiliary profiles.  Currently Mac and Android only.
-  virtual void LoadAuxiliaryProfiles();
+  virtual void LoadAuxiliaryProfiles() const;
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
@@ -251,6 +258,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   const AutofillMetrics* metric_logger() const;
   void set_metric_logger(const AutofillMetrics* metric_logger);
   void set_browser_context(content::BrowserContext* context);
+  void set_pref_service(PrefService* pref_service);
 
   // The browser context this PersonalDataManager is in.
   content::BrowserContext* browser_context_;
@@ -282,10 +290,20 @@ class PersonalDataManager : public WebDataServiceConsumer,
   ObserverList<PersonalDataManagerObserver> observers_;
 
  private:
+  // Finds the country code that occurs most frequently among all profiles.
+  // Prefers verified profiles over unverified ones.
+  std::string MostCommonCountryCodeFromProfiles() const;
+
   const std::string app_locale_;
+
+  // The default country code for new addresses.
+  mutable std::string default_country_code_;
 
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;
+
+  // The PrefService that this instance uses. Must outlive this instance.
+  PrefService* pref_service_;
 
   // Whether we have already logged the number of profiles this session.
   mutable bool has_logged_profile_count_;

@@ -25,7 +25,6 @@
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 
 namespace autofill {
@@ -139,6 +138,12 @@ bool IsValidFieldTypeAndValue(const std::set<ServerFieldType>& types_seen,
   return true;
 }
 
+// A helper function for finding the maximum value in a string->int map.
+static bool CompareVotes(const std::pair<std::string, int>& a,
+                         const std::pair<std::string, int>& b) {
+  return a.second < b.second;
+}
+
 }  // namespace
 
 PersonalDataManager::PersonalDataManager(const std::string& app_locale)
@@ -150,8 +155,10 @@ PersonalDataManager::PersonalDataManager(const std::string& app_locale)
       metric_logger_(new AutofillMetrics),
       has_logged_profile_count_(false) {}
 
-void PersonalDataManager::Init(content::BrowserContext* browser_context) {
+void PersonalDataManager::Init(content::BrowserContext* browser_context,
+                               PrefService* pref_service) {
   browser_context_ = browser_context;
+  pref_service_ = pref_service;
 
   if (!browser_context_->IsOffTheRecord())
     metric_logger_->LogIsAutofillEnabledAtStartup(IsAutofillEnabled());
@@ -542,9 +549,8 @@ bool PersonalDataManager::IsDataLoaded() const {
   return is_data_loaded_;
 }
 
-const std::vector<AutofillProfile*>& PersonalDataManager::GetProfiles() {
-  if (!user_prefs::UserPrefs::Get(browser_context_)->GetBoolean(
-          prefs::kAutofillAuxiliaryProfilesEnabled)) {
+const std::vector<AutofillProfile*>& PersonalDataManager::GetProfiles() const {
+  if (!pref_service_->GetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled)) {
     return web_profiles();
   }
 
@@ -698,8 +704,7 @@ void PersonalDataManager::GetCreditCardSuggestions(
 }
 
 bool PersonalDataManager::IsAutofillEnabled() const {
-  return user_prefs::UserPrefs::Get(browser_context_)->GetBoolean(
-      prefs::kAutofillEnabled);
+  return pref_service_->GetBoolean(prefs::kAutofillEnabled);
 }
 
 // static
@@ -763,6 +768,19 @@ std::string PersonalDataManager::MergeProfile(
     merged_profiles->push_back(new_profile);
 
   return guid;
+}
+
+const std::string& PersonalDataManager::GetDefaultCountryCodeForNewAddress()
+    const {
+  if (default_country_code_.empty())
+    default_country_code_ = MostCommonCountryCodeFromProfiles();
+
+  // If the profiles don't help, guess based on locale.
+  // TODO(estade): prefer to use the timezone instead.
+  if (default_country_code_.empty())
+    default_country_code_ = AutofillCountry::CountryCodeForLocale(app_locale());
+
+  return default_country_code_;
 }
 
 void PersonalDataManager::SetProfiles(std::vector<AutofillProfile>* profiles) {
@@ -888,7 +906,7 @@ void PersonalDataManager::LoadProfiles() {
 // Win and Linux implementations do nothing. Mac and Android implementations
 // fill in the contents of |auxiliary_profiles_|.
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-void PersonalDataManager::LoadAuxiliaryProfiles() {
+void PersonalDataManager::LoadAuxiliaryProfiles() const {
 }
 #endif
 
@@ -1029,6 +1047,39 @@ void PersonalDataManager::set_metric_logger(
 void PersonalDataManager::set_browser_context(
     content::BrowserContext* context) {
   browser_context_ = context;
+}
+
+void PersonalDataManager::set_pref_service(PrefService* pref_service) {
+  pref_service_ = pref_service;
+}
+
+std::string PersonalDataManager::MostCommonCountryCodeFromProfiles() const {
+  // Count up country codes from existing profiles.
+  std::map<std::string, int> votes;
+  // TODO(estade): can we make this GetProfiles() instead? It seems to cause
+  // errors in tests on mac trybots. See http://crbug.com/57221
+  const std::vector<AutofillProfile*>& profiles = web_profiles();
+  std::vector<std::string> country_codes;
+  AutofillCountry::GetAvailableCountries(&country_codes);
+  for (size_t i = 0; i < profiles.size(); ++i) {
+    std::string country_code = StringToUpperASCII(UTF16ToASCII(
+        profiles[i]->GetRawInfo(ADDRESS_HOME_COUNTRY)));
+
+    if (std::find(country_codes.begin(), country_codes.end(), country_code) !=
+            country_codes.end()) {
+      // Verified profiles count 100x more than unverified ones.
+      votes[country_code] += profiles[i]->IsVerified() ? 100 : 1;
+    }
+  }
+
+  // Take the most common country code.
+  if (!votes.empty()) {
+    std::map<std::string, int>::iterator iter =
+        std::max_element(votes.begin(), votes.end(), CompareVotes);
+    return iter->first;
+  }
+
+  return std::string();
 }
 
 }  // namespace autofill

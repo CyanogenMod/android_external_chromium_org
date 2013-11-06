@@ -151,6 +151,7 @@ extern const char kDisableSyncTypedUrls[];
 extern const char kDisableTranslate[];
 extern const char kDisableTLSChannelID[];
 extern const char kDisableUserMediaSecurity[];
+extern const char kDisableWebGLDebugRendererInfo[];
 extern const char kDisableWebResources[];
 extern const char kDisableZeroBrowsersOpenForTests[];
 extern const char kDiskCacheDir[];
@@ -199,7 +200,7 @@ extern const char kEnableOmniboxAutoCompletionForIme[];
 extern const char kEnablePanels[];
 extern const char kEnablePasswordAutofillPublicSuffixDomainMatching[];
 extern const char kEnablePasswordManagerReauthentication[];
-extern const char kDisablePeopleSearch[];
+extern const char kEnablePeopleSearch[];
 extern const char kEnablePrecache[];
 extern const char kEnablePrivetLocalPrinting[];
 extern const char kEnableProfiling[];
@@ -344,7 +345,6 @@ extern const char kSbDisableDownloadProtection[];
 extern const char kSbDisableExtensionBlacklist[];
 extern const char kSbDisableSideEffectFreeWhitelist[];
 extern const char kSbDownloadFeedbackURL[];
-extern const char kSbEnableDownloadFeedback[];
 extern const char kScriptBadges[];
 extern const char kScriptBubble[];
 extern const char kServiceProcess[];
@@ -455,6 +455,7 @@ extern const char kUseMockKeychain[];
 #endif
 
 #if defined(OS_WIN)
+extern const char kEnableProfileShortcutManager[];
 extern const char kForceImmersive[];
 extern const char kForceDesktop[];
 extern const char kPrintRaster[];

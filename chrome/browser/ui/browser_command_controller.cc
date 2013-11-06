@@ -49,6 +49,7 @@
 #include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/ui/apps/apps_metro_handler_win.h"
+#include "content/public/browser/gpu_data_manager.h"
 #endif
 
 #if defined(USE_ASH)
@@ -57,6 +58,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "ash/multi_profile_uma.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/multi_user_window_manager.h"
@@ -132,7 +134,7 @@ class SwitchToMetroUIHandler
       case ShellIntegration::STATE_UNKNOWN :
         break;
       case ShellIntegration::STATE_IS_DEFAULT:
-        chrome::AttemptRestartWithModeSwitch();
+        chrome::AttemptRestartToMetroMode();
         break;
       case ShellIntegration::STATE_NOT_DEFAULT:
         if (first_check_) {
@@ -462,6 +464,8 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
 #if defined(OS_CHROMEOS)
     case IDC_VISIT_DESKTOP_OF_LRU_USER_2:
     case IDC_VISIT_DESKTOP_OF_LRU_USER_3: {
+        ash::MultiProfileUMA::RecordTeleportAction(
+            ash::MultiProfileUMA::TELEPORT_WINDOW_CAPTION_MENU);
         // When running the multi user mode on Chrome OS, windows can "visit"
         // another user's desktop.
         const std::string& user_id =
@@ -483,7 +487,7 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       browser_->SetMetroSnapMode(false);
       break;
     case IDC_WIN8_DESKTOP_RESTART:
-      chrome::AttemptRestartWithModeSwitch();
+      chrome::AttemptRestartToDesktopMode();
       content::RecordAction(content::UserMetricsAction("Win8DesktopRestart"));
       break;
     case IDC_WIN8_METRO_RESTART:
@@ -649,19 +653,19 @@ void BrowserCommandController::ExecuteCommandWithDisposition(
       CreateApplicationShortcuts(browser_);
       break;
     case IDC_DEV_TOOLS:
-      ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_SHOW);
+      ToggleDevToolsWindow(browser_, DevToolsToggleAction::Show());
       break;
     case IDC_DEV_TOOLS_CONSOLE:
-      ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_SHOW_CONSOLE);
+      ToggleDevToolsWindow(browser_, DevToolsToggleAction::ShowConsole());
       break;
     case IDC_DEV_TOOLS_DEVICES:
       InspectUI::InspectDevices(browser_);
       break;
     case IDC_DEV_TOOLS_INSPECT:
-      ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_INSPECT);
+      ToggleDevToolsWindow(browser_, DevToolsToggleAction::Inspect());
       break;
     case IDC_DEV_TOOLS_TOGGLE:
-      ToggleDevToolsWindow(browser_, DEVTOOLS_TOGGLE_ACTION_TOGGLE);
+      ToggleDevToolsWindow(browser_, DevToolsToggleAction::Toggle());
       break;
     case IDC_TASK_MANAGER:
       OpenTaskManager(browser_);
@@ -965,7 +969,13 @@ void BrowserCommandController::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_SELECT_TAB_7, normal_window);
   command_updater_.UpdateCommandEnabled(IDC_SELECT_LAST_TAB, normal_window);
 #if defined(OS_WIN)
+#if !defined(USE_AURA)
   const bool metro_mode = base::win::IsMetroProcess();
+#else
+  const bool metro_mode =
+     browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH ?
+         true : false;
+#endif
   command_updater_.UpdateCommandEnabled(IDC_METRO_SNAP_ENABLE, metro_mode);
   command_updater_.UpdateCommandEnabled(IDC_METRO_SNAP_DISABLE, metro_mode);
   int restart_mode = metro_mode ?

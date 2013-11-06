@@ -23,6 +23,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/content/browser/risk/proto/fingerprint.pb.h"
 #include "components/autofill/content/browser/wallet/full_wallet.h"
@@ -36,6 +38,7 @@
 #include "components/autofill/core/browser/test_personal_data_manager.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -224,22 +227,6 @@ class TestAutofillDialogView : public AutofillDialogView {
   DISALLOW_COPY_AND_ASSIGN(TestAutofillDialogView);
 };
 
-// Bring over command-ids from AccountChooserModel.
-class TestAccountChooserModel : public AccountChooserModel {
- public:
-  TestAccountChooserModel(AccountChooserModelDelegate* delegate,
-                          PrefService* prefs,
-                          const AutofillMetrics& metric_logger)
-      : AccountChooserModel(delegate, prefs, metric_logger) {}
-  virtual ~TestAccountChooserModel() {}
-
-  using AccountChooserModel::kAutofillItemId;
-  using AccountChooserModel::kWalletAccountsStartId;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestAccountChooserModel);
-};
-
 class TestAutofillDialogController
     : public AutofillDialogControllerImpl,
       public base::SupportsWeakPtr<TestAutofillDialogController> {
@@ -269,7 +256,8 @@ class TestAutofillDialogController
   }
 
   void Init(content::BrowserContext* browser_context) {
-    test_manager_.Init(browser_context);
+    test_manager_.Init(browser_context,
+                       user_prefs::UserPrefs::Get(browser_context));
   }
 
   TestAutofillDialogView* GetView() {
@@ -315,6 +303,8 @@ class TestAutofillDialogController
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
   using AutofillDialogControllerImpl::IsEditingExistingData;
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
+  using AutofillDialogControllerImpl::NOT_CHECKED;
+  using AutofillDialogControllerImpl::SignedInState;
 
  protected:
   virtual PersonalDataManager* GetManager() OVERRIDE {
@@ -400,6 +390,11 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
                                       true);
     profile()->GetPrefs()->ClearPref(::prefs::kAutofillDialogSaveData);
 
+    // We have to clear the old local state before creating a new one.
+    scoped_local_state_.reset();
+    scoped_local_state_.reset(new ScopedTestingLocalState(
+        TestingBrowserProcess::GetGlobal()));
+
     SetUpControllerWithFormData(DefaultFormData());
   }
 
@@ -413,7 +408,8 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     return form_data;
   }
 
-  void SetUpControllerWithFormData(const FormData& form_data) {
+  // Creates a new controller for |form_data|.
+  void ResetControllerWithFormData(const FormData& form_data) {
     if (controller_)
       controller_->ViewClosed();
 
@@ -429,6 +425,12 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
         mock_new_card_bubble_controller_.get()))->AsWeakPtr();
     controller_->Init(profile());
     controller_->Show();
+  }
+
+  // Creates a new controller for |form_data| and sets up some initial wallet
+  // data for it.
+  void SetUpControllerWithFormData(const FormData& form_data) {
+    ResetControllerWithFormData(form_data);
     std::vector<std::string> usernames;
     usernames.push_back(kFakeEmail);
     controller_->OnUserNameFetchSuccess(usernames);
@@ -612,6 +614,8 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   // Used to record when new card bubbles would show. Created in |Reset()|.
   scoped_ptr<MockNewCreditCardBubbleController>
       mock_new_card_bubble_controller_;
+
+  scoped_ptr<ScopedTestingLocalState> scoped_local_state_;
 };
 
 }  // namespace
@@ -1221,37 +1225,130 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingPhoneNumber) {
 }
 
 TEST_F(AutofillDialogControllerTest, AcceptLegalDocuments) {
-  EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              AcceptLegalDocuments(_, _));
-  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetFullWallet(_));
-  EXPECT_CALL(*controller(), LoadRiskFingerprintData());
+  for (size_t i = 0; i < 2; ++i) {
+    SCOPED_TRACE(testing::Message() << "Case " << i);
 
-  EXPECT_TRUE(controller()->LegalDocumentsText().empty());
-  controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
-  EXPECT_TRUE(controller()->LegalDocumentsText().empty());
+    EXPECT_CALL(*controller()->GetTestingWalletClient(),
+                AcceptLegalDocuments(_, _));
+    EXPECT_CALL(*controller()->GetTestingWalletClient(), GetFullWallet(_));
+    EXPECT_CALL(*controller(), LoadRiskFingerprintData());
 
-  scoped_ptr<wallet::WalletItems> wallet_items = CompleteAndValidWalletItems();
-  wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
-  wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
-  controller()->OnDidGetWalletItems(wallet_items.Pass());
-  EXPECT_FALSE(controller()->LegalDocumentsText().empty());
+    EXPECT_TRUE(controller()->LegalDocumentLinks().empty());
+    controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+    EXPECT_TRUE(controller()->LegalDocumentLinks().empty());
 
-  controller()->OnAccept();
-  controller()->OnDidAcceptLegalDocuments();
-  controller()->OnDidLoadRiskFingerprintData(GetFakeFingerprint().Pass());
+    scoped_ptr<wallet::WalletItems> wallet_items =
+        CompleteAndValidWalletItems();
+    wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
+    wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
+    controller()->OnDidGetWalletItems(wallet_items.Pass());
+    EXPECT_FALSE(controller()->LegalDocumentLinks().empty());
+
+    controller()->OnAccept();
+    controller()->OnDidAcceptLegalDocuments();
+    controller()->OnDidLoadRiskFingerprintData(GetFakeFingerprint().Pass());
+
+    // Now try it all over again with the location disclosure already accepted.
+    // Nothing should change.
+    Reset();
+    ListValue preexisting_list;
+    preexisting_list.AppendString(kFakeEmail);
+    g_browser_process->local_state()->Set(
+        ::prefs::kAutofillDialogWalletLocationAcceptance,
+        preexisting_list);
+  }
 }
 
 TEST_F(AutofillDialogControllerTest, RejectLegalDocuments) {
-  EXPECT_CALL(*controller()->GetTestingWalletClient(),
-              AcceptLegalDocuments(_, _)).Times(0);
+  for (size_t i = 0; i < 2; ++i) {
+    SCOPED_TRACE(testing::Message() << "Case " << i);
 
-  scoped_ptr<wallet::WalletItems> wallet_items = CompleteAndValidWalletItems();
-  wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
-  wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
-  controller()->OnDidGetWalletItems(wallet_items.Pass());
+    EXPECT_CALL(*controller()->GetTestingWalletClient(),
+                AcceptLegalDocuments(_, _)).Times(0);
+
+    scoped_ptr<wallet::WalletItems> wallet_items =
+        CompleteAndValidWalletItems();
+    wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
+    wallet_items->AddLegalDocument(wallet::GetTestLegalDocument());
+    controller()->OnDidGetWalletItems(wallet_items.Pass());
+    EXPECT_FALSE(controller()->LegalDocumentLinks().empty());
+
+    controller()->OnCancel();
+
+    // Now try it all over again with the location disclosure already accepted.
+    // Nothing should change.
+    Reset();
+    ListValue preexisting_list;
+    preexisting_list.AppendString(kFakeEmail);
+    g_browser_process->local_state()->Set(
+        ::prefs::kAutofillDialogWalletLocationAcceptance,
+        preexisting_list);
+  }
+}
+
+TEST_F(AutofillDialogControllerTest, AcceptLocationDisclosure) {
+  // Check that accepting the dialog registers the user's name in the list
+  // of users who have accepted the geolocation terms.
+  EXPECT_TRUE(g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance)->empty());
+
+  controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
   EXPECT_FALSE(controller()->LegalDocumentsText().empty());
+  EXPECT_TRUE(controller()->LegalDocumentLinks().empty());
+  controller()->OnAccept();
 
+  const ListValue* list = g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance);
+  ASSERT_EQ(1U, list->GetSize());
+  std::string accepted_username;
+  EXPECT_TRUE(list->GetString(0, &accepted_username));
+  EXPECT_EQ(kFakeEmail, accepted_username);
+
+  // Now check it still works if that list starts off with some other username
+  // in it.
+  Reset();
+  list = g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance);
+  ASSERT_TRUE(list->empty());
+
+  std::string kOtherUsername("spouse@example.com");
+  ListValue preexisting_list;
+  preexisting_list.AppendString(kOtherUsername);
+  g_browser_process->local_state()->Set(
+      ::prefs::kAutofillDialogWalletLocationAcceptance,
+      preexisting_list);
+
+  controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+  EXPECT_FALSE(controller()->LegalDocumentsText().empty());
+  EXPECT_TRUE(controller()->LegalDocumentLinks().empty());
+  controller()->OnAccept();
+
+  list = g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance);
+  ASSERT_EQ(2U, list->GetSize());
+  EXPECT_NE(list->end(), list->Find(base::StringValue(kFakeEmail)));
+  EXPECT_NE(list->end(), list->Find(base::StringValue(kOtherUsername)));
+
+  // Now check the list doesn't change if the user cancels out of the dialog.
+  Reset();
+  list = g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance);
+  ASSERT_TRUE(list->empty());
+
+  g_browser_process->local_state()->Set(
+      ::prefs::kAutofillDialogWalletLocationAcceptance,
+      preexisting_list);
+
+  controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+  EXPECT_FALSE(controller()->LegalDocumentsText().empty());
+  EXPECT_TRUE(controller()->LegalDocumentLinks().empty());
   controller()->OnCancel();
+
+  list = g_browser_process->local_state()->GetList(
+      ::prefs::kAutofillDialogWalletLocationAcceptance);
+  ASSERT_EQ(1U, list->GetSize());
+  EXPECT_NE(list->end(), list->Find(base::StringValue(kOtherUsername)));
+  EXPECT_EQ(list->end(), list->Find(base::StringValue(kFakeEmail)));
 }
 
 TEST_F(AutofillDialogControllerTest, LegalDocumentOverflow) {
@@ -1632,6 +1729,8 @@ TEST_F(AutofillDialogControllerTest, VerifyCvv) {
   EXPECT_TRUE(controller()->IsDialogButtonEnabled(ui::DIALOG_BUTTON_CANCEL));
 
   controller()->OnAccept();
+
+  EXPECT_FALSE(controller()->GetDialogOverlay().image.IsEmpty());
 }
 
 TEST_F(AutofillDialogControllerTest, ErrorDuringSubmit) {
@@ -2573,6 +2672,34 @@ TEST_F(AutofillDialogControllerTest, InputEditability) {
         EXPECT_TRUE(controller()->InputIsEditable(inputs[j], sections[i]));
     }
   }
+}
+
+TEST_F(AutofillDialogControllerTest, DontGetWalletTillNecessary) {
+  // When starting on local data mode, the dialog will provide a "Use Google
+  // Wallet" link.
+  profile()->GetPrefs()->SetBoolean(
+      ::prefs::kAutofillDialogPayWithoutWallet, true);
+  ResetControllerWithFormData(DefaultFormData());
+  EXPECT_FALSE(controller()->ShouldDisableSignInLink());
+  base::string16 use_wallet_text = controller()->SignInLinkText();
+  EXPECT_EQ(TestAutofillDialogController::NOT_CHECKED,
+            controller()->SignedInState());
+
+  // When clicked, this link will ask for wallet items. If there's a signin
+  // failure, the link will switch to "Sign in to use Google Wallet".
+  EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
+  controller()->SignInLinkClicked();
+  EXPECT_NE(TestAutofillDialogController::NOT_CHECKED,
+            controller()->SignedInState());
+  std::vector<std::string> usernames;
+  usernames.push_back(kFakeEmail);
+  controller()->OnUserNameFetchSuccess(usernames);
+  controller()->OnDidFetchWalletCookieValue(std::string());
+  controller()->OnDidGetWalletItems(CompleteAndValidWalletItems());
+  controller()->OnPassiveSigninFailure(GoogleServiceAuthError(
+      GoogleServiceAuthError::CONNECTION_FAILED));
+  EXPECT_FALSE(controller()->ShouldDisableSignInLink());
+  EXPECT_NE(use_wallet_text, controller()->SignInLinkText());
 }
 
 }  // namespace autofill

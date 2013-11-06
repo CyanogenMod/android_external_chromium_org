@@ -48,8 +48,8 @@
 #include "jni/ContentViewCore_jni.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/android/view_android.h"
-#include "ui/android/window_android.h"
+#include "ui/base/android/view_android.h"
+#include "ui/base/android/window_android.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -490,6 +490,14 @@ void ContentViewCoreImpl::UnhandledFlingStartEvent() {
   if (j_obj.is_null())
     return;
   Java_ContentViewCore_unhandledFlingStartEvent(env, j_obj.obj());
+}
+
+void ContentViewCoreImpl::OnScrollUpdateGestureConsumed() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
+  if (j_obj.is_null())
+    return;
+  Java_ContentViewCore_onScrollUpdateGestureConsumed(env, j_obj.obj());
 }
 
 void ContentViewCoreImpl::HasTouchEventHandlers(bool need_touch_events) {

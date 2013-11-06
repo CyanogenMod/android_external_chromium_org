@@ -567,8 +567,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, URLLoader) {
       LIST_TEST(URLLoader_PrefetchBufferThreshold)
   );
 }
-// http://crbug.com/308906
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_URLLoader) {
+// Flaky on 32-bit linux bot; http://crbug.com/308906
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+#define MAYBE_NaCl_Glibc_URLLoader DISABLED_URLLoader
+#else
+#define MAYBE_NaCl_Glibc_URLLoader URLLoader
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_URLLoader) {
   RunTestViaHTTP(
       LIST_TEST(URLLoader_BasicGET)
       LIST_TEST(URLLoader_BasicPOST)
@@ -709,6 +714,7 @@ IN_PROC_BROWSER_TEST_F(PPAPITest, PostMessage) {
       LIST_TEST(PostMessage_SendingArrayBuffer)
       LIST_TEST(DISABLED_PostMessage_SendingArray)
       LIST_TEST(DISABLED_PostMessage_SendingDictionary)
+      LIST_TEST(DISABLED_PostMessage_SendingResource)
       LIST_TEST(DISABLED_PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
@@ -729,6 +735,7 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, MAYBE_PostMessage) {
       LIST_TEST(PostMessage_SendingArrayBuffer)
       LIST_TEST(PostMessage_SendingArray)
       LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingResource)
       LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
@@ -743,6 +750,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, PostMessage) {
       LIST_TEST(PostMessage_SendingArrayBuffer)
       LIST_TEST(PostMessage_SendingArray)
       LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingResource)
       LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
@@ -757,6 +765,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_GLIBC(PostMessage)) {
       LIST_TEST(PostMessage_SendingArrayBuffer)
       LIST_TEST(PostMessage_SendingArray)
       LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingResource)
       LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
@@ -771,6 +780,7 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, PostMessage) {
       LIST_TEST(PostMessage_SendingArrayBuffer)
       LIST_TEST(PostMessage_SendingArray)
       LIST_TEST(PostMessage_SendingDictionary)
+      LIST_TEST(PostMessage_SendingResource)
       LIST_TEST(PostMessage_SendingComplexVar)
       LIST_TEST(PostMessage_MessageEvent)
       LIST_TEST(PostMessage_NoHandler)
@@ -818,7 +828,13 @@ IN_PROC_BROWSER_TEST_F(OutOfProcessPPAPITest, FileIO) {
       LIST_TEST(FileIO_Mmap)
   );
 }
-IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
+// Flaky on XP; times out, http://crbug.com/313401
+#if defined(OS_WIN)
+#define MAYBE_FileIO DISABLED_FileIO
+#else
+#define MAYBE_FileIO FileIO
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, MAYBE_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -833,8 +849,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileIO) {
       LIST_TEST(FileIO_Mmap)
   );
 }
-// http://crbug.com/308905
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileIO) {
+// Flaky on 32-bit linux bot; http://crbug.com/308905
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+#define MAYBE_NaCl_Glibc_FileIO DISABLED_FileIO
+#else
+#define MAYBE_NaCl_Glibc_FileIO FileIO
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -851,11 +872,11 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileIO) {
 }
 // Flaky on XP; times out, http://crbug.com/313205
 #if defined(OS_WIN)
-#define MAYBE_FileIO DISABLED_FileIO
+#define MAYBE_PNaCl_FileIO DISABLED_FileIO
 #else
-#define MAYBE_FileIO FileIO
+#define MAYBE_PNaCl_FileIO FileIO
 #endif
-IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_FileIO) {
+IN_PROC_BROWSER_TEST_F(PPAPINaClPNaClTest, MAYBE_PNaCl_FileIO) {
   RunTestViaHTTP(
       LIST_TEST(FileIO_Open)
       LIST_TEST(FileIO_AbortCalls)
@@ -921,8 +942,13 @@ IN_PROC_BROWSER_TEST_F(PPAPINaClNewlibTest, FileRef) {
       LIST_TEST(DISABLED_FileRef_ReadDirectoryEntries)
   );
 }
-// http://crbug.com/308908
-IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, DISABLED_FileRef) {
+// Flaky on 32-bit linux bot; http://crbug.com/308908
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+#define MAYBE_NaCl_Glibc_FileRef DISABLED_FileRef
+#else
+#define MAYBE_NaCl_Glibc_FileRef FileRef
+#endif
+IN_PROC_BROWSER_TEST_F(PPAPINaClGLibcTest, MAYBE_NaCl_Glibc_FileRef) {
   RunTestViaHTTP(
       LIST_TEST(FileRef_Create)
       LIST_TEST(FileRef_GetFileSystemType)

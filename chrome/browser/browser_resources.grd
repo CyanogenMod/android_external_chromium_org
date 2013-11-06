@@ -133,6 +133,8 @@
       <include name="IDR_FLAGS_JS" file="resources\flags.js" type="BINDATA" />
       <include name="IDR_HANGOUT_SERVICES_MANIFEST" file="resources\hangout_services\manifest.json" type="BINDATA" />
       <include name="IDR_HELP_JS" file="resources\help\help.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_HELP_FOCUS_MANAGER_JS" file="resources\help\help_focus_manager.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_HELP_BASE_PAGE_JS" file="resources\help\help_base_page.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_CHANNEL_CHANGE_PAGE_JS" file="resources\help\channel_change_page.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_HISTORY_HTML" file="resources\history\history.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
       <include name="IDR_HISTORY_JS" file="resources\history\history.js" flattenhtml="true" type="BINDATA" />
@@ -149,6 +151,7 @@
       <include name="IDR_INSTANT_JS" file="resources\instant\instant.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_NET_EXPORT_HTML" file="resources\net_export\net_export.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_NET_EXPORT_JS" file="resources\net_export\net_export.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST" file="resources\network_speech_synthesis\manifest.json" type="BINDATA" />
       <if expr="not is_android">
         <include name="IDR_PERFORMANCE_MONITOR_CHART_CSS" file="resources\performance_monitor\chart.css" flattenhtml="true" type="BINDATA" />
         <include name="IDR_PERFORMANCE_MONITOR_CHART_JS" file="resources\performance_monitor\chart.js" type="BINDATA" />
@@ -398,7 +401,7 @@
         <include name="IDR_AUTOMATIC_PROFILE_RESET_RULES_DRY" file="internal\resources\profile_reset\automatic_profile_reset_rules_dry.dat" type="BINDATA" />
         <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED" file="internal\resources\profile_reset\automatic_profile_reset_hash_seed.dat" type="BINDATA" />
         <include name="IDR_AUTOMATIC_PROFILE_RESET_HASH_SEED_DRY" file="internal\resources\profile_reset\automatic_profile_reset_hash_seed_dry.dat" type="BINDATA" />
-        <include name="IDR_ADDITIONAL_MODULES_LIST" file="internal\resources\additional_modules_list.txt" type="BINDATA" />
+        <include name="IDR_ADDITIONAL_MODULES_LIST" file="${additional_modules_list_file}" use_base_dir="false" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('chromeos')">
         <include name="IDR_SOUND_STARTUP_WAV" file="resources\chromeos\sounds\startup.wav" type="BINDATA" />

@@ -26,7 +26,8 @@ LOCAL_SRC_FILES := \
 	third_party/skia/src/opts/SkBlitMask_opts_none.cpp \
 	third_party/skia/src/opts/SkBlitRow_opts_none.cpp \
 	third_party/skia/src/opts/SkUtils_opts_none.cpp \
-	third_party/skia/src/opts/SkXfermode_opts_none.cpp
+	third_party/skia/src/opts/SkXfermode_opts_none.cpp \
+	third_party/skia/src/opts/SkMorphology_opts_none.cpp
 
 
 # Flags passed to both C and C++ files.

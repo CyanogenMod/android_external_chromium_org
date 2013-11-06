@@ -379,11 +379,17 @@ bool AllowExtensionResourceLoad(net::URLRequest* request,
                                                  info->GetRouteID(),
                                                  &webview_info);
   std::string resource_path = request->url().path();
-  if (is_guest &&
+  if (is_guest && webview_info.allow_chrome_extension_urls &&
       extensions::WebviewInfo::IsResourceWebviewAccessible(
             extension, webview_info.partition_id, resource_path)) {
     return true;
   }
+
+  // If the request is for navigations outside of webviews, then it should be
+  // allowed. The navigation logic in CrossSiteResourceHandler will properly
+  // transfer the navigation to a privileged process before it commits.
+  if (ResourceType::IsFrame(info->GetResourceType()) && !is_guest)
+    return true;
 
   if (!content::PageTransitionIsWebTriggerable(info->GetPageTransition()))
     return false;

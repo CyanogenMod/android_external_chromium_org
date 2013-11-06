@@ -8,6 +8,7 @@ import logging
 import os
 from collections import defaultdict, Mapping
 
+from environment import IsPreviewServer
 import svn_constants
 import third_party.json_schema_compiler.json_parse as json_parse
 import third_party.json_schema_compiler.model as model
@@ -30,22 +31,37 @@ def _FormatValue(value):
   return ','.join([s[max(0, i - 3):i] for i in range(len(s), 0, -3)][::-1])
 
 
-def _GetAddRulesDefinitionFromEvents(events):
-  '''Parses the dictionary |events| to find the definition of the method
-  addRules among functions of the type Event.
+def _GetByNameDict(namespace):
+  '''Returns a dictionary mapping names to named items from |namespace|.
+
+  This lets us render specific API entities rather than the whole thing at once,
+  for example {{apis.manifestTypes.byName.ExternallyConnectable}}.
+
+  Includes items from namespace['types'], namespace['functions'],
+  namespace['events'], and namespace['properties'].
+  '''
+  by_name = {}
+  for item_type in ('types', 'functions', 'events', 'properties'):
+    if item_type in namespace:
+      old_size = len(by_name)
+      by_name.update(
+          (item['name'], item) for item in namespace[item_type])
+      assert len(by_name) == old_size + len(namespace[item_type]), (
+          'Duplicate name in %r' % namespace)
+  return by_name
+
+
+def _GetEventByNameFromEvents(events):
+  '''Parses the dictionary |events| to find the definitions of members of the
+  type Event.  Returns a dictionary mapping the name of a member to that
+  member's definition.
   '''
   assert 'types' in events, \
       'The dictionary |events| must contain the key "types".'
   event_list = [t for t in events['types']
                 if 'name' in t and t['name'] == 'Event']
   assert len(event_list) == 1, 'Exactly one type must be called "Event".'
-  event = event_list[0]
-  assert 'functions' in event, 'The type Event must contain "functions".'
-  result_list = [f for f in event['functions']
-                 if 'name' in f and f['name'] == 'addRules']
-  assert len(result_list) == 1, \
-      'Exactly one function must be called "addRules".'
-  return result_list[0]
+  return _GetByNameDict(event_list[0])
 
 
 class _JSCModel(object):
@@ -60,8 +76,8 @@ class _JSCModel(object):
                availability_finder,
                branch_utility,
                parse_cache,
-               template_data_source,
-               add_rules_schema_function,
+               template_cache,
+               event_byname_function,
                idl=False):
     self._ref_resolver = ref_resolver
     self._disable_refs = disable_refs
@@ -73,8 +89,8 @@ class _JSCModel(object):
         '%s/intro_tables.json' % svn_constants.JSON_PATH)
     self._api_features = parse_cache.GetFromFile(
         '%s/_api_features.json' % svn_constants.API_PATH)
-    self._template_data_source = template_data_source
-    self._add_rules_schema_function = add_rules_schema_function
+    self._template_cache = template_cache
+    self._event_byname_function = event_byname_function
     clean_json = copy.deepcopy(json)
     if RemoveNoDocs(clean_json):
       self._namespace = None
@@ -107,16 +123,15 @@ class _JSCModel(object):
       'events': self._GenerateEvents(self._namespace.events),
       'domEvents': self._GenerateDomEvents(self._namespace.events),
       'properties': self._GenerateProperties(self._namespace.properties),
-      'introList': self._GetIntroTableList(),
-      'channelWarning': self._GetChannelWarning(),
-      'byName': {},
     }
-    # Make every type/function/event/property also accessible by name for
-    # rendering specific API entities rather than the whole thing at once, for
-    # example {{apis.manifestTypes.byName.ExternallyConnectable}}.
-    for item_type in ('types', 'functions', 'events', 'properties'):
-      as_dict['byName'].update(
-          (item['name'], item) for item in as_dict[item_type])
+    # Rendering the intro list is really expensive and there's no point doing it
+    # unless we're rending the page - and disable_refs=True implies we're not.
+    if not self._disable_refs:
+      as_dict.update({
+        'introList': self._GetIntroTableList(),
+        'channelWarning': self._GetChannelWarning(),
+      })
+    as_dict['byName'] = _GetByNameDict(as_dict)
     return as_dict
 
   def _GetApiAvailability(self):
@@ -201,15 +216,17 @@ class _JSCModel(object):
       'supportsRules': event.supports_rules,
       'supportsListeners': event.supports_listeners,
       'properties': [],
-      'id': _CreateId(event, 'event')
+      'id': _CreateId(event, 'event'),
+      'byName': {},
     }
     if (event.parent is not None and
         not isinstance(event.parent, model.Namespace)):
       event_dict['parentName'] = event.parent.simple_name
-    # For the addRules method we can use the common definition, because addRules
-    # has the same signature for every event.
-    if event.supports_rules:
-      event_dict['addRulesFunction'] = self._add_rules_schema_function()
+    # Add the Event members to each event in this object.
+    # If refs are disabled then don't worry about this, since it's only needed
+    # for rendering, and disable_refs=True implies we're not rendering.
+    if self._event_byname_function and not self._disable_refs:
+      event_dict['byName'].update(self._event_byname_function())
     # We need to create the method description for addListener based on the
     # information stored in |event|.
     if event.supports_listeners:
@@ -223,7 +240,7 @@ class _JSCModel(object):
         callback_object.callback = event.callback
       callback_parameters = self._GenerateCallbackProperty(callback_object)
       callback_parameters['last'] = True
-      event_dict['addListenerFunction'] = {
+      event_dict['byName']['addListener'] = {
         'name': 'addListener',
         'callback': self._GenerateFunction(callback_object),
         'parameters': [callback_parameters]
@@ -379,8 +396,9 @@ class _JSCModel(object):
     return {
       'title': 'Availability',
       'content': [{
-        'partial': self._template_data_source.get(
-            'intro_tables/%s_message.html' % status),
+        'partial': self._template_cache.GetFromFile(
+                       '%s/intro_tables/%s_message.html' %
+                           (svn_constants.PRIVATE_TEMPLATE_PATH, status)).Get(),
         'version': version
       }]
     }
@@ -452,7 +470,8 @@ class _JSCModel(object):
         # If there is a 'partial' argument and it hasn't already been
         # converted to a Handlebar object, transform it to a template.
         if 'partial' in node:
-          node['partial'] = self._template_data_source.get(node['partial'])
+          node['partial'] = self._template_cache.GetFromFile('%s/%s' %
+              (svn_constants.PRIVATE_TEMPLATE_PATH, node['partial'])).Get()
       misc_rows.append({ 'title': category, 'content': content })
     return misc_rows
 
@@ -509,15 +528,16 @@ class APIDataSource(object):
       self._base_path = base_path
       self._availability_finder = availability_finder
       self._branch_utility = branch_utility
-      self._parse_cache = create_compiled_fs(
-          lambda _, json: json_parse.Parse(json),
-          'intro-cache')
+
+      self._parse_cache = compiled_fs_factory.ForJson(file_system)
+      self._template_cache = compiled_fs_factory.ForTemplates(file_system)
+
       # These must be set later via the SetFooDataSourceFactory methods.
       self._ref_resolver_factory = None
       self._samples_data_source_factory = None
 
-      # This caches the result of _LoadAddRulesSchema.
-      self._add_rules_schema = None
+      # This caches the result of _LoadEventByName.
+      self._event_byname = None
 
     def SetSamplesDataSourceFactory(self, samples_data_source_factory):
       self._samples_data_source_factory = samples_data_source_factory
@@ -525,15 +545,8 @@ class APIDataSource(object):
     def SetReferenceResolverFactory(self, ref_resolver_factory):
       self._ref_resolver_factory = ref_resolver_factory
 
-    def SetTemplateDataSource(self, template_data_source_factory):
-      # This TemplateDataSource is only being used for fetching template data.
-      self._template_data_source = template_data_source_factory.Create(
-          None, {})
-
-    def Create(self, request, disable_refs=False):
-      '''Create an APIDataSource. |disable_refs| specifies whether $ref's in
-      APIs being processed by the |ToDict| method of _JSCModel follows $ref's
-      in the API. This prevents endless recursion in ReferenceResolver.
+    def Create(self, request):
+      '''Creates an APIDataSource.
       '''
       if self._samples_data_source_factory is None:
         # Only error if there is a request, which means this APIDataSource is
@@ -544,9 +557,6 @@ class APIDataSource(object):
         samples = None
       else:
         samples = self._samples_data_source_factory.Create(request)
-      if not disable_refs and self._ref_resolver_factory is None:
-        logging.error('ReferenceResolver.Factory was never set in '
-                      'APIDataSource.Factory.')
       return APIDataSource(self._json_cache,
                            self._idl_cache,
                            self._json_cache_no_refs,
@@ -554,18 +564,17 @@ class APIDataSource(object):
                            self._names_cache,
                            self._idl_names_cache,
                            self._base_path,
-                           samples,
-                           disable_refs)
+                           samples)
 
-    def _LoadAddRulesSchema(self):
-      """ All events supporting rules have the addRules method. We source its
-      description from Event in events.json.
+    def _LoadEventByName(self):
+      """ All events have some members in common. We source their description
+      from Event in events.json.
       """
-      if self._add_rules_schema is None:
+      if self._event_byname is None:
         events_json = self._json_cache.GetFromFile(
             '%s/events.json' % self._base_path).Get()
-        self._add_rules_schema = _GetAddRulesDefinitionFromEvents(events_json)
-      return self._add_rules_schema
+        self._event_byname = _GetEventByNameFromEvents(events_json)
+      return self._event_byname
 
     def _LoadJsonAPI(self, api, disable_refs):
       return _JSCModel(
@@ -575,8 +584,8 @@ class APIDataSource(object):
           self._availability_finder,
           self._branch_utility,
           self._parse_cache,
-          self._template_data_source,
-          self._LoadAddRulesSchema).ToDict()
+          self._template_cache,
+          self._LoadEventByName).ToDict()
 
     def _LoadIdlAPI(self, api, disable_refs):
       idl = idl_parser.IDLParser().ParseData(api)
@@ -587,8 +596,8 @@ class APIDataSource(object):
           self._availability_finder,
           self._branch_utility,
           self._parse_cache,
-          self._template_data_source,
-          self._LoadAddRulesSchema,
+          self._template_cache,
+          self._LoadEventByName,
           idl=True).ToDict()
 
     def _GetIDLNames(self, base_dir, apis):
@@ -609,8 +618,7 @@ class APIDataSource(object):
                names_cache,
                idl_names_cache,
                base_path,
-               samples,
-               disable_refs):
+               samples):
     self._base_path = base_path
     self._json_cache = json_cache
     self._idl_cache = idl_cache
@@ -619,12 +627,14 @@ class APIDataSource(object):
     self._names_cache = names_cache
     self._idl_names_cache = idl_names_cache
     self._samples = samples
-    self._disable_refs = disable_refs
 
   def _GenerateHandlebarContext(self, handlebar_dict):
-    handlebar_dict['samples'] = _LazySamplesGetter(
-        handlebar_dict['name'],
-        self._samples)
+    # Parsing samples on the preview server takes seconds and doesn't add
+    # anything. Don't do it.
+    if not IsPreviewServer():
+      handlebar_dict['samples'] = _LazySamplesGetter(
+          handlebar_dict['name'],
+          self._samples)
     return handlebar_dict
 
   def _GetAsSubdirectory(self, name):
@@ -636,7 +646,7 @@ class APIDataSource(object):
       return '%s/%s' % (parts[0], name)
     return name.replace('_', '/', 1)
 
-  def get(self, key):
+  def get(self, key, disable_refs=False):
     if key.endswith('.html') or key.endswith('.json') or key.endswith('.idl'):
       path, ext = os.path.splitext(key)
     else:
@@ -647,7 +657,7 @@ class APIDataSource(object):
     if unix_name not in names and self._GetAsSubdirectory(unix_name) in names:
       unix_name = self._GetAsSubdirectory(unix_name)
 
-    if self._disable_refs:
+    if disable_refs:
       cache, ext = (
           (self._idl_cache_no_refs, '.idl') if (unix_name in idl_names) else
           (self._json_cache_no_refs, '.json'))

@@ -312,6 +312,7 @@ GdkFilterReturn NativeAppWindowGtk::OnXEvent(GdkXEvent* gdk_x_event,
 
   if (x_event->type == PropertyNotify &&
       x_event->xproperty.atom == atom_cache_.GetAtom("_NET_WM_STATE") &&
+      GTK_WIDGET(window_)->window &&
       ui::GetAtomArrayProperty(GDK_WINDOW_XWINDOW(GTK_WIDGET(window_)->window),
                                "_NET_WM_STATE",
                                &atom_list)) {
@@ -475,8 +476,6 @@ gboolean NativeAppWindowGtk::OnWindowState(GtkWidget* sender,
     if (rvh)
       rvh->ExitFullscreen();
   }
-
-  shell_window_->OnNativeWindowChanged();
 
   return FALSE;
 }
@@ -675,10 +674,6 @@ gfx::Insets NativeAppWindowGtk::GetFrameInsets() const {
       left_inset,
       rect_with_decorations.height - current_height - top_inset,
       rect_with_decorations.width - current_width - left_inset);
-}
-
-bool NativeAppWindowGtk::IsVisible() const {
-  return gtk_widget_get_visible(GTK_WIDGET(window_));
 }
 
 void NativeAppWindowGtk::HideWithApp() {}

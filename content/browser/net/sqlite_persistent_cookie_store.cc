@@ -18,7 +18,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
@@ -1199,25 +1198,31 @@ net::CookieStore* CreatePersistentCookieStore(
     bool restore_old_session_cookies,
     quota::SpecialStoragePolicy* storage_policy,
     net::CookieMonster::Delegate* cookie_monster_delegate,
+    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner) {
   SQLitePersistentCookieStore* persistent_store =
       new SQLitePersistentCookieStore(
           path,
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-          background_task_runner.get() ? background_task_runner :
-              BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
-                  BrowserThread::GetBlockingPool()->GetSequenceToken()),
+          client_task_runner,
+          background_task_runner,
           restore_old_session_cookies,
           storage_policy);
-  net::CookieMonster* cookie_monster =
-      new net::CookieMonster(persistent_store, cookie_monster_delegate);
+  return new net::CookieMonster(persistent_store, cookie_monster_delegate);
+}
 
-  const std::string cookie_priority_experiment_group =
-      base::FieldTrialList::FindFullName("CookieRetentionPriorityStudy");
-  cookie_monster->SetPriorityAwareGarbageCollection(
-      cookie_priority_experiment_group == "ExperimentOn");
-
-  return cookie_monster;
+net::CookieStore* CreatePersistentCookieStore(
+    const base::FilePath& path,
+    bool restore_old_session_cookies,
+    quota::SpecialStoragePolicy* storage_policy,
+    net::CookieMonster::Delegate* cookie_monster_delegate) {
+  return CreatePersistentCookieStore(
+      path,
+      restore_old_session_cookies,
+      storage_policy,
+      cookie_monster_delegate,
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+      BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
+          BrowserThread::GetBlockingPool()->GetSequenceToken()));
 }
 
 }  // namespace content

@@ -272,8 +272,6 @@ extern const char kAttestationExtensionWhitelist[];
 extern const char kTouchHudProjectionEnabled[];
 extern const char kOpenNetworkConfiguration[];
 extern const char kRAConsentFirstTime[];
-extern const char kRAConsentDomains[];
-extern const char kRAConsentAlways[];
 extern const char kMultiProfileNotificationDismissed[];
 extern const char kMultiProfileUserBehavior[];
 #endif  // defined(OS_CHROMEOS)
@@ -349,6 +347,7 @@ extern const char kPerHostZoomLevels[];
 extern const char kAutofillDialogAutofillDefault[];
 extern const char kAutofillDialogHasPaidWithWallet[];
 extern const char kAutofillDialogPayWithoutWallet[];
+extern const char kAutofillDialogWalletLocationAcceptance[];
 extern const char kAutofillDialogShowCount[];
 extern const char kAutofillDialogSaveData[];
 extern const char kAutofillGeneratedCardBubbleTimesShown[];
@@ -546,7 +545,7 @@ extern const char kShutdownNumProcessesSlow[];
 extern const char kRestartLastSessionOnShutdown[];
 extern const char kWasRestarted[];
 #if defined(OS_WIN)
-extern const char kRestartSwitchMode[];
+extern const char kRelaunchMode[];
 #endif
 
 extern const char kDisableVideoAndChat[];
@@ -764,6 +763,9 @@ extern const char kDeviceEnrollmentCanExit[];
 extern const char kUsersLRUInputMethod[];
 extern const char kEchoCheckedOffers[];
 extern const char kCachedMultiProfileUserBehavior[];
+extern const char kInitialLocale[];
+extern const char kOobeComplete[];
+extern const char kDeviceRegistered[];
 #endif
 
 extern const char kClearPluginLSODataEnabled[];
@@ -925,6 +927,10 @@ extern const char kWatchdogExtensionActive[];
 extern const char kProfilePreferenceHashes[];
 
 extern const char kNetworkTimeMapping[];
+
+#if defined(OS_ANDROID)
+extern const char kPartnerBookmarkMappings[];
+#endif
 
 }  // namespace prefs
 

@@ -10,6 +10,7 @@
 #include "ash/default_accessibility_delegate.h"
 #include "ash/host/root_window_host_factory.h"
 #include "ash/keyboard_controller_proxy_stub.h"
+#include "ash/media_delegate.h"
 #include "ash/new_window_delegate.h"
 #include "ash/session_state_delegate.h"
 #include "ash/shell.h"
@@ -39,6 +40,13 @@ class NewWindowDelegateImpl : public NewWindowDelegate {
   virtual void OpenFeedbackPage() OVERRIDE {}
 };
 
+class MediaDelegateImpl : public MediaDelegate {
+ public:
+  virtual void HandleMediaNextTrack() OVERRIDE {}
+  virtual void HandleMediaPlayPause() OVERRIDE {}
+  virtual void HandleMediaPrevTrack() OVERRIDE {}
+};
+
 }  // namespace
 
 TestShellDelegate::TestShellDelegate()
@@ -52,6 +60,10 @@ TestShellDelegate::~TestShellDelegate() {
 
 bool TestShellDelegate::IsFirstRunAfterBoot() const {
   return false;
+}
+
+bool TestShellDelegate::IsIncognitoAllowed() const {
+  return true;
 }
 
 bool TestShellDelegate::IsMultiProfilesEnabled() const {
@@ -117,20 +129,15 @@ NewWindowDelegate* TestShellDelegate::CreateNewWindowDelegate() {
   return new NewWindowDelegateImpl;
 }
 
+MediaDelegate* TestShellDelegate::CreateMediaDelegate() {
+  return new MediaDelegateImpl;
+}
+
 aura::client::UserActionClient* TestShellDelegate::CreateUserActionClient() {
   return NULL;
 }
 
 void TestShellDelegate::RecordUserMetricsAction(UserMetricsAction action) {
-}
-
-void TestShellDelegate::HandleMediaNextTrack() {
-}
-
-void TestShellDelegate::HandleMediaPlayPause() {
-}
-
-void TestShellDelegate::HandleMediaPrevTrack() {
 }
 
 ui::MenuModel* TestShellDelegate::CreateContextMenu(aura::Window* root) {

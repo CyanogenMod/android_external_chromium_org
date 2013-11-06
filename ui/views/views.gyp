@@ -366,9 +366,9 @@
         'widget/desktop_aura/desktop_capture_client.cc',
         'widget/desktop_aura/desktop_capture_client.h',
         'widget/desktop_aura/desktop_cursor_loader_updater.h',
+        'widget/desktop_aura/desktop_cursor_loader_updater_auralinux.cc',
+        'widget/desktop_aura/desktop_cursor_loader_updater_auralinux.h',
         'widget/desktop_aura/desktop_cursor_loader_updater_aurawin.cc',
-        'widget/desktop_aura/desktop_cursor_loader_updater_aurax11.cc',
-        'widget/desktop_aura/desktop_cursor_loader_updater_aurax11.h',
         'widget/desktop_aura/desktop_dispatcher_client.cc',
         'widget/desktop_aura/desktop_dispatcher_client.h',
         'widget/desktop_aura/desktop_drag_drop_client_aurax11.cc',
@@ -595,6 +595,11 @@
             'win/scoped_fullscreen_visibility.h',
             'widget/widget_hwnd_utils.cc',
             'widget/widget_hwnd_utils.h',
+          ],
+        }],
+        ['use_ozone==1', {
+          'dependencies': [
+            '../ozone/ozone.gyp:ozone',
           ],
         }],
       ],

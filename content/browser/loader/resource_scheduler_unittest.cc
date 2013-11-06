@@ -17,6 +17,7 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/common/process_type.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
@@ -139,8 +140,7 @@ class ResourceSchedulerTest : public testing::Test {
       net::RequestPriority priority,
       int route_id) {
     scoped_ptr<net::URLRequest> url_request(
-        context_.CreateRequest(GURL(url), NULL));
-    url_request->SetPriority(priority);
+        context_.CreateRequest(GURL(url), priority, NULL));
     ResourceRequestInfoImpl* info = new ResourceRequestInfoImpl(
         PROCESS_TYPE_RENDERER,             // process_type
         kChildId,                          // child_id
@@ -155,7 +155,6 @@ class ResourceSchedulerTest : public testing::Test {
         PAGE_TRANSITION_LINK,              // transition_type
         false,                             // is_download
         false,                             // is_stream
-        false,                             // is_detachable
         true,                              // allow_download
         false,                             // has_user_gesture
         WebKit::WebReferrerPolicyDefault,  // referrer_policy

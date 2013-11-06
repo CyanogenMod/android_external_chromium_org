@@ -24,6 +24,7 @@
 #include "ash/launcher/launcher_model.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
+#include "ash/media_delegate.h"
 #include "ash/multi_profile_uma.h"
 #include "ash/new_window_delegate.h"
 #include "ash/root_window_controller.h"
@@ -313,17 +314,17 @@ bool HandleMagnifyScreen(int delta_index) {
 }
 
 bool HandleMediaNextTrack() {
-  Shell::GetInstance()->delegate()->HandleMediaNextTrack();
+  Shell::GetInstance()->media_delegate()->HandleMediaNextTrack();
   return true;
 }
 
 bool HandleMediaPlayPause() {
-  Shell::GetInstance()->delegate()->HandleMediaPlayPause();
+  Shell::GetInstance()->media_delegate()->HandleMediaPlayPause();
   return true;
 }
 
 bool HandleMediaPrevTrack() {
-  Shell::GetInstance()->delegate()->HandleMediaPrevTrack();
+  Shell::GetInstance()->media_delegate()->HandleMediaPrevTrack();
   return true;
 }
 
@@ -623,10 +624,14 @@ bool AcceleratorController::PerformAction(int action,
       // UMA metrics are recorded in the handler.
       exit_warning_handler_.HandleAccelerator();
       return true;
-    case NEW_INCOGNITO_WINDOW:
-      Shell::GetInstance()->new_window_delegate()->NewWindow(
-          true /* is_incognito */);
-      return true;
+    case NEW_INCOGNITO_WINDOW: {
+        bool incognito_allowed =
+            Shell::GetInstance()->delegate()->IsIncognitoAllowed();
+        if (incognito_allowed)
+          Shell::GetInstance()->new_window_delegate()->NewWindow(
+              true /* is_incognito */);
+        return incognito_allowed;
+    }
     case NEW_TAB:
       if (key_code == ui::VKEY_T)
         shell->delegate()->RecordUserMetricsAction(UMA_ACCEL_NEWTAB_T);
