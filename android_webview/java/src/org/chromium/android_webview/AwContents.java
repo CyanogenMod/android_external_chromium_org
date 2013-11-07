@@ -816,6 +816,7 @@ public class AwContents {
     }
 
     private void syncOnNewPictureStateToNative() {
+        if (mNativeAwContents == 0) return;
         nativeEnableOnNewPicture(mNativeAwContents, mPictureListenerEnabled || mClearViewActive);
     }
 
