@@ -28,6 +28,7 @@ import org.chromium.content.common.CommandLine;
 import org.chromium.content.common.ProcessInitException;
 import org.chromium.content_shell.Shell;
 import org.chromium.content_shell.ShellManager;
+import org.chromium.ui.ActivityWindowAndroid;
 import org.chromium.ui.WindowAndroid;
 
 /**
@@ -84,7 +85,7 @@ public class ContentShellActivity extends ChromiumActivity {
 
             setContentView(R.layout.content_shell_activity);
             mShellManager = (ShellManager) findViewById(R.id.shell_container);
-            mWindowAndroid = new WindowAndroid(this);
+            mWindowAndroid = new ActivityWindowAndroid(this);
             mWindowAndroid.restoreInstanceState(savedInstanceState);
             mShellManager.setWindow(mWindowAndroid);
 
