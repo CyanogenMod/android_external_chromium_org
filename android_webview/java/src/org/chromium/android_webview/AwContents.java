@@ -201,6 +201,9 @@ public class AwContents {
 
     private ComponentCallbacks2 mComponentCallbacks;
 
+    // This flag is to ShouldOverrideUrlNavigation through the resourcethrottle.
+    private boolean mDeferredShouldOverrideUrlLoadingIsPendingForPopup;
+
     private static final class DestroyRunnable implements Runnable {
         private int mNativeAwContents;
         private DestroyRunnable(int nativeAwContents) {
@@ -290,21 +293,40 @@ public class AwContents {
     }
 
     //--------------------------------------------------------------------------------------------
-    // Use this delegate only to post onPageStarted messages, since using WebContentsObserver
-    // causes bugs with existing applications. The three problems observed are stale URLs,
-    // out of order onPageStarted's and double onPageStarted's.
+    // When the navigation is for a newly created WebView (i.e. a popup), intercept the navigation
+    // here for implementing shouldOverrideUrlLoading. This is to send the shouldOverrideUrlLoading
+    // callback to the correct WebViewClient that is associated with the WebView.
+    // Otherwise, use this delegate only to post onPageStarted messages. The navigations are
+    // intercepted via handleNavigation API of ContentRendererClient and communicated via a SYNC
+    // IPC. This is to prevent cancelling XHRs that may have already started.
+    //
+    // As for posting the onPageStarted, we could have used WebContentsObserver. However using
+    // it causes these problems at the time: stale URLs, out of order onPageStarted's and double
+    // onPageStarted's.
+    //
     // TODO(sgurun) implementing onPageStarted via a resource throttle has a performance hit
     // waiting for UI thread. Let's try to find a non-resource-throttle solution.
     private class InterceptNavigationDelegateImpl implements InterceptNavigationDelegate {
         @Override
         public boolean shouldIgnoreNavigation(NavigationParams navigationParams) {
             final String url = navigationParams.url;
-            mContentsClient.getCallbackHelper().postOnPageStarted(url);
-            return false;
+            boolean ignoreNavigation = false;
+            if (mDeferredShouldOverrideUrlLoadingIsPendingForPopup) {
+                mDeferredShouldOverrideUrlLoadingIsPendingForPopup = false;
+                // If this is used for all navigations in future, cases for application initiated
+                // load, redirect and backforward should also be filtered out.
+                if (!navigationParams.isPost) {
+                    ignoreNavigation = mContentsClient.shouldOverrideUrlLoading(url);
+                }
+            }
+            if (!ignoreNavigation) {
+                mContentsClient.getCallbackHelper().postOnPageStarted(url);
+            }
+            return ignoreNavigation;
         }
     }
 
-    //--------------------------------------------------------------------------------------------
+    //-------------------------------------------`-------------------------------------------------
     private class AwLayoutSizerDelegate implements AwLayoutSizer.Delegate {
         @Override
         public void requestLayout() {
@@ -593,6 +615,7 @@ public class AwContents {
     // Recap: supplyContentsForPopup() is called on the parent window's content, this method is
     // called on the popup window's content.
     private void receivePopupContents(int popupNativeAwContents) {
+        mDeferredShouldOverrideUrlLoadingIsPendingForPopup = true;
         // Save existing view state.
         final boolean wasAttached = mIsAttachedToWindow;
         final boolean wasViewVisible = mIsViewVisible;
