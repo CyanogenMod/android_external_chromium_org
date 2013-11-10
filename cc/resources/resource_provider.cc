@@ -1129,6 +1129,10 @@ void ResourceProvider::BindForSampling(ResourceProvider::ResourceId resource_id,
     resource->bound_image_id = resource->image_id;
     resource->dirty_image = false;
   }
+
+  // Active unit being GL_TEXTURE0 is effectively the ground state.
+  if (unit != GL_TEXTURE0)
+    GLC(context3d, context3d->activeTexture(GL_TEXTURE0));
 }
 
 void ResourceProvider::BeginSetPixels(ResourceId id) {
