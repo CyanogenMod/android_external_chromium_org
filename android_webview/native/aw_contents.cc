@@ -191,7 +191,6 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
                              new AwContentsUserData(this));
   render_view_host_ext_.reset(
       new AwRenderViewHostExt(this, web_contents_.get()));
-  AwContentsIoThreadClientImpl::RegisterPendingContents(web_contents_.get());
 
   AwAutofillManagerDelegate* autofill_manager_delegate =
       AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
@@ -224,15 +223,16 @@ void AwContents::SetJavaPeers(JNIEnv* env,
 
   AwContentsIoThreadClientImpl::Associate(
       web_contents_.get(), ScopedJavaLocalRef<jobject>(env, io_thread_client));
-  int child_id = web_contents_->GetRenderProcessHost()->GetID();
-  int route_id = web_contents_->GetRoutingID();
-  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   InterceptNavigationDelegate::Associate(
       web_contents_.get(),
       make_scoped_ptr(new InterceptNavigationDelegate(
           env, intercept_navigation_delegate)));
+
+  // Finally, having setup the associations, release any deferred requests
+  int child_id = web_contents_->GetRenderProcessHost()->GetID();
+  int route_id = web_contents_->GetRoutingID();
+  AwResourceDispatcherHostDelegate::OnIoThreadClientReady(child_id, route_id);
 }
 
 void AwContents::SetSaveFormData(bool enabled) {
