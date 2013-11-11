@@ -23,6 +23,7 @@ import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.CommandLine;
 import org.chromium.content.common.ProcessInitException;
+import org.chromium.ui.ActivityWindowAndroid;
 import org.chromium.ui.WindowAndroid;
 
 /**
@@ -91,7 +92,7 @@ public class ChromiumTestShellActivity extends ChromiumActivity {
             mTabManager.setStartupUrl(startupUrl);
         }
 
-        mWindow = new WindowAndroid(this);
+        mWindow = new ActivityWindowAndroid(this);
         mWindow.restoreInstanceState(savedInstanceState);
         mTabManager.setWindow(mWindow);
 
