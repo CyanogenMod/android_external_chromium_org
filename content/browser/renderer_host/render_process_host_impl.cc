@@ -51,7 +51,6 @@
 #include "content/browser/download/mhtml_generation_manager.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
-#include "content/browser/geolocation/geolocation_dispatcher_host.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_disk_cache.h"
@@ -636,17 +635,19 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   channel_->AddFilter(new IndexedDBDispatcherHost(
       GetID(),
       storage_partition_impl_->GetIndexedDBContext()));
+  geolocation_dispatcher_host_ = NULL;
   if (IsGuest()) {
     if (!g_browser_plugin_geolocation_context.Get().get()) {
       g_browser_plugin_geolocation_context.Get() =
           new BrowserPluginGeolocationPermissionContext();
     }
-    channel_->AddFilter(GeolocationDispatcherHost::New(
-        GetID(), g_browser_plugin_geolocation_context.Get().get()));
+    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
+        GetID(), g_browser_plugin_geolocation_context.Get().get());
   } else {
-    channel_->AddFilter(GeolocationDispatcherHost::New(
-        GetID(), browser_context->GetGeolocationPermissionContext()));
+    geolocation_dispatcher_host_ = GeolocationDispatcherHost::New(
+        GetID(), browser_context->GetGeolocationPermissionContext());
   }
+  channel_->AddFilter(geolocation_dispatcher_host_);
   gpu_message_filter_ = new GpuMessageFilter(GetID(), widget_helper_.get());
   channel_->AddFilter(gpu_message_filter_);
 #if defined(ENABLE_WEBRTC)

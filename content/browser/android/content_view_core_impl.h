@@ -61,6 +61,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual void RequestContentClipping(const gfx::Rect& clipping,
                                       const gfx::Size& content_size) OVERRIDE;
   virtual void PauseVideo() OVERRIDE;
+  virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
