@@ -351,6 +351,20 @@ void ContentViewCoreImpl::PauseVideo() {
     host->Send(new ViewMsg_PauseVideo(host->GetRoutingID()));
 }
 
+void ContentViewCoreImpl::PauseOrResumeGeolocation(bool should_pause) {
+  RenderViewHostImpl* rvh =
+      static_cast<RenderViewHostImpl*>(web_contents_->GetRenderViewHost());
+  if (rvh) {
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+        base::Bind(&GeolocationDispatcherHost::PauseOrResume,
+        static_cast<RenderProcessHostImpl*>(
+            web_contents_->GetRenderProcessHost())->
+                geolocation_dispatcher_host(),
+        rvh->GetRoutingID(),
+        should_pause));
+  }
+}
+
 void ContentViewCoreImpl::OnTabCrashed() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
