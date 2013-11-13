@@ -3095,6 +3095,10 @@
                       '-march=<(arm_arch)',
                     ],
                   }],
+                  # only set 'arch' if 'cpu' is not set
+                  ['cpu==""', {
+                    'cflags': [ '-march=armv7-a' ],
+                  }],
                   ['arm_tune!=""', {
                     'cflags': [
                       '-mtune=<(arm_tune)',
