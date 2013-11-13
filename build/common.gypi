@@ -3658,6 +3658,9 @@
                   '-D__compiler_offsetof=__builtin_offsetof',
                   '-Dnan=__builtin_nan',
                 ],
+                'includes': [
+                  'clang.gypi'
+                ],
                 'conditions': [
                   ['target_arch=="arm"', {
                     'cflags': [
@@ -3674,17 +3677,6 @@
                     ],
                     'ldflags': [
                       '-target x86-linux-androideabi',
-                    ],
-                  }],
-                  ['clang_use_integrated_as==1', {
-                    'cflags': [
-                      '-integrated-as',
-                    ],
-                  }],
-                  ['clang_use_integrated_as==0', {
-                    'cflags': [
-                      # Use GNU as to assemble
-                      '-no-integrated-as',
                     ],
                   }],
                 ],
