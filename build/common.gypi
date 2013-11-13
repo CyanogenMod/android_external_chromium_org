@@ -288,10 +288,10 @@
       # Has no effect if 'clang' is not set as well.
       'clang_use_chrome_plugins%': 1,
 
-      # Use Clang's integrated assembler.  By default, -1, indicating to let
+      # Use Clang's integrated assembler.  The default, 2, indicates to let
       # the compiler decide.  Set to 1 to use the integrated assembler and
       # to 0 to use GNU as to assemble.
-      'clang_use_integrated_as%': -1,
+      'clang_use_integrated_as%': 2,
 
       # Enable building with ASAN (Clang's -fsanitize=address option).
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
