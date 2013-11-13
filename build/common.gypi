@@ -286,7 +286,7 @@
       # Run tools/clang/scripts/update.sh to make sure they are compiled.
       # This causes 'clang_chrome_plugins_flags' to be set.
       # Has no effect if 'clang' is not set as well.
-      'clang_use_chrome_plugins%': 1,
+      'clang_use_chrome_plugins%': 0,
 
       # Use Clang's integrated assembler.  The default, 2, indicates to let
       # the compiler decide.  Set to 1 to use the integrated assembler and
@@ -1006,7 +1006,7 @@
     # Clang stuff.
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
-    'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-build/Release+Asserts',
+    'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-snapdragon',
 
     # These two variables can be set in GYP_DEFINES while running
     # |gclient runhooks| to let clang run a plugin in every compilation.
