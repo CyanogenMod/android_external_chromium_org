@@ -109,8 +109,25 @@ ${ANDROID_SDK_BUILD_TOOLS_VERSION}
 
   # The following defines will affect ARM code generation of both C/C++ compiler
   # and V8 mksnapshot.
+  case "${TARGET_PRODUCT}" in
+    "snapdragon")
+      TARGET_ARCH="arm"
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} " >& 2
+      ;;
+    *)
+      echo "TARGET_PRODUCT: ${TARGET_PRODUCT} is default " >& 2
+      ;;
+  esac
+
   case "${TARGET_ARCH}" in
     "arm")
+      case "${TARGET_PRODUCT}" in
+        "snapdragon")
+          DEFINES+=" arm_neon=1"
+          ;;
+        *)
+          ;;
+      esac
       DEFINES+=" ${ORDER_DEFINES}"
       DEFINES+=" target_arch=arm"
       ;;
@@ -246,7 +263,7 @@ sdk_build_init() {
   unset ANDROID_BUILD_TOP
 
   # Set default target.
-  export TARGET_PRODUCT="${TARGET_PRODUCT:-trygon}"
+  export TARGET_PRODUCT="${TARGET_PRODUCT:-snapdragon}"
 
   # Unset toolchain so that it can be set based on TARGET_PRODUCT.
   # This makes it easy to switch between architectures.
