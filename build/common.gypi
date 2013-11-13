@@ -1000,6 +1000,7 @@
     # Clang stuff.
     'clang%': '<(clang)',
     'make_clang_dir%': 'third_party/llvm-build/Release+Asserts',
+    'target_clang_dir%': '${CHROME_SRC}/third_party/llvm-build/Release+Asserts',
 
     # These two variables can be set in GYP_DEFINES while running
     # |gclient runhooks| to let clang run a plugin in every compilation.
@@ -3903,8 +3904,8 @@
             # Note that the prebuilt Clang binaries should not be used for iOS
             # development except for ASan builds.
             ['clang==1', {
-              'CC': '$(SOURCE_ROOT)/<(clang_dir)/clang',
-              'LDPLUSPLUS': '$(SOURCE_ROOT)/<(clang_dir)/clang++',
+              'CC': '<(target_clang_dir)/bin/clang',
+              'LDPLUSPLUS': '<(target_clang_dir)/bin/clang++',
 
               # gnu++11 instead of c++11 is needed because some code uses
               # typeof() (a GNU extension).
@@ -3972,11 +3973,6 @@
           ],
         },
         'conditions': [
-          ['clang==1', {
-            'variables': {
-              'clang_dir': '../third_party/llvm-build/Release+Asserts/bin',
-            },
-          }],
           ['asan==1', {
             'xcode_settings': {
               'OTHER_CFLAGS': [
@@ -4594,10 +4590,12 @@
         ['OS=="android"', {
           # Android could use the goma with clang.
           'make_global_settings': [
-            ['CC', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang)'],
-            ['CXX', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
-            ['CC.host', '$(CC)'],
-            ['CXX.host', '$(CXX)'],
+            ['CC', '<(target_clang_dir)/bin/clang'],
+            ['CXX', '<(target_clang_dir)/bin/clang++'],
+            ['LINK', '$(CXX)'],
+            ['CC.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang)'],
+            ['CXX.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
+            ['LINK.host', '<!(/bin/echo -n ${ANDROID_GOMA_WRAPPER} ${CHROME_SRC}/<(make_clang_dir)/bin/clang++)'],
           ],
         }, {
           'make_global_settings': [
