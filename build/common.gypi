@@ -288,6 +288,11 @@
       # Has no effect if 'clang' is not set as well.
       'clang_use_chrome_plugins%': 1,
 
+      # Use Clang's integrated assembler.  By default, -1, indicating to let
+      # the compiler decide.  Set to 1 to use the integrated assembler and
+      # to 0 to use GNU as to assemble.
+      'clang_use_integrated_as%': -1,
+
       # Enable building with ASAN (Clang's -fsanitize=address option).
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
       # See https://sites.google.com/a/chromium.org/dev/developers/testing/addresssanitizer
@@ -841,6 +846,7 @@
     'notifications%': '<(notifications)',
     'clang_use_chrome_plugins%': '<(clang_use_chrome_plugins)',
     'mac_want_real_dsym%': '<(mac_want_real_dsym)',
+    'clang_use_integrated_as%': '<(clang_use_integrated_as)',
     'asan%': '<(asan)',
     'lsan%': '<(lsan)',
     'msan%': '<(msan)',
@@ -3668,6 +3674,17 @@
                     ],
                     'ldflags': [
                       '-target x86-linux-androideabi',
+                    ],
+                  }],
+                  ['clang_use_integrated_as==1', {
+                    'cflags': [
+                      '-integrated-as',
+                    ],
+                  }],
+                  ['clang_use_integrated_as==0', {
+                    'cflags': [
+                      # Use GNU as to assemble
+                      '-no-integrated-as',
                     ],
                   }],
                 ],
