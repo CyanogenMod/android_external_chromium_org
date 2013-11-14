@@ -67,29 +67,23 @@ class GeolocationDispatcherHostImpl : public GeolocationDispatcherHost {
       bool enable_high_accuracy);
   void OnStopUpdating(int render_view_id);
 
-  virtual void PauseOrResume(int render_view_id, bool should_pause) OVERRIDE;
-
   // Updates the |location_arbitrator_| with the currently required update
-  // options.
-  void RefreshGeolocationOptions();
+  // options, based on |renderer_high_accuracy_|.
+  void RefreshHighAccuracy();
 
   void OnLocationUpdate(const Geoposition& position);
 
   int render_process_id_;
   scoped_refptr<GeolocationPermissionContext> geolocation_permission_context_;
 
-  struct RendererGeolocationOptions {
-    bool high_accuracy;
-    bool is_paused;
-  };
-
-  // Used to keep track of the renderers in this process that are using
-  // geolocation and the options associated with them. The map is iterated
-  // when a location update is available and the fan out to individual bridge
-  // IDs happens renderer side, in order to minimize context switches.
+  // Iterated when sending location updates to renderer processes. The fan out
+  // to individual bridge IDs happens renderer side, in order to minimize
+  // context switches.
   // Only used on the IO thread.
-  std::map<int, RendererGeolocationOptions> geolocation_renderers_;
-
+  std::set<int> geolocation_renderer_ids_;
+  // Maps renderer_id to whether high accuracy is requestd for this particular
+  // bridge.
+  std::map<int, bool> renderer_high_accuracy_;
   // Only set whilst we are registered with the arbitrator.
   GeolocationProviderImpl* location_provider_;
 
@@ -136,11 +130,9 @@ bool GeolocationDispatcherHostImpl::OnMessageReceived(
 void GeolocationDispatcherHostImpl::OnLocationUpdate(
     const Geoposition& geoposition) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  for (std::map<int, RendererGeolocationOptions>::iterator it =
-       geolocation_renderers_.begin();
-       it != geolocation_renderers_.end(); ++it) {
-    if (!(it->second.is_paused))
-      Send(new GeolocationMsg_PositionUpdated(it->first, geoposition));
+  for (std::set<int>::iterator it = geolocation_renderer_ids_.begin();
+       it != geolocation_renderer_ids_.end(); ++it) {
+    Send(new GeolocationMsg_PositionUpdated(*it, geoposition));
   }
 }
 
@@ -191,58 +183,44 @@ void GeolocationDispatcherHostImpl::OnStartUpdating(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << __FUNCTION__ << " " << render_process_id_ << ":"
            << render_view_id;
-  RendererGeolocationOptions opts = { enable_high_accuracy, false };
-  geolocation_renderers_[render_view_id] = opts;
-  RefreshGeolocationOptions();
+  if (!geolocation_renderer_ids_.count(render_view_id))
+    geolocation_renderer_ids_.insert(render_view_id);
+
+  renderer_high_accuracy_[render_view_id] = enable_high_accuracy;
+  RefreshHighAccuracy();
 }
 
 void GeolocationDispatcherHostImpl::OnStopUpdating(int render_view_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DVLOG(1) << __FUNCTION__ << " " << render_process_id_ << ":"
            << render_view_id;
-  DCHECK_EQ(1U, geolocation_renderers_.count(render_view_id));
-  geolocation_renderers_.erase(render_view_id);
-  RefreshGeolocationOptions();
+  if (renderer_high_accuracy_.erase(render_view_id))
+    RefreshHighAccuracy();
+
+  DCHECK_EQ(1U, geolocation_renderer_ids_.count(render_view_id));
+  geolocation_renderer_ids_.erase(render_view_id);
 }
 
-void GeolocationDispatcherHostImpl::PauseOrResume(int render_view_id,
-                                                  bool should_pause) {
+void GeolocationDispatcherHostImpl::RefreshHighAccuracy() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  std::map<int, RendererGeolocationOptions>::iterator it =
-      geolocation_renderers_.find(render_view_id);
-  if (it == geolocation_renderers_.end())
-    return;
-
-  RendererGeolocationOptions* opts = &(it->second);
-  if (opts->is_paused != should_pause) {
-    opts->is_paused = should_pause;
-    RefreshGeolocationOptions();
-  }
-}
-
-void GeolocationDispatcherHostImpl::RefreshGeolocationOptions() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  bool needs_updates = false;
-  bool use_high_accuracy = false;
-  std::map<int, RendererGeolocationOptions>::const_iterator i =
-       geolocation_renderers_.begin();
-  for (; i != geolocation_renderers_.end(); ++i) {
-    needs_updates |= !(i->second.is_paused);
-    use_high_accuracy |= i->second.high_accuracy;
-    if (needs_updates && use_high_accuracy)
-      break;
-  }
-  if (needs_updates) {
-     if (!location_provider_)
-       location_provider_ = GeolocationProviderImpl::GetInstance();
-     // Re-add to re-establish our options, in case they changed.
-     location_provider_->AddLocationUpdateCallback(
-         callback_, use_high_accuracy);
-  } else {
-    if (location_provider_)
+  if (renderer_high_accuracy_.empty()) {
+    if (location_provider_) {
       location_provider_->RemoveLocationUpdateCallback(callback_);
-    location_provider_ = NULL;
+      location_provider_ = NULL;
+    }
+  } else {
+    if (!location_provider_)
+      location_provider_ = GeolocationProviderImpl::GetInstance();
+    // Re-add to re-establish our options, in case they changed.
+    bool use_high_accuracy = false;
+    std::map<int, bool>::iterator i = renderer_high_accuracy_.begin();
+    for (; i != renderer_high_accuracy_.end(); ++i) {
+      if (i->second) {
+        use_high_accuracy = true;
+        break;
+      }
+    }
+    location_provider_->AddLocationUpdateCallback(callback_, use_high_accuracy);
   }
 }
 }  // namespace

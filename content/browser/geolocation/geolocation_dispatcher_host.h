@@ -19,10 +19,6 @@ class GeolocationDispatcherHost : public BrowserMessageFilter {
       int render_process_id,
       GeolocationPermissionContext* geolocation_permission_context);
 
-  // Pause or resumes geolocation for the given |render_view_id|. Should
-  // be called on the IO thread. Resuming when nothing is paused is a no-op.
-  virtual void PauseOrResume(int render_view_id, bool should_pause) = 0;
-
  protected:
   GeolocationDispatcherHost();
   virtual ~GeolocationDispatcherHost();
