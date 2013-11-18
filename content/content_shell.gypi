@@ -932,6 +932,9 @@
       ],
     }],  # OS=="mac"
     ['OS=="android"', {
+      'includes': [
+        '../third_party/libnetxt/libnetxt_vars.gypi',
+      ],
       'targets': [
         {
           # TODO(jrg): Update this action and other jni generators to only
@@ -1018,6 +1021,7 @@
             '../third_party/mesa/mesa.gyp:osmesa_in_lib_dir',
             '../tools/android/forwarder/forwarder.gyp:forwarder',
             '../ui/android/ui_android.gyp:ui_java',
+            '<@(libnetxt_dependencies)',
           ],
           'variables': {
             'apk_name': 'ContentShell',
@@ -1025,6 +1029,8 @@
             'java_in_dir': 'shell/android/shell_apk',
             'resource_dir': 'shell/android/shell_apk/res',
             'native_lib_target': 'libcontent_shell_content_view',
+            'additional_native_libs': [
+              '<@(libnetxt_native_libs)'],
             'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
             'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
             'extra_native_libs': ['<(SHARED_LIB_DIR)/libosmesa.so'],
