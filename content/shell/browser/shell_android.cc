@@ -52,7 +52,10 @@ void Shell::PlatformSetIsLoading(bool loading) {
 }
 
 void Shell::PlatformCreateWindow(int width, int height) {
-  java_object_.Reset(AttachCurrentThread(), CreateShellView(this));
+  JNIEnv* env = AttachCurrentThread();
+  jobject shell = CreateShellView(this);
+  java_object_.Reset(env, shell);
+  env->DeleteLocalRef(shell);
 }
 
 void Shell::PlatformSetContents() {
