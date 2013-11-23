@@ -52,6 +52,11 @@
             '-msse2',
           ],
         }],
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
+          ],
+        }],
         [ 'target_arch != "arm" and target_arch != "mipsel"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp',
@@ -162,10 +167,15 @@
 	  }],
 	],
       },
-          'includes': [
-            '../build/clang.gypi',
-          ],
+      'includes': [
+        '../build/clang.gypi',
+      ],
       'conditions': [
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
+          ],
+        }],
         [ 'OS in ["linux", "freebsd", "openbsd", "solaris", "android"]', {
           'cflags': [
             '-mssse3',
@@ -221,6 +231,13 @@
         '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
         '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
       ],
+      'conditions':[
+        [ 'OS == "linux"', {
+          'include_dirs': [
+            '../third_party/skia/include/config',
+          ],
+        }],
+      ]
     },
   ],
   'conditions': [
@@ -250,6 +267,13 @@
             '../third_party/skia/include/core',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
+          ],
+          'conditions':[
+            [ 'OS == "linux"', {
+              'include_dirs': [
+                '../third_party/skia/include/config',
+              ],
+            }],
           ],
           'cflags!': [
             '-fno-omit-frame-pointer',
@@ -281,7 +305,7 @@
                 '__ARM_HAVE_NEON',
               ],
             }],
-            ['clang==1', {
+            ['clang==1 and OS == "android"', {
               'include_dirs': [
                  '../..'
                  '../skia/config',
